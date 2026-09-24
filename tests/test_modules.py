@@ -3,9 +3,23 @@ import json
 import textwrap
 
 
+def module_row(run, identifier):
+    for line in run('list', 'modules').stdout.splitlines():
+        parts = line.split(None, 3)
+        if parts and parts[0] == identifier:
+            return parts
+    return None
+
+
+def user_module(home, name, body):
+    folder = home / 'modules' / name
+    folder.mkdir(parents=True)
+    (folder / '__init__.py').write_text(textwrap.dedent(body))
+    return folder
+
+
 def test_template_module_is_listed_and_enabled_out_of_the_box(run):
-    out = run('list', 'modules').stdout
-    assert 'template' in out and 'on' in out
+    assert module_row(run, 'template')[:3] == ['template', 'on', 'system']
 
 
 def test_sync_verb_with_noun_and_adverb(run):
@@ -25,9 +39,33 @@ def test_module_setting_declared_in_code_drives_set_and_behavior(run):
     assert run('template', 'greet', 'you').stdout.strip() == 'hello, you'
 
 
-def test_event_published_by_one_verb_reaches_the_subscriber(run):
+def test_event_reaches_every_subscriber_and_one_failure_does_not_stop_the_rest(run, home):
+    user_module(home, 'broken_listener', '''
+        from metaform.module import Module, Subscription
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def fail(payload, ctx):
+            raise RuntimeError('listener failed')
+        MODULE = Module(id='broken_listener', purpose='Fails.', summary='Fails.',
+                        subscriptions=(Subscription('template.greeted', fail),))
+    ''')
+    user_module(home, 'listener', '''
+        import json
+        from metaform.module import Module, Subscription, Verb
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def heard(payload, ctx):
+            path = ctx.data / 'heard.json'
+            got = json.loads(path.read_text()) if path.exists() else []
+            path.write_text(json.dumps(got + [payload]))
+        def show(ctx):
+            path = ctx.data / 'heard.json'
+            ctx.say(path.read_text() if path.exists() else '[]')
+        MODULE = Module(id='listener', purpose='Listens.', summary='Listens.',
+                        verbs=(Verb('show', show, 'Show what it heard.'),),
+                        subscriptions=(Subscription('template.greeted', heard),))
+    ''')
     run('template', 'greet', 'ada')
     run('template', 'greet', 'bob')
+    assert json.loads(run('listener', 'show').stdout) == [{'name': 'ada'}, {'name': 'bob'}]
     assert run('template', 'history').stdout.split() == ['ada', 'bob']
 
 
@@ -35,8 +73,10 @@ def test_data_driven_select_setting(run):
     result = run('set', '--favorite', 'zed', ok=False)
     assert result.returncode != 0 and 'none yet' in result.stderr
     run('template', 'greet', 'zed')
+    rejected = run('set', '--favorite', 'amy', ok=False)
+    assert rejected.returncode == 2 and 'Choices: zed.' in rejected.stderr
     run('set', '--favorite', 'zed')
-    assert 'favorite: zed' in run('config', '--show').stdout.replace('  ', ' ')
+    assert '  favorite: zed  (set)' in run('config', '--show').stdout.splitlines()
 
 
 def test_module_help_two_forms(run):
@@ -51,16 +91,25 @@ def test_module_help_two_forms(run):
 
 
 def test_command_index_includes_module_verbs(run):
-    assert 'template greet' in run('help', 'commands').stdout
+    rows = [line.split()[:2] for line in run('help', 'commands').stdout.splitlines() if line.startswith('  ')]
+    assert ['template', 'greet'] in rows and ['template', 'wait'] in rows
 
 
-def test_disable_and_enable_module(run):
+def test_module_and_verb_syntax_with_short_flag(run):
+    assert run('template', '-h').stdout == run('template', '--help').stdout
+    assert run('template', 'greet', '-h').stdout == run('template', 'greet', '--help').stdout
+    assert run('template', 'greet', '-h').stdout.startswith('Usage: metaform template greet <name> [--loud]')
+
+
+def test_disable_keeps_settings_and_enable_restores_the_module(run):
+    run('set', '--greeting', 'hey')
     run('disable', 'module', 'template')
+    assert module_row(run, 'template')[1] == 'off'
     result = run('template', 'greet', 'x', ok=False)
-    assert result.returncode != 0 and 'metaform enable module template' in result.stderr
-    assert 'template greet' not in run('help', 'commands').stdout
+    assert result.stderr.splitlines() == ['Error: Module template is off.', 'Next: metaform enable module template']
+    assert 'template' not in run('help', 'commands').stdout
     run('enable', 'module', 'template')
-    assert run('template', 'greet', 'x').stdout.strip() == 'hello, x'
+    assert run('template', 'greet', 'x').stdout.strip() == 'hey, x'
 
 
 def test_user_place_module_loads(run, home):
@@ -78,25 +127,60 @@ def test_user_place_module_loads(run, home):
                         verbs=(Verb('ping', ping, 'Answer with pong.'),))
     '''))
     assert run('hello', 'ping').stdout.strip() == 'pong'
-    assert 'hello' in run('list', 'modules').stdout
+    assert module_row(run, 'hello')[:3] == ['hello', 'on', 'user']
 
 
 def test_module_without_supported_os_is_refused_with_reason(run, home):
     folder = home / 'modules' / 'bad'
     folder.mkdir(parents=True)
     (folder / '__init__.py').write_text('raise SystemExit("must not run")\n')
-    out = run('list', 'modules').stdout
-    assert 'bad' in out and 'SUPPORTED_OS' in out
+    row = module_row(run, 'bad')
+    assert row[1] == 'error' and 'SUPPORTED_OS is required' in row[3]
 
 
-def test_commands_setting_narrows_the_surface_and_says_so(run):
-    out = run('set', '--commands', 'chassis').stdout
-    assert 'hidden' in out.lower()
-    result = run('template', 'greet', 'x', ok=False)
-    assert result.returncode != 0
-    assert 'template greet' not in run('help', 'commands').stdout
-    run('unset', '--commands')
+def test_module_for_another_os_is_refused_with_its_reason(run, home):
+    user_module(home, 'elsewhere', '''
+        SUPPORTED_OS = ('plan9',)
+        raise SystemExit('must not run')
+    ''')
+    row = module_row(run, 'elsewhere')
+    assert row[1] == 'error' and 'plan9' in row[3]
+
+
+def test_duplicate_id_and_reserved_name_are_refused(run, home):
+    user_module(home, 'template', '''
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        raise SystemExit('must not run')
+    ''')
+    user_module(home, 'list', '''
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        raise SystemExit('must not run')
+    ''')
+    rows = [line for line in run('list', 'modules').stdout.splitlines()]
+    assert any(line.startswith('template') and 'Another module already has the id' in line for line in rows)
+    assert any(line.startswith('list') and 'belongs to a chassis command' in line for line in rows)
     assert run('template', 'greet', 'x').stdout.strip() == 'hello, x'
+
+
+def test_commands_setting_narrows_the_surface_and_names_the_way_back(run):
+    out = run('set', '--commands', 'template').stdout.splitlines()
+    assert out[-3:] == ['Commands shown here: template.',
+                        'All other commands and help, including yours, are now hidden and will not run.',
+                        'To restore them: metaform unset --commands']
+    assert run('template', 'greet', 'x').stdout.strip() == 'hello, x'
+    refused = run('list', 'projects', ok=False)
+    assert refused.stderr.splitlines()[-1] == 'Next: metaform unset --commands'
+    rows = {line.split()[0] for line in run('help', 'commands').stdout.splitlines() if line.startswith('  ')}
+    assert 'list' not in rows and 'add' not in rows and {'help', 'set', 'unset', 'config'} <= rows
+    run('config', '--show')
+    run('unset', '--commands')
+    run('list', 'projects')
+
+
+def test_commands_setting_can_hide_a_module(run):
+    run('set', '--commands', 'chassis')
+    refused = run('template', 'greet', 'x', ok=False)
+    assert refused.stderr.splitlines()[-1] == 'Next: metaform unset --commands'
 
 
 def _package(site, name, body):
@@ -124,7 +208,8 @@ def test_installed_package_module_loads_through_its_entry_point(home, tmp_path):
     run = lambda *a: subprocess.run([sys.executable, '-m', 'metaform', *a], env=env, cwd=tmp_path,
                                     capture_output=True, text=True)
     assert run('shelf', 'count').stdout.strip() == '3 books'
-    assert 'entry' in run('list', 'modules').stdout
+    row = next(line.split(None, 3) for line in run('list', 'modules').stdout.splitlines() if line.startswith('shelf'))
+    assert row[:3] == ['shelf', 'on', 'entry']
 
 
 def test_module_setting_that_clashes_is_refused_and_reported(run, home):
@@ -137,8 +222,8 @@ def test_module_setting_that_clashes_is_refused_and_reported(run, home):
         settings.text('greeting', 'yo')
         MODULE = Module(id='clash', purpose='Clashes.', summary='Clash.')
     '''))
-    out = run('list', 'modules').stdout
-    assert 'clash' in out and 'already belongs to template' in out
+    row = module_row(run, 'clash')
+    assert row[1] == 'error' and 'already belongs to template' in row[3]
     assert run('template', 'greet', 'x').stdout.strip() == 'hello, x'
 
 
@@ -146,8 +231,8 @@ def test_module_that_crashes_on_import_is_reported_and_others_still_run(run, hom
     folder = home / 'modules' / 'crash'
     folder.mkdir(parents=True)
     (folder / '__init__.py').write_text("SUPPORTED_OS = ('linux', 'macos', 'windows')\nraise RuntimeError('boom')\n")
-    out = run('list', 'modules').stdout
-    assert 'crash' in out and 'boom' in out
+    row = module_row(run, 'crash')
+    assert row[1] == 'error' and 'boom' in row[3]
     result = run('crash', 'x', ok=False)
     assert 'did not load' in result.stderr and 'metaform list modules' in result.stderr
     assert run('template', 'greet', 'x').stdout.strip() == 'hello, x'
@@ -162,6 +247,12 @@ def test_caution_verb_explains_first_and_runs_with_confirm(run):
     assert run('template', 'history').stdout.strip() == 'ada'
     run('template', 'forget', '--confirm')
     assert 'No greetings yet' in run('template', 'history').stdout
+
+
+def test_confirm_is_not_a_switch_of_an_ordinary_verb(run):
+    result = run('template', 'greet', 'x', '--confirm', ok=False)
+    assert result.stderr.splitlines() == ['Error: template greet has no switch --confirm.',
+                                          'Next: metaform template greet --help']
 
 
 def test_status_shows_modules_and_a_narrowed_surface(run):

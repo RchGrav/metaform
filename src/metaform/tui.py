@@ -341,7 +341,7 @@ class ChassisTUI:
                         self.quit_open = True
                     else:
                         self.app.exit()
-        self.app.create_background_task(run())
+        self.last_task = self.app.create_background_task(run())
 
     @property
     def change_count(self):

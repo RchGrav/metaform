@@ -85,8 +85,24 @@ def choice(key: str, choices, default=None, help: str = '', **extra) -> Setting:
     return declare(Setting(key=key, default=default, help=help, kind='select', choices=choices, **extra))
 
 
-def _scope(setting: Setting, folder: Path) -> str:
+def _own_scope(setting: Setting, folder: Path) -> str:
     return 'global' if setting.scope == 'global' else 'folder:' + str(folder.resolve())
+
+
+def _scope(setting: Setting, folder: Path) -> str:
+    """Where this folder's value lives: the nearest folder at or above it that holds one.
+
+    A folder setting made in a folder applies to every folder below it, until a
+    deeper folder sets its own.
+    """
+    if setting.scope == 'global':
+        return 'global'
+    folder = folder.resolve()
+    for candidate in (folder, *folder.parents):
+        scope = 'folder:' + str(candidate)
+        if home.has_saved(scope, setting.key) or home.glued(scope, setting.key):
+            return scope
+    return 'folder:' + str(folder)
 
 
 def default(setting: Setting, folder: Path):
@@ -135,7 +151,7 @@ def assign(key: str, raw: str, folder: Path, *, glue: bool = False):
     setting = SCHEMA[key]
     new = parse(setting, raw)
     old = value(key, folder)
-    scope = _scope(setting, folder)
+    scope = _own_scope(setting, folder)
     home.save(scope, key, new)
     if glue:
         home.set_glue(scope, key, True)
@@ -157,7 +173,7 @@ def put(key: str, value, folder: Path, *, glue: bool = False):
 def glue(key: str, folder: Path, on: bool) -> None:
     """Glue or unglue a setting. Gluing a default keeps the default through unset all."""
     setting = SCHEMA[key]
-    scope = _scope(setting, folder)
+    scope = _scope(setting, folder) if not on else _own_scope(setting, folder)
     if on and not home.has_saved(scope, key):
         home.save(scope, key, value(key, folder))
     home.set_glue(scope, key, on)
