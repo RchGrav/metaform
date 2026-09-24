@@ -256,6 +256,7 @@ def test_confirm_is_not_a_switch_of_an_ordinary_verb(run):
 
 
 def test_status_shows_modules_and_a_narrowed_surface(run):
-    assert 'Modules: 1 on' in run().stdout
+    on = sum(1 for line in run('list', 'modules').stdout.splitlines() if line.split()[1] == 'on')
+    assert f'Modules: {on} on' in run().stdout.splitlines()
     run('set', '--commands', 'template')
     assert 'Commands: template' in run().stdout

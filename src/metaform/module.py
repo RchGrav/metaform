@@ -75,9 +75,13 @@ class Context:
     folder: Path
     nouns: list[str] = field(default_factory=list)
     adverbs: dict[str, object] = field(default_factory=dict)
+    sink: Callable[[str], None] | None = None
 
     def say(self, text: str) -> None:
-        sys.stdout.write(text + '\n')
+        if self.sink is not None:
+            self.sink(text)
+        else:
+            sys.stdout.write(text + '\n')
 
     def setting(self, key: str):
         from . import settings

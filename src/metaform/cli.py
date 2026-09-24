@@ -253,9 +253,16 @@ def help_(args, folder):
         raise Stop(f'No help topic {" ".join(args)}.', 'metaform help commands')
 
 
+def mcp(args, folder):
+    if args:
+        raise Stop('mcp takes no words.', 'metaform mcp')
+    from . import mcp_server
+    mcp_server.serve(folder)
+
+
 VERBS = {'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config,
-         'enable': enable, 'disable': disable}
-ALWAYS = {'help', 'set', 'unset', 'config'}
+         'enable': enable, 'disable': disable, 'mcp': mcp}
+ALWAYS = {'help', 'set', 'unset', 'config', 'mcp'}
 
 
 def shown(group: str, folder: Path) -> bool:
@@ -345,6 +352,13 @@ docs.command(Command('list', 'List registered projects or modules.',
                      details='list modules shows each module, whether it is on, where it was found, '
                              'and why it did not load when it did not.',
                      see_also=('add', 'enable', 'disable')))
+docs.command(Command('mcp', "Serve this folder's module verbs as MCP tools, over stdio.",
+                     ('metaform mcp',),
+                     description='A harness launches this. Each module verb on the folder\'s command surface becomes '
+                                 'a tool named <module>_<verb>, and the instructions carry each module\'s purpose.',
+                     details='Add it to Claude Code with: claude mcp add metaform -- metaform mcp. '
+                             'It serves the project of the folder it starts in.',
+                     see_also=('set', 'help')))
 docs.command(Command('enable', 'Turn a module on.', ('metaform enable module <id>',), see_also=('disable', 'list')))
 docs.command(Command('disable', 'Turn a module off. Its settings keep their saved values.',
                      ('metaform disable module <id>',), see_also=('enable', 'list')))

@@ -107,7 +107,7 @@ def test_help_overview_is_brief_and_ends_with_tips(run):
                         "  - run 'metaform config --show' to inspect your saved defaults."]
 
 
-@pytest.mark.parametrize('command', ['help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable'])
+@pytest.mark.parametrize('command', ['help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'mcp'])
 def test_every_chassis_command_has_a_man_page_and_a_separate_syntax(run, command):
     page = run('help', command).stdout
     syntax = run(command, '--help').stdout

@@ -20,7 +20,7 @@ from pathlib import Path
 from . import home, module_metadata, settings
 from .module import Module
 
-RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'chassis'}
+RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'mcp', 'chassis'}
 SYSTEM = Path(__file__).parent / 'modules'
 
 
