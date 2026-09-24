@@ -33,6 +33,10 @@ class Setting:
     def switch(self) -> str:
         return '--' + self.key.replace('_', '-')
 
+    @property
+    def type(self) -> type:
+        return {'int': int, 'bool': bool, 'list': list}.get(self.kind, str)
+
     def options(self) -> list[str]:
         return list(self.choices() if callable(self.choices) else self.choices or [])
 
@@ -103,6 +107,27 @@ def assign(key: str, raw: str, folder: Path, *, glue: bool = False):
     if glue:
         home.set_glue(scope, key, True)
     return old, new
+
+
+def put(key: str, value, folder: Path, *, glue: bool = False):
+    """Set one setting from an already typed value, as the settings screen does."""
+    setting = SCHEMA[key]
+    if setting.kind == 'list' and isinstance(value, list):
+        raw = ','.join(str(item) for item in value)
+    elif setting.kind == 'bool' and isinstance(value, bool):
+        raw = 'on' if value else 'off'
+    else:
+        raw = str(value)
+    return assign(key, raw, folder, glue=glue)
+
+
+def glue(key: str, folder: Path, on: bool) -> None:
+    """Glue or unglue a setting. Gluing a default keeps the default through unset all."""
+    setting = SCHEMA[key]
+    scope = _scope(setting, folder)
+    if on and not home.has_saved(scope, key):
+        home.save(scope, key, value(key, folder))
+    home.set_glue(scope, key, on)
 
 
 def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
