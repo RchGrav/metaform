@@ -7,7 +7,8 @@ to the folder the command runs in; global settings apply everywhere.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import home
@@ -42,14 +43,46 @@ class Setting:
 
 
 SCHEMA: dict[str, Setting] = {}
+_owner: str | None = None
+
+
+@contextmanager
+def owned_by(module: str):
+    """While a module loads, the settings it declares belong to it."""
+    global _owner
+    previous, _owner = _owner, module
+    try:
+        yield
+    finally:
+        _owner = previous
 
 
 def declare(setting: Setting) -> Setting:
+    if _owner is not None:
+        setting = replace(setting, owner=_owner)
     existing = SCHEMA.get(setting.key)
     if existing is not None and existing.owner != setting.owner:
         raise ValueError(f'Setting {setting.switch} already belongs to {existing.owner}.')
     SCHEMA[setting.key] = setting
     return setting
+
+
+def text(key: str, default: str = '', help: str = '', **extra) -> Setting:
+    return declare(Setting(key=key, default=default, help=help, kind='str', **extra))
+
+
+def number(key: str, default: int = 0, help: str = '', **extra) -> Setting:
+    return declare(Setting(key=key, default=default, help=help, kind='int', **extra))
+
+
+def boolean(key: str, default: bool = False, help: str = '', **extra) -> Setting:
+    return declare(Setting(key=key, default=default, help=help, kind='bool', **extra))
+
+
+def choice(key: str, choices, default=None, help: str = '', **extra) -> Setting:
+    """A select. choices is a list, or a function returning the current list,
+    for example names the module read from its own data."""
+    return declare(Setting(key=key, default=default, help=help, kind='select', choices=choices, **extra))
 
 
 def _scope(setting: Setting, folder: Path) -> str:
@@ -165,4 +198,11 @@ declare(Setting(
     help='The project this folder works on.',
     details='Defaults to the registered project that contains this folder. '
             'Set it to work on another project from here. Unset it to return to the folder\'s own project.',
+))
+
+declare(Setting(
+    key='commands', kind='list', scope='folder', default=[],
+    help='The command groups shown and run in this folder. Empty means all.',
+    details='A group is chassis or a module id. set, unset, config and help always run, '
+            'so the full set can be restored with unset --commands.',
 ))

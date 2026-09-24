@@ -5,16 +5,12 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, docs, home, settings
+from . import __version__, docs, home, loader, settings
 from .docs import Command, Switch
+from .module import Context, call
 
 
-class Stop(Exception):
-    """A user error. It says what happened and the one command to run next."""
-
-    def __init__(self, message: str, next_step: str | None = None):
-        super().__init__(message)
-        self.next_step = next_step
+from .module import Stop
 
 
 def out(text: str = '') -> None:
@@ -49,6 +45,16 @@ def status(args, folder):
         chosen = settings.state('project', folder) != 'default'
         out(f'Project: {project} ({where})' + (' [selected here]' if chosen else ''))
     out(f'Projects: {len(registered)} registered')
+    found = loader.discover()
+    loaded = [item.id for item in found if item.module is not None]
+    broken = [item.id for item in found if item.enabled and item.problem]
+    line = f'Modules: {len(loaded)} on'
+    if broken:
+        line += f", {len(broken)} not loaded (metaform list modules)"
+    out(line)
+    groups = settings.value('commands', folder)
+    if groups:
+        out('Commands: ' + ', '.join(groups))
 
 
 def add(args, folder):
@@ -63,8 +69,17 @@ def add(args, folder):
 
 
 def list_(args, folder):
+    if args == ['modules']:
+        found = loader.discover()
+        width = max((len(item.id) for item in found), default=6)
+        for item in found:
+            state = 'on' if item.enabled and not item.problem else ('off' if not item.enabled else 'error')
+            line = f'{item.id:<{width}}  {state:<5}  {item.place:<6}  '
+            line += item.problem if item.problem else (item.module.summary if item.module else '')
+            out(line.rstrip())
+        return
     if args != ['projects']:
-        raise Stop('list needs a noun: projects.', 'metaform list projects')
+        raise Stop('list needs a noun: projects or modules.', 'metaform list projects')
     registered = home.projects()
     if not registered:
         out('No projects yet. Register one: metaform add project <id> <path>')
@@ -72,6 +87,26 @@ def list_(args, folder):
     width = max(len(identifier) for identifier in registered)
     for identifier, path in registered.items():
         out(f'{identifier:<{width}}  {path}')
+
+
+def _toggle(args, on):
+    verb = 'enable' if on else 'disable'
+    if len(args) != 2 or args[0] != 'module':
+        raise Stop(f'{verb} needs: module <id>.', f'metaform {verb} module <id>')
+    identifier = args[1]
+    known = {item.id for item in loader.discover()}
+    if identifier not in known:
+        raise Stop(f'No module {identifier}.', 'metaform list modules')
+    loader.set_enabled(identifier, on)
+    out(f"Module {identifier}: {'on' if on else 'off'}")
+
+
+def enable(args, folder):
+    _toggle(args, True)
+
+
+def disable(args, folder):
+    _toggle(args, False)
 
 
 def _setting_for(switch: str) -> settings.Setting:
@@ -128,6 +163,11 @@ def set_(args, folder):
             out(f'  {key}: {_fmt(old)} → {_fmt(new)}')
     if glued:
         out('  glued: ' + ', '.join(glued))
+    if any(key == 'commands' for key, _, _ in changes) and settings.value('commands', folder):
+        shown = ', '.join(settings.value('commands', folder))
+        out(f'Commands shown here: {shown}.')
+        out('All other commands and help, including yours, are now hidden and will not run.')
+        out('To restore them: metaform unset --commands')
 
 
 def unset(args, folder):
@@ -178,10 +218,10 @@ def config(args, folder):
     if as_json:
         out(json.dumps(rows, indent=2, default=str))
         return
-    width = max(len(row['key']) for row in rows)
     for row in rows:
         mark = '*' if row['state'] == 'glued' else ' '
-        out(f"{mark} {row['key']:<{width}}  {_fmt(row['value'])}  ({row['state']})")
+        note = '' if row['state'] == 'default' else f"  ({row['state']})"
+        out(f"{mark} {row['key']}: {_fmt(row['value'])}{note}")
     out('')
     out('* glued: kept by unset all until unglued.')
 
@@ -192,7 +232,7 @@ def help_(args, folder):
     elif args == ['intro']:
         out(docs.INTRO)
     elif args == ['commands']:
-        out(docs.commands_index())
+        out(docs.commands_index(lambda group: shown(group, folder)))
     elif args == ['switches']:
         out(docs.switches_index())
     elif len(args) == 1 and args[0].startswith('--'):
@@ -201,11 +241,90 @@ def help_(args, folder):
         out(docs.switch_page(args[0]))
     elif len(args) == 1 and args[0] in docs.COMMANDS:
         out(docs.page(args[0]))
+    elif args and _module(args[0], folder, quiet=True):
+        found = _module(args[0], folder)
+        if len(args) == 1:
+            out(docs.module_page(found.module))
+        elif len(args) == 2 and (verb := _verb(found, args[1])):
+            out(docs.verb_page(found.module, verb))
+        else:
+            raise Stop(f'No verb {args[1]} in {args[0]}.', f'metaform help {args[0]}')
     else:
         raise Stop(f'No help topic {" ".join(args)}.', 'metaform help commands')
 
 
-VERBS = {'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config}
+VERBS = {'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config,
+         'enable': enable, 'disable': disable}
+ALWAYS = {'help', 'set', 'unset', 'config'}
+
+
+def shown(group: str, folder: Path) -> bool:
+    """Whether a command group is on this folder's surface. Empty means every group."""
+    groups = settings.value('commands', folder)
+    return not groups or group in groups
+
+
+def _module(identifier, folder, quiet=False):
+    found = loader.get(identifier)
+    if found is None:
+        if quiet:
+            return None
+        raise Stop(f'Unknown command: {identifier}.', 'metaform help commands')
+    if not found.enabled:
+        if quiet:
+            return None
+        raise Stop(f'Module {identifier} is off.', f'metaform enable module {identifier}')
+    if found.problem or found.module is None:
+        if quiet:
+            return None
+        raise Stop(f'Module {identifier} did not load: {found.problem}', 'metaform list modules')
+    if not shown(identifier, folder):
+        if quiet:
+            return None
+        raise Stop(f'{identifier} is not on this folder\'s command surface.', 'metaform unset --commands')
+    return found
+
+
+def _verb(found, name):
+    return next((verb for verb in found.module.verbs if verb.name == name), None)
+
+
+def run_module(identifier, rest, folder):
+    found = _module(identifier, folder)
+    if not rest or rest[0] in ('-h', '--help'):
+        out(docs.module_syntax(found.module))
+        return
+    verb = _verb(found, rest[0])
+    if verb is None:
+        raise Stop(f'{identifier} has no verb {rest[0]}.', f'metaform help {identifier}')
+    words = rest[1:]
+    if '-h' in words or '--help' in words:
+        out(docs.verb_syntax(found.module, verb))
+        return
+    known = {adverb.name: adverb for adverb in verb.adverbs}
+    nouns, adverbs, confirmed, index = [], {}, False, 0
+    while index < len(words):
+        word = words[index]
+        if word == '--confirm' and verb.caution:
+            confirmed = True
+        elif word.startswith('--'):
+            adverb = known.get(word)
+            if adverb is None:
+                raise Stop(f'{identifier} {verb.name} has no switch {word}.', f'metaform {identifier} {verb.name} --help')
+            if adverb.takes_value:
+                if index + 1 == len(words):
+                    raise Stop(f'{word} needs a value.', f'metaform {identifier} {verb.name} --help')
+                index += 1
+                adverbs[word] = words[index]
+            else:
+                adverbs[word] = True
+        else:
+            nouns.append(word)
+        index += 1
+    if verb.caution and not confirmed:
+        confirm = ' '.join(['metaform', identifier, verb.name, *words, '--confirm'])
+        raise Stop(verb.caution, f'If you are sure: {confirm}')
+    call(verb.run, Context(module=identifier, folder=folder, nouns=nouns, adverbs=adverbs))
 
 
 # Help records -------------------------------------------------------------
@@ -221,8 +340,14 @@ docs.command(Command('add', 'Register a project.', ('metaform add project <id> <
                      details='Running metaform inside the folder, or any folder below it, works on this project.',
                      examples=(('metaform add project mgm ~/mgm-main', 'Register the MGM repository as mgm.'),),
                      see_also=('list', 'set')))
-docs.command(Command('list', 'List registered things.', ('metaform list projects',),
-                     see_also=('add',)))
+docs.command(Command('list', 'List registered projects or modules.',
+                     ('metaform list projects', 'metaform list modules'),
+                     details='list modules shows each module, whether it is on, where it was found, '
+                             'and why it did not load when it did not.',
+                     see_also=('add', 'enable', 'disable')))
+docs.command(Command('enable', 'Turn a module on.', ('metaform enable module <id>',), see_also=('disable', 'list')))
+docs.command(Command('disable', 'Turn a module off. Its settings keep their saved values.',
+                     ('metaform disable module <id>',), see_also=('enable', 'list')))
 docs.command(Command('set', 'Save settings. Each setting is a switch.',
                      ('metaform set --<setting> <value> [--glue] [--quiet]',),
                      switches=(('--glue', 'Keep these settings through unset all.'),
@@ -259,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
     try:
+        loader.discover()
         if not args:
             status(args, folder)
             return 0
@@ -267,7 +393,10 @@ def main(argv: list[str] | None = None) -> int:
             out(docs.overview())
             return 0
         if verb not in VERBS:
-            raise Stop(f'Unknown command: {verb}.', 'metaform help commands')
+            run_module(verb, rest, folder)
+            return 0
+        if verb not in ALWAYS and not shown('chassis', folder):
+            raise Stop(f'{verb} is not on this folder\'s command surface.', 'metaform unset --commands')
         if '-h' in rest or '--help' in rest:
             out(docs.syntax(verb))
             return 0

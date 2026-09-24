@@ -159,9 +159,72 @@ command name what it acts on.
 '''
 
 
-def commands_index() -> str:
-    rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)]
-    return '\n'.join(['Commands', *_rows(rows), '', "Use 'metaform help <command>' for details."]) + '\n'
+def commands_index(visible=lambda group: True) -> str:
+    from . import loader
+    lines = []
+    if visible('chassis'):
+        rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)]
+        lines += ['Commands', *_rows(rows), '']
+    else:
+        rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)
+                if record.name in ('help', 'set', 'unset', 'config')]
+        lines += ['Commands', *_rows(rows), '']
+    for module in loader.enabled():
+        if not visible(module.id):
+            continue
+        rows = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs]
+        lines += [f'{module.id} — {module.summary}', *_rows(rows), '']
+    lines.append("Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.")
+    return '\n'.join(lines) + '\n'
+
+
+def module_syntax(module) -> str:
+    lines = [f'Usage: metaform {module.id} <verb> [nouns] [switches]', '']
+    lines += _rows([(verb.usage(module.id), verb.summary) for verb in module.verbs])
+    return '\n'.join(lines) + '\n'
+
+
+def module_page(module) -> str:
+    lines = [f'{module.id} — {module.summary}', '', module.purpose, '', 'Verbs']
+    lines += _rows([(verb.name + (' ' + verb.nouns if verb.nouns else ''), verb.summary) for verb in module.verbs])
+    owned = [item for item in settings.SCHEMA.values() if item.owner == module.id]
+    if owned:
+        lines += ['', 'Settings'] + _rows([(item.switch, item.help) for item in owned])
+    if module.details:
+        lines += ['', 'Details', '  ' + module.details]
+    lines += ['', f"Use 'metaform help {module.id} <verb>' for one verb."]
+    return '\n'.join(lines) + '\n'
+
+
+def _verb_switches(verb):
+    rows = [(adverb.name + (' <value>' if adverb.takes_value else ''), adverb.help) for adverb in verb.adverbs]
+    if verb.caution:
+        rows.append(('--confirm', 'Run it. Without this the verb only explains what it would do.'))
+    return rows
+
+
+def verb_syntax(module, verb) -> str:
+    lines = ['Usage: ' + verb.usage(module.id), '']
+    lines += _rows(_verb_switches(verb) + [('-h, --help', 'Show this syntax.')])
+    return '\n'.join(lines) + '\n'
+
+
+def verb_page(module, verb) -> str:
+    lines = [f'{module.id} {verb.name} — {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
+    rows = _verb_switches(verb)
+    if rows:
+        lines += ['Switches'] + _rows(rows) + ['']
+    if verb.caution:
+        lines += ['Caution', '  ' + verb.caution, '']
+    if verb.details:
+        lines += ['Details', '  ' + verb.details, '']
+    if verb.examples:
+        lines += ['Examples']
+        for example, meaning in verb.examples:
+            lines += ['  ' + example, '    ' + meaning]
+        lines += ['']
+    lines.append(f'See also: metaform help {module.id}')
+    return '\n'.join(lines).rstrip() + '\n'
 
 
 def switches_index() -> str:

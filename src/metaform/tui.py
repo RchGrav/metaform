@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import home, settings
+from . import home, loader, settings
 
 
 @dataclass
@@ -45,13 +45,21 @@ class _Backend:
         self.load_errors = {}
 
     def rows(self):
-        owners = sorted({item.owner for item in settings.SCHEMA.values()},
-                        key=lambda owner: (owner != 'chassis', owner))
-        self.plugins = {owner: _Owner(tuple(item for item in settings.SCHEMA.values() if item.owner == owner),
-                                      description=('Settings of the chassis itself.' if owner == 'chassis'
-                                                   else f'Settings of the {owner} module.'))
-                        for owner in owners}
-        return [{'id': owner, 'enabled': True, 'path': str(self.root)} for owner in owners]
+        loader.reset()
+        found = loader.discover()
+        self.plugins = {'chassis': _Owner(tuple(item for item in settings.SCHEMA.values() if item.owner == 'chassis'),
+                                          description='Settings of the chassis itself.')}
+        self.load_errors = {}
+        rows = [{'id': 'chassis', 'enabled': True, 'path': str(self.root)}]
+        for item in found:
+            if item.module is not None:
+                self.plugins[item.id] = _Owner(
+                    tuple(setting for setting in settings.SCHEMA.values() if setting.owner == item.id),
+                    description=item.module.purpose, help=item.module.details or item.module.purpose)
+            if item.problem:
+                self.load_errors[item.id] = item.problem
+            rows.append({'id': item.id, 'enabled': item.enabled, 'path': str(item.path)})
+        return rows
 
     def definition(self, owner):
         return self.plugins[owner]
@@ -358,7 +366,18 @@ class ChassisTUI:
         return '\n'.join(lines) or 'No pending changes.'
 
     def _toggle_module(self):
-        self.message = 'Enter opens the settings of this group.'
+        if not self.selected:
+            return
+        row = self.selected
+        if row['id'] == 'chassis':
+            self.message = 'The chassis is always on. Enter opens its settings.'
+            return
+        enabled = not self.pending_modules.get(row['id'], bool(row['enabled']))
+        if enabled == bool(row['enabled']):
+            self.pending_modules.pop(row['id'], None)
+        else:
+            self.pending_modules[row['id']] = enabled
+        self.message = 'Module change staged. S saves; P previews pending changes.'
 
     def _edit(self):
         if not self.declared_settings:
@@ -431,7 +450,9 @@ class ChassisTUI:
             for (module, key), pinned in list(self.pending_pins.items()):
                 settings.glue(key, folder, pinned)
                 self.pending_pins.pop((module, key))
-            self.pending_modules.clear()
+            for module, enabled in list(self.pending_modules.items()):
+                loader.set_enabled(module, enabled)
+                self.pending_modules.pop(module)
             if exit_after:
                 self.exit_requested = True
         self._perform(save, 'Saving settings and module state…')
