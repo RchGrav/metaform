@@ -33,6 +33,7 @@ switches change how they run.
 | `metaform unset --<setting>\|all [--unglue]` | Return settings to defaults |
 | `metaform config [--show]` | Settings screen, or print settings |
 | `metaform <module> <verb> <nouns> [--adverbs]` | Run a module's verb |
+| `metaform mcp` | Serve this folder's module verbs as MCP tools |
 
 ## Settings
 
@@ -52,6 +53,16 @@ A module is a folder with `SUPPORTED_OS` and `MODULE = Module(...)` in its
 `~/.metaform/modules/`, and in installed packages with a `metaform.modules`
 entry point. Start from `src/metaform/modules/template`, which shows every
 feature once and documents each in its README.
+
+## Agents over MCP
+
+```
+claude mcp add metaform -- metaform mcp
+```
+
+Each module verb on the folder's command surface becomes a tool named
+`<module>_<verb>`, for example `map_where` and `map_element`. It takes the words
+the CLI takes after the verb as `nouns`, and each switch as a named argument.
 
 ## Tests
 
