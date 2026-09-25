@@ -333,10 +333,10 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   CREATE INDEX refs_by_key_value ON refs(key, value);
   ```
   A revision copies forward the refs it keeps, as new rows pointing at the new revision row.
-  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. `add_ref` adds one more ref to a thing's current revision only while that thing's layer is open, STORE-032, or when the layer is mutable. After an immutable layer is complete, a ref changes only through `revise`, STORE-017.
+  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. `add_ref` adds one more ref to a thing's current revision only while that thing's layer is building, by its builder, STORE-032, or when the layer is mutable. After an immutable layer is locked, a ref changes only through `revise`, STORE-017.
 - Acceptance:
   - A join with refs `path=a` and `path=b`, revised to keep only `path=b`, reads back with one ref at the current revision and two at the old one.
-  - `add_ref` on a thing in a complete immutable layer is refused with `StoreError` naming `revise`.
+  - `add_ref` on a thing in a locked immutable layer is refused with `StoreError` naming `revise`.
 - Relates to: STORE-004, STORE-017, STORE-025, STORE-032, MAP-021.
 - Status: recommended. The lookup by key and value is required by MAP-021.
 
@@ -361,7 +361,8 @@ It covers the base database, the per-project store, revisions, layers, provenanc
     kind       TEXT NOT NULL DEFAULT 'layer'
                CHECK(kind IN ('layer','intake','memory')),  -- STORE-032
     created    TEXT NOT NULL,                         -- LAYER-001: creation time, ISO 8601 UTC
-    completed  TEXT                                   -- STORE-032: NULL while the layer is open
+    locked     TEXT,                                  -- STORE-032: NULL while the layer is building
+    build_key  TEXT                                   -- STORE-032: SHA-256 of the build token while building, NULL once locked
   );
   CREATE TABLE hidden_layers(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));
   ```
@@ -469,7 +470,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Acceptance:
   - After a revise, the old row's bytes are unchanged, the new row supersedes it, and an identity read returns the new row.
   - A retired join is absent from receiver and provider reads and present in its revision history.
-  - No `UPDATE` or `DELETE` statement in the data access object targets `elements`, `joins`, `subtypes`, or the `items` rows of an immutable layer, except inside `discard`, which deletes only content rows of an open layer and never identity or `types` rows, STORE-032. An open layer was never visible in context, so nothing can depend on it.
+  - No `UPDATE` or `DELETE` statement in the data access object targets `elements`, `joins`, `subtypes`, or the `items` rows of an immutable layer, except inside `edit`, `remove` and `discard` on a building layer, which change only content rows written in that layer and never identity or `types` rows, STORE-032. A building layer was never visible in context, so nothing can depend on it.
 - Relates to: STORE-007, STORE-012, STORE-018, LAYER-011, REQ-026, REQ-106 as corrected.
 - Status: confirmed. How dependents are found for re-examination is open question 6.
 
@@ -500,7 +501,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   );
   CREATE INDEX selections_by_layer ON selections(layer_id);
   ```
-  Resolution for an address: start from the root selection: the read's own root selection when it supplies one, else the project's `root_selection` rows when there are any, else every complete layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
+  Resolution for an address: start from the root selection: the read's own root selection when it supplies one, else the project's `root_selection` rows when there are any, else every locked layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
 - Acceptance:
   - The mask example above gives the stated results.
   - A layer masked at an element's address does not appear in the node read for a join that element receives, nor in the provider read that reaches that element.
@@ -516,7 +517,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - How it shows: `memory open code.manager.route` returns the node with its observations and relations, including relations other nodes hold toward it.
 - Build:
   - The default memory layer has the name `memory`, kind `memory`, module `memory`, and the variable `What agents have noted at this node.` It is mutable, hideable and not transitive, with no provenance row. The first memory write operation in a project creates it, inside that operation's transaction. A layer is recognized as memory by its kind, never by its name.
-  - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are complete and not hidden, unless the call names a layer, in which case it searches that layer alone:
+  - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are locked and not hidden, unless the call names a layer, in which case it searches that layer alone:
     ```sql
     CREATE VIRTUAL TABLE item_text USING fts5(value, content='items', content_rowid='row');
     CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
@@ -586,17 +587,19 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 
   | Operation | Inputs | Output | Errors |
   |---|---|---|---|
-  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), complete=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created open, or complete when `complete=True`, and a mutable one complete, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
-  | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `complete=True` becomes visible, complete, at commit | nested `atomic()` joins the outer block |
-  | `complete(layer)` | | `Layer` with `completed` set | layer unknown; already complete |
-| `discard(layer)` | an open immutable layer | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; layer complete; layer mutable |
-  | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer complete and immutable; malformed address |
+  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), locked=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created building, with its build token returned once, or locked when `locked=True`; a mutable one is created locked, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive, without a token | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `locked=True` becomes visible, locked, at commit | nested `atomic()` joins the outer block |
+  | `lock(layer, token)` | | `Layer` with `locked` set; the token stops working | layer unknown; already locked; wrong token |
+  | `edit(thing, token, changes)` | thing is an element, join, subtype or item written in a building layer; `changes` per STORE-034 | the changed row, in place, with no revision | layer locked or mutable; wrong token; a key not allowed for the thing's kind |
+  | `remove(thing, token)` | thing is an element, join, subtype, item or ref written in a building layer | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | layer locked or mutable; wrong token; the thing is still the receiver, provider or target of a current row in the layer |
+  | `discard(layer, token)` | a building layer | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; layer locked; layer mutable; wrong token |
+  | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
   | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', role=None, refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
   | `add_subtype(layer, join, end, address, *, purpose=None, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | end is `receiver` or `provider` | `Subtype` | join unknown; end not one of the two; malformed address |
-  | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current revision | owner unknown; owner's layer complete and immutable, STORE-012 |
+  | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current revision | owner unknown; owner's layer locked and immutable, STORE-012; wrong token for a building layer |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
-  | `update_item(item, value)` | | `Item` | layer is immutable |
-  | `delete_item(item)` | | nothing | layer is immutable |
+  | `update_item(item, value)` | an item of a mutable layer | `Item` | layer is immutable; use `edit` while building |
+  | `delete_item(item)` | an item of a mutable layer | nothing | layer is immutable; use `remove` while building |
   | `revise(thing, changes, *, reason, evidence=None)` | thing is an element, join, subtype or item id; `changes` per STORE-034 | the new revision | layer is mutable; receiver change requested; a key not allowed for the thing's kind |
   | `retire(thing, *, reason, evidence=None)` | | the retiring revision | layer is mutable; the thing still has current dependents, STORE-034 |
   | `reexamined(layer)` | | nothing | layer unknown, STORE-036 |
@@ -605,7 +608,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 
 - Acceptance: For each operation, one test performs it and checks the rows it must write and that no other table changed. Each listed error is produced once and writes nothing.
 - Relates to: STORE-009 to STORE-022, STORE-026, STORE-031 to STORE-036.
-- Status: confirmed for the set of things written. Operation names and signatures are recommended. The How it shows line assumes the intake writes record by record, which is recommended by D8 and depends on MAP open question 15.
+- Status: confirmed for the set of things written and for building then locking a knowledge layer. Operation names, signatures and the build token are recommended. Every write into a building layer, `add_element`, `add_join`, `add_subtype`, `add_item`, `add_ref`, `edit`, `remove`, `lock` and `discard`, takes the layer's build token; the intake's single `atomic()` write creates its layer locked and needs none.
 
 ### STORE-025 Read operations
 - Requirement: The data access object offers exactly these reads, each answered through indexes.
@@ -623,16 +626,16 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `where(address)` | the element, or the join and end holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
   | `children(address)` | the next types down the tree | `types_by_parent` |
   | `layer_items(layer, target=None)` | all of a layer, or a layer at one node | `current_items_by_layer` |
-  | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are complete and not hidden; with `raw=True`, every stored layer, open, hidden or masked included | `current_items_by_target`; `selections` primary key |
+  | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are locked and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
   | `context(address, selection=None)` | the applying and the visible transitive items at an address, as two lists, STORE-035 | `current_items_by_target`; `types` primary key range |
   | `links_to(target, layer=None)` | items in any layer linking to a node | `current_items_by_link` |
   | `citing(key, value)` | every current element, join, subtype and item whose refs hold that key and value, per MAP-021 | `refs_by_key_value` |
   | `revisions(thing)` | every revision with reason and evidence | `UNIQUE(id, revision)` |
   | `revision(thing, n)` | one named revision | `UNIQUE(id, revision)` |
-  | `layers()`, `provenance(layer)` | the layers with properties, kind and completion; one layer's provenance | full read of `layers`, STORE-005; primary key |
+  | `layers()`, `provenance(layer)` | the layers with properties, kind and whether each is building or locked; one layer's provenance | full read of `layers`, STORE-005; primary key |
   | `effective_selection(address, root=None)` | the resolved layer set at an address, and any unresolved selection rows, STORE-035 | `selections` primary key |
   | `search(text, layer=None)` | items whose value matches, per STORE-020 | `item_text` |
-  | `has_intake()` | whether the project holds a complete intake layer, STORE-032 | `layers_by_kind` |
+  | `has_intake()` | whether the project holds a locked intake layer, STORE-032 | `layers_by_kind` |
   | `project()` | the project record with its target, STORE-031 | `projects` primary key |
 
 - Acceptance: STORE-005's plan test covers every row of this table.
@@ -714,26 +717,32 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: STORE-002, STORE-003, MAP-041, CLI-001, CLI-028.
 - Status: recommended. The target fields follow MAP-041, confirmed.
 
-### STORE-032 Layer kinds, open layers and completion
-- Requirement: Every layer has a kind, intake, memory or layer, and an immutable layer is open while it is being written and complete once its writer marks it complete.
-- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, an intake layer is what "has an intake" looks for. An intake layer is written whole, in one atomic write by `intake_submit`, and is complete from the moment it exists, BASE-039. Other immutable layers that a module builds over several calls are open while being written and complete once their writer marks them complete. A complete layer is finished: an immutable one then changes only by revision. Reads in context leave open layers out.
-- Why: MAP-040 requires the map to appear whole or not at all. Writing the intake in one atomic submission means a half-written intake never exists, so the no-intake notice clears only when a whole intake is stored. A module layer built over several calls stays out of context reads until finished for the same reason.
-- How it shows: During an intake run nothing is stored, so `metaform` status still shows the no-intake notice. When `intake_submit` succeeds, the notice clears and `map node` in context shows the intake layer, at once.
+### STORE-032 Layer kinds, building and locking
+- Requirement: Every layer has a kind, intake, memory or layer; an immutable layer is building while its writer works on it and is locked when its writer's task is done; a mutable layer is never building and never locked against change.
+- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, and an intake layer is what "has an intake" looks for. There are three ways a layer comes to exist, LAYER-018:
+  - The intake layer is written whole, in one atomic write by `intake_submit`, and is locked from the moment it exists, BASE-039.
+  - A knowledge layer, or any immutable layer a module builds over several calls, is building while its agent follows its prompt. During that time its builder can add, edit and remove its elements, joins, subtypes, items and refs in place, with no revisions, as freely as memory is edited. No other agent can write to it, and no other agent's read in context sees it. When the task is done, the builder locks it. A locked layer is immutable: it changes only by correction, STORE-017, its one provenance record stays as written, and it can be selected, masked and hidden like any other layer.
+  - A mutable layer, memory included, is created ready and stays editable in place forever, STORE-018.
+- Why: The model builds a knowledge layer incrementally against its prompt and fixes its own work as it goes, so it needs full freedom to change what it wrote until its task is done. Locking gives the layer a stable identity that can be trusted, compared and selected, and it is what lets anything else depend on it. Writing the intake in one submission means a half-written intake never exists, so the no-intake notice clears only when a whole intake is stored.
+- How it shows: While a knowledge layer is building, the building agent reads it by name and sees every change it makes; another agent reading the same element in context sees nothing of it. After `lock`, the layer appears in context reads under the selection, and an attempt to edit it is refused with the next step naming `revise`. During an intake run nothing is stored, so `metaform` status shows the no-intake notice until `intake_submit` succeeds.
 - Build:
-  - `layers.kind` and `layers.completed`, STORE-013. `CREATE INDEX layers_by_kind ON layers(kind, completed);`
-  - `layer(...)` creates a layer open, with `completed` NULL. `complete(layer)` sets `completed` to the current time. A mutable layer, including memory, is created complete, because it has no building phase.
-  - While an immutable layer is open, `add_element`, `add_join`, `add_subtype`, `add_item` and `add_ref` may write to it. After it is complete, they are refused for that layer with the next step naming `revise`.
-  - `has_intake()` is true when a layer of kind intake exists with `completed` set. An intake layer is only ever created complete, inside `atomic()`. One indexed read.
-  - Node reads in context, `context`, `search` and the default root selection include only complete layers. A read that names an open layer, or uses `raw=True`, sees it.
-  - An open layer left by an interrupted run of a module that builds a layer over several calls stays open and invisible, and that module removes it with `discard`. The intake never leaves an open layer.
-  - `discard(layer)` deletes, in one transaction, the layer's content: its items; the element, join and subtype revision rows written in it; the refs and links attached to those rows; its provenance row, its source rows, and its layer row. It does not delete identity rows, STORE-007, or `types` rows, STORE-008, even those this layer created: STORE-007 keeps every identity id for as long as the store exists, so an id is never reused and a reference to it never points at something else. An identity id whose content was discarded has no current row, so reads by that id return not found and nothing in context shows it. A `types` row with no element under it is an ordinary type in the tree.
+  - `layers.kind`, `layers.locked` and `layers.build_key`, STORE-013. `CREATE INDEX layers_by_kind ON layers(kind, locked);`
+  - `layer(...)` without `locked=True` creates an immutable layer building: `locked` is NULL, and a build token of 32 random bytes, hex encoded, is generated and returned once; `build_key` stores its SHA-256. A mutable layer, including memory, is created with `locked` set and no token, because it has no building phase; its items change through `update_item` and `delete_item`.
+  - Every write into a building layer takes the token: `add_element`, `add_join`, `add_subtype`, `add_item`, `add_ref`, `edit`, `remove`, `lock` and `discard`. A missing or wrong token is refused with `StoreError` and writes nothing. The token is how "only the building agent" is enforced without agent identities: the agent that created the layer holds it, and the module keeps it for that agent's session only in the reply to the create call.
+  - `edit` changes a row written in the building layer in place. `remove` deletes a row written in it, with its refs and links; it refuses to remove a row that another current row in the same layer still uses as receiver, provider or target. Identity rows, STORE-007, and `types` rows, STORE-008, are never deleted.
+  - `lock(layer, token)` sets `locked` to the current time and clears `build_key`. After that the layer's rows change only through `revise` and `retire`.
+  - `has_intake()` is true when a layer of kind intake exists with `locked` set. An intake layer is only ever created locked, inside `atomic()`. One indexed read.
+  - Node reads in context, `context`, `search` and the default root selection include only locked layers. A read that names a building layer, or uses `raw=True`, sees it.
+  - A building layer left by an interrupted run stays building and invisible. Its builder, or the module on the builder's behalf with the token, removes it with `discard`. The intake never leaves a building layer.
+  - `discard(layer, token)` deletes, in one transaction, the layer's content: its items; the element, join and subtype revision rows written in it; the refs and links attached to those rows; its provenance row, its source rows, and its layer row. It does not delete identity rows or `types` rows, even those this layer created: STORE-007 keeps every identity id for as long as the store exists, so an id is never reused and a reference to it never points at something else. An identity id whose content was discarded has no current row, so reads by that id return not found and nothing in context shows it. A `types` row with no element under it is an ordinary type in the tree.
 - Acceptance:
   - An `intake_submit` whose `atomic()` block raises after writing elements leaves no layer, no elements, and `has_intake()` false.
-  - After `discard` of an open layer that wrote an element, the element's identity row and its `types` row remain, a read by its identity id returns not found, and `list layers` no longer lists the layer.
+  - A building layer's items are absent from another caller's node read in context and present in a read that names the layer; after `lock` they are present in context.
+  - `edit` with a wrong token, and `edit` on a locked layer, are refused and write nothing; `edit` with the token changes the row in place and adds no revision.
+  - After `discard` of a building layer that wrote an element, the element's identity row and its `types` row remain, a read by its identity id returns not found, and `list layers` no longer lists the layer.
   - After a successful `intake_submit`, `has_intake()` is true and the node read in context includes the layer.
-  - `add_element` into a complete immutable layer is refused and writes nothing.
-- Relates to: STORE-013, STORE-012, STORE-024, MAP-040, LAYER-001, MCP-009, BASE-039.
-- Status: confirmed for the intake: one atomic write, complete from the moment it exists. Open and complete for module layers built over several calls, and `discard`, are recommended.
+- Relates to: STORE-013, STORE-012, STORE-017, STORE-018, STORE-024, MAP-040, LAYER-001, LAYER-018, MCP-009, BASE-039.
+- Status: confirmed for the intake as one atomic write, and for a knowledge layer being freely editable by its builder until its task is done, then locked, immutable and selectable. The build token, and the operation names, are recommended.
 
 ### STORE-033 Every identity id resolves to its kind in one read
 - Requirement: One table maps every identity id to its kind, so operations that take a bare id find the right table in one read.
@@ -770,14 +779,14 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 
 ### STORE-035 Context reads: the applying set, the visible set and the starting selection
 - Requirement: The store answers, at any address, which transitive items apply there and which are visible there from beneath, after selection, starting from the project's starting selection.
-- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items beneath it that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The project may store its own starting selection; when it has none, every complete layer starts selected.
+- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items beneath it that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The project may store its own starting selection; when it has none, every locked layer starts selected.
 - Why: A broad question at `code` must see every medium in use beneath it without spreading a branch's specifics to its siblings, and each answer must be one indexed read, STORE-005.
 - How it shows: `metaform query context code` lists C++ from `code.engine` and Bash from `code.installer` as visible, and neither as applying.
 - Build:
-  - `CREATE TABLE root_selection(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));` Empty means every complete layer. The map module's `select-root` and `clear-root` verbs write it, BASE-038.
+  - `CREATE TABLE root_selection(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));` Empty means every locked layer. The map module's `select-root` and `clear-root` verbs write it, BASE-038.
   - Applying set at A: for each prefix P of A, root first, the current items of transitive layers attached at type P or at the current element whose address is P, filtered by the effective selection at A.
   - Visible set at A: the current items of transitive layers attached at any type or current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is a primary-key range on `types.address` from `A.` up to but not including `A/`, the next character after the period, joined to `current_items_by_target` and to `current_elements.address`.
-  - Unresolved selection: a select or mask row whose layer is hidden or open is kept and returned by `effective_selection` in an `unresolved` list, and is not applied.
+  - Unresolved selection: a select or mask row whose layer is hidden or still building is kept and returned by `effective_selection` in an `unresolved` list, and is not applied.
 - Acceptance:
   - The C++ and Bash example gives the stated sets.
   - A transitive item attached at the element `code.engine` applies at `code.engine.game`, and after the element is retyped to `code.runtime` it applies at `code.runtime.game` and not at `code.engine.game`.

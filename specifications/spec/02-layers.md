@@ -9,7 +9,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: A layer is a named body of inferred knowledge laid over the map. The intake produces a layer too: its layer is the one that creates most elements and joins. Every element, join, subtype and layer item records the layer that produced it. The core map is the selection of the intake layer. A new element proposed by a later pass lives in that pass's layer.
 - Why: When everything is a layer, every piece of knowledge attaches, selects, hides and records its origin the same way. That uniformity lets modules compose, and it keeps the map from becoming a special case that every module has to handle separately.
 - How it shows: Asking for an element's or join's origin always names one layer. Selecting only the intake layer shows the core map with nothing else on it.
-- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable, hideable, transitive (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer created at the start of the intake run. That layer stays open, invisible to reads in context, until the run completes it, STORE-032, so the map appears whole or not at all.
+- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable, hideable, transitive (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer, created locked in the single atomic write of `intake_submit`, STORE-032, so the map appears whole or not at all. A knowledge layer is built and then locked, LAYER-018. Memory is mutable and never locked against change, LAYER-012.
 - Acceptance:
   - After an intake through MCP, every stored element, join and subtype names the intake layer, and reading the intake layer returns all of them.
   - Storing an element, join, subtype or layer item without a layer is refused.
@@ -19,7 +19,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 ### LAYER-002 A layer carries one inferred variable
 
 - Requirement: Each layer answers exactly one question, and every item in it is an answer to that question at the place it attaches.
-- What this means: The variable is the one thing the layer infers. For example: a blind-spot challenge at each node, a verdict on each proposal, best practices for a type, porting concerns for a move to another language, or an agent's memory. A layer never mixes two variables. Two questions make two layers.
+- What this means: The variable is the one thing the layer infers, and for a knowledge layer it is whatever the prompt that builds the layer defines. Examples, not a closed list: a blind-spot challenge at each node, a verdict on each proposal, best-practice imperatives for a type, porting concerns for a move to another language, or an agent's memory. A layer never mixes two variables. Two questions make two layers.
 - Why: A layer with one variable can be selected, masked, hidden, compared and trusted as a unit, because everything in it was produced the same way for the same purpose. That is what makes layers compose: a module adds its one variable without knowing about any other module, and select and mask decide which layers an agent sees together.
 - How it shows: Every layer states its variable in one sentence. Reading a layer returns items that all answer that sentence.
 - Build: The layer record's variable field is required text, stating the question. The operation that creates a layer refuses an empty variable.
@@ -92,8 +92,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - Resolution at address A: start with the project's starting selection; for each prefix of A from the trunk to A itself, set selection to (selection minus the layers masked there) plus the layers selected there.
   - Resolution follows the namespace tree only, never the purpose graph.
   - An element's effective selection is the effective selection at its address. Every context assembly path calls this one resolution.
-  - The project's starting selection is stored as in STORE-035; when none is stored, every complete layer starts selected.
-  - Selection data that cannot be applied faithfully, a select or mask row whose layer is hidden or still open, is kept and reported as unresolved by the resolution read, STORE-035, never replaced by a broad default.
+  - The project's starting selection is stored as in STORE-035; when none is stored, every locked layer starts selected.
+  - Selection data that cannot be applied faithfully, a select or mask row whose layer is hidden or still building, is kept and reported as unresolved by the resolution read, STORE-035, never replaced by a broad default.
 - Acceptance:
   - With layer L masked at `code.engine` and selected at `code.engine.renderer`: L reaches `code.engine.renderer`, and does not reach `code.engine` or `code.engine.physics`.
   - A layer masked at an element's address is absent from context assembled through a join whose provider carries that layer.
@@ -128,7 +128,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: Everything in a layer was produced the same way, by one producer following one prompt in one role, so one record describes the origin of every item in it. Nothing is recorded per item, per change or per read. Blinded means the producer saw the map and not the artifact.
 - Why: Provenance tracks what a feature actually uses and nothing more. Knowing how a layer was made, by which perspective under which role, is what lets layers be trusted, compared and reproduced. Per-item and per-read records turn provenance into bloat, and bloat defeats a system whose purpose is to give agents only what matters.
 - How it shows: Asking for any layer's origin returns one record. Two critic layers over the same proposals show two records, for example one blinded and one sighted, each with its role.
-- Build: The provenance record holds: layer id (unique), module, workflow, prompt (the full text as delivered), model, role, blinded. It is written when the layer is created, by the operation that creates it. A layer other than memory cannot be created without it.
+- Build: The provenance record holds: layer id (unique), module, workflow, prompt (the full text as delivered), model, role, blinded. It is written when the layer is created, by the operation that creates it, and never changes: it is fixed as written through building and locking. A layer other than memory cannot be created without it.
 - Acceptance:
   - Creating a non-memory layer without provenance is refused.
   - Writing a thousand items to a layer leaves exactly one provenance record for it.
@@ -137,7 +137,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 
 ### LAYER-011 Immutable layers change by superseding revisions
 
-- Requirement: An item in an immutable layer changes only by a correction, stored as a new revision that supersedes the old one, and current is a pointer to the newest revision.
+- Requirement: Once an immutable layer is locked, an item in it changes only by a correction, stored as a new revision that supersedes the old one, and current is a pointer to the newest revision.
 - What this means: The earlier revision stays stored and readable. Reads return the current revision unless a revision is asked for. Knowledge built on the corrected item is re-examined and never rewritten: layers that depend on it are marked for re-examination, and their contents stay as they were until someone re-examines them.
 - Why: The map is the shared foundation, so a change to it must be explicit and traceable. Rewriting dependents silently would put inference into them that nobody performed; marking them keeps every stored answer honest about what it was built from.
 - How it shows: After a correction, reads show the new value, and the item's history shows both revisions. Layers built on the corrected layer show that they need re-examination.
@@ -145,8 +145,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance:
   - A correction leaves the old revision readable and the pointer on the new one.
   - A correction changes no item in any other layer.
-- Relates to: LAYER-004, LAYER-010, MAP-015, STORE-017.
-- Status: confirmed. The unit of revision being the item is recommended. How a layer records which layers it was built from is open.
+- Relates to: LAYER-004, LAYER-010, LAYER-018, MAP-015, STORE-017.
+- Status: confirmed. Before it is locked, a layer is changed freely by its builder, LAYER-018. The unit of revision being the item is recommended. How a layer records which layers it was built from is open.
 
 ### LAYER-012 Memory is a mutable layer with no provenance
 
@@ -196,19 +196,21 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance:
   - A C verdict without a link to an existing element or join is refused.
   - A run with both critics produces two verdict layers and leaves the challenge and proposal layers unchanged.
-- Relates to: LAYER-009, LAYER-010, LAYER-014, STORE-015.
+- Relates to: LAYER-009, LAYER-010, LAYER-014, LAYER-016, STORE-015.
 - Status: confirmed. The C verdict's link is held in the item's link fields of STORE-015, per E8, recommended; the verdict item's value holds the verdict letter. The blind critic as the default when no option is chosen is recommended. How an element proposed in a proposal layer becomes part of the core map is open.
 
-### LAYER-016 Knowledge layers carry what the functional map leaves out
+### LAYER-016 Knowledge layers carry whatever their prompt asks for
 
-- Requirement: Knowledge layers hold non-functional and task knowledge at any address, element or join, including best-practice imperatives, foresight, and content generated by asking one question at every element and join.
-- What this means: The functional map holds only functional types. Medium, encoding, practices, foresight and anything else an agent should know live in knowledge layers, which may link any address, MAP-013. Common kinds are best-practice imperative layers, thinking-with-foresight layers and memory layers. A knowledge layer is often produced by one prompt applied at every element and every join, for example project-specific best practices for each node and join, or, after ingesting a paper, a specification at each node for applying the paper's ideas. How completely such a layer covers the map depends on the prompt that produces it: an open-ended prompt gives open-ended coverage, and a prompt that asks for at least one item per join gives one per join.
-- Why: Keeping non-functional knowledge out of the map keeps the map's types clean, while layers put that knowledge exactly where an agent reads. Generating a layer node by node reuses the map's structure as the plan for the work.
-- How it shows: A best-practice layer returns practices when an agent reads an element or join; the same element without that layer selected shows none.
-- Build: Each kind is an ordinary layer, LAYER-001 to LAYER-004, written by the module that produces it, with one provenance record, LAYER-010. The chassis supplies no kind-specific behavior.
-- Acceptance: A layer written with one item at every join of a map returns, for each join, exactly the item written there.
-- Relates to: LAYER-001, LAYER-002, LAYER-003, LAYER-005, MAP-013, LAYER-017.
-- Status: confirmed as design. Producing these layers is module work, pending D44.
+- Requirement: A knowledge layer is freeform: it holds whatever its prompt asks to be placed there and may create new namespace objects of any kind, and every item in it attaches to the metaform, at an element or join or at a new object the layer creates that is itself linked to the metaform.
+- What this means: The functional map holds only functional types. A knowledge layer is not bound by that. Its content is whatever the prompt that builds it asks for: imperatives, best practices, foresight, a specification at each node after ingesting a paper, or anything else. Those are examples, not a closed list, and the layer's one variable is what its prompt defines, LAYER-002. A knowledge layer carries new namespace objects related to whatever it concerns, and those objects can be pure encounter, medium, encoding, or whatever the prompt asks for; the functional map's address rules, MAP-013, do not apply to them. Every knowledge layer attaches to the metaform: each item links to an element or join of the metaform, or to a new object the layer creates, and that new object is itself linked to the metaform. What a layer holds, and how its agent was prompted, is up to the prompt. For example, a prompt can have an agent apply the intake's reasoning to find blind spots and create new encounter-function objects in its layer, each linked to the part of the metaform it concerns. A knowledge layer is often produced by one prompt applied at every element and every join. How completely it covers the map depends on the prompt: an open-ended prompt gives open-ended coverage, and a prompt that asks for at least one item per join gives one per join. It is built by an agent following its prompt, freely edited until the task is done, then locked and toggled on when needed through select and mask, LAYER-018.
+- Why: Keeping non-functional knowledge out of the map keeps the map's types clean, while layers put that knowledge exactly where an agent reads. Leaving the content to the prompt is what makes a layer useful for any job, and generating a layer node by node reuses the map's structure as the plan for the work.
+- How it shows: A layer built from a prompt asking for porting concerns returns them at each element it covers; an element under `code` can carry a knowledge object for the language in use, which the functional map would never hold. Without the layer selected, the same element shows none of it.
+- Build: Each knowledge layer is an ordinary layer, LAYER-001 to LAYER-004, with one provenance record, LAYER-010, built and locked as LAYER-018. An item attaches at an element, join or subtype of the metaform, or at an element or join the same layer created, LAYER-003; an element the layer creates is linked to the metaform by a join or an item in the same layer whose other end is part of the metaform. The chassis supplies no kind-specific behavior and does not check the content or the addresses of the objects a knowledge layer creates beyond address form, MAP-010. Whether an element a knowledge layer creates carries an intake role is D48; carrying none is recommended.
+- Acceptance:
+  - A layer written with one item at every join of a map returns, for each join, exactly the item written there.
+  - A knowledge layer creates an element at a medium address, such as one naming a programming language, linked to an element of the metaform, and it is stored and readable in that layer, while the intake map is unchanged.
+- Relates to: LAYER-001, LAYER-002, LAYER-003, LAYER-005, LAYER-018, MAP-013.
+- Status: confirmed: knowledge layers are freeform, content is whatever the prompt asks, objects are not limited by function, and every item attaches to the metaform. How a created object is linked, by a join or an item in the same layer, is recommended. Producing specific layers is module work, pending D44.
 
 ### LAYER-017 Prompts and workflows are preprocessed against the metaform
 
@@ -225,6 +227,20 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance: Belongs to the workflow module's spec.
 - Relates to: MAP-005, MAP-012, LAYER-007, LAYER-008, LAYER-015, LAYER-016, MCP-026.
 - Status: confirmed as design; deferred for the first working test.
+
+### LAYER-018 A knowledge layer is built, then locked
+
+- Requirement: An agent builds a knowledge layer by following a prompt, with full ability to attach, edit and delete its items and objects until its task is done; then the layer is locked, immutable, and toggled on when needed.
+- What this means: Building a knowledge layer is a different path from intake. The intake is one submission, BASE-039. A knowledge layer is assembled over many calls: the agent attaches items and creates objects, reads back what it wrote, and edits or deletes it as it goes, the way memories are attached and edited, with calls that take named arguments. While it is building, only its builder can write to it, and no other agent's read in context sees it. When the task is done, the builder locks it. From then on the layer is immutable: it changes only by correction, LAYER-011, and its one provenance record, module and workflow, prompt, model, role, blinded, stays exactly as written. A locked layer is toggled on for a job through select and mask, LAYER-007, and can be hidden if it is hideable. Memory is the other mutable path: it has no building phase, stays editable in place forever, and has no provenance, LAYER-012.
+- Why: The model does the building incrementally against the prompt and fixes its own work as it goes, so it needs full freedom until its task is done. Locking gives the layer a stable identity that can be trusted, compared and selected, and nothing can depend on a layer that is still changing.
+- How it shows: A building agent adds an item at an element, reads the layer by name, edits the item, and removes a join it created; another agent reading that element in context sees none of it. After the builder locks the layer, the item appears for agents whose selection includes it, and an edit is refused with the next step naming a correction.
+- Build: The store's building and locking mechanics are STORE-032: a build token returned when the layer is created is required for every write into it; `edit` and `remove` change rows in place while building; `lock` ends building. The map module exposes these as verbs and MCP tools from one declaration, BASE-038: `new-layer`, `add-element`, `add-join`, `add-subtype`, `add-item`, `add-ref`, `edit`, `remove`, `lock` and `discard`, each taking the layer and its token, so a knowledge-layer build needs no module of its own.
+- Acceptance:
+  - A layer built with an edit and a removal, then locked, reads back exactly the final state, with no revisions.
+  - Before `lock`, the layer's items are absent from another agent's node read in context; after `lock` they are present when selected and absent when masked.
+  - After `lock`, `edit` is refused and writes nothing, and a correction writes a revision.
+- Relates to: LAYER-001, LAYER-007, LAYER-010, LAYER-011, LAYER-012, LAYER-016, STORE-024, STORE-032, BASE-038.
+- Status: confirmed for building with full edit ability, locking when the task is done, immutability and provenance fixed after locking, and toggling through select and mask. The build token and the verb names are recommended.
 
 ## Open questions
 

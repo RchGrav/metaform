@@ -106,6 +106,11 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25 00:42. One fixed skill pointing to live instructions; uvx launch; the official SDK rather than FastMCP. MCP-021, MCP-010, MCP-002, covered.
 - 09-25 01:07. The installer asks unless told which tools to set up. MCP-014, covered.
 - 09-25 01:16 to 01:19. Tests only protect the design; passing tests are not quality. QUAL-006, covered.
+- 09-25. Intake and knowledge-layer building are two different write paths: intake is one submission through `intake_submit`; a knowledge layer is built by an agent following a prompt. LAYER-018, STORE-032, BASE-039, added.
+- 09-25. While its task runs, the building agent has full ability to attach, edit and delete its items and objects, as with memories, then the layer is locked in: immutable, provenance fixed, changed only by correction, and toggled on when needed through select and mask. LAYER-018, LAYER-011, LAYER-010, STORE-032, STORE-024, BASE-038, added and corrected; supersedes the open and complete wording.
+- 09-25. A knowledge layer carries new namespace objects related to whatever it concerns, not limited by function: pure encounter, medium, encoding or whatever the prompt asks. The functional map's address rules apply only to the intake's map. LAYER-016, MAP-013, corrected.
+- 09-25. A knowledge layer's content is imperatives or whatever the prompt asks; the listed kinds are examples, and the layer's variable is what its prompt defines. LAYER-016, LAYER-002, corrected.
+- 09-25. Knowledge layers are freeform, and every knowledge layer attaches to the metaform: each item links to an element or join, or to a new object the layer creates that is itself linked to the metaform. A blind-spot build using the intake's reasoning is only an example of a prompt, not a mechanism. LAYER-016, corrected; supersedes the earlier instruction to route such objects through the challenge.
 
 ## For section 08, projects and folders
 

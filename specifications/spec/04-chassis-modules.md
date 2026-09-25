@@ -434,13 +434,16 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `citing` | key, value | `citing` |
   | `revisions` | id | `revisions` |
   | `search` | text | `search` |
-  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, and the provenance fields module, workflow, prompt, model, role, blinded | `layer` |
-  | `complete` | layer | `complete` |
-  | `add-element` | layer, address; optional name, name_length, role, refs, extra | `add_element` |
-  | `add-join` | layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, role, refs, extra | `add_join` |
-  | `add-subtype` | layer, join, end, address; optional purpose, function, relation, observation, name, name_length, role, refs, extra | `add_subtype` |
-  | `add-ref` | owner, key, value | `add_ref` |
-  | `add-item` | layer, node, value; optional link, refs, extra | `add_item` |
+  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, and the provenance fields module, workflow, prompt, model, role, blinded | `layer`; an immutable layer is created building and its build token is returned once, STORE-032 |
+  | `lock` | layer, token | `lock` |
+  | `edit` | id, token; each changed field of STORE-034 | `edit` |
+  | `remove` | id, token | `remove` |
+  | `discard` | layer, token | `discard` |
+  | `add-element` | layer, address, token for a building layer; optional name, name_length, role, refs, extra | `add_element` |
+  | `add-join` | layer, token for a building layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, role, refs, extra | `add_join` |
+  | `add-subtype` | layer, token for a building layer, join, end, address; optional purpose, function, relation, observation, name, name_length, role, refs, extra | `add_subtype` |
+  | `add-ref` | owner, key, value; token when the owner's layer is building | `add_ref` |
+  | `add-item` | layer, token for a building layer, node, value; optional link, refs, extra | `add_item` |
   | `revise` | id, reason; optional evidence and each changed field of STORE-034 | `revise` |
   | `retire` | id, reason; optional evidence | `retire` |
   | `select`, `mask` | address, layer | `select`, `mask` |
@@ -449,9 +452,11 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `hide`, `unhide` | layer | `hide`, `unhide` |
   | `reexamined` | layer | `reexamined` |
 
+  These verbs are how any agent builds a knowledge layer, LAYER-018: `new-layer`, then the add verbs with `edit` and `remove` as it works, then `lock` when its task is done. A token is a plain string noun; a write into a building layer without its token is refused, STORE-032.
+
   A node noun is written `element:<address or id>`, `join:<id>`, `subtype:<address or id>` or `type:<address>`. `refs` is a `json` noun holding an array of `[key, value]` pairs of strings, with the schema `{"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}`. `extra` is a `json` noun holding an object, with the schema `{"type": "object"}`. Neither is ever a switch. `retire` and `hide` are caution verbs.
 - Acceptance: Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.
-- Relates to: STORE-024, STORE-025, STORE-028, BASE-035, BASE-036, MCP-003.
+- Relates to: STORE-024, STORE-025, STORE-028, STORE-032, BASE-035, BASE-036, LAYER-018, MCP-003.
 - Status: recommended.
 
 ### BASE-039 The intake module
