@@ -1,0 +1,44 @@
+{
+  "id": "kitchen-timer-typology",
+  "elements": [
+    {
+      "namespace_address": "stakeholder.cook.home", "name_length": 2, "role": "VE", "name": "Home cook",
+      "joins": [
+        {
+          "type": "purpose", "provider": "code.timer.kitchen",
+          "purpose": "Know when each dish is done without watching the clock.",
+          "function": "The timer counts down each named dish and rings when one reaches zero.",
+          "relation": "The kitchen timer tells the cook when a dish is done.",
+          "observation": "A kitchen timer counts down a set time.",
+          "non_goal": "Plan the meal.",
+          "refs": [{"key": "path", "value": "src"}]
+        }
+      ]
+    },
+    {
+      "namespace_address": "code.timer.kitchen", "name_length": 2, "role": "DE", "name": "kitchen timer daemon",
+      "refs": [{"key": "path", "value": "src/main.c"}],
+      "joins": [
+        {
+          "provider": "code.alarm.audible",
+          "purpose": "Get the cook's attention the moment a countdown ends.",
+          "function": "The alarm plays a tone on the speaker until the cook presses stop.",
+          "relation": "The alarm rings for the timer.",
+          "observation": "A piezo speaker driven by one GPIO pin.",
+          "refs": [{"key": "path", "value": "src/alarm.c"}, {"key": "path", "value": "src/pins.h"}],
+          "subtypes": [
+            {
+              "provider": "code.loop.tick",
+              "function": "tick_all subtracts one second from each running countdown.",
+              "relation": "The tick loop advances every running countdown.",
+              "observation": "One timer interrupt per second.",
+              "element": {"namespace_address": "code.loop.tick", "name_length": 2, "role": "SE",
+                          "name": "one-second tick loop", "refs": [{"key": "path", "value": "src/tick.c"}]}
+            }
+          ]
+        }
+      ]
+    },
+    {"namespace_address": "code.alarm.audible", "name_length": 2, "role": "SE", "name": "audible alarm"}
+  ]
+}

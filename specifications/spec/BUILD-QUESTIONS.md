@@ -97,3 +97,15 @@ CLI-033 says `layers` may be given on a single tool call, but MCP-003 lists only
 Meanwhile: every tool also takes an optional `layers` array for that call only.
 Blocks: nothing.
 
+## Step 7, intake
+
+**Q18. `elements` is required in the schema and named on the command line. (BASE-039, BASE-043, BASE-035)**
+BASE-039 makes `elements` required in the tool's input schema and a named argument `elements=<path>` on the CLI, but a required noun is positional, BASE-043, and a noun has one kind on both surfaces while `elements` is an array over MCP and a path on the CLI.
+Meanwhile: `elements` is declared optional, so the CLI takes `elements=<path>`; its declaration carries the array schema, which the MCP server uses as the property's schema; the check refuses a submission without it, naming `elements: is required`. The tool's `required` list therefore does not name `elements`.
+Blocks: nothing.
+
+**Q19. MAP-040's real intake result. (MAP-040, BASE-039)**
+The acceptance submits a real intake result such as the MGM map; no such result in the tool's schema is in this repository, and the build does not read other repositories.
+Meanwhile: the tests submit a three-element fixture with a subtype, refs and a non-goal, `tests/fixtures/intake_timer.json`.
+Blocks: nothing; a real result can be added as a fixture when one is supplied.
+

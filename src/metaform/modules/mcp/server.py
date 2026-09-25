@@ -52,7 +52,8 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     required = []
     for noun in verb.nouns:
-        kind = dict(noun.schema or {}) if noun.kind == 'json' else dict(NOUN_TYPES[noun.kind])
+        kind = dict(noun.schema) if noun.schema is not None else ({} if noun.kind == 'json' else
+                                                                  dict(NOUN_TYPES[noun.kind]))
         properties[noun.name] = {'type': 'array', 'items': kind} if noun.many else kind
         if noun.required:
             required.append(noun.name)
