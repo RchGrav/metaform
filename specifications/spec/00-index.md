@@ -38,6 +38,7 @@ This spec is frozen for the first release. New design ideas go to a later versio
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
 | BUILD-BRIEF.md | | How the building agent works from this spec |
+| HANDOFF.md | | Where the build stands and what comes next |
 | CAPTURE.md | | Every design point from the design discussion, with the record that carries it |
 
 The Open questions list at the end of each section shows the questions that section raised. OPEN-QUESTIONS.md is the single merged list; answers are recorded there and in the owning records.
