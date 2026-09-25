@@ -88,16 +88,21 @@ def _strings(value: Any) -> bool:
     return isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in value)
 
 
-def read(folder: Path) -> Declared:
-    """The declarations of a module folder, or the package folder of an entry point."""
+def _source(path: Any) -> str:
+    if isinstance(path, Path):
+        with tokenize.open(path) as stream:
+            return stream.read()
+    return str(path.read_text(encoding='utf-8'))
+
+
+def read(folder: Any) -> Declared:
+    """The declarations of a module folder, or the package folder of an entry point; a folder may be in a zip."""
     entry = folder / '__init__.py'
-    with tokenize.open(entry) as stream:
-        tree = ast.parse(stream.read(), filename=str(entry))
+    tree = ast.parse(_source(entry), filename=str(entry))
     manifest_path = folder / 'manifest.py'
     manifest = None
     if manifest_path.is_file():
-        with tokenize.open(manifest_path) as stream:
-            manifest = ast.parse(stream.read(), filename=str(manifest_path))
+        manifest = ast.parse(_source(manifest_path), filename=str(manifest_path))
 
     def declared(name: str, check: Any) -> Any:
         local = _literal(tree, entry, name, check)

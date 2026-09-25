@@ -438,9 +438,25 @@ def query_(args: list[str], folder: Path) -> None:
         sys.stdout.write(results.as_text(result))
 
 
+def install_(args: list[str], folder: Path) -> None:
+    from . import install
+    install.install(args, out)
+
+
+def build_(args: list[str], folder: Path) -> None:
+    if args:
+        raise Stop('build takes no words.', 'metaform build')
+    from . import build
+    wheel, notes = build.build()
+    for note in notes:
+        out(note)
+    out(f'Wheel: {wheel}')
+
+
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
-    'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_}
+    'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
+    'install': install_, 'build': build_}
 ALWAYS = {'help', 'set', 'unset', 'config'}
 
 
@@ -592,6 +608,15 @@ docs.command(Command('import', 'Add what a JSON document holds and this home doe
 docs.command(Command('query', "Ask one of the design's questions of the folder's project.",
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))
+docs.command(Command('install', 'Set up your AI tools to use Metaform.',
+                     ('metaform install', 'metaform install <tool>...', 'metaform install all'),
+                     description='Checks the system first, previews every change with its backup, registers the '
+                                 'server with each tool, writes the skill, and proves each tool can start the server.',
+                     details='With no tool named it asks; naming tools, or all, sets up without asking.',
+                     see_also=('build',)))
+docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
+                     details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
+                     see_also=('install',)))
 docs.switch(Switch('--glue', 'Keep the settings you set through unset all.',
                    'A glued setting is skipped by unset all until you unset it with --unglue.', ('set',)))
 docs.switch(Switch('--unglue', 'Reset glued settings too, and unglue them.', used_by=('unset',)))
@@ -604,6 +629,9 @@ docs.switch(Switch('--confirm', 'Run a caution verb. It is never a setting.', us
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
+    if args[:1] == ['--version']:
+        out(f'metaform {__version__}')
+        return 0
     try:
         loader.discover()
         if not args:
@@ -612,6 +640,9 @@ def main(argv: list[str] | None = None) -> int:
         verb, rest = args[0], args[1:]
         if verb in ('-h', '--help'):
             out(docs.overview())
+            return 0
+        if verb == '--version':
+            out(f'metaform {__version__}')
             return 0
         if verb not in VERBS:
             run_module(verb, rest, folder)
@@ -627,13 +658,19 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f'Error: {stop}\n')
         sys.stderr.write(f'Next: {stop.next_step}\n')
         return 2
+
     except asyncio.CancelledError:
         sys.stderr.write('Cancelled.\n')
         return 3
     except KeyboardInterrupt:
         sys.stderr.write('Interrupted.\n')
         return 130
-    except Exception as error:  # Unexpected: one Error line and one Next line, exit 1, BASE-031 and CLI-009.
+    except Exception as error:  # A failure: one Error line and one Next line, exit 1, BASE-031 and CLI-009.
+        from .install import Failed
+        sys.stdout.flush()
+        if isinstance(error, Failed):
+            sys.stderr.write(f'Error: {error}\nNext: {error.next_step}\n')
+            return 1
         sys.stderr.write(f'Error: {type(error).__name__}: {error}\n')
         sys.stderr.write(f'Next: {"metaform list modules" if args and args[0] not in VERBS else "metaform help"}\n')
         return 1

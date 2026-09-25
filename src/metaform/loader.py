@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import importlib
+import importlib.resources
 import importlib.util
 import re
 import sys
@@ -28,7 +29,7 @@ from .module import Context, Module, call
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
             'query', 'build', 'install', 'uninstall', 'chassis'}
-SYSTEM = Path(__file__).parent / 'modules'
+SYSTEM: Any = importlib.resources.files('metaform') / 'modules'
 TOOL_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 
@@ -37,7 +38,7 @@ class Found:
     """One module candidate: where it was found, whether it is on, and why it did not load when it did not."""
     id: str
     place: str
-    path: Path
+    path: Any
     import_name: str = ''
     enabled: bool = True
     module: Module | None = None
@@ -54,11 +55,13 @@ def _candidates() -> list[Found]:
     found = []
     for place, root in (('system', SYSTEM), ('user', home.home() / 'modules')):
         if root.is_dir():
-            for folder in sorted(root.iterdir()):
-                if (folder / '__init__.py').is_file():
+            for folder in sorted(root.iterdir(), key=lambda item: item.name):
+                if folder.is_dir() and (folder / '__init__.py').is_file():
                     found.append(Found(folder.name, place, folder, f'metaform_module_{place}_{folder.name}'))
     for entry in sorted(metadata.entry_points(group='metaform.modules'), key=lambda item: item.name):
         package = entry.value.split(':')[0]
+        if package == f'metaform.modules.{entry.name}':
+            continue  # A built wheel names its own system modules as entry points too; they are found above.
         spec = importlib.util.find_spec(package)
         if spec is None or spec.origin is None:
             found.append(Found(entry.name, 'entry', Path('.'), package, problem=f'Package {package} is not importable.'))
@@ -69,6 +72,9 @@ def _candidates() -> list[Found]:
 
 def _import(item: Found) -> Module:
     if item.place == 'entry':
+        imported = importlib.import_module(item.import_name)
+    elif not isinstance(item.path, Path):
+        item.import_name = f'metaform.modules.{item.id}'  # A system module inside a directly run wheel.
         imported = importlib.import_module(item.import_name)
     else:
         spec = importlib.util.spec_from_file_location(item.import_name, item.path / '__init__.py',

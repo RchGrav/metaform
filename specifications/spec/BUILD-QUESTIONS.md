@@ -109,3 +109,25 @@ The acceptance submits a real intake result such as the MGM map; no such result 
 Meanwhile: the tests submit a three-element fixture with a subtype, refs and a non-goal, `tests/fixtures/intake_timer.json`.
 Blocks: nothing; a real result can be added as a fixture when one is supplied.
 
+## Step 8, installer, skill and build
+
+**Q20. Gemini's registration command. (MCP-016, E2)**
+The table's form is `gemini mcp add --scope user metaform uvx --from <source> metaform mcp serve`, with no `--` before the server's own arguments. The local `gemini mcp add --help` takes options after the command, so `--from` may be read as a Gemini option.
+Meanwhile: the command is built exactly as the table gives it; it is not proven against a real Gemini CLI.
+Blocks: nothing in the first working test, which registers Claude Code, Codex and Cursor.
+
+**Q21. A built wheel's system modules as entry points. (BASE-041, BASE-037)**
+BASE-041 writes a `[metaform.modules]` entry point for every module the wheel carries, and those modules are also in the wheel's system place, so BASE-037's duplicate rule would report each one as an error once the wheel is installed.
+Meanwhile: discovery skips an entry point whose package is `metaform.modules.<id>`, the module already found in the system place.
+Blocks: nothing.
+
+**Q22. Importing system modules from a directly run wheel. (BASE-037, BASE-042)**
+BASE-037 imports folder modules under `metaform_module_<place>_<id>` from their `__init__.py` file, which cannot be done for a module inside a zip.
+Meanwhile: a system module inside a directly run wheel is imported as `metaform.modules.<id>`; on disk the BASE-037 name is kept.
+Blocks: nothing.
+
+**Q23. A home written by the earlier chassis. (STORE-029, D24)**
+The base database in `~/.metaform` on this machine was written by the earlier chassis and has no schema version, so every command except `metaform --version` stops with the next step to rename it. D24 says pre-1.0 data is dropped; the build does not touch the file.
+Meanwhile: the error names the file and the rename.
+Blocks: running the new build against `~/.metaform` until that file is moved.
+

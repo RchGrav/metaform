@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from importlib import resources
 import secrets
 import sys
 from datetime import datetime, timezone
@@ -26,7 +27,7 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = Path(__file__).parent / 'resources' / 'Canonical_Intake.xml'
+RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
 SUBMIT_LINE = 'Submit the result with intake_submit, or metaform intake submit on the command line.'
 NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
           'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
@@ -53,7 +54,7 @@ def served(ctx: Context) -> str:
     """The intake text exactly as stored, with its target filled, then the submit line, BASE-039."""
     store = ctx.require_store()
     chosen = ctx.setting('intake_file')
-    source = Path(chosen) if chosen else RESOURCE
+    source: Any = Path(chosen) if chosen else RESOURCE
     try:
         text = source.read_text(encoding='utf-8')
     except OSError:

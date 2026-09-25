@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from pathlib import Path
+from importlib import resources
 from typing import Any
 
 
@@ -30,7 +30,7 @@ def short_name(address: str, name_length: int | None) -> str:
 
 @lru_cache(maxsize=1)
 def _roots() -> tuple[dict[str, Any], ...]:
-    return tuple(json.loads((Path(__file__).parent / 'roots.json').read_text(encoding='utf-8')))
+    return tuple(json.loads((resources.files('metaform.data') / 'roots.json').read_text(encoding='utf-8')))
 
 
 def roots() -> list[dict[str, Any]]:
