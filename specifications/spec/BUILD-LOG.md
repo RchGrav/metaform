@@ -26,3 +26,10 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: 9b0e2d0.
 - Questions raised: Q11 and Q12.
 
+## Step 4: the map and layer records and operations
+
+- Records satisfied: BASE-038, the `map` module, shipping enabled with every verb of its table and `--raw`; MAP-010, MAP-011, MAP-012 (readings and short names), MAP-014 (roots as data in `roots.json`), MAP-022 and MAP-044 through the module; LAYER-006, LAYER-007, LAYER-008, LAYER-015, LAYER-016, LAYER-018 and LAYER-019 end to end on the CLI. Select and mask resolution and the direct reads are the data access object's, built in step 1.
+- Tests added: `src/metaform/modules/map/tests/test_map.py`, 10 tests; one grammar case added to `tests/test_base.py`. `src/metaform/modules/` is now a package, so a module's settings stay its own however it is imported. Whole suite: 305 passed.
+- Commit: e0c8596.
+- Questions raised: Q13 and Q14.
+
