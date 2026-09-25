@@ -51,9 +51,9 @@ Each record has these parts:
 - **Build:** records, fields, operations and procedures.
 - **Acceptance:** the tests that protect the requirement and fail on a wrong build.
 - **Relates to:** other record IDs.
-- **Status:** confirmed by Rich, recommended and awaiting his confirmation, open, or deferred.
+- **Status:** confirmed by Rich, recommended, meaning the technically correct answer, accepted and built as written, open, or deferred.
 
-A record whose status is recommended is built as written unless Rich changes it. A record whose status is open is not built past the point the record settles.
+A record whose status is recommended is built as written. A record whose status is open is not built past the point the record settles.
 
 ## Out of scope for this spec
 

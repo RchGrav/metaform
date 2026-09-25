@@ -253,7 +253,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - After `finish`, `edit` through the tool changes the item in place and the next in-context read shows the change.
   - With `map` narrowed off the command surface, `map_knowledge` is not listed and a call to it is refused.
 - Relates to: LAYER-001, LAYER-007, LAYER-010, LAYER-011, LAYER-012, LAYER-016, LAYER-019, STORE-024, STORE-032, BASE-038, CLI-022.
-- Status: confirmed for one read-write tool that alone makes new layers, every call naming its layer, no assignment or ownership, editing any existing knowledge layer with the tool, access by tool only, and toggling on and off. Finishing as marking a layer ready without making it immutable, the single tool with an operation noun, and the operation names are recommended.
+- Status: confirmed for one read-write tool that alone makes new layers, every call naming its layer, no assignment or ownership, editing any existing knowledge layer with the tool, access by tool only, and toggling on and off. Finishing as marking a layer ready without making it immutable, and the single tool with an operation noun, are accepted as the technical answer and confirmed. The operation names are recommended.
 
 ### LAYER-019 Layers are tagged, listed and toggled
 - Requirement: Every layer carries tags; layers can be listed and filtered by tag, kind and module; and the layers active for a piece of work are toggled on and off by name or by tag.

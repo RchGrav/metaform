@@ -15,21 +15,19 @@ These terms are used exactly as defined in the Canonical Intake.
 - DE, Defining Element; SE, Supportive Element; NE, Notable Element: roles of elements inside the AUE. A Supportive Element's encounter is a function, MAP-022.
 - AT, Artifact Type. Type: a namespace address and the reusable functional meaning it names.
 - Element: a project's realization of a Type. Join: the receiver-owned record of one encounter.
-- Subtype: an element that annealing absorbed into a join it shares with its parent functionality.
+- Subtype: an element that annealing absorbed into a join it shares with its parent functionality. It keeps its own encounter function and has no purpose of its own.
 
 ---
 
-### MAP-001 A metaform records identity as C(T)
+### MAP-001 C(T) is the theory behind how a metaform works
 
-- Requirement: A metaform records each Type's identity as the set C(T) = { (r_i AND p_i AND e) }, where each Receiving Entity r_i is bound to its Operative Purpose p_i and the Type's Encounter Function e.
-- What this means: A thing is what it is because of who receives it, why they hold it, and how it serves them. The conjunction is exact: a receiver without its purpose, or a purpose without the encounter that serves it, is not part of the identity. C(T) is a semantic definition. It is not a similarity score, a confidence, a lower bound or a gate. A realization can change substantially and keep its identity as long as C(T) holds. Mutation changes the realization and keeps C(T). Transformation changes C(T), which means the thing has become something else.
-- Why: Placing identity in semantic relations, instead of in a frozen part of the content, lets the realization change freely while the identity stays stable. It also turns an inference-heavy question, what is this and what must it keep doing, into a structure an agent reads instead of reconstructs. Cost in Metaform means orientation inference an agent no longer has to spend, and C(T) is where that saving comes from.
-- How it shows: Reading every join whose provider realizes a Type returns that Type's receivers, their purposes and the encounters that serve them, in one read.
-- Build: The identity of the Type realized by element X in a project is read as all current joins in that project whose provider is X, each returned as receiver, purpose and function. No stored field holds C(T); it is always this read. The store never evaluates C(T) to accept or refuse a write.
-- Acceptance:
-  1. Given three joins with provider X from three receivers, the C(T) read for X returns exactly those three triples with their purposes and functions, and nothing from joins where X is the receiver.
-  2. No write of an element or join is refused on the grounds that it changes C(T).
-- Relates to: MAP-002, MAP-010, MAP-011, STORE-010, STORE-025, LAYER-011.
+- Requirement: A metaform is built on the theory C(T) = { (r_i AND p_i AND e) }: a Type's identity is each Receiving Entity r_i bound to its Operative Purpose p_i and the Type's Encounter Function e. C(T) explains why the structure works; it is not a mechanism, and nothing in Metaform stores, computes or checks it.
+- What this means: A thing is what it is because of who receives it, why they hold it, and how it serves them. The conjunction is exact: a receiver without its purpose, or a purpose without the encounter that serves it, is not part of the identity. A realization can change substantially and keep its identity as long as C(T) holds. Mutation changes the realization and keeps C(T). Transformation changes C(T), which means the thing has become something else. The map's records carry this theory in their shape: every join is one receiver's purpose served by a provider's encounter function, MAP-002 and MAP-020. There is no Type record that stores a single encounter function e, no C(T) field, no C(T) score and no C(T) read.
+- Why: Placing identity in semantic relations, instead of in a frozen part of the content, lets the realization change freely while the identity stays stable. It also turns an inference-heavy question, what is this and what must it keep doing, into a structure an agent reads instead of reconstructs. Cost in Metaform means orientation inference an agent no longer has to spend. Because C(T) is theory, turning it into a stored value or a check would add a gate the design does not have.
+- How it shows: The records are receivers, purposes and encounters. An agent that reads the joins an element provides sees who receives it, why and how, without any C(T) operation.
+- Build: Nothing beyond the records it explains, MAP-002, MAP-020 and MAP-022. No field, table, read or check is named after C(T) or implements it.
+- Acceptance: No write of an element or join is refused on the grounds that it changes C(T).
+- Relates to: MAP-002, MAP-005, MAP-020, STORE-025.
 - Status: confirmed.
 
 ### MAP-002 The functional map is a tripartite mesh that cannot express a cycle
@@ -76,7 +74,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: Each join is a triangle of receiver, purpose and encounter, MAP-002. Triangles share elements without forming one closed surface, which is what non-manifold means here, and the map holds a C(T) for every Type in it, so it is many identities joined, not one. Layers add further dimensions over the same nodes, LAYER-001. Understanding what a type is and what a function does is primordial to a model: it happens without reasoning activating. Reading addresses as proper nouns, trunk to leaf and reversed, engages that understanding directly, MAP-011 and MAP-012. The prepared structure keeps work inside the basin of each subsystem, where a basin is the stable semantic definition C(T) of that subsystem: code can be mutated freely while its receiving entities and operative purposes stay the same. The same structure is a meta-prompting surface: prompts and workflows can be preprocessed against it, LAYER-017.
 - Why: The cost Metaform saves is the inference every agent pays to orient itself in a project. Turning an inference-heavy operation, such as working around a frozen core or a gate, or finding one's place in a project, into a structure read at the level of type understanding leaves more of the agent's inference for higher-order reasoning. The shape itself guides agents, so the design needs no rejecting checks or approval gates, and agents work in flow rather than against blockers. Any token savings are a by-product, not the aim.
 - How it shows: An agent given an element's address, its joins and its layers can say what the element is for and what must stay true about it without reading the implementation first.
-- Build: Nothing beyond the records it explains: MAP-001, MAP-002, MAP-011, MAP-012 and LAYER-001. No component computes basins or embeddings; the basin is the C(T) read of MAP-001.
+- Build: Nothing beyond the records it explains: MAP-001, MAP-002, MAP-011, MAP-012 and LAYER-001. No component computes basins, embeddings or C(T); they describe why the structure works, MAP-001.
 - Acceptance: None of its own. The acceptance of the records it names protects it.
 - Relates to: MAP-001, MAP-002, MAP-011, MAP-012, LAYER-001, LAYER-017.
 - Status: confirmed.
@@ -137,10 +135,10 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The Canonical Intake lists the roots as code, document, media, data and stakeholder. Stakeholder holds the parties outside the artifact, such as the VE.
 - Why: The roots are the bases every inference starts from, so each root must carry a distinct, well-understood meaning.
 - How it shows: The Type tree has one branch per root.
-- Build: The root list is data, not code, so a change to it needs no code change. Each entry holds the root name and its reading phrase, MAP-012: code with program code, and document, media, data and stakeholder each reading as its name, until D1 is answered. The store does not refuse an address under another root, per MAP-013.
+- Build: The root list is data, not code, so a change to it needs no code change. Each entry holds the root name and its reading phrase, MAP-012. The roots are exactly code, document, media, data and stakeholder; there is no exterior, asset or entity root. The store does not refuse an address under another root, per MAP-013.
 - Acceptance: None; the list is data and low impact.
 - Relates to: MAP-010, MAP-013.
-- Status: open. REQUIREMENTS.md names asset in place of media and an entity trunk, and the repository's development instructions name exterior as a base. See open question 1.
+- Status: confirmed. The roots are those of the current Canonical Intake: code, document, media, data and stakeholder. Exterior is no longer a root, and asset and entity are not roots.
 
 ### MAP-015 An element is a project's realization of a Type, with a stable id
 
@@ -158,7 +156,7 @@ These terms are used exactly as defined in the Canonical Intake.
 
 - Requirement: Within one project's functional map, an address identifies at most one element.
 - What this means: The intake traces an element that bears an Operative Purpose as a receiver without creating a duplicate record. The same element may be a receiver in some joins and a provider in others. Any reference to an element, in a join or anywhere else, uses its address, and an address with no element is not a valid reference.
-- Why: One record per realized Type keeps every join about that element in one place, which is what makes C(T) a single read.
+- Why: One record per realized Type keeps every join about that element in one place, so an agent reads the element's receivers, purposes and encounters in one read.
 - How it shows: Writing an element at an address that already has one returns the existing element.
 - Build: The pair project and address is unique among current root elements of a project. A write that names an unknown address as a join's receiver or provider fails with one next step: add the element first.
 - Acceptance:
@@ -231,25 +229,25 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-030 Annealing produces subtypes inside the one join they share
 
-- Requirement: An element absorbed by annealing is kept as a subtype inside the one join it shares with its parent functionality, at the receiver end or the provider end.
-- What this means: Annealing combines elements that share a join into a bigger functionality that describes them all. The subtypes do not share the whole join; they share all of it except the end where they differ.
-  - Provider end: several parts each serve the same receiver's purpose. The bigger functionality becomes the provider of a combined encounter, and each part hangs under that combined encounter, keeping its own encounter function. Two probes absorbed by a failsafe, serving a daemon's purpose of catching a dead gateway, are provider-end subtypes.
-  - Receiver end: several parts each hold the same purpose served by the same provider. The bigger functionality becomes the receiver of a combined purpose, and each part hangs under that combined purpose, keeping its own purpose. A command line and a status page absorbed by an operator interface, both needing node state from a control API, are receiver-end subtypes.
+- Requirement: An element absorbed by annealing is kept as a subtype inside the one join it shares with its parent functionality, carrying its own encounter function and never a purpose of its own.
+- What this means: Annealing combines parts that share a join into a bigger functionality that describes them all. Each part serves the same receiver's purpose through the same join. The bigger functionality becomes the provider of a combined encounter, and each part hangs under that combined encounter, keeping its own encounter function. Two probes absorbed by a failsafe, serving a daemon's purpose of catching a dead gateway, are subtypes of the failsafe's join.
 
-  Absorbing is legal only when the subparts share that join and the combined node covers them: at the provider end the combined encounter covers each subtype's encounter, and at the receiver end the combined purpose covers each subtype's purpose. A subpart with an objective purpose the parent cannot carry stays its own element. Combining never optimizes a functionality away.
-- Why: Annealing keeps the root map minimal, coarse and shallow without discarding any functionality. A subtype exists only because it shares that join, so the join is where it lives.
-- How it shows: Reading a join returns its combined purpose and function, and beneath them each subtype with its end and its own piece.
-- Build: A subtype record has subtype id, join id, end which is provider or receiver, address, name, name_length, role, its own piece, relation, observation and refs. Its own piece is a function at the provider end and a purpose at the receiver end. The join record holds the combined purpose and combined function. Coverage is the intake agent's judgment and is never checked by the store.
+  A subtype has no purpose of its own. A part that holds its own purpose is not sharing the same join: it is its own receiver with its own join, so it is promoted to its own element and is not a subtype. A command line and a status page that each need node state from a control API each hold their own purpose, so each is an element with its own join to the control API.
+
+  Absorbing is legal only when the parts share that join and the combined encounter covers each part's encounter function. Combining never optimizes a functionality away.
+- Why: Annealing keeps the root map minimal, coarse and shallow without discarding any functionality. A subtype exists only because it shares that join, so the join is where it lives. A purpose is what gives a part its own join, so a part with a purpose cannot live inside another's join.
+- How it shows: Reading a join returns its purpose and combined function, and beneath them each subtype with its own function.
+- Build: A subtype record has subtype id, join id, address, name, name_length, role, its own function, relation, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
 - Acceptance:
-  1. A join with two provider-end subtypes reads back with the combined function on the join and each subtype's own function, relation and observation under it, marked provider end.
-  2. A receiver-end subtype reads back with its own purpose, marked receiver end.
+  1. A join with two subtypes reads back with the purpose and combined function on the join and each subtype's own function, relation and observation under it.
+  2. A submission that gives a subtype a purpose is refused with a form error naming the subtype, and nothing is written.
 - Relates to: MAP-031, MAP-032, MAP-040, STORE-011.
-- Status: confirmed. The Canonical Intake response schema currently expresses only provider-end subtypes; see open question 2.
+- Status: confirmed.
 
 ### MAP-031 A subtype is reachable only through its join and is never a root
 
 - Requirement: A subtype is never a root element and never a join's receiver or provider, and it is reached only through the join that holds it.
-- What this means: The absorbed element is not mapped to the external graph. It still keeps its own address, relation and specific purpose or encounter, and layers and memory attach to it directly by its subtype id.
+- What this means: The absorbed element is not mapped to the external graph. It still keeps its own address, relation and encounter function, and layers and memory attach to it directly by its subtype id.
 - Why: Keeping subtypes inside the join is what keeps the root map minimal. Keeping them addressable is what lets memory and layers still reach the specific part.
 - How it shows: Listing a project's elements does not show subtypes. Reading a subtype's address returns it with the join that holds it.
 - Build: Subtypes are stored separately from elements. A join's receiver and provider reference element ids only, so a subtype cannot become a join endpoint by construction. Reading by a subtype's address returns the subtype and its holding join.
@@ -280,7 +278,7 @@ These terms are used exactly as defined in the Canonical Intake.
   - Each root `<element>` becomes an element with its address, name, name_length, role and refs.
   - Each `<join>` inside a root element becomes a join owned by that element, with its provider resolved by address, every field in MAP-020, and the refs written directly inside the join, which only the test schema has.
   - An `<element>` nested directly inside a `<join>`, as in the 1.1 schema, is the definition of that join's provider: its address equals the join's provider. It becomes, or adds to, the provider's element: when no element holds that address yet, one is created with the nested element's address, name, name_length, role and refs; when one exists in the intake layer being written, the existing element is kept, STORE-009, and the nested element's refs are added to it, STORE-012; when the existing element belongs to another layer that is finished, the nested element's refs are written onto the join that holds it, in order and unchanged, because a locked layer never changes in place, and the metaform changes only through correction layers, LAYER-011. A nested element whose address differs from its join's provider is recorded as written, as an element, and its join is not changed.
-  - A `<join>` nested inside a `<join>`, as in the test schema, becomes a subtype of the outer join at the provider end: its own piece is the nested join's function, with its relation and observation, its address is the nested join's provider, and the `<element>` inside it gives the subtype's name, name_length, role and refs.
+  - A `<join>` nested inside a `<join>`, as in the test schema, becomes a subtype of the outer join: its own function is the nested join's function, with its relation and observation, its address is the nested join's provider, and the `<element>` inside it gives the subtype's name, name_length, role and refs.
   - Each ref becomes a ref record on its owner, in order.
   - When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 
@@ -289,7 +287,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - How it shows: After an intake, every element, join, subtype and ref in the result is readable from the store.
 - Build: `intake_submit` checks the submission's form and stores the whole mapping above as one intake layer, with its provenance record, LAYER-010, in one atomic write, STORE-024 and STORE-032. A submission with a form error writes nothing. So a half-written intake never exists, and the map appears whole or not at all.
 - Acceptance:
-  1. Storing a real intake result, such as the MGM map, then reading the project back yields the same set of root elements, joins with every field, subtypes with their ends and pieces, and refs in order.
+  1. Storing a real intake result, such as the MGM map, then reading the project back yields the same set of root elements, joins with every field, subtypes with their functions, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-013, STORE-024, MCP-009.
 - Status: the mapping of root elements, joins and refs is confirmed, and one atomic submission through `intake_submit` after the whole method is confirmed. The handling of the 1.1 nested provider element, of test-schema subtype joins, and of a missing AUE is recommended.
@@ -364,8 +362,8 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ## Open questions
 
-1. Root Types: are the roots code, document, media, data and stakeholder as in Canonical Intake 1.1, or does asset replace media and entity or exterior replace stakeholder?
-2. Receiver-end subtypes: the intake response schema has no place for a subtype that keeps its own purpose under a combined purpose. How should the intake express one?
+1. Answered: the roots are code, document, media, data and stakeholder, as in the current Canonical Intake. Exterior is gone. (MAP-014)
+2. Answered: a subtype never has a purpose of its own; a part with its own purpose is its own element. There are no receiver-end subtypes. (MAP-030)
 3. Can a subtype be the receiver of joins of its own after annealing, or do its joins lift to the parent?
 4. Can one element be a subtype in two different joins, such as one probe serving two failsafes?
 5. May a subtype share an address with a root element of the same project?
@@ -373,7 +371,7 @@ These terms are used exactly as defined in the Canonical Intake.
 7. The Canonical Intake must emit properties as properties attached to elements, not as joins, MAP-022. What line in the intake text asks for it, in Rich's wording?
 8. May a subtype hold subtypes of its own?
 9. Answered: the agent submits once through `intake_submit` after the whole method, MAP-040. Does the intake agent write its result as one whole submission or record by record through tool calls?
-10. C(T) names the Type's single Encounter Function e, while each join stores the provider's function for that encounter. Does the Type record also store its one Encounter Function, and if so, who writes it?
+10. Answered: C(T) is the theory behind how a metaform works and describes no mechanism. No Type record stores a single encounter function. (MAP-001)
 11. May a join have the same element as receiver and provider?
 12. Are Type records shared across projects, as MAP-010 recommends, or kept in each project store, as STORE-008 has them?
 13. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.

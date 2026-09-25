@@ -1,16 +1,45 @@
 # Open questions
 
-Every question the seven sections left open, with duplicates merged. Design and scope questions are for Rich, each with a recommendation and its reason. Engineering choices are already made so the build is not blocked; Rich can veto any of them. When a question is answered, the answer goes into the owning record, the record's Status changes, and the question is removed from this file.
+Only questions that depend on Rich's intent are open. Every question with one technically correct answer is settled by its recommendation, which the build follows as written.
 
-## Design questions
+## Open
 
-### Map
+**D60.** Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
 
-**D1. Root types.** Canonical Intake 1.1 lists code, document, media, data and stakeholder. The MetaformFoundation block in CLAUDE.md lists code, document, media, data and exterior. REQUIREMENTS.md says asset replaces media and adds an entity trunk. (MAP-014, REQ-018)
-Recommendation: the Canonical Intake 1.1 roots. The intake is what builds every map, so its roots are the ones every stored map already uses.
+**D66.** Is history owned by the chassis, as recommended in PROJ-010, or by a module?
 
-**D2. Receiver-end subtypes in the intake.** The intake's response schema only has a place for a subtype at the provider end. A subtype that keeps its own purpose under a combined purpose has nowhere to go. (MAP-022)
-Recommendation: add a second nested form inside the join that carries the subtype's own purpose and its address, with no function. Change the test intake first and adopt it after your test, as with the other fixes.
+**D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
+Recommendation: open. I do not know which you meant.
+
+**D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
+Recommendation: your wording; I will draft one for the test file when you want it.
+
+## Answered
+
+**D1. Root types.** code, document, media, data and stakeholder, as in the current Canonical Intake. Exterior is gone.
+
+**D2. Subtypes.** A subtype never has its own purpose. A part with its own purpose is not sharing the join, so it is its own element.
+
+**D9. C(T).** The theory behind how Metaform works. It describes no mechanism and no stored field.
+
+**D26. A directly run wheel's data.** A subfolder of ~/.metaform per wheel name and version.
+
+**D27. Installing a wheel.** Its data can be pulled into the main folder, each metaform arriving as its own. Nothing is merged.
+
+**D59. Mapping a worker's folder.** The orchestrator runs `metaform set --modules workflow,memory folder=<path>` before the worker starts. The setting formerly called `--commands` is `--modules`. This per-folder surface is the closest thing Metaform has to a nonce.
+
+**D77. Correction and knowledge layers.** Correction layers always beat knowledge layers and sit underneath them. A knowledge item left with nothing to attach to is orphaned: kept, and no longer shown.
+
+**D23 and D76. Import.** Everything exported carries its unique id, and importing something that already exists does nothing. Agent work brought in is a new layer. Backup and restore is separate. A project can have several metaforms, each with its own layers; one is active, and starting over creates a new, empty metaform while the old one is kept.
+
+**D7 and D49. Encounters.** Every encounter is a function or a property. A join is always a function. A property is its own record, attached only to an element, transitive up to the leaves and visible down to the trunk. A property at a prefix with no element goes on an element the layer creates there. MAP-022, STORE-039.
+
+**D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
+
+**D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
+
+
+## Settled by recommendation
 
 **D3. Can a subtype own joins after annealing?** (MAP, STORE)
 Recommendation: no. Its joins lift to the parent when it is annealed. A subtype is reachable only through its join and is never a root, so it cannot be a receiver in the graph.
@@ -23,9 +52,6 @@ Recommendation: no, one level. A subtype lives inside a join, not inside an elem
 
 **D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
 Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.
-
-**D9. The Type's single Encounter Function.** C(T) names one encounter function e for the Type, while each join stores the function for its own encounter. Does the Type record store e?
-Recommendation: open. I do not know which reading you intend, and it changes the Type record.
 
 **D10. Two elements with the same address in one project.** Two photos that are both media.photo, for example.
 Recommendation: yes. The address names the type and the element has its own identity, so two elements of the same type are normal.
@@ -78,12 +104,6 @@ Recommendation: dropped. Before 1.0 the contract changes freely and nothing real
 **D25. A module place per project (REQ-035).**
 Recommendation: none, since all data is global.
 
-**D26. A directly run wheel's data folder.**
-Recommendation: one subfolder per wheel name and version, so two builds never share data by accident.
-
-**D27. What installing a wheel does to the installed data.**
-Recommendation: the installed Metaform converts its own data to the wheel's format, then imports the data the wheel carries, with conflicts handled as in D23. This is my reading of "merge it in" and the one I am least sure of.
-
 **D28. Whether install and uninstall are chassis verbs.**
 Recommendation: chassis verbs. Setup is the first thing a user runs and has to work with no modules enabled. The MCP module supplies the registration entry the installer writes.
 
@@ -135,8 +155,6 @@ Recommendation: after the first test, once D37 is built.
 **D43. Uninstall and the data in ~/.metaform.**
 Recommendation: it asks separately and keeps the data by default.
 
-## Design questions from the consistency pass
-
 **D47. Type records: shared or per project.** MAP-010 treats Types as one shared tree; STORE-008 keeps them in each project's store.
 Recommendation: one shared Type tree, with elements per project. A Type keeps its universal description, and practices attached at a Type apply to every artifact of that Type.
 
@@ -161,13 +179,9 @@ Recommendation: `name=value` nouns on the CLI. Agents mostly write through MCP, 
 **D56. How a root reads.** The Canonical Intake's reading examples disagree on `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` reads as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
 Recommendation: every root reads as its own name, and the example that says program code is corrected in the test intake. One rule is easier to apply than a phrase per root.
 
-## Projects, folders and origins (section 8)
-
 **D57.** A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)
 
 **D58.** Should a worktree created outside the project's source location default to the repository's project with nothing selected, found through the worktree's shared git folder, `git rev-parse --git-common-dir`? Recommended: yes, because it needs no setup and writes nothing. (PROJ-006)
-
-**D60.** Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
 
 **D61.** Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
 
@@ -179,18 +193,12 @@ Recommendation: every root reads as its own name, and the example that says prog
 
 **D65.** Is the 3 MB line measured on the total size of a variant's changed text, or per file? Recommended: the total. (PROJ-016)
 
-**D66.** Is history owned by the chassis, as recommended in PROJ-010, or by a module?
-
 **D67.** Are ignored files always outside the boundary of a repository, including generated outputs a workflow was asked to produce? Recommended: yes, and a workflow that wants its outputs kept writes them outside ignored paths. (PROJ-011)
 
 **D68.** When a repository's working tree is dirty as an origin is established, is the commit the origin and the uncommitted work its first variant? Recommended: yes. (PROJ-012)
 
-**D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
-Recommendation: open. I do not know which you meant.
-
 **D71. A stored starting selection per project.** Should a project also keep a starting selection used wherever `--layers` is unset?
 Recommendation: no. The setting already falls back to every locked, unhidden layer, and one mechanism is simpler.
-
 
 **D72. Hard dependency.** With join roles gone, does hard dependency survive in any form, for example a mark on a function join saying the receiver cannot work without the provider?
 Recommendation: gone. How hard a need is already shows in the purpose the join serves.
@@ -201,9 +209,6 @@ Recommendation: no. An item is transitive exactly when it is a property, so the 
 **D74. Items at a type address with no element.** Properties attach only to elements. Can a memory or a verdict attach at a bare type address?
 Recommendation: no. Every item attaches to an element or a join, or to an element its layer creates, which the namespace tree links to the metaform. One rule for every item.
 
-**D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
-Recommendation: your wording; I will draft one for the test file when you want it.
-
 **D78. What an element record holds.** The spec gives element records a name, name length, role, refs and extras, while an element is just a namespace address that things link to. The intake schema also puts a name and refs on the element. Which fields, if any, does an element keep, and where do the rest belong? (MAP-015, STORE-009)
 Recommendation: the element row holds only its identity and its address. The name, name length, role and refs the intake gives for an element are stored as intake-layer items attached to that element, so they are linked to it, not held in it.
 
@@ -212,20 +217,6 @@ Recommendation: yes for a unit whose id already exists. A diverged unit has a di
 
 **D80. A removed join when both ends come back.** If an element is removed and put back at the same address, its attached items show again. Does a join whose receiver and provider both exist again at the same places show again too?
 Recommendation: yes, by the same logic: the join has both ends to attach to again.
-
-## Answered
-
-**D59. Mapping a worker's folder.** The orchestrator runs `metaform set --modules workflow,memory folder=<path>` before the worker starts. The setting formerly called `--commands` is `--modules`. This per-folder surface is the closest thing Metaform has to a nonce.
-
-**D77. Correction and knowledge layers.** Correction layers always beat knowledge layers and sit underneath them. A knowledge item left with nothing to attach to is orphaned: kept, and no longer shown.
-
-**D23 and D76. Import.** Everything exported carries its unique id, and importing something that already exists does nothing. Agent work brought in is a new layer. Backup and restore is separate. A project can have several metaforms, each with its own layers; one is active, and starting over creates a new, empty metaform while the old one is kept.
-
-**D7 and D49. Encounters.** Every encounter is a function or a property. A join is always a function. A property is its own record, attached only to an element, transitive up to the leaves and visible down to the trunk. A property at a prefix with no element goes on an element the layer creates there. MAP-022, STORE-039.
-
-**D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
-
-**D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
 
 ## Engineering choices made
 

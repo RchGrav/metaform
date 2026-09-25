@@ -218,10 +218,10 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: Running a wheel needs no permanent install. Its prepared runtime is separate from its durable data. It never replaces, downgrades or modifies an installed Metaform, its dependencies or its data.
 - Why: A custom build never has to worry about version compatibility with the installed Metaform.
 - How it shows: Running a wheel creates its own subfolder under `~/.metaform` and leaves the installed Metaform's files unchanged.
-- Build: A `__main__.py` at the wheel root bootstraps from the wheel. The subfolder naming is open.
+- Build: A `__main__.py` at the wheel root bootstraps from the wheel, BASE-042. The wheel's data folder is `~/.metaform/wheels/<name>-<version>`, one per wheel name and version, so two builds never share data by accident. It is never the main data folder.
 - Acceptance: With an installed Metaform present, run a different-version wheel directly; the installed package, entry points and base db are byte-identical afterwards.
 - Relates to: BASE-024, BASE-025.
-- Status: confirmed; the subfolder naming is open.
+- Status: confirmed. The folder naming by wheel name and version is the technical answer.
 
 ### BASE-024 A directly run wheel works in hosted code execution environments
 - Requirement: A wheel runs in the code execution environments of OpenAI and Claude, offline, carrying everything its selected modules need.
@@ -233,15 +233,21 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-023, BASE-026.
 - Status: confirmed.
 
-### BASE-025 Installing a wheel updates and merges the installed data
-- Requirement: Installing a wheel can update the installed data and merge the wheel's data into it.
-- What this means: Open. See the open questions.
-- Why: A wheel that was run on its own accumulates data the user wants to keep when the wheel becomes the installed Metaform.
-- How it shows: Open.
-- Build: Open.
-- Acceptance: Open.
-- Relates to: BASE-023, STORE-027, STORE-030.
-- Status: confirmed as intent; behavior open.
+### BASE-025 Data from a directly run wheel can be pulled into the main data folder
+- Requirement: When a wheel that was run directly is later installed, its data can be moved into the main data folder and used there, arriving as its own metaforms, never merged into existing ones.
+- What this means: A wheel run directly keeps its data in its own subfolder of `~/.metaform`, BASE-023, not in the main data folder. If the user later installs that wheel, for example because it is a newer version they have reason to install, the installed Metaform can pull the wheel's data into the main folder so the work done while running it directly is still usable. Separate data cannot really be merged, so nothing is merged into an existing metaform: each metaform from the wheel's folder arrives in the main folder as its own metaform, MAP-045. A project that already exists in the main folder gains the incoming metaform as another metaform, not active; a project that does not exist is registered with it.
+- Why: Work done while using a wheel directly is not lost when the user moves to an installed Metaform.
+- How it shows: After installing a wheel that was run directly, `metaform import wheel=<name>-<version>` lists and pulls in that wheel's data; `list metaforms` in each affected project shows the pulled-in metaform next to the ones already there, and nothing already there changed.
+- Build:
+  - The noun `wheel=<name>-<version>` on the chassis `import` verb names a folder under `~/.metaform/wheels/`. Import reads that folder's projects, metaforms and layers the same way it reads an export document, STORE-027.
+  - Each incoming metaform is added under a new metaform id. Its name is its original name followed by `-from-<name>-<version>`; if that name is taken, a numeric suffix is added. It is never made active by the pull; the user selects it with `activate metaform`.
+  - Identity ids that already exist are not added again, STORE-027, so pulling the same folder twice adds nothing the second time.
+  - The wheel's folder is left in place. Removing it is a separate, explicit act by the user.
+- Acceptance:
+  1. A project with an active metaform in the main folder, and a wheel folder holding a metaform for the same project: after the pull, the project has both metaforms, the original is still active, and every read of the original returns what it returned before.
+  2. Pulling the same wheel folder a second time adds no metaform and no rows.
+- Relates to: BASE-023, BASE-042, MAP-045, STORE-027, STORE-041.
+- Status: confirmed for moving the data into the main folder as its own metaform, never merged. The noun, naming and flow are recommended.
 
 ### BASE-026 The chassis depends only on the standard library and pure-Python packages
 - Requirement: The chassis has no compiled dependencies; modules bring their own.
@@ -420,7 +426,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `element` | element | `element` |
   | `joins` | element, optional `as` receiver or provider | `joins` |
   | `identity` | element | `identity` |
-  | `subtypes` | join, optional `end` | `subtypes` |
+  | `subtypes` | join | `subtypes` |
   | `children` | address | `children` |
   | `layers` | optional tag, kind, module | `layers` |
   | `tag`, `untag` | layer, tag | `tag`, `untag`, STORE-038 |
@@ -435,7 +441,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `add-metaform` | name, optional project | `add_metaform`, STORE-041 |
   | `activate` | name, optional project | `activate_metaform`, STORE-041 |
   | `search` | text | `search` |
-  | `knowledge` | `op=` one of `create`, `add-element`, `add-join`, `add-subtype`, `add-property`, `add-item`, `add-ref`, `add-plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard`; `layer=` naming the layer on every call; then the nouns of that operation: for `create`, name, variable, mutable, hideable, transitive, optional kind (`layer` or `correction`), sources, tags and the provenance fields module, workflow, prompt, model, role, blinded; for `add-element`, address, optional name, name_length, role, refs, extra; for `add-join`, receiver, provider, purpose, function, relation, observation, optional non_goal, type, refs, extra; for `add-subtype`, join, end, address, optional purpose, function, relation, observation, name, name_length, role, refs, extra; for `add-property`, element, value, optional refs, extra; for `add-item`, node, value, optional link, refs, extra; for `add-ref`, owner, key, value; for `add-plan`, element, join; for `edit`, id and each changed field of STORE-034; for `remove`, id; for `correct`, id, reason, optional evidence, `remove=true` and each changed field of STORE-034 | the matching STORE-024 operation: `layer`, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `add_plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard` |
+  | `knowledge` | `op=` one of `create`, `add-element`, `add-join`, `add-subtype`, `add-property`, `add-item`, `add-ref`, `add-plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard`; `layer=` naming the layer on every call; then the nouns of that operation: for `create`, name, variable, mutable, hideable, transitive, optional kind (`layer` or `correction`), sources, tags and the provenance fields module, workflow, prompt, model, role, blinded; for `add-element`, address, optional name, name_length, role, refs, extra; for `add-join`, receiver, provider, purpose, function, relation, observation, optional non_goal, type, refs, extra; for `add-subtype`, join, address, optional function, relation, observation, name, name_length, role, refs, extra; for `add-property`, element, value, optional refs, extra; for `add-item`, node, value, optional link, refs, extra; for `add-ref`, owner, key, value; for `add-plan`, element, join; for `edit`, id and each changed field of STORE-034; for `remove`, id; for `correct`, id, reason, optional evidence, `remove=true` and each changed field of STORE-034 | the matching STORE-024 operation: `layer`, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `add_plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard` |
   | `select`, `mask` | address, layer | `select`, `mask` |
   | `clear` | address, layer, kind | `clear` |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
@@ -464,7 +470,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `status` | none | Has an intake or not, with the name of the latest intake layer |
 
   - The submission, as JSON: `{"result_id": string or null, "elements": [element, ...]}`. An element is `{"address", "name", "name_length", "role", "refs": [{"key", "value"}, ...], "joins": [join, ...]}`. A join is `{"type", "provider", "purpose", "function", "relation", "observation", "non_goal", "refs", "element", "subtypes": [subtype, ...]}`, where `element`, optional, is the provider's definition nested in the join, as in the 1.1 schema. A subtype is `{"provider", "function", "relation", "observation", "element"}`, where `element` gives the subtype's name, name_length, role and refs, as in the test schema's nested join. Every field matches the same-named field of the intake schema, and MAP-040 maps each one. On the CLI, `result` is a path to a JSON file, or `-` for standard input.
-  - Form check: the submission is JSON of this shape; every address is in the form of MAP-010; every join has purpose, function, relation and observation present; every provider resolves to an address among the submitted elements, the joins' nested elements, or the project's current elements. The check never judges content, MAP-013. When any check fails, nothing is written, and the error lists every problem found, each with its path in the submission, followed by one Next line, `Next: fix the listed fields and call intake_submit again`, so one resubmission can fix them all.
+  - Form check: the submission is JSON of this shape; every address is in the form of MAP-010; every join has purpose, function, relation and observation present; no subtype carries a purpose, MAP-030; every provider resolves to an address among the submitted elements, the joins' nested elements, or the project's current elements. The check never judges content, MAP-013. When any check fails, nothing is written, and the error lists every problem found, each with its path in the submission, followed by one Next line, `Next: fix the listed fields and call intake_submit again`, so one resubmission can fix them all.
   - Status hook, BASE-035: `status(ctx)` returns no lines and no notice when `ctx.store` is None. Otherwise, when `has_intake()` is true, it returns the one line `Intake: complete` and no notice. Otherwise it returns the line `Intake: none yet` and the notice of MCP-009.
 
   - The stored intake text is the module resource `resources/Canonical_Intake.xml`, a checked-in byte copy of `specifications/Canonical_Intake.xml`. A repository test fails when the two files differ, so adopting a new intake text means copying the file in the same commit. A test file is never served unless the setting `intake_file` names one: declared `settings.text('intake_file', '', scope='folder')`, owned by `intake`, where the empty default means the resource and any other value is a file path read at serve time.
@@ -528,7 +534,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Build: `__main__.py` inserts the wheel path and the wheel path joined with `metaform/_vendor` at the front of `sys.path`, removes any other path entry that provides a `metaform` package, sets `METAFORM_HOME` to `~/.metaform/wheels/<name>-<version>` when it is not already set, sets `METAFORM_WHEEL` to the wheel's absolute path, then calls `metaform.cli.main()` and exits with its code. Nothing is unpacked to disk.
 - Acceptance: With a different Metaform installed, `python <wheel>` reports the wheel's version and home, and the installed package's files and base database are unchanged afterwards.
 - Relates to: BASE-023, BASE-024, BASE-041, STORE-001.
-- Status: recommended. The folder name depends on D26.
+- Status: recommended.
 
 ### BASE-043 Optional nouns are written as name=value
 - Requirement: A verb's optional nouns are passed on the CLI as `name=value` words, in any order after its required nouns, and over MCP as named arguments.
@@ -542,8 +548,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 ## Open questions
 
 1. A per-project module place: is it wanted, and if so where, given all data is global?
-2. A directly run wheel's data subfolder: one per build, or one per wheel name reused across its versions?
-3. Installing a wheel: does the installed Metaform take on the wheel's data, does the wheel's code convert the installed data to its format, or both, and what happens on conflicting records?
+2. Answered: one data folder per wheel name and version, BASE-023.
+3. Answered: an installed Metaform can pull a wheel's data into the main folder as its own metaforms, never merged, BASE-025.
 4. The PyPI distribution name.
 5. Whether `metaform install` and `metaform uninstall` are chassis verbs or belong to a module, given MCP registration is part of installing.
 6. How Metaform maintains a user's fork, CI and wheel at release: which service, which commands.

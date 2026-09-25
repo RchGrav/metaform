@@ -121,7 +121,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ### STORE-005 Every read goes straight to its answer through an index
 - Requirement: Every read the data access object offers is answered through an index, and no read scans a whole table to find its answer.
-- What this means: Each question agents ask has an index built for it: a thing by id, an element by address, the joins an element receives, the joins an element provides, the subtypes at one end of a join, all items of a layer, all items at a node, the items that link to a node, and the children of a type. Table size does not change the cost of finding one answer.
+- What this means: Each question agents ask has an index built for it: a thing by id, an element by address, the joins an element receives, the joins an element provides, the subtypes in a join, all items of a layer, all items at a node, the items that link to a node, and the children of a type. Table size does not change the cost of finding one answer.
 - Why: Agents navigate by meaning, one question at a time: who receives this, why, how, what do other layers say here. Each question must go straight to its answer so the structure does the orienting and the agent keeps its inference for the task.
 - How it shows: A read at one node of a store with a million items takes about as long as the same read in a store with a thousand.
 - Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Some reads are allowed to read a whole table, because the table has one row per layer or per project and the answer is that table: `layers()` and the project list; the full read of `hidden_layers` during selection resolution, STORE-019 and STORE-035; and the starting selection falling back to `layers()` when the folder's `--layers` setting is unset. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
@@ -273,24 +273,22 @@ It covers the base database, the per-project store, the correction stack, layers
 - Relates to: STORE-009, STORE-011, STORE-025, MAP-001, MAP-002, MAP-003, MAP-020.
 - Status: confirmed.
 
-### STORE-011 Subtypes live inside one join, at one end
-- Requirement: Each subtype is stored in its own table, tied to the one join it shares with its parent and to the end of that join it belongs to, with its own address and its own purpose or function.
-- What this means: Annealing combines parts that share the same join into a larger parent functionality. The combined node carries the combined purpose or the combined encounter, and each absorbed part stays as a subtype under it. At the provider end a subtype keeps its own encounter function under the combined encounter. At the receiver end it keeps its own purpose under the combined purpose. A subtype keeps its own address, name, relation and observation, and layers attach to it directly. It is reachable only through its join, is never a root element, and is never a join end.
+### STORE-011 Subtypes live inside one join
+- Requirement: Each subtype is stored in its own table, tied to the one join it shares with its parent, with its own address and its own encounter function, and no purpose.
+- What this means: Annealing combines parts that share the same join into a larger parent functionality. The join carries the purpose and the combined encounter, and each absorbed part stays as a subtype under it, keeping its own encounter function. A subtype never has a purpose of its own: a part with its own purpose does not share the join and is its own element, MAP-030. A subtype keeps its own address, name, relation and observation, and layers attach to it directly. It is reachable only through its join, is never a root element, and is never a join end.
 - Why: Annealing keeps the root map minimal without discarding functionality. A subtype exists only because it shares that join with its parent, so it lives there. A separate table whose rows can only point at a join makes "excluded from the external graph" a property of the schema, so no query can pull a subtype into the element graph by forgetting a filter.
-- How it shows: `subtypes <join>` lists the probes inside the failsafe's join, each with its own function. `where code.probe.echo` answers with the join and end it lives in, not as a root element.
+- How it shows: `subtypes <join>` lists the probes inside the failsafe's join, each with its own function. `where code.probe.echo` answers with the join it lives in, not as a root element.
 - Build:
   ```sql
   CREATE TABLE subtypes(
     row         INTEGER PRIMARY KEY,
     subtype_id  TEXT NOT NULL REFERENCES subtype_ids(subtype_id),
     layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-    end         TEXT NOT NULL CHECK(end IN ('receiver','provider')),
     address     TEXT NOT NULL REFERENCES types(address),
     name        TEXT,
     name_length INTEGER,
     role        TEXT CHECK(role IN ('DE','SE','NE')),
-    purpose     TEXT,      -- its own purpose, at the receiver end
-    function    TEXT,      -- its own encounter function, at the provider end
+    function    TEXT,      -- its own encounter function; a subtype has no purpose, MAP-030
     relation    TEXT,
     observation TEXT,
     extra       TEXT,
@@ -303,17 +301,16 @@ It covers the base database, the per-project store, the correction stack, layers
     subtype_id TEXT PRIMARY KEY REFERENCES subtype_ids(subtype_id),
     row        INTEGER NOT NULL UNIQUE REFERENCES subtypes(row),
     join_id    TEXT NOT NULL,
-    end        TEXT NOT NULL,
     address    TEXT NOT NULL
   );
-  CREATE INDEX current_subtypes_by_join_end ON current_subtypes(join_id, end);
+  CREATE INDEX current_subtypes_by_join ON current_subtypes(join_id);
   CREATE INDEX current_subtypes_by_address ON current_subtypes(address);
   ```
   - `subtype_ids.join_id` fixes the join. A subtype never moves to another join.
   - Until MAP-032 is settled, `add_subtype` and a correction refuse an address that a current subtype or a current element already holds, and a current element's address may not be taken by a new subtype. The check is one read on `current_subtypes_by_address` and one on `current_elements`.
-  - A join may have subtypes at both ends at once.
 - Acceptance:
-  - A subtype written at the provider end of a join is returned by the subtypes read for that join and end, and by no element or join read.
+  - A subtype written in a join is returned by the subtypes read for that join, and by no element or join read.
+  - Writing a subtype with a purpose is refused as a form error, and nothing is written.
   - No read that returns elements, or joins by receiver or provider, ever returns a subtype.
   - Writing an item attached to a subtype succeeds and is returned by the node read for that subtype.
 - Relates to: STORE-010, STORE-015, MAP-030, MAP-031, MAP-032.
@@ -615,7 +612,7 @@ It covers the base database, the per-project store, the correction stack, layers
   | `discard(layer)` | a knowledge layer, or a correction layer still building | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; the intake layer; a correction layer on the stack; memory |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
   | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
-  | `add_subtype(layer, join, end, address, *, purpose=None, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | end is `receiver` or `provider` | `Subtype` | join unknown; end not one of the two; malformed address |
+  | `add_subtype(layer, join, address, *, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | a subtype has no purpose, MAP-030 | `Subtype` | join unknown; malformed address; a purpose given |
   | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current version | owner unknown; owner in the intake layer or a finished correction layer, STORE-012 |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
   | `add_property(layer, element, value, *, refs=(), extra=None)` | element as address or element id | `Property` | element unknown; a target that is not an element; `extra` not an object |
@@ -645,9 +642,9 @@ It covers the base database, the per-project store, the correction stack, layers
   |---|---|---|
   | `element(ref)` | one element by address or id, with refs | `current_elements` address or primary key; `refs_by_owner` |
   | `joins(element, as_='receiver' or 'provider')` | the joins an element owns, or provides for | `current_joins_by_receiver`, `current_joins_by_provider` |
-  | `identity(element)` | C(T): every current join where it is the provider | `current_joins_by_provider` |
-  | `subtypes(join, end=None)` | the subtypes at one or both ends of a join | `current_subtypes_by_join_end` |
-  | `where(address)` | the element, or the join and end holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
+  | `identity(element)` | every current join where it is the provider, each as receiver, purpose and function | `current_joins_by_provider` |
+  | `subtypes(join)` | the subtypes in a join | `current_subtypes_by_join` |
+  | `where(address)` | the element, or the join holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
   | `children(address)` | the next types up the tree, toward the leaves | `types_by_parent` |
   | `layer_items(layer, target=None)` | all of a layer, or a layer at one node | `current_items_by_layer` |
   | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are finished and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
@@ -728,7 +725,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - Status: recommended. Whether stores from the current chassis branch, which keep joins as JSON bodies in `objects` and `joins` tables, are migrated is open question 14.
 
 ### STORE-030 A directly run wheel keeps its data in its own subfolder
-Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its own subfolder under `~/.metaform`, and installing a wheel can merge its data in through export and import, STORE-027.
+Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.metaform/wheels/<name>-<version>`, never the main data folder. After the wheel is installed, its data can be pulled into the main folder, where each of its metaforms arrives as its own metaform and nothing is merged, STORE-027.
 
 ## Records added by the cold build check
 
@@ -776,7 +773,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
   - After `discard` of a building layer that wrote an element, the element's identity row and its `types` row remain, a read by its identity id returns not found, and `list layers` no longer lists the layer.
   - After a successful `intake_submit`, `has_intake()` is true and the node read in context includes the layer.
 - Relates to: STORE-013, STORE-012, STORE-017, STORE-018, STORE-024, MAP-040, LAYER-001, LAYER-018, MCP-009, BASE-038, BASE-039.
-- Status: confirmed for the intake as one atomic write, for knowledge layers written object by object through one tool that alone makes new layers, with every call naming its layer, no ownership, and editing after finishing. Finishing as marking a layer ready, the `ready` column and the operation names are recommended.
+- Status: confirmed for the intake as one atomic write, for knowledge layers written object by object through one tool that alone makes new layers, with every call naming its layer, no ownership, and editing after finishing. Finishing as marking a layer ready is confirmed. The `ready` column and the operation names are recommended.
 
 ### STORE-033 Every identity id resolves to its kind in one read
 - Requirement: One table maps every identity id to its kind, so operations that take a bare id find the right table in one read.
@@ -797,11 +794,11 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 
 ### STORE-034 What a correction may change, and what removal requires
 - Requirement: A correction changes only the fields allowed for its kind, and a correction layer that removes a thing must also remove everything current that depends on it.
-- What this means: A correction is explicit about what it changes. A retype is a correction that changes an element's address; a relocation is a correction that changes a subtype's address or end, or a join's provider. A node that still has current joins or subtypes pointing at it cannot silently disappear from under them.
+- What this means: A correction is explicit about what it changes. A retype is a correction that changes an element's address; a relocation is a correction that changes a subtype's address, or a join's provider. A node that still has current joins or subtypes pointing at it cannot silently disappear from under them.
 - Why: A correction format with no rules lets a correction change a join's owner or orphan the joins of a removed element, which breaks the structure that everything reads through.
 - How it shows: `metaform map correct <layer> <element id> address=code.probe.echo reason=...` inside a building correction layer relocates the element, with everything attached to it, when that layer is finished. Finishing a correction layer that removes an element but not the join it still receives is refused, naming that join.
 - Build:
-  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `end`, `name`, `name_length`, `role`, `purpose`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `element`, `value`, `extra`. Any other key is refused when the correction is written. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
+  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `name`, `name_length`, `role`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `element`, `value`, `extra`. Any other key is refused when the correction is written. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
   - These checks run at `finish`, against the state after the whole correction layer is applied, so one correction layer can remove an element and its joins, or move several things, together:
     - an element's new address is not held by another current element, and its `types` rows are written;
     - every current join where a relocated element is receiver or provider is removed, with its subtypes, as part of applying the layer, STORE-017;
@@ -1004,8 +1001,8 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 12. Is JSON the exchange document format, or is XML required for any exchange?
 13. Answered: everything exported carries its unique id, and importing something that already exists does nothing; there is no conflict case, STORE-027. Earlier question, kept for reference: on import, when a store already holds a thing with the same identity id but different rows, is the incoming version applied as a new correction layer on top of the stack, kept as a separate layer, or reported and skipped? Recommended: a new correction layer on top, whose provenance names the import.
 14. Are stores written by the current chassis branch migrated, or is pre-1.0 data dropped?
-15. The directly run wheel's subfolder naming: see BASE open question 2.
-16. What merging does when a wheel is installed: see BASE open question 3.
+15. Answered: one folder per wheel name and version, BASE-023.
+16. Answered: an installed Metaform pulls a wheel's data in as its own metaforms, never merged, BASE-025.
 17. Do Type records live in each project store, as STORE-008 has them, or are they shared across projects, as MAP-010 recommends?
 18. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 19. Properties attach only to elements, STORE-039, MAP-022. Can any other layer item attach at a type address that no element holds? The `items.target_kind` value `type` stays until this is answered.
