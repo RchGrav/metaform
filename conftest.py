@@ -86,3 +86,28 @@ def module_row(run):
                 return parts
         return None
     return row
+
+
+def _spec_ids():
+    import re
+    folder = Path(__file__).parent / 'specifications' / 'spec'
+    ids = set()
+    for path in folder.glob('0*.md'):
+        ids.update(re.findall(r'^### ([A-Z]+-\d{3})\b', path.read_text(encoding='utf-8'), re.M))
+    return ids
+
+
+def pytest_collection_modifyitems(config, items):
+    """Every test names the requirement it protects and what kind of run it is, QUAL-009, QUAL-014 and E4."""
+    known = _spec_ids()
+    problems = []
+    for item in items:
+        requirements = [mark.args[0] for mark in item.iter_markers('req')]
+        kinds = [mark.args[0] for mark in item.iter_markers('kind')]
+        if not requirements:
+            problems.append(f'{item.nodeid}: no @pytest.mark.req')
+        problems += [f'{item.nodeid}: {name} is not a record of the spec' for name in requirements if name not in known]
+        if not kinds or any(kind not in ('fixture', 'simulation', 'real') for kind in kinds):
+            problems.append(f'{item.nodeid}: no @pytest.mark.kind of fixture, simulation or real')
+    if problems:
+        raise pytest.UsageError('Tests without a traced requirement:\n' + '\n'.join(problems))

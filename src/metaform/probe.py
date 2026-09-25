@@ -84,6 +84,10 @@ class Session:
                     raise RuntimeError(f'{method} failed: {message["error"]}')
                 return dict(message.get('result') or {})
 
+    def call(self, name: str, arguments: dict[str, Any], *, limit: float = LIMIT) -> dict[str, Any]:
+        """Call one tool; the result holds its content blocks and whether it is an error."""
+        return self.request('tools/call', {'name': name, 'arguments': arguments}, deadline=time.monotonic() + limit)
+
     def close(self) -> None:
         try:
             if self.process.stdin is not None:

@@ -4,7 +4,11 @@ import asyncio
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+import pytest
+
 from metaform import home as metaform_home, loader, settings, tui
+
+pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('CLI-026')]
 
 
 def _screen(folder):
