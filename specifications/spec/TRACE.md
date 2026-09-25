@@ -42,7 +42,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-042 | Platform limits belong to modules | BASE-015, BASE-016, QUAL-002 | covered |
 | REQ-050 | Stable public services | BASE-004, STORE-023 | covered |
 | REQ-051 | Public imports do not create competing runtimes | STORE-003, STORE-002 | covered |
-| REQ-052 | Context follows operations | BASE-028 | covered |
+| REQ-052 | Context follows operations | BASE-028, MCP-025 | covered |
 | REQ-053 | Sync and async access are both supported | BASE-009 | covered |
 | REQ-054 | Feature logic has one owning operation | BASE-006, MCP-003 | covered |
 | REQ-060 | Modules declare their settings in code | BASE-008, CLI-010 | covered |

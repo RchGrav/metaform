@@ -31,7 +31,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: on every command, `--` ends switch parsing, and every word after it is an argument.
 - What this means: a name that starts with a dash, or collides with a word the command gives special meaning, can still be passed as a plain argument after `--`.
 - Why: it is the standard command line convention for this, and users who know git or rm expect it.
-- How it shows: `metaform install -- all` sets up a tool literally named `all`. `metaform add project -- -scratch ./scratch` registers a project named `-scratch`.
+- How it shows: `metaform install -- all` sets up a tool literally named `all`. `metaform memory add-observations element:code.radio -- "-40 dBm is the weakest usable signal."` stores an observation that begins with a dash, BASE-040, where without `--` the parser would reject `-40` as a switch.
 - Build: the shared parser stops classifying words at the first `--` and passes all later words through as arguments, also suppressing keyword meaning such as `all`. The current chassis parsers (`set_`, `unset`, `run_module`) do not handle `--`; the change adds it once in the shared parser that all verbs use.
 - Acceptance: a word after `--` that starts with `--` arrives as an argument, not a switch; `all` after `--` is not expanded.
 - Relates to: CLI-001, CLI-002.
@@ -258,9 +258,11 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - What this means: the workflow setting, for example, offers the workflows its module has stored. An invalid choice fails with the current choices listed.
 - Why: a module can offer choices it authored itself, and the choices stay current without redeclaring the setting.
 - How it shows: `metaform set --favorite zed` fails with `Error: --favorite has no choice 'zed'. Choices: world, rich.` and a Next line naming `metaform help --favorite`.
-- Build: `settings.choice(key, choices, default=None, help='')`, where `choices` is a list or a function returning the current list. The function is called each time the choices are needed: parsing, help and the settings screen. It reads through the chassis data access object.
-- Acceptance: after the module stores a new item, `set` accepts it as a choice with no redeclaration.
-- Relates to: CLI-010, STORE-022.
+- Build: `settings.choice(key, choices, default=None, help='')`, where `choices` is a list or a function `choices(ctx: Context) -> list[str]` returning the current list. The chassis builds the Context for the folder the setting is being read or set for, BASE-028, and calls the function each time the choices are needed: parsing, help and the settings screen. It reads through `ctx.store`, the data access object. When `ctx.store` is None, because the folder resolves to no project, the function returns an empty list, and a `set` of that setting then fails with `Error: --<switch> has no choices here: this folder is not in a registered project.` and `Next: metaform add project <id> <path>`.
+- Acceptance:
+  - After the module stores a new item, `set` accepts it as a choice with no redeclaration.
+  - In a folder with no project, the choices function receives a Context whose store is None and the `set` fails with the Next line above.
+- Relates to: CLI-010, STORE-022, STORE-023, BASE-028.
 - Status: confirmed.
 
 ### CLI-020 Metaform works with zero configuration
@@ -269,8 +271,8 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: low-friction start for users and agents; nothing blocks the first command.
 - How it shows: a fresh home with no saved settings runs `metaform`, `metaform help`, and every enabled module verb.
 - Build: every declared setting has a working default or a `default_from`. A module whose setting cannot have a working default is refused at load with a Next line.
-- Acceptance: with an empty home, every chassis verb and the template's verbs run with exit 0 given valid nouns.
-- Relates to: CLI-010, CLI-017.
+- Acceptance: with an empty home, every chassis verb runs with exit 0 given valid nouns, and every template verb that needs no project store runs with exit 0. A module verb that needs a project store, such as the template's greeting and history verbs, stops in an empty home with exit 2 and `Next: metaform add project <id> <path>`, STORE-023; no configuration is involved, since registering a project is data, not a setting. After `metaform add project <id> <path>` and nothing else, every template verb runs with exit 0.
+- Relates to: CLI-010, CLI-017, STORE-022, STORE-023.
 - Status: confirmed.
 
 ## Context and the command surface
@@ -298,7 +300,9 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   To restore them: metaform unset --commands
   ```
   When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50.
-- Build: a command group is shown when `commands` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --commands`, which is the current text.
+- Build:
+  - The exact text of `set` output is owned here. Line 1: `Success: updated <n> key` when one setting changed, `Success: updated <n> keys` otherwise. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `commands` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `commands` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
+  - A command group is shown when `commands` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --commands`, which is the current text.
 - Acceptance: after narrowing to one module, a chassis verb outside the surface exits 2 and is absent from `help commands` and from the MCP tool list.
 - Relates to: CLI-008, CLI-021, MCP-004, BASE-016.
 - Status: confirmed for hiding and blocking; the way-back text depends on D35 and D50.
@@ -407,10 +411,12 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   6. `Projects: <n> registered`
   7. `Modules: <n> on`, followed by `, <m> not loaded (metaform list modules)` when any enabled module failed.
   8. When `commands` is not empty: `Commands: <groups> (narrowed; restore: metaform unset --commands)`.
-  9. When the intake module is on: `Intake: complete` when `has_intake()` is true. Otherwise `Intake: none yet`, followed by the notice of MCP-009 indented two spaces, and, when an intake layer is open, a further line indented two spaces: `An intake run is open in layer <name>. To continue it, keep writing to that layer; to drop it: metaform intake discard <name> --confirm`. The notice stays until an intake layer is complete, STORE-032.
+  9. For each enabled module on the folder's surface that declares a status hook, BASE-035, in module id order: each of its lines, then its notice, when it returns one, indented two spaces. The chassis prints what the hooks return and names no module. With the intake module on, its hook gives the `Intake:` lines and the no-intake notice shown above, BASE-039.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
-- Acceptance: In a registered project with no intake and the intake module on, status contains the notice; after an intake is completed, it shows `Intake: complete` and no notice.
-- Relates to: CLI-005, MCP-007, MCP-009, STORE-031, BASE-039.
+- Acceptance:
+  - In a registered project with no intake and the intake module on, status contains the notice; after an intake is completed, it shows `Intake: complete` and no notice.
+  - A test module with a status hook returning one line and one notice gets both printed in its id order; `cli.py` contains no module id.
+- Relates to: CLI-005, MCP-007, MCP-009, STORE-031, BASE-035, BASE-039.
 - Status: recommended. `metaform help agents` follows D40's intent that status leads an agent without MCP to the instructions.
 
 ### CLI-029 Help page and syntax layouts
@@ -450,8 +456,8 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `help` | none; `intro`; `commands`; `switches`; `agents`; a switch such as `--loud`; a chassis verb; a module id; a module id and verb | The overview, CLI-006; the intro, CLI-006; the indexes, CLI-008; the composed instructions, MCP-007; the pages, CLI-029. Unknown thing: `No command, module or switch <thing>.` Next `metaform help commands`. |
   | `add` | `project <id> <path> [<target type> <target value>]` | STORE-031. Success: `Added project <id>: <path> (target <type> <value>)`. |
   | `list` | `projects` or `modules` | projects: one line per project, `<id>  <path>  <target type> <target value>`, ids padded to the widest; none: `No projects yet. Register one: metaform add project <id> <path>`. modules: BASE-037's line per module, `<id>  <on|off|error>  <system|user|entry>  <summary or reason>`, ids padded to the widest. Any other noun: `list needs a noun: projects or modules.` Next `metaform list projects`. |
-  | `set` | one or more setting switches with values, CLI-011 and CLI-015; `--glue`; `-q` | Success: `Success: updated <n> key(s)` and one line per change, `  <key>: <old> → <new>`, then `  glued: <keys>` when glued; no change: `Success: no changes`. When `commands` narrows the surface, the three lines of CLI-022. A word that is not a switch: `set takes switches, not '<word>'.` Next `metaform set --help`. An unknown switch: `<switch> is not a setting.` Next `metaform help switches`. An invalid value: the error of CLI-027 with Next `metaform help <switch>`. |
-  | `unset` | one or more setting switches, or `all`; `--unglue`; `-q` | `Reset <n> setting(s): <keys>` or `No settings required reset`, then `Skipped (glued): <keys>` and `Unglued: <keys>` when they apply. `--all`: `--all is not a setting. A switch names one setting.` Next `metaform unset all`. |
+  | `set` | one or more setting switches with values, CLI-011 and CLI-015; `--glue`; `-q` | Success output: exactly as CLI-022's Build states, which owns the text of `set` output with or without narrowing. A word that is not a switch: `set takes switches, not '<word>'.` Next `metaform set --help`. An unknown switch: `<switch> is not a setting.` Next `metaform help switches`. An invalid value: the error of CLI-027 with Next `metaform help <switch>`. |
+  | `unset` | one or more setting switches, or `all`; `--unglue`; `-q` | `Reset <n> setting(s): <keys>` or `No settings required reset`, then `Skipped (glued): <keys>` and `Unglued: <keys>` when they apply. `--all`: the error and Next line of CLI-002, which owns that text. |
   | `config` | none; `--show`; `--show --json` | none: the settings screen, CLI-026, or `--show`'s output without a terminal. `--show`: one line per setting in schema order, `<mark> <key>: <value>` with `*` as the mark for glued and a space otherwise, followed by `  (set)` or `  (glued)` unless default, then a blank line and `* glued: kept by unset all until unglued.` `--json`: a list of objects with key, switch, owner, kind, value, state, default and help. |
   | `enable`, `disable` | `module <id>` | `Module <id>: on` or `off`. Unknown id: `No module <id>.` Next `metaform list modules`. Writes the `module_state` row, STORE-002. |
   | `install`, `uninstall` | MCP-013 to MCP-020 | As specified there. |
@@ -459,7 +465,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `import`, `export` | STORE-027 | As specified there. |
   | `query` | STORE-028 | As specified there. |
 
-  A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value.
+  A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value, except the `commands` setting, whose empty value is shown as `all`, CLI-022.
 - Acceptance:
   - `metaform list foo` exits 2 with the stated error and Next line.
   - `metaform set --favorite world` then `metaform config --show` shows `  favorite: world  (set)`.
