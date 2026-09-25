@@ -240,7 +240,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - Build: A subtype record has subtype id, join id, address, name, name_length, role, its own function, relation, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
 - Acceptance:
   1. A join with two subtypes reads back with the purpose and combined function on the join and each subtype's own function, relation and observation under it.
-  2. A submission that gives a subtype a purpose is refused with a form error naming the subtype, and nothing is written.
+  2. A submission that gives a subtype a purpose is stored as given: the purpose is kept in the subtype's `extra`, and the result carries a notice naming the subtype, BASE-044.
 - Relates to: MAP-031, MAP-032, MAP-040, STORE-011.
 - Status: confirmed.
 
@@ -374,6 +374,16 @@ These terms are used exactly as defined in the Canonical Intake.
   2. After `activate metaform main`, every read returns exactly what it returned before `fresh` was added.
 - Relates to: MAP-040, LAYER-001, LAYER-011, STORE-003, STORE-041, CLI-031, BASE-038.
 - Status: confirmed for more than one metaform per project, every layer and the correction stack belonging to one metaform, one active metaform per project, starting over as a new empty metaform, and the old one kept and selectable. The storage and verbs are recommended.
+
+### MAP-046 Intake findings flag objects as missing, broken or cruft
+- Requirement: Each element and join the intake submits can carry a finding flag, missing, broken or cruft, with a short note; working is the default.
+- What this means: Working code goes in the main metaform as normal, unflagged. `missing` is a function that is part of the project's current specs but is not built; it shows when the agent reviews the whole repository, specs included. `broken` is something in the intake target that is broken, not working, not connected or orphaned. `cruft` is left-over code that is disabled and needs cleaning up. A flagged object is still part of the map, in its place, with its joins, and every read shows its flag, so an agent reading the map sees the finding where it applies.
+- Why: The intake agent sees the whole project, specs included, and what it finds wrong or unfinished is as valuable as the working map. Kept on the object it concerns, a finding reaches the next agent exactly where it is working, and the flags can be listed to plan fixes and clean-up.
+- How it shows: An intake of a repository with a disabled legacy module flags that module's element `cruft` with the note `disabled since the 2.0 rewrite`. `metaform map findings flag=cruft` lists it.
+- Build: `flag` and `flag_note` on elements, joins and subtypes in `intake_submit`'s input schema, BASE-039; stored per STORE-042; shown by every read, STORE-025.
+- Acceptance: An intake submission with one element of each flag reads back each flag on its element, and a working element has no flag.
+- Relates to: BASE-039, STORE-042, MAP-040, BASE-045.
+- Status: confirmed. Keeping flagged objects in the map in their places is recommended.
 
 ## Open questions
 

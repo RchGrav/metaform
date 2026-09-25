@@ -4,10 +4,9 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 ## Open
 
-**D82. Submissions that break the shape.** The Canonical Intake says intake is never gated or judged. A submitted join whose provider is its own receiver, or whose provider is a subtype, cannot exist in the acyclic mesh. Store it as given for a later correction layer or grading layer to deal with, or refuse the submission?
-Recommendation: store it as given. A refusal makes the agent loop and retry, and the intake is never gated. Reads show it like any other join, and a correction layer removes it.
-
 ## Answered
+
+**D82. Submissions that break the shape.** Stored as given; a correction layer or a reviewer deals with them. No agent submission is refused for its content: what does not fit is stored and noted in a notice, and an agent that cannot continue stops and submits a trouble report. BASE-044, STORE-026.
 
 **D81. intake_submit.** It has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake. The agent submits against it once. The intake text is served unchanged with one module line after it, and can change freely as long as its structure keeps that pattern.
 

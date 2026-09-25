@@ -12,7 +12,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable and hideable (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer, created locked in the single atomic write of `intake_submit`, STORE-032, so the map appears whole or not at all. A knowledge layer is built and then locked, LAYER-018. Memory is mutable and never locked against change, LAYER-012.
 - Acceptance:
   - After an intake through MCP, every stored element, join and subtype names the intake layer, and reading the intake layer returns all of them.
-  - Storing an element, join, subtype or layer item without a layer is refused.
+  - An element, join, subtype or layer item sent without a layer is stored in a new building layer named `unnamed-<UTC timestamp YYYYMMDDTHHMMSSZ>`, and the result names that layer in a notice, BASE-044.
 - Relates to: LAYER-002, LAYER-003, LAYER-008, MAP-040, STORE-013, STORE-014.
 - Status: confirmed.
 
@@ -22,8 +22,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: The variable is the one thing the layer infers, and for a knowledge layer it is whatever the prompt that builds the layer defines. Examples, not a closed list: a blind-spot challenge where the critic sees one, best-practice imperatives for a type, porting concerns for a move to another language, or an agent's memory. A layer never mixes two variables. Two questions make two layers.
 - Why: A layer with one variable can be selected, masked, hidden, compared and trusted as a unit, because everything in it was produced the same way for the same purpose. That is what makes layers compose: a module adds its one variable without knowing about any other module, and select and mask decide which layers an agent sees together.
 - How it shows: Every layer states its variable in one sentence. Reading a layer returns items that all answer that sentence.
-- Build: The layer record's variable field is required text, stating the question. The operation that creates a layer refuses an empty variable.
-- Acceptance: Creating a layer without a variable is refused.
+- Build: The layer record's variable field is required text, stating the question. A layer created with an empty variable is stored as given, and the result carries a notice asking for the variable, BASE-044.
+- Acceptance: Creating a layer without a variable stores the layer and returns a notice; nothing is refused.
 - Relates to: LAYER-001, LAYER-003, LAYER-009.
 - Status: confirmed.
 
@@ -49,10 +49,10 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - Hideable: the layer can be hidden from views and agent context while its content and history stay stored (LAYER-006).
   - Transitivity is not a layer flag. It belongs to properties, MAP-022: a property attached to an element travels along the namespace tree as described in LAYER-005, whatever layer holds it, and nothing else travels, D73.
 - Why: Declaring the behavior on the layer lets the chassis apply corrections, visibility and propagation once, uniformly. No module rebuilds these rules, and no module can apply them differently.
-- How it shows: A layer's properties are listed with it. Trying to edit an item in place in the intake layer or a correction layer is refused with one next step naming the correction operation.
+- How it shows: A layer's properties are listed with it. Trying to edit an item in place in the intake layer or a correction layer changes nothing and returns a notice naming the correction operation, BASE-044.
 - Build: Two required boolean fields on the layer record, mutable and hideable, declared by the module when it creates the layer and never changed, D12. The chassis enforces them in every write and read path.
 - Acceptance:
-  - An in-place edit of an item in the intake layer is refused and names the correction operation.
+  - An in-place edit of an item in the intake layer changes nothing, succeeds, and its notice names the correction operation.
   - A property on an element at a parent address is received at a child address; an item at the same element is not.
 - Relates to: LAYER-005, LAYER-006, LAYER-011, LAYER-013.
 - Status: confirmed that layers declare these properties. Chosen by the module for each layer it creates, D12; no transitive flag, D73.
@@ -76,7 +76,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: Hidden knowledge stays stored with its history and provenance, and it can be shown again at any time. A port from C++ to Rust hides the C++ layers and selects the Rust layers; addresses and purposes stay unchanged.
 - Why: Knowledge that no longer applies must stop steering agents without being lost, because it may apply again and because its history explains why things are the way they are.
 - How it shows: After hiding a layer, no read, view or context assembled for an agent contains its items. Showing it restores them unchanged.
-- Build: The layer's hidden state, stored as in STORE-013. Every read path and every context assembly path filters hidden layers out. Hiding a layer that is not hideable is refused with one next step. Correction layers are never hideable, LAYER-011.
+- Build: The layer's hidden state, stored as in STORE-013. Every read path and every context assembly path filters hidden layers out. Hiding a layer that is not hideable changes nothing and returns a notice saying why. Correction layers are never hideable, LAYER-011.
 - Acceptance: A hidden layer's items appear in no element read, join read, layer-at-node read or MCP read, and reappear unchanged when it is shown.
 - Relates to: LAYER-004, LAYER-007, STORE-013.
 - Status: confirmed for hiding a layer. Hiding is of whole layers only, per D20's recommendation. Whether hiding a layer also hides the layers built from it is open.
@@ -130,7 +130,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - How it shows: Asking for any layer's origin returns one record. Two critics' blind-spot layers over the same metaform show two records, for example one blinded and one sighted, each with its role.
 - Build: The provenance record holds: layer id (unique), module, workflow, prompt (the full text as delivered), model, role, blinded. It is written when the layer is created, by the operation that creates it, and never changes: it is fixed as written through building and locking. A layer other than memory cannot be created without it.
 - Acceptance:
-  - Creating a non-memory layer without provenance is refused.
+  - Creating a non-memory layer without provenance stores the layer with an empty provenance record and returns a notice, BASE-044.
   - Writing a thousand items to a layer leaves exactly one provenance record for it.
 - Relates to: LAYER-012, LAYER-014, LAYER-015, STORE-016, PROJ-010, PROJ-017.
 - Status: confirmed, including that provenance tracks exactly these two things and is a chassis function, PROJ-010. What the record holds for a layer written directly by a person, with no model or prompt, is open. Whether a second run adding items to an existing layer is the same layer or a new layer is open.
@@ -144,8 +144,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build: The stack, applying a correction layer when it is finished, peeling the top layer, and the history read are STORE-017; what a correction may change and what a removal requires are STORE-034; the dependency marking and how it is cleared are STORE-036. A correction layer is built like any knowledge layer, LAYER-018: freely edited by its builder until locked, and applied only when locked.
 - Acceptance:
   - Two correction layers change the same element; reads show the later one's version, and history shows the intake's version, then each correction layer's in stack order.
-  - Peeling the lower of two correction layers is refused and changes nothing; peeling the top one restores the metaform as it was before that layer was finished.
-  - Selecting, masking, toggling or hiding a correction layer is refused.
+  - Peeling the lower of two correction layers changes nothing and returns a notice naming the top layer; peeling the top one restores the metaform as it was before that layer was finished.
+  - Selecting, masking, toggling or hiding a correction layer changes nothing and returns a notice.
   - A correction layer changes no item in any other layer.
   - A correction that removes an element orphans a knowledge item attached to it: the item is absent from every read in context, and a raw read returns it marked orphaned.
   - A later correction that puts an element back at the same address shows that item again in context, with no row of its layer rewritten.
@@ -197,13 +197,13 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build:
   - The workflow is module work; the chassis supplies the layers, items, links, provenance and challenge states it uses. A challenge is an item in the critic's blind-spot layer, STORE-015, attached to the element or join where the blind spot is seen, or to the new element it proposes. The blind-spot layer is built and locked by the critic like any knowledge layer, LAYER-018.
   - Answers and approvals are recorded as challenge state, STORE-040, not as edits to the critic's blind-spot layer.
-  - `answer` is a map verb and MCP tool: challenge, A, B or C, and for C a link to an existing element or join. A C answer without that link is refused.
+  - `answer` is a map verb and MCP tool: challenge, A, B or C, and for C a link to an existing element or join. A C answer without that link is stored as given, with a notice asking for the link, BASE-044.
   - `approve` is a map verb declared for the CLI only, `surfaces=('cli',)`, BASE-035, so it is never an MCP tool and an agent working through MCP cannot approve its own answers. It is the one place a person acts. It accepts only a challenge answered B.
   - A plan an agent adds directly is recorded as a plan with no challenge, STORE-040.
   - Every read that returns a challenge, or an element or join a challenge carries, shows its state next to its layer name.
   - The critic prompt gives the metaform and asks for blind spots; the answer prompt gives each challenge and the three answers as equals. The provenance of each blind-spot layer records the critic's role and whether it was blinded.
 - Acceptance:
-  - A C answer without a link to an existing element or join is refused.
+  - A C answer without a link to an existing element or join is stored, and the result carries a notice.
   - `approve` is absent from the MCP tool list, and on the CLI it refuses a challenge that is open or answered A or C.
   - After `approve` on a B challenge, reads show that challenge and the element and join it carries as plan; the blind-spot layer's items are unchanged.
   - A plan added directly by an agent reads as plan without any approval.

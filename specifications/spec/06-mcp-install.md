@@ -41,11 +41,11 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-004 The tool list follows the folder's command surface
 
 - Requirement: A tool exists on the MCP server exactly when its command is on the folder's command surface: it is listed only then, and it runs only then.
-- What this means: The `modules` setting and the module enabled state decide the surface. A command outside the surface is neither listed nor callable. A call to it returns an error with one next step. Harness tool permissions can narrow the surface further, but never widen it.
+- What this means: The `modules` setting and the module enabled state decide the surface. `metaform mcp serve` itself is never cut off by narrowing: it is the transport, not a command an agent runs, so it starts whatever `--modules` says, and `--modules` narrows the tools it lists and runs. The chassis tools that always run, `set`, `feedback`, `list_reports` and `read_report`, stay listed, CLI-022. A command outside the surface is neither listed nor callable. A call to it returns an error with one next step. Harness tool permissions can narrow the surface further, but never widen it.
 - Why: The command surface governs what exists, so the narrowing holds even when a host grants every tool. The orchestrator that narrowed the surface holds the way back; a subagent meets only what is on the surface.
-- How it shows: `metaform set --modules helloworld` in a folder. A new MCP connection from that folder lists only `helloworld_*` tools. A call to `map_where` returns `Error: No tool map_where on this surface.` followed by one `Next:` line.
+- How it shows: `metaform set --modules helloworld` in a folder. `metaform mcp serve` still starts there, and a new MCP connection from that folder lists only `helloworld_*` tools and the always-run chassis tools. A call to `map_where` returns `Error: No tool map_where on this surface.` followed by one `Next:` line.
 - Build: The surface is the loaded modules whose ids pass the `modules` check of CLI-022 for the server's folder, and within them the verbs whose `surfaces` include `mcp` and whose `supported_os` includes this system, BASE-016. `list_tools` lists exactly those. `call_tool` for any other name returns `is_error` true with `Error: No tool <name> on this surface.` and `Next: metaform help commands`.
-- Acceptance: With the surface narrowed, the narrowed-out tool is absent from `tools/list`, and calling it by name returns `is_error` true. With the surface restored, both work.
+- Acceptance: With the surface narrowed to a module other than `mcp`, `metaform mcp serve` starts and serves; the narrowed-out tool is absent from `tools/list`, and calling it by name returns `is_error` true. With the surface restored, both work.
 - Relates to: CLI-022, BASE-016, MCP-003.
 - Status: confirmed.
 
@@ -62,13 +62,13 @@ It also defines the first working test, which exercises all three end to end.
 
 ### MCP-006 Every tool error ends with one next step
 
-- Requirement: A tool error returns `is_error` true with text ending in exactly one `Next:` line, the same line the CLI prints for the same failure.
+- Requirement: A tool error returns `is_error` true with text ending in exactly one `Next:` line, the same line the CLI prints for the same failure, and errors are kept to calls that cannot be read at all; everything else is a notice, BASE-044.
 - What this means: Errors from `Stop` carry the message and one next command. A caution verb called without `confirm` explains what it would do and names the call with `confirm` true as the next step.
 - Why: An error that names the next command keeps an agent on the surface instead of sending it into the source code, where it starts guessing at the design.
 - How it shows: `helloworld_forget` without `confirm` returns the caution text and `Next: If you are sure: call helloworld_forget with confirm true`.
 - Build: A `Stop` raised by the verb, or by the dispatch checks, becomes a result with `is_error` true whose text is `Error: <message>` and `Next: <next_step>`. A caution verb called without `confirm: true` raises `Stop(caution, 'If you are sure: call <tool name> with confirm true')` before it runs. An unexpected exception becomes `Error: <type>: <message>` and `Next: metaform list modules`.
 - Acceptance: For each error path of the helloworld module's tools, the text has exactly one `Next:` line, and it matches the CLI's next step for the same failure.
-- Relates to: CLI-009, CLI-018, BASE-013.
+- Relates to: CLI-009, CLI-018, BASE-013, BASE-044.
 - Status: confirmed.
 
 ### MCP-007 Server instructions are composed live from the base text and each module's instructions
@@ -77,13 +77,14 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The base text says what Metaform is, how tools are named, how arguments work, and that errors end with a next step. Each module on the surface adds a section headed by its id. Nothing is cached in files, so enabling, disabling or narrowing takes effect on the next connection. The same composed text is available on the CLI, so an agent without MCP reads the same instructions. The command name for that is open.
 - Why: Live instructions have one source. A module's instructions are never copied anywhere that could go stale.
 - How it shows: Enable a module and reconnect: its section appears. Disable it and reconnect: its section is gone.
+- Reporting: the base text always tells agents that an agent that cannot continue stops and submits a trouble report with the `feedback` tool instead of retrying, BASE-044. When `--debug` is on for the folder, it also asks for feedback on the Metaform process; `--report` governs the intake report line in the intake footer, CLI-034.
 - Build: The text is assembled as the base text; then, for each surfaced module in id order, a blank line, the line `## <id>`, and the module's `purpose`; then, for each surfaced module in id order whose status hook, BASE-035, returns a notice, a blank line and that notice. The notice of MCP-009 arrives this way, from the intake module's hook. Lines end with a single newline and the text ends with one newline. D39 and BASE-035. The base text lives in the chassis, because every surface uses it, and reads exactly:
   ```
   Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. Read the map before you change the project, so you work from the purpose of each part. Each tool comes from a module; the sections below say what each module is for. A tool named <module>_<verb> takes the verb's nouns and switches as named arguments. A tool error ends with the one next step to take. For any module's full help, run metaform help <module>.
   ```
   `metaform help agents` prints the same composed text for the folder, CLI-029, so an agent without MCP reads the same instructions.
 - Acceptance: The instructions returned at initialization contain exactly the sections of the surfaced modules, in id order, and change after an enable or disable with no other step.
-- Relates to: MCP-008, MCP-009, BASE-012, CLI-005.
+- Relates to: MCP-008, MCP-009, BASE-012, CLI-005, BASE-044, CLI-034.
 - Status: confirmed. The base text wording is recommended.
 
 ### MCP-008 Each module adds concise instructions that defer to help
@@ -93,7 +94,7 @@ It also defines the first working test, which exercises all three end to end.
 - Why: Agents start with little context. The details stay in help, where they are current and cost nothing until needed.
 - How it shows: The helloworld module's section in the instructions is a few sentences, ending with `metaform help helloworld`.
 - Build: The `purpose` field of `Module`, BASE-035, following D39's recommendation. A module whose `purpose` is empty fails to load with the next step `metaform help helloworld`. The template and its README show the expected length: two to four sentences ending with `metaform help <id>`. The shipped modules' texts are exactly:
-  - `map`: `Reads and writes this project's functional map. Before changing a part, read it with map_where or map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a time, and finish it when the task is done. Details: metaform help map.`
+  - `map`: `Reads and writes this project's functional map. Start with map_roots: it returns the map's entry, the VE and the DE with their joins, and the root elements. Before changing a part, read it with map_where or map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a time, and finish it when the task is done. Details: metaform help map.`
   - `intake`: `Serves the Canonical Intake instructions and tracks whether this project has an intake. The intake is agent work: a subagent reads its instructions with intake_prompt and follows them. Details: metaform help intake.`
   - `memory`: `Notes that agents keep at the map's own nodes, in the reference memory server's operations. When the map is wrong or incomplete at a node, add an observation there so the next agent reads it where it looks. Details: metaform help memory.`
   - `mcp`: `Serves Metaform's tools to AI tools over MCP. Every tool is also a metaform command on the CLI. Details: metaform help mcp.`
@@ -333,15 +334,16 @@ It also defines the first working test, which exercises all three end to end.
   The modules on in this test are `map`, `intake`, `memory` and `mcp`, all of which ship enabled. `helloworld` and `template` are the only modules that ship disabled, and they do not appear.
 - Why: This is the smallest run that proves setup works, that agents are oriented by live instructions, and that intake is delegated without rewording. Memory and layer selection are in it because memory is how a small wrong inference gets fixed right at the node, and select and mask are how a job controls which layers an agent sees; the first test is not a working Metaform without them.
 - How it shows: The steps above, observed in at least one real AI tool.
-- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, LAYER-007, LAYER-012, LAYER-013, STORE-019, STORE-020, STORE-032, and the `purpose` field. The first test's tool list must include `intake_prompt`, `intake_submit`, `memory_add-observations`, `memory_open-nodes`, `map_select`, `map_mask`, `map_clear`, `map_node`, `map_layers`, `map_tag`, `map_untag`, `map_knowledge` and `set` with `layers`.
+- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, LAYER-007, LAYER-012, LAYER-013, STORE-019, STORE-020, STORE-032, and the `purpose` field. The first test's tool list must include `intake_prompt`, `intake_submit`, `memory_add-observations`, `memory_open-nodes`, `map_select`, `map_mask`, `map_clear`, `map_node`, `map_layers`, `map_tag`, `map_untag`, `map_knowledge`, `map_findings`, `feedback`, `list_reports`, `read_report` and `set` with `layers`.
 - Acceptance: An automated run of steps 2 to 10, plus one recorded manual run in a real tool. The automated run:
   - Uses a temporary `METAFORM_HOME` and a temporary user home, and puts fake `claude` and `codex` executables first on PATH. Each fake records its arguments to a file and exits 0, so registration is checked without the real tools. The temporary home also holds `.cursor/mcp.json` containing one other server entry, so the Cursor merge and its backup are checked against a real existing file.
   - Every process the test starts inherits its environment, including the temporary `METAFORM_HOME`; the registered command carries no environment of its own, so inheritance is how the probe's server finds the test home. The test needs network access or a warm uv cache for uvx to prepare the server's environment; CI keeps the uv cache between runs.
   - Builds the wheel with `metaform build`, runs `metaform install claude codex cursor`, and checks the recorded registration arguments, the skill copies, the Cursor file holding both its old entry and `metaform`, the backup of the Cursor file byte-identical to the fixture, and a passing proof step against the built wheel.
   - Registers a temporary project folder, then starts the registered command, `uvx --from <wheel> metaform mcp serve`, with that folder as its working folder, using the probe client of MCP-017 as the scripted host. It checks that the instructions hold the base text, the four modules' sections and the notice.
   - Calls `intake_prompt` and checks the text against the stored file with only the target filled.
-  - Submits a three-element fixture intake through `intake_submit`: a VE, a DE and one SE, with two joins. A first submission missing one join's purpose is refused, writes nothing, and the notice remains; the corrected submission is stored whole.
-  - Starts a new connection and checks the notice is gone.
+  - Submits a three-element fixture intake through `intake_submit`: a VE, a DE and one SE, with two joins. A first submission missing one join's purpose is stored whole with a notice naming that join, and nothing is refused. The fixture flags one element `broken` and one join `missing`, and carries a `report` and a `feedback` text.
+  - Starts a new connection and checks the no-intake notice is gone.
+  - Calls `list_reports` and sees the intake layer's report and feedback; calls `read_report` on each and gets the submitted text back byte for byte; calls `map_findings` with `flag=broken` and gets the flagged element; calls `feedback` with a freeform text and sees a new feedback file listed.
   - Checks the tool list holds every tool named in Build.
   - On one connection, calls `memory_add-observations` at the DE element and at one join. On a second connection, calls `memory_open-nodes` on both and gets both observations back.
   - Calls `map_node` in context at the DE element and sees the memory; calls `map_mask` for the memory layer at the DE's address and no longer sees it; calls `map_clear` for that mask and sees it again; the join's memory is checked the same way through its receiver's address.

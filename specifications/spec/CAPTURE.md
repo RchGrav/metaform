@@ -174,3 +174,11 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. intake_submit has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake's response schema; it never parses the intake's XML. The intake text is served unchanged, followed by the intake module's line to submit with intake_submit; intake text changes that keep the pattern need no tool change. BASE-039, MAP-040, MCP-009.
 - 09-25. An element record holds only identity and address; name, name_length, role and refs given for it are a descriptor item linked to it. STORE-009, MAP-015, MAP-017, D78.
 - 09-25. Intake is never gated or judged: intake_submit refuses only what cannot be stored in the pattern; a repeated namespace_address is the same element. BASE-039.
+- 09-25. Agent submissions are never blocked: no submission is refused for its content; what does not fit is stored as given and noted in a notice, never an error; self joins and joins to a subtype are stored as given, D82. BASE-044, STORE-026, BASE-039.
+- 09-25. An agent that cannot continue stops, submits a trouble report and ends; it never loops. If it cannot submit its shape at all, it saves what it has with its report. BASE-044, BASE-045.
+- 09-25. Agents can submit freeform feedback on the Metaform process at any time, and the intake agent submits a report on the project it examined; both are separate files in the project's reports folder, listed and readable, and refs on the layer's provenance. BASE-045, STORE-043, STORE-016.
+- 09-25. Intake findings: each element and join can be flagged missing, broken or cruft with a note; working is the default. MAP-046, STORE-042.
+- 09-25. `--debug` asks agents for process feedback, default off; `--report` asks the intake agent for a project report, default on; both are ordinary boolean settings. During development the orchestrator turns `--debug` on. CLI-034.
+- 09-25. A second intake into a metaform that has one is stored as a new active metaform, the old kept. BASE-039.
+- 09-25. `map roots` returns the map's entry, the VE and DE with their joins and the root elements; `map where` with no address returns the same. BASE-038, STORE-025, MCP-008.
+- 09-25. `metaform mcp serve` is the transport and always runs; `--modules` narrows the tools it lists. MCP-004, CLI-022.
