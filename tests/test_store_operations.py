@@ -188,23 +188,11 @@ ERRORS: dict[str, tuple[Callable, Callable]] = {
     'add_element unknown layer': (lambda s, w: None, lambda s, w: s.add_element('ghost', 'code.x')),
     'add_element intake after its write': (lambda s, w: None, lambda s, w: s.add_element('intake-1', 'code.x')),
     'add_element finished correction': (finished_fix, lambda s, w: s.add_element('fix', 'code.x')),
-    'add_element malformed': (lambda s, w: None, lambda s, w: s.add_element('k', 'code..x')),
-    'add_join unknown end': (lambda s, w: None,
-                             lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', function='f',
-                                                     relation='r', observation='o')),
-    'add_join subtype end': (lambda s, w: None,
-                             lambda s, w: s.add_join('k', 'code.k.a', 'code.loop.tick', purpose='p', function='f',
-                                                     relation='r', observation='o')),
-    'add_join to itself': (lambda s, w: None,
-                           lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', function='f',
-                                                   relation='r', observation='o')),
+    'add_join an end that is no element id': (lambda s, w: None,
+                                              lambda s, w: s.add_join('k', 'code.k.a', '0' * 32, purpose='p',
+                                                                      function='f', relation='r', observation='o')),
     'add_subtype unknown join': (lambda s, w: None,
                                  lambda s, w: s.add_subtype('k', '0' * 32, 'code.k.part', function='f')),
-    'add_subtype malformed': (lambda s, w: None,
-                              lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', function='f')),
-    'add_subtype purpose': (lambda s, w: None,
-                            lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.part', function='f',
-                                                       purpose='p')),
     'add_ref unknown owner': (lambda s, w: None, lambda s, w: s.add_ref('0' * 32, 'path', 'x')),
     'add_ref intake owner': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.join_id, 'path', 'x')),
     'add_item unknown target': (lambda s, w: None,
@@ -272,3 +260,46 @@ def test_an_operation_reaches_every_row_through_an_index(home, store, traced, ca
     act(store, world, context)
     bad = [(statement, found) for statement, lines in plans(home, store, traced) if (found := scans(lines))]
     assert bad == []
+
+
+def _kept(store, notice_where, found):
+    """The write returned its record with a notice at `notice_where`, and the record reads back raw."""
+    return notice_where in [notice.where for notice in found.notices]
+
+
+NOTICES: dict[str, tuple[Callable, Callable]] = {
+    'add_element malformed': (
+        lambda s, w: s.add_element('k', 'code..x'),
+        lambda s, w, got: _kept(s, 'address', got) and s.where('code..x', raw=True) is not None),
+    'add_join unknown end': (
+        lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', function='f', relation='r',
+                                observation='o'),
+        lambda s, w, got: _kept(s, 'provider', got) and s.element('code.nothing', raw=True).layer == 'k'),
+    'add_join to a subtype address': (
+        lambda s, w: s.add_join('k', 'code.k.a', 'code.loop.tick', purpose='p', function='f', relation='r',
+                                observation='o'),
+        lambda s, w, got: _kept(s, 'provider', got) and got.provider_address == 'code.loop.tick'),
+    'add_join to itself': (
+        lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', function='f', relation='r', observation='o'),
+        lambda s, w, got: _kept(s, 'provider', got) and got.receiver == got.provider),
+    'add_subtype malformed': (
+        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', function='f'),
+        lambda s, w, got: _kept(s, 'address', got) and got.address == 'Code.Part'),
+    'add_subtype purpose': (
+        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.part', function='f', purpose='p'),
+        lambda s, w, got: _kept(s, 'purpose', got) and got.extra == {'purpose': 'p'}),
+    'add_subtype address held': (
+        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', function='f'),
+        lambda s, w, got: _kept(s, 'address', got) and got.address == 'code.loop.tick'),
+}
+
+
+@pytest.mark.req('STORE-026')
+@pytest.mark.req('BASE-044')
+@pytest.mark.parametrize('case', sorted(NOTICES))
+def test_each_condition_that_does_not_fit_is_stored_with_a_notice(home, store, case):
+    act, check = NOTICES[case]
+    world = build(store)
+    got = act(store, world)
+    assert got.notices and all(notice.message for notice in got.notices)
+    assert check(store, world, got)

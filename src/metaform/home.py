@@ -295,6 +295,7 @@ class Metaform:
     name: str
     created: str
     active: bool
+    notices: tuple[Any, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -343,18 +344,45 @@ def _create_metaform(db: sqlite3.Connection, project_id: str, name: str, metafor
     return record
 
 
-def add_metaform(project_id: str, name: str) -> Metaform:
-    """A new, empty metaform for the project, made active; the old one is kept whole, STORE-041."""
+def add_metaform(project_id: str, name: str, *, activate: bool = True) -> Metaform:
+    """A new, empty metaform for the project, made active unless asked not to; the old one is kept whole, STORE-041.
+
+    A name the project already has is stored with `-2`, or the next free number, added; the caller compares the
+    returned name with the one it asked for to say so, BASE-044.
+    """
     if not NAME.fullmatch(name) or ID.fullmatch(name):
         raise StoreError(f'{name!r} is not a metaform name: use letters, digits, ., _ and -.',
                          'metaform add metaform <name>')
     with base(write=True) as db:
-        taken = db.execute('SELECT 1 FROM metaforms WHERE project_id=? AND name=?', (project_id, name)).fetchone()
-        if taken is not None:
-            raise StoreError(f'Project {project_id} already has a metaform named {name}.', 'metaform list metaforms')
+        chosen, number = name, 1
+        while db.execute('SELECT 1 FROM metaforms WHERE project_id=? AND name=?', (project_id, chosen)).fetchone():
+            number += 1
+            chosen = f'{name}-{number}'
         if db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone() is None:
             _create_metaform(db, project_id, 'main')
-        return _create_metaform(db, project_id, name)
+        return _create_metaform(db, project_id, chosen, activate=activate)
+
+
+def metaform_by_id(project_id: str, metaform_id: str) -> Metaform | None:
+    with base() as db:
+        row = db.execute('SELECT metaform_id, name, created FROM metaforms WHERE metaform_id=? AND project_id=?',
+                         (metaform_id, project_id)).fetchone()
+        active = db.execute('SELECT metaform_id FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
+    if row is None:
+        return None
+    return Metaform(row[0], project_id, row[1], row[2], active is not None and active[0] == row[0])
+
+
+def withdraw_metaform(project_id: str, metaform_id: str) -> None:
+    """Undo a metaform created in this operation whose first write failed: its row and its store file go."""
+    with base(write=True) as db:
+        db.execute('DELETE FROM active_metaforms WHERE project_id=? AND metaform_id=?', (project_id, metaform_id))
+        db.execute('DELETE FROM metaforms WHERE metaform_id=? AND project_id=?', (metaform_id, project_id))
+    folder = store_path(project_id, metaform_id).parent
+    for path in sorted(folder.glob('store.sqlite3*')):
+        path.unlink(missing_ok=True)
+    if folder.is_dir() and not any(folder.iterdir()):
+        folder.rmdir()
 
 
 def activate_metaform(project_id: str, name: str) -> Metaform:

@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Verbs
 
-Reads: `where`, `element`, `joins`, `identity`, `subtypes`, `children`, `layers`, `layer`, `node`, `context`, `links`, `citing`, `history`, `stack`, `metaforms`, `search`. Writes: `knowledge` with `op=` and `layer=` on every call, `tag`, `untag`, `select`, `mask`, `clear`, `hide`, `unhide`, `reexamined`, `add-metaform`, `activate`, `answer`, and `approve` on the CLI only. Each verb returns its operation's result; every join shows the layer it comes from. Tools are `map_<verb>`.
+Start with `roots`: the map's entry, the VE and the DE with the joins they receive, and every root element; `where` with an empty address returns the same. Reads: `where`, `element`, `joins`, `identity`, `subtypes`, `children`, `layers`, `layer`, `node`, `context`, `links`, `citing`, `history`, `stack`, `metaforms`, `search`, and `findings`, the objects flagged missing, broken or cruft. Writes: `knowledge` with `op=` and `layer=` on every call, `tag`, `untag`, `select`, `mask`, `clear`, `hide`, `unhide`, `reexamined`, `add-metaform`, `activate`, `answer`, and `approve` on the CLI only. Each verb returns its operation's result; every join shows the layer it comes from, and every element, join and subtype its flag. A write that does not fit is stored as given and its result carries `notices`. `knowledge` takes `flag=` and `flag_note=` on `add-element`, `add-join` and `add-subtype`. Tools are `map_<verb>`.
 
 ## Settings
 

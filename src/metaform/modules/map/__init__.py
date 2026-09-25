@@ -50,8 +50,19 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
           Noun('after', 'The cursor the previous page returned.', required=False))
 
 
+def roots(ctx: Context) -> Any:
+    """The map's entry: the VE and the DE with their joins, and every root element, STORE-025."""
+    return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+
+
 def where(ctx: Context) -> Any:
+    if not ctx.nouns['address']:
+        return roots(ctx)
     return _store(ctx).where(ctx.nouns['address'], **_reading(ctx))
+
+
+def findings(ctx: Context) -> Any:
+    return _store(ctx).findings(ctx.nouns.get('flag'), ctx.nouns.get('layer'), **_reading(ctx), **_paging(ctx))
 
 
 def element(ctx: Context) -> Any:
@@ -215,16 +226,19 @@ def knowledge(ctx: Context) -> Any:
                            provenance=provenance, sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
         (address,) = _need(ctx, 'address')
-        return store.add_element(name, address, **_optional(ctx, 'name', 'name_length', 'role', 'refs', 'extra'))
+        return store.add_element(name, address, **_optional(ctx, 'name', 'name_length', 'role', 'refs', 'extra',
+                                                            'flag', 'flag_note'))
     if op == 'add-join':
         receiver, provider, purpose, function, relation, observation = _need(
             ctx, 'receiver', 'provider', 'purpose', 'function', 'relation', 'observation')
         return store.add_join(name, receiver, provider, purpose=purpose, function=function, relation=relation,
-                              observation=observation, **_optional(ctx, 'non_goal', 'type', 'refs', 'extra'))
+                              observation=observation, **_optional(ctx, 'non_goal', 'type', 'refs', 'extra', 'flag',
+                                                                   'flag_note'))
     if op == 'add-subtype':
         join, address = _need(ctx, 'join', 'address')
         return store.add_subtype(name, join, address, **_optional(ctx, 'function', 'relation', 'observation', 'name',
-                                                                  'name_length', 'role', 'refs', 'extra'))
+                                                                  'name_length', 'role', 'refs', 'extra', 'flag',
+                                                                  'flag_note'))
     if op == 'add-property':
         element_ref, value = _need(ctx, 'element', 'value')
         return store.add_property(name, element_ref, value, **_optional(ctx, 'refs', 'extra'))
@@ -306,6 +320,8 @@ KNOWLEDGE_NOUNS = (
     _noun('reason', 'correct: why.'),
     _noun('evidence', 'correct: what shows it.'),
     _noun('remove', 'correct: remove the thing instead of changing it.', 'bool'),
+    _noun('flag', 'add-element, add-join and add-subtype: missing, broken or cruft; leave it out when it works.'),
+    _noun('flag_note', 'add-element, add-join and add-subtype: a short note on the flag.'),
 )
 
 RAW = ('raw',)
@@ -313,15 +329,19 @@ RAW = ('raw',)
 MODULE = Module(
     id='map',
     summary="Read and write this project's functional map and its layers.",
-    purpose="Reads and writes this project's functional map. Before changing a part, read it with map_where or "
+    purpose="Reads and writes this project's functional map. Start with map_roots: it returns the map's entry, the "
+            'VE and the DE with their joins, and the root elements. Before changing a part, read it with map_where or '
             'map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
             'map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
             'time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
-        Verb('where', where, 'The element at an address, or the subtype there with its join.',
-             nouns=(Noun('address', 'A dotted namespace address.'),), switches=RAW),
+        Verb('roots', roots, "The map's entry: the VE and the DE with their joins, and every root element.",
+             nouns=PAGING, switches=RAW),
+        Verb('where', where, 'The element at an address, or the subtype there with its join; with an empty '
+                             "address, the map's entry.",
+             nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),), switches=RAW),
         Verb('element', element, 'One element with its descriptors and refs.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
         Verb('joins', joins, 'The joins an element owns, or with as=provider those it serves.',
@@ -357,6 +377,9 @@ MODULE = Module(
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
+        Verb('findings', findings, 'The objects the intake flagged missing, broken or cruft.',
+             nouns=(_noun('flag', 'missing, broken or cruft.'), _noun('layer', 'Only this layer.'), *PAGING),
+             switches=RAW),
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '

@@ -143,3 +143,65 @@ Adding an observation writes the `items` row, its `current_items` pointer, and t
 Meanwhile: the test requires exactly those four rows and nothing else.
 Blocks: nothing.
 
+
+## Step 10, intake and reporting
+
+**Q26. The words of the stop rule and the feedback request in the instructions. (MCP-007, BASE-044, CLI-034)**
+MCP-007 says the base text always tells agents to stop and submit a trouble report instead of retrying, and asks for process feedback when `--debug` is on, but gives no words; the base text itself "reads exactly" the earlier paragraph.
+Meanwhile: the base text keeps its paragraph and gains a second one, the intake footer's own sentence: `If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have in its shape field; do not retry.` With `--debug` on, one more paragraph follows: `Submit feedback on the Metaform process with the feedback tool: bad semantics, a tool that did not match its schema, where you got stuck.`
+Blocks: nothing.
+
+**Q27. `map where` with no address. (BASE-038, BASE-043)**
+BASE-038 says `where` with no address returns the entry, but `address` is a required noun, and required nouns are positional, BASE-043; an optional one is written `address=...`.
+Meanwhile: `address` stays required and positional; an empty address, `metaform map where ''` or `map_where {"address": ""}`, returns what `roots` returns. `map_where {}` is an error naming the missing noun.
+Blocks: nothing.
+
+**Q28. How the chassis lets `mcp serve` run on any surface. (CLI-022, MCP-004, BASE-001, BASE-035)**
+The chassis may not name a module, so it needs a declaration to tell a transport from a command an agent runs; BASE-035's `Verb` has none.
+Meanwhile: `Verb` gains `transport: bool = False`; a transport verb runs whatever the surface. `mcp serve` declares it. The template changelog records it as 0.3.0.
+Blocks: nothing.
+
+**Q29. An `intake_submit` with no `elements` at all. (BASE-039, BASE-044)**
+A missing required field is "stored empty", but an intake with no elements at all would set `has_intake()` true with an empty map.
+Meanwhile: a call with no `elements` is a call that cannot be read: nothing is stored and one notice says to save the result with the `feedback` tool's `shape` field.
+Blocks: nothing.
+
+**Q30. The export document and the new tables. (STORE-027, STORE-042, STORE-043, STORE-009)**
+The document's member list predates `findings`, `element_roles` and `reports`, so a round trip would lose the flags.
+Meanwhile: each metaform in the document also carries `element_roles` and `findings`, and import adds them for the layers it adds. `reports` rows are not carried, because their files are not in the document.
+Blocks: nothing.
+
+**Q31. Discarding a layer's findings without a scan. (STORE-042, STORE-032, STORE-005)**
+`findings` has indexes by flag and by target, but not by layer, so `discard` would scan it.
+Meanwhile: the store adds `CREATE INDEX findings_by_layer ON findings(layer_id)`, as with Q4.
+Blocks: nothing.
+
+**Q32. Text or a file in `feedback report=` and `shape=` on the CLI. (BASE-045)**
+BASE-045 lets report and shape be text, a file path or `-`, without saying how the two are told apart.
+Meanwhile: `-` reads standard input; a value that names an existing file reads it; any other value is the text itself. Over MCP they are always text.
+Blocks: nothing.
+
+**Q33. The way back named after a second intake. (BASE-039, CLI-031)**
+BASE-039 writes the way back as `metaform activate <earlier name>`; the chassis verb is `metaform activate metaform <name>`.
+Meanwhile: the notice names `metaform activate metaform <earlier name>`, the command that works.
+Blocks: nothing.
+
+**Q34. A tool argument the tool does not declare. (BASE-043, BASE-044, MCP-003)**
+The schema says `additionalProperties: false`, and the SDK does not enforce it; BASE-043 keeps an unknown `name=value` in the record's `extra`, which only verbs with an `extra` noun have.
+Meanwhile: over MCP an unknown argument is named in one `Notice:` line and ignored; the call still runs.
+Blocks: nothing.
+
+**Q35. The roles index after a correction. (STORE-009, STORE-017)**
+`element_roles` is written with each descriptor that carries a role and follows `edit`, `remove` and `discard` of it; a correction layer that changes an intake descriptor's role writes its own descriptor version, and the index row of the intake layer stays as the intake wrote it.
+Meanwhile: `roots` picks the entry by the intake layer's roles and shows each element's current role from its descriptors.
+Blocks: nothing in the first working test.
+
+**Q36. Where a subtype's flag is given. (MAP-046, BASE-039)**
+BASE-039 puts `flag` on element objects and join objects; a subtype join is a join object and its `element` is an element object.
+Meanwhile: the subtype's flag is the subtype join's `flag`, else its element's.
+Blocks: nothing.
+
+**Q37. Stores written before this step. (STORE-029, D24)**
+The layout gained `element_roles`, `findings` and `reports` while the schema version stays 1, so a store written by the earlier build lacks them.
+Meanwhile: nothing migrates them, per D24; such a store is re-created.
+Blocks: nothing.

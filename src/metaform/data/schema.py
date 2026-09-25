@@ -1,9 +1,11 @@
 """The SQL of one metaform's store, STORE-003 to STORE-040, at schema version 1.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
-The only index added beyond the section's own is `elements_by_address`, which
+Two indexes are added beyond the section's own: `elements_by_address`, which
 lets a correction layer put an element back at an address by reusing the most
-recently removed element there without a scan, STORE-017 and STORE-005.
+recently removed element there without a scan, STORE-017 and STORE-005, and
+`findings_by_layer`, which lets discarding a layer remove its findings rows
+without a scan, STORE-042 and STORE-032.
 """
 from __future__ import annotations
 
@@ -265,4 +267,37 @@ CREATE TABLE IF NOT EXISTS plans(
   item_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS plans_by_layer ON plans(layer_id);
+
+CREATE TABLE IF NOT EXISTS element_roles(
+  element_id TEXT NOT NULL,
+  layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
+  role       TEXT NOT NULL,
+  PRIMARY KEY(element_id, layer_id)
+);
+CREATE INDEX IF NOT EXISTS element_roles_by_role ON element_roles(layer_id, role);
+CREATE INDEX IF NOT EXISTS element_roles_by_layer ON element_roles(layer_id, element_id);
+
+CREATE TABLE IF NOT EXISTS findings(
+  row         INTEGER PRIMARY KEY,
+  target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join','subtype')),
+  target_id   TEXT NOT NULL,
+  layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
+  flag        TEXT NOT NULL CHECK(flag IN ('missing','broken','cruft')),
+  note        TEXT,
+  UNIQUE(target_kind, target_id, layer_id)
+);
+CREATE INDEX IF NOT EXISTS findings_by_flag ON findings(flag, row);
+CREATE INDEX IF NOT EXISTS findings_by_target ON findings(target_kind, target_id);
+CREATE INDEX IF NOT EXISTS findings_by_layer ON findings(layer_id);
+
+CREATE TABLE IF NOT EXISTS reports(
+  report_id TEXT PRIMARY KEY,
+  run_id    TEXT NOT NULL,
+  layer_id  TEXT REFERENCES layers(layer_id),
+  kind      TEXT NOT NULL CHECK(kind IN ('report','feedback','shape')),
+  created   TEXT NOT NULL,
+  size      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reports_by_layer ON reports(layer_id, kind);
+CREATE INDEX IF NOT EXISTS reports_by_time ON reports(created, report_id);
 """

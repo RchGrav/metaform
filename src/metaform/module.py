@@ -24,8 +24,9 @@ from .errors import Stop
 if TYPE_CHECKING:
     from .data import Store
 
-__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call', 'context', 'instructions',
-           'result_json', 'surface']
+__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call', 'context', 'feedback',
+           'instructions', 'list_reports', 'read_report', 'on_this_system', 'result_json', 'save_report', 'setting_value',
+           'surface', 'tool_arguments']
 
 VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
 NOUN_KINDS = ('str', 'int', 'bool', 'json')
@@ -54,7 +55,11 @@ class Noun:
 
 @dataclass(frozen=True)
 class Verb:
-    """One command of a module. `switches` names the settings the verb reads, CLI-012."""
+    """One command of a module. `switches` names the settings the verb reads, CLI-012.
+
+    A `transport` verb, such as `mcp serve`, is how a host reaches Metaform rather than a command an agent runs,
+    so it runs whatever the folder's command surface; the surface narrows what it serves, CLI-022 and MCP-004.
+    """
     name: str
     run: Callable[..., Any]
     summary: str
@@ -65,6 +70,7 @@ class Verb:
     caution: str = ''
     supported_os: tuple[str, ...] | None = None
     surfaces: tuple[str, ...] = SURFACES
+    transport: bool = False
 
     def __post_init__(self) -> None:
         if not VERB_NAME.fullmatch(self.name):
@@ -157,6 +163,12 @@ class Context:
         return loader.spawn(self.module, coroutine)
 
 
+def on_this_system(verb: Verb) -> bool:
+    """Whether a verb runs on this system: its own systems when it narrows them, BASE-016."""
+    from .module_metadata import current_os
+    return verb.supported_os is None or current_os() in verb.supported_os
+
+
 def call(function: Callable[..., Any], *args: Any) -> Any:
     """Run a function or a coroutine function the same way, BASE-009."""
     result = function(*args)
@@ -202,3 +214,50 @@ def result_json(result: Any) -> str:
     """A verb's result as the JSON every surface shows, BASE-036."""
     from . import results
     return results.as_json(result)
+
+
+def tool_arguments(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tuple[str, ...] = (),
+                   folder: Path | None = None) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    """A tool call's nouns and switches, checked as the command line checks them, and the names it does not know."""
+    from . import grammar
+    parsed = grammar.from_json(module, verb, arguments, ignore=ignore, folder=folder)
+    return parsed.nouns, parsed.switches, parsed.unknown
+
+
+def setting_value(key: str, value: Any, folder: Path) -> Any:
+    """A setting's value from its JSON form, checked as `metaform set` checks it, CLI-027."""
+    from . import grammar, settings
+    setting = settings.SCHEMA.get(key)
+    if setting is None:
+        raise Stop(f'{key} is not a setting.', 'metaform help switches')
+    try:
+        return grammar.switch_value(setting, value, folder)
+    except settings.SettingError as error:
+        raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
+
+
+def feedback(folder: Path, text: str, *, layer: str | None = None, report: str | None = None,
+             shape: str | None = None, project: str | None = None) -> dict[str, Any]:
+    """Save feedback on the Metaform process, with a report and a shape when given, BASE-045."""
+    from . import reports
+    return reports.feedback(folder, text, layer=layer, report=report, shape=shape, project=project)
+
+
+def save_report(project: str, run: str, kind: str, text: str, *, store: Store | None = None,
+                layer: str | None = None) -> str:
+    """Write one report, feedback or shape file for a run and record it, BASE-045. Returns the file name."""
+    from . import reports
+    return reports.write(project, run, kind, text, store=store, layer=layer)
+
+
+def list_reports(folder: Path, *, project: str | None = None, kind: str | None = None, layer: str | None = None,
+                 limit: int = 500, after: str | None = None) -> Any:
+    """The report, feedback and shape files for the folder's project, BASE-045."""
+    from . import reports
+    return reports.list_reports(folder, project=project, kind=kind, layer=layer, limit=limit, after=after)
+
+
+def read_report(folder: Path, name: str, *, project: str | None = None) -> str:
+    """One listed report file's text exactly, BASE-045."""
+    from . import reports
+    return reports.read_report(folder, name, project=project)

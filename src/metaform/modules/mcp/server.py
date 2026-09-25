@@ -1,11 +1,13 @@
 """The MCP server, MCP-002: the official SDK's low-level Server over stdio.
 
 Tools are computed on every request from the live module declarations and the
-folder's command surface, MCP-003 and MCP-004. Each call gets its own Context,
-BASE-028: a coroutine verb is awaited in the server's loop, so the host's
-cancellation reaches it; a plain function runs in a worker thread. The result
-is one text block of `say` lines, when there are any, and one block holding
-the result, BASE-036.
+folder's command surface, MCP-003 and MCP-004, plus the chassis tools that
+always run, `set`, `feedback`, `list_reports` and `read_report`, CLI-022 and
+BASE-045. Each call gets its own Context, BASE-028, with its arguments checked
+as the command line checks them, MCP-005: a coroutine verb is awaited in the
+server's loop, so the host's cancellation reaches it; a plain function runs in
+a worker thread. The result is one text block of `say` lines, when there are
+any, and one block holding the result, BASE-036.
 """
 from __future__ import annotations
 
@@ -16,22 +18,25 @@ from typing import Any
 import anyio
 
 from metaform import settings
-from metaform.module import Module, Stop, Verb, call, context, instructions, result_json, surface
+from metaform.module import (Context, Module, Stop, Verb, call, context, feedback, instructions, list_reports,
+                             on_this_system, read_report, result_json, setting_value, surface, tool_arguments)
 
 PROJECT = {'type': 'string', 'description': "A registered project id; overrides the folder's project for this call."}
 LAYERS = {'type': 'array', 'items': {'type': 'string'},
           'description': 'The layers, by name or tag, toggled on for this call only.'}
-NOUN_TYPES = {'str': {'type': 'string'}, 'int': {'type': 'integer'}, 'bool': {'type': 'boolean'}}
+NOUN_TYPES: dict[str, dict[str, Any]] = {'str': {'type': 'string'}, 'int': {'type': 'integer'},
+                                         'bool': {'type': 'boolean'}}
+PER_CALL = ('project', 'layers', 'confirm')
+TEXT = {'type': 'string'}
+
+Outcome = tuple[bool, list[str]]
 
 
 def _here(verb: Verb) -> bool:
-    import platform
-    system = platform.system().lower()
-    system = 'macos' if system == 'darwin' else system
-    return 'mcp' in verb.surfaces and (verb.supported_os is None or system in verb.supported_os)
+    return 'mcp' in verb.surfaces and on_this_system(verb)
 
 
-def setting_schema(setting: Any, folder: Path) -> dict[str, Any]:
+def setting_schema(setting: settings.Setting, folder: Path) -> dict[str, Any]:
     """A setting's JSON type over MCP, CLI-027."""
     if setting.kind == 'bool':
         return {'type': 'boolean'}
@@ -42,7 +47,7 @@ def setting_schema(setting: Any, folder: Path) -> dict[str, Any]:
     if setting.kind == 'select':
         try:
             choices = setting.options(folder)
-        except Exception:  # A module's choices that fail give a plain string.
+        except Exception:  # noqa: BLE001  a module's failing choices function gives a plain string, not a dead list
             choices = []
         return {'type': 'string', 'enum': choices} if choices else {'type': 'string'}
     return {'type': 'string'}
@@ -50,7 +55,7 @@ def setting_schema(setting: Any, folder: Path) -> dict[str, Any]:
 
 def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
     properties: dict[str, Any] = {}
-    required = []
+    required: list[str] = []
     for noun in verb.nouns:
         kind = dict(noun.schema) if noun.schema is not None else ({} if noun.kind == 'json' else
                                                                   dict(NOUN_TYPES[noun.kind]))
@@ -79,62 +84,119 @@ def set_schema(folder: Path) -> dict[str, Any]:
     return {'type': 'object', 'properties': properties, 'additionalProperties': False}
 
 
-def _error(stop: Stop) -> tuple[bool, list[str]]:
+CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
+    'feedback': ('Save feedback on the Metaform process, with a report and the shape you could not submit when you '
+                 'have them. Always available.',
+                 {'type': 'object', 'required': ['text'], 'additionalProperties': False,
+                  'properties': {'text': TEXT, 'layer': TEXT, 'report': TEXT, 'shape': TEXT, 'project': PROJECT}}),
+    'list_reports': ('List the report, feedback and shape files of this project. Always available.',
+                     {'type': 'object', 'additionalProperties': False,
+                      'properties': {'kind': {'type': 'string', 'enum': ['report', 'feedback', 'shape']},
+                                     'layer': TEXT, 'limit': {'type': 'integer'}, 'after': TEXT,
+                                     'project': PROJECT}}),
+    'read_report': ('Read one report, feedback or shape file exactly. Always available.',
+                    {'type': 'object', 'required': ['name'], 'additionalProperties': False,
+                     'properties': {'name': TEXT, 'project': PROJECT}}),
+}
+JSON_TYPES: dict[str, type] = {'string': str, 'integer': int}
+
+
+def _error(stop: Stop) -> Outcome:
     return True, [f'Error: {stop}\nNext: {stop.next_step}']
 
 
-def run_set(folder: Path, arguments: dict[str, Any]) -> tuple[bool, list[str]]:
+def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    """A chassis tool's arguments: each one of its declared JSON type, the required ones given."""
+    properties: dict[str, Any] = schema['properties']
+    for key in schema.get('required', []):
+        if key not in arguments:
+            raise Stop(f'{name} needs {key}.', 'metaform help commands')
+    checked: dict[str, Any] = {}
+    for key, value in arguments.items():
+        expected = properties.get(key)
+        if expected is None:
+            raise Stop(f'{name} has no argument {key}.', 'metaform help commands')
+        wanted = JSON_TYPES[expected['type']]
+        if not isinstance(value, wanted) or isinstance(value, bool):
+            raise Stop(f'{key} is {"text" if wanted is str else "a whole number"}, not {value!r}.',
+                       'metaform help commands')
+        checked[key] = value
+    return checked
+
+
+def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
     """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033."""
-    glue = bool(arguments.pop('glue', False))
-    changes = []
+    glue = arguments.pop('glue', False)
+    changes: list[dict[str, Any]] = []
     try:
-        for key, value in arguments.items():
-            setting = settings.SCHEMA.get(key)
-            if setting is None:
-                raise Stop(f'{key} is not a setting.', 'metaform help switches')
+        if not isinstance(glue, bool):
+            raise Stop('glue is true or false.', 'metaform help --glue')
+        typed = {key: setting_value(key, value, folder) for key, value in arguments.items()}
+        for key, value in typed.items():
             try:
                 old, new = settings.put(key, value, folder, glue=glue)
             except settings.SettingError as error:
-                raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
+                raise Stop(str(error), error.next_step or 'metaform help switches') from None
             changes.append({'key': key, 'old': old, 'new': new})
     except Stop as stop:
         return _error(stop)
     return False, [result_json({'updated': changes, 'glued': glue})]
 
 
+def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
+    """`feedback`, `list_reports` and `read_report`: always on the surface, so an agent can always report."""
+    try:
+        given = _checked(name, arguments, CHASSIS[name][1])
+        project = given.pop('project', None)
+        if name == 'feedback':
+            return False, [result_json(feedback(folder, given.pop('text'), project=project, **given))]
+        if name == 'list_reports':
+            return False, [result_json(list_reports(folder, project=project, **given))]
+        return False, [read_report(folder, given['name'], project=project)]
+    except Stop as stop:
+        return _error(stop)
+
+
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
-             lines: list[str]) -> Any:
-    arguments = dict(arguments)
-    project = arguments.pop('project', None)
-    layers = arguments.pop('layers', None)
-    confirmed = bool(arguments.pop('confirm', False))
+             lines: list[str]) -> Context:
+    project = arguments.get('project')
+    layers = arguments.get('layers')
+    confirmed = arguments.get('confirm', False)
+    if project is not None and not isinstance(project, str):
+        raise Stop('project is a registered project id, as text.', 'metaform list projects')
+    if layers is not None and (not isinstance(layers, list) or not all(isinstance(item, str) for item in layers)):
+        raise Stop('layers is a list of layer names or tags.', 'metaform map layers')
+    if not isinstance(confirmed, bool):
+        raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
     if verb.caution and not confirmed:
         raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
-    nouns = {noun.name: arguments[noun.name] for noun in verb.nouns if noun.name in arguments}
-    switches = {key: arguments[key] for key in verb.switches if key in arguments}
+    nouns, switches, unknown = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
+    lines.extend(f'Notice: {key}: {name} has no argument {key}; it was ignored.' for key in unknown)
     if layers is not None:
         switches['layers'] = list(layers)
     return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp')
 
 
-async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> tuple[bool, list[str]]:
+async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
     if name == 'set':
         return await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
+    if name in CHASSIS:
+        return await anyio.to_thread.run_sync(run_chassis, folder, name, dict(arguments))
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
         return True, [f'Error: No tool {name} on this surface.\nNext: metaform help commands']
     module, verb = known[name]
     lines: list[str] = []
     try:
-        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, arguments, lines)
+        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
             result = await anyio.to_thread.run_sync(call, verb.run, ctx)
     except Stop as stop:
         return _error(stop)
-    except Exception as error:  # Unexpected: the error and one next step, MCP-006.
+    except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
         return True, [f'Error: {type(error).__name__}: {error}\nNext: metaform list modules']
     blocks = ['\n'.join(lines)] if lines else []
     if result is not None:
@@ -149,15 +211,18 @@ def serve(folder: Path) -> None:
 
     from metaform import __version__
 
+    def build() -> list[Any]:
+        found = [types.Tool(name=name, description=verb.summary + (f' Caution: {verb.caution}' if verb.caution
+                                                                    else ''),
+                            input_schema=verb_schema(verb, folder))
+                 for name, (_, verb) in tools(folder).items()]
+        found.append(types.Tool(name='set', description="Save settings for the server's folder, as metaform set "
+                                                        'does.', input_schema=set_schema(folder)))
+        found += [types.Tool(name=name, description=description, input_schema=schema)
+                  for name, (description, schema) in CHASSIS.items()]
+        return found
+
     async def list_tools(ctx: Any, params: Any) -> Any:
-        def build() -> list[Any]:
-            found = [types.Tool(name=name, description=verb.summary + (f' Caution: {verb.caution}' if verb.caution
-                                                                        else ''),
-                                input_schema=verb_schema(verb, folder))
-                     for name, (_, verb) in tools(folder).items()]
-            found.append(types.Tool(name='set', description="Save settings for the server's folder, as metaform set "
-                                                            'does.', input_schema=set_schema(folder)))
-            return found
         return types.ListToolsResult(tools=await anyio.to_thread.run_sync(build))
 
     async def call_tool(ctx: Any, params: Any) -> Any:

@@ -9,6 +9,7 @@ STORE-019.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -19,16 +20,20 @@ from .. import home
 from ..errors import StoreError
 from . import corrections
 from .names import reading, short_name
-from .ids import (check_address, check_layer_name, check_tag, decode_extra, encode_extra, encode_value, is_id,
-                  new_id, prefixes, refs_list)
-from .records import (ChallengeState, Citation, ContextView, Descriptor, Element, Item, Join, Layer, LayerGroup,
-                      Node, NodeView, Page, Plan, Property, Provenance, Ref, Selection, Subtype, Version, Where)
+from .ids import (ADDRESS, check_address, check_layer_name, check_tag, decode_extra, encode_extra, encode_value,
+                  is_id, new_id, prefixes, refs_list)
+from .records import (ChallengeState, Citation, ContextView, Descriptor, Element, Finding, Item, Join, Layer,
+                      LayerGroup, Node, NodeView, Notice, Page, Plan, Property, Provenance, Ref, Report, RootElement,
+                      RootEntry, Roots, Selection, Subtype, Version, Where)
 from .selection import LAYER_COLUMNS, LayerRow, Resolver, all_layers, hidden_closure, layer_row, resolve_names
 from .session import Session, Tx
 
 LIMIT = 500
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')
+FLAGS = ('missing', 'broken', 'cruft')
+REPORT_KINDS = ('report', 'feedback', 'shape')
+TEXT_FIELDS = ('purpose', 'function', 'relation', 'observation', 'non_goal')
 METAFORM_KINDS = corrections.METAFORM_KINDS
 EDITABLE = {
     'element': ('address', 'extra'),
@@ -43,15 +48,59 @@ def _correct_step(thing: str = '<id>') -> str:
     return f'metaform map knowledge op=correct layer=<correction layer> id={thing} reason=<why>'
 
 
+def _is_descriptor(value: str) -> bool:
+    decoded = json.loads(value)
+    return isinstance(decoded, dict) and isinstance(decoded.get('descriptor'), dict)
+
+
+def _address_form(address: str) -> bool:
+    return bool(ADDRESS.fullmatch(address)) and not is_id(address)
+
+
+def _text(value: Any, field: str, notices: list[Notice]) -> str | None:
+    """A text column's value: text as given, or anything else written as JSON text with a notice, BASE-044."""
+    if value is None or isinstance(value, str):
+        return value
+    notices.append(Notice(field, f'{field} is not text; it was stored as the JSON text of what was given.'))
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _holds_records(value: Any) -> bool:
+    return isinstance(value, list) and any(isinstance(member, dict) for member in value)
+
+
+def _extra(extra: Any, where: str, notices: list[Notice]) -> tuple[dict[str, Any] | None, list[tuple[str, Any]]]:
+    """An `extra` object, and the records it held that are split out to be items of their own, STORE-004.
+
+    An `extra` that is not an object is kept as `{"value": <what was given>}`, STORE-015. Each list of records
+    under a key is taken out; each record becomes its own item, `{<key>: <record>}`, with a notice.
+    """
+    if extra is None:
+        return None, []
+    if not isinstance(extra, dict):
+        notices.append(Notice('extra', f'extra on {where} is not an object; it was kept as {{"value": ...}}.'))
+        return {'value': extra}, []
+    kept: dict[str, Any] = {}
+    split: list[tuple[str, Any]] = []
+    for key, value in extra.items():
+        if _holds_records(value):
+            split += [(str(key), member) for member in value]
+            notices.append(Notice('extra', f'extra.{key} on {where} held a list of records; each was stored as '
+                                           'its own item.'))
+        else:
+            kept[str(key)] = value
+    return (kept or None), split
+
+
 class Store:
     """Reads and writes one project's active metaform."""
 
-    def __init__(self, project: str, *, toggled: Sequence[str] | None = None) -> None:
+    def __init__(self, project: str, *, toggled: Sequence[str] | None = None, metaform: str | None = None) -> None:
         record = home.project(project)
         if record is None:
             raise StoreError(f'No project {project} is registered.', 'metaform list projects')
         self._record = record
-        self._session = Session(record.project_id)
+        self._session = Session(record.project_id, metaform)
         self.toggled: tuple[str, ...] = tuple(toggled or ())
 
     # ------------------------------------------------------------------ plumbing
@@ -304,6 +353,9 @@ class Store:
                         db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
             db.execute('DELETE FROM plans WHERE layer_id=?', (layer_id,))
             db.execute('DELETE FROM selections WHERE layer_id=?', (layer_id,))
+            db.execute('DELETE FROM element_roles WHERE layer_id=?', (layer_id,))
+            db.execute('DELETE FROM findings WHERE layer_id=?', (layer_id,))  # findings_by_layer
+            db.execute('UPDATE reports SET layer_id=NULL WHERE layer_id=?', (layer_id,))
             for table in ('hidden_layers', 'layer_tags', 'layer_fields', 'provenance'):
                 db.execute(f'DELETE FROM {table} WHERE layer_id=?', (layer_id,))
             db.execute('DELETE FROM layer_sources WHERE layer_id=?', (layer_id,))
@@ -376,15 +428,25 @@ class Store:
 
     # ---------------------------------------------------------------- the map
 
-    def add_element(self, layer: str, address: str, *, name: str | None = None, name_length: int | None = None,
-                    role: str | None = None, refs: Iterable[Any] = (), extra: dict[str, Any] | None = None) -> Element:
-        """Write an element, or return the one already at the address, STORE-009."""
+    def add_element(self, layer: str, address: str, *, name: Any = None, name_length: Any = None,
+                    role: Any = None, refs: Iterable[Any] = (), extra: Any = None, flag: Any = None,
+                    flag_note: Any = None) -> Element:
+        """Write an element, or return the one already at the address, STORE-009. Nothing is refused, BASE-044."""
         pairs = refs_list(refs)
+        if not isinstance(address, str):
+            raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
+        notices: list[Notice] = []
+        kept_extra, split = _extra(extra, address, notices)
         with self._write() as tx:
             found = self._layer(tx, layer)
             self._writable(tx, found)
-            check_address(address, found.name)
-            encoded_extra = encode_extra(extra, address)
+            if not _address_form(address):
+                notices.append(Notice('address', f'{address!r} is not in the address form, dotted lowercase segments '
+                                                 'of letters, digits and underscores; it was stored as given.'))
+            if name_length is not None and (not isinstance(name_length, int) or isinstance(name_length, bool)
+                                            or name_length < 1):
+                notices.append(Notice('name_length', 'name_length is not a whole number of at least 1; it was '
+                                                     'stored as given.'))
             descriptor = {key: value for key, value in (('name', name), ('name_length', name_length),
                                                         ('role', role)) if value is not None}
             current = self._current_element(tx, address)
@@ -393,31 +455,75 @@ class Store:
                 differs = self._descriptor_differs(tx, element_id, descriptor)
                 if (descriptor or pairs) and not self._has_descriptor(tx, element_id, found.layer_id):
                     self._write_descriptor(tx, found, element_id, descriptor, pairs)
+                self._split_items(tx, found, 'element', element_id, split)
+                self._flag(tx, 'element', element_id, found, flag, flag_note, notices)
                 record = self._element_record(tx, element_id, None)
                 assert record is not None
-                return _replace(record, existing=True, differs=differs)
-            if self._is_subtype(tx, address):
-                raise StoreError(f'{address} is held by a subtype; an address holds one element or one subtype.',
-                                 f'metaform map where {address}')
-            element_id = self._reused_element(tx, found, address) or new_id()
-            if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
-                tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
-                self._identity(tx, element_id, 'element')
-            self._types(tx, address)
-            cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, extra) VALUES (?, ?, ?, ?)',
-                                   (element_id, found.layer_id, address, encoded_extra))
-            if found.kind != 'correction':
-                tx.db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, 0)',
-                              (element_id, cursor.lastrowid, address))
+                return dataclasses.replace(record, existing=True, differs=differs, notices=tuple(notices))
+            holder = self._subtype_holding(tx, address)
+            if holder is not None:
+                notices.append(Notice('address', f'{address} is also held by subtype {holder}; the element was stored '
+                                                 'as given.'))
+            element_id = self._new_element(tx, found, address, kept_extra)
             if descriptor or pairs:
                 self._write_descriptor(tx, found, element_id, descriptor, pairs)
+            self._split_items(tx, found, 'element', element_id, split)
+            self._flag(tx, 'element', element_id, found, flag, flag_note, notices)
             if found.kind == 'correction':
+                length = name_length if isinstance(name_length, int) and not isinstance(name_length, bool) else None
                 return Element(element_id, address, found.layer_id, found.name, reading(address),
-                               short_name(address, descriptor.get('name_length')), descriptor.get('name'), descriptor.get('name_length'), descriptor.get('role'),
-                               extra=extra)
+                               short_name(address, length), name if isinstance(name, str) else None, length,
+                               role if isinstance(role, str) else None, extra=kept_extra, notices=tuple(notices))
             record = self._element_record(tx, element_id, None)
             assert record is not None
-            return record
+            return dataclasses.replace(record, notices=tuple(notices))
+
+    def _new_element(self, tx: Tx, layer: LayerRow, address: str, extra: dict[str, Any] | None = None) -> str:
+        """Write a new element row in a layer, reusing a removed element's id when a correction puts it back."""
+        element_id = self._reused_element(tx, layer, address) or new_id()
+        if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
+            tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
+            self._identity(tx, element_id, 'element')
+        self._types(tx, address)
+        cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, extra) VALUES (?, ?, ?, ?)',
+                               (element_id, layer.layer_id, address, encode_extra(extra, address)))
+        if layer.kind != 'correction':
+            tx.db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, 0)',
+                          (element_id, cursor.lastrowid, address))
+        return element_id
+
+    @staticmethod
+    def _subtype_holding(tx: Tx, address: str) -> str | None:
+        row = tx.db.execute('SELECT subtype_id FROM current_subtypes WHERE address=?', (address,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def _split_items(self, tx: Tx, layer: LayerRow, kind: str, thing_id: str, split: list[tuple[str, Any]]) -> None:
+        for key, record in split:
+            self._insert_item(tx, layer, kind, thing_id, {key: record}, None, None, [], None)
+
+    def _flag(self, tx: Tx, kind: str, thing_id: str, layer: LayerRow, flag: Any, note: Any,
+              notices: list[Notice]) -> None:
+        """One findings row for a flagged object, STORE-042; a flag outside the three is kept as broken."""
+        if flag is None:
+            if note is not None:
+                notices.append(Notice('flag_note', 'flag_note was given without a flag; it was not stored.'))
+            return
+        text_note = _text(note, 'flag_note', notices)
+        if flag not in FLAGS:
+            notices.append(Notice('flag', f'{flag!r} is not missing, broken or cruft; it was stored as broken with '
+                                          'the given value in its note.'))
+            given = flag if isinstance(flag, str) else json.dumps(flag, ensure_ascii=False)
+            text_note = given if text_note is None else f'{given}: {text_note}'
+            flag = 'broken'
+        existing = tx.db.execute('SELECT flag, note FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
+                                 (kind, thing_id, layer.layer_id)).fetchone()
+        if existing is not None:
+            if (existing[0], existing[1]) != (flag, text_note):
+                notices.append(Notice('flag', f'This {kind} is already flagged {existing[0]} in {layer.name}; that '
+                                              'flag was kept.'))
+            return
+        tx.db.execute('INSERT INTO findings(target_kind, target_id, layer_id, flag, note) VALUES (?, ?, ?, ?, ?)',
+                      (kind, thing_id, layer.layer_id, flag, text_note))
 
     def _reused_element(self, tx: Tx, layer: LayerRow, address: str) -> str | None:
         """A correction layer's add at an address whose element was removed reuses that element, STORE-017."""
@@ -452,65 +558,127 @@ class Store:
 
     def _write_descriptor(self, tx: Tx, layer: LayerRow, element_id: str, descriptor: dict[str, Any],
                           pairs: list[tuple[str, str]]) -> None:
+        """The element's descriptor item, and its role in `element_roles` so the entry is one read, STORE-009."""
         self._insert_item(tx, layer, 'element', element_id, {'descriptor': descriptor}, None, None, pairs, None)
+        self._set_role(tx, element_id, layer.layer_id, descriptor.get('role'))
 
-    def add_join(self, layer: str, receiver: Any, provider: Any, *, purpose: str | None, function: str | None,
-                 relation: str | None, observation: str | None, non_goal: str | None = None, type: str = 'purpose',
-                 refs: Iterable[Any] = (), extra: dict[str, Any] | None = None) -> Join:
-        """Write one join, owned by its receiver and served by its provider, STORE-010."""
+    @staticmethod
+    def _set_role(tx: Tx, element_id: str, layer_id: str, role: Any) -> None:
+        tx.db.execute('DELETE FROM element_roles WHERE element_id=? AND layer_id=?', (element_id, layer_id))
+        if isinstance(role, str) and role:
+            tx.db.execute('INSERT INTO element_roles(element_id, layer_id, role) VALUES (?, ?, ?)',
+                          (element_id, layer_id, role))
+
+    def _end(self, tx: Tx, ref: Any, layer: LayerRow, what: str, notices: list[Notice]) -> str:
+        """A join end by address or id. An address that names no element gets one in the writing layer, BASE-044."""
+        if isinstance(ref, Node):
+            if ref.kind != 'element':
+                raise StoreError(f'{ref} is a {ref.kind}; a join end is an element.', 'metaform map where <address>')
+            ref = ref.id
+        if not isinstance(ref, str):
+            raise StoreError(f'The {what} {ref!r} is not an address or an element id.', 'metaform map where <address>')
+        current = self._current_element(tx, ref)
+        if current is not None:
+            return str(current['element_id'])
+        if layer.kind == 'correction':
+            column = 'element_id' if is_id(ref) else 'address'
+            row = tx.db.execute(f"SELECT element_id FROM elements WHERE {column}=? AND layer_id=? AND op != 'remove'",
+                                (ref, layer.layer_id)).fetchone()
+            if row is not None:
+                return str(row[0])
+        if is_id(ref):
+            raise StoreError(f'No element has the id {ref}.', 'metaform map where <address>')
+        holder = self._subtype_holding(tx, ref)
+        if holder is not None:
+            notices.append(Notice(what, f'{ref} is a subtype\'s address; an element was created there in layer '
+                                        f'{layer.name} so the join could be stored as given.'))
+        else:
+            notices.append(Notice(what, f'{ref} was not an element; it was created in layer {layer.name}.'))
+        return self._new_element(tx, layer, ref)
+
+    def add_join(self, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
+                 relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
+                 refs: Iterable[Any] = (), extra: Any = None, flag: Any = None, flag_note: Any = None) -> Join:
+        """Write one join, owned by its receiver and served by its provider, STORE-010. Nothing is refused."""
         pairs = refs_list(refs)
+        notices: list[Notice] = []
+        texts = {field: _text(value, field, notices) for field, value in (
+            ('purpose', purpose), ('function', function), ('relation', relation), ('observation', observation),
+            ('non_goal', non_goal))}
+        kind = _text(type, 'type', notices) or 'purpose'
+        kept_extra, split = _extra(extra, 'the join', notices)
         with self._write() as tx:
             found = self._layer(tx, layer)
             self._writable(tx, found)
-            receiver_id = self._element_id(tx, receiver, found, 'The receiver')
-            provider_id = self._element_id(tx, provider, found, 'The provider')
+            receiver_id = self._end(tx, receiver, found, 'receiver', notices)
+            provider_id = self._end(tx, provider, found, 'provider', notices)
             if receiver_id == provider_id:
-                raise StoreError(f'A join runs from a receiver to a different provider; {receiver} cannot serve '
-                                 'itself.', 'metaform help map knowledge')
-            if not isinstance(type, str) or not type:
-                raise StoreError('A join needs a type.', 'metaform help map knowledge')
-            if type != 'purpose':
-                check_address(type, found.name)
-            encoded_extra = encode_extra(extra, 'the join')
+                notices.append(Notice('provider', 'The provider is the receiver itself; the join was stored as '
+                                                  'given, D82.'))
+            if kind != 'purpose' and not _address_form(kind):
+                notices.append(Notice('type', f'{kind!r} is not purpose or an address; it was stored as given.'))
             join_id = new_id()
             tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
             self._identity(tx, join_id, 'join')
             cursor = tx.db.execute(
                 'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, relation, '
                 'observation, non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (join_id, found.layer_id, type, receiver_id, provider_id, purpose, function, relation, observation,
-                 non_goal, encoded_extra, self._top(tx)))
+                (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'],
+                 texts['relation'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
+                 self._top(tx)))
             row = int(cursor.lastrowid or 0)
             if found.kind != 'correction':
                 tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
                               (join_id, row, receiver_id, provider_id))
             self._write_refs(tx, 'join', row, pairs)
-            return self._join_record(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(),
-                                     all_layers(tx.db))
+            self._split_items(tx, found, 'join', join_id, split)
+            self._flag(tx, 'join', join_id, found, flag, flag_note, notices)
+            record = self._join_record(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(),
+                                       all_layers(tx.db))
+            return dataclasses.replace(record, notices=tuple(notices))
 
-    def add_subtype(self, layer: str, join: str, address: str, *, function: str | None = None,
-                    relation: str | None = None, observation: str | None = None, name: str | None = None,
-                    name_length: int | None = None, role: str | None = None, refs: Iterable[Any] = (),
-                    extra: dict[str, Any] | None = None, purpose: str | None = None) -> Subtype:
+    def add_subtype(self, layer: str, join: str, address: str, *, function: Any = None, relation: Any = None,
+                    observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
+                    refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
+                    flag_note: Any = None) -> Subtype:
         """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
         pairs = refs_list(refs)
+        if not isinstance(address, str):
+            raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
+        notices: list[Notice] = []
+        kept_extra, split = _extra(extra, address, notices)
+        moved: dict[str, Any] = {}
+        if purpose is not None:
+            moved['purpose'] = purpose
+            notices.append(Notice('purpose', 'A subtype has no purpose of its own; the purpose was kept in its '
+                                             'extra.'))
+        if role is not None and role not in SUBTYPE_ROLES:
+            moved['role'] = role
+            notices.append(Notice('role', f'{role!r} is not DE, SE or NE; it was kept in the subtype\'s extra.'))
+            role = None
+        if name_length is not None and (not isinstance(name_length, int) or isinstance(name_length, bool)):
+            moved['name_length'] = name_length
+            notices.append(Notice('name_length', 'name_length is not a whole number; it was kept in the subtype\'s '
+                                                 'extra.'))
+            name_length = None
+        if moved:
+            kept_extra = {**(kept_extra or {}), **moved}
+        texts = {field: _text(value, field, notices) for field, value in (
+            ('function', function), ('relation', relation), ('observation', observation), ('name', name))}
         with self._write() as tx:
             found = self._layer(tx, layer)
             self._writable(tx, found)
-            if purpose is not None:
-                raise StoreError(f'Subtype {address} has a purpose; a subtype has none of its own. A part with its '
-                                 'own purpose is its own element with its own join.',
-                                 f'metaform map knowledge op=add-element layer={found.name} address={address}')
-            check_address(address, found.name)
-            if role is not None and role not in SUBTYPE_ROLES:
-                raise StoreError(f'{role!r} is not a subtype role: use DE, SE or NE.', 'metaform help map knowledge')
-            join_id = self._node_id(tx, Node('join', join), found) if is_id(join) else None
+            join_id = self._node_id(tx, Node('join', join), found) if isinstance(join, str) and is_id(join) else None
             if join_id is None:
-                raise StoreError(f'{join} is not a join in this project.', 'metaform map joins <element>')
-            if tx.db.execute('SELECT 1 FROM current_subtypes WHERE address=?', (address,)).fetchone() or \
-                    self._current_element(tx, address) is not None:
-                raise StoreError(f'{address} is already held by an element or a subtype.', f'metaform map where {address}')
-            encoded_extra = encode_extra(extra, address)
+                raise StoreError(f'{join} is not a join in this project; a subtype lives inside one join.',
+                                 'metaform map joins <element>')
+            if not _address_form(address):
+                notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
+            holder = self._subtype_holding(tx, address)
+            if holder is not None:
+                notices.append(Notice('address', f'{address} is also held by subtype {holder}; stored as given.'))
+            elif self._current_element(tx, address) is not None:
+                notices.append(Notice('address', f'{address} is also held by an element; stored as given.'))
             subtype_id = new_id()
             tx.db.execute('INSERT INTO subtype_ids(subtype_id, join_id) VALUES (?, ?)', (subtype_id, join_id))
             self._identity(tx, subtype_id, 'subtype')
@@ -518,15 +686,18 @@ class Store:
             cursor = tx.db.execute(
                 'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, relation, '
                 'observation, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (subtype_id, found.layer_id, address, name, name_length, role, function, relation, observation,
-                 encoded_extra))
+                (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'],
+                 texts['relation'], texts['observation'], encode_extra(kept_extra, address)))
             row = int(cursor.lastrowid or 0)
             if found.kind != 'correction':
                 tx.db.execute('INSERT INTO current_subtypes(subtype_id, row, join_id, address) VALUES (?, ?, ?, ?)',
                               (subtype_id, row, join_id, address))
             self._write_refs(tx, 'subtype', row, pairs)
-            return self._subtype_record(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(),
-                                        join_id, all_layers(tx.db))
+            self._split_items(tx, found, 'subtype', subtype_id, split)
+            self._flag(tx, 'subtype', subtype_id, found, flag, flag_note, notices)
+            record = self._subtype_record(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(),
+                                          join_id, all_layers(tx.db))
+            return dataclasses.replace(record, notices=tuple(notices))
 
     def add_ref(self, owner: str, key: str, value: str) -> Ref:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
@@ -645,6 +816,12 @@ class Store:
             if refs is not None:
                 tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
                 self._write_refs(tx, kind, row['row'], refs_list(refs))
+            if kind == 'item' and row['target_kind'] == 'element' and 'value' in changes:
+                given = changes['value']
+                if isinstance(given, dict) and isinstance(given.get('descriptor'), dict):
+                    self._set_role(tx, row['target_id'], found.layer_id, given['descriptor'].get('role'))
+                elif _is_descriptor(row['value']):
+                    self._set_role(tx, row['target_id'], found.layer_id, None)
             if tx.db.execute(f'SELECT 1 FROM {spec.current} WHERE row=?', (row['row'],)).fetchone():
                 updated = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row['row'],)).fetchone()
                 tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
@@ -721,6 +898,11 @@ class Store:
             tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
             if kind == 'item':
                 tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
+                if row['target_kind'] == 'element' and _is_descriptor(row['value']):
+                    self._set_role(tx, row['target_id'], found.layer_id, None)
+            if kind in ('element', 'join', 'subtype'):
+                tx.db.execute('DELETE FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
+                              (kind, thing, found.layer_id))
             tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
 
     def _remove_ref(self, tx: Tx, ref_id: int) -> None:
@@ -920,17 +1102,30 @@ class Store:
             if res is not None and not res.reaches(row['layer_id'], address):
                 continue
             given = value['descriptor']
+            length = given.get('name_length')
             descriptors.append(Descriptor(row['item_id'], row['layer_id'], layers[row['layer_id']].name,
-                                          given.get('name'), given.get('name_length'), given.get('role'),
-                                          self._refs(tx.db, 'item', row['row'])))
+                                          given.get('name'),
+                                          length if isinstance(length, int) and not isinstance(length, bool) else None,
+                                          given.get('role'), self._refs(tx.db, 'item', row['row'])))
         descriptors.sort(key=lambda item: layers[item.layer_id].kind != 'intake')
         first = descriptors[0] if descriptors else None
         plan = tx.db.execute('SELECT 1 FROM plans WHERE element_id=?', (element_id,)).fetchone()
+        flag, note = self._finding(tx, 'element', element_id, res, address)
         return Element(element_id, address, current['layer_id'], layers[current['layer_id']].name,
                        reading(address), short_name(address, first.name_length if first else None),
                        first.name if first else None, first.name_length if first else None,
                        first.role if first else None, tuple(descriptors), self._refs(tx.db, 'element', current['row']),
-                       decode_extra(current['extra']), state='plan' if plan else None)
+                       decode_extra(current['extra']), state='plan' if plan else None, flag=flag, flag_note=note)
+
+    @staticmethod
+    def _finding(tx: Tx, kind: str, thing_id: str, res: Resolver | None,
+                 address: str | None) -> tuple[str | None, str | None]:
+        """The flag and note shown with an object: from a layer that reaches it, or any layer in a raw read."""
+        for row in tx.db.execute('SELECT layer_id, flag, note FROM findings WHERE target_kind=? AND target_id=? '
+                                 'ORDER BY row', (kind, thing_id)):
+            if res is None or res.reaches(row[0], address):
+                return str(row[1]), row[2]
+        return None, None
 
     @staticmethod
     def _element_shows(res: Resolver, layer_id: str, address: str) -> bool:
@@ -954,16 +1149,19 @@ class Store:
             return False
         return any(int(end[0]) > int(row['stack_at']) for end in ends if end is not None)
 
-    def _join_record(self, tx: Tx, row: sqlite3.Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
+    def _join_record(self, tx: Tx, row: sqlite3.Row, layers: dict[str, LayerRow], orphaned: bool = False,
+                     res: Resolver | None = None) -> Join:
         plan = None
         for end in (row['provider'], row['receiver']):
             found = tx.db.execute('SELECT join_id FROM plans WHERE element_id=?', (end,)).fetchone()
             if found is not None and found[0] == row['join_id']:
                 plan = 'plan'
+        receiver_address = self._address_of(tx, row['receiver'])
+        flag, note = self._finding(tx, 'join', row['join_id'], res, receiver_address)
         return Join(row['join_id'], row['layer_id'], layers[row['layer_id']].name, row['type'], row['receiver'],
-                    self._address_of(tx, row['receiver']), row['provider'], self._address_of(tx, row['provider']),
+                    receiver_address, row['provider'], self._address_of(tx, row['provider']),
                     row['purpose'], row['function'], row['relation'], row['observation'], row['non_goal'],
-                    self._refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned)
+                    self._refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned, flag, note)
 
     def _visible_join(self, tx: Tx, row: sqlite3.Row, res: Resolver | None) -> Join | None:
         orphaned = self._join_orphaned(tx, row, res.layers if res else all_layers(tx.db))
@@ -971,16 +1169,18 @@ class Store:
             return self._join_record(tx, row, all_layers(tx.db), orphaned)
         if orphaned or not res.reaches(row['layer_id'], self._address_of(tx, row['receiver'])):
             return None
-        return self._join_record(tx, row, res.layers)
+        return self._join_record(tx, row, res.layers, res=res)
 
-    def _subtype_record(self, tx: Tx, row: sqlite3.Row, join_id: str, layers: dict[str, LayerRow]) -> Subtype:
+    def _subtype_record(self, tx: Tx, row: sqlite3.Row, join_id: str, layers: dict[str, LayerRow],
+                        res: Resolver | None = None) -> Subtype:
         join_row = tx.db.execute('SELECT j.layer_id FROM current_joins c JOIN joins j ON j.row = c.row '
                                  'WHERE c.join_id=?', (join_id,)).fetchone()
         layer_id = join_row[0] if join_row is not None else row['layer_id']
+        flag, note = self._finding(tx, 'subtype', row['subtype_id'], res, row['address'])
         return Subtype(row['subtype_id'], join_id, layer_id, layers[layer_id].name, row['address'],
                        reading(row['address']), row['name'],
                        row['name_length'], row['role'], row['function'], row['relation'], row['observation'],
-                       self._refs(tx.db, 'subtype', row['row']), decode_extra(row['extra']))
+                       self._refs(tx.db, 'subtype', row['row']), decode_extra(row['extra']), flag, note)
 
     def _target_current(self, tx: Tx, kind: str, thing: str) -> bool:
         spec = corrections.KINDS[kind]
@@ -1030,11 +1230,14 @@ class Store:
 
     @staticmethod
     def _provenance(tx: Tx, layer_id: str) -> Provenance | None:
+        """The layer's one provenance record, with its report, feedback and shape files as refs, STORE-016."""
         row = tx.db.execute('SELECT * FROM provenance WHERE layer_id=?', (layer_id,)).fetchone()
         if row is None:
             return None
+        refs = tuple(Ref(str(ref[0]), str(ref[1])) for ref in tx.db.execute(
+            'SELECT kind, report_id FROM reports WHERE layer_id=? ORDER BY kind, report_id', (layer_id,)))
         return Provenance(row['layer_id'], row['module'], row['workflow'], row['prompt'], row['model'], row['role'],
-                          None if row['blinded'] is None else bool(row['blinded']))
+                          None if row['blinded'] is None else bool(row['blinded']), refs)
 
     def _version(self, tx: Tx, kind: str, row: sqlite3.Row, positions: dict[str, int]) -> Version:
         spec = corrections.KINDS[kind]
@@ -1105,7 +1308,7 @@ class Store:
                 return tx.db.execute('SELECT c.subtype_id AS key, s.* FROM current_subtypes c '
                                      'JOIN subtypes s ON s.row = c.row WHERE c.join_id=? AND c.subtype_id > ? '
                                      'ORDER BY c.subtype_id LIMIT ?', (join, cursor or '', count)).fetchall()
-            return _paged(fetch, lambda row: self._subtype_record(tx, row, join, layers), limit, after)
+            return _paged(fetch, lambda row: self._subtype_record(tx, row, join, layers, res), limit, after)
 
     def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Where | None:
         """The element at an address, or the subtype there with the join that holds it."""
@@ -1127,7 +1330,7 @@ class Store:
             if join is None:
                 return None
             layers = res.layers if res else all_layers(tx.db)
-            return Where('subtype', subtype=self._subtype_record(tx, row, row['join_id'], layers), join=join)
+            return Where('subtype', subtype=self._subtype_record(tx, row, row['join_id'], layers, res), join=join)
 
     def children(self, address: str, *, limit: int = LIMIT, after: str | None = None) -> Page[str]:
         """The next types up the tree, toward the leaves."""
@@ -1416,6 +1619,128 @@ class Store:
                 return self._item_record(tx, row.row, res.layers)
             return _paged(fetch, build, limit, after, key=lambda row: row.key)
 
+    def roots(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
+              after: str | None = None) -> Roots:
+        """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025."""
+        with self._read() as tx:
+            intake = tx.db.execute("SELECT layer_id FROM layers WHERE kind='intake' AND ready IS NOT NULL "
+                                   'LIMIT 1').fetchone()
+            if intake is None:
+                return Roots((), (), None)
+            layer_id = str(intake[0])
+            res = None if raw else self._resolver(tx, selection)
+            entry: list[RootEntry] = []
+            if after is None:
+                for element_id, _role in tx.db.execute(
+                        "SELECT element_id, role FROM element_roles WHERE layer_id=? AND role IN ('VE', 'DE') "
+                        'ORDER BY role DESC, element_id', (layer_id,)).fetchall():
+                    element = self._element_record(tx, element_id, res)
+                    if element is None:
+                        continue
+                    received = tx.db.execute('SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j '
+                                             'ON j.row = c.row WHERE c.receiver=? ORDER BY c.join_id',
+                                             (element_id,)).fetchall()
+                    joins = [join for join in (self._visible_join(tx, row, res) for row in received) if join]
+                    entry.append(RootEntry(element, tuple(joins)))
+
+            def fetch(cursor: str | None, count: int) -> list[sqlite3.Row]:
+                return tx.db.execute('SELECT element_id AS key, role FROM element_roles WHERE layer_id=? '
+                                     'AND element_id > ? ORDER BY element_id LIMIT ?',
+                                     (layer_id, cursor or '', count)).fetchall()
+
+            def build(row: sqlite3.Row) -> RootElement | None:
+                element = self._element_record(tx, str(row['key']), res)
+                if element is None:
+                    return None
+                return RootElement(element.element_id, element.address, str(row['role']), element.name)
+            page = _paged(fetch, build, limit, after)
+            return Roots(tuple(entry), page.results, page.next)
+
+    def findings(self, flag: str | None = None, layer: str | None = None, *, selection: Sequence[str] | None = None,
+                 raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Finding]:
+        """Flagged objects, by flag, each with its address or its join's ends, STORE-042."""
+        with self._read() as tx:
+            res = None if raw else self._resolver(tx, selection)
+            layers = res.layers if res else all_layers(tx.db)
+            layer_id = self._layer(tx, layer).layer_id if layer else None
+
+            def fetch(cursor: str | None, count: int) -> list[sqlite3.Row]:
+                if flag is not None:
+                    return tx.db.execute('SELECT row AS key, * FROM findings WHERE flag=? AND row > ? ORDER BY row '
+                                         'LIMIT ?', (flag, int(cursor or 0), count)).fetchall()
+                return tx.db.execute('SELECT row AS key, * FROM findings WHERE row > ? ORDER BY row LIMIT ?',
+                                     (int(cursor or 0), count)).fetchall()
+
+            def build(row: sqlite3.Row) -> Finding | None:
+                if layer_id is not None and row['layer_id'] != layer_id:
+                    return None
+                kind, thing = str(row['target_kind']), str(row['target_id'])
+                address = receiver = provider = None
+                if kind == 'join':
+                    ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?',
+                                         (thing,)).fetchone()
+                    if ends is None:
+                        return None
+                    receiver, provider = self._address_of(tx, ends[0]), self._address_of(tx, ends[1])
+                    place = receiver
+                else:
+                    address = self._node_address(tx, kind, thing)
+                    if address is None:
+                        return None
+                    place = address
+                if res is not None and not res.reaches(row['layer_id'], place):
+                    return None
+                return Finding(kind, thing, address, receiver, provider, row['layer_id'],
+                               layers[row['layer_id']].name, str(row['flag']), row['note'])
+            return _paged(fetch, build, limit, after)
+
+    def save_report(self, name: str, run_id: str, kind: str, size: int, layer: str | None = None) -> Report:
+        """Record one report, feedback or shape file, or its new size after an append, STORE-043."""
+        if kind not in REPORT_KINDS:
+            raise StoreError(f'{kind!r} is not report, feedback or shape.', 'metaform help feedback')
+        with self._write() as tx:
+            layer_id = self._layer(tx, layer).layer_id if layer else None
+            tx.db.execute('INSERT INTO reports(report_id, run_id, layer_id, kind, created, size) '
+                          'VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(report_id) DO UPDATE SET size=excluded.size',
+                          (name, run_id, layer_id, kind, home.now(), size))
+            return self._report(tx, tx.db.execute('SELECT * FROM reports WHERE report_id=?', (name,)).fetchone())
+
+    def _report(self, tx: Tx, row: sqlite3.Row) -> Report:
+        layer_id = row['layer_id']
+        return Report(row['report_id'], row['run_id'], layer_id, self._layer_name(tx, layer_id) if layer_id else None,
+                      row['kind'], row['created'], int(row['size']))
+
+    def reports(self, kind: str | None = None, layer: str | None = None, *, limit: int = LIMIT,
+                after: str | None = None) -> Page[Report]:
+        """The report, feedback and shape files of this metaform, oldest first, STORE-043."""
+        with self._read() as tx:
+            if layer is not None:
+                layer_id = self._layer(tx, layer).layer_id
+                rows = tx.db.execute('SELECT * FROM reports WHERE layer_id=? ORDER BY kind, report_id',
+                                     (layer_id,)).fetchall()
+                found = tuple(self._report(tx, row) for row in rows if kind is None or row['kind'] == kind)
+                return _slice(found, limit, after)
+
+            def fetch(cursor: str | None, count: int) -> list[sqlite3.Row]:
+                created, _, name = (cursor or '|').partition('|')
+                return tx.db.execute("SELECT created || '|' || report_id AS key, * FROM reports "
+                                     'WHERE (created, report_id) > (?, ?) ORDER BY created, report_id LIMIT ?',
+                                     (created, name, count)).fetchall()
+
+            def build(row: sqlite3.Row) -> Report | None:
+                return self._report(tx, row) if kind is None or row['kind'] == kind else None
+            return _paged(fetch, build, limit, after)
+
+    def report(self, name: str) -> Report | None:
+        with self._read() as tx:
+            row = tx.db.execute('SELECT * FROM reports WHERE report_id=?', (name,)).fetchone()
+            return None if row is None else self._report(tx, row)
+
+    def layer_ref(self, layer: str) -> Layer:
+        """One layer by name or id, with its declaration."""
+        with self._read() as tx:
+            return self._layer_record(tx, self._layer(tx, layer))
+
     def has_intake(self) -> bool:
         with self._read() as tx:
             return tx.db.execute("SELECT 1 FROM layers WHERE kind='intake' AND ready IS NOT NULL LIMIT 1").fetchone() \
@@ -1427,8 +1752,18 @@ class Store:
     def active_metaform(self) -> home.Metaform | None:
         return home.active_metaform(self.project_id)
 
-    def add_metaform(self, name: str) -> home.Metaform:
-        return home.add_metaform(self.project_id, name)
+    def add_metaform(self, name: str, *, activate: bool = True) -> home.Metaform:
+        """A new, empty metaform; a name already used gets `-2` or the next free number, with a notice, STORE-041."""
+        made = home.add_metaform(self.project_id, name, activate=activate)
+        if made.name == name:
+            return made
+        notice = Notice('name', f'{self.project_id} already has a metaform named {name}; this one was named '
+                                f'{made.name}.')
+        return dataclasses.replace(made, notices=(notice,))
+
+    def withdraw_metaform(self, metaform_id: str) -> None:
+        """Undo a metaform made by this operation whose first write failed, so a failed write leaves nothing."""
+        home.withdraw_metaform(self.project_id, metaform_id)
 
     def activate_metaform(self, name: str) -> home.Metaform:
         return home.activate_metaform(self.project_id, name)
@@ -1446,11 +1781,6 @@ class _Keyed:
     def __init__(self, row: sqlite3.Row, key: str) -> None:
         self.row = row
         self.key = key
-
-
-def _replace(record: Element, **changes: Any) -> Element:
-    import dataclasses
-    return dataclasses.replace(record, **changes)
 
 
 def _paged(fetch: Callable[[str | None, int], list[Any]], build: Callable[[Any], Any], limit: int,

@@ -101,3 +101,29 @@ def test_a_layer_limited_export_names_what_it_requires(home, store, monkeypatch,
     with pytest.raises(StoreError) as refused:
         import_document(document)
     assert refused.value.next_step
+
+
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('STORE-023')
+@pytest.mark.req('STORE-026')
+def test_an_import_document_is_checked_whole_before_any_write_and_its_keys_never_reach_sql(
+        home, store, monkeypatch, tmp_path, traced):
+    filled(store)
+    document = json.loads(json.dumps(export_document(['proj'])))
+    other = move_home(monkeypatch, tmp_path, 'other-home')
+    entry = document['projects'][0]
+    entry['project']['owner'] = 'someone'
+    metaform = entry['metaforms'][0]
+    metaform['items'][0]['value) SELECT * FROM items; --'] = 'x'
+    del metaform['joins'][0]['purpose']
+    metaform['elements'][0]['address'] = {'not': 'text'}
+    traced.clear()
+    with pytest.raises(StoreError) as refused:
+        import_document(document)
+    message = str(refused.value)
+    for path in ('projects[0].project.owner', 'projects[0].metaforms[0].items[0]',
+                 'projects[0].metaforms[0].joins[0].purpose', 'projects[0].metaforms[0].elements[0].address'):
+        assert path in message
+    assert refused.value.next_step and '\n' not in refused.value.next_step
+    assert not any('SELECT * FROM items' in statement for statement in traced)
+    assert not (other / 'metaform.sqlite3').exists() and not (other / 'projects').exists()

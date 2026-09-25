@@ -17,6 +17,10 @@ BASE = ("Metaform keeps this project's functional map: what each part is for, wh
         'from a module; the sections below say what each module is for. A tool named <module>_<verb> takes the '
         "verb's nouns and switches as named arguments. A tool error ends with the one next step to take. For any "
         "module's full help, run metaform help <module>.")
+STOP = ('If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have in '
+        'its shape field; do not retry.')
+DEBUG = ('Submit feedback on the Metaform process with the feedback tool: bad semantics, a tool that did not match '
+         'its schema, where you got stuck.')
 NO_PROJECT = 'This folder is not in a registered project. To register one: metaform add project <id> <path>'
 
 
@@ -46,7 +50,9 @@ def notices(folder: Path, project: str | None) -> list[str]:
 
 def compose(folder: Path, project: str | None = None) -> str:
     chosen = project if project is not None else context.project_for(folder)
-    parts = [BASE]
+    parts = [BASE + '\n\n' + STOP]
+    if settings.value('debug', folder):
+        parts.append(DEBUG)
     for module in surfaced(folder):
         parts.append(f'## {module.id}\n{module.purpose}')
     if chosen is None:

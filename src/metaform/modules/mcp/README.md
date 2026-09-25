@@ -12,15 +12,15 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ('mcp>=2.2',)`, `SHIPS_DISABLED = False`. `MODULE` declares one verb, `serve`, for the CLI only.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ('mcp>=2.2',)`, `SHIPS_DISABLED = False`. `MODULE` declares one verb, `serve`, for the CLI only, and a transport, so it runs whatever the folder's command surface.
 
 ## Common base used
 
-`metaform.module` for the declaration, `Context`, the module registry, the command surface, the composed instructions and the per-call context; `metaform.settings` for tool switch schemas and the `set` tool.
+`metaform.module` for the declaration, `Context`, the module registry, the command surface, the composed instructions, the per-call context, the argument checks and the report functions; `metaform.settings` for tool switch schemas and the `set` tool.
 
 ## Verbs
 
-`serve`: runs the server over stdio until the host closes it. It is never itself a tool.
+`serve`: runs the server over stdio until the host closes it. It is never itself a tool. Beside the module tools it always serves the chassis tools `set`, `feedback`, `list_reports` and `read_report`, which narrowing never hides. Every call's arguments are checked as the command line checks them: a missing required noun or a value of the wrong kind is an error with the command line's next step; an argument the tool does not know is named in a `Notice:` line and ignored.
 
 ## Settings
 

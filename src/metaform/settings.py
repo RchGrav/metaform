@@ -340,3 +340,8 @@ modules = items('modules', check=_check_modules,
 layers = items('layers', check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
                     'is not hidden.')
+
+debug = boolean('debug', False, help='Ask agents doing Metaform work for feedback and trouble reports on the Metaform '
+                                     'process.')
+
+report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.')

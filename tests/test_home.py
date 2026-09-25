@@ -197,14 +197,14 @@ def test_a_new_metaform_starts_empty_and_the_old_one_is_kept_whole(home, store):
 
 
 @pytest.mark.req('STORE-041')
-def test_a_metaform_name_taken_in_the_project_is_refused(home, store):
+@pytest.mark.req('BASE-044')
+def test_a_metaform_name_taken_in_the_project_is_numbered_with_a_notice(home, store):
     store.add_metaform('fresh')
-    before = sqlite3.connect(home / 'metaform.sqlite3').execute('SELECT * FROM metaforms').fetchall()
-    with pytest.raises(StoreError) as refused:
-        store.add_metaform('fresh')
-    assert refused.value.next_step == 'metaform list metaforms'
-    after = sqlite3.connect(home / 'metaform.sqlite3').execute('SELECT * FROM metaforms').fetchall()
-    assert before == after
+    second = store.add_metaform('fresh')
+    third = store.add_metaform('fresh')
+    assert (second.name, third.name) == ('fresh-2', 'fresh-3')
+    assert second.notices and 'fresh' in second.notices[0].message
+    assert [item.name for item in store.metaforms().results] == ['main', 'fresh', 'fresh-2', 'fresh-3']
 
 
 @pytest.mark.req('STORE-041')

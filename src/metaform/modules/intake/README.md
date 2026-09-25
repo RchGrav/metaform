@@ -16,17 +16,17 @@ Started from template 0.2.0.
 
 ## Common base used
 
-`metaform.module` for the declaration, `Context` and `Status`; `metaform.settings` for `--intake-file`; `metaform.data` for the atomic write.
+`metaform.module` for the declaration, `Context`, `Status` and `save_report`; `metaform.settings` for `--intake-file`; `metaform.data` for the atomic write.
 
 ## Verbs
 
-- `prompt`: the stored intake text with the project's target filled, then the submit line. Tool `intake_prompt`.
-- `submit`: checks the submission against its input schema and stores it. Over MCP `elements` is the array; on the CLI `elements=<path>` names a JSON file, or `-` for standard input. Returns the layer name, the project and the counts. Tool `intake_submit`.
-- `status`: whether the project has an intake, with the latest intake layer. Tool `intake_status`.
+- `prompt`: the stored intake text with the project's target filled, then the submit lines: always the submit line and the rule to stop and submit a trouble report with `feedback` instead of retrying; the report request when `--report` is on; the feedback request when `--debug` is on. Takes `--report` and `--debug` for one call. Tool `intake_prompt`.
+- `submit`: stores the submission in one atomic write and never refuses it for its content. What does not fit is stored as given and named in a notice with its path: a missing field is stored empty, an unknown field is kept in the row's `extra`, a subtype's purpose and a subtype provider that differs from its element go to the subtype's `extra`, a provider that names no element gets one in the intake layer, and an address out of form is stored as given. `elements` that cannot be read at all store nothing and return one notice to save the result with `feedback`'s `shape` field. Over MCP `elements` is the array and a string is never read as a path; on the CLI `elements=<path>` names a JSON file, or `-` for standard input. `report=` and `feedback=` are saved as the intake layer's report and feedback files, and each element, join and subtype may carry `flag` and `flag_note`. A second submission into a metaform that has an intake is stored as a new active metaform named `intake-<UTC timestamp>`; the earlier one is kept. Returns the layer, the project, the metaform, the counts of elements, joins, subtypes, refs and findings, and the notices. Tool `intake_submit`.
+- `status`: whether the project has an intake, with the latest intake layer. Tool `intake_status`. The status hook adds `Intake: complete` and `Start with: metaform map roots`, or `Intake: none yet` and the notice to delegate the intake.
 
 ## Settings
 
-`--intake-file`, default empty, meaning the Canonical Intake in `resources/`.
+`--intake-file`, default empty, meaning the Canonical Intake in `resources/`. The prompt also reads the chassis settings `--report`, default on, and `--debug`, default off, CLI-034.
 
 ## Events
 

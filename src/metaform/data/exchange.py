@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Sequence
+from functools import cache
 from typing import Any
 
 from .. import home
 from ..errors import StoreError
 from . import corrections
 from .ids import prefixes
+from .schema import STORE_SCHEMA
 from .session import _open
 
 FORMAT = 1
@@ -64,7 +66,8 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'correction_stack', 'requires'):
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'element_roles', 'findings',
+                 'correction_stack', 'requires'):
         document[name] = []
     path = home.store_path(project_id, metaform.metaform_id)
     if not path.exists():
@@ -122,6 +125,10 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
     document['challenge_states'] = [row for row in _rows(db, 'SELECT * FROM challenge_states ORDER BY rowid')
                                     if row['item_id'] in item_ids]
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
+    document['element_roles'] = [row for row in _rows(db, 'SELECT * FROM element_roles ORDER BY rowid')
+                                 if row['layer_id'] in chosen]
+    document['findings'] = _without_row([row for row in _rows(db, 'SELECT * FROM findings ORDER BY row')
+                                         if row['layer_id'] in chosen])
     document['correction_stack'] = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack '
                                                                  'ORDER BY position') if row[0] in chosen]
     addresses = {row['address'] for table in ('elements', 'subtypes', 'selections') for row in document[table]}
@@ -156,13 +163,98 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
     return found
 
 
-def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, int]:
-    """Add what the target does not hold, by unique id, STORE-027. Returns what was added and skipped."""
+ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
+              *THINGS, 'challenge_states', 'plans', 'element_roles', 'findings')
+PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
+HEAD_KEYS = ('metaform_id', 'name', 'created')
+REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'position', 'key', 'value')
+
+
+@cache
+def columns(table: str) -> tuple[str, ...]:
+    """The columns a document row of this table carries: the store's own, without `row`, STORE-027."""
+    db = sqlite3.connect(':memory:')
+    try:
+        db.executescript(STORE_SCHEMA)
+        found = tuple(str(row[1]) for row in db.execute(f'PRAGMA table_info({table})') if row[1] != 'row')
+    finally:
+        db.close()
+    return (*found, 'join_id') if table == 'subtypes' else found
+
+
+def _scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
+
+def _record(value: Any, path: str, keys: Sequence[str], problems: list[str]) -> None:
+    """One object of the document: exactly these keys, each holding text, a number or null."""
+    if not isinstance(value, dict):
+        problems.append(f'{path}: not an object')
+        return
+    problems += [f'{path}.{key}: not a field here' for key in value if key not in keys]
+    problems += [f'{path}.{key}: missing' for key in keys if key not in value]
+    problems += [f'{path}.{key}: not text, a number or null' for key in keys if key in value
+                 and not _scalar(value[key])]
+
+
+def _strings(value: Any, path: str, problems: list[str]) -> None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        problems.append(f'{path}: not a list of ids')
+
+
+def _validate(document: Any) -> None:
+    """Check the whole document before anything is written; every problem is named with its path, H8."""
     if not isinstance(document, dict) or document.get('metaform_export') != FORMAT:
         raise StoreError('This is not a Metaform export document.', 'metaform export > <file>')
     if str(document.get('schema_version')) != SCHEMA:
         raise StoreError(f'The document has schema version {document.get("schema_version")}; this Metaform '
                          f'supports version {SCHEMA}.', 'install the Metaform release that wrote it')
+    problems: list[str] = []
+    entries = document.get('projects')
+    if not isinstance(entries, list):
+        problems.append('projects: not a list')
+        entries = []
+    for number, entry in enumerate(entries):
+        path = f'projects[{number}]'
+        if not isinstance(entry, dict):
+            problems.append(f'{path}: not an object')
+            continue
+        _record(entry.get('project'), f'{path}.project', PROJECT_KEYS, problems)
+        if not _scalar(entry.get('active_metaform')):
+            problems.append(f'{path}.active_metaform: not an id or null')
+        metaforms = entry.get('metaforms')
+        if not isinstance(metaforms, list):
+            problems.append(f'{path}.metaforms: not a list')
+            continue
+        for index, metaform in enumerate(metaforms):
+            where = f'{path}.metaforms[{index}]'
+            if not isinstance(metaform, dict):
+                problems.append(f'{where}: not an object')
+                continue
+            _record(metaform.get('metaform'), f'{where}.metaform', HEAD_KEYS, problems)
+            for table in ROW_TABLES:
+                rows = metaform.get(table, [])
+                if not isinstance(rows, list):
+                    problems.append(f'{where}.{table}: not a list')
+                    continue
+                for place, row in enumerate(rows):
+                    _record(row, f'{where}.{table}[{place}]', columns(table), problems)
+            for place, ref in enumerate(metaform.get('refs', [])):
+                _record(ref, f'{where}.refs[{place}]', REF_KEYS, problems)
+            for key in ('hidden', 'correction_stack'):
+                _strings(metaform.get(key, []), f'{where}.{key}', problems)
+            for place, need in enumerate(metaform.get('requires', [])):
+                keys = ('kind', 'address') if isinstance(need, dict) and need.get('kind') == 'type' else ('kind', 'id')
+                _record(need, f'{where}.requires[{place}]', keys, problems)
+    if problems:
+        raise StoreError('The document does not fit an export document:\n' +
+                         '\n'.join(f'  {problem}' for problem in problems),
+                         'metaform export > <file>, from the home that holds the project')
+
+
+def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, int]:
+    """Add what the target does not hold, by unique id, STORE-027. Returns what was added and skipped."""
+    _validate(document)
     report = {'metaforms_added': 0, 'metaforms_skipped': 0, 'layers_added': 0, 'layers_skipped': 0,
               'things_added': 0, 'things_skipped': 0}
     for entry in document.get('projects', []):
@@ -277,6 +369,10 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for row in metaform.get('plans', []):
         if row['layer_id'] in fresh:
             _insert(db, 'plans', row, ignore=True)
+    for table in ('element_roles', 'findings'):
+        for row in metaform.get(table, []):
+            if row['layer_id'] in fresh:
+                _insert(db, table, row, ignore=True)
     for layer_id in metaform.get('correction_stack', []):
         if layer_id in fresh:
             db.execute('INSERT INTO correction_stack(position, layer_id) VALUES (?, ?)',
@@ -308,8 +404,8 @@ def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
 
 
 def _insert(db: sqlite3.Connection, table: str, row: dict[str, Any], *, ignore: bool = False) -> sqlite3.Cursor:
-    columns = [key for key in row if key != 'row' and not (table == 'subtypes' and key == 'join_id')]
-    names = ', '.join(columns)
-    marks = ', '.join('?' for _ in columns)
+    """Insert one checked document row; the SQL names only the table's own columns, never a document's keys."""
+    names = [column for column in columns(table) if not (table == 'subtypes' and column == 'join_id')]
+    marks = ', '.join('?' for _ in names)
     verb = 'INSERT OR IGNORE' if ignore else 'INSERT'
-    return db.execute(f'{verb} INTO {table}({names}) VALUES ({marks})', tuple(row[key] for key in columns))
+    return db.execute(f'{verb} INTO {table}({", ".join(names)}) VALUES ({marks})', tuple(row[key] for key in names))

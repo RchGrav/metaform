@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import __version__, context, docs, grammar, home, instructions, loader, query, results, settings
+from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
 from .data import Store, export_document, import_document
 from .docs import Command, Switch
 from .errors import Stop
@@ -136,11 +136,17 @@ def add(args: list[str], folder: Path) -> None:
         kept = previous.name if previous else 'main'
         out(f'Added metaform {created.name} to {project_id}; it is now active. The previous metaform {kept} is kept. '
             f'To switch back: metaform activate metaform {kept}')
+        if created.name != args[1]:
+            out(f'Notice: name: {project_id} already has a metaform named {args[1]}; this one was named '
+                f'{created.name}.')
         return
     raise Stop('add needs: project <id> <path>, or metaform <name>.', 'metaform add project <id> <path>')
 
 
 def list_(args: list[str], folder: Path) -> None:
+    if args[:1] == ['reports']:
+        list_reports(args[1:], folder)
+        return
     if args == ['modules']:
         found = loader.discover()
         width = max((len(item.id) for item in found), default=6)
@@ -163,6 +169,58 @@ def list_(args: list[str], folder: Path) -> None:
     width = max(len(record.project_id) for record in registered)
     for record in registered:
         out(f'{record.project_id:<{width}}  {record.path}  {record.target_type} {record.target_value}')
+
+
+def list_reports(args: list[str], folder: Path) -> None:
+    """`list reports [<project>] [kind=] [layer=]`: one line per file, BASE-045."""
+    as_json = '--json' in args
+    positional, named = _nouns([arg for arg in args if arg != '--json'], ('kind', 'layer'), 'list')
+    if len(positional) > 1:
+        raise Stop('list reports takes one project.', 'metaform list reports')
+    page = reports.list_reports(folder, project=positional[0] if positional else None,
+                                kind=(named.get('kind') or [None])[0], layer=(named.get('layer') or [None])[0])
+    if as_json:
+        out(results.as_json(page))
+        return
+    if not page.results:
+        out('No reports yet.')
+        return
+    width = max(len(row.name) for row in page.results)
+    for row in page.results:
+        out(f'{row.name:<{width}}  {row.kind:<8}  {row.layer or "-"}  {row.size}  {row.created}')
+
+
+def read(args: list[str], folder: Path) -> None:
+    """`read report <file name> [<project>]`: the file's text exactly, BASE-045."""
+    if args[:1] != ['report'] or len(args) not in (2, 3):
+        raise Stop('read needs: report <file name>.', 'metaform list reports')
+    sys.stdout.write(reports.read_report(folder, args[1], project=args[2] if len(args) == 3 else None))
+
+
+def _text_or_file(value: str) -> str:
+    """A report or shape given on the command line: `-` reads standard input, a file's path reads the file."""
+    if value == '-':
+        return sys.stdin.read()
+    path = Path(value)
+    try:
+        if path.is_file():
+            return path.read_bytes().decode('utf-8')
+    except (OSError, ValueError):
+        return value
+    return value
+
+
+def feedback(args: list[str], folder: Path) -> None:
+    """`feedback <text> [layer=] [report=] [shape=]`: saved whatever the settings and never refused, BASE-045."""
+    as_json = '--json' in args
+    positional, named = _nouns([arg for arg in args if arg != '--json'], ('layer', 'report', 'shape'), 'feedback')
+    if len(positional) != 1:
+        raise Stop('feedback takes one text; put it in quotes.', 'metaform help feedback')
+    given = {key: values[0] for key, values in named.items()}
+    report = _text_or_file(given['report']) if 'report' in given else None
+    shape = _text_or_file(given['shape']) if 'shape' in given else None
+    result = reports.feedback(folder, positional[0], layer=given.get('layer'), report=report, shape=shape)
+    sys.stdout.write(results.as_json(result) + '\n' if as_json else results.as_text(result))
 
 
 def activate(args: list[str], folder: Path) -> None:
@@ -375,14 +433,15 @@ def help_(args: list[str], folder: Path) -> None:
 
 # Data -------------------------------------------------------------------------------------
 
-def _nouns(args: list[str], allowed: tuple[str, ...]) -> tuple[list[str], dict[str, list[str]]]:
-    positional, named = [], {}
+def _nouns(args: list[str], allowed: tuple[str, ...], verb: str = 'export') -> tuple[list[str], dict[str, list[str]]]:
+    positional: list[str] = []
+    named: dict[str, list[str]] = {}
     for arg in args:
         key, equals, value = arg.partition('=')
         if equals and key in allowed:
             named.setdefault(key, []).append(value)
-        elif equals and '=' in arg and not arg.startswith('-'):
-            raise Stop(f'{key}= is not a noun here; the named nouns are {", ".join(allowed)}.', 'metaform help export')
+        elif equals and key.isidentifier() and not arg.startswith('-'):
+            raise Stop(f'{key}= is not a noun here; the named nouns are {", ".join(allowed)}.', f'metaform help {verb}')
         else:
             positional.append(arg)
     return positional, named
@@ -456,13 +515,18 @@ def build_(args: list[str], folder: Path) -> None:
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
-    'install': install_, 'build': build_}
-ALWAYS = {'help', 'set', 'unset', 'config'}
+    'install': install_, 'build': build_, 'feedback': feedback, 'read': read}
+ALWAYS = {'help', 'set', 'unset', 'config', 'feedback', 'read'}
+
+
+def always(verb: str, rest: list[str]) -> bool:
+    """Whether a chassis command runs whatever the surface: restoring it, and reporting, CLI-022 and BASE-045."""
+    return verb in ALWAYS or (verb == 'list' and rest[:1] == ['reports'])
 
 
 # Module verbs ------------------------------------------------------------------------------
 
-def _module(identifier: str, folder: Path, quiet: bool = False) -> Any:
+def _module(identifier: str, folder: Path, quiet: bool = False, surface: bool = True) -> Any:
     found = loader.get(identifier)
     if found is None:
         if quiet:
@@ -476,11 +540,15 @@ def _module(identifier: str, folder: Path, quiet: bool = False) -> Any:
         if quiet:
             return None
         raise Stop(f'Module {identifier} is off.', f'metaform enable {identifier}')
-    if not shown(identifier, folder):
+    if surface and not shown(identifier, folder):
         if quiet:
             return None
-        raise Stop(f"{identifier} is not on this folder's command surface.", 'metaform unset --modules')
+        raise off_surface(identifier)
     return found
+
+
+def off_surface(identifier: str) -> Stop:
+    return Stop(f"{identifier} is not on this folder's command surface.", 'metaform unset --modules')
 
 
 def _verb(found: Any, name: str) -> Any:
@@ -516,11 +584,13 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
 
 
 def run_module(identifier: str, rest: list[str], folder: Path) -> None:
-    found = _module(identifier, folder)
+    found = _module(identifier, folder, surface=False)
+    verb = _verb(found, rest[0]) if rest else None
+    if not (verb is not None and verb.transport) and not shown(identifier, folder):
+        raise off_surface(identifier)
     if not rest or rest[0] in ('-h', '--help'):
         out(docs.module_syntax(found.module))
         return
-    verb = _verb(found, rest[0])
     if verb is None:
         raise Stop(f'{identifier} has no verb {rest[0]}.', f'metaform help {identifier}')
     if not _here(verb):
@@ -563,8 +633,9 @@ docs.command(Command('add', 'Register a project, or start a new metaform for one
                              'folder itself.',
                      examples=(('metaform add project mgm ~/mgm-main', 'Register the MGM repository as mgm.'),),
                      see_also=('list', 'activate')))
-docs.command(Command('list', 'List registered projects, modules, or a project\'s metaforms.',
-                     ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]'),
+docs.command(Command('list', "List registered projects, modules, a project's metaforms, or its reports.",
+                     ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]',
+                      'metaform list reports [<project>] [kind=<kind>] [layer=<layer>] [--json]'),
                      details='list modules shows each module, whether it is on, where it was found, and why it did '
                              'not load when it did not.', see_also=('add', 'enable', 'disable')))
 docs.command(Command('activate', "Make one of a project's metaforms the active one.",
@@ -614,6 +685,19 @@ docs.command(Command('install', 'Set up your AI tools to use Metaform.',
                                  'server with each tool, writes the skill, and proves each tool can start the server.',
                      details='With no tool named it asks; naming tools, or all, sets up without asking.',
                      see_also=('build',)))
+docs.command(Command('feedback', 'Save feedback on the Metaform process, and a report or a shape with it.',
+                     ('metaform feedback <text> [layer=<layer>] [report=<text|file|->] [shape=<text|file|->]',),
+                     description='Feedback is about Metaform itself: problems with the process, bad semantics, a tool '
+                                 'that did not match its schema. It is saved in the home, never in the project, and '
+                                 'nothing given is refused.',
+                     details='An agent that cannot continue stops and saves a trouble report here, with the result '
+                             'it has in shape=, instead of retrying. A value that names a file reads the file; - reads '
+                             'standard input.',
+                     examples=(('metaform feedback "The subtype fields did not match the intake text." '
+                                'layer=intake-20260925T041500Z-3fa2c1', "Feedback on an intake run."),),
+                     see_also=('list', 'read')))
+docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
+                     ('metaform read report <file name> [<project>]',), see_also=('list', 'feedback')))
 docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
                      details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
                      see_also=('install',)))
@@ -647,7 +731,7 @@ def main(argv: list[str] | None = None) -> int:
         if verb not in VERBS:
             run_module(verb, rest, folder)
             return 0
-        if verb not in ALWAYS and not shown('chassis', folder):
+        if not always(verb, rest) and not shown('chassis', folder):
             raise Stop(f"{verb} is not on this folder's command surface.", 'metaform unset --modules')
         if '-h' in rest or '--help' in rest:
             out(docs.syntax(verb))

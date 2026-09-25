@@ -26,6 +26,7 @@ MODULE = Module(
     summary="Serve Metaform's tools to AI tools over MCP.",
     purpose="Serves Metaform's tools to AI tools over MCP. Every tool is also a metaform command on the CLI. "
             'Details: metaform help mcp.',
-    details='A host starts it with uvx --from <source> metaform mcp serve. It serves the folder it starts in.',
-    verbs=(Verb('serve', serve, 'Serve the MCP server over stdio.', surfaces=('cli',)),),
+    details='A host starts it with uvx --from <source> metaform mcp serve. It serves the folder it starts in, '
+            "whatever that folder's command surface; the surface narrows the tools it serves.",
+    verbs=(Verb('serve', serve, 'Serve the MCP server over stdio.', surfaces=('cli',), transport=True),),
 )

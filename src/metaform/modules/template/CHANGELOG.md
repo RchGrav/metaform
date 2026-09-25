@@ -2,6 +2,13 @@
 
 Each change to the module contract, newest first, so a module copied from the template can follow it.
 
+## 0.3.0
+
+- `Verb` gains `transport`: a transport verb, such as `mcp serve`, runs whatever the folder's command surface, CLI-022 and MCP-004.
+- The common base gains `tool_arguments` and `setting_value`, which check a tool call's arguments as the command line does, MCP-005; `on_this_system`, BASE-016; and `feedback`, `save_report`, `list_reports` and `read_report`, BASE-045.
+- A write that does not fit is stored as given and its result carries `notices`, each with `where` and `message`; only a call that cannot be read raises `Stop`, BASE-044 and STORE-026.
+- Elements, joins and subtypes carry `flag` and `flag_note`, MAP-046 and STORE-042.
+
 ## 0.2.0
 
 - `Verb` takes `nouns` as `Noun` records and `switches` as setting keys; `Adverb` is gone, CLI-012 and BASE-035.

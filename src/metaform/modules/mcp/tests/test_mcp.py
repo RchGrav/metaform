@@ -20,7 +20,12 @@ BASE = ("Metaform keeps this project's functional map: what each part is for, wh
         'Read the map before you change the project, so you work from the purpose of each part. Each tool comes '
         'from a module; the sections below say what each module is for. A tool named <module>_<verb> takes the '
         "verb's nouns and switches as named arguments. A tool error ends with the one next step to take. For any "
-        "module's full help, run metaform help <module>.")
+        "module's full help, run metaform help <module>.\n\n"
+        'If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have in '
+        'its shape field; do not retry.')
+DEBUG = ('Submit feedback on the Metaform process with the feedback tool: bad semantics, a tool that did not match '
+         'its schema, where you got stuck.')
+CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report'}
 
 
 def session(home, folder, fn):
@@ -312,3 +317,87 @@ def test_a_value_set_through_the_set_tool_reads_back_as_the_cli_writes_it(run, h
         rows = json.loads(run('config', '--show', '--json', cwd=folder).stdout)
         return {row['key']: (row['value'], row['state']) for row in rows if row['key'] in ('modules', 'layers')}
     assert values(mapped) == values(other)
+
+
+@pytest.mark.req('MCP-007')
+@pytest.mark.req('CLI-034')
+@pytest.mark.req('BASE-044')
+def test_the_instructions_always_carry_the_stop_rule_and_ask_for_feedback_only_under_debug(run, home, mapped):
+    async def instructions(client, init):
+        return init.instructions
+    plain = session(home, mapped, instructions)
+    assert plain.startswith(BASE + '\n\n## ') and DEBUG not in plain
+    run('set', '--debug', cwd=mapped)
+    debugging = session(home, mapped, instructions)
+    assert debugging.startswith(BASE + '\n\n' + DEBUG + '\n\n## ')
+    assert run('help', 'agents', cwd=mapped).stdout == debugging
+
+
+@pytest.mark.req('MCP-004')
+@pytest.mark.req('CLI-022')
+@pytest.mark.req('BASE-045')
+def test_the_server_starts_on_any_surface_and_keeps_the_chassis_tools(run, home, mapped, user_module):
+    user_module('solo', f'''
+        from metaform.module import Module, Verb
+        {OS}
+        MODULE = Module(id='solo', summary='x', purpose='Solo. Details: metaform help solo.',
+                        verbs=(Verb('hi', lambda ctx: 'hi', 'Say hi.'),))
+    ''')
+    run('set', '--modules', 'solo', cwd=mapped)
+
+    async def narrowed(client, init):
+        names = set(await tool_names(client))
+        said = await client.call_tool('feedback', {'text': 'Narrowed to solo.'})
+        listed = await client.call_tool('list_reports', {})
+        name = json.loads(text(said)[-1])['files'][0]
+        read = await client.call_tool('read_report', {'name': name})
+        refused = await client.call_tool('map_where', {'address': 'code'})
+        return names, said.is_error, json.loads(text(listed)[-1]), text(read), refused.is_error
+    names, said_error, listed, read, refused = session(home, mapped, narrowed)
+    assert names == {'solo_hi'} | CHASSIS_TOOLS
+    assert not said_error and read == ['Narrowed to solo.'] and refused
+    assert [row['kind'] for row in listed['results']] == ['feedback']
+
+
+@pytest.mark.req('MCP-005')
+@pytest.mark.req('MCP-006')
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('CLI-027')
+def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, mapped):
+    run('enable', 'helloworld')
+    missing_cli = run('helloworld', 'greet', cwd=mapped, ok=False).stderr.splitlines()[-1]
+
+    async def call(client, init):
+        missing = await client.call_tool('helloworld_greet', {})
+        as_text = await client.call_tool('helloworld_greet', {'name': 'x', 'loud': 'no'})
+        not_number = await client.call_tool('helloworld_wait', {'seconds': 'abc'})
+        not_text = await client.call_tool('helloworld_greet', {'name': {'a': 1}})
+        bad_set = await client.call_tool('set', {'loud': 'no'})
+        return [(result.is_error, text(result)) for result in (missing, as_text, not_number, not_text, bad_set)]
+    results = session(home, mapped, call)
+    assert all(error for error, _ in results)
+    assert all(len([line for line in blocks[0].splitlines() if line.startswith('Next: ')]) == 1
+               for _, blocks in results)
+    assert results[0][1][0].splitlines()[-1] == missing_cli
+    assert run('helloworld', 'history', cwd=mapped).stdout.startswith('No greetings')
+    shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
+    assert shown['loud']['state'] == 'default'
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('MCP-002')
+def test_a_string_for_elements_over_mcp_is_one_notice_and_never_reads_a_file_or_stdin(run, home, mapped, tmp_path):
+    secret = tmp_path / 'elements.json'
+    secret.write_text(json.dumps([{'namespace_address': 'code.leak', 'role': 'DE'}]), encoding='utf-8')
+
+    async def call(client, init):
+        dashed = await client.call_tool('intake_submit', {'elements': '-'})
+        pathed = await client.call_tool('intake_submit', {'elements': str(secret)})
+        still = await client.call_tool('map_layers', {})
+        return [(result.is_error, json.loads(text(result)[-1])) for result in (dashed, pathed)], still.is_error
+    results, still_error = session(home, mapped, call)
+    for error, report in results:
+        assert error is False and len(report['notices']) == 1 and report['notices'][0]['where'] == 'elements'
+    assert still_error is False
+    assert Store('proj').element('code.leak', raw=True) is None

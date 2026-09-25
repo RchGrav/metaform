@@ -64,6 +64,19 @@ class Ref(Record):
     value: str
 
 
+@dataclass(frozen=True)
+class Notice(Record):
+    """What did not fit a write and what happened to it, BASE-044: the write still succeeded."""
+    where: str
+    message: str
+
+
+@dataclass(frozen=True)
+class Outcome(Record):
+    """The result of a write that returns no record: only its notices, STORE-026."""
+    notices: tuple[Notice, ...] = ()
+
+
 class Page(NamedTuple, Generic[T]):
     """One page of a list read: its results and the cursor for the next page, or None, STORE-025."""
     results: tuple[T, ...]
@@ -102,6 +115,9 @@ class Element(Record):
     differs: bool = False
     state: str | None = None
     orphaned: bool = False
+    flag: str | None = None
+    flag_note: str | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,6 +139,9 @@ class Join(Record):
     extra: dict[str, Any] | None = None
     state: str | None = None
     orphaned: bool = False
+    flag: str | None = None
+    flag_note: str | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,6 +160,9 @@ class Subtype(Record):
     observation: str | None
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
+    flag: str | None = None
+    flag_note: str | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -179,6 +201,7 @@ class Provenance(Record):
     model: str | None
     role: str | None
     blinded: bool | None
+    refs: tuple[Ref, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -287,3 +310,52 @@ class Plan(Record):
     layer: str
     source: str
     item_id: str | None
+
+
+@dataclass(frozen=True)
+class RootEntry(Record):
+    """A VE or DE element of the intake with the joins it receives, the map's entry, STORE-025."""
+    element: Element
+    joins: tuple[Join, ...]
+
+
+@dataclass(frozen=True)
+class RootElement(Record):
+    element_id: str
+    address: str
+    role: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class Roots(Record):
+    """Where an agent starts: the VE and DE with their joins, and every root element, one page, STORE-025."""
+    entry: tuple[RootEntry, ...]
+    elements: tuple[RootElement, ...]
+    next: str | None = None
+
+
+@dataclass(frozen=True)
+class Finding(Record):
+    """One flagged object, STORE-042: an element or subtype with its address, or a join with its two ends."""
+    kind: str
+    id: str
+    address: str | None
+    receiver_address: str | None
+    provider_address: str | None
+    layer_id: str
+    layer: str
+    flag: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class Report(Record):
+    """One report, feedback or shape file, STORE-043."""
+    name: str
+    run_id: str
+    layer_id: str | None
+    layer: str | None
+    kind: str
+    created: str
+    size: int

@@ -1,34 +1,43 @@
-"""intake: the Canonical Intake served by name, one atomic submission, and intake state, BASE-039.
+"""intake: the Canonical Intake served by name, one atomic submission never blocked, and intake state, BASE-039.
 
 A subagent reads `intake prompt`, performs the whole method on the artifact,
 and submits the final shape once through `intake_submit`. The tool never parses
 the intake's XML: it takes its own input schema, the metaform's general data
-pattern, checks it, and stores it as one intake layer in one atomic write, so
-a half-written intake never exists, MAP-040 and STORE-032.
+pattern, and stores it as one intake layer in one atomic write, so a
+half-written intake never exists, MAP-040 and STORE-032. Nothing is refused for
+its content: what does not fit is stored as given and named in a notice,
+BASE-044. The intake report and process feedback are saved beside it, BASE-045.
 """
 from __future__ import annotations
 
 import json
 import re
-from importlib import resources
 import secrets
 import sys
 from datetime import datetime, timezone
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from metaform import settings
 from metaform.data import Store
-from metaform.module import Context, Module, Noun, Status, Stop, Verb
+from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
-from .schema import ELEMENTS, check
+from .schema import ELEMENTS
+from .submission import Writer, unreadable
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-SUBMIT_LINE = 'Submit the result with intake_submit, or metaform intake submit on the command line.'
+ALWAYS = ('Submit the result with intake_submit, or metaform intake submit on the command line. If you cannot '
+          'continue, stop and submit a trouble report with the feedback tool, attaching what you have in its shape '
+          'field; do not retry.')
+REPORT_LINE = ('Include your report on the project you examined in the report field: broken code, things that need '
+               'fixing, anything not working or partially working.')
+DEBUG_LINE = ('Include feedback on this process in the feedback field: bad semantics, a tool that did not match its '
+              'schema, where you got stuck.')
 NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
           'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
@@ -50,8 +59,18 @@ def _fill(tag: str, name: str, value: str) -> str:
     return tag.replace('<target', f'<target {name}="{_escape(value)}"', 1)
 
 
+def footer(ctx: Context) -> str:
+    """The submit lines: always the submit and stop rule, then the report and feedback requests, CLI-034."""
+    lines = [ALWAYS]
+    if ctx.setting('report'):
+        lines.append(REPORT_LINE)
+    if ctx.setting('debug'):
+        lines.append(DEBUG_LINE)
+    return '\n'.join(lines) + '\n'
+
+
 def served(ctx: Context) -> str:
-    """The intake text exactly as stored, with its target filled, then the submit line, BASE-039."""
+    """The intake text exactly as stored, with its target filled, then the submit lines, BASE-039."""
     store = ctx.require_store()
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
@@ -65,81 +84,101 @@ def served(ctx: Context) -> str:
         tag = _fill(_fill(match.group(0), 'type', record.target_type), 'value', record.target_value)
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
-    return text + ('\n' if text.endswith('\n') else '\n\n') + SUBMIT_LINE + '\n'
+    return text + ('\n' if text.endswith('\n') else '\n\n') + footer(ctx)
 
 
 def prompt(ctx: Context) -> str:
     return served(ctx)
 
 
-def _elements(ctx: Context) -> Any:
+def _elements(ctx: Context) -> tuple[list[Any] | None, str]:
+    """The submitted elements, or None and why they cannot be read. A file or standard input only on the CLI."""
     given = ctx.nouns.get('elements')
-    if not isinstance(given, str):
-        return given
-    try:
-        text = sys.stdin.read() if given == '-' else Path(given).read_text(encoding='utf-8')
-    except OSError:
-        raise Stop(f'No file at {given}.', 'metaform intake submit elements=<path to a JSON file>') from None
-    try:
-        return json.loads(text)
-    except ValueError:
-        raise Stop(f'{given} is not JSON.', 'metaform intake submit elements=<path to a JSON file>') from None
+    if given is None:
+        return None, 'elements is missing, so there is no map to store.'
+    if isinstance(given, str):
+        if ctx.surface != 'cli':
+            return None, 'elements is text; over MCP it is the array of elements itself.'
+        try:
+            text = sys.stdin.read() if given == '-' else Path(given).read_text(encoding='utf-8')
+        except OSError:
+            return None, f'No file at {given}.'
+        try:
+            given = json.loads(text)
+        except ValueError:
+            return None, f'{"Standard input" if given == "-" else given} is not JSON.'
+    if not isinstance(given, list):
+        return None, 'elements is not an array of elements.'
+    return given, ''
+
+
+def _text_noun(ctx: Context, name: str, notices: list[dict[str, str]]) -> str | None:
+    value = ctx.nouns.get(name)
+    if value is None or isinstance(value, str):
+        return value
+    notices.append({'where': name, 'message': f'{name} is not text; it was stored as its JSON text.'})
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _target(store: Store, project: str) -> tuple[Store, str | None, str, str | None]:
+    """Where this intake goes: the active metaform, or a new one when that one has an intake, BASE-039.
+
+    Returns the store to write, the earlier metaform's name when a new one is made, the name of the metaform
+    written, and the new metaform's id.
+    """
+    active = store.active_metaform()
+    if active is None or not store.has_intake():
+        return store, None, active.name if active is not None else 'main', None
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    fresh = store.add_metaform(f'intake-{stamp}', activate=False)
+    return Store(project, metaform=fresh.metaform_id), active.name, fresh.name, fresh.metaform_id
 
 
 def submit(ctx: Context) -> Any:
-    """Check the submission, then store it in one atomic write as a new intake layer."""
+    """Store the submission in one atomic write as a new intake layer; nothing is refused for its content."""
     store = ctx.require_store()
-    elements = _elements(ctx)
-    known = set()
-    if isinstance(elements, list):
-        for element in elements:
-            for join in element.get('joins', []) if isinstance(element, dict) else []:
-                provider = join.get('provider') if isinstance(join, dict) else None
-                if isinstance(provider, str) and store.element(provider, raw=True) is not None:
-                    known.add(provider)
-    problems = ['elements: is required'] if elements is None else check(elements, known)
-    if 'id' in ctx.nouns and not isinstance(ctx.nouns['id'], str):
-        problems.append('id: must be a string')
-    if problems:
-        raise Stop('The submission cannot be stored:\n' + '\n'.join(f'  {problem}' for problem in problems),
-                   'fix the listed fields and call intake_submit again')
+    project = store.project_id
+    elements, why = _elements(ctx)
+    empty: dict[str, Any] = {'layer': None, 'project': project, 'metaform': None, 'elements': 0, 'joins': 0,
+                             'subtypes': 0, 'refs': 0, 'findings': 0}
+    if elements is None:
+        return {**empty, 'notices': [unreadable(why)]}
+    notices: list[dict[str, str]] = []
+    result_id = _text_noun(ctx, 'id', notices)
+    report = _text_noun(ctx, 'report', notices)
+    feedback = _text_noun(ctx, 'feedback', notices)
+    target, previous, metaform, fresh = _target(store, project)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     name = f'intake-{stamp}-{secrets.token_hex(3)}'
     provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': served(ctx),
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role'), 'blinded': ctx.nouns.get('blinded')}
-    counts = {'elements': 0, 'joins': 0, 'subtypes': 0, 'refs': 0}
-    with store.atomic():
-        store.layer(name, 'intake', VARIABLE, kind='intake', mutable=False, hideable=False, provenance=provenance,
-                    result_id=ctx.nouns.get('id'), ready=True)
-        seen: set[str] = set()
-        for element in elements:
-            address = element['namespace_address']
-            refs = [(ref['key'], ref['value']) for ref in element.get('refs', [])]
-            store.add_element(name, address, name=element.get('name'), name_length=element.get('name_length'),
-                              role=element.get('role'), refs=refs)
-            if address not in seen:
-                seen.add(address)
-                counts['elements'] += 1
-                counts['refs'] += len(refs)
-        for element in elements:
-            for join in element.get('joins', []):
-                refs = [(ref['key'], ref['value']) for ref in join.get('refs', [])]
-                made = store.add_join(name, element['namespace_address'], join['provider'], purpose=join['purpose'],
-                                      function=join['function'], relation=join['relation'],
-                                      observation=join['observation'], non_goal=join.get('non_goal'),
-                                      type=join.get('type', 'purpose'), refs=refs)
-                counts['joins'] += 1
-                counts['refs'] += len(refs)
-                for subtype in join.get('subtypes', []):
-                    inner = subtype['element']
-                    sub_refs = [(ref['key'], ref['value']) for ref in inner.get('refs', [])]
-                    store.add_subtype(name, made.join_id, inner['namespace_address'], function=subtype['function'],
-                                      relation=subtype['relation'], observation=subtype['observation'],
-                                      name=inner.get('name'), name_length=inner.get('name_length'),
-                                      role=inner.get('role'), refs=sub_refs)
-                    counts['subtypes'] += 1
-                    counts['refs'] += len(sub_refs)
-    return {'layer': name, 'project': ctx.project, **counts}
+    writer = Writer(target, name)
+    try:
+        with target.atomic():
+            layer = target.layer(name, 'intake', VARIABLE, kind='intake', mutable=False, hideable=False,
+                                 provenance=provenance, result_id=result_id, ready=True)
+            receivers = [writer.element(index, raw) for index, raw in enumerate(elements)]
+            for index, (raw, receiver) in enumerate(zip(elements, receivers)):
+                if receiver is not None and isinstance(raw, dict):
+                    writer.joins(index, raw, receiver)
+    except BaseException:
+        if fresh is not None:
+            store.withdraw_metaform(fresh)
+        raise
+    if fresh is not None:
+        store.activate_metaform(metaform)
+        notices.append({'where': 'metaform', 'message': f'This project already had an intake in metaform {previous}. '
+                                                        f'This one was stored as the new active metaform {metaform}; '
+                                                        f'the earlier one is kept whole. To switch back: metaform '
+                                                        f'activate metaform {previous}'})
+    for kind, text in (('report', report), ('feedback', feedback)):
+        if text is not None:
+            save_report(project, layer.layer_id, kind, text, store=target, layer=layer.layer_id)
+    findings = len(target.findings(layer=name, raw=True, limit=0).results)
+    counts = writer.counts
+    return {'layer': name, 'project': project, 'metaform': metaform, 'elements': counts.elements,
+            'joins': counts.joins, 'subtypes': counts.subtypes, 'refs': counts.refs, 'findings': findings,
+            'notices': notices + writer.notices}
 
 
 def status_verb(ctx: Context) -> str:
@@ -154,7 +193,7 @@ def status(ctx: Context) -> Status:
     if ctx.store is None:
         return Status()
     if ctx.store.has_intake():
-        return Status(lines=('Intake: complete',))
+        return Status(lines=('Intake: complete', 'Start with: metaform map roots'))
     return Status(lines=('Intake: none yet',), notice=NOTICE)
 
 
@@ -165,14 +204,19 @@ MODULE = Module(
             'agent work: a subagent reads its instructions with intake_prompt and follows them. '
             'Details: metaform help intake.',
     details='The intake text is served unchanged except for its filled target. The result is submitted once, '
-            'after the whole method, and stored as one intake layer in one atomic write.',
+            'after the whole method, and stored as one intake layer in one atomic write. Nothing is refused for its '
+            'content: what does not fit is stored as given and named in a notice.',
     verbs=(
-        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.'),
+        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.', switches=('report', 'debug')),
         Verb('submit', submit, "Store an intake's final shape, once, as one intake layer.",
              nouns=(Noun('elements', 'The elements, each holding its joins: over MCP the array, on the command line '
                                      'a path to a JSON file holding it, or - for standard input.', required=False,
                          schema=ELEMENTS),
                     Noun('id', "The result's generated id.", required=False),
+                    Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
+                                   'anything not working or partially working.', required=False),
+                    Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
+                                     'schema, where you got stuck.', required=False),
                     Noun('model', 'The model that performed the intake.', required=False),
                     Noun('role', 'The role of the agent that performed it.', required=False),
                     Noun('blinded', 'Whether the agent saw only the map.', kind='bool', required=False))),

@@ -29,7 +29,10 @@ NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the 
           'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")
 TOOLS = {'intake_prompt', 'intake_submit', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
-         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'set'}
+         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_findings', 'feedback',
+         'list_reports', 'read_report', 'set'}
+REPORT = 'The alarm pin is never released after stop.'
+FEEDBACK = 'The subtype provider field repeats the element address.'
 CURSOR = {'mcpServers': {'other': {'command': 'other-server', 'args': ['--port', '1']}}}
 LIMIT = 180.0
 
@@ -120,40 +123,45 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
         served = texts(host.call('intake_prompt', {}, limit=LIMIT))[-1]
-        submit_line = '\n\nSubmit the result with intake_submit, or metaform intake submit on the command line.\n'
-        assert served.endswith(submit_line)
+        body, _, footer = served.partition('</process>\n')
+        body += '</process>\n'
+        assert footer.startswith('\nSubmit the result with intake_submit, or metaform intake submit on the command '
+                                 'line. If you cannot continue, stop and submit a trouble report')
         stored = SPEC.read_text(encoding='utf-8')
-        body = served[:-len(submit_line) + 1]
         assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
             re.sub(r'<target [^>]*>', '<target>', stored, count=1)
         assert re.search(r'<target [^>]*type="path"[^>]*value="[^"]*kitchen timer"', body)
 
-        # 7: a submission missing one purpose is refused whole; the corrected one is stored.
-        broken = copy.deepcopy(FIXTURE)
-        del broken['elements'][0]['joins'][0]['purpose']
-        refused = host.call('intake_submit', broken, limit=LIMIT)
-        assert refused.get('isError') is True
-        assert 'elements[0].joins[0]: purpose is required' in texts(refused)[0]
-    finally:
-        host.close()
-    status = metaform(cwd=project).stdout
-    assert NOTICE in status
-    host, initialized = connect()
-    try:
-        assert initialized['instructions'].rstrip().endswith(NOTICE)
-        stored_result = host.call('intake_submit', {**FIXTURE, 'model': 'fixture', 'role': 'intake subagent'},
-                                  limit=LIMIT)
+        # 7: a submission missing one purpose is stored whole with a notice naming that join; nothing is refused.
+        submission = copy.deepcopy(FIXTURE)
+        del submission['elements'][0]['joins'][0]['purpose']
+        submission['elements'][2]['flag'] = 'broken'
+        submission['elements'][1]['joins'][0]['flag'] = 'missing'
+        submission.update({'model': 'fixture', 'role': 'intake subagent', 'report': REPORT, 'feedback': FEEDBACK})
+        stored_result = host.call('intake_submit', submission, limit=LIMIT)
         assert stored_result.get('isError') is not True, texts(stored_result)
         report = last_json(stored_result)
-        assert (report['elements'], report['joins'], report['subtypes']) == (3, 2, 1)
+        assert (report['elements'], report['joins'], report['subtypes'], report['findings']) == (3, 2, 1, 2)
+        assert [notice['where'] for notice in report['notices']] == ['elements[0].joins[0]']
     finally:
         host.close()
+    assert NOTICE not in metaform(cwd=project).stdout
 
-    # A new connection no longer shows the notice.
+    # A new connection no longer shows the notice; the report, the feedback and the findings are there to read.
     first, initialized = connect()
     second = None
     try:
         assert NOTICE not in initialized['instructions']
+        listed = last_json(first.call('list_reports', {}, limit=LIMIT))['results']
+        by_kind = {row['kind']: row['name'] for row in listed}
+        assert sorted(by_kind) == ['feedback', 'report']
+        assert texts(first.call('read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
+        assert texts(first.call('read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
+        broken = last_json(first.call('map_findings', {'flag': 'broken'}, limit=LIMIT))['results']
+        assert [row['address'] for row in broken] == ['code.alarm.audible']
+        said = last_json(first.call('feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
+        relisted = {row['name'] for row in last_json(first.call('list_reports', {}, limit=LIMIT))['results']}
+        assert set(said['files']) <= relisted and len(relisted) == 3
 
         # 8: an agent writes a memory at the DE element and at one join.
         joins = last_json(first.call('map_joins', {'element': 'code.timer.kitchen'}, limit=LIMIT))['results']

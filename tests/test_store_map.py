@@ -49,17 +49,13 @@ def test_an_address_writes_itself_and_every_prefix_as_types(home, store):
 
 @pytest.mark.req('STORE-008')
 @pytest.mark.req('MAP-013')
-def test_only_the_form_of_an_address_is_checked(home, store):
+def test_only_the_form_of_an_address_is_checked_and_a_bad_one_is_stored_with_a_notice(home, store):
     layer = knowledge(store, 'types')
-    store.add_element(layer.name, 'code.anchor')
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.add_element(layer.name, 'Code..Engine')
-    assert refused.value.next_step
-    with pytest.raises(StoreError):
-        store.add_element(layer.name, '0123456789abcdef0123456789abcdef')
-    assert dump(store_file(home, store)) == before
-    assert store.add_element(layer.name, 'media.photo.jpg').address == 'media.photo.jpg'
+    odd = store.add_element(layer.name, 'Code..Engine')
+    assert [notice.where for notice in odd.notices] == ['address'] and 'form' in odd.notices[0].message
+    assert store.where('Code..Engine', raw=True).element.element_id == odd.element_id
+    jpg = store.add_element(layer.name, 'media.photo.jpg')
+    assert jpg.address == 'media.photo.jpg' and jpg.notices == ()
 
 
 @pytest.mark.req('STORE-008')
@@ -116,7 +112,7 @@ def test_two_elements_may_each_receive_from_the_other(store):
 
 @pytest.mark.req('STORE-010')
 @pytest.mark.req('MAP-031')
-def test_a_subtype_can_never_be_a_join_end(home, store):
+def test_a_subtype_is_never_a_join_end(home, store):
     _, outer, _ = small_map(store)
     subtype = store.subtypes(outer.join_id).results[0]
     layer = knowledge(store, 'ends')
@@ -125,10 +121,11 @@ def test_a_subtype_can_never_be_a_join_end(home, store):
         store.add_join(layer.name, 'code.timer.kitchen', subtype.subtype_id, purpose='p', function='f',
                        relation='r', observation='o')
     assert refused.value.next_step
-    with pytest.raises(StoreError):
-        store.add_join(layer.name, 'code.timer.kitchen', 'code.loop.tick', purpose='p', function='f',
-                       relation='r', observation='o')
     assert dump(store_file(home, store)) == before
+    stored = store.add_join(layer.name, 'code.timer.kitchen', 'code.loop.tick', purpose='p', function='f',
+                            relation='r', observation='o')
+    assert [notice.where for notice in stored.notices] == ['provider']
+    assert stored.provider != subtype.subtype_id and store.element('code.loop.tick', raw=True).layer == 'ends'
 
 
 @pytest.mark.req('STORE-011')
@@ -149,13 +146,11 @@ def test_a_subtype_is_read_only_through_its_join(store):
 
 @pytest.mark.req('STORE-011')
 @pytest.mark.req('MAP-030')
-def test_a_subtype_with_a_purpose_is_refused_and_nothing_is_written(home, store):
+def test_a_subtype_given_a_purpose_keeps_it_in_its_extra_with_a_notice(home, store):
     _, outer, _ = small_map(store)
     layer = knowledge(store, 'subs')
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.add_subtype(layer.name, outer.join_id, 'code.loop.other', function='f', purpose='its own why')
-    assert dump(store_file(home, store)) == before
+    stored = store.add_subtype(layer.name, outer.join_id, 'code.loop.other', function='f', purpose='its own why')
+    assert stored.extra == {'purpose': 'its own why'} and [notice.where for notice in stored.notices] == ['purpose']
 
 
 @pytest.mark.req('STORE-011')
@@ -171,13 +166,14 @@ def test_an_item_at_a_subtype_is_read_at_the_subtype_and_not_its_parent(store):
 
 
 @pytest.mark.req('STORE-011')
-def test_a_subtype_address_is_held_once_and_never_by_an_element(home, store):
+def test_a_subtype_address_held_by_another_is_stored_with_a_notice_naming_the_holder(home, store):
     _, outer, inner = small_map(store)
+    tick = store.subtypes(outer.join_id).results[0]
     layer = knowledge(store, 'subs')
-    with pytest.raises(StoreError):
-        store.add_subtype(layer.name, inner.join_id, 'code.loop.tick', function='f')
-    with pytest.raises(StoreError):
-        store.add_subtype(layer.name, inner.join_id, 'code.alarm.audible', function='f')
+    twice = store.add_subtype(layer.name, inner.join_id, 'code.loop.tick', function='f')
+    assert tick.subtype_id in twice.notices[0].message
+    element = store.add_subtype(layer.name, inner.join_id, 'code.alarm.audible', function='f')
+    assert 'element' in element.notices[0].message
 
 
 @pytest.mark.req('STORE-012')

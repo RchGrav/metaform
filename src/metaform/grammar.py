@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from . import settings
@@ -26,6 +27,7 @@ class Parsed:
     confirm: bool = False
     json: bool = False
     help: bool = False
+    unknown: list[str] = field(default_factory=list)
 
 
 def convert(noun: Noun, raw: str, where: str) -> Any:
@@ -129,3 +131,76 @@ def _place(verb: Verb, positional: list[str], parsed: Parsed, where: str) -> Non
             raise Stop(f'{verb.name} needs {noun.usage()}.', f'{where} --help')
     if remaining:
         raise Stop(f'{verb.name} does not take {remaining[0]!r}.', f'{where} --help')
+
+
+KIND_WORDS = {'str': 'text', 'int': 'a whole number', 'bool': 'true or false'}
+
+
+def _typed(kind: str, value: Any) -> bool:
+    if kind == 'str':
+        return isinstance(value, str)
+    if kind == 'int':
+        return isinstance(value, int) and not isinstance(value, bool)
+    if kind == 'bool':
+        return isinstance(value, bool)
+    return True
+
+
+def _noun_value(noun: Noun, value: Any, where: str) -> Any:
+    """One noun from its JSON value, BASE-035. A noun with a schema, or of kind json, takes any JSON value."""
+    if noun.schema is not None or noun.kind == 'json':
+        return value
+    if noun.many:
+        if not isinstance(value, list) or not all(_typed(noun.kind, member) for member in value):
+            raise Stop(f'{noun.name} is a list of {KIND_WORDS[noun.kind]} values.', f'{where} --help')
+        return list(value)
+    if not _typed(noun.kind, value):
+        raise Stop(f'{noun.name} is {KIND_WORDS[noun.kind]}, not {json.dumps(value)}.', f'{where} --help')
+    return value
+
+
+def switch_value(setting: settings.Setting, value: Any, folder: Path | None = None) -> Any:
+    """A setting's value from its JSON form over MCP, CLI-027, checked as `set` checks it."""
+    if setting.kind == 'bool':
+        if not isinstance(value, bool):
+            raise settings.SettingError(f'{setting.key} is true or false, not {json.dumps(value)}.')
+        return value
+    if setting.kind == 'list':
+        if not isinstance(value, list) or not all(isinstance(member, str) for member in value):
+            raise settings.SettingError(f'{setting.key} is a list of text values.')
+        return [member.strip() for member in value if member.strip()]
+    if setting.kind == 'int':
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise settings.SettingError(f'{setting.key} is a whole number, not {json.dumps(value)}.')
+        return settings.parse(setting, str(value), folder)
+    if not isinstance(value, str):
+        raise settings.SettingError(f'{setting.key} is text, not {json.dumps(value)}.')
+    return settings.parse(setting, value, folder)
+
+
+def from_json(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tuple[str, ...] = (),
+              folder: Path | None = None) -> Parsed:
+    """The nouns and switches of one tool call, checked the way the command line checks them, MCP-005 and MCP-006.
+
+    A required noun that is missing, or a value of the wrong kind, stops the call with the same next step the
+    command line gives. A name that is neither a noun nor a switch of the verb is listed in `unknown`.
+    """
+    where = f'metaform {module} {verb.name}'
+    parsed = Parsed()
+    for noun in verb.nouns:
+        if noun.name not in arguments:
+            if noun.required:
+                raise Stop(f'{verb.name} needs {noun.usage()}.', f'{where} --help')
+            continue
+        parsed.nouns[noun.name] = _noun_value(noun, arguments[noun.name], where)
+    for key in verb.switches:
+        setting = settings.SCHEMA.get(key)
+        if setting is None or key not in arguments:
+            continue
+        try:
+            parsed.switches[key] = switch_value(setting, arguments[key], folder)
+        except settings.SettingError as error:
+            raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
+    known = {noun.name for noun in verb.nouns} | set(verb.switches) | set(ignore)
+    parsed.unknown = sorted(name for name in arguments if name not in known)
+    return parsed

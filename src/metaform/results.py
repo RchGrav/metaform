@@ -21,14 +21,16 @@ def _compact(value: Any) -> str:
 
 
 def as_text(result: Any) -> str:
-    """The CLI's readable form of a result that is not a string."""
+    """The CLI's readable form of a result that is not a string; its notices follow as `Notice:` lines, BASE-044."""
     data = plain(result)
     if isinstance(data, list):
         return ''.join(_compact(entry) + '\n' for entry in data)
     if isinstance(data, dict):
+        notices = data.pop('notices', None) or []
         lines = []
         for key, value in data.items():
             shown = _compact(value) if isinstance(value, (list, dict)) else ('' if value is None else str(value))
             lines.append(f'{key}: {shown}')
+        lines += [f"Notice: {notice['where']}: {notice['message']}" for notice in notices]
         return '\n'.join(lines) + '\n'
     return f'{data}\n'
