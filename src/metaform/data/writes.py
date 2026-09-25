@@ -20,18 +20,7 @@ from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
 from .ids import encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
-from .records import (
-    Element,
-    Item,
-    Join,
-    Node,
-    Notice,
-    Outcome,
-    Property,
-    Ref,
-    Subtype,
-    Version,
-)
+from .records import (Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype, Version)
 from .selection import LayerRow, all_layers
 from .session import Tx
 

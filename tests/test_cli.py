@@ -539,6 +539,38 @@ def test_the_layers_setting_is_the_starting_selection(run, project):
     assert read() == set()
 
 
+@pytest.mark.req('CLI-033')
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('CLI-021')
+@pytest.mark.req('BASE-028')
+def test_project_and_layers_pass_on_one_call_to_any_module_verb(run, project, tmp_path):
+    from metaform.data import Node, Store
+    other = tmp_path / 'other'
+    other.mkdir()
+    run('add', 'project', 'other', str(other))
+    for project_id in ('proj', 'other'):
+        store = Store(project_id)
+        with store.atomic():
+            base = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
+                               provenance={'module': 'intake'}, ready=True)
+            store.add_element(base.name, f'code.{project_id}', role='DE')
+    store = Store('proj')
+    for name in ('a', 'b'):
+        store.layer(name, 'test', f'{name} notes.', mutable=True, hideable=True, provenance={'module': 'test'})
+        store.add_item(name, Node('element', 'code.proj'), f'from {name}')
+        store.finish(name)
+
+    def read(*extra):
+        view = json.loads(run('map', 'node', 'element:code.proj', '--json', *extra, cwd=project).stdout)
+        return {group['layer'] for group in view['layers'] if group['items']} & {'a', 'b'}
+    assert read() == {'a', 'b'}
+    assert read('--layers', 'a') == {'a'}
+    assert read() == {'a', 'b'} and shown(run, cwd=project)['layers']['value'] == []
+    there = json.loads(run('map', 'where', 'code.other', '--project', 'other', '--json', cwd=project).stdout)
+    assert there['element']['address'] == 'code.other'
+    assert shown(run, cwd=project)['project']['value'] == 'proj'
+
+
 @pytest.mark.req('BASE-031')
 @pytest.mark.skipif(os.name == 'nt', reason='SIGINT is delivered differently on Windows')
 def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, user_module, tmp_path):

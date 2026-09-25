@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from metaform import settings
-from metaform.data import Node, Store
+from metaform.data import PLACE_KINDS, Node, Store
 from metaform.module import Context, Module, Noun, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -28,6 +28,13 @@ UNNAMED = ('add-element', 'add-join', 'add-subtype', 'add-property', 'add-item')
 
 def _node(text: str) -> Node:
     return Node.parse(text)
+
+
+def _element(value: Any) -> Any:
+    """An element noun: an address or id, or a node written `kind:<address or id>`, which is read as that node."""
+    if isinstance(value, str) and value.partition(':')[0] in PLACE_KINDS and ':' in value:
+        return Node.parse(value)
+    return value
 
 
 def _store(ctx: Context) -> Store:
@@ -212,6 +219,8 @@ def _changes(ctx: Context) -> dict[str, Any]:
     changes = {name: ctx.nouns[name] for name in FIELDS if name in ctx.nouns}
     if 'link' in changes and isinstance(changes['link'], str):
         changes['link'] = _node(changes['link'])
+    if 'element' in changes:
+        changes['element'] = _element(changes['element'])
     return changes
 
 
@@ -254,7 +263,7 @@ def knowledge(ctx: Context) -> Any:
                                                                   'flag_note'))
     if op == 'add-property':
         element_ref, value = _need(ctx, 'element', 'value')
-        return store.add_property(name, element_ref, value, **_optional(ctx, 'refs', 'extra'))
+        return store.add_property(name, _element(element_ref), value, **_optional(ctx, 'refs', 'extra'))
     if op == 'add-item':
         target, value = _need(ctx, 'node', 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
@@ -266,7 +275,7 @@ def knowledge(ctx: Context) -> Any:
         return store.add_ref(owner, key, value)
     if op == 'add-plan':
         (element_ref,) = _need(ctx, 'element')
-        return store.add_plan(name, element_ref, nouns.get('join'))
+        return store.add_plan(name, _element(element_ref), nouns.get('join'))
     if op == 'edit':
         (thing,) = _need(ctx, 'id')
         return store.edit(thing, _changes(ctx))
@@ -322,7 +331,7 @@ KNOWLEDGE_NOUNS = (
     _noun('non_goal', 'add-join: what the receiver does not seek.'),
     _noun('type', 'add-join: the join type, purpose by default.'),
     _noun('join', 'add-subtype and add-plan: the join id.'),
-    _noun('element', 'add-property and add-plan: the element, by address or id.'),
+    _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
     _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
     _noun('node', 'add-item: element:<address or id>, join:<id> or subtype:<address or id>.'),
     _noun('link', 'add-item: a node the item links to.'),

@@ -15,29 +15,9 @@ from . import corrections
 from .corrections import METAFORM_KINDS
 from .ids import decode_extra
 from .names import reading, short_name
-from .records import (
-    Descriptor,
-    Element,
-    Finding,
-    Item,
-    Join,
-    Layer,
-    Node,
-    Property,
-    Provenance,
-    Ref,
-    Report,
-    Subtype,
-    Version,
-)
-from .rows import (
-    address_of,
-    layer_name,
-    node_address,
-    read_refs,
-    target_current,
-    whole_number,
-)
+from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Property, Provenance, Ref, Report,
+                      Subtype, Version)
+from .rows import (address_of, layer_name, node_address, read_refs, target_current, whole_number)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
 

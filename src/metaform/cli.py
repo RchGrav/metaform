@@ -618,14 +618,15 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         confirm = ' '.join(['metaform', identifier, verb.name, *rest[1:], '--confirm'])
         raise Stop(verb.caution, f'If you are sure: {confirm}')
     messages = sys.stderr if parsed.json else sys.stdout
-    ctx = context.build(identifier, folder, nouns=parsed.nouns, switches=parsed.switches,
+    project = parsed.switches.pop('project', None)
+    ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches,
                         sink=lambda text: messages.write(text + '\n'))
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:
         result = call(verb.run, ctx)
-    data = results.noted(result, parsed.notices)
-    if not isinstance(data, dict):
+    data = results.noted(result, parsed.notices) if parsed.notices else result
+    if parsed.notices and not isinstance(data, dict):
         for where, message in parsed.notices:
             messages.write(f'Notice: {where}: {message}\n')
     if result is None:
@@ -633,7 +634,7 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     if isinstance(result, str):
         sys.stdout.write(result)
     elif parsed.json:
-        sys.stdout.write(json.dumps(data, ensure_ascii=False) + '\n')
+        sys.stdout.write(results.as_json(data) + '\n')
     else:
         sys.stdout.write(results.as_text(data))
 

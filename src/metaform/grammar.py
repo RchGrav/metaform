@@ -18,6 +18,7 @@ from .errors import Stop
 from .module import Noun, Verb
 
 CONTROLS = ('--confirm', '--json', '--help', '-h')
+CONTEXT = ('project', 'layers')  # every module verb takes these for one call, as every tool does, CLI-021 and MCP-025
 
 
 @dataclass
@@ -79,7 +80,7 @@ def parse(module: str, verb: Verb, words: list[str]) -> Parsed:
             if not name.startswith('--') and (len(name) != 2 or not name[1].isalpha()):
                 raise Stop(f'{name} is not a switch; to pass it as a word, put -- before it.', f'{where} --help')
             found = settings.by_switch(name)
-            if found is None or found[0].key not in verb.switches:
+            if found is None or found[0].key not in (*verb.switches, *CONTEXT):
                 raise Stop(f'{module} {verb.name} has no switch {name}.', f'{where} --help')
             setting, negative = found
             if setting.kind == 'bool':

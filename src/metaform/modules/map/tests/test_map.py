@@ -238,3 +238,51 @@ def test_a_correction_asking_to_change_a_receiver_says_so_and_writes_the_rest(ru
     k(run, mapped, 'op=finish', 'layer=fix-a')
     after = Store('proj').joins('code.timer.kitchen').results[0]
     assert (after.purpose, after.receiver_address) == ('First fix.', 'code.timer.kitchen')
+
+
+@pytest.mark.req('STORE-039')
+@pytest.mark.req('STORE-008')
+@pytest.mark.req('BASE-044')
+def test_a_property_named_by_node_attaches_by_the_nodes_kind(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    join = Store('proj').joins('stakeholder.cook.home').results[0]
+    at_element = json.loads(k(run, mapped, 'op=add-property', 'layer=notes', 'element=element:code.timer.kitchen',
+                              'value="a"').stdout)
+    assert at_element['address'] == 'code.timer.kitchen' and at_element['notices'] == []
+    at_type = json.loads(k(run, mapped, 'op=add-property', 'layer=notes', 'element=type:code', 'value="b"').stdout)
+    assert at_type['address'] == 'code' and at_type['notices']
+    at_join = json.loads(k(run, mapped, 'op=add-property', 'layer=notes', f'element=join:{join.join_id}',
+                           'value="c"').stdout)
+    assert at_join['orphaned'] and at_join['extra'] == {'target': f'join:{join.join_id}'} and at_join['notices']
+    store = Store('proj')
+    assert [store.where(address, raw=True) for address in ('type:code', f'join:{join.join_id}')] == [None, None]
+
+
+@pytest.mark.req('CLI-033')
+@pytest.mark.req('LAYER-019')
+@pytest.mark.req('BASE-036')
+def test_layers_stack_and_metaforms_read_as_one_aligned_row_each(run, mapped):
+    k(run, mapped, 'op=create', 'layer=practices-cpp', 'variable=C++ practice here.', 'mutable=true', 'hideable=true',
+      'tags=["practices"]', *PROVENANCE)
+    k(run, mapped, 'op=finish', 'layer=practices-cpp')
+    k(run, mapped, 'op=create', 'layer=draft', 'variable=Drafts.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
+      'hideable=false', *PROVENANCE)
+    join = Store('proj').joins('code.timer.kitchen').results[0]
+    k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'function=Plays a loud tone.', 'reason=r')
+    k(run, mapped, 'op=finish', 'layer=fix-1')
+
+    def rows(*args):
+        lines = run('map', *args, cwd=mapped).stdout.splitlines()
+        starts = {len(line) - len(line[len(line.split()[0]):].lstrip()) for line in lines}
+        assert len(starts) == 1, lines
+        return {line.split()[0]: line.split() for line in lines}
+    layers = rows('layers')
+    assert layers['intake-1'] == ['intake-1', 'intake', 'intake', 'ready', 'on']
+    assert layers['practices-cpp'] == ['practices-cpp', 'layer', 'test', 'practices', 'ready', 'on']
+    assert layers['draft'] == ['draft', 'layer', 'test', 'building', 'off']
+    assert layers['fix-1'] == ['fix-1', 'correction', 'test', 'ready', 'applied']
+    assert list(rows('stack')) == ['fix-1']
+    metaforms = rows('metaforms')
+    assert metaforms['main'][-1] == 'active'
+    assert {layer['name'] for layer in j(run, 'layers', cwd=mapped)['results']} == set(layers)

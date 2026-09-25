@@ -16,29 +16,8 @@ from ..errors import StoreError
 from . import corrections, rows, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
-from .records import (
-    Citation,
-    ContextView,
-    Element,
-    Finding,
-    Item,
-    Join,
-    Layer,
-    LayerGroup,
-    Node,
-    NodeView,
-    Page,
-    Property,
-    Provenance,
-    Report,
-    RootElement,
-    RootEntry,
-    Roots,
-    Selection,
-    Subtype,
-    Version,
-    Where,
-)
+from .records import (Citation, ContextView, Element, Finding, Item, Join, Layer, LayerGroup, Node, NodeView, Page,
+                      Property, Provenance, Report, RootElement, RootEntry, Roots, Selection, Subtype, Version, Where)
 from .selection import Resolver, all_layers
 from .session import Tx
 

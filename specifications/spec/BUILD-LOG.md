@@ -113,3 +113,12 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Not done: stores written before this step lack `unapplied` and keep two CHECK constraints the layout dropped; per Q37 nothing migrates them.
 - Questions raised: Q39 to Q41.
 
+## Step 13: the manual-test defects
+
+- D9: every module verb on the CLI takes `--project` and `--layers` for one call, as every tool does over MCP, CLI-011, CLI-021, CLI-033 acceptance 2 and BASE-028.
+- D11: `map layers`, `map stack` and `map metaforms` print one aligned row each on the CLI: a layer's name, kind, module, tags, `ready` or `building`, and `on`, `off` or, for a stacked correction layer, `applied`, then `hidden` and `re-examine` when they hold, CLI-033, LAYER-019 and STORE-036; a metaform's name, created time and `active`. `--json` and MCP keep the data, BASE-036.
+- D12: an `element=` noun written as a node, such as `type:code` or `join:<id>`, is read as that node, so a property sent to a join is stored orphaned, and one sent to a type address goes on the element there, STORE-039 and STORE-008. It had made an element at the literal address `join:<id>`.
+- Found already fixed: D13 and D20 in step 10; D15 and D16 in step 12, since an observation at an unknown element now makes it in memory with a notice and a correction's `receiver` is named in a notice; D17, whose export with `layer=` across two metaforms now succeeds.
+- Also: step 12's autofix of import order had expanded the imports of `store.py`, `writes.py`, `reads.py` and `views.py` to one name per line; they are back in the repository's style.
+- Tests added, each seen failing first: `test_a_property_named_by_node_attaches_by_the_nodes_kind`, `test_layers_stack_and_metaforms_read_as_one_aligned_row_each` and `test_project_and_layers_pass_on_one_call_to_any_module_verb`.
+

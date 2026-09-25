@@ -27,32 +27,9 @@ from .. import home
 from ..errors import StoreError
 from . import challenges, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
-from .records import (
-    ChallengeState,
-    Citation,
-    ContextView,
-    Element,
-    Finding,
-    Item,
-    Join,
-    Layer,
-    Node,
-    NodeView,
-    Notice,
-    Outcome,
-    Page,
-    Plan,
-    Property,
-    Provenance,
-    Record,
-    Ref,
-    Report,
-    Roots,
-    Selection,
-    Subtype,
-    Version,
-    Where,
-)
+from .records import (ChallengeState, Citation, ContextView, Element, Finding, Item, Join, Layer, Node, NodeView,
+                      Notice, Outcome, Page, Plan, Property, Provenance, Record, Ref, Report, Roots, Selection,
+                      Subtype, Version, Where)
 from .selection import Resolver
 from .session import Session, Tx
 
