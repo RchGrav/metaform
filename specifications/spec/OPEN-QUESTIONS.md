@@ -168,6 +168,12 @@ Recommendation: no. Receipts belong to the workflow module, since the chassis do
 **D53. Settings of an absent module.** Does `unset all` leave a missing module's stored settings untouched? (CLI-024)
 Recommendation: yes. Configuration survives the module's absence and applies again when it returns.
 
+**D54. How the intake agent writes its answer.** The Canonical Intake text says to return only the final XML shape, while the design has the agent build the map through Metaform's tools. (BASE-039, MAP-040, MCP-009)
+Recommendation: the intake text gets a second response protocol, in your words, that names the intake tools, with the method unchanged. It goes into the test intake first and is adopted after your test. Until then the agent can return its XML answer through one intake tool that stores it by the MAP-040 mapping, which keeps the first test unblocked.
+
+**D55. Record fields on the command line.** Arguments are nouns and switches are settings, so a join's purpose or observation is neither. BASE-043 writes optional fields as `name=value` nouns.
+Recommendation: `name=value` nouns on the CLI. Agents mostly write through MCP, where each field is a named argument, so the CLI form only has to be clear and unambiguous.
+
 ## Engineering choices made
 
 These are decided so the build can proceed. Veto any of them.

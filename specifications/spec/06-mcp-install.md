@@ -8,22 +8,22 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-001 MCP is a module
 
 - Requirement: The MCP server is provided by a module named `mcp`, built on the common base like every other module.
-- What this means: The chassis runs completely without MCP. The `mcp` module adds the verb `metaform mcp`, which starts the server. It uses the same chassis resources as any module: the module registry, the settings, the command surface and the verb declarations. It gets no private access. MCP's library dependencies belong to the module, not the chassis.
+- What this means: The chassis runs completely without MCP. The `mcp` module adds the verb `metaform mcp serve`, which starts the server. The verb is declared for the CLI only, so it is never itself a tool, BASE-035. It uses the same chassis resources as any module: the module registry, the settings, the command surface and the verb declarations. It gets no private access. MCP's library dependencies belong to the module, not the chassis.
 - Why: The chassis must stay usable on its own, and every surface stands on the same base. Keeping MCP a module also keeps its compiled dependencies out of the chassis, so a wheel without the MCP module runs anywhere.
-- How it shows: `metaform list modules` lists `mcp`. With it disabled, `metaform mcp` fails with one next step, `metaform enable module mcp`. Everything else in the chassis still works.
-- Build: Move `src/metaform/mcp_server.py` into `src/metaform/modules/mcp/`, following the template's shape. Remove `mcp` from `VERBS` and `ALWAYS` in `src/metaform/cli.py` and from `RESERVED` in `src/metaform/loader.py`, and remove the `mcp` command page from the chassis docs. Move the `mcp>=1.10` dependency out of the chassis requirements and into the module's declared requirements. How a module declares its requirements for a wheel build is in the packaging section.
-- Acceptance: With the `mcp` module disabled, `metaform mcp` exits nonzero with a `Next: metaform enable module mcp` line, and the chassis command tests still pass. Importing the chassis package with the `mcp` library absent succeeds.
+- How it shows: `metaform list modules` lists `mcp`. With it disabled, `metaform mcp serve` fails with one next step, `metaform enable module mcp`. Everything else in the chassis still works.
+- Build: Move `src/metaform/mcp_server.py` into `src/metaform/modules/mcp/`, following the template's shape. Remove `mcp` from `VERBS` and `ALWAYS` in `src/metaform/cli.py` and from `RESERVED` in `src/metaform/loader.py`, and remove the `mcp` command page from the chassis docs. Move the `mcp>=1.10` dependency out of the chassis requirements and into the module's `DEPENDENCIES`, BASE-035 and BASE-041. The module ships enabled.
+- Acceptance: With the `mcp` module disabled, `metaform mcp serve` exits 2 with a `Next: metaform enable module mcp` line, and the chassis command tests still pass. Importing the chassis package with the `mcp` library absent succeeds.
 - Relates to: BASE-003, BASE-026, CLI-001, MCP-002, MCP-003.
 - Status: confirmed.
 
 ### MCP-002 The server speaks MCP over stdio through the official SDK's low-level server
 
-- Requirement: `metaform mcp` serves the Model Context Protocol over stdin and stdout, using the low-level `Server` class of the official `mcp` Python SDK.
+- Requirement: `metaform mcp serve` serves the Model Context Protocol over stdin and stdout, using the low-level `Server` class of the official `mcp` Python SDK.
 - What this means: One process serves one host connection. Tools and instructions are computed on each request from the live module declarations, not registered once with decorators.
 - Why: Tools come from module verb declarations and change with the folder's command surface. A server that lists tools per request fits that directly. A decorator-based framework would sit between the declaration and the server and add dependencies without adding anything used.
-- How it shows: A host that launches `metaform mcp` completes initialization and receives the tool list and the instructions.
-- Build: Keep the current `serve()` shape in `mcp_server.py`: `Server(... on_list_tools=..., on_call_tool=...)` with `stdio_server()`. Tool calls run in a worker thread through `anyio.to_thread.run_sync`, as now.
-- Acceptance: An MCP client test starts `metaform mcp` as a subprocess, initializes, lists tools and calls one. It protects MCP-003 and MCP-004 through real protocol traffic.
+- How it shows: A host that launches `metaform mcp serve` completes initialization and receives the tool list and the instructions.
+- Build: `Server('metaform', version=<chassis version>, instructions=<composed text>, on_list_tools=list_tools, on_call_tool=call_tool)`, run with `stdio_server()` under `anyio.run`. `list_tools` returns one `Tool` per surfaced verb, MCP-003. `call_tool` builds a new `Context` for the call, BASE-028: a verb whose `run` is a coroutine function is awaited in the server's loop, so the host's cancellation reaches it, BASE-031; a plain function runs in a worker thread through `anyio.to_thread.run_sync`. The result follows BASE-036. The folder is the server's working folder at start, until D37 is answered, MCP-011.
+- Acceptance: An MCP client test starts `metaform mcp serve` as a subprocess, initializes, lists tools and calls one. It protects MCP-003 and MCP-004 through real protocol traffic.
 - Relates to: MCP-001, MCP-003.
 - Status: recommended.
 
@@ -33,7 +33,7 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The tool's description is the verb's summary. Its input schema comes from the verb's nouns and switches. A module author declares a verb once and gets the CLI command, its help and its tool. Names must match `^[a-zA-Z0-9_-]{1,64}$` and contain no double underscore. A verb whose name would break that rule is refused when the module loads, with the reason. It is not silently skipped.
 - Why: One declaration for both surfaces means CLI and MCP never disagree, and an agent without MCP loses nothing.
 - How it shows: The template's `greet` verb appears as the tool `template_greet`, with the same summary as `metaform help template greet`.
-- Build: `tools()` in `mcp_server.py` does this now. Change the silent `continue` on an invalid name into a load-time refusal in `loader.py`, with a `Next:` line naming the fix.
+- Build: For each surfaced verb whose `surfaces` include `mcp`: name `<module>_<verb>`; description the verb's summary, followed by ` Caution: <caution>` for a caution verb; input schema `{"type": "object", "properties": {...}, "required": [...], "additionalProperties": false}` with one property per noun, typed by CLI-027 and BASE-035, a many noun as an array, required nouns listed in `required`; one property per switch the verb reads, keyed by the setting key, typed by CLI-027; and `confirm` of type boolean for a caution verb. An invalid tool name is refused at load, BASE-037. The current code puts all nouns in one `nouns` array and silently skips invalid names; both change.
 - Acceptance: A verb added to a test module appears as a tool with no MCP code written for it. A module declaring an invalid verb name fails to load and says why.
 - Relates to: BASE-006, CLI-001, MCP-004, MCP-005.
 - Status: confirmed.
@@ -44,18 +44,18 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The `commands` setting and the module enabled state decide the surface. A command outside the surface is neither listed nor callable. A call to it returns an error with one next step. Harness tool permissions can narrow the surface further, but never widen it.
 - Why: The command surface governs what exists, so the narrowing holds even when a host grants every tool. The orchestrator that narrowed the surface holds the way back; a subagent meets only what is on the surface.
 - How it shows: `metaform set --commands template` in a folder. A new MCP connection from that folder lists only `template_*` tools. A call to `map_where` returns `Error: No tool map_where on this surface.` followed by one `Next:` line.
-- Build: `_surface()` and `run_tool()` in `mcp_server.py` do this now. Per-verb OS compatibility is filtered by the same check, as specified in the CLI section.
+- Build: The surface is the loaded modules whose ids pass the `commands` check of CLI-022 for the server's folder, and within them the verbs whose `surfaces` include `mcp` and whose `supported_os` includes this system, BASE-016. `list_tools` lists exactly those. `call_tool` for any other name returns `is_error` true with `Error: No tool <name> on this surface.` and `Next: metaform help commands`.
 - Acceptance: With the surface narrowed, the narrowed-out tool is absent from `tools/list`, and calling it by name returns `is_error` true. With the surface restored, both work.
 - Relates to: CLI-022, BASE-016, MCP-003.
 - Status: confirmed.
 
 ### MCP-005 Tool arguments follow the command grammar, and booleans appear once
 
-- Requirement: A tool takes the verb's nouns as an array argument `nouns` and each switch as a named argument. A boolean setting appears once, as a boolean named after the setting, and is left out when not given.
-- What this means: `nouns` carries the words the CLI takes after the verb. A switch that takes a value is a string argument. A boolean appears as `tmux: true | false`. Leaving it out means not given, so the stored or default value applies. The no-form exists for people typing on a command line. An agent never sees it and never has to resolve a double negative. `confirm` is a per-call boolean, present only on caution verbs, and never a setting.
+- Requirement: A tool takes each of the verb's nouns and each switch as a named argument. A boolean setting appears once, as a boolean named after the setting, and is left out when not given.
+- What this means: Each noun is a named property, the name from its declaration. A switch that takes a value has the JSON type of its setting kind, CLI-027. A boolean appears as `tmux: true | false`. Leaving it out means not given, so the stored or default value applies. The no-form exists for people typing on a command line. An agent never sees it and never has to resolve a double negative. `confirm` is a per-call boolean, present only on caution verbs, and never a setting.
 - Why: The CLI grammar is verbs, nouns and switches, and MCP carries the same grammar in JSON. A boolean has three parsing cases: on, off and not given. Absent is how JSON says not given. One argument per setting keeps the tool schema free of contradictions such as `tmux: true, no_tmux: true`.
 - How it shows: The schema for a verb with a boolean setting `tmux` shows one property, `tmux`, of type boolean. Calling it with `tmux: false` runs that call with tmux off, even when `--tmux` is glued on. Calling it without `tmux` uses the stored value.
-- Build: In `tools()`, switch properties come from the module's settings declarations, not a separate adverb list, per the settings section. Change `run_tool()` so that `false` is passed through as off. Today it drops `False`, which makes off impossible over MCP. Apply the value to that call only, as the CLI does.
+- Build: Switch properties come from the module's settings declarations, not a separate adverb list, CLI-012. A call's switch arguments become `Context.switches` for that call only; `false` is passed through as off. Today the code drops `False`, which makes off impossible over MCP; that changes.
 - Acceptance: A glued-on boolean called with `false` runs off for that call, and the stored value remains on afterward. A call without the argument uses the stored value.
 - Relates to: CLI-011, CLI-012, CLI-015, CLI-018, MCP-003.
 - Status: recommended.
@@ -66,7 +66,7 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: Errors from `Stop` carry the message and one next command. A caution verb called without `confirm` explains what it would do and names the call with `confirm` true as the next step.
 - Why: An error that names the next command keeps an agent on the surface instead of sending it into the source code, where it starts guessing at the design.
 - How it shows: `template_forget` without `confirm` returns the caution text and `Next: If you are sure: call template_forget with confirm true`.
-- Build: `run_tool()` does this now.
+- Build: A `Stop` raised by the verb, or by the dispatch checks, becomes a result with `is_error` true whose text is `Error: <message>` and `Next: <next_step>`. A caution verb called without `confirm: true` raises `Stop(caution, 'If you are sure: call <tool name> with confirm true')` before it runs. An unexpected exception becomes `Error: <type>: <message>` and `Next: metaform list modules`.
 - Acceptance: For each error path of the template's tools, the text has exactly one `Next:` line, and it matches the CLI's next step for the same failure.
 - Relates to: CLI-009, CLI-018, BASE-013.
 - Status: confirmed.
@@ -77,10 +77,14 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The base text says what Metaform is, how tools are named, how arguments work, and that errors end with a next step. Each module on the surface adds a section headed by its id. Nothing is cached in files, so enabling, disabling or narrowing takes effect on the next connection. The same composed text is available on the CLI, so an agent without MCP reads the same instructions. The command name for that is open.
 - Why: Live instructions have one source. A module's instructions are never copied anywhere that could go stale.
 - How it shows: Enable a module and reconnect: its section appears. Disable it and reconnect: its section is gone.
-- Build: `instructions()` in `mcp_server.py` composes the text. Add a module field for concise instructions, per MCP-008. It replaces the use of `purpose` here, if the two differ; that is open. The base text lives in the chassis, because every module surface uses it.
+- Build: The text is the base text, then for each surfaced module in id order a section `## <id>` followed by the module's `purpose`, D39 and BASE-035, then the no-intake notice of MCP-009 when it applies. The base text lives in the chassis, because every surface uses it, and reads exactly:
+  ```
+  Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. Read the map before you change the project, so you work from the purpose of each part. Each tool comes from a module; the sections below say what each module is for. A tool named <module>_<verb> takes the verb's nouns and switches as named arguments. A tool error ends with the one next step to take. For any module's full help, run metaform help <module>.
+  ```
+  `metaform help agents` prints the same composed text for the folder, CLI-029, so an agent without MCP reads the same instructions.
 - Acceptance: The instructions returned at initialization contain exactly the sections of the surfaced modules, in id order, and change after an enable or disable with no other step.
 - Relates to: MCP-008, MCP-009, BASE-012, CLI-005.
-- Status: confirmed.
+- Status: confirmed. The base text wording is recommended.
 
 ### MCP-008 Each module adds concise instructions that defer to help
 
@@ -88,29 +92,33 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The text is low in context. It says what the module is for, when to use it, and where the details are. It does not list every verb or switch, because help does that. The template shows the expected length and shape.
 - Why: Agents start with little context. The details stay in help, where they are current and cost nothing until needed.
 - How it shows: The template module's section in the instructions is a few sentences, ending with `metaform help template`.
-- Build: Add a field to the `Module` declaration in `src/metaform/module.py`. Its relation to `purpose` is open. Update the template and its README.
+- Build: The `purpose` field of `Module`, BASE-035, following D39's recommendation. A module whose `purpose` is empty fails to load with the next step `metaform help template`. The template and its README show the expected length: two to four sentences ending with `metaform help <id>`.
 - Acceptance: A module missing the field fails to load with a next step. It is not served with empty instructions.
 - Relates to: MCP-007, BASE-012, BASE-019.
-- Status: confirmed. The field name and its relation to `purpose` are open.
+- Status: confirmed. Using `purpose` follows D39, recommended.
 
 ### MCP-009 A project with no intake gets a notice to delegate the intake to a subagent
 
 - Requirement: When the folder's project has no intake, the instructions say so and tell the agent to have a subagent perform the intake. The subagent reads its instructions from Metaform by name, through the CLI or MCP. The orchestrator passes only where to read them.
 - What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word and writes its result back through the same kind of plain commands and tools. The same notice appears in `metaform` status output, so an agent without MCP sees it too.
 - Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it. The nonce later replaces the name as the handle, without changing how anything works.
-- How it shows: In a registered project with no intake, the instructions contain a notice in this shape: the project has no intake yet; have a subagent perform it; tell the subagent to read its instructions with the named command or tool and follow them. After an intake is stored, the notice is gone.
-- Build: "Has an intake" means the project holds an intake layer in the store. The check reads the store through the data access object. The intake instructions come from the module that owns the intake, served by name: recommended `metaform intake prompt` and the tool `intake_prompt`. The owning module and the exact names are open.
-- Acceptance: Instructions for a project with no intake layer contain the notice and name a command that exists on the surface. Instructions for a project with an intake layer do not contain it. The text returned by the named command is byte-identical to the stored intake instructions.
-- Relates to: MCP-007, MCP-024, CLI-005, LAYER-001, STORE-013.
-- Status: confirmed. The owning module and the command names are open.
+- How it shows: In a registered project with no intake, the instructions end with:
+  ```
+  This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.
+  ```
+  After an intake is completed, the notice is gone.
+- Build: "Has an intake" is `has_intake()`: a complete layer of kind intake exists, STORE-032. An intake layer that is still open does not count, so a half-written intake never clears the notice. The notice appears only when the intake module is on the folder's surface, since it names that module's command. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder.
+- Acceptance: Instructions for a project with no complete intake layer contain the notice, including while an intake layer is open, and the command it names exists on the surface. Instructions for a project with a complete intake layer do not contain it. The text returned by `intake prompt` equals the stored intake file with only the `<target>` element's attributes filled.
+- Relates to: MCP-007, MCP-024, CLI-028, LAYER-001, STORE-032, BASE-039.
+- Status: confirmed. The intake module, its command names and the notice wording follow D38, recommended. How the served text asks the subagent to write its result is open, BASE question 9.
 
 ### MCP-010 AI tools start the server with uvx
 
-- Requirement: The registration each AI tool receives runs `uvx --from <source> metaform mcp`, where the source is the user's built wheel or the published distribution.
+- Requirement: The registration each AI tool receives runs `uvx --from <source> metaform mcp serve`, where the source is the user's built wheel or the published distribution.
 - What this means: uvx gives the server its own environment with its own dependencies, the same way on every system. For a local build, the source is the absolute path of the wheel. Once published, it is the distribution name. The command and the Python package stay `metaform` either way.
 - Why: The server runs isolated from whatever else is installed, with the modules the user enabled, on Linux, macOS and Windows alike.
-- How it shows: A tool's MCP entry reads `"command": "uvx", "args": ["--from", "<source>", "metaform", "mcp"]`.
-- Build: The installer writes this entry, per MCP-016. `uv` must be present, per MCP-013.
+- How it shows: A tool's MCP entry reads `"command": "uvx", "args": ["--from", "<source>", "metaform", "mcp", "serve"]`.
+- Build: The installer writes this entry, per MCP-016. `uv` must be present, per MCP-013. The source is found in this order: when Metaform is running from a wheel file, directly or under uvx, that wheel's absolute path; otherwise the last wheel `metaform build` wrote, recorded as `last_build`, BASE-041. With neither, install stops before changing anything, with the next step `metaform build`. The published distribution name replaces the path once publishing is decided.
 - Acceptance: The installer's proof step (MCP-017) launches exactly the registered command and lists tools. A registration that cannot start fails that step.
 - Relates to: MCP-013, MCP-016, MCP-017, BASE-021.
 - Status: confirmed. The PyPI distribution name is undecided; `metaform` belongs to an unrelated package.
@@ -131,7 +139,7 @@ It also defines the first working test, which exercises all three end to end.
 - Requirement: The MVP serves MCP locally over stdio, with data in `~/.metaform`, and has no nonces.
 - What this means: Remote hosting, where a server holds the data for several users over HTTP, is a later goal. The nonce, the handle that carries a job's text to a worker exactly as written, is designed after the MVP. Until then, instructions are read by name (MCP-009).
 - Why: The first test and the MVP need a working local server. Remote hosting changes where the data lives, and nonces depend on their own design.
-- How it shows: `metaform mcp` has no transport or nonce options.
+- How it shows: `metaform mcp serve` has no transport or nonce options.
 - Build: Nothing is built for either now.
 - Acceptance: None needed.
 - Relates to: MCP-009.
@@ -145,10 +153,16 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: Nothing is changed before the checks pass. A missing `uv` gives the one command that installs it on this system. The installer never installs anything itself.
 - Why: Setup touches other tools' configuration. Failing early with the fix beats a half-finished setup, and installing software behind the user's back surprises them.
 - How it shows: The first screen lists each check with its result. With `uv` missing, it ends with `Next:` and the install command for this OS.
-- Build: An `install` verb, in the chassis CLI unless BASE open question 5 places it in a module. Checks use `shutil.which` and `platform`. The screen uses the chassis settings-screen code, `tui.py`, so it looks like the rest of Metaform.
+- Build: An `install` verb in the chassis CLI, per D28's recommendation. Checks, in order:
+  - System: `platform.system()` mapped to linux, macos or windows.
+  - Python: the running version against the `Requires-Python` of the Metaform distribution, read with `importlib.metadata`; today `>=3.11`.
+  - uv: `shutil.which('uv')` and `shutil.which('uvx')`. When missing, the next step is uv's own install command for the system: on Linux and macOS `curl -LsSf https://astral.sh/uv/install.sh | sh`; on Windows `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`.
+  - Source: MCP-010.
+  - Tools: detection per MCP-016.
+  With a terminal, the checks show on a screen built with the same `prompt_toolkit` code as the settings screen, CLI-026; without one, they print as lines.
 - Acceptance: With `uv` absent from PATH, `metaform install` changes no files and exits nonzero with one `Next:` line.
 - Relates to: MCP-010, CLI-001.
-- Status: recommended.
+- Status: recommended. The uv install commands are uv's documented ones and are checked against uv's docs during the build, E2.
 
 ### MCP-014 The installer asks by default, and named tools or `all` set up without asking
 
@@ -157,17 +171,17 @@ It also defines the first working test, which exercises all three end to end.
 - Why: No one is surprised by changes to their tools, and scripts can still install without questions. Naming what to install already means do not ask.
 - How it shows: `metaform install` shows a checklist with the detected tools ticked. `metaform install claude codex` sets up those two and prints the report. `metaform install all` sets up everything detected.
 - Build: The checklist uses `tui.py`. With no terminal and no names, the installer changes nothing and names both forms in its `Next:` line. `--` ends switch parsing, as everywhere.
-- Acceptance: With stdin not a terminal and no nouns, no file changes. `install claude` touches only Claude Code's configuration and the skill folders for Claude. `install all` touches every detected tool and no undetected one.
+- Acceptance: With stdin not a terminal and no nouns, no file changes. `install claude` touches only Claude Code's configuration, `~/.claude/skills/metaform/`, and the shared skill copies `~/.metaform/skills/metaform/` and `~/.agents/skills/metaform/`, MCP-021. `install all` touches every detected tool and no undetected one.
 - Relates to: CLI-001, CLI-002, CLI-003, MCP-015.
 - Status: asking by default is confirmed. The noun form and `all` are recommended.
 
 ### MCP-015 A preview comes before any write, and every changed file is backed up
 
 - Requirement: Before writing, the installer lists every file it will create or change and where each backup will go, and writes only after one confirmation.
-- What this means: The preview names each tool's config file or registration command, and each skill file. Each existing file is copied to a backup before it changes. Other entries in a tool's config are preserved. With named tools or `all`, the preview is printed as part of the report and no confirmation is asked.
+- What this means: The preview names, for each tool, the registration command it will run or the config file it will merge into, and in both cases the file that ends up changed, and each skill file. For a tool registered through its own command, the file backed up is the file that command manages, as listed in MCP-016. Each existing file is copied to a backup before it changes. Other entries in a tool's config are preserved. With named tools or `all`, the preview is printed as part of the report and no confirmation is asked.
 - Why: Setup changes other programs' configuration. A user sees exactly what will happen and can undo it.
-- How it shows: A table of files and backups, then a single confirm.
-- Build: Backups go to `~/.metaform/backups/install/<timestamp>/`, mirroring each file's path. Recommended; the old installer put backups next to each config file. JSON configs are merged by key, never rewritten from scratch.
+- How it shows: A table of files and backups, then the single question `Apply these changes? [y/N]`. Only `y` or `yes`, any case, applies them.
+- Build: Backups go to `~/.metaform/backups/install/<UTC timestamp YYYYMMDDTHHMMSSZ>/`, mirroring each file's path under the user's home, E1. JSON configs are merged by key, never rewritten from scratch. TOML configs are written only through the tool's own command.
 - Acceptance: After install, each changed config still holds every entry it had before, and a backup byte-identical to the original exists.
 - Relates to: MCP-016, MCP-020.
 - Status: recommended.
@@ -177,24 +191,25 @@ It also defines the first working test, which exercises all three end to end.
 - Requirement: The installer registers the server with each chosen tool through that tool's own registration command where one exists, and otherwise by merging an entry into its user-level config file, at the location for the current OS.
 - What this means: Registration is user-level and never touches a project folder. Recommended table:
 
-| Tool | Mechanism | Location |
-|---|---|---|
-| Claude Code | `claude mcp add --transport stdio --scope user metaform -- uvx --from <source> metaform mcp` | Claude Code manages `~/.claude.json` |
-| Codex | `codex mcp add metaform -- uvx --from <source> metaform mcp` | `~/.codex/config.toml`, or `$CODEX_HOME` |
-| Gemini CLI | `gemini mcp add --scope user metaform uvx --from <source> metaform mcp` | `~/.gemini/settings.json` |
-| Cursor | merge `mcpServers.metaform` | `~/.cursor/mcp.json` |
-| VS Code | `code --add-mcp '{"name":"metaform","command":"uvx","args":[...]}'` | user profile `mcp.json` |
-| Copilot CLI | open | open |
-| Factory | open | open |
-| Claude Desktop | open whether it is a target | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
+| Noun | Tool | Detected by | Mechanism | File changed |
+|---|---|---|---|---|
+| `claude` | Claude Code | `claude` on PATH | `claude mcp add --transport stdio --scope user metaform -- uvx --from <source> metaform mcp serve` | `~/.claude.json` |
+| `codex` | Codex | `codex` on PATH | `codex mcp add metaform -- uvx --from <source> metaform mcp serve` | `~/.codex/config.toml`, or under `$CODEX_HOME` |
+| `gemini` | Gemini CLI | `gemini` on PATH | `gemini mcp add --scope user metaform uvx --from <source> metaform mcp serve` | `~/.gemini/settings.json` |
+| `cursor` | Cursor | the folder `~/.cursor` | merge `mcpServers.metaform` | `~/.cursor/mcp.json` |
+| `vscode` | VS Code | `code` on PATH | `code --add-mcp '{"name":"metaform","command":"uvx","args":[...]}'` | the user profile's `mcp.json` |
+| `copilot` | Copilot CLI | `copilot` on PATH | unverified, E2 | unverified |
+| `factory` | Factory | `droid` on PATH | unverified, E2 | unverified |
+| `antigravity` | Antigravity | the folder `~/.gemini/config` | skill only, MCP-021; MCP registration unverified | unverified |
+| `claude-desktop` | Claude Desktop | its config folder | merge `mcpServers.metaform`, after D42 | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json` |
 
   On Windows, `~` is `%USERPROFILE%`.
 - Why: A tool's own command knows its current config format. Writing its files by hand breaks when the format changes. User-level registration serves every project, and nothing is written into project folders.
 - How it shows: After install, `claude mcp list` shows `metaform`.
-- Build: Salvage detection and registration from the old installer (`git show 6d991b7^:src/metaform/installation.py`) only where it matches this table. The server entry is the uvx form, never a bare launcher path. Detection is by the tool's executable on PATH, or its config folder for tools without one.
+- Build: Salvage detection and registration from the old installer (`git show 6d991b7^:src/metaform/installation.py`) only where it matches this table. The server entry is the uvx form, never a bare launcher path. Detection is exactly the column above. A tool whose mechanism is unverified is detected and listed, marked `unverified`, and is not offered for setup until its mechanism is confirmed from its own documentation, E2.
 - Acceptance: Per tool and per OS in CI: after install, the tool's own list command, where it has one, shows `metaform` with the uvx entry.
 - Relates to: MCP-010, MCP-015, MCP-017, QUAL-003.
-- Status: recommended. Paths and commands are not verified against each tool's current docs on each OS. Copilot CLI, Factory and Claude Desktop are open.
+- Status: recommended. Paths and commands are not verified against each tool's current docs on each OS, E2. Claude Desktop waits on D42.
 
 ### MCP-017 Setup proves each tool can start the server
 
@@ -202,8 +217,8 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: The installer proves that the entry it wrote starts a working server. It does not prove that the host tool applies the server's instructions; each host decides that.
 - Why: A written entry is not a working setup. This check turns installed into working.
 - How it shows: The report lists each tool with `server starts, N tools` or the failure and one next step.
-- Build: An MCP client call from the installer, using the SDK's stdio client, against the registered command and arguments.
-- Acceptance: A registration with a wrong source path reports fail for that tool and exits nonzero.
+- Build: The chassis carries a small standard-library client for this, `metaform.probe`, because the chassis must not depend on the `mcp` SDK, BASE-026. It starts the registered command and arguments with `subprocess.Popen`, working folder the user's home, so the surface is every enabled module's; writes newline-delimited JSON-RPC 2.0 to its standard input: `initialize` with protocol version `2025-06-18`, client info `metaform-install`, and empty capabilities; then the `notifications/initialized` notification; then `tools/list`; reads one JSON response per line from standard output; and stops the process. The whole exchange has a 30 second limit per tool, which covers uvx preparing its environment on first run. Pass means an `initialize` result and a `tools/list` result with at least one tool; the report shows `server starts, N tools`.
+- Acceptance: A registration with a wrong source path reports fail for that tool and exits 1. A fake server script that answers correctly reports pass with its tool count.
 - Relates to: MCP-002, MCP-010, MCP-018.
 - Status: recommended.
 
@@ -243,7 +258,7 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-021 One fixed skill is copied to each chosen tool's global skill folder
 
 - Requirement: The installer writes one fixed, short skill to `~/.metaform/skills/metaform/SKILL.md` and copies it into the global skill folder of each chosen tool, and never into a project folder.
-- What this means: The skill says what Metaform is and tells the agent to run `metaform` for the live state and instructions, or use the MCP server's instructions. It carries no module text. It is written as real copies, never symlinks. Recommended global folders:
+- What this means: The skill says what Metaform is and tells the agent to run `metaform` for the live state and instructions, or use the MCP server's instructions. It carries no module text. It is written as real copies, never symlinks. The source copy `~/.metaform/skills/metaform/SKILL.md` and the cross-agent copy `~/.agents/skills/metaform/SKILL.md` are written whenever any tool is set up; each chosen tool's own folder gets a copy too. Recommended global folders:
   - `~/.agents/skills/`, the cross-agent folder
   - `~/.claude/skills/` for Claude Code
   - `~/.codex/skills/` for Codex
@@ -256,7 +271,18 @@ It also defines the first working test, which exercises all three end to end.
   Each copy lives at `<folder>/metaform/SKILL.md`.
 - Why: Live instructions have one source, so enabling or disabling a module never rewrites skill files in several places. Symlinks need admin rights or Developer Mode on Windows. All Metaform data is global, and nothing is written into project folders.
 - How it shows: After install, each chosen tool's skill folder holds `metaform/SKILL.md`, identical to the copy in `~/.metaform/skills`.
-- Build: The skill text ships inside the chassis package. The old installer wrote `~/.metaform/skills`, `~/.agents/skills`, `~/.claude/skills` and `~/.codex/skills`, and used `gemini skills install` for Gemini. Which Gemini mechanism to use is open.
+- Build: The skill text ships inside the chassis package as `metaform/skill/SKILL.md` and reads exactly:
+  ```
+  ---
+  name: metaform
+  description: Use when working in a project registered with Metaform, or when the user mentions Metaform or a functional map. Metaform holds the project's functional map and agent instructions.
+  ---
+
+  Metaform keeps a project's functional map: what each part is for, who receives what it does, and how.
+
+  Before you work in a project, run `metaform` in its folder. It shows the project, whether it has an intake, and the next step. Run `metaform help agents` for the current instructions from every enabled module, or read the Metaform MCP server's instructions when it is connected. Follow the next step Metaform gives you.
+  ```
+  The old installer wrote `~/.metaform/skills`, `~/.agents/skills`, `~/.claude/skills` and `~/.codex/skills`, and used `gemini skills install` for Gemini. Gemini gets a copy in `~/.gemini/skills`, like the others, until its own mechanism is confirmed, E2.
 - Acceptance: After `install claude`, `~/.claude/skills/metaform/SKILL.md` is byte-identical to the chassis copy. No file is written under the current folder. Enabling a module changes no skill file.
 - Relates to: MCP-007, MCP-014, MCP-022.
 - Status: confirmed. The folder paths come from secondary sources and are not verified. Factory's path and the Gemini mechanism are open.
@@ -297,11 +323,17 @@ It also defines the first working test, which exercises all three end to end.
   6. The subagent reads the instructions by name, unaltered.
   7. After an intake is stored, a new connection no longer shows the notice.
 
-  The template and demo modules are disabled and do not appear.
+  The modules on in this test are `map`, `intake`, `memory` and `mcp`, all of which ship enabled. The template is the only module that ships disabled, and it does not appear.
 - Why: This is the smallest run that proves setup works, that agents are oriented by live instructions, and that intake is delegated without rewording.
 - How it shows: The steps above, observed in at least one real AI tool.
-- Build: Depends on MCP-001 to MCP-021, the intake module (open, MCP-009), the store's intake layer, and the module instructions field.
-- Acceptance: An automated run of steps 2 to 7, with a scripted MCP client in place of the AI tool, plus one recorded manual run in a real tool. Step 7 needs the intake module and the store.
+- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, STORE-032, and the `purpose` field.
+- Acceptance: An automated run of steps 2 to 7, plus one recorded manual run in a real tool. The automated run:
+  - Uses a temporary `METAFORM_HOME` and a temporary user home, and puts fake `claude` and `codex` executables first on PATH. Each fake records its arguments to a file and exits 0, so registration is checked without the real tools.
+  - Builds the wheel with `metaform build`, runs `metaform install claude codex`, and checks the recorded registration arguments, the skill copies, the backups, and a passing proof step against the built wheel.
+  - Registers a temporary project folder, then starts `metaform mcp serve` with that folder as its working folder, using the probe client of MCP-017 as the scripted host. It checks that the instructions hold the base text, the four modules' sections and the notice.
+  - Calls `intake_prompt` and checks the text against the stored file with only the target filled.
+  - Writes a three-element fixture intake through `intake_begin`, `map_add-element`, `map_add-join` and `intake_complete`: a VE, a DE and one SE, with two joins.
+  - Starts a new connection and checks the notice is gone.
 - Relates to: MCP-001 to MCP-023, BASE-017, LAYER-001, STORE-013.
 - Status: confirmed.
 

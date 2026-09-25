@@ -31,6 +31,7 @@ This folder is the Metaform contract. A builder builds from these files alone. E
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
+| BUILD-BRIEF.md | | How the building agent works from this spec |
 
 The Open questions list at the end of each section shows the questions that section raised. OPEN-QUESTIONS.md is the single merged list; answers are recorded there and in the owning records.
 

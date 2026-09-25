@@ -9,7 +9,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: A layer is a named body of inferred knowledge laid over the map. The intake produces a layer too: its layer is the one that creates most elements and joins. Every element, join, subtype and layer item records the layer that produced it. The core map is the selection of the intake layer. A new element proposed by a later pass lives in that pass's layer.
 - Why: When everything is a layer, every piece of knowledge attaches, selects, hides and records its origin the same way. That uniformity lets modules compose, and it keeps the map from becoming a special case that every module has to handle separately.
 - How it shows: Asking for an element's or join's origin always names one layer. Selecting only the intake layer shows the core map with nothing else on it.
-- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable, hideable, transitive (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer created at the start of the intake run.
+- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable, hideable, transitive (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer created at the start of the intake run. That layer stays open, invisible to reads in context, until the run completes it, STORE-032, so the map appears whole or not at all.
 - Acceptance:
   - After an intake through MCP, every stored element, join and subtype names the intake layer, and reading the intake layer returns all of them.
   - Storing an element, join, subtype or layer item without a layer is refused.
@@ -79,7 +79,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build: The layer's hidden state, stored as in STORE-013. Every read path and every context assembly path filters hidden layers out. Hiding a layer that is not hideable is refused with one next step.
 - Acceptance: A hidden layer's items appear in no element read, join read, layer-at-node read or MCP read, and reappear unchanged when it is shown.
 - Relates to: LAYER-004, LAYER-007, STORE-013.
-- Status: confirmed for hiding a layer. Hiding a single item inside a layer is recommended. Whether hiding a layer also hides the layers built from it is open.
+- Status: confirmed for hiding a layer. Hiding is of whole layers only, per D20's recommendation. Whether hiding a layer also hides the layers built from it is open.
 
 ### LAYER-007 Select and mask decide which layers reach each address
 
@@ -92,7 +92,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - Resolution at address A: start with the project's starting selection; for each prefix of A from the trunk to A itself, set selection to (selection minus the layers masked there) plus the layers selected there.
   - Resolution follows the namespace tree only, never the purpose graph.
   - An element's effective selection is the effective selection at its address. Every context assembly path calls this one resolution.
-  - Selection data that cannot be applied faithfully is kept and reported as unresolved, never replaced by a broad default.
+  - The project's starting selection is stored as in STORE-035; when none is stored, every complete layer starts selected.
+  - Selection data that cannot be applied faithfully, a select or mask row whose layer is hidden or still open, is kept and reported as unresolved by the resolution read, STORE-035, never replaced by a broad default.
 - Acceptance:
   - With layer L masked at `code.engine` and selected at `code.engine.renderer`: L reaches `code.engine.renderer`, and does not reach `code.engine` or `code.engine.physics`.
   - A layer masked at an element's address is absent from context assembled through a join whose provider carries that layer.
@@ -140,7 +141,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: The earlier revision stays stored and readable. Reads return the current revision unless a revision is asked for. Knowledge built on the corrected item is re-examined and never rewritten: layers that depend on it are marked for re-examination, and their contents stay as they were until someone re-examines them.
 - Why: The map is the shared foundation, so a change to it must be explicit and traceable. Rewriting dependents silently would put inference into them that nobody performed; marking them keeps every stored answer honest about what it was built from.
 - How it shows: After a correction, reads show the new value, and the item's history shows both revisions. Layers built on the corrected layer show that they need re-examination.
-- Build: The layer item record carries revision number and supersedes (the prior revision's id), and a current pointer per item names the current revision. A correction writes a new revision and moves the pointer in one transaction. Elements, joins and subtypes in an immutable layer follow the same rule. The dependency marking reads the list of source layers described in the open questions.
+- Build: The layer item record carries revision number and supersedes (the prior revision's id), and a current pointer per item names the current revision. A correction writes a new revision and moves the pointer in one transaction. Elements, joins and subtypes in an immutable layer follow the same rule. The dependency marking and how it is cleared are STORE-036, which reads the list of source layers described in the open questions.
 - Acceptance:
   - A correction leaves the old revision readable and the pointer on the new one.
   - A correction changes no item in any other layer.
@@ -153,7 +154,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: Memory is agents' working notes, kept at the node they concern. One memory at a node corrects a small wrong inference right where agents read it, so the map does not have to be perfect to be useful. Memory takes part in select and mask like any other layer, so a job can include it or mask it on a branch.
 - Why: Memory's value is being cheap to add and to fix. History and provenance would make every note heavy.
 - How it shows: An agent adds an observation at an element, and the next agent reading that element receives it. Editing or deleting a memory changes it immediately, and no history is kept.
-- Build: The memory layer is created per project with mutable true and transitive false. It has no provenance record, and LAYER-010's refusal does not apply to it. Updates and deletes change the stored item in place.
+- Build: The memory layer is created per project, on the first memory write, with kind memory, mutable true and transitive false; its name, module and variable are in STORE-020. It has no provenance record, and LAYER-010's refusal does not apply to it, because it is recognized by its kind. Updates and deletes change the stored item in place.
 - Acceptance: After an update, a read returns only the new text, and no earlier version is stored.
 - Relates to: LAYER-013, LAYER-007, LAYER-010, STORE-018.
 - Status: confirmed. Transitive false for memory is recommended.
@@ -164,7 +165,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: The reference interface has entities with a name, a type and observations; relations with a from, a to and a relation type; and operations to create entities, create relations, add observations, delete entities, delete observations, delete relations, read the graph, search nodes and open nodes. In Metaform, an entity is an element or join of the map, named by its address or join id, and observations are memory items attached there. A relation is a memory item linking two nodes with a relation type.
 - Why: Agents already know this interface. Putting memory on the map's own nodes means a note lands exactly where the next agent reads, instead of in a separate graph that has to be matched back to the map.
 - How it shows: An agent calls open nodes on an element address and receives that element with its observations and relations. Search finds nodes by the text of their observations.
-- Build: Each operation maps onto the memory layer's items at the named nodes, through the common base, on the CLI and over MCP from one declaration. Open nodes and search are direct reads under LAYER-008.
+- Build: Each operation maps onto the memory layer's items at the named nodes, through the memory module, BASE-040, on the CLI and over MCP from one declaration. Open nodes and search are direct reads under LAYER-008. Subtypes and type addresses may also be named as nodes, which is recommended in STORE-020.
 - Acceptance: Add observations at an element, then open nodes at the same address, returns those observations.
 - Relates to: LAYER-012, LAYER-008, STORE-020, MCP-003.
 - Status: confirmed. What create entities does for a name that is not a node of the map is open.
@@ -191,12 +192,12 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - Each critic writes its own verdict layer, with its own provenance. Where the critics disagree is a view over the two layers.
 - Why: Bias does not come from seeing the code. It comes from the role: an agent that sees a problem as its own to deal with defends the current work or reaches for the answer that closes its task, and gaming is part of that. So the critic owns nothing it judges, no verdict turns into work for it, and no verdict is presented as more rewarded than another. The blind critic can notice what should exist because of what the artifact is; the sighted critic can notice what the code already does that the map never named, or a claimed handler that does not really handle it. Either can produce answers the other would not.
 - How it shows: After a run, every element and join has a challenge. Each proposal has one verdict per critic that ran. A C verdict opens the element or join it names.
-- Build: The workflow is module work; the chassis supplies the layers, links and provenance it uses. The verdict item value holds the verdict letter and, for C, the stable id of the linked element or join; a C verdict without a link is refused. The critic prompt gives the piece, the three verdicts as equals, and the map. The provenance of each verdict layer records the critic's role and whether it was blinded.
+- Build: The workflow is module work; the chassis supplies the layers, links and provenance it uses. The verdict item value holds the verdict letter; for C, the item's link names the element or join that already handles it, STORE-015 and E8. The workflow refuses a C verdict without a link. The critic prompt gives the piece, the three verdicts as equals, and the map. The provenance of each verdict layer records the critic's role and whether it was blinded.
 - Acceptance:
   - A C verdict without a link to an existing element or join is refused.
   - A run with both critics produces two verdict layers and leaves the challenge and proposal layers unchanged.
 - Relates to: LAYER-009, LAYER-010, LAYER-014, STORE-015.
-- Status: confirmed. Whether the C verdict's link is held inside the item's value, as stated here, or in the item's link fields of STORE-015 is open; see open question 11. The blind critic as the default when no option is chosen is recommended. How an element proposed in a proposal layer becomes part of the core map is open.
+- Status: confirmed. The C verdict's link is held in the item's link fields of STORE-015, per E8, recommended; the verdict item's value holds the verdict letter. The blind critic as the default when no option is chosen is recommended. How an element proposed in a proposal layer becomes part of the core map is open.
 
 ## Open questions
 

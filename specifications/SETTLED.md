@@ -1,6 +1,6 @@
 # Settled design awaiting the spec
 
-This file holds design settled in conversation that the spec has not absorbed yet. Each entry states the design, its why, and its status. When the spec absorbs an entry, the entry is removed from here. Status is one of: **confirmed** (Rich confirmed it), **recommended** (my recommendation, not yet confirmed), **open** (needs Rich's answer).
+The spec in spec/ now carries every entry below; TRACE.md maps each entry to its records, and the spec is the authority. This file stays as the record of what was settled in conversation and is not edited further.
 
 ## Chassis and modules
 

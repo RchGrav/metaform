@@ -42,7 +42,7 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 - What this means: Every push and pull request to the repo runs type checking, linting and the tests on all three systems. The template module ships with the same CI configuration, so every community fork built from it tests on all three systems too. The offer to maintain a user's fork and CI carries this matrix.
 - Why: Cross-platform needs proof, not a promise. Without runs on every system, one system breaks quietly and nobody sees it until a user does.
 - How it shows: Every change shows three results, one per system. A change that fails on any system does not merge.
-- Build: GitHub Actions with a job matrix of ubuntu-latest, macos-latest and windows-latest. Each job installs with uv from pyproject.toml, then runs the type check (QUAL-004), the lint (QUAL-005) and the tests. The Python version is the project's declared minimum. The template carries its own copy of this workflow file.
+- Build: GitHub Actions with a job matrix of ubuntu-latest, macos-latest and windows-latest. Each job installs with uv from pyproject.toml, then runs the type check (QUAL-004), the lint (QUAL-005) and the tests. The Python versions are the project's declared minimum, the `requires-python` lower bound in pyproject.toml, which is 3.11 today, and the newest released Python, E6. The template carries its own copy of this workflow file.
 - Acceptance: The workflow file lists all three systems. A deliberately system-specific failure, such as a hard-coded POSIX path separator in a check fixture, fails the Windows job.
 - Relates to: QUAL-002, QUAL-004, QUAL-005, QUAL-006, BASE-019, BASE-027.
 - Status: confirmed.
@@ -187,11 +187,11 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 - What this means: A fixture shows that the mechanics work. A simulation shows that its own environment works. A real run in Claude Code or Codex shows only that host on that path. None of them is reported as another. The first working test counts as done only with a real run in a real host.
 - Why: Reports that pass fixtures off as real runs make features look finished when they have never met a real agent, and the gap is found by users.
 - How it shows: Test names and status reports carry fixture, simulation or real, and real results name the host.
-- Build: Tests that use fixtures are marked as fixture tests. The installer's proof step, MCP-017, and the first working test, MCP-024, record the real host and version they ran against.
+- Build: Every test carries `@pytest.mark.kind("fixture")`, `@pytest.mark.kind("simulation")` or `@pytest.mark.kind("real")`, registered in pyproject.toml, next to its requirement marker, E4. A real test also records the host and version it ran against. The installer's proof step, MCP-017, and the first working test, MCP-024, record the real host and version they ran against.
 - Acceptance:
   1. The report for MCP-024 names the host, its version and the operating system it ran on.
 - Relates to: QUAL-006, QUAL-009, MCP-017, MCP-024.
-- Status: confirmed.
+- Status: confirmed. The marker name is recommended.
 
 ## Open questions
 

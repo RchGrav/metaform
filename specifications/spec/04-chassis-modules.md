@@ -23,8 +23,8 @@ Current code referenced below is the `chassis` branch: `src/metaform/module.py`,
 - Requirement: The chassis is the only owner of Metaform data, settings and the command line, and it provides import, export, query and wheel building for them.
 - What this means: All persistent Metaform state is written and read by chassis code. Settings are declared by modules but stored, validated and presented by the chassis. Every command, including module commands, is parsed, dispatched and documented by the chassis. Import, export and query operate on the whole of the data, so they are chassis verbs, not module verbs.
 - Why: One owner means one format, one set of rules and one place to fix a fault. Data that a module keeps privately cannot be exported, imported or queried whole, and a command surface parsed in several places drifts apart.
-- How it shows: `metaform export` writes every project's data, including what modules stored. `metaform import` restores it. `metaform query` reads it. `metaform build` produces a wheel. No module needs its own storage code.
-- Build: New chassis verbs `import`, `export`, `query` and `build`, added to `cli.VERBS` and to `loader.RESERVED`. Their data formats are defined in STORE. The chassis dependencies stay limited per BASE-026.
+- How it shows: `metaform export all backup.json` writes every project's data, including what modules stored, and `metaform export` writes the folder's project. `metaform import backup.json` restores it. `metaform query` reads it. `metaform build` produces a wheel. No module needs its own storage code.
+- Build: New chassis verbs `import`, `export`, `query` and `build`, added to `cli.VERBS` and to `loader.RESERVED`. The grammar and document of export and import are STORE-027, query is STORE-028, and build is BASE-042. The chassis dependencies stay limited per BASE-026.
 - Acceptance: A module writes layer data through the data access object; `export` then `import` into an empty home reproduces it, read back through the same object. A module that writes a file into the home outside the data access object is reported by a test over the home folder after the template's verbs run.
 - Relates to: BASE-004, STORE-022, STORE-027, CLI.
 - Status: confirmed.
@@ -61,7 +61,7 @@ Specified in STORE-022 and STORE-023: everything a module keeps is a layer writt
 - What this means: Commands are verbs, arguments are the nouns a verb acts on, and switches are adverbs that change how it runs. A verb runs as `metaform <module> <verb> <nouns> [switches]`. Its summary, details, usage and examples come from the declaration. MCP exposes the same verb as the tool `<module>_<verb>`.
 - Why: A consistent grammar makes every command predictable. One declaration means the CLI, help and MCP can never disagree.
 - How it shows: `metaform help <module> <verb>` shows the page, `metaform <module> <verb> --help` shows the syntax, and the MCP tool list carries the same verb.
-- Build: `Verb(name, run, summary, nouns, switches, details, examples, caution, supported_os)`. The current `Verb` has `adverbs: tuple[Adverb, ...]`, declared separately from settings. It changes per CLI-012.
+- Build: The full declaration is BASE-035. The current `Verb` has `nouns` as one free string and `adverbs: tuple[Adverb, ...]`, declared separately from settings. Both change: nouns become `Noun` records, and switches become setting keys per CLI-012.
 - Acceptance: Declaring a verb in a scratch module makes it appear in `metaform help commands`, in `metaform help <module>` and in the MCP tool list with the same summary.
 - Relates to: CLI-012, CLI, MCP.
 - Status: confirmed.
@@ -77,8 +77,8 @@ Specified in CLI-010, CLI-019 and CLI-020: a module declares its settings in its
 - What this means: The chassis awaits a coroutine and calls a function; the author does not manage an event loop. Long work can be async without blocking other work the chassis runs in the same loop.
 - Why: Module work includes waiting on processes, networks and agents. Authors should not choose between blocking the chassis and writing loop code.
 - How it shows: The template's `wait` verb is async and behaves like any other verb on the CLI and over MCP.
-- Build: Existing `module.call` runs a coroutine with `asyncio.run`. Inside an already running loop, such as the MCP module's server, the chassis awaits the coroutine in that loop instead. Cancellation is BASE-018.
-- Acceptance: An async verb called from the CLI and from inside a running loop both complete and return the same output.
+- Build: `module.call(function, *args)` calls the function; when the result is awaitable and no event loop is running in the current thread, it runs it with `asyncio.run`. The MCP module does not use `call` for coroutine verbs: it awaits a coroutine verb in the server's own loop, so the host's cancellation reaches it, and it runs a plain function in a worker thread, MCP-002. Nothing ever calls `asyncio.run` inside a running loop. Cancellation is BASE-018 and BASE-031.
+- Acceptance: An async verb called from the CLI and through the MCP module both complete and return the same result.
 - Relates to: BASE-018, MCP.
 - Status: confirmed.
 
@@ -87,7 +87,7 @@ Specified in CLI-010, CLI-019 and CLI-020: a module declares its settings in its
 - What this means: Modules cooperate through events without importing each other. Each delivery reports completed or failed for each subscriber.
 - Why: Modules must compose without knowing each other's code; an event names what happened, not who handles it.
 - How it shows: The template's `greet` publishes `template.greeted`, and its subscriber records the name.
-- Build: Existing `events.publish(topic, payload, source)`, `Subscription(topic, handler)`. Subscribers write through the data access object per STORE-022.
+- Build: `ctx.publish(topic, payload)` calls `events.publish(topic, payload, ctx)`. For each loaded module in discovery order, BASE-037, and each of its subscriptions whose topic equals the topic exactly, the chassis builds a new `Context` for the subscriber's module with the publisher's folder and project, BASE-028, and calls `handler(copy of payload, context)` through `call`. It returns a list with one entry per delivery: `{"module": id, "status": "completed", "result": value}` or `{"module": id, "status": "failed", "error": message}`, and `cancelled` per BASE-032. A subscriber's exception is caught and reported, never raised to the publisher. Subscribers write through the data access object per STORE-022.
 - Acceptance: Two subscribers, one raising; publish returns one completed and one failed delivery, and the completed one's effect is stored.
 - Relates to: STORE-022.
 - Status: confirmed.
@@ -103,7 +103,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: The caution text says what will be lost. The confirming command is the same command plus `--confirm`.
 - Why: The main agent that holds the confirming command acts with confidence; a subagent meeting only the caution hesitates. The wording steers, and nothing gates inference.
 - How it shows: `metaform template forget` prints the caution and `Next: If you are sure: metaform template forget --confirm`.
-- Build: Existing `Verb.caution`.
+- Build: `Verb.caution`, BASE-035, checked by the dispatcher as in CLI-018 and by the MCP module as in MCP-006.
 - Acceptance: Without `--confirm` the data is unchanged; with it, the data is removed.
 - Relates to: CLI-018, CLI.
 - Status: confirmed.
@@ -117,7 +117,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: A module is a folder with an `__init__.py`, or a package named by an entry point. Its id is its folder or entry point name and must equal `MODULE.id`. Two modules with one id, or a module named like a chassis verb, are not loaded, and `metaform list modules` says why.
 - Why: Community extensibility means a module can be dropped into the user place or installed like any Python package. Nothing lives in project folders because all data is global.
 - How it shows: `metaform list modules` shows each module with its place and state, and the reason for any that is not loaded.
-- Build: Existing `loader.discover()`, `RESERVED`. `RESERVED` gains `import`, `export`, `query`, `build` and loses `mcp`.
+- Build: Discovery and loading in full are BASE-037. `RESERVED` is every chassis verb plus `chassis`: `help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `import`, `export`, `query`, `build`, `install`, `uninstall`, `chassis`. It loses `mcp`, which is a module.
 - Acceptance: A user-place module and an entry-point module with the same id: the second is reported with the reason and not loaded. A module named `export` is refused with the reason.
 - Relates to: BASE-015, CLI.
 - Status: confirmed. A per-project module place is open.
@@ -127,7 +127,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: `SUPPORTED_OS` is a literal tuple of `linux`, `macos`, `windows`. The chassis parses it from source. A module without it is not loaded.
 - Why: Importing incompatible code can fail in ways that take the chassis down. Reading literals first keeps every failure contained and reportable.
 - How it shows: A module declaring only `linux` is listed on Windows as not loaded, with the reason.
-- Build: Existing `module_metadata.read`, which parses `SUPPORTED_OS` and `DEPENDENCIES` by AST. It adds the literal declarations of BASE-016 and BASE-022.
+- Build: The module's `__init__.py`, or the entry point package's `__init__.py`, is parsed with `ast` and never executed. Each declaration is one top-level assignment of a literal: `SUPPORTED_OS` and `DEPENDENCIES` a tuple or list of strings, `SHIPS_DISABLED` a boolean, and from 1.0 `REQUIRES_CHASSIS` a string. A name assigned more than once, assigned a non-literal, or defined any other way is an error naming the declaration. A `manifest.py` beside `__init__.py` may hold the same declarations; when both hold one, they must be equal. `SUPPORTED_OS` values are `linux`, `macos` and `windows`, compared with `platform.system()` lowercased, with `darwin` read as `macos`. A missing `SUPPORTED_OS` makes the module incompatible with the reason `SUPPORTED_OS is required`.
 - Acceptance: A module whose `__init__.py` raises on import but declares an unsupported OS is reported as incompatible and its code never runs.
 - Relates to: BASE-016, BASE-022.
 - Status: confirmed.
@@ -137,7 +137,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: The module still loads everywhere it declares. The verb is not shown and does not run on a system outside its list. `metaform help <module> <verb>` on that system states the systems it runs on and gives one next step. A small OS-specific piece may instead be its own module.
 - Why: One piece that cannot run on a system should not make a whole module unusable there. Filtering through the existing command check adds no second mechanism.
 - How it shows: On Windows, a linux-only verb is missing from `metaform help <module>` and from the MCP tool list, and its help page explains why.
-- Build: `Verb.supported_os`, a subset of the module's `SUPPORTED_OS`, default the module's. The dispatcher and the MCP tool list apply the same filter as the command setting.
+- Build: `Verb.supported_os`, a subset of the module's `SUPPORTED_OS`, default the module's. The dispatcher and the MCP tool list apply the same filter as the command setting. `metaform help <module>` lists such a verb after the others under the heading `Not on this system`, with the systems it runs on. `metaform help <module> <verb>` and running the verb both print `<module> <verb> runs on <systems>.` with the next step `metaform help <module>`.
 - Acceptance: Simulating the current OS outside a verb's list hides it from help commands and MCP, running it gives the explanation with one next step, and the module's other verbs still work.
 - Relates to: BASE-015, CLI, MCP.
 - Status: per-verb compatibility is confirmed as acceptable; the mechanism is recommended.
@@ -157,7 +157,10 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: A failed load withdraws whatever it registered. Unload removes its verbs, settings from the schema, help, subscriptions and running tasks. Reload does not accumulate duplicates. Shutdown ends the module's running tasks cleanly. Cancelling an async verb stops it and leaves stored data consistent. Stored settings values, layers and history are never removed by unload.
 - Why: The quality standard requires explicit lifecycle and no resource leakage or state corruption across load, unload, reload and shutdown. Without owned contributions, disabling a module leaves behind ghost commands and subscribers.
 - How it shows: `metaform disable module template` removes its verbs and settings from help at once; enabling it again shows them once.
-- Build: The loader records every contribution by owner. Existing: failed import restores the settings schema; `loader.reset()` removes settings by owner. Added: withdrawal of subscriptions and running tasks, optional module `start(ctx)` and `stop(ctx)` hooks, and cancellation delivered to running coroutines on shutdown.
+- Build: The loader records every contribution by owner. Existing: failed import restores the settings schema; `loader.reset()` removes settings by owner. Added:
+  - `Module(start=None, stop=None)`. Each is a function or coroutine taking one argument, the module's `Context` with no nouns. `start` runs once per process, after the module's verbs, settings and subscriptions are registered and before its first verb, subscriber or tool call runs. `stop` runs once, at process exit or unload, after its running tasks are cancelled. A `start` that raises unloads the module and reports the error as its load problem.
+  - `ctx.spawn(coroutine)` starts a task owned by the context's module and returns it. The chassis keeps each module's tasks. Unload, reload and shutdown cancel them, wait for them to finish, then call `stop`.
+  - Withdrawal of subscriptions and tasks on unload.
 - Acceptance: Load, unload, load: each verb, setting and subscription appears exactly once. A module whose import fails leaves no settings behind. Cancelling a running async verb leaves no partial write.
 - Relates to: BASE-009, QUAL.
 - Status: confirmed; the hook names are recommended.
@@ -199,8 +202,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: The registration entry an installer writes is specified in MCP-010. The command and the Python package are `metaform`. The distribution name is separate.
 - Why: uvx runs the server in its own environment with its own dependencies, the same way on every system, without a permanent install.
 - How it shows: A client configured that way starts the server and lists its tools.
-- Build: Existing `pyproject.toml` with hatchling; the `metaform` console script stays. The PyPI distribution name is undecided; `metaform` belongs to an unrelated package.
-- Acceptance: `uvx --from <built wheel> metaform mcp` answers an MCP initialize and tools/list on Linux, macOS and Windows.
+- Build: `pyproject.toml` with the hatchling build backend, the console script `metaform = "metaform.cli:main"`, and `python -m metaform` running the same entry. The PyPI distribution name is undecided; `metaform` belongs to an unrelated package.
+- Acceptance: `uvx --from <built wheel> metaform mcp serve` answers an MCP initialize and tools/list on Linux, macOS and Windows.
 - Relates to: BASE-003, MCP-010.
 - Status: confirmed; the distribution name is open.
 
@@ -308,11 +311,11 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: Asking an operation to stop is not the same as it having stopped. An async verb that is asked to cancel reports that the request was received, and reports cancelled only once it has actually stopped and cleaned up. A CLI call stopped by the user reports interruption, not failure. Over MCP, a cancelled tool call reports cancellation, not an error.
 - Why: An agent that believes work stopped when it did not will start a second copy, and one that believes work failed when it was cancelled will retry work nobody wants.
 - How it shows: Pressing Ctrl+C during an async verb prints that the verb was interrupted, and the exit code differs from a failure's.
-- Build: A verb's outcome is one of completed, failed, cancel requested, cancelled, interrupted. The CLI maps them to exit codes: 0 completed, 1 failed, 130 interrupted by the user; cancelled is reported in the message with its own code, recommended 2. The MCP module maps a host's cancellation notice to cancelling the task and reports cancelled when the task has ended.
+- Build: A verb's outcome is one of completed, failed, cancel requested, cancelled, interrupted. The CLI exit codes: 0 completed; 1 failed with an unexpected error; 2 a user error, a `Stop` with its Next line, CLI-009; 3 cancelled; 130 interrupted by the user. On the CLI, the first Ctrl+C during an async verb requests cancellation and prints `Cancelling <module> <verb>...` to standard error; the verb then reports cancelled when it has stopped. A second Ctrl+C interrupts at once with exit 130. Over MCP, the host's `notifications/cancelled` for a running tool call cancels its task; per the protocol no result is sent for a cancelled request, and the task's stored writes follow BASE-030.
 - Acceptance:
   1. Cancelling an async verb mid-wait yields cancelled, never completed or failed, and its partial writes are either committed whole or absent.
 - Relates to: BASE-009, BASE-018, MCP-006.
-- Status: confirmed for the distinction; recommended for the exit codes.
+- Status: confirmed for the distinction; recommended for the exit codes and the display. Exit 2 for user errors follows CLI-009, confirmed.
 
 ### BASE-032 Every event delivery reaches a terminal outcome
 
@@ -349,6 +352,185 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-019, QUAL-013.
 - Status: confirmed; the nonce heading deferred.
 
+
+## Records added by the cold build check
+
+### BASE-035 The module and verb declarations in full
+- Requirement: A module is declared with fixed records, `Module`, `Verb`, `Noun` and `Subscription`, and a verb receives a fixed `Context`, all from `metaform.module`.
+- What this means: These records are the whole contract between a module and the chassis. Everything the CLI, help, MCP and the settings screen show about a module comes from them.
+- Why: A builder with only this spec must be able to write the chassis and a module against the same contract without reading earlier code.
+- How it shows: The template module's declaration uses every field below.
+- Build:
+  - `Stop(message: str, next_step: str)`: an exception for a user error. `next_step` is required and is one command, CLI-009. The CLI prints `Error: <message>` and `Next: <next_step>` to standard error and exits 2; MCP returns the same two lines with `is_error` true.
+  - `Noun(name: str, help: str, kind: str = 'str', required: bool = True, many: bool = False)`. `kind` is `str`, `int` or `json`. Only the last noun of a verb may have `many`. Usage renders a required noun as `<name>`, an optional one as `[name]`, and a many noun as `<name>...` or `[name...]`.
+  - `Verb(name, run, summary, nouns: tuple[Noun, ...] = (), switches: tuple[str, ...] = (), details='', examples: tuple[tuple[str, str], ...] = (), caution='', supported_os: tuple[str, ...] | None = None, surfaces: tuple[str, ...] = ('cli', 'mcp'))`. `name` matches `^[a-z][a-z0-9-]*$`. `switches` names setting keys the verb reads, CLI-012. `caution` makes it a `--confirm` verb, BASE-013. `surfaces` says where it is offered; a verb with only `cli` is never an MCP tool, such as `mcp serve`, MCP-001. Usage is generated: `metaform <module> <verb> <nouns> [switches]`, plus `[--confirm]` for a caution verb.
+  - `Subscription(topic: str, handler)`: `handler(payload: dict, ctx: Context)`, a function or coroutine.
+  - `Module(id, summary, purpose, verbs=(), subscriptions=(), details='', start=None, stop=None)`. `summary` is one line for indexes. `purpose` is the module's concise instructions for agents, MCP-008 and D39. `details` is the longer help text. `id` must equal the module's folder or entry point name.
+  - Module source literals, read before import, BASE-015: `SUPPORTED_OS`, required; `DEPENDENCIES`, a tuple of requirement strings; `SHIPS_DISABLED`, a boolean; and from 1.0, `REQUIRES_CHASSIS`.
+  - `Context` fields: `module`, `folder`, `project` (the project id or None), `store` (the data access object or None), `nouns` (a dict of noun name to value, a list for a many noun), `switches` (a dict of setting key to the value passed on this call, only those passed), `sink` (where `say` writes), `surface` (`cli` or `mcp`). Methods: `say(text)`, `setting(key)` which returns the per-call value when passed and otherwise the resolved stored or default value, CLI-011, `require_store()`, STORE-023, `publish(topic, payload)`, BASE-010, and `spawn(coroutine)`, BASE-018.
+  - `call(function, *args)`, BASE-009.
+- Acceptance:
+  - Declaring `Stop` without a next step fails at the call site.
+  - A verb with a many noun receives a list; a verb whose optional noun is omitted receives no key for it.
+  - A verb with `surfaces=('cli',)` appears in help and not in the MCP tool list.
+- Relates to: BASE-004, BASE-006, BASE-009, BASE-013, BASE-016, BASE-018, CLI-001, CLI-009, CLI-012, MCP-003.
+- Status: recommended. The records replace the current `Adverb`, the free-string `nouns` and the list-based `Context.nouns`.
+
+### BASE-036 A verb's result is data, shown the same way on every surface
+- Requirement: A verb may return a result value, and the CLI and MCP present that one value, so both surfaces carry the same data.
+- What this means: `say` is for messages to a person. The result is the data an agent needs back, such as the id of the element it just wrote. Every surface shows the same result.
+- Why: An intake agent needs the ids of what it writes to write the joins and refs that point at them. STORE-023 requires CLI and MCP to return equal results, which needs one representation.
+- How it shows: `metaform map add-element intake-20260924T220000Z code.bus.event name="Event bus" --json` prints `{"element_id": "...", "address": "code.bus.event", ...}`. The tool `map_add-element` returns the same JSON.
+- Build:
+  - A verb returns None, a JSON-ready value, or an object with `to_dict()`. The chassis converts it with `to_dict()` when present.
+  - CLI: lines from `say` go to standard output. A result is then printed as readable text, one `key: value` line per top-level field, or as JSON alone on standard output when the call has `--json`; with `--json`, `say` lines go to standard error, CLI-025. `--json` is a verb control switch accepted by every verb, not a setting, D32.
+  - MCP: the tool result content is one text block with the `say` lines, when there are any, followed by one text block holding the result as JSON, when there is a result.
+- Acceptance: For each map module verb, the CLI `--json` output and the MCP JSON block parse to equal values.
+- Relates to: BASE-035, STORE-023, CLI-025, MCP-003.
+- Status: recommended.
+
+### BASE-037 Discovery and loading in full
+- Requirement: The chassis finds modules in three places in a fixed order, reads each one's literals before importing it, and loads the enabled, compatible ones, reporting every module it does not load with the reason.
+- What this means: `metaform list modules` is a complete account: every module found, where, whether it is on, and why any is not loaded.
+- Why: A module that fails quietly leaves an agent searching the source for a command that was never registered.
+- How it shows: `metaform list modules` prints one line per module: id, state on, off or error, place, and the summary or the reason.
+- Build:
+  1. Candidates, in order: the system place, `metaform/modules/` inside the package, each folder with an `__init__.py`, sorted by name; the user place, `modules/` under the home, the same way; then each installed entry point in the group `metaform.modules`, whose value is an importable package name.
+  2. For each candidate: an id in `RESERVED`, BASE-014, is refused. An id already taken by an earlier candidate is refused, naming the place that holds it. Otherwise its literals are read, BASE-015. An incompatible module is refused with the reason.
+  3. Enabled state: the `module_state` row when present, otherwise not `SHIPS_DISABLED`, STORE-002.
+  4. An enabled, compatible module is imported under the name `metaform_module_<place>_<id>` for folder modules, or its own package name for entry points, with its settings declarations owned by its id, CLI-010. `MODULE` must be a `Module` whose id equals the module's id. Verb names must be unique, match BASE-035, and give tool names matching `^[a-zA-Z0-9_-]{1,64}$` with no double underscore, MCP-003. Any failure withdraws everything the module registered and records the reason as `<ExceptionType>: <message>`.
+  5. Then each loaded module's `start` runs, BASE-018.
+  - Discovery runs once per process and is cached. `enable` and `disable` reset the cache.
+- Acceptance: One test module per refusal reason, reserved id, duplicate id, missing `SUPPORTED_OS`, wrong `MODULE.id`, duplicate verb, invalid tool name, import error, appears in `list modules` with that reason and contributes no verb or setting.
+- Relates to: BASE-014, BASE-015, BASE-017, BASE-018, STORE-002, MCP-003.
+- Status: confirmed for the three places and for reporting; the order and names are recommended.
+
+### BASE-038 The map module
+- Requirement: A shipped module named `map` exposes the data access object's map and layer operations as verbs, so every read and write is available on the CLI and as MCP tools.
+- What this means: MCP tools come only from module verbs, MCP-003, so the map's reads and writes need a module to reach agents over MCP. The chassis `query` verb gives the same reads on the CLI with no module, STORE-028. The map module ships enabled.
+- Why: The intake agent builds the map, and every agent reads it, through these verbs. One module owning them keeps one declaration per operation.
+- How it shows: The tools `map_where`, `map_element`, `map_add-element`, `map_add-join` and the rest appear in the tool list.
+- Build: Every verb calls `ctx.require_store()` and exactly one operation of STORE-024 or STORE-025, returning its result per BASE-036. The fields of a record being written are data the verb acts on, so they are nouns, never switches: required nouns are positional, and optional nouns are written as `name=value` words on the CLI, BASE-043, and as named arguments over MCP. The only switch is `--raw`, a boolean setting owned by `map` that changes how `node` reads.
+
+  | Verb | Nouns | Operation |
+  |---|---|---|
+  | `where` | address | `where` |
+  | `element` | element | `element` |
+  | `joins` | element, optional `as` receiver or provider | `joins` |
+  | `identity` | element | `identity` |
+  | `subtypes` | join, optional `end` | `subtypes` |
+  | `children` | address | `children` |
+  | `layers` | none | `layers` |
+  | `layer` | layer, optional node | `layer_items` |
+  | `node` | node; switch `--raw` | `node` |
+  | `context` | address | `context` |
+  | `links` | node | `links_to` |
+  | `citing` | key, value | `citing` |
+  | `revisions` | id | `revisions` |
+  | `search` | text | `search` |
+  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, and the provenance fields module, workflow, prompt, model, role, blinded | `layer` |
+  | `complete` | layer | `complete` |
+  | `add-element` | layer, address; optional name, name_length, role, refs, extra | `add_element` |
+  | `add-join` | layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, role, refs, extra | `add_join` |
+  | `add-subtype` | layer, join, end, address; optional purpose, function, relation, observation, name, name_length, role, refs, extra | `add_subtype` |
+  | `add-ref` | owner, key, value | `add_ref` |
+  | `add-item` | layer, node, value; optional link, refs, extra | `add_item` |
+  | `revise` | id, reason; optional evidence and each changed field of STORE-034 | `revise` |
+  | `retire` | id, reason; optional evidence | `retire` |
+  | `select`, `mask` | address, layer | `select`, `mask` |
+  | `clear` | address, layer, kind | `clear` |
+  | `select-root`, `clear-root` | layer | STORE-035 |
+  | `hide`, `unhide` | layer | `hide`, `unhide` |
+  | `reexamined` | layer | `reexamined` |
+
+  A node noun is written `element:<address or id>`, `join:<id>`, `subtype:<address or id>` or `type:<address>`. `refs` is a JSON array of `[key, value]` pairs, and `extra` a JSON object; both are `json` nouns or switches. `retire` and `hide` are caution verbs.
+- Acceptance: Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.
+- Relates to: STORE-024, STORE-025, STORE-028, BASE-035, BASE-036, MCP-003.
+- Status: recommended.
+
+### BASE-039 The intake module
+- Requirement: A shipped module named `intake` serves the Canonical Intake instructions by name, opens and completes the intake layer, and reports intake state; the map writes themselves go through the map module.
+- What this means: The intake module owns everything specific to the intake and nothing general. An intake run is: `intake begin` opens the intake layer with its provenance; the subagent reads `intake prompt`; the subagent writes elements, joins, subtypes and refs with the map verbs into that layer; `intake complete` marks it complete, STORE-032. The module ships enabled.
+- Why: The orchestrator passes only the name of the instructions, and the subagent reads them itself, MCP-009. Opening and completing the layer explicitly is what lets a half-written intake stay invisible.
+- How it shows: `metaform intake prompt` prints the instructions with the project's target filled in. `metaform intake status` says whether the project has an intake, and names any open intake layer.
+- Build:
+
+  | Verb | Nouns and switches | Does |
+  |---|---|---|
+  | `prompt` | none | Returns the stored intake text with its placeholders filled, below |
+  | `begin` | optional nouns model, role, blinded, result_id | Creates layer `intake-<UTC timestamp YYYYMMDDTHHMMSSZ>`, kind intake, immutable, not hideable, not transitive, variable `The functional map of the artifact: its elements, and each receiver's purpose served by a provider's encounter function.`, provenance module `intake`, workflow `canonical-intake`, prompt the exact text `prompt` returns, and model, role and blinded as given by the calling agent. Returns the layer name and the project id and target. |
+  | `complete` | layer | `complete(layer)`, STORE-032 |
+  | `status` | none | Has an intake or not; the names of open intake layers |
+  | `discard` | layer | Caution verb. Removes an open intake layer and everything written to it. Refused for a complete layer. |
+
+  - The stored intake text is the module resource `resources/Canonical_Intake.xml`, a byte copy of `specifications/Canonical_Intake.xml` at build time. A test file is never served unless a folder setting `intake_file`, owned by `intake`, names a file path, which then replaces the resource.
+  - Serving: the text is returned exactly as stored, except that the attributes of its first `<target>` element are filled: `type` with the project's target type and `value` with its target value. If the text contains the literal `{project_id}`, each occurrence is replaced with the project id. Nothing else changes. The Canonical Intake 1.1 text has no `{project_id}` placeholder, so the project id reaches the subagent in the result of `intake begin`.
+  - Model and role are supplied by the agent that calls `begin`, since only the agent knows them.
+- Acceptance:
+  - `intake prompt` output differs from the stored file only inside the `<target>` element's attributes.
+  - Between `begin` and `complete`, `has_intake()` is false; after `complete`, true.
+  - `discard` of a complete intake layer is refused.
+- Relates to: MCP-009, MAP-040, MAP-043, STORE-032, LAYER-001, LAYER-010.
+- Status: recommended. How the intake agent is told to write through these verbs, when the intake text asks for an XML answer, is open, see question 9 of this section.
+
+### BASE-040 The memory module
+- Requirement: A shipped module named `memory` offers the reference memory server's operations as verbs over the map's nodes.
+- What this means: The operations of LAYER-013, on the memory layer of STORE-020. The module ships enabled.
+- Why: Agents already know these operations, and one declaration gives them on the CLI and as tools.
+- How it shows: `metaform memory add-observations element:code.manager.route "Routes are ejected, never packed on delete."`.
+- Build:
+
+  | Verb | Nouns | Maps to |
+  |---|---|---|
+  | `create-entities` | name, entity type | D18: pending; recommended to create an element in the memory layer |
+  | `create-relations` | from node, relation type, to node | `add_item` in memory at from, linking to, value the relation type |
+  | `add-observations` | node, text... | one `add_item` per text |
+  | `delete-entities` | node... | deletes every memory item at each node; never the node |
+  | `delete-observations` | node, text... | deletes memory items at the node whose value equals each text |
+  | `delete-relations` | from node, relation type, to node | deletes the matching relation item |
+  | `read-graph` | none | every memory item, grouped by node |
+  | `search-nodes` | query | `search` on the memory layer, grouped by node |
+  | `open-nodes` | node... | for each node: its identity read, its memory items, and memory relations to it |
+
+  Node nouns follow BASE-038. Each writing verb creates the memory layer on first use, STORE-020.
+- Acceptance: `add-observations` then `open-nodes` on the same node returns the observations; a relation from A to B appears when opening B.
+- Relates to: LAYER-012, LAYER-013, STORE-020, BASE-038.
+- Status: recommended.
+
+### BASE-041 The build command
+- Requirement: `metaform build` writes one wheel of the chassis and the enabled modules to a known place, with module dependencies as wheel metadata and pure-Python dependencies carried inside for direct runs.
+- What this means: A user's build holds exactly what they use, BASE-022, and runs offline when run directly, BASE-024.
+- Why: The installer and the user need to find the built wheel, and an uploaded wheel has no network to fetch its dependencies.
+- How it shows: `metaform build` prints the path of the wheel it wrote.
+- Build:
+  - Output: `~/.metaform/builds/<UTC timestamp>/metaform-<version>-py3-none-any.whl`, or a platform tag when a carried dependency is compiled. The newest build is also recorded in the base database `meta` table as `last_build`.
+  - Contents: the chassis package; each enabled module, from any place, copied to `metaform/modules/<id>/` so that it is a system module inside the wheel; the root `__main__.py`, BASE-042.
+  - Metadata: `Requires-Dist` lists the chassis's dependencies and every enabled module's `DEPENDENCIES`.
+  - Carried dependencies: the build resolves the same requirements with `uv pip compile` and downloads them with `uv pip download` or an equivalent; each pure-Python distribution is unpacked into `metaform/_vendor/` in the wheel. A compiled distribution is not carried and makes the build print which module needs it.
+  - The build needs `uv` and network or a warm uv cache. Running the wheel directly does not.
+- Acceptance: With `map` enabled and `template` disabled, the wheel holds `metaform/modules/map/` and no `metaform/modules/template/`, lists only the chassis's and map's dependencies, and runs `python <wheel> query layers` in a container with no network.
+- Relates to: BASE-022, BASE-024, BASE-026, BASE-042, MCP-010.
+- Status: recommended.
+
+### BASE-042 A directly run wheel bootstraps from itself
+- Requirement: A wheel's root `__main__.py` makes `python <wheel>` run Metaform from the wheel, with its carried dependencies and its own home.
+- What this means: Python runs a zip file's root `__main__.py`. The bootstrap puts the wheel and its carried dependencies first on the import path, chooses the wheel's own home, and runs the CLI.
+- Why: A direct run must never use or change an installed Metaform, BASE-023, and must work offline, BASE-024.
+- How it shows: `python metaform-0.2.0-py3-none-any.whl` prints status with `Home: ~/.metaform/wheels/...`.
+- Build: `__main__.py` inserts the wheel path and the wheel path joined with `metaform/_vendor` at the front of `sys.path`, removes any other path entry that provides a `metaform` package, sets `METAFORM_HOME` to `~/.metaform/wheels/<name>-<version>` when it is not already set, then calls `metaform.cli.main()` and exits with its code. Nothing is unpacked to disk.
+- Acceptance: With a different Metaform installed, `python <wheel>` reports the wheel's version and home, and the installed package's files and base database are unchanged afterwards.
+- Relates to: BASE-023, BASE-024, BASE-041, STORE-001.
+- Status: recommended. The folder name depends on D26.
+
+### BASE-043 Optional nouns are written as name=value
+- Requirement: A verb's optional nouns are passed on the CLI as `name=value` words, in any order after its required nouns, and over MCP as named arguments.
+- What this means: Required nouns stay positional, so common calls read naturally. A record with many optional fields, such as a join with a non-goal and refs, is written without a fixed order and without turning data into switches. A word containing `=` whose part before `=` is an optional noun of the verb is that noun. After `--`, no word is read this way, CLI-003.
+- Why: The grammar keeps data as nouns and behavior as switches, and switches are settings, CLI-011. Record fields are data, and storing a join's purpose as a setting would be meaningless. Named optional nouns keep the grammar and stay readable.
+- How it shows: `metaform map add-join intake-20260924T220000Z code.daemon code.failsafe "catch a dead gateway" "probes the gateway" "The failsafe probes the gateway." "One probe every 5 s." non_goal="balance load"`.
+- Build: The shared parser, CLI-001, reads required nouns in order, then `name=value` words for optional nouns, then the rest per CLI-003 and CLI-004. A `json` noun's value is parsed as JSON. An unknown name before `=` is an error naming the verb's optional nouns. Over MCP, each noun is a property of the tool's input schema, required ones listed as required, MCP-005.
+- Acceptance: The example above stores the join with its non-goal; the same call with `non_goal=` moved before the positional fields is refused with a Next line showing the usage.
+- Relates to: BASE-035, BASE-038, CLI-001, CLI-003, MCP-005.
+- Status: recommended. See question 10 of this section.
 ## Open questions
 
 1. A per-project module place: is it wanted, and if so where, given all data is global?
@@ -359,3 +541,5 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 6. How Metaform maintains a user's fork, CI and wheel at release: which service, which commands.
 7. Whether a module can call another module's public operation directly, beyond events, and through what interface.
 8. Does any chassis verb run long enough to return a receipt, or do receipts belong only to the workflow module? Recommended: only the workflow module. (BASE-030)
+9. NEW The Canonical Intake text says to return only the final XML shape, and its method has `deliverable_format="xml"`, while the design has the intake agent build the map through Metaform's commands and tools and not by importing an XML answer. Does the intake text get a response protocol for writing through the tools, in Rich's words, with the method unchanged? Or does the agent return its XML answer through one intake tool that stores it by the MAP-040 mapping? (BASE-039, MAP-040, MCP-009)
+10. NEW The grammar makes arguments nouns and switches settings. Record fields a verb writes, such as a join's purpose, are data, not settings. Is writing optional fields as `name=value` nouns, BASE-043, the form you intend, or should they be written another way?

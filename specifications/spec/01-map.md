@@ -97,14 +97,14 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-012 An address reads as its name when reversed
 
 - Requirement: An address is read as a name by reversing its segments and replacing periods and underscores with spaces, and an element's name_length gives how many trailing segments form its short name.
-- What this means: `code.loop.main` reads as main loop code. `code.bus.data.event` reads as event data bus code. `data.bill_of_materials` reads as bill of materials data. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity.
+- What this means: `code.loop.main` reads as main loop program code. `code.bus.data.event` reads as event data bus program code. `data.bill_of_materials` reads as bill of materials data. A root Type may carry a reading phrase that stands for it when the address is read: `code` reads as program code, as the Canonical Intake's reading example shows. Every other root reads as its own name. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity.
 - Why: Reading addresses as proper nouns engages the model's existing understanding of types directly, without reasoning. Short names keep references readable.
 - How it shows: Every element and Type listing shows the address and its reading.
-- Build: reading(address) reverses the segments, replaces underscores with spaces, and joins with spaces. short_name(address, n) applies reading to the last n segments. Readings are computed, never stored as identity.
+- Build: reading(address) reverses the segments, replaces underscores with spaces, replaces the root segment with its reading phrase from the root list data, MAP-014, and joins with spaces. short_name(address, n) reverses the last n segments, replaces underscores with spaces and joins them, without the root phrase unless the root is among those n segments. When n is null, zero, or larger than the number of segments, short_name returns reading(address). Readings are computed, never stored as identity.
 - Acceptance:
-  1. reading of `code.bus.data.event` is event data bus code; short_name of `code.engine.game` with name_length 2 is game engine.
+  1. reading of `code.bus.data.event` is event data bus program code; short_name of `code.engine.game` with name_length 2 is game engine; short_name with name_length 9 is game engine program code.
 - Relates to: MAP-010, MAP-015.
-- Status: confirmed.
+- Status: confirmed. The root reading phrase for `code` follows the Canonical Intake's own example; the edge cases of short_name are recommended.
 
 ### MAP-013 The namespace rules govern the functional map, and the store does not judge them
 
@@ -124,7 +124,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The Canonical Intake lists the roots as code, document, media, data and stakeholder. Stakeholder holds the parties outside the artifact, such as the VE.
 - Why: The roots are the bases every inference starts from, so each root must carry a distinct, well-understood meaning.
 - How it shows: The Type tree has one branch per root.
-- Build: The root list is data, not code, so a change to it needs no code change. The store does not refuse an address under another root, per MAP-013.
+- Build: The root list is data, not code, so a change to it needs no code change. Each entry holds the root name and its reading phrase, MAP-012: code with program code, and document, media, data and stakeholder each reading as its name, until D1 is answered. The store does not refuse an address under another root, per MAP-013.
 - Acceptance: None; the list is data and low impact.
 - Relates to: MAP-010, MAP-013.
 - Status: open. REQUIREMENTS.md names asset in place of media and an entity trunk, and the repository's development instructions name exterior as a base. See open question 1.
@@ -159,7 +159,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: AUE marks the artifact under examination. VE marks a party outside the artifact whose purpose drives changes or improvements to it; it is never the person who asked for the intake, the end user, or whoever performs the operation, and it is named at its most specific reusable type level. DE is the element whose loss would stop the artifact being the same type; its function is stated independently of medium, encoding, genre and style. SE is an element whose Encounter Function helps the DE serve the VE's purpose. NE is a component, interface or specification that states an essential demand on its environment. Inside the AUE, an element is DE, SE or NE. A VE is an element with role VE and never receives an AUE role. PE is not a role; it is a join's other endpoint. A subtype carries DE, SE or NE.
 - Why: Roles tell an agent at once how an element bears on the artifact's identity, which is the first thing it needs to orient.
 - How it shows: Every element listing shows its role.
-- Build: role is a required field on elements and subtypes, from the set above. There may be several VEs.
+- Build: The intake writes exactly one role, from the set above, on every element and subtype it creates. There may be several VEs. The store records the role as given and does not refuse a missing one, STORE-009 and STORE-026, because the store never judges content; a missing role on an intake element is a defect of that intake, visible to any later layer that grades the map.
 - Acceptance: None beyond the intake mapping test in MAP-031.
 - Relates to: MAP-020, MAP-030, MAP-031.
 - Status: confirmed. Whether one VE is recorded as primary is open, see open question 6. STORE-009 allows an element with no role; whether an element created by a layer other than the intake must carry one is open, see open question 13.
@@ -183,7 +183,7 @@ These terms are used exactly as defined in the Canonical Intake.
   A join speaks about this artifact. Its purpose and function state what this artifact actually does in its own particulars. Where the artifact represents something, the join describes the function of that representation within the artifact, not the real-world function of the thing represented.
 - Why: Functions live in joins, and joins speak to the artifact. Keeping each field separate lets an agent ask one question at a time, who, why, how, what is actually there, and get a direct answer.
 - How it shows: Reading a join returns every field it was written with, each on its own.
-- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. purpose, function, relation and observation are required on purpose joins. non_goal is nullable. refs follow MAP-021.
+- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. non_goal is nullable. refs follow MAP-021.
 - Acceptance:
   1. A join written with every field, including a non_goal and two refs, reads back with each field equal to what was written.
   2. A join of a module-defined type with extension content survives export and import unchanged.
@@ -261,22 +261,24 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-040 An intake result becomes map records
 
 - Requirement: An intake result is stored as elements, joins, refs and subtypes in the project's map layer, with nothing lost.
-- What this means: The Canonical Intake response maps onto the records as follows.
-  - The result id is kept on the map layer written for that intake.
-  - Each root element becomes an element with its address, name, name_length, role and refs.
-  - Each join inside a root element becomes a join owned by that element, with its provider resolved by address, and every field in MAP-020.
-  - Each join nested inside a join becomes a subtype of the outer join: provider end, own piece the nested join's function, with its relation and observation, and the nested element's address, name, name_length, role and refs.
+- What this means: The Canonical Intake response maps onto the records as follows. Two response forms exist: the 1.1 schema of `Canonical_Intake.xml`, and the test schema of `Canonical_Intake_test.xml`, which adds nested subtype joins. The mapping covers both.
+  - The result id is kept on the intake layer written for that intake.
+  - Each root `<element>` becomes an element with its address, name, name_length, role and refs.
+  - Each `<join>` inside a root element becomes a join owned by that element, with its provider resolved by address, every field in MAP-020, and the refs written directly inside the join, which only the test schema has.
+  - An `<element>` nested directly inside a `<join>`, as in the 1.1 schema, is the definition of that join's provider: its address equals the join's provider. It becomes, or adds to, the provider's element: when no element holds that address yet, one is created with the nested element's address, name, name_length, role and refs; when one exists, the existing element is kept, STORE-009, and the nested element's refs are added to it while the intake layer is open, STORE-012. A nested element whose address differs from its join's provider is recorded as written, as an element, and its join is not changed.
+  - A `<join>` nested inside a `<join>`, as in the test schema, becomes a subtype of the outer join at the provider end: its own piece is the nested join's function, with its relation and observation, its address is the nested join's provider, and the `<element>` inside it gives the subtype's name, name_length, role and refs.
   - Each ref becomes a ref record on its owner, in order.
+  - When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 
   The intake's instructions are delivered to the performing agent by name, and the agent writes its result back through the same chassis commands and tools, specified in BASE, CLI and MCP.
 - Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part.
 - How it shows: After an intake, every element, join, subtype and ref in the result is readable from the store.
-- Build: The mapping above, performed inside one write so the map layer appears whole or not at all. The provenance record of the map layer is written at the same time, as specified in LAYER.
+- Build: The mapping above, written into one intake layer that stays open while it is written and is completed when the intake is done, so the map appears whole or not at all, STORE-032 and BASE-039. The provenance record of the intake layer is written when the layer is created, LAYER-010.
 - Acceptance:
   1. Storing a real intake result, such as the MGM map, then reading the project back yields the same set of root elements, joins with every field, subtypes with their ends and pieces, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-013, STORE-024, MCP-009.
-- Status: the mapping is confirmed. Whether the agent submits one whole result or builds the map by one call per record is open, see open question 9.
+- Status: the mapping of root elements, joins and refs is confirmed; the handling of the 1.1 nested provider element, of test-schema subtype joins, and of a missing AUE is recommended. Whether the agent submits one whole result or builds the map by one call per record is open, see open questions 9 and 15.
 
 ---
 
@@ -299,7 +301,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The artifact under examination is an entity: it contains the elements the intake finds in it. Its Defining Element is one of those elements, the one whose loss would stop the artifact being the same Type. The artifact and its Defining Element are two records with two Types. An agentic delivery framework as a whole and the delivery workflow that defines it are an example: the whole is one Type, the defining part another. A Vested Entity outside the artifact is also an entity in this sense, a party that holds purposes. An ordinary element such as a supportive script is not an entity.
 - Why: The whole and the part that defines it answer different questions. Collapsing them would force the artifact's Type to equal its Defining Element's Type, which loses either the functional type of the whole or the specific function of the part.
 - How it shows: A mapped project holds one element with the AUE role and, separately, one with the DE role, each with its own address. Reading the AUE element does not return the DE's address as its own.
-- Build: The AUE is stored as an element with role AUE and its own address and identity. The DE is a separate element with role DE. Elements carry no flag of their own saying entity or not; being an entity follows from the role, AUE or VE. Which elements belong to which AUE, when a project holds more than one AUE, is open.
+- Build: The AUE is stored as an element with role AUE and its own address and identity when the intake result names one. When it names none, no AUE element is created, MAP-040, and the project's target records the artifact. The DE is a separate element with role DE. Elements carry no flag of their own saying entity or not; being an entity follows from the role, AUE or VE. Which elements belong to which AUE, when a project holds more than one AUE, is open.
 - Acceptance:
   1. An intake result whose AUE and DE have different addresses is stored as two elements, and both addresses read back unchanged.
 - Relates to: MAP-015, MAP-017, MAP-040, STORE-009.
@@ -311,10 +313,11 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The map records where each element lives in the artifact, through refs such as a path. A worker that must judge the artifact itself, such as an intake agent or a sighted critic, is given the project's target and the refs, and reads the real material. A Type's universal description is never a stand-in for looking at the artifact. The blind latent critic is the one deliberate exception: its role is to reason from the map alone, so it receives the map and not the artifact, and its layer's provenance records that it was blinded.
 - Why: A map built or checked from names alone repeats whatever the names suggest, and the errors then look like the artifact's own. Keeping the source identity and the project with the evidence means every conclusion can be traced back to the material it came from.
 - How it shows: The intake instructions a subagent reads name the project's target. Reading an element or a join returns its refs, so an agent can open the exact files or passages behind it.
-- Build: Every element and join read returns its refs in order. The intake instructions served by name include the project id and its target. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
+- Build: Every element and join read returns its refs in order. The intake instructions served by name carry the project's target, filled into the intake text's `<target>` element, BASE-039. The project id reaches the subagent in the result of `intake begin`, and is filled into the text only where the text holds a `{project_id}` placeholder. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
 - Acceptance:
   1. Reading a join returns its path refs exactly as written.
-  2. The served intake instructions for a registered project contain that project's target value.
+  2. The served intake instructions for a registered project contain that project's target type and value in the `<target>` element.
+  3. The result of `intake begin` contains the project id.
 - Relates to: MAP-021, MAP-041, LAYER-010, LAYER-015, MCP-009, STORE-025.
 - Status: confirmed.
 
@@ -334,3 +337,4 @@ These terms are used exactly as defined in the Canonical Intake.
 12. Are Type records shared across projects, as MAP-010 recommends, or kept in each project store, as STORE-008 has them?
 13. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 14. When a project holds more than one AUE, how is the set of elements belonging to each AUE recorded? (MAP-042)
+15. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)

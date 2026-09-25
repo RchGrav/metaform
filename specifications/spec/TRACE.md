@@ -1,15 +1,15 @@
 # Trace from source requirements to the spec
 
-This table maps every requirement in REQUIREMENTS.md, read with REQUIREMENTS-corrections.md applied, and every entry in SETTLED.md to the spec records that carry it.
+This table maps every requirement in REQUIREMENTS.md, read with REQUIREMENTS-corrections.md applied, and every entry in SETTLED.md to the spec records that carry it. The corrections file says none of its entries apply until Rich approves them; this trace reads them as proposed, and a row whose disposition rests on an unapproved correction stands only once that correction is approved.
 Dispositions: covered; deferred, meaning nonces, assignment context or remote hosting; removed, with the reason from the corrections file; NOT COVERED, explained in the notes below the tables.
 
 ## REQUIREMENTS.md
 
 | Source | Subject | Spec ids | Disposition |
 |---|---|---|---|
-| REQ-001 | The requirements are the product contract; older material is evidence | none | NOT COVERED |
-| REQ-002 | Requirements describe outcomes and invariants | none | NOT COVERED |
-| REQ-003 | Open choices do not block unrelated work; no invented semantics | none | NOT COVERED |
+| REQ-001 | The requirements are the product contract; older material is evidence | 00-index Authority | covered |
+| REQ-002 | Requirements describe outcomes and invariants | 00-index Authority | covered |
+| REQ-003 | Open choices do not block unrelated work; no invented semantics | 00-index Authority | covered |
 | REQ-004 | No implementation self-ratification | QUAL-006, QUAL-012 | covered |
 | REQ-010 | Project understanding is reusable working context | MAP-001 | covered |
 | REQ-011 | Artifact independence, software and non-software | MAP-041, MAP-021 | covered |
@@ -203,7 +203,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 
 ## What the spec lacks for each NOT COVERED row
 
-- REQ-001, REQ-002, REQ-003: no record states the spec's own authority, that requirements are outcomes and invariants, or that open choices do not block unrelated work while nothing is invented. These govern the spec as a document and fit the spec index.
+- REQ-001, REQ-002, REQ-003: carried by the Authority section of 00-index.md.
 - REQ-041: whether a module can call another module's public operation beyond events is open question 7 in 04-chassis-modules.
 - REQ-066: confirmed design gives a directly run wheel its own data subfolder, BASE-023 and STORE-030, which contradicts sharing one configuration. Whether REQ-066 is retired, or reconciled through merge on install, BASE-025, needs Rich's answer.
 - REQ-087: MCP-009 covers operation from inside any host. Launching a configured harness conflicts with the confirmed rule that Metaform never launches a model, and no correction retires it. The deterministic local fixture is not specified.
@@ -211,3 +211,24 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 - REQ-140 to REQ-150: the workflow module is not in the spec. BASE-003 places workflows in modules and MCP-009 delivers intake instructions by name, but workflow execution, representation, snapshots, revisions, replay, human waits and CLI completeness are unspecified.
 - REQ-160, REQ-162, REQ-163, REQ-164: artifact history, origins and variants, reconstruction and portable continuation are not in the spec.
 - REQ-190 to REQ-196: the web and browser terminal modules are not in the spec.
+
+## Records that carry build detail for other records
+
+These records were added to close gaps a builder would otherwise guess at. Each serves the records named, not a source requirement of its own.
+
+| Record | Serves |
+|---|---|
+| STORE-031 | MAP-041, STORE-002, CLI-001 |
+| STORE-032 | MAP-040, LAYER-001, MCP-009 |
+| STORE-033 | STORE-017, STORE-024 |
+| STORE-034 | STORE-017, MAP-015 |
+| STORE-035 | LAYER-005, LAYER-007 |
+| STORE-036 | LAYER-011 |
+| STORE-037 | STORE-006 |
+| BASE-035, BASE-036, BASE-037 | BASE-004, BASE-006, BASE-014, CLI-001, MCP-003 |
+| BASE-038 | STORE-024, STORE-025, MCP-003 |
+| BASE-039 | MCP-009, MAP-040 |
+| BASE-040 | LAYER-013 |
+| BASE-041, BASE-042 | BASE-022, BASE-023, BASE-024 |
+| BASE-043 | CLI-001, CLI-011 |
+| CLI-027, CLI-028, CLI-029, CLI-030 | CLI-005, CLI-007, CLI-021, MCP-005 |
