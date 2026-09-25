@@ -638,9 +638,16 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `has_intake()` | whether the project holds a locked intake layer, STORE-032 | `layers_by_kind` |
   | `project()` | the project record with its target, STORE-031 | `projects` primary key |
 
-- Acceptance: STORE-005's plan test covers every row of this table.
-- Relates to: STORE-005, STORE-012, STORE-019, MAP-001, MAP-021, CLI, MCP.
-- Status: confirmed for the questions answered. Names and signatures are recommended.
+- Joins from layers:
+  - Every read that returns a join, `joins`, `identity`, `node`, `context`, `links_to`, `where` for a subtype, and the graph and export reads, returns with each join its `layer_id` and `layer`, the name of the layer it comes from, read from the join row's `layer_id` through the `layers` primary key. Subtypes carry the layer of the join that holds them.
+  - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is locked, not hidden, and in the effective selection at its receiver's address, LAYER-007. With `raw=True`, every stored join is returned, each with its layer name.
+  - The intake map's joins go through the same filter, so masking the intake layer at an address removes its joins there like any other layer's.
+- Acceptance:
+  - STORE-005's plan test covers every row of this table.
+  - Every join returned by every read in this table carries a non-empty `layer` equal to the name of the layer whose id its row holds.
+  - A join added by a locked knowledge layer is returned by `joins(receiver)` in context when that layer is toggled on, is absent when it is toggled off or masked at the receiver's address, and is returned by `joins(receiver, raw=True)` in both cases.
+- Relates to: STORE-005, STORE-012, STORE-019, MAP-001, MAP-021, LAYER-016, CLI, MCP.
+- Status: confirmed for the questions answered, and for every join showing the layer it comes from. Names, signatures and the in-context filter of joins are recommended.
 
 ### STORE-026 Errors name one next step and never judge content
 - Requirement: A data access error states what is wrong and names one next command, and the store never refuses a write because of what its text says.
