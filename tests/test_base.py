@@ -512,3 +512,48 @@ def test_both_example_modules_have_the_same_files():
     for name in ('helloworld', 'template'):
         folder = MODULES / name
         assert {'__init__.py', 'README.md', 'CHANGELOG.md', 'tests'} <= {path.name for path in folder.iterdir()}
+
+
+@pytest.mark.req('BASE-009')
+@pytest.mark.req('BASE-010')
+def test_an_async_publish_never_blocks_its_loop_and_a_sync_one_there_is_refused(home, user_module):
+    import asyncio
+    from metaform import loader
+    from metaform.module import Context, call
+    user_module('slowear', '''
+        import asyncio, time
+        from metaform.module import Module, Subscription
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        async def hear_async(payload, ctx):
+            await asyncio.sleep(0.3)
+            return 'async heard'
+        def hear_sync(payload, ctx):
+            time.sleep(0.3)
+            return 'sync heard'
+        MODULE = Module(id='slowear', summary='Listens slowly.', purpose='Listens. Details: metaform help slowear.',
+                        subscriptions=(Subscription('slowear.ping', hear_async), Subscription('slowear.ping', hear_sync)))
+    ''')
+    loader.reset()
+    loader.discover()
+    ticks = []
+
+    async def main():
+        async def ticker():
+            while True:
+                ticks.append(1)
+                await asyncio.sleep(0.02)
+        running = asyncio.get_running_loop().create_task(ticker())
+        source = Context(module='test', folder=home)
+        deliveries = await source.publish_async('slowear.ping', {})
+        with pytest.raises(RuntimeError, match='publish_async'):
+            source.publish('slowear.ping', {})
+
+        async def later():
+            return 'x'
+        with pytest.raises(RuntimeError):
+            call(later)
+        running.cancel()
+        return deliveries
+    deliveries = asyncio.run(main())
+    assert sorted(delivery['result'] for delivery in deliveries) == ['async heard', 'sync heard']
+    assert len(ticks) >= 15

@@ -283,7 +283,8 @@ class ChassisTUI:
 
     async def refresh(self, *, declarations=False):
         previous = self.selected['id'] if self.selected else None
-        self.rows = self.runtime.rows()
+        # Discovery runs module start hooks; off this loop, an async one runs on a loop of its own, BASE-009.
+        self.rows = await asyncio.to_thread(self.runtime.rows)
         self.definitions = {}
         for row in self.rows:
             identifier = row['id']
@@ -455,7 +456,7 @@ class ChassisTUI:
                 settings.glue(key, folder, pinned)
                 self.pending_pins.pop((module, key))
             for module, enabled in list(self.pending_modules.items()):
-                loader.set_enabled(module, enabled)
+                await asyncio.to_thread(loader.set_enabled, module, enabled)
                 self.pending_modules.pop(module)
             if exit_after:
                 self.exit_requested = True

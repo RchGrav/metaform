@@ -109,3 +109,35 @@ def test_refreshing_the_screen_starts_no_module_again(home, tmp_path, user_modul
                 await screen.refresh()
         asyncio.run(drive())
     assert marks.read_text().splitlines() == ['start']
+
+
+@pytest.mark.req('BASE-009')
+@pytest.mark.req('BASE-018')
+def test_the_screen_loads_and_turns_off_a_module_whose_start_and_stop_are_async(home, tmp_path, user_module):
+    marks = tmp_path / 'marks.txt'
+    user_module('asyncer', f'''
+        from pathlib import Path
+        from metaform.module import Module
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        async def start(ctx):
+            with Path({str(marks)!r}).open('a') as out:
+                out.write('start\\n')
+        async def stop(ctx):
+            with Path({str(marks)!r}).open('a') as out:
+                out.write('stop\\n')
+        MODULE = Module(id='asyncer', summary='Async.', purpose='Async. Details: metaform help asyncer.',
+                        start=start, stop=stop)
+    ''')
+    loader.reset()
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            assert 'asyncer' not in screen.runtime.load_errors
+            screen.module_index = [row['id'] for row in screen.rows].index('asyncer')
+            screen._toggle_module()
+            screen._save_changes()
+            await screen.last_task
+        asyncio.run(drive())
+    assert marks.read_text().splitlines() == ['start', 'stop']
+    assert next(item for item in loader.discover() if item.id == 'asyncer').problem == ''

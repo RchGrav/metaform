@@ -14,7 +14,6 @@ import inspect
 import re
 import sys
 from collections.abc import Callable, Coroutine
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -157,6 +156,11 @@ class Context:
         from . import events
         return events.publish(topic, payload or {}, self)
 
+    async def publish_async(self, topic: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Publish from an async verb; subscribers run without blocking this loop, BASE-009."""
+        from . import events
+        return await events.publish_async(topic, payload or {}, self)
+
     def spawn(self, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Start a task owned by this module; unload, reload and shutdown cancel it, BASE-018."""
         from . import loader
@@ -170,16 +174,21 @@ def on_this_system(verb: Verb) -> bool:
 
 
 def call(function: Callable[..., Any], *args: Any) -> Any:
-    """Run a function or a coroutine function the same way, BASE-009."""
+    """Run a function or a coroutine function the same way from synchronous code, BASE-009.
+
+    Inside a running loop a coroutine is refused: waiting for it there would block that loop. Await it, or run
+    the synchronous caller in a worker thread.
+    """
     result = function(*args)
     if inspect.isawaitable(result):
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(_await(result))
-        # Inside a running loop, asyncio.run is never called on it: the coroutine gets a loop of its own.
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            return worker.submit(asyncio.run, _await(result)).result()
+        if inspect.iscoroutine(result):
+            result.close()
+        raise RuntimeError(f'{getattr(function, "__qualname__", function)} is async and was called from inside a '
+                           'running event loop; await it there instead, BASE-009.')
     return result
 
 

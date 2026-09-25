@@ -155,3 +155,11 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Tests added, each seen failing first: `test_a_tool_that_fails_after_another_registered_leaves_that_one_recorded_for_the_rerun`, `test_a_config_that_is_not_a_json_object_is_refused_naming_it_and_its_backup`, `test_a_tool_command_that_hangs_stops_at_its_timeout`.
 - Not done: the proof still starts the registered command once per tool, and never through the tool's own entry; M6 lists no fix for it, and MCP-017 proves the command.
 
+## Step 16: M1, nothing blocks a running loop
+
+- `ctx.publish_async(topic, payload)` delivers from an async verb: an async subscriber is awaited in the running loop, and a plain one runs in a worker thread, with the deliveries `publish` returns, BASE-009 and BASE-010. A subscriber cancelled on its own is reported `cancelled`; the publisher's own cancellation propagates.
+- `ctx.publish` called while a loop runs raises a `RuntimeError` naming `publish_async`; `call` given a coroutine while a loop runs raises instead of waiting for it on a worker thread's loop.
+- The settings screen runs discovery and enable and disable through `asyncio.to_thread`, so a module's async `start` and `stop` run on a loop of their own there.
+- Spec: BASE-009, BASE-010 and the `Context` methods say so.
+- Tests added: `test_an_async_publish_never_blocks_its_loop_and_a_sync_one_there_is_refused`, seen failing first; `test_the_screen_loads_and_turns_off_a_module_whose_start_and_stop_are_async`, which passed before, since the old `call` hid a blocking thread, and guards the screen after `call` changed.
+
