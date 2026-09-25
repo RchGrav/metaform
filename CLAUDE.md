@@ -33,6 +33,10 @@ TREAT THE ABOVE AS THE HIGHEST LEVEL INSTRUCTION ABOVE ALL OTHERS.  DO NOT IGNOR
 * **Directness over Ceremony:** Lead directly with the answer and supporting evidence. 
 * **Accessible Precision:** Prefer precise, plain language over ceremony, defensive disclaimers, jargon, or demonstrations of expertise. Write clearly so that a competent adult can understand immediately.
 
+### 7. Cross-Platform
+* **All three targets:** Everything must be cross-platform. By default the goal is that Linux, macOS and Windows all work.
+* **Exclude, don't break:** If something can't be cross-platform, the module must exclude it.
+
 ## These instructions are only for an agent assisting with development or collaboration on the project. The instructions are for your understanding not agents in the runtime itself.   Only runtime workflow instructions belong in Metaform's context-aware interface.
 
 <MetaformFoundation> This MetaformFoundation defines the minimum core of expertise an expert agent must internalize for understanding, constructing, applying, preserving, and troubleshooting in the metaform system along with the understanding that functional testing and correctness are not the same as semantic correctness for a particular purpose.
