@@ -386,9 +386,9 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 
 ### STORE-015 Layer items carry one variable at one node
 - Requirement: Each layer item is one row holding one value of its layer's variable, attached to one node, with an optional link to another node.
-- What this means: An item attaches to a type address, an element, a join or a subtype. Its value is that layer's variable at that node, such as one best practice, one challenge, one verdict or one memory observation. The optional link points at another node. A C verdict links the challenge to the element or join that already handles it, and a memory relation links one node to another. Links are items, so the whole structure stays navigable from any node, and links may form cycles.
-- Why: One variable per layer is what lets any set of layers be selected together. Links as items mean a verdict points at the real node instead of copying it, and following links backward from the map shows every challenge a node already covers.
-- How it shows: Reading the challenge layer at `code.guard.switch.gateway` by incoming links lists every proposal judged as already handled there.
+- What this means: An item attaches to a type address, an element, a join or a subtype. Its value is that layer's variable at that node, such as one best practice, one challenge or one memory observation. The optional link points at another node; a memory relation links one node to another. Links are items, so the whole structure stays navigable from any node, and links may form cycles.
+- Why: One variable per layer is what lets any set of layers be selected together. Links as items mean an item points at the real node instead of copying it, and following links backward from the map shows everything that refers to a node.
+- How it shows: Reading memory at `code.guard.switch.gateway` by incoming links lists every memory relation that points at it.
 - Build:
   ```sql
   CREATE TABLE items(
@@ -424,12 +424,11 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   - The data access object checks that an identity target exists in its identity table, and writes `types` rows for a type target, STORE-008.
   - `value` is any JSON value: a string, number, boolean, array, object or null. It is the answer to the layer's one variable at this node. The store does not judge its content.
   - `extra` is a JSON object or NULL. It holds any further fields the writer supplies for this one item that are not the variable's answer, STORE-021. An `extra` that is not an object is refused.
-  - A C verdict's link is stored in `link_kind` and `link_id`, E8.
 - Acceptance:
   - All items of a layer, all items at a node, and all items linking to a node are each returned by one read using the matching index.
   - An item linking from A to B and another from B to A both store and both read back.
 - Relates to: STORE-004, STORE-005, STORE-020, LAYER-003, LAYER-015.
-- Status: confirmed for attachment to elements, joins and subtypes, and for links. Attaching an item at a type address with no element is used by LAYER-005 and MAP-011 but is not in LAYER-003's list of attachment targets; see open question 19. The link fields for a C verdict follow E8, recommended. The fields inside a layer's value are open question 7.
+- Status: confirmed for attachment to elements, joins and subtypes, and for links. Attaching an item at a type address with no element is used by LAYER-005 and MAP-011 but is not in LAYER-003's list of attachment targets; see open question 19. The fields inside a layer's value are open question 7.
 
 ### STORE-016 Provenance is one record per layer
 - Requirement: Each layer other than memory has exactly one provenance row, recording the module and workflow that created it, the prompt, the model, the role, and whether it was blinded.
@@ -598,6 +597,9 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current revision | owner unknown; owner's layer locked and immutable, STORE-012; wrong token for a building layer |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
   | `add_property(layer, element, value, *, refs=(), extra=None)` | element as address or element id | `Property` | element unknown; a target that is not an element; `extra` not an object |
+  | `answer(item_id, state, link=None)` | state A, B or C; link for C | challenge state | per STORE-040 |
+  | `approve(item_id)` | a challenge answered B | challenge state and plans | per STORE-040 |
+  | `add_plan(layer, element, join)` | a new function element and its join | plan | per STORE-040 |
   | `update_item(item, value)` | an item of a mutable layer | `Item` | layer is immutable; use `edit` while building |
   | `delete_item(item)` | an item of a mutable layer | nothing | layer is immutable; use `remove` while building |
   | `revise(thing, changes, *, reason, evidence=None)` | thing is an element, join, subtype or item id; `changes` per STORE-034 | the new revision | layer is mutable; receiver change requested; a key not allowed for the thing's kind |
@@ -607,7 +609,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `hide(layer)`, `unhide(layer)` | | nothing | layer not hideable |
 
 - Acceptance: For each operation, one test performs it and checks the rows it must write and that no other table changed. Each listed error is produced once and writes nothing.
-- Relates to: STORE-009 to STORE-022, STORE-026, STORE-031 to STORE-036.
+- Relates to: STORE-009 to STORE-022, STORE-026, STORE-031 to STORE-036, STORE-040.
 - Status: confirmed for the set of things written and for building then locking a knowledge layer. Operation names, signatures and the build token are recommended. Every write into a building layer, `add_element`, `add_join`, `add_subtype`, `add_item`, `add_ref`, `edit`, `remove`, `lock` and `discard`, takes the layer's build token; the intake's single `atomic()` write creates its layer locked and needs none.
 
 ### STORE-025 Read operations
@@ -902,6 +904,42 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: MAP-022, LAYER-005, LAYER-016, STORE-008, STORE-010, STORE-015, STORE-024, STORE-035.
 - Status: confirmed that properties are their own transitive records attached only to elements. Creating an element at a prefix to hold a property, linked by the namespace tree with no join, is recommended. The table shape is recommended.
 
+### STORE-040 Challenge states and plans
+- Requirement: The store keeps each blind-spot challenge's state, open, answered A, B or C, or plan, and every plan, outside the locked blind-spot layer.
+- What this means: A challenge is an item in a critic's locked blind-spot layer, LAYER-015. Its answer and its approval come later and from other actors, so they are recorded next to the item and never as edits to the locked layer. A plan is a new function element, with its join, that is either approved from a B challenge or added directly by an agent as a plan. A challenge with no state row is open.
+- Why: The blind-spot layer is the critic's work and stays exactly as the critic left it, with its provenance. Keeping answers and approvals beside it lets every read show a challenge's state without changing the layer, and lets one read answer where a project's plans are.
+- How it shows: `metaform map node element:<id>` on an element a challenge carries shows `challenge.blind` and `answered B`; after `metaform map approve`, it shows `plan`.
+- Build:
+  ```sql
+  CREATE TABLE challenge_states(
+    item_id    TEXT PRIMARY KEY,                     -- the challenge item, STORE-015
+    state      TEXT NOT NULL CHECK(state IN ('A','B','C','plan')),
+    link_kind  TEXT CHECK(link_kind IN ('element','join')),
+    link_id    TEXT,                                 -- for C: the existing element or join
+    answered   TEXT NOT NULL,                        -- UTC time of the answer
+    approved   TEXT,                                 -- UTC time of approval, set when state becomes plan
+    CHECK((state = 'C') = (link_id IS NOT NULL))
+  );
+  CREATE INDEX challenge_states_by_state ON challenge_states(state);
+  CREATE TABLE plans(
+    element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
+    join_id    TEXT REFERENCES join_ids(join_id),
+    layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
+    source     TEXT NOT NULL CHECK(source IN ('direct','approved')),
+    item_id    TEXT                                  -- the challenge, when source is approved
+  );
+  CREATE INDEX plans_by_layer ON plans(layer_id);
+  ```
+  - `answer(item_id, state, link)` writes or replaces the item's row with state A, B or C. It refuses an item that is not in a blind-spot layer, a state of plan, a C without a link to an existing element or join, and an item already approved.
+  - `approve(item_id)` requires state B, sets state to plan and the approval time, and writes a `plans` row with source approved for each new function element the challenge carries, with its join.
+  - `add_plan(layer, element, join)` writes a `plans` row with source direct; it needs no approval.
+  - Reads that return a challenge item, or an element or join listed in `plans`, add its state next to its layer name: open, A, B, C or plan.
+- Acceptance:
+  - A C answer without a link is refused, and so is `approve` on a challenge that is open or answered A or C.
+  - After `approve`, the blind-spot layer's item rows are unchanged, and reads show the challenge and its element as plan.
+- Relates to: LAYER-015, LAYER-018, STORE-015, STORE-025, BASE-038, MAP-044.
+- Status: recommended.
+
 ## Open questions
 
 1. Can two current elements in one project share a type address, for example two photos that are both `media.photo`? The store currently allows one current element per address, because the intake refers to elements by address.
@@ -923,6 +961,6 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 17. Do Type records live in each project store, as STORE-008 has them, or are they shared across projects, as MAP-010 recommends?
 18. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 19. Properties attach only to elements, STORE-039, MAP-022. Can any other layer item attach at a type address that no element holds? The `items.target_kind` value `type` stays until this is answered.
-20. Is a C verdict's link to the handling element or join stored in the item's link fields, as STORE-015 has it, or inside the item's value, as LAYER-015 states?
+20. Answered: a C answer's link is kept with the challenge state, STORE-040.
 21. Resolved by E9: `ctx.store`.
 22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every locked layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)

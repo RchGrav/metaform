@@ -228,7 +228,7 @@ These are decided so the build can proceed. Veto any of them.
 - **E5.** The test-gaming review is an agent run before merge. Its report and the critic review are stored in the repo under `reviews/`, and each is linked from the pull request.
 - **E6.** CI runs the chassis's declared minimum Python version and the newest release, on Linux, macOS and Windows. The minimum stays as it is until you take up the version question.
 - **E7.** JSON is the exchange format for import and export.
-- **E8.** A C verdict's link to the element or join that already handles the proposal is stored in the item's link fields, not inside its value, so it can be followed and queried.
+- **E8.** A C answer's link to the element or join that already handles the challenge is kept with the challenge state, STORE-040.
 - **E9.** A verb reaches the data access object as `ctx.store`. `Context.data`, the module's own folder, is removed with STORE-022.
 
 ## Scope questions from the trace

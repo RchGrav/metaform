@@ -452,13 +452,16 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `clear` | address, layer, kind | `clear` |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
   | `reexamined` | layer | `reexamined` |
+  | `answer` | challenge, A or B or C; for C `link=` an existing element or join | `answer` |
+  | `approve` | challenge; CLI only, `surfaces=('cli',)`, never an MCP tool | `approve` |
+  | `add-plan` | layer, token for a building layer, element, join | `add_plan` |
 
   These verbs are how any agent builds a knowledge layer, LAYER-018: `new-layer`, then the add verbs with `edit` and `remove` as it works, then `lock` when its task is done. A token is a plain string noun; a write into a building layer without its token is refused, STORE-032.
 
   A node noun is written `element:<address or id>`, `join:<id>`, `subtype:<address or id>` or `type:<address>`. `refs` is a `json` noun holding an array of `[key, value]` pairs of strings, with the schema `{"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}`. `extra` is a `json` noun holding an object, with the schema `{"type": "object"}`. Neither is ever a switch. `retire` and `hide` are caution verbs.
 - Acceptance: Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.
-- Relates to: STORE-024, STORE-025, STORE-028, STORE-032, BASE-035, BASE-036, LAYER-018, MCP-003.
-- Status: recommended.
+- Relates to: STORE-024, STORE-025, STORE-028, STORE-032, STORE-040, BASE-035, BASE-036, LAYER-015, LAYER-018, MCP-003.
+- Status: recommended. `approve` being a person's act on the CLI only is confirmed, LAYER-015.
 
 ### BASE-039 The intake module
 - Requirement: A shipped module named `intake` serves the Canonical Intake instructions by name, accepts the finished intake through one submission, `intake_submit`, that stores it atomically, and reports intake state.

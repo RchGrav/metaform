@@ -19,7 +19,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 ### LAYER-002 A layer carries one inferred variable
 
 - Requirement: Each layer answers exactly one question, and every item in it is an answer to that question at the place it attaches.
-- What this means: The variable is the one thing the layer infers, and for a knowledge layer it is whatever the prompt that builds the layer defines. Examples, not a closed list: a blind-spot challenge at each node, a verdict on each proposal, best-practice imperatives for a type, porting concerns for a move to another language, or an agent's memory. A layer never mixes two variables. Two questions make two layers.
+- What this means: The variable is the one thing the layer infers, and for a knowledge layer it is whatever the prompt that builds the layer defines. Examples, not a closed list: a blind-spot challenge where the critic sees one, best-practice imperatives for a type, porting concerns for a move to another language, or an agent's memory. A layer never mixes two variables. Two questions make two layers.
 - Why: A layer with one variable can be selected, masked, hidden, compared and trusted as a unit, because everything in it was produced the same way for the same purpose. That is what makes layers compose: a module adds its one variable without knowing about any other module, and select and mask decide which layers an agent sees together.
 - How it shows: Every layer states its variable in one sentence. Reading a layer returns items that all answer that sentence.
 - Build: The layer record's variable field is required text, stating the question. The operation that creates a layer refuses an empty variable.
@@ -114,7 +114,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 ### LAYER-009 Comparing is a view, not a stored record
 
 - Requirement: Comparing two layers means selecting both; the comparison itself is never stored.
-- What this means: Two perspectives on the same nodes, such as a blind critic's verdicts and a sighted critic's verdicts, are two layers. Selecting both at a node puts them next to each other. Where they disagree is found by the view reading both layers, not by a record holding both answers.
+- What this means: Two perspectives on the same nodes, such as a blind critic's blind-spot layer and a sighted critic's blind-spot layer, are two layers. Selecting both at a node puts them next to each other. Where they disagree is found by the view reading both layers, not by a record holding both answers.
 - Why: Each layer stays one variable with one provenance. Storing a comparison would mix two perspectives into one record and give it no single origin.
 - How it shows: Selecting two layers at a node shows both sets of items, each labeled with its layer and provenance.
 - Build: No comparison record exists. A view takes a list of layer ids and returns, per node, the items of each layer grouped by layer.
@@ -127,7 +127,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Requirement: Every layer except memory has exactly one provenance record, stating how the layer was created: the module and the workflow within it, the prompt, the model, the role, and whether the producer was blinded.
 - What this means: Everything in a layer was produced the same way, by one producer following one prompt in one role, so one record describes the origin of every item in it. Nothing is recorded per item, per change or per read. Blinded means the producer saw the map and not the artifact.
 - Why: Provenance tracks what a feature actually uses and nothing more. Knowing how a layer was made, by which perspective under which role, is what lets layers be trusted, compared and reproduced. Per-item and per-read records turn provenance into bloat, and bloat defeats a system whose purpose is to give agents only what matters.
-- How it shows: Asking for any layer's origin returns one record. Two critic layers over the same proposals show two records, for example one blinded and one sighted, each with its role.
+- How it shows: Asking for any layer's origin returns one record. Two critics' blind-spot layers over the same metaform show two records, for example one blinded and one sighted, each with its role.
 - Build: The provenance record holds: layer id (unique), module, workflow, prompt (the full text as delivered), model, role, blinded. It is written when the layer is created, by the operation that creates it, and never changes: it is fixed as written through building and locking. A layer other than memory cannot be created without it.
 - Acceptance:
   - Creating a non-memory layer without provenance is refused.
@@ -183,21 +183,29 @@ The receiver, purpose and encounter structure itself, element identity and subty
 
 ### LAYER-015 The blind-spot challenge workflow
 
-- Requirement: The blind-spot challenge workflow writes a challenge at every element and every join, collects proposed pieces, and has critics give each piece one verdict, A, B or C, each critic writing its own layer.
+- Requirement: A blind-spot challenge runs in two passes and one approval: a critic builds the blind-spot layer, a project agent answers each challenge A, B or C through the MCP server, and the user approves B answers, which then become plans.
 - What this means:
-  - Challenge: a pass visits every element and every join and writes a bias blind-spot challenge there, in a challenge layer. Rendered as a prompt, the challenge asks what is missing at that node.
-  - Proposals: the pieces proposed in answer are items in a proposal layer; a piece that is a new element and join lives in that layer.
-  - Verdict: each proposed piece gets exactly one verdict from each critic that runs. A: not beneficial, it was considered and is not an oversight. B: beneficial, it should be considered for the project. C: handled by X, where X is a link to the existing element or join that already does it.
-  - Critics: blind, reasoning from the map only; sighted and non-embroiled, reasoning from the map with the artifact available as evidence for one specific claim, the heavier operation; or both. Which critics run is an option of the workflow. Running both is an option, not a requirement.
-  - Each critic writes its own verdict layer, with its own provenance. Where the critics disagree is a view over the two layers.
-- Why: Bias does not come from seeing the code. It comes from the role: an agent that sees a problem as its own to deal with defends the current work or reaches for the answer that closes its task, and gaming is part of that. So the critic owns nothing it judges, no verdict turns into work for it, and no verdict is presented as more rewarded than another. The blind critic can notice what should exist because of what the artifact is; the sighted critic can notice what the code already does that the map never named, or a claimed handler that does not really handle it. Either can produce answers the other would not.
-- How it shows: After a run, every element and join has a challenge. Each proposal has one verdict per critic that ran. A C verdict opens the element or join it names.
-- Build: The workflow is module work; the chassis supplies the layers, links and provenance it uses. The verdict item value holds the verdict letter; for C, the item's link names the element or join that already handles it, STORE-015 and E8. The workflow refuses a C verdict without a link. The critic prompt gives the piece, the three verdicts as equals, and the map. The provenance of each verdict layer records the critic's role and whether it was blinded.
+  - Pass one, the critic. An unembroiled critic, working blind from the metaform or with the artifact's context, traverses the metaform and writes a challenge wherever it sees a blind spot. Blind, sighted or both is an option of the run, and each critic run builds its own blind-spot layer with its own provenance. A challenge that proposes new functionality carries the new element and its join, joined to the metaform on either side, MAP-044. The critic defines the blind spots and answers none of them.
+  - Pass two, the answer. A project agent answers each challenge through the MCP server with one of three answers, each an equal choice. A: not beneficial, it was considered and is not an oversight. B: beneficial, it should be taken up. C: handled by X, where X is a link to the existing element or join that already does it.
+  - Approval. The user approves B answers. An approved B becomes a plan. A and C stay recorded as answered, so no later agent raises them again as if they had been missed.
+  - States. A challenge is open, answered A, answered B, answered C, or plan. Only a blind spot needs approval to become a plan. A plan an agent adds directly is pre-accepted and needs no approval.
+- Why: Bias does not come from seeing the code. It comes from the role: an agent that sees a problem as its own to deal with defends the current work or reaches for the answer that closes its task, and gaming is part of that. So the blind spots are defined by a critic that owns nothing it judges, and the project agent, which knows the project, answers them. The blind critic notices what should exist because of what the artifact is; the sighted critic notices what the artifact already does that the map never named. Approval stays with the user because a B answer is the project agent agreeing to new work, and turning that into a plan is the owner's decision.
+- How it shows: After pass one, a blind-spot layer holds challenges, all open. After pass two, every challenge shows its answer next to its layer name. After `metaform map approve <challenge>`, the B challenge reads as plan, and any element and join it carries read as plan.
+- Build:
+  - The workflow is module work; the chassis supplies the layers, items, links, provenance and challenge states it uses. A challenge is an item in the critic's blind-spot layer, STORE-015, attached to the element or join where the blind spot is seen, or to the new element it proposes. The blind-spot layer is built and locked by the critic like any knowledge layer, LAYER-018.
+  - Answers and approvals are recorded as challenge state, STORE-040, not as edits to the locked blind-spot layer.
+  - `answer` is a map verb and MCP tool: challenge, A, B or C, and for C a link to an existing element or join. A C answer without that link is refused.
+  - `approve` is a map verb declared for the CLI only, `surfaces=('cli',)`, BASE-035, so it is never an MCP tool and an agent working through MCP cannot approve its own answers. It is the one place a person acts. It accepts only a challenge answered B.
+  - A plan an agent adds directly is recorded as a plan with no challenge, STORE-040.
+  - Every read that returns a challenge, or an element or join a challenge carries, shows its state next to its layer name.
+  - The critic prompt gives the metaform and asks for blind spots; the answer prompt gives each challenge and the three answers as equals. The provenance of each blind-spot layer records the critic's role and whether it was blinded.
 - Acceptance:
-  - A C verdict without a link to an existing element or join is refused.
-  - A run with both critics produces two verdict layers and leaves the challenge and proposal layers unchanged.
-- Relates to: LAYER-009, LAYER-010, LAYER-014, LAYER-016, STORE-015.
-- Status: confirmed. The C verdict's link is held in the item's link fields of STORE-015, per E8, recommended; the verdict item's value holds the verdict letter. The blind critic as the default when no option is chosen is recommended. How an element proposed in a proposal layer becomes part of the core map is open.
+  - A C answer without a link to an existing element or join is refused.
+  - `approve` is absent from the MCP tool list, and on the CLI it refuses a challenge that is open or answered A or C.
+  - After `approve` on a B challenge, reads show that challenge and the element and join it carries as plan; the blind-spot layer's items are unchanged.
+  - A plan added directly by an agent reads as plan without any approval.
+- Relates to: LAYER-009, LAYER-010, LAYER-014, LAYER-016, LAYER-018, MAP-044, STORE-015, STORE-040, BASE-035, BASE-038.
+- Status: confirmed for the two passes, the approval, the answers and the states. Recommended: challenge state kept in STORE-040, `answer` and `approve` as map verbs, `approve` on the CLI only, and the blind critic as the default when no option is chosen.
 
 ### LAYER-016 Knowledge layers carry whatever their prompt asks for
 
@@ -265,8 +273,8 @@ The receiver, purpose and encounter structure itself, element identity and subty
 5. When a second run adds items to an existing layer, is that the same layer with its one record, or a new layer with its own?
 6. Does a join have its own select and mask, or does it use its receiver's? Recommended: the receiver's.
 7. What does the memory operation to create entities do for a name that is not a node of the map?
-8. How does an element proposed in a proposal layer become part of the core map?
+8. Answered: a proposed element never enters the intake map. It stays in its blind-spot layer, and an approved B answer makes it a plan there, LAYER-015.
 9. Can a single item inside a layer be hidden, or only a whole layer?
-10. Properties attach only to elements, and a property at a prefix with no element goes on an element the layer creates there, MAP-022. Can any other layer item, such as a memory or a verdict, attach at a type address that no element holds?
-11. Is a C verdict's link to the handling element or join held inside the item's value, as LAYER-015 states, or in the item's link fields, as STORE-015 has it?
-12. Properties carry transitivity, MAP-022, LAYER-005. Does a layer still declare a transitive flag for its other items, such as memories or verdicts, or is transitivity only a property's, so the flag is removed?
+10. Properties attach only to elements, and a property at a prefix with no element goes on an element the layer creates there, MAP-022. Can any other layer item, such as a memory or a challenge, attach at a type address that no element holds?
+11. Answered: a C answer's link to the handling element or join is kept with the challenge state, STORE-040, LAYER-015.
+12. Properties carry transitivity, MAP-022, LAYER-005. Does a layer still declare a transitive flag for its other items, such as memories or challenges, or is transitivity only a property's, so the flag is removed?
