@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import threading
-from pathlib import Path
 
 import pytest
 
@@ -67,4 +66,3 @@ def test_a_reported_write_survives_its_process(home, store, tmp_path):
                       "import os; os._exit(9)\n")
     subprocess.run([sys.executable, str(script)], env={**os.environ, 'METAFORM_HOME': str(home)}, check=False)
     assert [item.value for item in Store('proj').layer_items('memory').results] == ['kept']
-    assert Path(script).exists()

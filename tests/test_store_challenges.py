@@ -74,9 +74,8 @@ def test_a_plan_added_directly_needs_no_approval(store):
 @pytest.mark.req('STORE-040')
 def test_every_read_of_a_challenge_shows_its_state(store):
     # Showing 'open' for an unanswered challenge waits on how a blind-spot layer is recognized, BUILD-QUESTIONS.
-    challenge, other = critic(store)
+    _, other = critic(store)
     store.answer(other.item_id, 'A')
     view = store.node(Node('element', 'code.alarm.audible'))
     group = next(group for group in view.layers if group.layer == 'challenge.blind')
     assert group.items[0].state == 'A'
-    assert challenge

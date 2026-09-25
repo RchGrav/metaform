@@ -131,3 +131,15 @@ The base database in `~/.metaform` on this machine was written by the earlier ch
 Meanwhile: the error names the file and the rename.
 Blocks: running the new build against `~/.metaform` until that file is moved.
 
+## Test review
+
+**Q24. The chassis's own dependency now ships compiled. (BASE-026, BASE-041)**
+BASE-026 says `prompt_toolkit` is pure Python and a build with no modules resolves with no compiled distribution. `prompt_toolkit` needs `wcwidth`, and the current `wcwidth` wheel carries `_wcwidth_c.abi3.so`. The build therefore names `wcwidth` as compiled and leaves it out of `_vendor`, so a direct run of a wheel with no network needs `wcwidth` installed.
+Meanwhile: the build does exactly what BASE-041 says for a compiled dependency; the test checks that it is named and not carried.
+Blocks: BASE-024's offline direct run on a machine without `wcwidth`, until a pure `wcwidth` is pinned or the requirement changes.
+
+**Q25. STORE-020's "one item row and no other row". (STORE-020, STORE-007, STORE-033)**
+Adding an observation writes the `items` row, its `current_items` pointer, and the `item_ids` and `identities` rows that STORE-007 and STORE-033 require for every item, so "no other row" cannot hold as written.
+Meanwhile: the test requires exactly those four rows and nothing else.
+Blocks: nothing.
+

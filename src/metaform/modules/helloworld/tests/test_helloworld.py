@@ -41,13 +41,28 @@ def test_wait_is_an_async_verb(run, hello):
 @pytest.mark.req('BASE-019')
 @pytest.mark.req('BASE-010')
 @pytest.mark.req('STORE-022')
-def test_the_greeted_event_is_recorded_as_a_layer(run, hello, home):
+def test_the_greeted_event_is_recorded_as_a_layer(run, hello, home, user_module):
+    user_module('witness', '''
+        from metaform.data import Node
+        from metaform.module import Module, Subscription
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def saw(payload, ctx):
+            store = ctx.require_store()
+            with store.atomic():
+                store.layer('witnessed', 'witness', 'Greetings seen.', mutable=True, hideable=True,
+                            provenance={'module': 'witness'})
+                store.add_element('witnessed', 'code.witness')
+                store.add_item('witnessed', Node('element', 'code.witness'), payload['name'])
+        MODULE = Module(id='witness', summary='x', purpose='Witnesses. Details: metaform help witness.',
+                        subscriptions=(Subscription('helloworld.greeted', saw),))
+    ''')
     run('helloworld', 'greet', 'ada', cwd=hello)
     run('helloworld', 'greet', 'bob', cwd=hello)
     assert run('helloworld', 'history', cwd=hello).stdout.split() == ['ada', 'bob']
     from metaform.data import Store
     layers = {layer.name: layer for layer in Store('proj').layers(limit=0).results}
     assert layers['helloworld.greetings'].module == 'helloworld'
+    assert [item.value for item in Store('proj').layer_items('witnessed').results] == ['ada', 'bob']
 
 
 @pytest.mark.req('BASE-019')
@@ -111,6 +126,9 @@ def test_the_status_hook_adds_a_line(run, hello):
 @pytest.mark.req('BASE-019')
 @pytest.mark.req('BASE-016')
 def test_beep_runs_only_on_its_own_system(run, hello):
-    from metaform import module_metadata
-    listed = 'helloworld beep' in run('help', 'commands', cwd=hello).stdout
-    assert listed == (module_metadata.current_os() == 'windows')
+    import platform
+    on_windows = platform.system() == 'Windows'
+    assert ('helloworld beep' in run('help', 'commands', cwd=hello).stdout) == on_windows
+    if not on_windows:
+        refused = run('helloworld', 'beep', cwd=hello, ok=False)
+        assert refused.stderr.splitlines() == ['Error: helloworld beep runs on windows.', 'Next: metaform help helloworld']

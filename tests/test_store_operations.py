@@ -142,7 +142,7 @@ def test_an_operation_writes_exactly_its_rows(home, store, case):
 
 
 def test_atomic_commits_every_write_together(home, store):
-    world = build(store)
+    build(store)
     before = dump(store_file(home, store))
     with store.atomic():
         store.add_item('k', Node('element', 'code.k.a'), 'one')
@@ -158,7 +158,6 @@ def test_atomic_commits_every_write_together(home, store):
                 store.add_item('k', Node('element', 'code.k.a'), 'four')
             raise ValueError('abandon the block')
     assert dump(store_file(home, store)) == before
-    assert world
 
 
 ERRORS: dict[str, tuple[Callable, Callable]] = {

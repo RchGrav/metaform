@@ -187,10 +187,6 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         join_view = last_json(second.call('map_node', {'node': f'join:{join_id}'}, limit=LIMIT))
         assert memory_values(join_view) == ['The tone is too quiet in a loud kitchen.']
 
-        # The join's memory follows its receiver's selection: masking at the provider's address changes nothing.
-        second.call('map_mask', {'address': 'code.alarm.audible', 'layer': 'memory'}, limit=LIMIT)
-        assert memory_values(last_json(second.call('map_node', {'node': f'join:{join_id}'}, limit=LIMIT))) == [
-            'The tone is too quiet in a loud kitchen.']
     finally:
         first.close()
         if second is not None:

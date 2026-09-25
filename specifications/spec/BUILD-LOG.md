@@ -71,3 +71,9 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: 2cf8fd2.
 - Questions raised: none new.
 
+## Test-gaming review, after step 9
+
+- A review agent given only the spec records and the tests, QUAL-007, flagged 22 items. Fixed: STORE-028's mask now checked on `query`, `map` and the MCP read; the event tests read the subscriber's stored effect and a second subscriber witnesses helloworld's event; MCP-007 compares sections with the enabled modules exactly; `uvx --from <wheel> metaform mcp serve` is proved; the direct-run test runs `help`, `set`, `export` and `import`; a build with no modules is checked for compiled files; a one-call override and the `set` tool against the CLI; `--json` with messages and a stray warning on standard error; BASE-006, BASE-009, BASE-016 and BASE-035 checked over MCP; the caution refusal over MCP leaves the history; the AST check of `sqlite3` imports covers every module; filler asserts and misplaced requirement marks removed (MAP-014, MCP-011, BASE-003, BASE-023, BASE-028, LAYER-013 on those tests); the unrecorded provider-mask assertion removed from the first working test.
+- Left open: the settings screen tests drive the screen's methods rather than key presses (CLI-026); the Ctrl+C test is POSIX only and does not check partial writes (BASE-031, QUAL-010); no test installs a different Metaform version to compare byte for byte (BASE-023); STORE-005's timing medians; an import killed as a process rather than failing (STORE-006); `--layers` on one CLI call (CLI-033); a changed declared default (CLI-023); a concurrent reader during an intake (BASE-039).
+- The review found one real defect report, Q24. Whole suite: 355 passed.
+

@@ -203,9 +203,3 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
     assert [join['receiver_address'] for join in listed] == ['stakeholder.cook.home']
     node = Node('element', 'code.timer.kitchen')
     assert j(run, 'links', str(node), cwd=mapped) == {'results': [], 'next': None}
-
-
-@pytest.mark.req('MAP-014')
-def test_the_roots_are_data():
-    from metaform.data import roots
-    assert [root['name'] for root in roots()] == ['code', 'document', 'media', 'data', 'stakeholder']

@@ -142,6 +142,8 @@ def test_values_of_each_kind_read_back_as_written(run, toggles, project):
     run('set', '--panes', '6', '--tmux', '--modules', 'chassis,toggles', cwd=project)
     got = shown(run, cwd=project)
     assert (got['panes']['value'], got['tmux']['value'], got['modules']['value']) == (6, True, ['chassis', 'toggles'])
+    assert run('toggles', 'show', '--no-tmux', cwd=project).stdout == 'tmux=False'
+    assert shown(run, cwd=project)['tmux']['value'] is True
     refused = run('set', '--panes', '12', cwd=project, ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform help --panes'
 
@@ -395,9 +397,22 @@ def test_a_setting_declared_by_a_module_reaches_every_surface(run, toggles):
 
 
 @pytest.mark.req('CLI-025')
-def test_json_goes_to_standard_output_alone(run, toggles):
-    result = run('config', '--show', '--json')
-    json.loads(result.stdout)
+def test_json_goes_to_standard_output_alone(run, toggles, user_module):
+    user_module('noisy', f'''
+        import sys
+        from metaform.module import Module, Verb
+        {OS}
+        def speak(ctx):
+            ctx.say('A message for a person.')
+            print('A stray warning.', file=sys.stderr)
+            return {{'answer': 42}}
+        MODULE = Module(id='noisy', summary='x', purpose='Noisy. Details: metaform help noisy.',
+                        verbs=(Verb('speak', speak, 'Speak.'),))
+    ''')
+    result = run('noisy', 'speak', '--json')
+    assert json.loads(result.stdout) == {'answer': 42}
+    assert 'A message for a person.' in result.stderr
+    json.loads(run('config', '--show', '--json').stdout)
 
 
 @pytest.mark.req('CLI-031')
@@ -478,6 +493,15 @@ def test_query_answers_through_the_reads_and_lists_them(run, project):
     assert [item['value'] for item in items['results']] == ['ada']
     node = json.loads(run('query', 'node', 'element:code.module.helloworld', 'raw=true', '--json', cwd=project).stdout)
     assert node['layers'][0]['layer'] == 'helloworld.greetings'
+    run('map', 'knowledge', 'op=finish', 'layer=helloworld.greetings', cwd=project)
+
+    def layers_at(*command):
+        result = run(*command, 'element:code.module.helloworld', '--json', cwd=project, ok=False)
+        view = json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else None
+        return {group['layer'] for group in view['layers']} if view else set()
+    assert 'helloworld.greetings' in layers_at('query', 'node') & layers_at('map', 'node')
+    run('map', 'mask', 'code.module', 'helloworld.greetings', cwd=project)
+    assert 'helloworld.greetings' not in layers_at('query', 'node') | layers_at('map', 'node')
 
 
 @pytest.mark.req('CLI-033')

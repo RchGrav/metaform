@@ -32,6 +32,20 @@ def metadata(wheel):
 
 
 @pytest.mark.req('BASE-026')
+def test_a_build_with_no_modules_is_pure_python(run):
+    wheel, out = build(run, 'map', 'mcp', 'memory', 'intake')
+    assert wheel.name.endswith('-py3-none-any.whl')
+    # BUILD-QUESTIONS Q24: wcwidth, which prompt_toolkit needs, now ships compiled; it must be named, not carried.
+    compiled = [line.split(':')[0] for line in out.splitlines() if ': compiled, not carried' in line]
+    assert all('needed by' in line for line in out.splitlines() if ': compiled' in line)
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+    assert not any(name.endswith(('.so', '.pyd', '.dylib')) for name in names)
+    assert any(name.startswith('metaform/_vendor/prompt_toolkit/') for name in names)
+    assert not any(name.startswith(f'metaform/_vendor/{dist}/') for dist in compiled for name in names)
+
+
+@pytest.mark.req('BASE-026')
 def test_the_chassis_depends_only_on_pure_python_packages():
     from metaform import _build_info
     declared = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['dependencies']
@@ -41,7 +55,6 @@ def test_the_chassis_depends_only_on_pure_python_packages():
 
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-022')
-@pytest.mark.req('BASE-003')
 def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, home):
     wheel, _ = build(run, 'mcp', 'memory', 'intake')
     assert re.fullmatch(r'metaform-.+-py3-none-any\.whl', wheel.name)
@@ -59,7 +72,6 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
 
 
 @pytest.mark.req('BASE-042')
-@pytest.mark.req('BASE-023')
 @pytest.mark.req('BASE-024')
 def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     wheel, _ = build(run, 'mcp', 'memory', 'intake')
@@ -78,6 +90,11 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     layers = subprocess.run([sys.executable, '-I', str(wheel), 'query', 'layers'], cwd=folder, env=env,
                             capture_output=True, text=True)
     assert layers.returncode == 0, layers.stderr
+    document = tmp_path / 'export.json'
+    for args in (('help',), ('set', '--layers', ''), ('export', f'file={document}'), ('import', str(document))):
+        done = subprocess.run([sys.executable, '-I', str(wheel), *args], cwd=folder, env=env, capture_output=True,
+                              text=True)
+        assert done.returncode == 0, (args, done.stderr)
     import sqlite3
     main = sqlite3.connect(home / 'metaform.sqlite3')
     assert main.execute('SELECT COUNT(*) FROM projects').fetchone() == (0,)
@@ -119,3 +136,6 @@ def test_uvx_runs_the_built_wheel(run, tmp_path):
                             cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().startswith('metaform ')
+    from metaform.probe import probe
+    served = probe([uvx, '--from', str(wheel), 'metaform', 'mcp', 'serve'], cwd=tmp_path, limit=180)
+    assert served.ok and served.tools > 0, served.reason

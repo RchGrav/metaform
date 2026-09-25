@@ -76,9 +76,10 @@ def test_the_server_lists_each_surfaced_verb_as_a_tool_and_composes_its_instruct
     async def check(client, init):
         return init.instructions, await tool_names(client)
     instructions, tools = session(home, mapped, check)
-    assert instructions.startswith(BASE + '\n\n## intake\n') or instructions.startswith(BASE + '\n\n## map\n')
+    enabled = sorted(line.split()[0] for line in run('list', 'modules', cwd=mapped).stdout.splitlines()
+                     if line.split()[1] == 'on')
     sections = [line[3:] for line in instructions.splitlines() if line.startswith('## ')]
-    assert sections == sorted(sections) and {'map', 'mcp', 'memory'} <= set(sections)
+    assert instructions.startswith(BASE + '\n\n## ') and sections == enabled
     assert "## map\nReads and writes this project's functional map." in instructions
     assert ('## memory\nNotes that agents keep at the map\'s own nodes, in the reference memory server\'s operations.'
             in instructions)
@@ -177,6 +178,7 @@ def test_a_boolean_false_on_one_call_overrides_a_glued_true(run, home, mapped, u
 @pytest.mark.req('BASE-013')
 def test_tool_errors_end_with_the_one_next_step_the_cli_gives(run, home, mapped):
     run('enable', 'helloworld')
+    run('helloworld', 'greet', 'ada', cwd=mapped)
     cli = run('map', 'element', 'code.nothing', cwd=mapped, ok=False).stderr.splitlines()
 
     async def call(client, init):
@@ -187,6 +189,7 @@ def test_tool_errors_end_with_the_one_next_step_the_cli_gives(run, home, mapped)
     assert error and missing[0].splitlines() == cli
     assert caution_error and caution[0].splitlines() == [
         'Error: This deletes the greeting history.', 'Next: If you are sure: call helloworld_forget with confirm true']
+    assert run('helloworld', 'history', cwd=mapped).stdout.split() == ['ada']
 
 
 @pytest.mark.req('MCP-007')
@@ -224,7 +227,6 @@ def test_every_tool_takes_a_project_and_concurrent_calls_stay_apart(run, home, m
 
 
 @pytest.mark.req('PROJ-005')
-@pytest.mark.req('MCP-011')
 def test_a_server_started_outside_every_project_selects_one_with_set(run, home, mapped, tmp_path):
     outside = tmp_path / 'desktop'
     outside.mkdir()
@@ -249,3 +251,64 @@ def test_an_async_verb_and_a_string_result_over_mcp(run, home, mapped):
     async def call(client, init):
         return text(await client.call_tool('helloworld_wait', {'seconds': 0}))
     assert session(home, mapped, call) == ['waited 0 s\n']
+
+
+@pytest.mark.req('STORE-028')
+@pytest.mark.req('LAYER-007')
+def test_a_masked_layer_is_absent_from_the_tool_read_too(run, home, mapped):
+    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
+        'module=test', cwd=mapped)
+    run('map', 'knowledge', 'op=add-item', 'layer=notes', 'node=element:code.timer.kitchen', 'value="n"', cwd=mapped)
+    run('map', 'knowledge', 'op=finish', 'layer=notes', cwd=mapped)
+    run('map', 'mask', 'code.timer', 'notes', cwd=mapped)
+
+    async def call(client, init):
+        return text(await client.call_tool('map_node', {'node': 'element:code.timer.kitchen'}))
+    view = json.loads(session(home, mapped, call)[-1])
+    assert 'notes' not in [group['layer'] for group in view['layers']]
+
+
+@pytest.mark.req('BASE-006')
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('BASE-016')
+@pytest.mark.req('BASE-009')
+def test_a_declared_verb_is_a_tool_with_its_summary_unless_it_is_cli_only_or_elsewhere(run, home, mapped,
+                                                                                        user_module):
+    user_module('declared', f'''
+        import asyncio
+        from metaform.module import Module, Verb
+        SUPPORTED_OS = ('linux', 'macos', 'windows', 'plan9')
+        async def later(ctx):
+            await asyncio.sleep(0)
+            return {{'done': True}}
+        MODULE = Module(id='declared', summary='x', purpose='Declares. Details: metaform help declared.',
+                        verbs=(Verb('later', later, 'Finish later.'),
+                               Verb('local', later, 'Only here.', surfaces=('cli',)),
+                               Verb('far', later, 'Only on plan9.', supported_os=('plan9',))))
+    ''')
+    cli = json.loads(run('declared', 'later', '--json', cwd=mapped).stdout)
+
+    async def call(client, init):
+        tools = await tool_names(client)
+        return tools, text(await client.call_tool('declared_later', {}))
+    tools, result = session(home, mapped, call)
+    assert tools['declared_later'].description == 'Finish later.'
+    assert 'declared_local' not in tools and 'declared_far' not in tools
+    assert json.loads(result[-1]) == cli == {'done': True}
+
+
+@pytest.mark.req('CLI-027')
+@pytest.mark.req('PROJ-005')
+def test_a_value_set_through_the_set_tool_reads_back_as_the_cli_writes_it(run, home, mapped, tmp_path):
+    other = mapped / 'cli-folder'
+    other.mkdir()
+    run('set', '--modules', 'map,mcp', '--layers', 'intake-1', cwd=other)
+
+    async def call(client, init):
+        return (await client.call_tool('set', {'modules': ['map', 'mcp'], 'layers': ['intake-1']})).is_error
+    assert session(home, mapped, call) is False
+
+    def values(folder):
+        rows = json.loads(run('config', '--show', '--json', cwd=folder).stdout)
+        return {row['key']: (row['value'], row['state']) for row in rows if row['key'] in ('modules', 'layers')}
+    assert values(mapped) == values(other)

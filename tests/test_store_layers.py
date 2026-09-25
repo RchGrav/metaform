@@ -192,7 +192,6 @@ def test_a_layer_masked_at_the_receiver_does_not_reach_its_joins(store):
 
 
 @pytest.mark.req('STORE-020')
-@pytest.mark.req('LAYER-013')
 def test_an_observation_on_a_node_with_no_memories_writes_one_item(home, store):
     small_map(store)
     notes = memory(store)

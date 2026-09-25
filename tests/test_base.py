@@ -71,7 +71,10 @@ def test_the_example_modules_import_only_the_public_base(tmp_path):
                 if isinstance(node, ast.ImportFrom) and node.module == 'sqlite3':
                     raise AssertionError(f'{source} imports sqlite3')
     for source in MODULES.rglob('*.py'):
-        assert 'import sqlite3' not in source.read_text(encoding='utf-8'), source
+        for node in ast.walk(ast.parse(source.read_text(encoding='utf-8'))):
+            names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else \
+                [node.module or ''] if isinstance(node, ast.ImportFrom) else []
+            assert 'sqlite3' not in names, source
 
 
 @pytest.mark.req('BASE-004')
@@ -169,7 +172,6 @@ def test_an_async_verb_runs_like_a_sync_one(run, user_module):
 
 @pytest.mark.req('BASE-010')
 @pytest.mark.req('BASE-032')
-@pytest.mark.req('BASE-028')
 def test_one_failing_subscriber_never_hides_the_others(run, user_module, tmp_path):
     user_module('publisher', f'''
         from metaform.module import Module, Verb
@@ -190,7 +192,14 @@ def test_one_failing_subscriber_never_hides_the_others(run, user_module, tmp_pat
     user_module('listener', f'''
         from metaform.module import Module, Subscription
         {OS}
+        from metaform.data import Node
         def heard(payload, ctx):
+            store = ctx.require_store()
+            with store.atomic():
+                store.layer('heard', 'listener', 'What the listener heard.', mutable=True, hideable=True,
+                            provenance={{'module': 'listener'}})
+                store.add_element('heard', 'code.listener')
+                store.add_item('heard', Node('element', 'code.listener'), payload['word'])
             return {{'word': payload['word'], 'project': ctx.project}}
         MODULE = Module(id='listener', summary='Listens.', purpose='Listens. Details: metaform help listener.',
                         subscriptions=(Subscription('publisher.shouted', heard),))
@@ -204,6 +213,8 @@ def test_one_failing_subscriber_never_hides_the_others(run, user_module, tmp_pat
     assert 'listener failed' in by_module['broken_listener']['error']
     assert by_module['listener'] == {'module': 'listener', 'status': 'completed',
                                      'result': {'word': 'hi', 'project': 'proj'}}
+    from metaform.data import Store
+    assert [item.value for item in Store('proj').layer_items('heard').results] == ['hi']
 
 
 @pytest.mark.req('BASE-013')
@@ -448,7 +459,7 @@ def test_a_failed_start_unloads_the_module(module_row, user_module, run):
 def test_unloading_cancels_the_modules_tasks_and_calls_stop(home, user_module):
     import asyncio
     from metaform import loader
-    from metaform.module import Context, call
+    from metaform.module import Context
     user_module('spawner', '''
         import asyncio
         from metaform.module import Module, Verb
@@ -476,7 +487,6 @@ def test_unloading_cancels_the_modules_tasks_and_calls_stop(home, user_module):
     task = asyncio.run(scenario())
     assert task.cancelled()
     assert namespace.STOPPED == [True]
-    assert call is not None
 
 
 @pytest.mark.req('BASE-034')

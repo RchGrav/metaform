@@ -104,7 +104,7 @@ def test_install_all_merges_cursor_and_backs_up_every_changed_file(run, machine,
     assert merged['mcpServers']['metaform'] == {'command': 'uvx', 'args': entry(machine['wheel'])[1:]}
     backups = list((home / 'backups' / 'install').rglob('mcp.json'))
     assert len(backups) == 1 and backups[0].read_bytes() == original
-    assert backups[0].parts[-3:] == ('.cursor', 'mcp.json')[-2:] or backups[0].parts[-2:] == ('.cursor', 'mcp.json')
+    assert backups[0].parts[-2:] == ('.cursor', 'mcp.json')
     for tool in ('claude', 'codex', 'cursor'):
         assert f'{tool}: server starts, 2 tools' in out
     assert (machine['user'] / '.cursor' / 'skills' / 'metaform' / 'SKILL.md').is_file()
