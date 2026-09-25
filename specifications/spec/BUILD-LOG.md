@@ -54,3 +54,11 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: 2acf1f7.
 - Questions raised: Q18 and Q19.
 
+## Step 8: the installer, the skill and the build
+
+- Records satisfied: MCP-010, MCP-013 to MCP-019, MCP-021 and MCP-023; BASE-021 to BASE-026, BASE-041 and BASE-042 (the build the first working test runs). `metaform install` checks the system, Python, uv and the source first, lists every known tool with unverified ones marked, previews each change with its backup, registers `uvx --from <wheel> metaform mcp serve`, copies the one fixed skill, proves every registration with `metaform.probe`, and ends with one next step; a re-run replaces its entry. `metaform build` writes the wheel with `zipfile`, carries pure-Python dependencies from `uv pip compile` and `uv pip install --target`, and names each compiled one with the module that needs it. `metaform --version` answers without discovery.
+- Tests added: `tests/test_install.py` (10 tests, with the fake tools of `tests/fakes.py`) and `tests/test_build.py` (6 tests, including `uvx --from <wheel>` and `pip install` of the wheel). Whole suite: 351 passed.
+- Not built: `metaform uninstall`, MCP-020, and the terminal checklist screen of MCP-014 beyond a line prompt; D41 leaves repair and uninstall out of the first test. MCP-022 needs each real tool and is not automated.
+- Commit: c86bc51.
+- Questions raised: Q20 to Q23.
+
