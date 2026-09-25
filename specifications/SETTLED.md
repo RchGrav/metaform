@@ -1,4 +1,4 @@
-# Settled design awaiting the spec
+# Settled design
 
 The spec in spec/ now carries every entry below; TRACE.md maps each entry to its records, and the spec is the authority. This file stays as the record of what was settled in conversation and is not edited further.
 
