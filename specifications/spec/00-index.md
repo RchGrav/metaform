@@ -2,6 +2,10 @@
 
 This folder is the Metaform contract. A builder builds from these files alone. Every requirement is a full record with its reason, its build detail and the tests that protect it.
 
+## Scope freeze
+
+This spec is frozen for the first release. New design ideas go to a later version and are not added here. Changes to this spec are limited to answering the open questions and fixing defects the build finds.
+
 ## Authority
 
 - This spec is the contract. Where it and any other document, code or test differ, this spec wins, and the difference is either a defect to fix or a question for Rich.

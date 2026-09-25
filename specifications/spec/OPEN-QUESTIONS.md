@@ -205,7 +205,7 @@ Recommendation: no. Every item attaches to an element or a join, or to an elemen
 Recommendation: your wording; I will draft one for the test file when you want it.
 
 **D78. What an element record holds.** The spec gives element records a name, name length, role, refs and extras, while an element is just a namespace address that things link to. The intake schema also puts a name and refs on the element. Which fields, if any, does an element keep, and where do the rest belong? (MAP-015, STORE-009)
-Recommendation: open.
+Recommendation: the element row holds only its identity and its address. The name, name length, role and refs the intake gives for an element are stored as intake-layer items attached to that element, so they are linked to it, not held in it.
 
 **D79. Importing history units.** Importing something that already exists does nothing. Section 8 instead keeps both copies of a history unit when they diverge, with the next suffix. Does the does-nothing rule govern history units too? (PROJ-021, STORE-027)
 Recommendation: yes for a unit whose id already exists. A diverged unit has a different id, so it is simply new, and keeping both follows without a special rule.
