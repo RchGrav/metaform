@@ -40,3 +40,10 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: f2dd73d.
 - Questions raised: none.
 
+## Step 6: the MCP module
+
+- Records satisfied: MCP-001 to MCP-008 and MCP-025; BASE-003 and BASE-026 (`mcp` is the module's dependency, no longer the chassis's); BASE-028 for tool calls; BASE-036 and STORE-023 (the CLI's `--json` and the tool return the same data); PROJ-005 (a server outside every project selects one with the `set` tool); LAYER-018's access by tool. The chassis `mcp` verb and `mcp_server.py` are gone; `metaform mcp serve` belongs to the `mcp` module. The public base gained the registry, surface, instructions and context functions the module needs, so it has no private access.
+- Tests added: `src/metaform/modules/mcp/tests/test_mcp.py`, 11 tests through real protocol traffic with the SDK's client; the chassis import test now also blocks the `mcp` library. Whole suite: 325 passed.
+- Commit: e05036b.
+- Questions raised: Q15 to Q17.
+
