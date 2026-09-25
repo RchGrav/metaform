@@ -18,7 +18,7 @@ This spec is frozen for the first release. New design ideas go to a later versio
 
 - `../REQUIREMENTS.md` with `../REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
 - `../SETTLED.md`: design settled in conversation, now carried by the records here.
-- `../Canonical_Intake.xml` and `../Canonical_Intake_test.xml`: the intake procedure. The test file holds changes under test; it is adopted into the main file after Rich's test.
+- `../Canonical_Intake.xml`: the current intake procedure, the tested version. `../Canonical_Intake_test.xml` is identical to it. `../Canonical_Intake_old.xml` is the previous version, reference only.
 - `../metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
 - `../code_quality_standards.md`: the quality bar, carried by section 7.
 

@@ -4,17 +4,18 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 ## Open
 
-**D60.** Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
-
-**D66.** Is history owned by the chassis, as recommended in PROJ-010, or by a module?
-
-**D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
-Recommendation: open. I do not know which you meant.
-
-**D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
-Recommendation: your wording; I will draft one for the test file when you want it.
+**D81. What intake_submit takes.** The intake text ends by asking for well-formed XML with no prose.
+Recommendation: `intake_submit` takes the answer in the exact XML shape the intake defines and stores its records, and `metaform intake prompt` serves the intake text unchanged followed by one line from the intake module saying to submit the result with `intake_submit`. The intake text stays word for word.
 
 ## Answered
+
+**D60. Origins.** The origin records the commit hash as its base. Diffs are intermediary checkpoints between real commits, only for worktrees and agent work, made with git diff even outside a repository. Collecting a worktree makes the diff and either removes the worktree or leaves it.
+
+**D66. History and provenance.** Chassis functions. Provenance tracks one record per layer and the intermediary diffs, nothing else.
+
+**D69. Stacking commands.** Dropped.
+
+**D75. Properties from the intake.** The intake produces no properties. Properties come from knowledge layers.
 
 **D1. Root types.** code, document, media, data and stakeholder, as in the current Canonical Intake. Exterior is gone.
 

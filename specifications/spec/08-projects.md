@@ -103,14 +103,14 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 ## History: origins and variants
 
 ### PROJ-010 History is chassis data kept in the home
-- Requirement: The chassis owns the history of each project, meaning its origins, variants, reconstruction, export and import, and keeps all of it in the Metaform home.
+- Requirement: History and provenance are chassis functions. The chassis owns the history of each project, meaning its origins, variants, reconstruction, export and import, and keeps all of it in the Metaform home.
 - What this means: History is data. The chassis owns data, import, export and query, so it owns history too, through the data access object that modules use, STORE-023. A workflow module that creates workfolders or worktrees and collects their results calls these operations. It never keeps history of its own.
 - Why: History must be exportable and importable as a whole with the project, and it must work with no feature module enabled. Keeping it in the chassis means one implementation, used the same way by every module.
 - How it shows: With every feature module disabled, `metaform list origins` and `metaform extract` still work.
 - Build: The records are in PROJ-023, and the operations and commands in PROJ-024.
 - Acceptance: With every feature module disabled, collecting a variant from a folder and extracting it produces the variant's files.
 - Relates to: BASE-001, STORE-023, PROJ-023, PROJ-024.
-- Status: recommended. The data being global is confirmed.
+- Status: confirmed that history and provenance are chassis functions and that the data is global. Provenance tracks exactly two things, one record per layer and the intermediary diffs, LAYER-010.
 
 ### PROJ-011 Every history operation uses the same artifact boundary
 - Requirement: Capturing an origin, collecting a variant, reconstructing, comparing and exporting all work on the same set of files: the project's source location within its boundary.
@@ -124,20 +124,20 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Relates to: PROJ-012, PROJ-016, PROJ-018.
 - Status: recommended, carrying REQ-160. Whether ignored files are always outside is open question 11.
 
-### PROJ-012 An origin is a commit for a repository and a full content copy for anything else
-- Requirement: For a repository, the origin is the commit the history is keyed by, and Metaform keeps no copy of it. For a source outside any repository, the origin is a full copy of its content kept in the home.
-- What this means: A repository already holds its commits, so the commit is the origin and its files are read from git when they are needed: for reconstruction, comparison and export. A folder with no repository has nothing to return to, so Metaform copies it at the moment the origin is established, and that copy is the only place its baseline exists.
+### PROJ-012 An origin records the commit it is based on
+- Requirement: For a repository, the origin records the commit hash as its base, and every variant's diff goes off that commit. For a source outside any repository, the origin is a full copy of its content kept in the home.
+- What this means: A repository already holds its commits, so the origin is the commit hash, and the commit's files are read from git when they are needed: for making diffs, reconstruction, comparison and export. Metaform keeps no copy of the commit. A folder with no repository has nothing to return to, so Metaform copies it at the moment the origin is established, and that copy is the base its diffs go off.
 - Why: The commit already anchors a repository's baseline exactly, so a second copy only costs space. A plain folder changes in place and would lose its baseline without a copy.
-- How it shows: Establishing an origin for mgm records the commit and copies no files. Establishing one for a photo folder copies the folder into the origin unit.
+- How it shows: Establishing an origin for mgm records the commit hash and copies no files. Establishing one for a photo folder copies the folder into the origin unit.
 - Build:
-  - For a repository, the origin records the full commit id of `HEAD` at the moment it is established. Its files are read with `git archive <commit>` when needed.
+  - For a repository, the origin records the full commit hash of `HEAD` at the moment it is established. Its files are read with `git archive <commit>` when needed.
   - If the working tree is dirty at that moment, the commit is still the origin, and the uncommitted changes are collected at once as the unit's first variant, PROJ-017.
   - For a folder, the boundary's files are copied to `origin/` in the unit's payload folder, PROJ-023.
 - Acceptance:
-  - A repository origin stores no file payload.
+  - A repository origin stores its commit hash and no file payload.
   - A folder origin's `origin/` holds exactly the boundary's files, and later changes to the source do not change it.
-- Relates to: PROJ-011, PROJ-013, PROJ-018, PROJ-023.
-- Status: confirmed that a repository keeps no origin copy and a folder does. The earlier reading, that the origin folder always holds a copy of the commit, is superseded. Handling a dirty working tree is recommended, open question 12.
+- Relates to: PROJ-011, PROJ-013, PROJ-016, PROJ-018, PROJ-023.
+- Status: confirmed that a repository origin records the commit hash as its base and diffs go off that commit. The folder copy is as previously settled. Handling a dirty working tree is recommended.
 
 ### PROJ-013 Origin identity has a long form and a short form
 - Requirement: Every origin has a full digest, a long id `mform_sha_id` and a short id `mform_id`, both built from the digest and a 16-bit suffix.
@@ -172,14 +172,14 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Status: confirmed, carrying REQ-162. The command form and the selected-origin rule are recommended.
 
 ### PROJ-015 Variants of one origin are siblings
-- Requirement: Every variant is stored against its origin and never against another variant, so many variants pinned to one origin stay independent siblings.
+- Requirement: Every variant is stored against its origin and never against another variant, so many variants pinned to one origin stay independent siblings. Variants are intermediary checkpoints between real commits, and they relate only to worktrees and agent work.
 - What this means: This covers mutation experiments that produce many variants from one commit or one folder, for example ten copies made from one base. Running operations one after another does not turn an earlier result into a later one's baseline. A result becomes a baseline only by re-anchoring.
 - Why: Iterative and self-play workflows produce many variations from one base, and each is worth keeping. Storing each against the origin keeps every one reconstructable on its own, whatever happens to the others.
 - How it shows: Ten collected variants of one origin each extract on their own, in any order, to the same result as when they were collected.
 - Build: A variant records only its origin unit, never a parent variant.
 - Acceptance: Deleting nothing and extracting variant 7 alone reproduces it without reading any other variant's payload.
 - Relates to: PROJ-014, PROJ-016, PROJ-017.
-- Status: confirmed.
+- Status: confirmed, including that variants are intermediary checkpoints between real commits for worktrees and agent work only.
 
 ### PROJ-016 A variant stores only what changed against its origin
 - Requirement: A variant stores the files that differ from its origin and nothing else. Changed text is kept whole when the variant's changed text is small, and as a diff against the origin when it is large. Changed binaries are always kept whole.
@@ -188,30 +188,32 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - How it shows: A variant that edits two source files and swaps a font stores two text files and one font file. A variant that rewrites a large generated file stores one diff.
 - Build:
   - A file is text when its bytes decode as UTF-8 and contain no NUL byte; otherwise it is binary.
-  - The diff is produced and applied by Metaform's own Python code, never by git or a patch tool. It is stored as JSON, `{"base_sha256": <origin file hash>, "ops": [...]}`. The ops come from `difflib.SequenceMatcher(None, origin_lines, new_lines, autojunk=False).get_opcodes()` over the lines as split by `splitlines(keepends=True)`. Each non-equal op is stored with its replacement lines, and each equal op by its ranges only.
+  - The diff is made with git diff, even when the source is not a repository: `git diff --no-index --no-color --no-ext-diff --full-index <origin file> <new file>`, run on the origin version and the collected version of one file. The output is stored as `variants/<variant id>/diffs/<path>.diff`, preceded by one line `base_sha256 <origin file hash>`.
+  - Reconstruction applies the stored unified diff with Metaform's own Python code, so extraction needs no git, PROJ-018.
   - Applying a diff whose `base_sha256` does not match the origin file is an error, never a guess.
 - Acceptance:
   - A variant with 1 MB of changed text stores whole files. The same edit on a 4 MB file stores a diff, and both reconstruct byte-identical.
   - A changed binary is stored whole and reconstructs byte-identical.
   - A file stored with a tampered hash fails reconstruction with an error naming the file.
 - Relates to: PROJ-011, PROJ-015, PROJ-018, PROJ-023.
-- Status: confirmed for diffs off the origin, whole binaries, and keeping small text whole with 3 MB as the line. Measuring the 3 MB on the variant's total changed text, the text test and the diff format are recommended.
+- Status: confirmed for diffs off the origin made with git diff, whole binaries, and keeping small text whole with 3 MB as the line. Measuring the 3 MB on the variant's total changed text, the text test, the stored diff layout and applying it in Python are recommended.
 
 ### PROJ-017 Collecting a worktree or workfolder keeps it as a variant, committed or not
 - Requirement: The work in a worktree or workfolder made from an origin can be collected as a variant of that origin, whether or not its changes were committed.
-- What this means: Metaform acts as a side channel for git. It diffs what is in the folder against the origin, so uncommitted work is kept. Collecting keeps the variant. It does not apply it to the project or clean up the folder. Each variant carries one provenance record saying how it was produced.
+- What this means: Metaform acts as a side channel for git. It diffs what is in the folder against the origin, so uncommitted work is kept. Collecting keeps the variant and never applies it to the project. When the worktree is collected, Metaform either makes the diff and leaves the worktree in place, or makes the diff and removes the worktree; both are options. Each variant carries one provenance record saying how it was produced.
 - Why: Work produced in many worktrees would be lost when they are cleaned up, and much of it is worth keeping and comparing. Diffing against the origin, not against the worktree's own commits, captures the work however the agent left it.
 - How it shows: An orchestrator runs ten workers in ten worktrees off one commit, then collects each folder. `metaform list variants` shows ten variants, each with the workflow and prompt that produced it.
 - Build:
   - `metaform add variant <folder> [origin=<mform_id>]` reads the folder's boundary, PROJ-011, compares it file by file with the origin, and stores the differences, PROJ-016. The origin defaults to the project's selected origin, PROJ-014.
-  - The folder is left untouched.
+  - By default the folder is left in place, untouched. With `remove=true`, the folder is removed after the variant is stored and verified against its recorded hashes: a git worktree through `git worktree remove`, a workfolder Metaform created by deleting it. `remove=true` on any other folder is refused with `Next: metaform add variant <folder>`.
   - The provenance record has the same fields as a layer's, LAYER-010: module and workflow, prompt, model, role and blinded. Any field the collector did not supply is empty. Variant ids are sequential within their unit, starting at `v000001`.
 - Acceptance:
   - Collecting a worktree with uncommitted edits stores those edits.
-  - The collected folder is byte-identical before and after collection.
+  - Without `remove=true`, the collected folder is byte-identical before and after collection.
+  - With `remove=true`, the worktree is gone after collection, and the variant extracts byte-identical to what the folder held.
   - A variant's provenance reads back with the fields given at collection.
 - Relates to: PROJ-011, PROJ-015, PROJ-016, PROJ-023, LAYER-010.
-- Status: confirmed that collected worktrees are kept as variants, including uncommitted work. The command, the id form and reusing the layer provenance fields are recommended.
+- Status: confirmed that collected worktrees are kept as variants, including uncommitted work, and that collection either removes the worktree or leaves it in place. The command, the id form and reusing the layer provenance fields are recommended.
 
 ### PROJ-018 Any variant, several, or all reconstruct with Python alone
 - Requirement: One variant, several, or every variant of an origin unit can be reconstructed into external folders by a CLI command, using Python alone, with no git and no access to the original repository.
@@ -310,7 +312,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   );
   ```
 
-  A variant's payload is `variants/<variant id>/files/<path>` for whole files and `variants/<variant id>/diffs/<path>.json` for diffs. A variant's rows and payload are written in one step: the payload goes to a temporary folder in the same unit, then the rows are committed, then the folder is renamed into place. A crash leaves either no variant or a complete one.
+  A variant's payload is `variants/<variant id>/files/<path>` for whole files and `variants/<variant id>/diffs/<path>.diff` for diffs. A variant's rows and payload are written in one step: the payload goes to a temporary folder in the same unit, then the rows are committed, then the folder is renamed into place. A crash leaves either no variant or a complete one.
 - Acceptance: A collection killed partway leaves no variant rows and no `variants/<id>/` folder.
 - Relates to: STORE-003, STORE-004, STORE-006, PROJ-013, PROJ-016, PROJ-017.
 - Status: recommended. The folder name `origins` is recommended.
@@ -341,13 +343,13 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 1. A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)
 2. Should a worktree created outside the project's source location default to the repository's project with nothing selected, found through the worktree's shared git folder, `git rev-parse --git-common-dir`? Recommended: yes, because it needs no setup and writes nothing. (PROJ-006)
 3. Answered: the orchestrator passes a folder noun, `metaform set --modules workflow,memory folder=<path>`, before the worker starts. PROJ-007, CLI-022.
-4. Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
+4. Answered: a repository origin records the commit hash as its base, and diffs go off that commit. PROJ-012.
 5. Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
 6. Answered: knowledge import adds only what the target does not hold, by unique id; importing something that already exists does nothing, STORE-027.
 7. Does the first instance of an origin take suffix `0000` or `0001`? Recommended: `0000`. (PROJ-013)
 8. Which module serves web variants, and is the serving port OS-assigned? Recommended: the web module, with OS-assigned ports. (PROJ-019, D44)
 9. Is the 3 MB line measured on the total size of a variant's changed text, or per file? Recommended: the total. (PROJ-016)
-10. Is history owned by the chassis, as recommended in PROJ-010, or by a module?
+10. Answered: history and provenance are chassis functions. PROJ-010, LAYER-010.
 11. Are ignored files always outside the boundary of a repository, including generated outputs a workflow was asked to produce? Recommended: yes, and a workflow that wants its outputs kept writes them outside ignored paths. (PROJ-011)
 12. When a repository's working tree is dirty as an origin is established, is the commit the origin and the uncommitted work its first variant? Recommended: yes. (PROJ-012)
 13. Everything exported carries its unique id, and importing something that already exists does nothing, STORE-027. PROJ-021 instead keeps both on divergence, with the next suffix, or advances the local unit when the incoming one includes it. Does the does-nothing rule govern history units too, so a unit whose `mform_id` already exists is skipped, or do history units keep PROJ-021's rule? (PROJ-021, STORE-027)

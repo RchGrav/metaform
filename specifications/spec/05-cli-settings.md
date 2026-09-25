@@ -485,7 +485,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Build: The commands index and the settings screen group commands by chassis and by module id, in the order of CLI-031 and module id order.
 - Acceptance: `help commands` lists every enabled module's verbs under that module's id, and no module verb at the top level.
 - Relates to: CLI-001, CLI-008, CLI-022, CLI-031.
-- Status: confirmed for the hierarchy. How commands stack under an object so that any of them can be run is open, see open question 10.
+- Status: confirmed for the hierarchy.
 
 ### CLI-033 `--layers` toggles the layers on for a folder
 - Requirement: the layers toggled on for a folder are the context setting `--layers`, which follows every settings rule.
@@ -523,4 +523,4 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 7. Module switches as settings: what scope does a module switch get when stored with `set`: folder, like context settings, or global?
 8. `metaform abort <workflow> --confirm` is written as a chassis verb, but the chassis does not run workflows (BASE-003) and module verbs take the module id first (CLI-001). Is `abort` a chassis verb, or the workflow module's verb, written `metaform workflow abort <workflow> --confirm`?
 9. When a module is absent, does `unset all` leave its stored settings untouched? Recommended: yes. (CLI-024)
-10. NEW The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
+10. Dropped: stacking commands is not part of the design. CLI-032 keeps only the hierarchy.

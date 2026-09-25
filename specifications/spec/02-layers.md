@@ -122,18 +122,18 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Relates to: LAYER-002, LAYER-014, LAYER-015.
 - Status: confirmed.
 
-### LAYER-010 Provenance is one record per layer
+### LAYER-010 Provenance is one record per layer, and one per intermediary diff
 
-- Requirement: Every layer except memory has exactly one provenance record, stating how the layer was created: the module and the workflow within it, the prompt, the model, the role, and whether the producer was blinded.
-- What this means: Everything in a layer was produced the same way, by one producer following one prompt in one role, so one record describes the origin of every item in it. Nothing is recorded per item, per change or per read. Blinded means the producer saw the map and not the artifact.
+- Requirement: Provenance tracks exactly two things: one record per layer, and the intermediary diffs made with git diff. Every layer except memory has exactly one provenance record, stating how the layer was created: the module and the workflow within it, the prompt, the model, the role, and whether the producer was blinded. Each intermediary diff, a variant, carries the same fields, PROJ-017.
+- What this means: Everything in a layer was produced the same way, by one producer following one prompt in one role, so one record describes the origin of every item in it. Nothing else is tracked: nothing per item, per change or per read. Blinded means the producer saw the map and not the artifact.
 - Why: Provenance tracks what a feature actually uses and nothing more. Knowing how a layer was made, by which perspective under which role, is what lets layers be trusted, compared and reproduced. Per-item and per-read records turn provenance into bloat, and bloat defeats a system whose purpose is to give agents only what matters.
 - How it shows: Asking for any layer's origin returns one record. Two critics' blind-spot layers over the same metaform show two records, for example one blinded and one sighted, each with its role.
 - Build: The provenance record holds: layer id (unique), module, workflow, prompt (the full text as delivered), model, role, blinded. It is written when the layer is created, by the operation that creates it, and never changes: it is fixed as written through building and locking. A layer other than memory cannot be created without it.
 - Acceptance:
   - Creating a non-memory layer without provenance is refused.
   - Writing a thousand items to a layer leaves exactly one provenance record for it.
-- Relates to: LAYER-012, LAYER-014, LAYER-015, STORE-016.
-- Status: confirmed. What the record holds for a layer written directly by a person, with no model or prompt, is open. Whether a second run adding items to an existing layer is the same layer or a new layer is open.
+- Relates to: LAYER-012, LAYER-014, LAYER-015, STORE-016, PROJ-010, PROJ-017.
+- Status: confirmed, including that provenance tracks exactly these two things and is a chassis function, PROJ-010. What the record holds for a layer written directly by a person, with no model or prompt, is open. Whether a second run adding items to an existing layer is the same layer or a new layer is open.
 
 ### LAYER-011 Correction layers are chronological, stacked, and the only way to change the metaform
 
