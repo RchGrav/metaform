@@ -199,12 +199,13 @@ Recommendation: every root reads as its own name, and the example that says prog
 **D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
 Recommendation: open. I do not know which you meant.
 
+**D71. A stored starting selection per project.** Should a project also keep a starting selection used wherever `--layers` is unset?
+Recommendation: no. The setting already falls back to every locked, unhidden layer, and one mechanism is simpler.
+
+
 ## Answered
 
 **D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
-
-**D71. A stored starting selection per project.** Should a project also keep a starting selection used wherever `--layers` is unset?
-Recommendation: no. The setting already falls back to every locked, unhidden layer, and one mechanism is simpler.
 
 **D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
 
