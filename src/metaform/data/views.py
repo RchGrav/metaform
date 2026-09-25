@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Any
+from typing import Any, cast
 
 from . import corrections
 from .corrections import METAFORM_KINDS
 from .ids import decode_extra, descriptor_of
 from .names import reading, short_name
-from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Property, Provenance, Ref, Report,
+from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Op, Property, Provenance, Ref, Report,
                       Subtype, Version)
 from .rows import (address_of, layer_name, node_address, read_refs, target_current, whole_number)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
@@ -133,8 +133,8 @@ def item(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Item:
     state_row = tx.db.execute('SELECT state FROM challenge_states WHERE item_id=?', (row['item_id'],)).fetchone()
     orphaned = not target_current(tx, str(row['target_kind']), str(row['target_id']))
     return Item(str(row['item_id']), str(row['layer_id']), layers[row['layer_id']].name,
-                Node(str(row['target_kind']), str(row['target_id'])), json.loads(str(row['value'])),
-                Node(str(row['link_kind']), str(row['link_id'])) if row['link_kind'] else None,
+                Node.of(str(row['target_kind']), str(row['target_id'])), json.loads(str(row['value'])),
+                Node.of(str(row['link_kind']), str(row['link_id'])) if row['link_kind'] else None,
                 read_refs(tx.db, 'item', row['row']), decode_extra(row['extra']),
                 str(state_row[0]) if state_row else None, orphaned)
 
@@ -195,7 +195,7 @@ def version(tx: Tx, kind: str, row: Row, positions: dict[str, int]) -> Version:
     if 'value' in fields and fields['value'] is not None:
         fields['value'] = json.loads(str(fields['value']))
     return Version(str(row[spec.id_column]), kind, str(row['layer_id']), layer_name(tx, str(row['layer_id'])),
-                   positions.get(str(row['layer_id'])), str(row['op']), row['reason'], row['evidence'], fields,
+                   positions.get(str(row['layer_id'])), cast(Op, row['op']), row['reason'], row['evidence'], fields,
                    read_refs(tx.db, kind, row['row']))
 
 

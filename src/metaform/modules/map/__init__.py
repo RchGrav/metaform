@@ -12,7 +12,7 @@ from typing import Any
 
 from metaform import settings
 from metaform.data import PLACE_KINDS, Node, Store
-from metaform.module import Context, Module, Noun, Stop, Verb
+from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -295,7 +295,7 @@ def knowledge(ctx: Context) -> Any:
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
 
 
-def _noun(name: str, help: str, kind: str = 'str', schema: dict[str, Any] | None = None) -> Noun:
+def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] | None = None) -> Noun:
     return Noun(name, help, kind=kind, required=False, schema=schema)
 
 

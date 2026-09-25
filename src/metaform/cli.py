@@ -20,7 +20,7 @@ from . import __version__, context, docs, grammar, home, instructions, loader, q
 from .data import Store, export_document, import_document
 from .docs import Command, Switch
 from .errors import Stop
-from .module import call, on_this_system
+from .module import Verb, call, on_this_system
 
 EMPTY_IS_ALL = ('modules', 'layers')
 
@@ -575,17 +575,19 @@ def off_surface(identifier: str) -> Stop:
     return Stop(f"{identifier} is not on this folder's command surface.", 'metaform unset --modules')
 
 
-def _verb(found: Any, name: str) -> Any:
+def _verb(found: loader.Found, name: str) -> Verb | None:
+    if found.module is None:
+        return None
     return next((verb for verb in found.module.verbs if verb.name == name and 'cli' in verb.surfaces), None)
 
 
-def _here(verb: Any) -> bool:
+def _here(verb: Verb) -> bool:
     return on_this_system(verb)
 
 
-def _elsewhere(identifier: str, verb: Any) -> Stop:
+def _elsewhere(identifier: str, verb: Verb) -> Stop:
     """A verb outside this system: where it runs, printed by running it and by its help page, BASE-016."""
-    return Stop(f'{identifier} {verb.name} runs on {", ".join(verb.supported_os)}.', f'metaform help {identifier}')
+    return Stop(f'{identifier} {verb.name} runs on {", ".join(verb.supported_os or ())}.', f'metaform help {identifier}')
 
 
 def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:

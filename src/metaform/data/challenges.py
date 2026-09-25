@@ -8,12 +8,12 @@ writes nothing and says so. `approve` keeps its check: it acts only on B.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .. import home
 from ..errors import StoreError
 from . import rows
-from .records import ChallengeState, Node, Notice, Outcome, Plan
+from .records import Answer, ChallengeState, Node, Notice, Outcome, Plan
 from .session import Tx
 
 ANSWERS = ('A', 'B', 'C')
@@ -49,8 +49,9 @@ def answer(tx: Tx, item_id: str, state: Any, link: Node | None = None) -> Challe
     tx.db.execute('INSERT INTO challenge_states(item_id, state, link_kind, link_id, answered) VALUES (?, ?, ?, ?, ?) '
                   'ON CONFLICT(item_id) DO UPDATE SET state=excluded.state, link_kind=excluded.link_kind, '
                   'link_id=excluded.link_id, answered=excluded.answered', (item_id, state, link_kind, link_id, stamp))
-    return ChallengeState(item_id, str(state), Node(link_kind, link_id) if link_kind and link_id else None, stamp, None,
-                          tuple(notices))
+    # `state` is one of ANSWERS, checked above.
+    return ChallengeState(item_id, cast(Answer, state), Node.of(link_kind, link_id) if link_kind and link_id else None,
+                          stamp, None, tuple(notices))
 
 
 def approve(tx: Tx, item_id: str) -> ChallengeState:

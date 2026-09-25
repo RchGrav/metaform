@@ -8,12 +8,18 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from collections.abc import Sequence
-from typing import Any, Generic, NamedTuple, TypeVar, cast
+from typing import Any, Generic, Literal, NamedTuple, TypeVar, cast
 
 from ..errors import StoreError
 
-NODE_KINDS = ('element', 'join', 'subtype')
-PLACE_KINDS = (*NODE_KINDS, 'type')
+NodeKind = Literal['element', 'join', 'subtype', 'type']
+LayerKind = Literal['layer', 'intake', 'memory', 'correction']
+Op = Literal['add', 'change', 'remove']  # what a row does, STORE-017
+Answer = Literal['A', 'B', 'C', 'plan']  # a challenge's state, STORE-040
+NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join', 'subtype')
+PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
+LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
+OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # a subtype's role, MAP-030
 FLAGS = ('missing', 'broken', 'cruft')  # an intake finding, MAP-046
@@ -46,7 +52,7 @@ class Node(Record):
     `type:<address>` names a bare type address; a write there attaches to an element at that address, made by the
     writing layer when the project has none, with a notice, STORE-008.
     """
-    kind: str
+    kind: NodeKind
     id: str
 
     def __post_init__(self) -> None:
@@ -55,12 +61,19 @@ class Node(Record):
                              'metaform help map node')
 
     @classmethod
+    def of(cls, kind: str, ident: str) -> Node:
+        """A node whose kind was read as text, such as from a row, checked before it is typed."""
+        if kind not in PLACE_KINDS:
+            raise StoreError(f'{kind!r} is not a node kind: use element, join, subtype or type.', 'metaform help map node')
+        return cls(kind, ident)
+
+    @classmethod
     def parse(cls, text: str) -> Node:
         kind, separator, ident = text.partition(':')
         if not separator or not ident:
             raise StoreError(f'{text!r} is not a node: write element:<address or id>, join:<id> or '
                              'subtype:<address or id>.', 'metaform help map node')
-        return cls(kind, ident)
+        return cls.of(kind, ident)
 
     def __str__(self) -> str:
         return f'{self.kind}:{self.id}'
@@ -221,7 +234,7 @@ class Layer(Record):
     name: str
     module: str
     variable: str
-    kind: str
+    kind: LayerKind
     mutable: bool
     hideable: bool
     result_id: str | None
@@ -246,7 +259,7 @@ class Version(Record):
     layer_id: str
     layer: str
     position: int | None
-    op: str
+    op: Op
     reason: str | None
     evidence: str | None
     fields: dict[str, Any] = field(default_factory=dict[str, Any])
@@ -259,7 +272,7 @@ class LayerGroup(Record):
     """One layer's items and properties at one node."""
     layer_id: str
     layer: str
-    kind: str
+    kind: LayerKind
     items: tuple[Item, ...] = ()
     properties: tuple[Property, ...] = ()
 
@@ -308,7 +321,7 @@ class Citation(Record):
 @dataclass(frozen=True)
 class ChallengeState(Record):
     item_id: str
-    state: str
+    state: Answer
     link: Node | None
     answered: str
     approved: str | None

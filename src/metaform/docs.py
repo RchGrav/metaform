@@ -7,9 +7,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import __version__, settings
+
+if TYPE_CHECKING:
+    from .module import Module, Verb
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,7 @@ def intro(home: str) -> str:
         '  metaform                           See status and the next step.\n')
 
 
-def _here(verb: Any) -> bool:
+def _here(verb: Verb) -> bool:
     from .module import on_this_system
     return 'cli' in verb.surfaces and on_this_system(verb)
 
@@ -192,13 +195,13 @@ def switches_index() -> str:
     return '\n'.join(['Switches', *rows(found), '', "Use 'metaform help <switch>' for details."]) + '\n'
 
 
-def module_syntax(module: Any) -> str:
+def module_syntax(module: Module) -> str:
     lines = [f'Usage: metaform {module.id} <verb> [nouns] [switches]', '']
     lines += rows([(verb.usage(module.id), verb.summary) for verb in module.verbs if _here(verb)])
     return '\n'.join(lines) + '\n'
 
 
-def module_page(module: Any) -> str:
+def module_page(module: Module) -> str:
     lines = [f'{module.id}: {module.summary}', '', module.purpose]
     here = [verb for verb in module.verbs if _here(verb)]
     elsewhere = [verb for verb in module.verbs if 'cli' in verb.surfaces and not _here(verb)]
@@ -208,7 +211,8 @@ def module_page(module: Any) -> str:
                        for verb in here])
     if elsewhere:
         lines += ['', 'Not on this system']
-        lines += rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os)}.') for verb in elsewhere])
+        lines += rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os or ())}.')
+                       for verb in elsewhere])
     owned = [setting for setting in settings.SCHEMA.values() if setting.owner == module.id]
     if owned:
         lines += ['', 'Settings'] + rows([(setting.switch, setting.help) for setting in owned])
@@ -218,7 +222,7 @@ def module_page(module: Any) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def _verb_rows(verb: Any) -> list[tuple[str, str]]:
+def _verb_rows(verb: Verb) -> list[tuple[str, str]]:
     found = [(f'{noun.name}=<{noun.kind}>', noun.help) for noun in verb.nouns if not noun.required]
     for key in verb.switches:
         setting = settings.SCHEMA.get(key)
@@ -229,12 +233,12 @@ def _verb_rows(verb: Any) -> list[tuple[str, str]]:
     return found
 
 
-def verb_syntax(module: Any, verb: Any) -> str:
+def verb_syntax(module: Module, verb: Verb) -> str:
     lines = ['Usage: ' + verb.usage(module.id), '']
     return '\n'.join(lines + rows(_verb_rows(verb) + [('-h, --help', 'Show this syntax.')])) + '\n'
 
 
-def verb_page(module: Any, verb: Any) -> str:
+def verb_page(module: Module, verb: Verb) -> str:
     lines = [f'{module.id} {verb.name}: {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
     found = _verb_rows(verb)
     if found:

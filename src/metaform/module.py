@@ -13,23 +13,31 @@ import asyncio
 import inspect
 import re
 import sys
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .errors import Stop
 
 if TYPE_CHECKING:
     from .data import Store
 
-__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call', 'context', 'feedback',
-           'instructions', 'list_reports', 'read_report', 'on_this_system', 'result_json', 'save_report', 'setting_value',
-           'surface', 'tool_arguments']
+__all__ = ['Context', 'Handler', 'Hook', 'Module', 'Noun', 'NounKind', 'Status', 'StatusHook', 'Stop', 'Subscription',
+           'Surface', 'Verb', 'VerbFunction', 'call', 'context', 'feedback', 'instructions', 'list_reports', 'read_report',
+           'on_this_system', 'result_json', 'save_report', 'setting_value', 'surface', 'tool_arguments']
 
 VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
-NOUN_KINDS = ('str', 'int', 'bool', 'json')
-SURFACES = ('cli', 'mcp')
+NounKind = Literal['str', 'int', 'bool', 'json']
+Surface = Literal['cli', 'mcp']
+NOUN_KINDS: tuple[NounKind, ...] = ('str', 'int', 'bool', 'json')
+SURFACES: tuple[Surface, ...] = ('cli', 'mcp')
+
+# The module contract's callables, BASE-035. Each may be a plain function or a coroutine function, BASE-009.
+VerbFunction = Callable[['Context'], Any]  # returns the verb's result, BASE-036
+Handler = Callable[[dict[str, Any], 'Context'], Any]  # a subscriber: the payload and its own context, BASE-010
+Hook = Callable[['Context'], Any]  # start and stop, BASE-018
+StatusHook = Callable[['Context'], 'Status | Awaitable[Status]']  # what status and the instructions add
 
 
 @dataclass(frozen=True)
@@ -37,7 +45,7 @@ class Noun:
     """What a verb acts on. Required nouns are positional; optional ones are written name=value."""
     name: str
     help: str
-    kind: str = 'str'
+    kind: NounKind = 'str'
     required: bool = True
     many: bool = False
     schema: dict[str, Any] | None = None
@@ -60,7 +68,7 @@ class Verb:
     so it runs whatever the folder's command surface; the surface narrows what it serves, CLI-022 and MCP-004.
     """
     name: str
-    run: Callable[..., Any]
+    run: VerbFunction
     summary: str
     nouns: tuple[Noun, ...] = ()
     switches: tuple[str, ...] = ()
@@ -68,7 +76,7 @@ class Verb:
     examples: tuple[tuple[str, str], ...] = ()
     caution: str = ''
     supported_os: tuple[str, ...] | None = None
-    surfaces: tuple[str, ...] = SURFACES
+    surfaces: tuple[Surface, ...] = SURFACES
     transport: bool = False
 
     def __post_init__(self) -> None:
@@ -94,7 +102,7 @@ class Verb:
 @dataclass(frozen=True)
 class Subscription:
     topic: str
-    handler: Callable[..., Any]
+    handler: Handler
 
 
 @dataclass(frozen=True)
@@ -112,9 +120,9 @@ class Module:
     verbs: tuple[Verb, ...] = ()
     subscriptions: tuple[Subscription, ...] = ()
     details: str = ''
-    start: Callable[..., Any] | None = None
-    stop: Callable[..., Any] | None = None
-    status: Callable[..., Any] | None = None
+    start: Hook | None = None
+    stop: Hook | None = None
+    status: StatusHook | None = None
 
 
 @dataclass
@@ -127,7 +135,7 @@ class Context:
     nouns: dict[str, Any] = field(default_factory=dict[str, Any])
     switches: dict[str, Any] = field(default_factory=dict[str, Any])
     sink: Callable[[str], None] | None = None
-    surface: str = 'cli'
+    surface: Surface = 'cli'
 
     def say(self, text: str) -> None:
         """A message for a person. The data an agent needs back is the verb's return value, BASE-036."""
@@ -213,7 +221,7 @@ def instructions(folder: Path, project: str | None = None) -> str:
 
 def context(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
             switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
-            surface: str = 'cli') -> Context:
+            surface: Surface = 'cli') -> Context:
     """A Context for one call, with the project and store resolved for its folder, BASE-028."""
     from . import context as contexts
     return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface)

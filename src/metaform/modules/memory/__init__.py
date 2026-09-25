@@ -71,7 +71,7 @@ def _grouped(store: Store, items: list[Item]) -> dict[str, Any]:
         nodes.setdefault((item.target.kind, item.target.id), []).append(item)
         if item.link is not None:
             relations.append(_relation(store, item))
-    return {'nodes': [_entity(store, Node(kind, ident), found) for (kind, ident), found in nodes.items()],
+    return {'nodes': [_entity(store, Node.of(kind, ident), found) for (kind, ident), found in nodes.items()],
             'relations': relations}
 
 

@@ -13,7 +13,7 @@ from typing import Any, cast
 from . import settings
 from .data import Store
 from .errors import Stop
-from .module import Context
+from .module import Context, Surface
 
 
 def project_for(folder: Path, named: str | None = None) -> str | None:
@@ -35,7 +35,7 @@ def toggled_for(folder: Path) -> list[str]:
 
 def build(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
           switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
-          surface: str = 'cli', resolve: bool = True) -> Context:
+          surface: Surface = 'cli', resolve: bool = True) -> Context:
     """A Context for one operation, with the project and store resolved for its folder."""
     chosen = project_for(folder, project) if resolve else project
     toggled = list(switches['layers']) if switches and isinstance(switches.get('layers'), list) else toggled_for(folder)

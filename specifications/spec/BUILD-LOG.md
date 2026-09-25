@@ -178,3 +178,14 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Tests: the screen tests use the new names. Whole suite: 411 passed, 3 failed on Q39.
 - Questions raised: Q46 and Q47.
 
+## Step 18: M10, the module contract typed
+
+- `metaform.module` states the shapes of the contract:
+  - `VerbFunction`, `Handler`, `Hook` and `StatusHook` for a verb, a subscriber, `start` and `stop`, and `status`. Each may be a plain function or a coroutine function, BASE-009 and BASE-035.
+  - `NounKind` and `Surface` as `Literal` types for a noun's kind and a verb's surfaces. `Context.surface` is a `Surface`.
+- `metaform.data` exports `NodeKind`, `LayerKind`, `Op` and `Answer` as `Literal` types for a node's kind, a layer's kind, a row's op and a challenge's state.
+  - `Node.of(kind, id)` checks a kind read as text before typing it, and `Node.parse` uses it.
+  - A row's layer kind and op are typed as the schema's CHECK constraints keep them.
+- The help pages and the CLI take `Module`, `Verb` and `Found`. The loader types module places as `Traversable`. Typing them found two unguarded paths, now guarded: a verb lookup on a module that did not load, and the systems of a verb that names none.
+- Whole suite: 411 passed, 3 failed on Q39. Strict pyright: 0 errors.
+

@@ -12,8 +12,10 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from .ids import is_id, prefixes
+from .records import LayerKind
 
 
 @dataclass(frozen=True)
@@ -26,7 +28,7 @@ class LayerRow:
     mutable: bool
     hideable: bool
     result_id: str | None
-    kind: str
+    kind: LayerKind
     created: str
     ready: str | None
 
@@ -39,9 +41,10 @@ LAYER_COLUMNS = 'layer_id, metaform_id, name, module, variable, mutable, hideabl
 
 
 def layer_row(row: sqlite3.Row) -> LayerRow:
+    # The schema's CHECK keeps `kind` to the four layer kinds, STORE-013.
     return LayerRow(row['layer_id'], row['metaform_id'], row['name'], row['module'], row['variable'],
-                    bool(row['mutable']), bool(row['hideable']), row['result_id'], row['kind'], row['created'],
-                    row['ready'])
+                    bool(row['mutable']), bool(row['hideable']), row['result_id'], cast(LayerKind, row['kind']),
+                    row['created'], row['ready'])
 
 
 def all_layers(db: sqlite3.Connection) -> dict[str, LayerRow]:

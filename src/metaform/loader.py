@@ -22,6 +22,7 @@ import sys
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from importlib import metadata
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,7 @@ from .module import Context, Module, call
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
             'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'chassis'}
-SYSTEM: Any = importlib.resources.files('metaform') / 'modules'
+SYSTEM: Traversable = importlib.resources.files('metaform') / 'modules'
 TOOL_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 
@@ -39,7 +40,7 @@ class Found:
     """One module candidate: where it was found, whether it is on, and why it did not load when it did not."""
     id: str
     place: str
-    path: Any
+    path: Traversable
     import_name: str = ''
     enabled: bool = True
     module: Module | None = None
