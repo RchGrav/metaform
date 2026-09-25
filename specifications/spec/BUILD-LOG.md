@@ -47,3 +47,10 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: e05036b.
 - Questions raised: Q15 to Q17.
 
+## Step 7: the intake module
+
+- Records satisfied: BASE-039, MAP-040, MAP-041, MAP-042, MAP-043 and MCP-009, with LAYER-001 and STORE-032 for the intake layer. `intake prompt` serves the stored text with only its `<target>` attributes filled and `{project_id}` replaced, then the submit line; `intake submit` checks the whole submission, lists every problem with its path, and stores it in one atomic write as `intake-<timestamp>-<hex>`; the status hook gives `Intake: none yet` with the notice, or `Intake: complete`. `resources/Canonical_Intake.xml` is a byte copy of the specification's file.
+- Tests added: `src/metaform/modules/intake/tests/test_intake.py`, 10 tests, and the fixture `tests/fixtures/intake_timer.json`. Whole suite: 335 passed.
+- Commit: 2acf1f7.
+- Questions raised: Q18 and Q19.
+
