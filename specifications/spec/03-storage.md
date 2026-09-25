@@ -575,10 +575,10 @@ It covers the base database, the per-project store, the correction stack, layers
 ### STORE-022 A module keeps its own data as a layer
 - Requirement: Everything a module keeps is stored through the data access object as a layer, and no module writes files or databases of its own.
 - What this means: A module that needs to remember something declares a layer and writes items to it. Such data is exported, imported and queried with everything else.
-- Why: Data held outside the chassis cannot be exported, imported or queried as a whole, and cannot be selected alongside other layers. The template module currently writes its own `history.json` through `Context.data`, which this requirement replaces.
-- How it shows: The template module's greeting history appears as a layer in `list layers` and in an export.
-- Build: `Context.data`, the per-module folder under the home, is removed from the common base. The template module's history becomes items in a mutable layer it declares. Every template verb and handler that reads or writes that layer calls `ctx.require_store()`, so in a folder with no project it stops with `Next: metaform add project <id> <path>`. The template's event subscriber receives a Context built from the publisher's folder and project, BASE-028, and so writes to the same project's store. Its choices function receives a Context and returns no choices when the store is None, CLI-019.
-- Acceptance: After exercising every template verb, the home contains no file outside the base database and project stores.
+- Why: Data held outside the chassis cannot be exported, imported or queried as a whole, and cannot be selected alongside other layers. The current demo module writes its own `history.json` through `Context.data`, which this requirement replaces.
+- How it shows: The helloworld module's greeting history appears as a layer in `list layers` and in an export.
+- Build: `Context.data`, the per-module folder under the home, is removed from the common base. The helloworld module's history becomes items in a mutable layer it declares. Every template verb and handler that reads or writes that layer calls `ctx.require_store()`, so in a folder with no project it stops with `Next: metaform add project <id> <path>`. The template's event subscriber receives a Context built from the publisher's folder and project, BASE-028, and so writes to the same project's store. Its choices function receives a Context and returns no choices when the store is None, CLI-019.
+- Acceptance: After exercising every helloworld verb, the home contains no file outside the base database and project stores.
 - Relates to: STORE-023, STORE-024, BASE-005, BASE-019.
 - Status: recommended. Where an item goes when it is about no map node is open question 11.
 
@@ -1000,7 +1000,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 8. What does the provenance record hold for a layer written by a person or by a deterministic import, which has no model, prompt or role?
 9. When a second run of the same workflow writes to an existing layer, is it the same layer with one provenance record, or a new layer with its own?
 10. Can memory create a node that is not already in the map, as the reference server's create operation does? If yes, it would be a new element in the memory layer.
-11. Where does a module's item go when it is about no map node, such as the template's greeting history? One option is an element the module's layer creates for itself.
+11. Where does a module's item go when it is about no map node, such as the helloworld module's greeting history? One option is an element the module's layer creates for itself.
 12. Is JSON the exchange document format, or is XML required for any exchange?
 13. Answered: everything exported carries its unique id, and importing something that already exists does nothing; there is no conflict case, STORE-027. Earlier question, kept for reference: on import, when a store already holds a thing with the same identity id but different rows, is the incoming version applied as a new correction layer on top of the stack, kept as a separate layer, or reported and skipped? Recommended: a new correction layer on top, whose provenance names the import.
 14. Are stores written by the current chassis branch migrated, or is pre-1.0 data dropped?
