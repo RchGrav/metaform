@@ -338,10 +338,10 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE INDEX refs_by_key_value ON refs(key, value);
   ```
   A `change` row in a correction layer copies forward the refs it keeps, as new rows pointing at the new version row.
-  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. `add_ref` adds one more ref to a thing's current version only while that thing's layer is building, by its builder, STORE-032, or when the layer is mutable. After an immutable layer is locked, a ref changes only through a correction layer, STORE-017.
+  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. `add_ref` adds one more ref to a thing's current version in a knowledge layer or a mutable layer at any time, STORE-032. A ref on a thing of the intake layer or of a finished correction layer changes only through a correction layer, STORE-017.
 - Acceptance:
   - A join with refs `path=a` and `path=b`, changed by a correction layer to keep only `path=b`, reads back with one ref at the current version and two in its intake version.
-  - `add_ref` on a thing in a locked immutable layer is refused with `StoreError` naming a correction layer.
+  - `add_ref` on a thing in the intake layer is refused with `StoreError` naming a correction layer.
 - Relates to: STORE-004, STORE-017, STORE-025, STORE-032, MAP-021.
 - Status: recommended. The lookup by key and value is required by MAP-021.
 
@@ -367,8 +367,7 @@ It covers the base database, the per-project store, the correction stack, layers
     kind       TEXT NOT NULL DEFAULT 'layer'
                CHECK(kind IN ('layer','intake','memory','correction')),  -- STORE-032, STORE-017
     created    TEXT NOT NULL,                         -- LAYER-001: creation time, ISO 8601 UTC
-    locked     TEXT,                                  -- STORE-032: NULL while the layer is building
-    build_key  TEXT                                   -- STORE-032: SHA-256 of the build token while building, NULL once locked
+    ready      TEXT                                   -- STORE-032: NULL while the layer is building, the finish time once finished
   );
   CREATE TABLE hidden_layers(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));
   ```
@@ -462,10 +461,10 @@ It covers the base database, the per-project store, the correction stack, layers
 - Status: confirmed. What a layer written by a person or by a deterministic import records is open question 8. Whether a second run adds to the same layer is open question 9.
 
 ### STORE-017 Correction layers are stacked in order and are the only way to change the metaform
-- Requirement: The metaform changes only through correction layers, applied one on top of another in the order they were locked; they cannot be toggled, and only the top one can be peeled off.
+- Requirement: The metaform changes only through correction layers, applied one on top of another in the order they were finished; they cannot be toggled, and only the top one can be peeled off.
 - What this means: The metaform an agent reads is always the intake map with every correction layer applied in order. A correction layer is the only thing that can remove something from the metaform, relocate it, or add something to it permanently. Knowledge layers extend the metaform only while they are toggled on, and plans stay in their layers; only a correction layer changes the metaform itself. Correction layers are chronological: each is applied on top of the ones before it. They are never selected, masked, toggled or hidden. A correction layer in the middle of the stack cannot be deleted. To remove one, walk the stack backwards, peeling layers off the top one at a time, then rebuild the ones that were above it; or put another correction layer on top. Each correction layer carries its one provenance record like any layer. Anything built on a thing a correction changed or removed is re-examined, never rewritten, STORE-036.
 - Why: The metaform is the shared foundation, so a change to it must be explicit, ordered and traceable. A stack applied in order gives one answer to what the metaform is at every moment, and each change keeps the provenance of the layer that made it. Toggling corrections would give different agents different foundations, and deleting one from the middle would silently change what every later correction was applied to; peeling from the top is the only removal that keeps every remaining layer applied to exactly what it was built against.
-- How it shows: `metaform map stack` lists the correction layers in order. After a correction layer that retypes an element is locked, every read shows the new address; `metaform map history <id>` shows the element as the intake wrote it and as each correction layer left it. Peeling a layer that is not on top is refused, naming the top layer.
+- How it shows: `metaform map stack` lists the correction layers in order. After a correction layer that retypes an element is finished, every read shows the new address; `metaform map history <id>` shows the element as the intake wrote it and as each correction layer left it. Peeling a layer that is not on top is refused, naming the top layer.
 - Build:
   ```sql
   CREATE TABLE correction_stack(
@@ -473,7 +472,7 @@ It covers the base database, the per-project store, the correction stack, layers
     layer_id TEXT NOT NULL UNIQUE REFERENCES layers(layer_id)
   );
   ```
-  - A correction layer is a layer of kind `correction`, immutable, not hideable and not transitive, with its one provenance record, STORE-013 and STORE-016. It is built like any immutable layer, STORE-032: while building, its builder writes and edits its rows freely with the build token, and nothing in it is applied.
+  - A correction layer is a layer of kind `correction`, immutable, not hideable and not transitive, with its one provenance record, STORE-013 and STORE-016. It is written through the knowledge-layer tool like any layer, STORE-032: while building, its rows are written and edited freely, and nothing in it is applied.
   - Its rows are versions in the ordinary tables, `elements`, `joins`, `subtypes`, `properties` and `items`, with `layer_id` set to the correction layer and `op` saying what the row does:
     - `add`: a new thing with a new identity id, added to the metaform permanently.
     - `change`: a complete new version of an existing thing, under the same identity id. Fields not being changed are copied forward from the thing's current version, and so are its refs unless a complete new list is given, STORE-012. A subtype's address or end and a join's provider are changes. A join's receiver and a subtype's join never change, STORE-034; moving a join to another receiver, or a subtype to another join, is a removal and an add in the same correction layer.
@@ -481,18 +480,18 @@ It covers the base database, the per-project store, the correction stack, layers
     - `remove`: the thing is no longer in the metaform.
     Each `change` and `remove` row carries `reason` and, optionally, `evidence`. Rows with `op` `add` in the intake layer, knowledge layers and memory are the things those layers wrote.
   - A correction layer corrects the metaform: the intake layer's things and things added by earlier correction layers. It never changes a knowledge layer's things. Correction layers always beat knowledge layers: they sit underneath, and knowledge layers sit on top of the metaform the stack leaves, LAYER-011.
-  - `lock` on a correction layer, in one transaction: checks the rules of STORE-034 against the state after the layer is applied, and refuses the lock naming the first violation, writing nothing; inserts the layer at the next position on top of `correction_stack`; and applies it to the current tables, `current_elements`, `current_joins`, `current_subtypes`, `current_properties` and `current_items`: each `add` and `change` row becomes the thing's current row, and each `remove` deletes the thing's current row. It then writes re-examination marks, STORE-036.
-  - `peel(layer)` accepts only the layer at the highest position. In one transaction it deletes that stack row, recomputes the current row of every thing the layer touched from the remaining stack, and returns the layer to building with a new build token returned once, STORE-032, so it can be edited and locked again on top, or discarded. Its provenance record stays. It writes re-examination marks for what it undid, STORE-036. Peeling any other layer is refused with `StoreError` whose next step peels the top layer.
+  - `finish` on a correction layer, in one transaction: checks the rules of STORE-034 against the state after the layer is applied, and refuses the finish naming the first violation, writing nothing; inserts the layer at the next position on top of `correction_stack`; and applies it to the current tables, `current_elements`, `current_joins`, `current_subtypes`, `current_properties` and `current_items`: each `add` and `change` row becomes the thing's current row, and each `remove` deletes the thing's current row. It then writes re-examination marks, STORE-036.
+  - `peel(layer)` accepts only the layer at the highest position. In one transaction it deletes that stack row, recomputes the current row of every thing the layer touched from the remaining stack, and returns the layer to building, STORE-032, so it can be edited and finished again on top, or discarded. Its provenance record stays. It writes re-examination marks for what it undid, STORE-036. Peeling any other layer is refused with `StoreError` whose next step peels the top layer.
   - The current tables always equal the intake map with the whole stack applied in order, with every knowledge and memory layer's own rows on top, unchanged by any correction; they are what every read uses.
   - `select`, `mask`, `clear`, `hide` and `unhide` on a correction layer are refused, and `--layers` never names one, CLI-033. A correction layer's rows are part of every read, in context and raw.
   - Things a correction removes keep their identity rows, STORE-007, and every row of their history.
   - Orphans: a row of a knowledge or memory layer, an item, a property or a join, whose target is no longer current after the stack is applied has nothing left to attach to and is orphaned. A target is an item's node, a property's element, or a join's receiver or provider. Items and properties on a relocated element are not orphaned, because they point at its identity id, which is still current. A join where a relocated element was receiver or provider is removed by the relocation, so items and subtypes on it are orphaned. An orphan stays stored. It is absent from every read in context. A raw read returns it with `orphaned: true`. The check is made when a read joins through the current tables; nothing is rewritten when an item becomes orphaned or current again, so peeling the correction that orphaned it shows it again.
 - Acceptance:
-  - Two correction layers change the same element's name; after both are locked, reads show the second one's name, and `history` shows the intake's version, then the first, then the second.
-  - Peeling the lower of two correction layers is refused and changes nothing; peeling the top one restores exactly the reads that held before it was locked, and it can be locked again.
+  - Two correction layers change the same element's name; after both are finished, reads show the second one's name, and `history` shows the intake's version, then the first, then the second.
+  - Peeling the lower of two correction layers is refused and changes nothing; peeling the top one restores exactly the reads that held before it was finished, and it can be finished again.
   - `select`, `mask` and `hide` on a correction layer are refused and write nothing.
   - After a correction layer removes a join, no read in context or raw returns it as current, and `history` still returns every version of it.
-  - After a correction layer removes an element that a locked knowledge layer's item is attached to, the item is absent from `node` in context, `node` with `raw=True` returns it with `orphaned: true`, and the knowledge layer's rows are unchanged; peeling the correction shows the item in context again.
+  - After a correction layer removes an element that a finished knowledge layer's item is attached to, the item is absent from `node` in context, `node` with `raw=True` returns it with `orphaned: true`, and the knowledge layer's rows are unchanged; peeling the correction shows the item in context again.
 - Relates to: STORE-007, STORE-012, STORE-013, STORE-032, STORE-034, STORE-036, LAYER-011, MAP-015.
 - Status: confirmed for the model: correction layers are chronological and stacked, the only way to remove, relocate or permanently add something to the metaform, never toggled, and removed only by peeling from the top or covered by a layer on top. Confirmed also: correction layers sit underneath knowledge layers, never change a knowledge layer's things, and an item left with nothing to attach to is orphaned and not shown. A raw read listing orphans marked as orphaned is recommended. The storage mechanics, the `op` column, applying on `lock`, and `peel` returning a layer to building, are recommended.
 ### STORE-018 Mutable layers change in place
@@ -522,7 +521,7 @@ It covers the base database, the per-project store, the correction stack, layers
   );
   CREATE INDEX selections_by_layer ON selections(layer_id);
   ```
-  Resolution for an address: start from the starting selection: the read's own starting selection when it supplies one, else the layers toggled on by the folder's `--layers` setting, CLI-033, with each tag expanded through `layer_tags`, else every locked layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
+  Resolution for an address: start from the starting selection: the read's own starting selection when it supplies one, else the layers toggled on by the folder's `--layers` setting, CLI-033, with each tag expanded through `layer_tags`, else every finished layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
 - Acceptance:
   - The mask example above gives the stated results.
   - A layer masked at an element's address does not appear in the node read for a join that element receives, nor in the provider read that reaches that element.
@@ -538,7 +537,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - How it shows: `memory open code.manager.route` returns the node with its observations and relations, including relations other nodes hold toward it.
 - Build:
   - The default memory layer has the name `memory`, kind `memory`, module `memory`, and the variable `What agents have noted at this node.` It is mutable, hideable and not transitive, with no provenance row. The first memory write operation in a project creates it, inside that operation's transaction. A layer is recognized as memory by its kind, never by its name.
-  - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are locked and not hidden, unless the call names a layer, in which case it searches that layer alone:
+  - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are ready and not hidden, unless the call names a layer, in which case it searches that layer alone:
     ```sql
     CREATE VIRTUAL TABLE item_text USING fts5(value, content='items', content_rowid='row');
     CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
@@ -608,32 +607,32 @@ It covers the base database, the per-project store, the correction stack, layers
 
   | Operation | Inputs | Output | Errors |
   |---|---|---|---|
-  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), locked=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created building, with its build token returned once, or locked when `locked=True`; a mutable one is created locked, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive, without a token | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
-  | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `locked=True` becomes visible, locked, at commit | nested `atomic()` joins the outer block |
-  | `lock(layer, token)` | | `Layer` with `locked` set; the token stops working | layer unknown; already locked; wrong token |
-  | `edit(thing, token, changes)` | thing is an element, join, subtype or item written in a building layer; `changes` per STORE-034 | the changed row, in place, with no new version | layer locked or mutable; wrong token; a key not allowed for the thing's kind |
-  | `remove(thing, token)` | thing is an element, join, subtype, item or ref written in a building layer | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | layer locked or mutable; wrong token; the thing is still the receiver, provider or target of a current row in the layer |
-  | `discard(layer, token)` | a building layer | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; layer locked; layer mutable; wrong token |
+  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), ready=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: created building, or ready when `ready=True`, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `ready=True` becomes visible, ready, at commit | nested `atomic()` joins the outer block |
+  | `finish(layer)` | | `Layer` with `ready` set; a correction layer is applied on top of the stack, STORE-017 | layer unknown; already finished; a correction layer failing STORE-034 |
+  | `edit(thing, changes)` | thing is an element, join, subtype, property or item written in a knowledge layer, or in a correction layer still building; `changes` per STORE-034 | the changed row, in place, with no new version | thing in the intake layer, a finished correction layer or memory; a key not allowed for the thing's kind |
+  | `remove(thing)` | thing is an element, join, subtype, property, item or ref written in a knowledge layer, or in a correction layer still building | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | thing in the intake layer, a finished correction layer or memory; the thing is still the receiver, provider or target of a current row in the layer |
+  | `discard(layer)` | a knowledge layer, or a correction layer still building | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; the intake layer; a correction layer on the stack; memory |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
   | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
   | `add_subtype(layer, join, end, address, *, purpose=None, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | end is `receiver` or `provider` | `Subtype` | join unknown; end not one of the two; malformed address |
-  | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current version | owner unknown; owner's layer locked and immutable, STORE-012; wrong token for a building layer |
+  | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current version | owner unknown; owner in the intake layer or a finished correction layer, STORE-012 |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
   | `add_property(layer, element, value, *, refs=(), extra=None)` | element as address or element id | `Property` | element unknown; a target that is not an element; `extra` not an object |
   | `answer(item_id, state, link=None)` | state A, B or C; link for C | challenge state | per STORE-040 |
   | `approve(item_id)` | a challenge answered B | challenge state and plans | per STORE-040 |
   | `add_plan(layer, element, join)` | a new function element and its join | plan | per STORE-040 |
-  | `update_item(item, value)` | an item of a mutable layer | `Item` | layer is immutable; use `edit` while building |
-  | `delete_item(item)` | an item of a mutable layer | nothing | layer is immutable; use `remove` while building |
-  | `correct(layer, thing, token, changes=None, *, remove=False, reason, evidence=None)` | a building correction layer; thing is an element, join, subtype, property or item id of the metaform; `changes` per STORE-034 | the `change` row, or the `remove` row when `remove=True`, written in the correction layer and applied only when it is locked, STORE-017 | layer not a building correction layer; wrong token; a key not allowed for the thing's kind; receiver change requested |
-  | `peel(layer)` | the correction layer at the top of the stack | `Layer`, building again, with a new build token returned once, STORE-017 | layer not a correction layer; layer not on top, naming the top layer |
+  | `update_item(item, value)` | an item of a mutable layer | `Item` | layer is not memory; use `edit` for a knowledge layer |
+  | `delete_item(item)` | an item of a mutable layer | nothing | layer is not memory; use `remove` for a knowledge layer |
+  | `correct(layer, thing, changes=None, *, remove=False, reason, evidence=None)` | a building correction layer; thing is an element, join, subtype, property or item id of the metaform; `changes` per STORE-034 | the `change` row, or the `remove` row when `remove=True`, written in the correction layer and applied only when it is finished, STORE-017 | layer not a building correction layer; a key not allowed for the thing's kind; receiver change requested |
+  | `peel(layer)` | the correction layer at the top of the stack | `Layer`, building again, STORE-017 | layer not a correction layer; layer not on top, naming the top layer |
   | `reexamined(layer)` | | nothing | layer unknown, STORE-036 |
   | `select(address, layer)`, `mask(address, layer)`, `clear(address, layer, kind)` | | nothing | layer unknown |
   | `hide(layer)`, `unhide(layer)` | | nothing | layer not hideable |
 
 - Acceptance: For each operation, one test performs it and checks the rows it must write and that no other table changed. Each listed error is produced once and writes nothing.
 - Relates to: STORE-009 to STORE-022, STORE-026, STORE-031 to STORE-036, STORE-040.
-- Status: confirmed for the set of things written and for building then locking a knowledge layer. Operation names, signatures and the build token are recommended. Every write into a building layer, `add_element`, `add_join`, `add_subtype`, `add_item`, `add_ref`, `edit`, `remove`, `lock` and `discard`, takes the layer's build token; the intake's single `atomic()` write creates its layer locked and needs none.
+- Status: confirmed for the set of things written, for knowledge layers written object by object through one tool with every call naming its layer, and for editing a knowledge layer after it is finished. Operation names and signatures are recommended. No write takes a token or checks ownership; the intake's single `atomic()` write creates its layer ready.
 
 ### STORE-025 Read operations
 - Requirement: The data access object offers exactly these reads, each answered through indexes.
@@ -651,27 +650,27 @@ It covers the base database, the per-project store, the correction stack, layers
   | `where(address)` | the element, or the join and end holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
   | `children(address)` | the next types up the tree, toward the leaves | `types_by_parent` |
   | `layer_items(layer, target=None)` | all of a layer, or a layer at one node | `current_items_by_layer` |
-  | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are locked and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
+  | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are finished and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
   | `context(address, selection=None)` | the applying and the visible transitive items at an address, as two lists, STORE-035 | `current_items_by_target`; `types` primary key range |
   | `links_to(target, layer=None)` | items in any layer linking to a node | `current_items_by_link` |
   | `citing(key, value)` | every current element, join, subtype and item whose refs hold that key and value, per MAP-021 | `refs_by_key_value` |
   | `history(thing)` | every version of a thing: the row that added it, then each correction layer's row in stack order, each with its layer, position, op, reason and evidence | `UNIQUE(id, layer_id)`; `correction_stack` |
   | `stack()` | the correction layers in the order they were applied, each with its provenance | `correction_stack` primary key |
-  | `layers(tag=None, kind=None, module=None)`, `provenance(layer)` | the layers with properties, kind, module, tags, whether each is building or locked, whether it is hidden, and whether it is toggled on for the current context, LAYER-019, filtered by tag, kind and module; one layer's provenance | full read of `layers`, STORE-005, or `layer_tags_by_tag` when filtering by tag; primary key |
+  | `layers(tag=None, kind=None, module=None)`, `provenance(layer)` | the layers with properties, kind, module, tags, whether each is building or ready, whether it is hidden, and whether it is toggled on for the current context, LAYER-019, filtered by tag, kind and module; one layer's provenance | full read of `layers`, STORE-005, or `layer_tags_by_tag` when filtering by tag; primary key |
   | `effective_selection(address, root=None)` | the resolved layer set at an address, and any unresolved selection rows, STORE-035 | `selections` primary key |
   | `search(text, layer=None)` | items whose value matches, per STORE-020 | `item_text` |
-  | `has_intake()` | whether the active metaform holds a locked intake layer, STORE-032 | `layers_by_kind` |
+  | `has_intake()` | whether the active metaform holds a ready intake layer, STORE-032 | `layers_by_kind` |
   | `metaforms(project)`, `active_metaform(project)` | the project's metaforms with their names and creation times, and which one is active, STORE-041 | `metaforms` `UNIQUE(project_id, name)`; `active_metaforms` primary key |
   | `project()` | the project record with its target, STORE-031 | `projects` primary key |
 
 - Joins from layers:
   - Every read that returns a join, `joins`, `identity`, `node`, `context`, `links_to`, `where` for a subtype, and the graph and export reads, returns with each join its `layer_id` and `layer`, the name of the layer it comes from, read from the join row's `layer_id` through the `layers` primary key. Subtypes carry the layer of the join that holds them.
-  - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is locked, not hidden, and in the effective selection at its receiver's address, LAYER-007. With `raw=True`, every stored join is returned, each with its layer name.
+  - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is finished, not hidden, and in the effective selection at its receiver's address, LAYER-007. With `raw=True`, every stored join is returned, each with its layer name.
   - The intake map's joins go through the same filter, so masking the intake layer at an address removes its joins there like any other layer's.
 - Acceptance:
   - STORE-005's plan test covers every row of this table.
   - Every join returned by every read in this table carries a non-empty `layer` equal to the name of the layer whose id its row holds.
-  - A join added by a locked knowledge layer is returned by `joins(receiver)` in context when that layer is toggled on, is absent when it is toggled off or masked at the receiver's address, and is returned by `joins(receiver, raw=True)` in both cases.
+  - A join added by a finished knowledge layer is returned by `joins(receiver)` in context when that layer is toggled on, is absent when it is toggled off or masked at the receiver's address, and is returned by `joins(receiver, raw=True)` in both cases.
 - Relates to: STORE-005, STORE-012, STORE-019, MAP-001, MAP-021, LAYER-016, CLI, MCP.
 - Status: confirmed for the questions answered, and for every join showing the layer it comes from. Names, signatures and the in-context filter of joins are recommended.
 
@@ -751,32 +750,33 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: STORE-002, STORE-003, MAP-041, CLI-001, CLI-028.
 - Status: recommended. The target fields follow MAP-041, confirmed.
 
-### STORE-032 Layer kinds, building and locking
-- Requirement: Every layer has a kind, intake, memory or layer; an immutable layer is building while its writer works on it and is locked when its writer's task is done; a mutable layer is never building and never locked against change.
-- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, and an intake layer is what "has an intake" looks for. There are three ways a layer comes to exist, LAYER-018:
-  - The intake layer is written whole, in one atomic write by `intake_submit`, and is locked from the moment it exists, BASE-039.
-  - A knowledge layer, or any immutable layer a module builds over several calls, is building while its agent follows its prompt. During that time its builder can add, edit and remove its elements, joins, subtypes, properties, items and refs in place, with no history, as freely as memory is edited. No other agent can write to it, and no other agent's read in context sees it. When the task is done, the builder locks it. A locked knowledge layer is immutable: its one provenance record stays as written, and it can be selected, masked and hidden like any other layer. A correction layer is built the same way, and locking it applies it on top of the correction stack, STORE-017; it is never selected, masked or hidden.
-  - A mutable layer, memory included, is created ready and stays editable in place forever, STORE-018.
-- Why: The model builds a knowledge layer incrementally against its prompt and fixes its own work as it goes, so it needs full freedom to change what it wrote until its task is done. Locking gives the layer a stable identity that can be trusted, compared and selected, and it is what lets anything else depend on it. Writing the intake in one submission means a half-written intake never exists, so the no-intake notice clears only when a whole intake is stored.
-- How it shows: While a knowledge layer is building, the building agent reads it by name and sees every change it makes; another agent reading the same element in context sees nothing of it. After `lock`, the layer appears in context reads under the selection, and an attempt to edit it is refused with the next step naming a correction layer. During an intake run nothing is stored, so `metaform` status shows the no-intake notice until `intake_submit` succeeds.
+### STORE-032 Layer kinds, building and finishing
+- Requirement: Every layer has a kind, intake, memory, correction or layer; a knowledge layer is building until its writer finishes it and stays editable through the knowledge-layer tool afterwards; the intake layer and a finished correction layer never change in place; memory is never building.
+- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, an intake layer is what "has an intake" looks for, and a correction layer goes on the stack. Layers come to exist in these ways, LAYER-018:
+  - The intake layer is written whole, in one atomic write by `intake_submit`, and is finished from the moment it exists, BASE-039. It never changes in place; the metaform changes only through correction layers, STORE-017.
+  - A knowledge layer is created by the knowledge-layer tool, the only tool that makes a new layer, and written object by object: elements, joins, subtypes, properties, items and refs are added, edited and removed one at a time, in place, with no history. Every call names the layer. There is no token and no ownership: whoever has the tool can write to any knowledge layer, before or after it is finished. While a knowledge layer is building, no read in context shows it. When its writer's task is done, the writer finishes it; a finished knowledge layer is listed as ready, can be toggled on, selected, masked and hidden like any other layer, and remains editable through the tool. Its one provenance record describes how it was created.
+  - A correction layer is made and written through the same tool. Finishing it applies it on top of the correction stack, STORE-017; after that its rows never change in place, and only peeling the top layer returns it to building. It is never toggled, selected, masked or hidden.
+  - Memory is created ready on the first memory write and stays editable in place forever, STORE-018.
+- Why: The model builds a knowledge layer incrementally against its prompt and fixes its own work as it goes, and a later agent, prompted to, improves it; both need to add, change and remove single objects. Access follows only from having the tool, so there is one rule for every agent and every host, and trusting an agent to name its layer needs no assignment machinery. Finishing marks when a layer is ready to be used, so a half-built layer never reaches an agent's context. The intake and the correction stack are what everything else attaches to, so they change only in the one recorded way. Writing the intake in one submission means a half-written intake never exists, so the no-intake notice clears only when a whole intake is stored.
+- How it shows: While a knowledge layer is building, a read that names it shows every change; another agent reading the same element in context sees nothing of it. After `finish`, the layer appears in context reads when toggled on, and an agent with the tool can still edit it, with the change visible on the next read. During an intake run nothing is stored, so `metaform` status shows the no-intake notice until `intake_submit` succeeds.
 - Build:
-  - `layers.kind`, `layers.locked` and `layers.build_key`, STORE-013. `CREATE INDEX layers_by_kind ON layers(kind, locked);`
-  - `layer(...)` without `locked=True` creates an immutable layer building: `locked` is NULL, and a build token of 32 random bytes, hex encoded, is generated and returned once; `build_key` stores its SHA-256. A mutable layer, including memory, is created with `locked` set and no token, because it has no building phase; its items change through `update_item` and `delete_item`.
-  - Every write into a building layer takes the token: `add_element`, `add_join`, `add_subtype`, `add_item`, `add_ref`, `edit`, `remove`, `lock` and `discard`. A missing or wrong token is refused with `StoreError` and writes nothing. The token is how "only the building agent" is enforced without agent identities: the agent that created the layer holds it, and the module keeps it for that agent's session only in the reply to the create call.
-  - `edit` changes a row written in the building layer in place. `remove` deletes a row written in it, with its refs and links; it refuses to remove a row that another current row in the same layer still uses as receiver, provider or target. Identity rows, STORE-007, and `types` rows, STORE-008, are never deleted.
-  - `lock(layer, token)` sets `locked` to the current time and clears `build_key`. After that the layer's rows never change in place. Locking a correction layer also applies it on top of the stack, STORE-017.
-  - `has_intake()` is true when a layer of kind intake exists with `locked` set. An intake layer is only ever created locked, inside `atomic()`. One indexed read.
-  - Node reads in context, `context`, `search` and the default root selection include only locked layers. A read that names a building layer, or uses `raw=True`, sees it.
-  - A building layer left by an interrupted run stays building and invisible. Its builder, or the module on the builder's behalf with the token, removes it with `discard`. The intake never leaves a building layer.
-  - `discard(layer, token)` deletes, in one transaction, the layer's content: its items; the element, join, subtype and property rows written in it; the refs and links attached to those rows; its provenance row, its source rows, and its layer row. It does not delete identity rows or `types` rows, even those this layer created: STORE-007 keeps every identity id for as long as the store exists, so an id is never reused and a reference to it never points at something else. An identity id whose content was discarded has no current row, so reads by that id return not found and nothing in context shows it. A `types` row with no element under it is an ordinary type in the tree.
+  - `layers.kind` and `layers.ready`, STORE-013. `CREATE INDEX layers_by_kind ON layers(kind, ready);`
+  - `layer(...)` creates a layer building: `ready` is NULL. `layer(..., ready=True)`, used only inside `atomic()` by `intake_submit` and by the memory module's first write, creates it ready.
+  - The writes into a knowledge layer, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `edit`, `remove`, `finish` and `discard`, take the layer reference and nothing else to authorize them. They are refused only for the intake layer and for a finished correction layer, with `StoreError` naming the correction operation.
+  - `edit` changes a row written in the layer in place. `remove` deletes a row written in it, with its refs and links; it refuses to remove a row that another current row in the same layer still uses as receiver, provider or target. Identity rows, STORE-007, and `types` rows, STORE-008, are never deleted.
+  - `finish(layer)` sets `ready` to the current time. For a knowledge layer nothing else changes: `edit` and `remove` still work. For a correction layer it also applies the layer on top of the stack, STORE-017, and from then on its rows never change in place.
+  - `has_intake()` is true when a layer of kind intake exists with `ready` set. An intake layer is only ever created ready, inside `atomic()`. One indexed read.
+  - Node reads in context, `context`, `search` and the default toggled set include only ready layers. A read that names a building layer, or uses `raw=True`, sees it.
+  - A building layer left by an interrupted run stays building and invisible until an agent with the tool finishes it, keeps writing to it, or removes it with `discard`. The intake never leaves a building layer.
+  - `discard(layer)` deletes, in one transaction, a knowledge layer's content: its items; the element, join, subtype and property rows written in it; the refs and links attached to those rows; its provenance row, its source rows, and its layer row. It does not delete identity rows or `types` rows, even those this layer created: STORE-007 keeps every identity id for as long as the store exists, so an id is never reused and a reference to it never points at something else. An identity id whose content was discarded has no current row, so reads by that id return not found and nothing in context shows it. Discarding the intake layer or a correction layer on the stack is refused.
 - Acceptance:
   - An `intake_submit` whose `atomic()` block raises after writing elements leaves no layer, no elements, and `has_intake()` false.
-  - A building layer's items are absent from another caller's node read in context and present in a read that names the layer; after `lock` they are present in context.
-  - `edit` with a wrong token, and `edit` on a locked layer, are refused and write nothing; `edit` with the token changes the row in place and adds no version.
+  - A building layer's items are absent from another caller's node read in context and present in a read that names the layer; after `finish` they are present in context when the layer is toggled on.
+  - After `finish`, `edit` on a knowledge layer's item changes the row in place and adds no version; `edit` on an intake layer's item is refused and writes nothing.
   - After `discard` of a building layer that wrote an element, the element's identity row and its `types` row remain, a read by its identity id returns not found, and `list layers` no longer lists the layer.
   - After a successful `intake_submit`, `has_intake()` is true and the node read in context includes the layer.
-- Relates to: STORE-013, STORE-012, STORE-017, STORE-018, STORE-024, MAP-040, LAYER-001, LAYER-018, MCP-009, BASE-039.
-- Status: confirmed for the intake as one atomic write, and for a knowledge layer being freely editable by its builder until its task is done, then locked, immutable and selectable. The build token, and the operation names, are recommended.
+- Relates to: STORE-013, STORE-012, STORE-017, STORE-018, STORE-024, MAP-040, LAYER-001, LAYER-018, MCP-009, BASE-038, BASE-039.
+- Status: confirmed for the intake as one atomic write, for knowledge layers written object by object through one tool that alone makes new layers, with every call naming its layer, no ownership, and editing after finishing. Finishing as marking a layer ready, the `ready` column and the operation names are recommended.
 
 ### STORE-033 Every identity id resolves to its kind in one read
 - Requirement: One table maps every identity id to its kind, so operations that take a bare id find the right table in one read.
@@ -799,27 +799,27 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Requirement: A correction changes only the fields allowed for its kind, and a correction layer that removes a thing must also remove everything current that depends on it.
 - What this means: A correction is explicit about what it changes. A retype is a correction that changes an element's address; a relocation is a correction that changes a subtype's address or end, or a join's provider. A node that still has current joins or subtypes pointing at it cannot silently disappear from under them.
 - Why: A correction format with no rules lets a correction change a join's owner or orphan the joins of a removed element, which breaks the structure that everything reads through.
-- How it shows: `metaform map correct <layer> <element id> address=code.probe.echo reason=...` inside a building correction layer relocates the element, with everything attached to it, when that layer is locked. Locking a correction layer that removes an element but not the join it still receives is refused, naming that join.
+- How it shows: `metaform map correct <layer> <element id> address=code.probe.echo reason=...` inside a building correction layer relocates the element, with everything attached to it, when that layer is finished. Finishing a correction layer that removes an element but not the join it still receives is refused, naming that join.
 - Build:
   - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `end`, `name`, `name_length`, `role`, `purpose`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `element`, `value`, `extra`. Any other key is refused when the correction is written. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
-  - These checks run at `lock`, against the state after the whole correction layer is applied, so one correction layer can remove an element and its joins, or move several things, together:
+  - These checks run at `finish`, against the state after the whole correction layer is applied, so one correction layer can remove an element and its joins, or move several things, together:
     - an element's new address is not held by another current element, and its `types` rows are written;
     - every current join where a relocated element is receiver or provider is removed, with its subtypes, as part of applying the layer, STORE-017;
     - no current join has a removed element as receiver or provider;
     - no current subtype belongs to a removed join;
     - no current property of the metaform is attached to a removed element.
-    A failed check refuses the lock, names the first violation and the next step to add the missing removal to the layer, and applies nothing.
-  - The checks above apply to things of the metaform, the intake layer and correction layers. Items, properties and joins of knowledge and memory layers attached to a removed thing never block a lock; they are orphaned, STORE-017, and show again if the thing is put back at the same address.
+    A failed check refuses the finish, names the first violation and the next step to add the missing removal to the layer, and applies nothing.
+  - The checks above apply to things of the metaform, the intake layer and correction layers. Items, properties and joins of knowledge and memory layers attached to a removed thing never block a finish; they are orphaned, STORE-017, and show again if the thing is put back at the same address.
 - Acceptance:
   - A correction with the key `receiver` is refused.
   - A correction layer removes an element carrying a knowledge layer's property and locks; a later correction layer adds an element at the same address; the property shows again in context under the same element id, with no row of the knowledge layer changed.
-  - Locking a correction layer that retypes an element to an address held by another current element is refused and applies nothing.
-  - Locking a correction layer that removes an element with a current join is refused; after the join's removal is added to the same layer, the lock succeeds.
+  - Finishing a correction layer that retypes an element to an address held by another current element is refused and applies nothing.
+  - Finishing a correction layer that removes an element with a current join is refused; after the join's removal is added to the same layer, the finish succeeds.
 - Relates to: STORE-017, STORE-024, MAP-015, LAYER-011.
 - Status: recommended. That removal orphans and a put-back element shows its attachments again is confirmed, LAYER-011. Whether a removed join shows again when its receiver and provider exist again at the same places is open question 24.
 ### STORE-035 Context reads: the applying set, the visible set and the starting selection
 - Requirement: The store answers, at any address, which transitive items apply there and which are visible there from above, toward the leaves, after selection, starting from the layers toggled on, LAYER-019.
-- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items above it toward the leaves that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every locked layer that is not hidden starts selected.
+- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items above it toward the leaves that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every finished layer that is not hidden starts selected.
 - Why: A broad question at `code` must see every medium in use above it without spreading a branch's specifics to its siblings, and each answer must be one indexed read, STORE-005.
 - How it shows: `metaform query context code` lists C++ from `code.engine` and Bash from `code.installer` as visible, and neither as applying.
 - Build:
@@ -854,8 +854,8 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
     PRIMARY KEY(layer_id, correction_layer_id, thing_id)
   );
   ```
-  `layer(...)` takes `sources`, the layer ids it was built from. Locking a correction layer, and peeling one, insert a `reexamine` row for every layer whose sources include the layer that added a thing the correction layer changed or removed. `reexamined(layer)` deletes that layer's rows.
-- Acceptance: Locking a correction layer that changes a thing added by layer S marks every layer with S as a source, and no other layer; `reexamined` clears it.
+  `layer(...)` takes `sources`, the layer ids it was built from. Finishing a correction layer, and peeling one, insert a `reexamine` row for every layer whose sources include the layer that added a thing the correction layer changed or removed. `reexamined(layer)` deletes that layer's rows.
+- Acceptance: Finishing a correction layer that changes a thing added by layer S marks every layer with S as a source, and no other layer; `reexamined` clears it.
 - Relates to: LAYER-011, STORE-017, STORE-024.
 - Status: recommended. It depends on D14, where a layer's sources are recorded.
 ### STORE-037 Each operation opens its own connection
@@ -870,8 +870,8 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 
 ### STORE-038 Layer tags
 - Requirement: A layer's tags are stored one row per tag, indexed by tag, and can be changed at any time.
-- What this means: Tags let layers be found and toggled by what they are for, LAYER-019. They are not layer content, so adding or removing a tag is allowed on a locked layer and needs no correction layer and does not touch provenance.
-- Why: An orchestrator toggles layers by tag, so finding every layer with a tag must be one indexed read, STORE-005, and a tag must be changeable after a layer is locked without disturbing the locked content.
+- What this means: Tags let layers be found and toggled by what they are for, LAYER-019. They are not layer content, so adding or removing a tag is allowed on a finished layer and needs no correction layer and does not touch provenance.
+- Why: An orchestrator toggles layers by tag, so finding every layer with a tag must be one indexed read, STORE-005, and a tag must be changeable after a layer is finished without touching its content.
 - How it shows: `metaform map tag practices-cpp practices` then `metaform map layers tag=practices` lists that layer.
 - Build:
   ```sql
@@ -883,12 +883,12 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
   CREATE INDEX layer_tags_by_tag ON layer_tags(tag, layer_id);
   ```
   - A tag is one to 64 characters of lowercase letters, digits, periods, underscores and hyphens.
-  - `tag(layer, tag)` inserts a row and is a no-op when the row exists; `untag(layer, tag)` deletes it and is a no-op when it is absent. Both work on building and locked layers, need no build token, and write no version rows.
-  - `new-layer` accepts an optional list of tags, written in the same transaction as the layer row.
+  - `tag(layer, tag)` inserts a row and is a no-op when the row exists; `untag(layer, tag)` deletes it and is a no-op when it is absent. Both work on building and finished layers, and write no version rows.
+  - The knowledge tool's `create` operation accepts an optional list of tags, written in the same transaction as the layer row.
   - Discarding a building layer deletes its `layer_tags` rows with its other content rows, STORE-032.
   - Resolving a `--layers` value: each name is looked up as a layer reference, STORE-013; a name that is not a layer is read as a tag and expands through `layer_tags_by_tag` to every layer carrying it. A name that is neither is an error naming it.
 - Acceptance:
-  1. Tagging a locked layer adds the tag, and the layer's rows and provenance row are unchanged.
+  1. Tagging a finished layer adds the tag, and the layer's rows and provenance row are unchanged.
   2. `EXPLAIN QUERY PLAN` for listing by tag shows `SEARCH layer_tags USING COVERING INDEX layer_tags_by_tag`.
 - Relates to: STORE-005, STORE-013, STORE-025, STORE-032, STORE-035, LAYER-019, CLI-033, BASE-038.
 - Status: recommended. Tags being editable after locking is recommended; that layers carry tags is confirmed.
@@ -922,7 +922,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
   CREATE INDEX current_properties_by_element ON current_properties(element_id, layer_id);
   CREATE INDEX current_properties_by_layer   ON current_properties(layer_id, element_id);
   ```
-  - Ids, versions, corrections, refs and `extra` follow the same rules as items, STORE-015 and STORE-021. A property written to a building layer is edited or removed in place until the layer is locked, LAYER-018; a property of the metaform changes after that only through a correction layer, STORE-017.
+  - Ids, versions, corrections, refs and `extra` follow the same rules as items, STORE-015 and STORE-021. A property in a knowledge layer is edited or removed in place at any time through the knowledge-layer tool, LAYER-018; a property of the metaform, the intake layer or a finished correction layer, changes only through a correction layer, STORE-017.
   - The data access object checks that the element exists and refuses any other target. The element's address, through `current_elements`, places the property in the namespace.
   - Written by `add_property`, STORE-024; read through `node`, `layer` and `context`, STORE-025 and STORE-035.
 - Acceptance:
@@ -932,8 +932,8 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Status: confirmed that properties are their own transitive records attached only to elements. Creating an element at a prefix to hold a property, linked by the namespace tree with no join, is recommended. The table shape is recommended.
 
 ### STORE-040 Challenge states and plans
-- Requirement: The store keeps each blind-spot challenge's state, open, answered A, B or C, or plan, and every plan, outside the locked blind-spot layer.
-- What this means: A challenge is an item in a critic's locked blind-spot layer, LAYER-015. Its answer and its approval come later and from other actors, so they are recorded next to the item and never as edits to the locked layer. A plan is a new function element, with its join, that is either approved from a B challenge or added directly by an agent as a plan. A challenge with no state row is open.
+- Requirement: The store keeps each blind-spot challenge's state, open, answered A, B or C, or plan, and every plan, outside the critic's blind-spot layer.
+- What this means: A challenge is an item in a critic's blind-spot layer, LAYER-015. Its answer and its approval come later and from other actors, so they are recorded next to the item and never as edits to that layer. A plan is a new function element, with its join, that is either approved from a B challenge or added directly by an agent as a plan. A challenge with no state row is open.
 - Why: The blind-spot layer is the critic's work and stays exactly as the critic left it, with its provenance. Keeping answers and approvals beside it lets every read show a challenge's state without changing the layer, and lets one read answer where a project's plans are.
 - How it shows: `metaform map node element:<id>` on an element a challenge carries shows `challenge.blind` and `answered B`; after `metaform map approve`, it shows `plan`.
 - Build:
@@ -1011,6 +1011,6 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 19. Properties attach only to elements, STORE-039, MAP-022. Can any other layer item attach at a type address that no element holds? The `items.target_kind` value `type` stays until this is answered.
 20. Answered: a C answer's link is kept with the challenge state, STORE-040.
 21. Resolved by E9: `ctx.store`.
-22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every locked layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)
+22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every finished layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)
 23. Answered: a correction layer never changes a knowledge layer's things. Correction layers sit underneath, knowledge layers on top, and an item left with nothing to attach to is orphaned, STORE-017, LAYER-011.
 24. A removed join whose receiver and provider both exist again at the same places: does it show again, or stay removed until a correction adds a join? (STORE-017, STORE-034, LAYER-011)

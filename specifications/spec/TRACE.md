@@ -57,17 +57,17 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-072 | Module ownership remains visible | BASE-029 | covered |
 | REQ-073 | Complete CLI | BASE-006, MCP-003 | covered |
 | REQ-074 | Working context is folder settings; narrowing states the way back | CLI-021, CLI-022 | covered |
-| REQ-075 | Assignment context | MCP-012 | deferred |
+| REQ-075 | Assignment context | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
 | REQ-076 | Navigation exit and work finalization stay distinct | CLI-022 | deferred |
 | REQ-077 | Help is generated from live contributions | CLI-010, MCP-007 | covered |
 | REQ-078 | Interactive and non-interactive use are equivalent | CLI-025, MCP-014 | covered |
 | REQ-079 | Concise settings screen | CLI-026 | covered |
-| REQ-080 | Work identity by nonce | MCP-012 | deferred |
-| REQ-081 | Assignment delivery is exact | MCP-012 | deferred |
-| REQ-082 | Submission uses the assignment header | MCP-012 | deferred |
+| REQ-080 | Work identity by nonce | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
+| REQ-081 | Assignment delivery is exact | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
+| REQ-082 | Submission uses the assignment header | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
 | REQ-083 | The working-folder table lives in the home; nothing marks project folders | STORE-002, PROJ-002 | covered |
-| REQ-084 | MCP uses the same work identity | MCP-012 | deferred |
-| REQ-085 | One MCP process serves many assignments | MCP-012 | deferred |
+| REQ-084 | MCP uses the same work identity | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
+| REQ-085 | One MCP process serves many assignments | MCP-012 | removed: nonces and assignment handles are dropped; agents get permission through their tools or are prompted, and the orchestrator hands work by name |
 | REQ-086 | MCP serves the folder's command surface from the CLI declaration | MCP-003, MCP-004 | covered |
 | REQ-087 | Harness participation is vendor-independent | MCP-009, MCP-016 | NOT COVERED |
 | REQ-090 | Modules may be sync, async or both | BASE-009 | covered |

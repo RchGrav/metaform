@@ -107,8 +107,8 @@ Recommendation: allowed when declared in the schema, and help shows them.
 **D34. `--name=false`.**
 Recommendation: not accepted. A boolean takes its two bare forms only. Over MCP a boolean is a true or false value.
 
-**D35. The way back when `set --commands` narrows the commands with no workflow active.**
-Recommendation: the line names `metaform unset --commands`. help, set, unset and config are always shown.
+**D35. The way back when `set --modules` narrows the commands with no workflow active.**
+Recommendation: the line names `metaform unset --modules`. help, set, unset and config are always shown.
 
 **D36. What `unset all` resets.**
 Recommendation: only the settings stored at the current folder. Values inherited from parent folders show again once the folder's own values are gone.
@@ -167,8 +167,6 @@ Recommendation: every root reads as its own name, and the example that says prog
 
 **D58.** Should a worktree created outside the project's source location default to the repository's project with nothing selected, found through the worktree's shared git folder, `git rev-parse --git-common-dir`? Recommended: yes, because it needs no setup and writes nothing. (PROJ-006)
 
-**D59.** How does an orchestrator store the narrowed context for a worker's folder that is not its own? Every long switch is a setting (CLI-011), so a `--path` switch does not fit the grammar. One way is a folder noun, `metaform set --commands workflow,memory folder=<path>`. The other is having the worker's first command store it. (PROJ-007)
-
 **D60.** Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
 
 **D61.** Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
@@ -216,6 +214,8 @@ Recommendation: yes for a unit whose id already exists. A diverged unit has a di
 Recommendation: yes, by the same logic: the join has both ends to attach to again.
 
 ## Answered
+
+**D59. Mapping a worker's folder.** The orchestrator runs `metaform set --modules workflow,memory folder=<path>` before the worker starts. The setting formerly called `--commands` is `--modules`. This per-folder surface is the closest thing Metaform has to a nonce.
 
 **D77. Correction and knowledge layers.** Correction layers always beat knowledge layers and sit underneath them. A knowledge item left with nothing to attach to is orphaned: kept, and no longer shown.
 

@@ -272,14 +272,14 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 ### BASE-028 Context travels with each operation
 
 - Requirement: Every verb, event delivery and tool call receives its full context explicitly, and no operation reads another operation's context.
-- What this means: The chassis builds one context object for each operation and passes it in. It holds the module, the folder, the project, the nouns and switches of this call, and the way to reach the data access object and settings. A module never keeps the current project or folder in a module-level variable. Two operations running at once, such as two MCP tool calls, each have their own context and cannot see each other's changes to it. Nonce and assignment context join the same object when nonces are designed.
+- What this means: The chassis builds one context object for each operation and passes it in. It holds the module, the folder, the project, the nouns and switches of this call, and the way to reach the data access object and settings. A module never keeps the current project or folder in a module-level variable. Two operations running at once, such as two MCP tool calls, each have their own context and cannot see each other's changes to it.
 - Why: Metaform serves many folders and agents at once through the CLI and MCP. Context held anywhere but the operation leaks from one call into the next, and a write lands in the wrong project with no error at all.
 - How it shows: A tool call for one project and a tool call for another, running together, each read and write only their own project.
 - Build: `Context` gains `project`, the project the folder resolves to or the one named by the call, and `store`, the data access object bound to that project. Events build a new context for each subscriber from the publisher's folder and project. The server builds a new context for every tool call; a call names its project with the optional `project` argument every tool takes, MCP-025, as `--project <id>` does on the CLI, CLI-021, and otherwise uses the folder's project. Module code receives context only as the argument to its verb or handler.
 - Acceptance:
   1. Two concurrent tool calls for two different projects each write one element; each element lands only in its own project's store.
 - Relates to: BASE-004, BASE-009, BASE-010, STORE-023, MCP-003, MCP-011, MCP-025, CLI-021.
-- Status: confirmed; nonce and assignment context deferred with nonces. The per-call project argument is recommended, MCP-025, see D37.
+- Status: confirmed. The per-call project argument is recommended, MCP-025, see D37.
 
 ### BASE-029 Every capability shows which module owns it
 
@@ -346,11 +346,11 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: The README covers the module's purpose; which template version it started from; its declaration; the parts of the common base it uses; its verbs, what each returns and its CLI and tool forms; its settings and defaults; the events it publishes and subscribes to; which verbs are sync or async; the layers it writes, their properties and provenance; its lifecycle and cleanup; the modules it relies on; the systems it supports; the resources it owns; how it behaves installed and in a directly run wheel; and a runnable demonstration.
 - Why: Authors learn modules by reading one. A README that answers these questions lets a community author build on a module without guessing at its contract.
 - How it shows: Every folder under the shipped modules has a README with these headings.
-- Build: The template's README has one heading per item above and is the pattern every module copies. Work and nonce context is added when nonces are designed.
+- Build: The template's README has one heading per item above and is the pattern every module copies.
 - Acceptance:
   1. A check lists every shipped module folder without a README, or whose README lacks one of the headings; the list is empty.
 - Relates to: BASE-019, QUAL-013.
-- Status: confirmed; the nonce heading deferred.
+- Status: confirmed.
 
 
 ## Records added by the cold build check
@@ -383,7 +383,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: A verb may return a result value, and the CLI and MCP present that one value, so both surfaces carry the same data.
 - What this means: `say` is for messages to a person. The result is the data an agent needs back, such as the id of the element it just wrote. Every surface shows the same result.
 - Why: An intake agent needs the ids of what it writes to write the joins and refs that point at them. STORE-023 requires CLI and MCP to return equal results, which needs one representation.
-- How it shows: `metaform map add-element intake-20260924T220000Z code.bus.event name="Event bus" --json` prints `{"element_id": "...", "address": "code.bus.event", ...}`. The tool `map_add-element` returns the same JSON.
+- How it shows: `metaform map knowledge op=add-element layer=practices-cpp address=code.bus.event name="Event bus" --json` prints `{"element_id": "...", "address": "code.bus.event", ...}`. The tool `map_knowledge` with the same arguments returns the same JSON.
 - Build:
   - A verb returns None, a string, a JSON-ready value, or an object with `to_dict()`. The chassis converts it with `to_dict()` when present.
   - A string result is text, shown exactly as returned on every surface: the CLI writes it to standard output byte for byte, with no JSON encoding, no quoting and no added newline beyond what the string holds, with or without `--json`; MCP returns it as one text content block holding the string unmodified, after the `say` block when there is one. Only results that are not strings are JSON, as below.
@@ -415,7 +415,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: A shipped module named `map` exposes the data access object's map and layer operations as verbs, so every read and write is available on the CLI and as MCP tools.
 - What this means: MCP tools come only from module verbs, MCP-003, so the map's reads and writes need a module to reach agents over MCP. The chassis `query` verb gives the same reads on the CLI with no module, STORE-028. The map module ships enabled.
 - Why: The intake agent builds the map, and every agent reads it, through these verbs. One module owning them keeps one declaration per operation.
-- How it shows: The tools `map_where`, `map_element`, `map_add-element`, `map_add-join` and the rest appear in the tool list.
+- How it shows: The tools `map_where`, `map_element`, `map_knowledge` and the rest appear in the tool list.
 - Build: Every verb calls `ctx.require_store()` and exactly one operation of STORE-024 or STORE-025, returning its result per BASE-036. The fields of a record being written are data the verb acts on, so they are nouns, never switches: required nouns are positional, and optional nouns are written as `name=value` words on the CLI, BASE-043, and as named arguments over MCP. The only switch is `--raw`, a boolean setting owned by `map` that changes how `node` and every read returning joins read, STORE-025. Every result that holds a join shows the join's `layer`, the name of the layer it comes from, and every result that holds a subtype shows the layer of its join, so the CLI and MCP output always say whether a join is from the intake map or from which knowledge layer, LAYER-016. A layer noun is a layer reference, an id or a name, STORE-013. An element, join, subtype or id noun is an address or an identity id, read as an id exactly when it matches the id form, STORE-007. The nouns mutable, hideable, transitive and blinded are `bool` nouns, BASE-035.
 
   | Verb | Nouns | Operation |
@@ -439,28 +439,15 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `add-metaform` | name, optional project | `add_metaform`, STORE-041 |
   | `activate` | name, optional project | `activate_metaform`, STORE-041 |
   | `search` | text | `search` |
-  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, tags, and the provenance fields module, workflow, prompt, model, role, blinded | `layer`; an immutable layer is created building and its build token is returned once, STORE-032 |
-  | `lock` | layer, token | `lock` |
-  | `edit` | id, token; each changed field of STORE-034 | `edit` |
-  | `remove` | id, token | `remove` |
-  | `discard` | layer, token | `discard` |
-  | `add-element` | layer, address, token for a building layer; optional name, name_length, role, refs, extra | `add_element` |
-  | `add-join` | layer, token for a building layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, refs, extra | `add_join` |
-  | `add-subtype` | layer, token for a building layer, join, end, address; optional purpose, function, relation, observation, name, name_length, role, refs, extra | `add_subtype` |
-  | `add-ref` | owner, key, value; token when the owner's layer is building | `add_ref` |
-  | `add-item` | layer, token for a building layer, node, value; optional link, refs, extra | `add_item` |
-  | `add-property` | layer, token for a building layer, element, value; optional refs, extra | `add_property` |
-  | `correct` | layer, token, id, reason; optional evidence, `remove=true`, and each changed field of STORE-034 | `correct`; writes into a building correction layer, applied when that layer is locked, STORE-017 |
-  | `peel` | layer; only the correction layer on top of the stack | `peel` |
+  | `knowledge` | `op=` one of `create`, `add-element`, `add-join`, `add-subtype`, `add-property`, `add-item`, `add-ref`, `add-plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard`; `layer=` naming the layer on every call; then the nouns of that operation: for `create`, name, variable, mutable, hideable, transitive, optional kind (`layer` or `correction`), sources, tags and the provenance fields module, workflow, prompt, model, role, blinded; for `add-element`, address, optional name, name_length, role, refs, extra; for `add-join`, receiver, provider, purpose, function, relation, observation, optional non_goal, type, refs, extra; for `add-subtype`, join, end, address, optional purpose, function, relation, observation, name, name_length, role, refs, extra; for `add-property`, element, value, optional refs, extra; for `add-item`, node, value, optional link, refs, extra; for `add-ref`, owner, key, value; for `add-plan`, element, join; for `edit`, id and each changed field of STORE-034; for `remove`, id; for `correct`, id, reason, optional evidence, `remove=true` and each changed field of STORE-034 | the matching STORE-024 operation: `layer`, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `add_plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard` |
   | `select`, `mask` | address, layer | `select`, `mask` |
   | `clear` | address, layer, kind | `clear` |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
   | `reexamined` | layer | `reexamined` |
   | `answer` | challenge, A or B or C; for C `link=` an existing element or join | `answer` |
   | `approve` | challenge; CLI only, `surfaces=('cli',)`, never an MCP tool | `approve` |
-  | `add-plan` | layer, token for a building layer, element, join | `add_plan` |
 
-  These verbs are how any agent builds a knowledge layer, LAYER-018: `new-layer`, then the add verbs with `edit` and `remove` as it works, then `lock` when its task is done. A token is a plain string noun; a write into a building layer without its token is refused, STORE-032.
+  `knowledge` is the one read-write verb for layers, served as the single MCP tool `map_knowledge`, LAYER-018. It is the only verb that makes a new layer. Every call names its layer with `layer=`. There is no token and no ownership check: an agent that has the tool can write to any knowledge layer, before or after it is finished, and an agent without it cannot write to any. Granting or withholding the tool, through the command surface, CLI-022, and harness permissions, is the whole of the access rule. An agent builds a layer with `op=create`, then adds, edits and removes objects one at a time, then `op=finish` when its task is done. The intake layer is created only by `intake_submit`, BASE-039, and the memory layer only by the memory module, LAYER-012.
 
   A node noun is written `element:<address or id>`, `join:<id>`, `subtype:<address or id>` or `type:<address>`. `refs` is a `json` noun holding an array of `[key, value]` pairs of strings, with the schema `{"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}`. `extra` is a `json` noun holding an object, with the schema `{"type": "object"}`. Neither is ever a switch. `retire` and `hide` are caution verbs.
 - Acceptance: Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.

@@ -53,7 +53,7 @@ A record whose status is recommended is built as written unless Rich changes it.
 
 ## Out of scope for this spec
 
-- Nonces and assignment context. The orchestrator hands work by name until nonces are designed.
+- Nonces are dropped. Agents act through the tools they are given and what they are prompted to do; the orchestrator hands work by name.
 - Remote hosting of the MCP server.
 - Module specs for the rulebook, workflows and the web and browser terminal modules, pending D44.
 - Maintaining users' forks, CI and wheels at release, pending D30.

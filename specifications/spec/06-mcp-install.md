@@ -41,10 +41,10 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-004 The tool list follows the folder's command surface
 
 - Requirement: A tool exists on the MCP server exactly when its command is on the folder's command surface: it is listed only then, and it runs only then.
-- What this means: The `commands` setting and the module enabled state decide the surface. A command outside the surface is neither listed nor callable. A call to it returns an error with one next step. Harness tool permissions can narrow the surface further, but never widen it.
+- What this means: The `modules` setting and the module enabled state decide the surface. A command outside the surface is neither listed nor callable. A call to it returns an error with one next step. Harness tool permissions can narrow the surface further, but never widen it.
 - Why: The command surface governs what exists, so the narrowing holds even when a host grants every tool. The orchestrator that narrowed the surface holds the way back; a subagent meets only what is on the surface.
-- How it shows: `metaform set --commands template` in a folder. A new MCP connection from that folder lists only `template_*` tools. A call to `map_where` returns `Error: No tool map_where on this surface.` followed by one `Next:` line.
-- Build: The surface is the loaded modules whose ids pass the `commands` check of CLI-022 for the server's folder, and within them the verbs whose `surfaces` include `mcp` and whose `supported_os` includes this system, BASE-016. `list_tools` lists exactly those. `call_tool` for any other name returns `is_error` true with `Error: No tool <name> on this surface.` and `Next: metaform help commands`.
+- How it shows: `metaform set --modules template` in a folder. A new MCP connection from that folder lists only `template_*` tools. A call to `map_where` returns `Error: No tool map_where on this surface.` followed by one `Next:` line.
+- Build: The surface is the loaded modules whose ids pass the `modules` check of CLI-022 for the server's folder, and within them the verbs whose `surfaces` include `mcp` and whose `supported_os` includes this system, BASE-016. `list_tools` lists exactly those. `call_tool` for any other name returns `is_error` true with `Error: No tool <name> on this surface.` and `Next: metaform help commands`.
 - Acceptance: With the surface narrowed, the narrowed-out tool is absent from `tools/list`, and calling it by name returns `is_error` true. With the surface restored, both work.
 - Relates to: CLI-022, BASE-016, MCP-003.
 - Status: confirmed.
@@ -93,7 +93,7 @@ It also defines the first working test, which exercises all three end to end.
 - Why: Agents start with little context. The details stay in help, where they are current and cost nothing until needed.
 - How it shows: The template module's section in the instructions is a few sentences, ending with `metaform help template`.
 - Build: The `purpose` field of `Module`, BASE-035, following D39's recommendation. A module whose `purpose` is empty fails to load with the next step `metaform help template`. The template and its README show the expected length: two to four sentences ending with `metaform help <id>`. The shipped modules' texts are exactly:
-  - `map`: `Reads and writes this project's functional map. Before changing a part, read it with map_where or map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. Record what you learn at a node with the memory tools; to build a knowledge layer for a task, create it with map_new-layer, add and fix its items with the add, edit and remove tools, and lock it when the task is done. Details: metaform help map.`
+  - `map`: `Reads and writes this project's functional map. Before changing a part, read it with map_where or map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a time, and finish it when the task is done. Details: metaform help map.`
   - `intake`: `Serves the Canonical Intake instructions and tracks whether this project has an intake. The intake is agent work: a subagent reads its instructions with intake_prompt and follows them. Details: metaform help intake.`
   - `memory`: `Notes that agents keep at the map's own nodes, in the reference memory server's operations. When the map is wrong or incomplete at a node, add an observation there so the next agent reads it where it looks. Details: metaform help memory.`
   - `mcp`: `Serves Metaform's tools to AI tools over MCP. Every tool is also a metaform command on the CLI. Details: metaform help mcp.`
@@ -105,14 +105,14 @@ It also defines the first working test, which exercises all three end to end.
 
 - Requirement: When the folder's project has no intake, the instructions say so and tell the agent to have a subagent perform the intake. The subagent reads its instructions from Metaform by name, through the CLI or MCP. The orchestrator passes only where to read them.
 - What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word, performs the whole method, and submits the final shape once through `intake_submit`, or `metaform intake submit`, BASE-039. The same notice appears in `metaform` status output, so an agent without MCP sees it too.
-- Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it. The nonce later replaces the name as the handle, without changing how anything works.
+- Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it.
 - How it shows: In a registered project with no intake, the instructions end with:
   ```
   This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.
   ```
   After an intake is completed, the notice is gone.
 - Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a layer of kind intake exists, STORE-032. An intake layer is written whole in one atomic submission, so a half-written intake never exists and never clears the notice. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder.
-- Acceptance: Instructions for a project with no intake layer contain the notice, including after a submission that failed its form check, and the command it names exists on the surface. Instructions for a project with a locked intake layer do not contain it. The text returned by `intake prompt` equals the stored intake file with only the `<target>` element's attributes filled.
+- Acceptance: Instructions for a project with no intake layer contain the notice, including after a submission that failed its form check, and the command it names exists on the surface. Instructions for a project with a ready intake layer do not contain it. The text returned by `intake prompt` equals the stored intake file with only the `<target>` element's attributes filled.
 - Relates to: MCP-007, MCP-024, CLI-028, LAYER-001, STORE-032, BASE-039.
 - Status: confirmed, including the single atomic submission through `intake_submit`. The intake module, its command names and the notice wording follow D38, recommended.
 
@@ -138,13 +138,13 @@ It also defines the first working test, which exercises all three end to end.
 - Relates to: MCP-010, CLI-021, STORE-002.
 - Status: open.
 
-### MCP-012 Remote hosting and nonces come later
+### MCP-012 Remote hosting comes later
 
-- Requirement: The MVP serves MCP locally over stdio, with data in `~/.metaform`, and has no nonces.
-- What this means: Remote hosting, where a server holds the data for several users over HTTP, is a later goal. The nonce, the handle that carries a job's text to a worker exactly as written, is designed after the MVP. Until then, instructions are read by name (MCP-009).
-- Why: The first test and the MVP need a working local server. Remote hosting changes where the data lives, and nonces depend on their own design.
-- How it shows: `metaform mcp serve` has no transport or nonce options.
-- Build: Nothing is built for either now.
+- Requirement: The MVP serves MCP locally over stdio, with data in `~/.metaform`.
+- What this means: Remote hosting, where a server holds the data for several users over HTTP, is a later goal. Metaform has no nonces and no assignment handles: agents are given permission through the tools they have, or are prompted, and the orchestrator hands work by name, MCP-009.
+- Why: The first test and the MVP need a working local server, and remote hosting changes where the data lives. Nonces are dropped because an agent that cannot be trusted to follow its directions here cannot be trusted with the source code either; permission is the tools an agent has.
+- How it shows: `metaform mcp serve` has no transport options, and no command or tool takes a nonce.
+- Build: Nothing is built for remote hosting now. Nothing is built for nonces, ever.
 - Acceptance: None needed.
 - Relates to: MCP-009.
 - Status: confirmed.
@@ -333,7 +333,7 @@ It also defines the first working test, which exercises all three end to end.
   The modules on in this test are `map`, `intake`, `memory` and `mcp`, all of which ship enabled. The template is the only module that ships disabled, and it does not appear.
 - Why: This is the smallest run that proves setup works, that agents are oriented by live instructions, and that intake is delegated without rewording. Memory and layer selection are in it because memory is how a small wrong inference gets fixed right at the node, and select and mask are how a job controls which layers an agent sees; the first test is not a working Metaform without them.
 - How it shows: The steps above, observed in at least one real AI tool.
-- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, LAYER-007, LAYER-012, LAYER-013, STORE-019, STORE-020, STORE-032, and the `purpose` field. The first test's tool list must include `intake_prompt`, `intake_submit`, `memory_add-observations`, `memory_open-nodes`, `map_select`, `map_mask`, `map_clear`, `map_node`, `map_layers`, `map_tag`, `map_untag` and `set` with `layers`.
+- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, LAYER-007, LAYER-012, LAYER-013, STORE-019, STORE-020, STORE-032, and the `purpose` field. The first test's tool list must include `intake_prompt`, `intake_submit`, `memory_add-observations`, `memory_open-nodes`, `map_select`, `map_mask`, `map_clear`, `map_node`, `map_layers`, `map_tag`, `map_untag`, `map_knowledge` and `set` with `layers`.
 - Acceptance: An automated run of steps 2 to 10, plus one recorded manual run in a real tool. The automated run:
   - Uses a temporary `METAFORM_HOME` and a temporary user home, and puts fake `claude` and `codex` executables first on PATH. Each fake records its arguments to a file and exits 0, so registration is checked without the real tools. The temporary home also holds `.cursor/mcp.json` containing one other server entry, so the Cursor merge and its backup are checked against a real existing file.
   - Every process the test starts inherits its environment, including the temporary `METAFORM_HOME`; the registered command carries no environment of its own, so inheritance is how the probe's server finds the test home. The test needs network access or a warm uv cache for uvx to prepare the server's environment; CI keeps the uv cache between runs.
@@ -356,28 +356,10 @@ It also defines the first working test, which exercises all three end to end.
 - How it shows: `map_where` called with `{"address": "code", "project": "mgm"}` reads the mgm project's store whatever folder the server started in.
 - Build: The server adds `"project": {"type": "string", "description": "A registered project id; overrides the folder's project for this call."}` to every tool's input schema, never in `required`. On a call, a given `project` is validated as a registered id, CLI-030; an unknown id is a tool error with `Next: metaform list projects`. The Context for that call gets that project and `Store(project)`; nothing is stored, and the folder's `project` setting is unchanged. This does not settle how the server chooses a project when the call names none and the folder is outside every project; that remains D37 and MCP-011.
 - Acceptance:
-  - Two concurrent `map_add-element` calls naming two different projects each write one element, each only in its own project's store, BASE-028.
+  - Two concurrent `map_knowledge` calls with `op=add-element` naming two different projects each write one element, each only in its own project's store, BASE-028.
   - A call naming an unregistered project fails with the Next line and writes nothing.
 - Relates to: BASE-028, CLI-021, CLI-030, MCP-003, MCP-005, MCP-011.
 - Status: recommended. The fallback when no project is named and the folder is outside every project is open, D37.
-
-### MCP-026 The nonce design carried forward
-
-- Requirement: After the MVP, a nonce issued by the orchestrator is the handle that carries a job's text and context to a worker exactly as written, on the CLI and over MCP.
-- What this means:
-  - `metaform <nonce>` is the working agent's entry into the CLI. Metaform reads the nonce as a top-level input based on what has been issued. It shows that agent's status and its workflow. It does not launch the MCP server.
-  - `metaform <nonce> next` gives the next step when the same agent performs a sequential workflow; submitting an answer also moves to the next step. `metaform <nonce> list` shows the agent's inputs. Together they are a navigation surface for that one job.
-  - The same nonce works over MCP to reach the assigned workflow. The CLI, or the orchestrator, gives the agent the header it uses on the MCP server for its task-specific surface. An agent without MCP can do everything through the CLI.
-  - The nonce targets the precise knowledge layers an agent gets for its workflow; the orchestrator sets up the job and chooses exactly which layers are available.
-  - The nonce's main purpose is running a prompt chain between agents deterministically, without the orchestrator rewording the work. Where a host cannot pass work between agents, the orchestrator only prompts the next agent to run `metaform <nonce>`.
-  - Changing a project needs a nonce issued for it; without one, an agent can change only memory.
-  - Each agent's stdio MCP server is its own instance, so a nonce is supplied to that agent's instance, never multiplexed across agents.
-- Why: The orchestrator passing only a handle keeps every worker's instructions identical to what was issued, which is the same reason the MVP passes only where to read the intake instructions, MCP-009.
-- How it shows: Not in the MVP.
-- Build: Nothing now. Until nonces are designed, instructions are read by name, MCP-009, and the command surface is narrowed by settings, CLI-022.
-- Acceptance: None now.
-- Relates to: MCP-009, MCP-012, CLI-022, LAYER-007, LAYER-017.
-- Status: deferred. The points above are confirmed design to carry into the nonce design.
 
 ## Open questions
 

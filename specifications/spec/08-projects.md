@@ -30,7 +30,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 
 ### PROJ-002 A working folder is a key in the home, and every folder gets its own context
 - Requirement: Every folder a command or server runs in is recorded in the base database's working-folder table, and that record holds the folder's context.
-- What this means: The folder's context is its folder settings: `project`, `workflow` and `commands`, CLI-021. The folder path is only the key those settings are stored under. A worktree is a working folder like any other. So is a scratch folder outside every project. The table is the single place that answers which folders exist and what each one was working on.
+- What this means: The folder's context is its folder settings: `project`, `workflow` and `modules`, CLI-021. The folder path is only the key those settings are stored under. A worktree is a working folder like any other. So is a scratch folder outside every project. The table is the single place that answers which folders exist and what each one was working on.
 - Why: Agents run in many folders, including worktrees created anywhere. The home must know each folder's context without writing a marker into it, and resuming after a restart must work by running `metaform` in the same folder.
 - How it shows: An agent runs `metaform set --project mgm` in `/tmp/work`, the machine restarts, and `metaform` in `/tmp/work` still reports project mgm.
 - Build: The `folders` row for a folder is written the first time a setting is stored for it, STORE-002. Reads never create rows. A folder's context is resolved by CLI-014 and PROJ-003.
@@ -95,10 +95,10 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - What this means: The command surface is a folder setting. Set on the worker's folder, it narrows only what the worker sees. The orchestrator's folder keeps the full surface. When the worker shares the orchestrator's folder, as subagents often do, the narrowing applies to that shared folder and the way back is the abort command, CLI-022.
 - Why: Narrowing the surface steers workers. Doing it per folder avoids hiding the orchestrator's commands whenever the two work in different places.
 - How it shows: The orchestrator starts a worker in a worktree and narrows that worktree's folder to `workflow,memory`. `metaform` in the worktree shows the narrowed surface, and `metaform` in the orchestrator's folder shows everything.
-- Build: The narrowing is stored as the worker folder's `commands` and `workflow` settings. How the orchestrator stores a setting for a folder other than its own is open question 3. Until that is answered, the worker, or a command run in the worker's folder, stores them.
-- Acceptance: With `commands` narrowed on folder A only, a command outside the surface is refused in A and runs in the orchestrator's folder B.
+- Build: The narrowing is stored as the worker folder's `modules` and `workflow` settings. The orchestrator stores them for the worker's folder before the worker starts, by passing a folder noun to `set`: `metaform set --modules workflow,memory folder=<path>`. The noun applies to `set`, `unset` and `config --show`; the path is resolved to an absolute path and becomes that folder's settings key, PROJ-002. This is the closest thing Metaform has to a handle for a worker's job: the worker needs nothing passed to it, because its folder already carries its context.
+- Acceptance: With `modules` narrowed on folder A only, a command outside the surface is refused in A and runs in the orchestrator's folder B.
 - Relates to: CLI-021, CLI-022, PROJ-002, PROJ-006.
-- Status: recommended. The per-path option is confirmed as wanted; the way the orchestrator names the folder is open.
+- Status: confirmed, including the `folder=<path>` noun on `set`.
 
 ## History: origins and variants
 
@@ -266,9 +266,9 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - What this means: A job handed on without its workfolder content, staged inputs, generated outputs and needed binaries is not complete.
 - Why: A worker that receives a prompt but not the files it refers to cannot continue the work.
 - How it shows: Deferred.
-- Build: Deferred with nonces and assignment context, MCP-012. Until then, the working files of a job travel as a collected variant, PROJ-017, exported with its unit, PROJ-020.
+- Build: Deferred. Until it is specified, the working files of a job travel as a collected variant, PROJ-017, exported with its unit, PROJ-020.
 - Acceptance: Deferred.
-- Relates to: MCP-012, PROJ-017, PROJ-020.
+- Relates to: PROJ-017, PROJ-020.
 - Status: deferred, carrying REQ-164.
 
 ### PROJ-023 History records and payload layout
@@ -340,7 +340,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 
 1. A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)
 2. Should a worktree created outside the project's source location default to the repository's project with nothing selected, found through the worktree's shared git folder, `git rev-parse --git-common-dir`? Recommended: yes, because it needs no setup and writes nothing. (PROJ-006)
-3. How does an orchestrator store the narrowed context for a worker's folder that is not its own? Every long switch is a setting (CLI-011), so a `--path` switch does not fit the grammar. One way is a folder noun, `metaform set --commands workflow,memory folder=<path>`. The other is having the worker's first command store it. (PROJ-007)
+3. Answered: the orchestrator passes a folder noun, `metaform set --modules workflow,memory folder=<path>`, before the worker starts. PROJ-007, CLI-022.
 4. Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
 5. Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
 6. Answered: knowledge import adds only what the target does not hold, by unique id; importing something that already exists does nothing, STORE-027.

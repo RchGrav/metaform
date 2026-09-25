@@ -57,9 +57,9 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-23 16:51. Preprocess prompts: namespace addresses as an MCP footer, chosen knowledge layers between prompt and footer. LAYER-017, added.
 - 09-23 19:33. The orchestrator sets up a job and chooses exactly which knowledge layers are available. LAYER-017, added; LAYER-007, covered.
 - 09-23 19:46, 19:51. Workflow scripts for any host; lexicalized wording, inline metaform text, knowledge-layer imperatives, reference links into the MCP server; inference collected in advance; the bias workflow as one canonical prompt; a workflow intake agent decides handoffs and blindness. LAYER-017, added. The workflow module's own spec waits on D44.
-- 09-23 17:08. Changing a project needs an orchestrator nonce, otherwise only memory. MCP-026, added, deferred. Nonces were dropped for the MVP at 09-24 05:00.
-- 09-23 19:33, 19:36, 19:38. `metaform <nonce>` shows status and workflow; `next`, `list`; the MCP header for the task surface; deterministic prompt chains without rewording; the nonce as a top-level input; nonces target knowledge layers. MCP-026, added, deferred.
-- 09-24 03:08, 03:10. Each agent's stdio server is its own instance; `metaform <nonce>` is the CLI entry, not an MCP launcher. MCP-026, added, deferred.
+- 09-23 17:08. Changing a project needs an orchestrator nonce, otherwise only memory. MCP-026, added, deferred; later dropped entirely, see 09-25.
+- 09-23 19:33, 19:36, 19:38. `metaform <nonce>` shows status and workflow; `next`, `list`; the MCP header for the task surface; deterministic prompt chains without rewording; the nonce as a top-level input; nonces target knowledge layers. MCP-026, added, deferred; later dropped entirely, see 09-25.
+- 09-24 03:08, 03:10. Each agent's stdio server is its own instance; `metaform <nonce>` is the CLI entry, not an MCP launcher. MCP-026, added, deferred; later dropped entirely, see 09-25.
 
 ## Chassis, modules and packaging
 
@@ -86,7 +86,7 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-24 04:05. Importing prompts and creating memory layers are tools given to a permitted agent. MCP-003, corrected.
 - 09-24 04:15. Commands are verbs, arguments nouns, switches adverbs. CLI-001, covered.
 - 09-24 04:34. `help commands` and `help switches` are reached from tips, not shown up front. CLI-006, CLI-008, covered.
-- 09-24 04:36 to 04:43. Starting a workflow changes the command surface as an ordinary setting, `set --workflow <name> --commands workflow,memory`, and says how to get back. CLI-021, CLI-022, covered.
+- 09-24 04:36 to 04:43. Starting a workflow changes the command surface as an ordinary setting, `set --workflow <name> --modules workflow,memory`, and says how to get back. CLI-021, CLI-022, covered.
 - 09-24 04:45. Hidden commands still work. Superseded by 09-24 05:03: hidden commands do not run. CLI-022, covered.
 - 09-24 04:53, 05:00. The abort caution makes the main agent confident and a subagent hesitate. CLI-022, BASE-013, covered.
 - 09-24 04:56. Agents probe `--help` and do not read source unless something fails; errors keep them on the surface. CLI-009, covered.
@@ -155,3 +155,7 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. Correction layers always beat knowledge layers: they sit underneath, knowledge layers on top, and a correction never changes a knowledge layer's things. LAYER-011, LAYER-016, LAYER-018, STORE-017, corrected.
 - 09-25. A knowledge item or join left with nothing to attach to after a correction is orphaned: stored, not shown in context; items on a relocated element follow it, items on a vanished join are orphaned. LAYER-011, STORE-017, added.
 - 09-25. An element is only a namespace address: removing it orphans what is attached, and putting an element back at the same address shows it again; this replaces delete-and-recreate dropping attachments. Relocation still carries everything; joins still disappear when an element moves. MAP-015, LAYER-011, STORE-017, STORE-034, corrected. Whether a removed join shows again when both ends return is open.
+- 09-25. Knowledge layers are written through one read-write tool, essentially a CRUD tool, the only tool that makes a new layer; every call names the layer; agents are trusted to work on the layer they are told to and are not assigned one; an agent with the tool can edit an existing knowledge layer at any time; access is by the tool only; objects are individual so they are added, changed and removed one at a time. Replaces the build token, builder-only writes and immutability after locking for knowledge layers. LAYER-018, LAYER-004, STORE-013, STORE-017, STORE-024, STORE-032, BASE-038, MCP-008, corrected.
+- 09-25. Nonces are dropped entirely, not deferred: agents are given permission through the tools they have, or are prompted; no nonce, no assignment handle, no `metaform <nonce>` entry. An agent that cannot be trusted to follow its directions here cannot be trusted with the source code either. MCP-026 removed; MCP-012, MCP-009, BASE-028, BASE-034, PROJ-022, corrected; REQ-075 and REQ-080 to 085 removed in TRACE.md.
+- 09-25. The command-surface setting is renamed from `--commands` to `--modules`; its value lists the modules whose commands a folder shows and runs; it narrows what a folder shows and runs and does not enable or disable modules; the way back is `metaform unset --modules`. CLI-021, CLI-022, CLI-028, CLI-029, MCP-004, PROJ-001, PROJ-007, corrected.
+- 09-25. The orchestrator maps a worker's folder by passing a folder noun to `set`, `metaform set --modules workflow,memory folder=<path>`, stored for that folder before the worker starts; the closest thing Metaform has to a nonce. PROJ-007, CLI-022, corrected.

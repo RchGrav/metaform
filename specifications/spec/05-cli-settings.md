@@ -130,7 +130,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: an index lets a user or agent find any command or switch in one read without guessing names.
 - How it shows: `metaform help commands` shows `chassis` then each module group; hidden groups do not appear.
 - Build: the commands index prints `Commands` and one row per chassis verb on the surface, then for each surfaced module a heading `<id>: <summary>` and one row per verb, `<id> <verb>` and its summary, then `Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.` The switches index prints `Switches` and one row per setting switch and per verb control switch, sorted, then `Use 'metaform help <switch>' for details.` Both are generated from the declarations, CLI-029.
-- Acceptance: after `metaform set --commands template`, `help commands` lists no chassis-only verbs except the ones always shown; a module declared setting appears in `help switches`.
+- Acceptance: after `metaform set --modules template`, `help commands` lists no chassis-only verbs except the ones always shown; a module declared setting appears in `help switches`.
 - Relates to: CLI-010, CLI-022.
 - Status: confirmed.
 
@@ -202,7 +202,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: `set` stores a folder setting for the folder it runs in, and that value applies to every folder below it until a deeper folder sets its own.
 - What this means: the effective stored value for a folder is the one stored at the nearest folder at or above it.
 - Why: agents run in many folders and worktrees inside one project; a setting made at the project root reaches all of them without being repeated.
-- How it shows: `cd ~/mgm-main && metaform set --commands workflow` then `cd ~/mgm-main/src && metaform config --show` shows commands workflow.
+- How it shows: `cd ~/mgm-main && metaform set --modules workflow` then `cd ~/mgm-main/src && metaform config --show` shows modules workflow.
 - Build: a folder setting's scope at folder F is the `folders.path_key` of the nearest folder at or above F, walking F and then each parent to the root, that holds a `settings` or `glue` row for the setting's owner and key; with none, it is F's own path key. `set` always writes at F's own path key. A global setting's scope is `global`. All values live in the home database under ~/.metaform; nothing is written into the folder.
 - Acceptance: a value set in a parent is effective in a child; a value set in the child overrides it for the child only.
 - Relates to: CLI-021, STORE-001, STORE-002.
@@ -278,34 +278,35 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 ## Context and the command surface
 
 ### CLI-021 Working context is made of ordinary folder settings
-- Requirement: the working context is four folder settings: `--project`, `--workflow`, `--commands` and `--layers`.
-- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--commands` lists the command groups on the folder's surface; empty means all. `--layers` lists the layers toggled on, by name or tag; empty means every locked layer that is not hidden, CLI-033. One workflow runs at a time, so the workflow is a single setting and never a list. A workflow may come with its own settings, declared by the module that provides it, like any module setting.
+- Requirement: the working context is four folder settings: `--project`, `--workflow`, `--modules` and `--layers`.
+- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--modules` lists the command groups on the folder's surface; empty means all. `--layers` lists the layers toggled on, by name or tag; empty means every finished layer that is not hidden, CLI-033. One workflow runs at a time, so the workflow is a single setting and never a list. A workflow may come with its own settings, declared by the module that provides it, like any module setting.
 - Why: context as settings needs no extra machinery, and it is visible and reversible like any setting.
-- How it shows: `metaform set --workflow intake --commands workflow,memory`. `metaform` status shows the project and the narrowed commands.
-- Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `commands`, a folder list whose default is empty, and `layers`, a folder list whose default is empty, CLI-033. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
+- How it shows: `metaform set --workflow intake --modules workflow,memory`. `metaform` status shows the project and the narrowed commands.
+- Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `modules`, a folder list whose default is empty, and `layers`, a folder list whose default is empty, CLI-033. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
 - Acceptance: in a subfolder of a registered project with nothing set, `--project` is that project; `unset --project` returns to it.
 - Relates to: CLI-014, CLI-022, STORE-002, MCP-011.
 - Status: confirmed.
 
 ### CLI-022 Narrowing the command surface hides and blocks, and states the way back
 - Requirement: commands outside the folder's command surface are neither shown nor run, on the CLI or over MCP, and the `set` that narrows the surface states the exact way back.
-- What this means: help indexes, help pages and MCP tool lists omit hidden groups, and a hidden command fails with a Next line. The narrowing `set` prints which commands remain and the way back.
+- What this means: `--modules` lists the modules whose commands a folder shows and runs; `chassis` names the chassis's own commands. It narrows what the folder shows and runs; it does not enable or disable any module. Help indexes, help pages and MCP tool lists omit hidden groups, and a hidden command fails with a Next line. The narrowing `set` prints which commands remain and the way back. An orchestrator narrows a worker's folder before the worker starts by naming that folder with a `folder=<path>` noun, PROJ-007.
 - Why: removing commands from the surface holds even for agents with full permissions, where host permissions do not. The orchestrator that narrowed the surface holds the exact way back and acts with confidence; a subagent meets only the caution. The wording steers, and nothing gates inference.
 - How it shows:
   ```
   Success: updated 1 key
-    commands: all → workflow,memory
+    modules: all → workflow,memory
   Commands shown here: workflow, memory.
   All other commands and help, including yours, are now hidden and will not run.
-  To restore them: metaform unset --commands
+  To restore them: metaform unset --modules
   ```
-  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50.
+  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50. `metaform set --modules workflow,memory folder=~/wt/job1` stores the same value for that folder and prints the same lines, naming the folder.
+  `metaform help --modules` says: `Narrows which modules' commands this folder shows and runs. It does not enable or disable modules; use metaform enable and disable for that.`
 - Build:
-  - The exact text of `set` output is owned here. Line 1: `Success: updated <n> key` when one setting changed, `Success: updated <n> keys` otherwise. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `commands` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `commands` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
-  - A command group is shown when `commands` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --commands`, which is the current text.
+  - The exact text of `set` output is owned here. Line 1: `Success: updated <n> key` when one setting changed, `Success: updated <n> keys` otherwise. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `modules` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `modules` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
+  - A command group is shown when `modules` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --modules`, which is the current text.
 - Acceptance: after narrowing to one module, a chassis verb outside the surface exits 2 and is absent from `help commands` and from the MCP tool list.
-- Relates to: CLI-008, CLI-021, MCP-004, BASE-016.
-- Status: confirmed for hiding and blocking; the way-back text depends on D35 and D50.
+- Relates to: CLI-008, CLI-021, MCP-004, BASE-016, PROJ-007.
+- Status: confirmed for hiding and blocking, for the name `--modules` and its help text, and for the `folder=<path>` noun that stores the value for another folder. The way-back text depends on D35 and D50.
 
 ### CLI-023 Defaults are never written, and a changed default never replaces a stored value
 
@@ -412,7 +413,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   5a. `Metaform: <name>`, the project's active metaform, STORE-041, followed by `, <n> in project` when the project has more than one. Omitted when there is no project.
   6. `Projects: <n> registered`
   7. `Modules: <n> on`, followed by `, <m> not loaded (metaform list modules)` when any enabled module failed.
-  8. When `commands` is not empty: `Commands: <groups> (narrowed; restore: metaform unset --commands)`.
+  8. When `modules` is not empty: `Modules: <groups> (narrowed; restore: metaform unset --modules)`.
   9. For each enabled module on the folder's surface that declares a status hook, BASE-035, in module id order: each of its lines, then its notice, when it returns one, indented two spaces. The chassis prints what the hooks return and names no module. With the intake module on, its hook gives the `Intake:` lines and the no-intake notice shown above, BASE-039.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
 - Acceptance:
@@ -437,12 +438,12 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Status: recommended.
 
 ### CLI-030 Values the context settings accept
-- Requirement: `--project` accepts only a registered project id, and `--commands` accepts only `chassis` and ids of discovered modules.
+- Requirement: `--project` accepts only a registered project id, and `--modules` accepts only `chassis` and ids of discovered modules.
 - What this means: A context setting that named nothing real would narrow a folder to an empty surface or point it at a missing project.
 - Why: Context decides what an agent can reach. A typo in it must fail at once with the next step, not later as a missing command.
-- How it shows: `metaform set --commands mapp` fails: `Error: --commands has no group 'mapp'. Groups: chassis, intake, map, mcp, memory.` `Next: metaform list modules`.
-- Build: `project` is a select over registered ids, CLI-019. `commands` validates each item against `chassis` plus the ids `loader.discover()` found, whether enabled or not; naming a disabled module is accepted, and its commands appear when it is enabled.
-- Acceptance: The example fails and stores nothing; `set --commands chassis,map` succeeds.
+- How it shows: `metaform set --modules mapp` fails: `Error: --modules has no group 'mapp'. Groups: chassis, intake, map, mcp, memory.` `Next: metaform list modules`.
+- Build: `project` is a select over registered ids, CLI-019. `modules` validates each item against `chassis` plus the ids `loader.discover()` found, whether enabled or not; naming a disabled module is accepted, and its commands appear when it is enabled.
+- Acceptance: The example fails and stores nothing; `set --modules chassis,map` succeeds.
 - Relates to: CLI-021, CLI-022, BASE-037.
 - Status: recommended.
 
@@ -455,7 +456,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 
   | Verb | Nouns and switches | Output and errors |
   |---|---|---|
-  | `help` | none; `intro`; `commands`; `switches`; `agents`; a switch such as `--loud`; a chassis verb; a module id; a module id and verb | The overview, CLI-006; the intro, CLI-006; the indexes, CLI-008; the composed instructions, MCP-007; the pages, CLI-029. Unknown thing: `No command, module or switch <thing>.` Next `metaform help commands`. |
+  | `help` | none; `intro`; `modules`; `switches`; `agents`; a switch such as `--loud`; a chassis verb; a module id; a module id and verb | The overview, CLI-006; the intro, CLI-006; the indexes, CLI-008; the composed instructions, MCP-007; the pages, CLI-029. Unknown thing: `No command, module or switch <thing>.` Next `metaform help commands`. |
   | `add` | `project <id> <path> [<target type> <target value>]`; `metaform <name> [<project>]` | project: STORE-031. Success: `Added project <id>: <path> (target <type> <value>)`. metaform: STORE-041, with the output stated there. |
   | `list` | `projects`, `modules` or `metaforms [<project>]` (STORE-041) | projects: one line per project, `<id>  <path>  <target type> <target value>`, ids padded to the widest; none: `No projects yet. Register one: metaform add project <id> <path>`. modules: BASE-037's line per module, `<id>  <on|off|error>  <system|user|entry>  <summary or reason>`, ids padded to the widest. Any other noun: `list needs a noun: projects or modules.` Next `metaform list projects`. |
   | `set` | one or more setting switches with values, CLI-011 and CLI-015; `--glue`; `-q` | Success output: exactly as CLI-022's Build states, which owns the text of `set` output with or without narrowing. A word that is not a switch: `set takes switches, not '<word>'.` Next `metaform set --help`. An unknown switch: `<switch> is not a setting.` Next `metaform help switches`. An invalid value: the error of CLI-027 with Next `metaform help <switch>`. |
@@ -468,7 +469,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `import`, `export` | STORE-027 | As specified there. |
   | `query` | STORE-028 | As specified there. |
 
-  A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value, except the `commands` setting, whose empty value is shown as `all`, CLI-022.
+  A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value, except the `modules` setting, whose empty value is shown as `all`, CLI-022.
 - Acceptance:
   - `metaform list foo` exits 2 with the stated error and Next line.
   - `metaform set --favorite world` then `metaform config --show` shows `  favorite: world  (set)`.
@@ -488,7 +489,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 
 ### CLI-033 `--layers` toggles the layers on for a folder
 - Requirement: the layers toggled on for a folder are the context setting `--layers`, which follows every settings rule.
-- What this means: `--layers` holds a list of layer names and tags. A tag turns on every layer carrying it. Correction layers are never named or toggled here: they are always applied, in order, LAYER-011; naming one is refused. The listed layers are the starting selection for every in-context read from this folder and its subfolders, on the CLI and over MCP; per-address select and mask apply on top, LAYER-007. Like any setting, it is given on one call to apply to that call only, stored with `set`, cleared with `unset`, protected with `--glue`, and `unset all` returns it to its default. The default, empty, means every locked layer that is not hidden. The orchestrator sets it for the work it hands out, choosing the layers by how it is prompted, LAYER-019.
+- What this means: `--layers` holds a list of layer names and tags. A tag turns on every layer carrying it. Correction layers are never named or toggled here: they are always applied, in order, LAYER-011; naming one is refused. The listed layers are the starting selection for every in-context read from this folder and its subfolders, on the CLI and over MCP; per-address select and mask apply on top, LAYER-007. Like any setting, it is given on one call to apply to that call only, stored with `set`, cleared with `unset`, protected with `--glue`, and `unset all` returns it to its default. The default, empty, means every finished layer that is not hidden. The orchestrator sets it for the work it hands out, choosing the layers by how it is prompted, LAYER-019.
 - Why: Toggling layers is part of the working context, like the workflow and the command surface, so it is an ordinary setting: visible, reversible, stored per folder and needing no machinery of its own.
 - How it shows:
   ```
@@ -496,14 +497,14 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   Success: updated 1 key
     layers: all → practices,memory
   $ metaform map layers
-  practices-cpp   layer   map   practices        locked  on
-  mgm-foresight   layer   map   foresight        locked  off
-  memory          memory  memory                 locked  on
+  practices-cpp   layer   map   practices        ready   on
+  mgm-foresight   layer   map   foresight        ready   off
+  memory          memory  memory                 ready   on
   $ metaform unset --layers
   Reset 1 setting(s): layers
   ```
   Over MCP, the same value is passed to the `set` tool as `layers`, or as `layers` on a single tool call to apply to that call only.
-- Build: the chassis declares `layers` as a folder list setting with default empty, value syntax per CLI-030 for lists. Validation resolves each entry through STORE-038 and rejects an entry that is neither a layer nor a tag, with one Next line naming `metaform map layers`. A building layer named in the list is not turned on until it is locked; a hidden layer named in the list stays out, LAYER-006. The set's output follows CLI-022's format, showing an empty value as `all`.
+- Build: the chassis declares `layers` as a folder list setting with default empty, value syntax per CLI-030 for lists. Validation resolves each entry through STORE-038 and rejects an entry that is neither a layer nor a tag, with one Next line naming `metaform map layers`. A building layer named in the list is not turned on until it is finished; a hidden layer named in the list stays out, LAYER-006. The set's output follows CLI-022's format, showing an empty value as `all`.
 - Acceptance:
   1. `set --layers practices` in a folder, then an in-context read in a subfolder, returns only layers tagged `practices`.
   2. `--layers memory` given on one call changes that call's read and leaves the stored setting unchanged.
@@ -517,7 +518,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 2. Verb control switches: `--glue`, `--unglue`, `--show`, `--json` and `--quiet` steer chassis commands rather than change what a command does. Are they exempt from being settings, alongside `--confirm`, or is `--quiet` a setting?
 3. Switch aliases: mvm's schema lists more than one long form for some settings (`--target-profile` and `--profile`, `--host-bridge-isolation` and `--hbi`). Does a setting get exactly one long form, or may it list aliases?
 4. Boolean with a value: should `--name=false` be accepted, or does a boolean only take its two bare forms?
-5. Way back from narrowing: when the surface is narrowed by `set --commands` with no workflow active, what is the way back line, and which commands remain always shown (today help, set, unset, config and mcp)?
+5. Way back from narrowing: when the surface is narrowed by `set --modules` with no workflow active, what is the way back line, and which commands remain always shown (today help, set, unset, config and mcp)?
 6. Scope of `unset all`: does it reset only the settings stored at the current folder, or also the values it inherits from parent folders and any global settings?
 7. Module switches as settings: what scope does a module switch get when stored with `set`: folder, like context settings, or global?
 8. `metaform abort <workflow> --confirm` is written as a chassis verb, but the chassis does not run workflows (BASE-003) and module verbs take the module id first (CLI-001). Is `abort` a chassis verb, or the workflow module's verb, written `metaform workflow abort <workflow> --confirm`?
