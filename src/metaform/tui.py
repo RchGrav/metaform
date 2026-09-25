@@ -232,6 +232,7 @@ class ChassisTUI:
         return result
 
     def _setting_lines(self):
+        from .cli import setting_row
         if not self.declared_settings:
             return [('class:disabled', ('  Enable and save to configure.' if self.selected['id'] not in self.runtime.plugins
                                           else '  No matching settings.') if self.selected else '  Select a module.')]
@@ -240,11 +241,13 @@ class ChassisTUI:
             style = ''
             if index == self.setting_index:
                 style = 'class:selection' if self.panel == 'settings' else 'class:selected-inactive'
+            identity = (self.selected['id'], setting.key)
             value = self._value(self.selected['id'], setting)
-            rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-            rendered = str(rendered).replace('\n', '\\n')
-            result.append((style, f' {">" if index == self.setting_index else " "} {"◆" if self._pinned(self.selected["id"], setting.key) else " "} {setting.key} = {rendered}'
-                                  f'  {"*" if (self.selected["id"], setting.key) in self.pending_settings else self.sources.get((self.selected["id"], setting.key), "default")}\n'))
+            pending = self.pending_settings.get(identity)
+            saved = pending[0] != 'reset' if pending else self.sources.get(identity) == 'saved'
+            state = 'glued' if self._pinned(*identity) else ('set' if saved else 'default')
+            row = setting_row(setting.key, value, state).replace('\n', '\\n')
+            result.append((style, f' {">" if index == self.setting_index else " "}{row}\n'))
         return result
 
     def _details(self):

@@ -395,6 +395,8 @@ def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module,
     assert cli.main(['narrow', 'elsewhere']) == 2
     err = capsys.readouterr().err.splitlines()
     assert err == ['Error: narrow elsewhere runs on plan9.', 'Next: metaform help narrow']
+    assert cli.main(['help', 'narrow', 'elsewhere']) == 2
+    assert capsys.readouterr().err.splitlines() == err
     assert cli.main(['help', 'narrow']) == 0
     page = capsys.readouterr().out
     assert 'Not on this system' in page and page.index('Not on this system') < page.index('elsewhere')

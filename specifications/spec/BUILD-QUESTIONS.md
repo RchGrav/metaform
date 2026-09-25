@@ -230,3 +230,20 @@ CLI-033 keeps a name that is neither a layer nor a tag, with a notice. It says n
 Meanwhile: the refusal stays. Recommended: keep the name with a notice that correction layers are always applied, so the setting follows the rule of the operations.
 Blocks: nothing.
 
+## Step 13, the manual-test defects
+
+**Q42. `help modules`. (CLI-031, CLI-008, D1 of the manual test)**
+CLI-031's `help` row lists the noun `modules` beside `intro`, `switches` and `agents`; CLI-008's indexes are `commands` and `switches`, and `help modules` is refused.
+Meanwhile: refused. Recommended: read the table's `modules` as `commands`, since `list modules` already prints the module list.
+Blocks: nothing.
+
+**Q43. Where a verb page lists its optional nouns. (CLI-029, BASE-043, D4 of the manual test)**
+CLI-029's page has a `Switches` section and none for nouns, and a verb page lists its optional nouns under `Switches`, though BASE-043 makes record fields nouns, not switches.
+Meanwhile: unchanged. Recommended: a `Nouns` section after `Usage`, holding the optional nouns, with `Switches` kept for settings the verb reads.
+Blocks: nothing.
+
+**Q44. A noun that is required but written `name=value`. (BASE-038, BASE-043, D2 of the manual test)**
+`map knowledge` needs `op=` on every call and `layer=` on every call but the adds, LAYER-001, yet both are optional nouns, since only optional nouns take the `name=value` form, so its usage shows `[op] [layer]`.
+Meanwhile: unchanged; the verb stops with `knowledge op=<op> needs layer.` when one is missing. Recommended: a noun marked required and named, shown as `op=<op>` in usage, with the parser reading it by name.
+Blocks: nothing.
+

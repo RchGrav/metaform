@@ -571,6 +571,50 @@ def test_project_and_layers_pass_on_one_call_to_any_module_verb(run, project, tm
     assert shown(run, cwd=project)['project']['value'] == 'proj'
 
 
+@pytest.mark.req('CLI-029')
+def test_a_module_page_leaves_out_an_empty_section_and_keeps_its_rows_narrow(run, user_module):
+    user_module('quiet', f'''
+        from metaform.module import Module
+        {OS}
+        MODULE = Module(id='quiet', summary='Declares nothing.', purpose='Declares nothing. Details: metaform help quiet.')
+    ''')
+    page = run('help', 'quiet').stdout.splitlines()
+    assert page[0] == 'quiet: Declares nothing.' and 'Verbs' not in page
+    roots = next(line for line in run('help', 'map').stdout.splitlines() if line.strip().startswith('roots'))
+    assert roots.index("The map's entry") < 80
+
+
+@pytest.mark.req('BASE-037')
+def test_an_off_module_lists_with_the_summary_it_shows_when_on(run):
+    def text(module_id):
+        line = next(line for line in lines(run('list', 'modules')) if line.split()[0] == module_id)
+        parts = line.split(None, 3)
+        return parts[3] if len(parts) == 4 else ''
+    off = text('helloworld')
+    run('enable', 'helloworld')
+    assert off and off == text('helloworld')
+
+
+@pytest.mark.req('CLI-015')
+@pytest.mark.req('CLI-017')
+def test_set_and_unset_report_what_is_stored_whatever_the_value(run, toggles):
+    assert lines(run('set', '--no-tmux'))[0] == 'Success: updated 1 key'
+    assert shown(run)['tmux']['state'] == 'set'
+    assert lines(run('unset', 'all'))[0] == 'Reset 1 setting(s): tmux'
+    assert shown(run)['tmux']['state'] == 'default'
+    run('set', '--no-tmux', '--glue')
+    unglued = lines(run('unset', '--tmux', '--unglue'))
+    assert 'Reset 1 setting(s): tmux' in unglued and 'Unglued: tmux' in unglued
+
+
+@pytest.mark.req('CLI-022')
+@pytest.mark.req('PROJ-007')
+def test_set_for_another_folder_names_that_folder(run, tmp_path):
+    job = tmp_path / 'job1'
+    job.mkdir()
+    assert lines(run('set', '--modules', 'chassis', f'folder={job}'))[0] == f'Success: updated 1 key for {job}'
+
+
 @pytest.mark.req('BASE-031')
 @pytest.mark.skipif(os.name == 'nt', reason='SIGINT is delivered differently on Windows')
 def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, user_module, tmp_path):

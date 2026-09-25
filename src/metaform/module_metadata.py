@@ -33,6 +33,7 @@ class Declared:
     dependencies: tuple[str, ...]
     ships_disabled: bool
     requires_chassis: str | None
+    summary: str | None = None
 
     @property
     def compatible(self) -> bool:
@@ -84,6 +85,19 @@ def _literal(tree: ast.Module, source: Path, name: str, check: Any) -> Any:
     return value
 
 
+def _summary(tree: ast.Module) -> str | None:
+    """The `summary` of `MODULE = Module(...)` when it is written as a literal, so an off module can show it."""
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'MODULE'
+                                                     for target in statement.targets) \
+                and isinstance(statement.value, ast.Call):
+            for keyword in statement.value.keywords:
+                if keyword.arg == 'summary' and isinstance(keyword.value, ast.Constant) \
+                        and isinstance(keyword.value.value, str):
+                    return keyword.value.value
+    return None
+
+
 def _strings(value: Any) -> bool:
     return isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in value)
 
@@ -116,4 +130,4 @@ def read(folder: Any) -> Declared:
     ships_disabled = declared('SHIPS_DISABLED', lambda value: isinstance(value, bool)) or False
     requires = declared('REQUIRES_CHASSIS', lambda value: isinstance(value, str))
     return Declared(None if systems is None else tuple(canonical(name) for name in systems), tuple(dependencies),
-                    ships_disabled, requires)
+                    ships_disabled, requires, _summary(tree))

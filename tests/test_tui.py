@@ -66,3 +66,22 @@ def test_screen_turns_a_module_off_and_on(home, tmp_path):
         return next(item for item in loader.discover() if item.id == 'template').enabled
     first = toggle()
     assert toggle() is not first
+
+
+@pytest.mark.req('CLI-031')
+def test_screen_rows_read_as_config_show_rows(home, tmp_path, capsys):
+    from metaform import cli
+    settings.assign('debug', True, tmp_path)
+    settings.assign('report', False, tmp_path, glue=True)
+    assert cli.main(['config', '--show', f'folder={tmp_path}']) == 0
+    expected = {line.split(':')[0].lstrip('* '): line for line in capsys.readouterr().out.splitlines() if ': ' in line}
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            await screen.refresh()
+            screen.module_index = [row['id'] for row in screen.rows].index('chassis')
+            return [text for _, text in screen._setting_lines()]
+        rows = asyncio.run(drive())
+    for key in ('debug', 'report', 'layers', 'modules'):
+        assert any(row.rstrip('\n').endswith(expected[key]) for row in rows), (key, expected[key], rows)
+

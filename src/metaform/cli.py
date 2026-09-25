@@ -42,6 +42,13 @@ def show(key: str, value: Any) -> str:
     return str(value)
 
 
+def setting_row(key: str, value: Any, state: str) -> str:
+    """One setting as `config --show` and the settings screen print it: `*` glued, `(set)` or `(glued)`, CLI-026."""
+    mark = '*' if state == 'glued' else ' '
+    note = '' if state == 'default' else f'  ({state})'
+    return f'{mark} {key}: {show(key, value)}{note}'
+
+
 def shown(group: str, folder: Path) -> bool:
     return instructions.on_surface(group, folder)
 
@@ -152,7 +159,8 @@ def list_(args: list[str], folder: Path) -> None:
         width = max((len(item.id) for item in found), default=6)
         for item in found:
             state = 'error' if item.problem else ('on' if item.enabled else 'off')
-            text = item.problem if item.problem else (item.module.summary if item.module else '')
+            summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
+            text = item.problem or summary or ''
             out(f'{item.id:<{width}}  {state:<5}  {item.place:<6}  {text}'.rstrip())
         return
     if args[:1] == ['metaforms'] and len(args) in (1, 2):
@@ -280,6 +288,7 @@ def _setting_for(switch: str, verb: str) -> tuple[settings.Setting, bool]:
 
 
 def set_(args: list[str], folder: Path) -> None:
+    named = any(arg.startswith('folder=') for arg in args)
     args, folder = _split_folder(args, folder)
     glue = quiet = ended = False
     pairs: list[tuple[settings.Setting, Any]] = []
@@ -315,12 +324,13 @@ def set_(args: list[str], folder: Path) -> None:
     before_groups = settings.value('modules', folder)
     changes, glued, notices = [], [], []
     for setting, raw in pairs:
+        before = settings.state(setting.key, folder)
         try:
             old, new, noted = settings.assign(setting.key, raw, folder, glue=glue)
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
-        if old != new:
+        if old != new or settings.state(setting.key, folder) != before:
             changes.append((setting.key, old, new))
         if glue:
             glued.append(setting.key)
@@ -329,10 +339,11 @@ def set_(args: list[str], folder: Path) -> None:
         out(f'Notice: {key}: {message}')
     if quiet:
         return
+    where = f' for {folder}' if named else ''
     if not changes:
-        out('Success: no changes')
+        out(f'Success: no changes{where}')
     else:
-        out(f'Success: updated {len(changes)} key' + ('s' if len(changes) != 1 else ''))
+        out(f'Success: updated {len(changes)} key' + ('s' if len(changes) != 1 else '') + where)
         for key, old, new in changes:
             out(f'  {key}: {show(key, old)} → {show(key, new)}')
     if glued:
@@ -396,9 +407,7 @@ def config(args: list[str], folder: Path) -> None:
         out(json.dumps(rows, default=str, ensure_ascii=False))
         return
     for row in rows:
-        mark = '*' if row['state'] == 'glued' else ' '
-        note = '' if row['state'] == 'default' else f"  ({row['state']})"
-        out(f"{mark} {row['key']}: {show(row['key'], row['value'])}{note}")
+        out(setting_row(row['key'], row['value'], row['state']))
     out('')
     out('* glued: kept by unset all until unglued.')
 
@@ -427,6 +436,8 @@ def help_(args: list[str], folder: Path) -> None:
         if len(args) == 1:
             out(docs.module_page(found.module))
         elif len(args) == 2 and (verb := _verb(found, args[1])):
+            if not _here(verb):
+                raise _elsewhere(args[0], verb)
             out(docs.verb_page(found.module, verb))
         else:
             raise Stop(f'No verb {args[1]} in {args[0]}.', f'metaform help {args[0]}')
@@ -566,6 +577,11 @@ def _here(verb: Any) -> bool:
     return verb.supported_os is None or current_os() in verb.supported_os
 
 
+def _elsewhere(identifier: str, verb: Any) -> Stop:
+    """A verb outside this system: where it runs, printed by running it and by its help page, BASE-016."""
+    return Stop(f'{identifier} {verb.name} runs on {", ".join(verb.supported_os)}.', f'metaform help {identifier}')
+
+
 def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
     """Run an async verb: the first Ctrl+C asks it to cancel, a second interrupts at once, BASE-031.
 
@@ -609,7 +625,7 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     if verb is None:
         raise Stop(f'{identifier} has no verb {rest[0]}.', f'metaform help {identifier}')
     if not _here(verb):
-        raise Stop(f'{identifier} {verb.name} runs on {", ".join(verb.supported_os)}.', f'metaform help {identifier}')
+        raise _elsewhere(identifier, verb)
     parsed = grammar.parse(identifier, verb, rest[1:])
     if parsed.help:
         out(docs.verb_syntax(found.module, verb))

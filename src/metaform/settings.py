@@ -288,9 +288,8 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
         unglued = True
     if not _has(scope, setting):
         return 'unchanged', unglued
-    before = value(key, folder)
     home.clear(scope, setting.owner, key)
-    return ('reset' if before != default(setting, folder) else 'unchanged'), unglued
+    return 'reset', unglued
 
 
 def describe(folder: Path) -> list[dict[str, Any]]:

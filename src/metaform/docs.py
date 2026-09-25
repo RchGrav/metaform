@@ -50,12 +50,21 @@ def switch(record: Switch) -> Switch:
     return record
 
 
+WIDE = 40  # a left cell longer than this goes on its own line, so one long usage never pads every row
+
+
 def rows(pairs: Iterable[tuple[str, str]], indent: int = 2) -> list[str]:
     pairs = list(pairs)
     if not pairs:
         return []
-    width = max(len(left) for left, _ in pairs)
-    return [' ' * indent + f'{left:<{width}}  {right}'.rstrip() for left, right in pairs]
+    width = max((len(left) for left, _ in pairs if len(left) <= WIDE), default=WIDE)
+    lines: list[str] = []
+    for left, right in pairs:
+        if len(left) > width:
+            lines += [' ' * indent + left, *([' ' * (indent + width + 2) + right] if right else [])]
+        else:
+            lines.append(' ' * indent + f'{left:<{width}}  {right}'.rstrip())
+    return lines
 
 
 def _setting_rows(record: Command) -> list[tuple[str, str]]:
@@ -190,10 +199,13 @@ def module_syntax(module: Any) -> str:
 
 
 def module_page(module: Any) -> str:
-    lines = [f'{module.id}: {module.summary}', '', module.purpose, '', 'Verbs']
+    lines = [f'{module.id}: {module.summary}', '', module.purpose]
     here = [verb for verb in module.verbs if _here(verb)]
     elsewhere = [verb for verb in module.verbs if 'cli' in verb.surfaces and not _here(verb)]
-    lines += rows([(' '.join([verb.name, *(noun.usage() for noun in verb.nouns)]), verb.summary) for verb in here])
+    if here:
+        lines += ['', 'Verbs']
+        lines += rows([(' '.join([verb.name, *(noun.usage() for noun in verb.nouns)]), verb.summary)
+                       for verb in here])
     if elsewhere:
         lines += ['', 'Not on this system']
         lines += rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os)}.') for verb in elsewhere])

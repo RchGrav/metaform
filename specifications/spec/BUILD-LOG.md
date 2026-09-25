@@ -120,5 +120,14 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - D12: an `element=` noun written as a node, such as `type:code` or `join:<id>`, is read as that node, so a property sent to a join is stored orphaned, and one sent to a type address goes on the element there, STORE-039 and STORE-008. It had made an element at the literal address `join:<id>`.
 - Found already fixed: D13 and D20 in step 10; D15 and D16 in step 12, since an observation at an unknown element now makes it in memory with a notice and a correction's `receiver` is named in a notice; D17, whose export with `layer=` across two metaforms now succeeds.
 - Also: step 12's autofix of import order had expanded the imports of `store.py`, `writes.py`, `reads.py` and `views.py` to one name per line; they are back in the repository's style.
-- Tests added, each seen failing first: `test_a_property_named_by_node_attaches_by_the_nodes_kind`, `test_layers_stack_and_metaforms_read_as_one_aligned_row_each` and `test_project_and_layers_pass_on_one_call_to_any_module_verb`.
+- Tests added, each seen failing first: `test_a_property_named_by_node_attaches_by_the_nodes_kind`, `test_layers_stack_and_metaforms_read_as_one_aligned_row_each` and `test_project_and_layers_pass_on_one_call_to_any_module_verb`.- D2 in part: a help row whose left cell is longer than 40 characters goes on its own line with its help under it, so the `knowledge` usage no longer pads every row of `metaform help map`. Its `op` and `layer` still show as optional, Q44.
+- D3: `metaform help <module> <verb>` for a verb outside this system prints what running it prints, `<module> <verb> runs on <systems>.` and `Next: metaform help <module>`, BASE-016.
+- D5: a module page leaves out `Verbs` when the module has none, CLI-029.
+- D6: `list modules` shows an off module's summary, read without importing from the literal `summary` of `MODULE = Module(...)`, BASE-037 and BASE-015.
+- D7: `set` reports a key as updated when its stored state changes, not only its value, CLI-015; `unset` reports a key as reset whenever it deletes a stored value, CLI-017.
+- D8: `set ... folder=<path>` names the folder in its first line, `Success: updated 1 key for <path>`, CLI-022.
+- D10: the settings screen prints each row as `config --show` does, `* key: value  (glued)`, `  key: value  (set)`, with CLI-031's value rule, through one formatter, CLI-026.
+- Tests added, each seen failing first: `test_a_module_page_leaves_out_an_empty_section_and_keeps_its_rows_narrow`, `test_an_off_module_lists_with_the_summary_it_shows_when_on`, `test_set_and_unset_report_what_is_stored_whatever_the_value`, `test_set_for_another_folder_names_that_folder`, `test_screen_rows_read_as_config_show_rows`, and a help assertion in the BASE-016 test.
+- Open: D1 is Q42, D4 is Q43, D14 waits on Q1, D18 comes after the viewer, D19 is deferred by D41.
+- Questions raised: Q42 to Q44.
 
