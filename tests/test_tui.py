@@ -60,5 +60,5 @@ def test_screen_turns_a_module_off_and_on(home, tmp_path):
             asyncio.run(drive())
         loader.reset()
         return next(item for item in loader.discover() if item.id == 'template').enabled
-    assert toggle() is False
-    assert toggle() is True
+    first = toggle()
+    assert toggle() is not first

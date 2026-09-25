@@ -1,65 +1,63 @@
 # template
 
-The template module shows every feature a module can use, once each. Copy this
-folder to start your own module, rename it, and replace the verbs.
+The empty start of every Metaform module. Copy this folder to begin a module; every heading below is one a module's README answers.
 
-## Layout
+## Purpose
 
-A module is a folder with an `__init__.py` that sets two names:
+What the module is for, in two to four sentences.
 
-- `SUPPORTED_OS`: a literal tuple such as `('linux', 'macos', 'windows')`.
-  Metaform reads it without running the module.
-- `MODULE`: a `metaform.module.Module`. Its `id` must match the folder name.
+## Template version
 
-Put the folder in `~/.metaform/modules/`, or publish it as a package with an
-entry point in the `metaform.modules` group.
+The template changelog version this module started from: 0.2.0.
+
+## Declaration
+
+`SUPPORTED_OS`, `DEPENDENCIES`, `SHIPS_DISABLED` and `MODULE`, with what each is set to and why.
+
+## Common base used
+
+Which of `metaform.module`, `metaform.settings`, `metaform.data` and `metaform.events` the module uses, and for what.
 
 ## Verbs
 
-A verb runs as `metaform <module> <verb> <nouns> [--adverbs]`. Commands are
-verbs, the words after them are the nouns they act on, and adverbs change how
-they run.
-
-| Verb | Shows |
-|---|---|
-| `greet <name> [--loud]` | A sync verb, a noun, an adverb, and publishing an event |
-| `wait <seconds>` | An async verb |
-| `history` | Reading data a subscriber wrote |
-| `forget` | A verb that asks for `--confirm` before it acts |
-
-A verb function takes one `ctx` argument:
-
-- `ctx.nouns` and `ctx.adverbs` hold what the user typed.
-- `ctx.setting(key)` returns a setting's value for the current folder.
-- `ctx.data` is this module's data folder in the Metaform home.
-- `ctx.publish(topic, payload)` sends an event to every subscriber.
-- `ctx.say(text)` prints a line.
-
-Raise `Stop(message, next_step)` for a user error. Metaform prints the message
-and the one command to run next.
+Each verb, what it returns, and its CLI form `metaform <id> <verb>` and tool form `<id>_<verb>`.
 
 ## Settings
 
-Declare settings in the module's code:
-
-```python
-from metaform import settings
-
-settings.text('greeting', 'hello', help='The word the template module greets with.')
-settings.choice('favorite', choices=lambda: names_from_my_data(), help='...')
-```
-
-They appear in `metaform set`, `metaform unset`, `metaform help switches` and
-the `metaform config` screen with no other code. The defaults are the working
-settings: a module works as installed.
+Each setting the module declares, its default, and which verbs read it as a switch.
 
 ## Events
 
-`Subscription(topic, handler)` receives every `ctx.publish` of that topic. The
-template records each greeted name in `history.json` in its data folder, and the
-`favorite` setting reads its choices from there.
+The topics the module publishes and those it subscribes to.
 
-## Tests
+## Sync and async
 
-`tests/test_modules.py` in the Metaform repository runs every verb, setting and
-event of this module through the real `metaform` command.
+Which verbs and subscribers are coroutines.
+
+## Layers
+
+The layers the module writes, their mutable and hideable declaration, and their provenance.
+
+## Lifecycle and cleanup
+
+What `start` and `stop` do, the tasks the module spawns, and what unload leaves behind.
+
+## Modules relied on
+
+Other modules this one needs, reached through their verbs and events, never by import.
+
+## Systems supported
+
+The systems in `SUPPORTED_OS`, and any verb that narrows them.
+
+## Resources owned
+
+Files, processes or connections the module owns, and when it releases them.
+
+## Installed and direct wheel
+
+How the module behaves in an installed Metaform and in a directly run wheel.
+
+## Demonstration
+
+A short command sequence that shows the module working.

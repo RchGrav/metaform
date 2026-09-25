@@ -36,23 +36,29 @@ def instructions(folder: Path) -> str:
 
 
 def tools(folder: Path) -> dict:
-    """Tool name -> (module, verb, input schema, description)."""
+    """Tool name -> (module, verb, input schema, description). Replaced by the mcp module, MCP-001."""
+    from .module_metadata import current_os
     result = {}
     for module in _surface(folder):
         for verb in module.verbs:
-            name = f'{module.id}_{verb.name}'
-            if not NAME.fullmatch(name) or '__' in name:
+            if 'mcp' not in verb.surfaces or (verb.supported_os and current_os() not in verb.supported_os):
                 continue
-            properties = {'nouns': {'type': 'array', 'items': {'type': 'string'},
-                                    'description': verb.nouns or 'No words are needed.'}}
-            for adverb in verb.adverbs:
-                key = adverb.name.lstrip('-').replace('-', '_')
-                properties[key] = ({'type': 'string', 'description': adverb.help} if adverb.takes_value
-                                   else {'type': 'boolean', 'description': adverb.help})
+            name = f'{module.id}_{verb.name}'
+            properties: dict = {}
+            required = []
+            for noun in verb.nouns:
+                kind = {'str': {'type': 'string'}, 'int': {'type': 'integer'}, 'bool': {'type': 'boolean'},
+                        'json': noun.schema or {}}[noun.kind]
+                properties[noun.name] = {'type': 'array', 'items': kind} if noun.many else dict(kind)
+                if noun.required:
+                    required.append(noun.name)
+            for key in verb.switches:
+                setting = settings.SCHEMA.get(key)
+                if setting is not None:
+                    properties[key] = {'type': {'bool': 'boolean', 'int': 'integer'}.get(setting.kind, 'string')}
             if verb.caution:
-                properties['confirm'] = {'type': 'boolean',
-                                         'description': 'Run it. Without this the tool only explains what it would do.'}
-            schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
+                properties['confirm'] = {'type': 'boolean'}
+            schema = {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}
             description = verb.summary + (f' Caution: {verb.caution}' if verb.caution else '')
             result[name] = (module, verb, schema, description)
     return result
@@ -60,27 +66,27 @@ def tools(folder: Path) -> dict:
 
 def run_tool(folder: Path, name: str, arguments: dict) -> tuple[bool, str]:
     """Run one tool. Returns (is_error, text)."""
+    from . import context, results
     known = tools(folder)
     if name not in known:
         return True, f'Error: No tool {name} on this surface.\nNext: metaform help commands'
     module, verb, _, _ = known[name]
     arguments = dict(arguments or {})
-    nouns = [str(item) for item in arguments.pop('nouns', []) or []]
     confirmed = bool(arguments.pop('confirm', False))
-    adverbs = {}
-    for adverb in verb.adverbs:
-        key = adverb.name.lstrip('-').replace('-', '_')
-        if key in arguments and arguments[key] not in (None, False):
-            adverbs[adverb.name] = arguments[key]
+    nouns = {noun.name: arguments[noun.name] for noun in verb.nouns if noun.name in arguments}
+    switches = {key: arguments[key] for key in verb.switches if key in arguments}
     lines: list[str] = []
     try:
         if verb.caution and not confirmed:
             raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
-        call(verb.run, Context(module=module.id, folder=folder, nouns=nouns, adverbs=adverbs, sink=lines.append))
-        return False, '\n'.join(lines)
+        ctx = context.build(module.id, folder, nouns=nouns, switches=switches, sink=lines.append, surface='mcp')
+        result = call(verb.run, ctx)
+        text = '\n'.join(lines)
+        if result is not None:
+            text += ('\n' if text else '') + (result if isinstance(result, str) else results.as_json(result))
+        return False, text
     except Stop as stop:
-        text = f'Error: {stop}' + (f'\nNext: {stop.next_step}' if stop.next_step else '')
-        return True, text
+        return True, f'Error: {stop}\nNext: {stop.next_step}'
 
 
 def serve(folder: Path) -> None:

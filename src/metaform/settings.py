@@ -1,45 +1,75 @@
-"""Settings: one schema drives set, unset, validation, defaults, help and config.
+"""Settings: one schema drives parsing, validation, defaults, help, `config --show` and the settings screen, CLI-010.
 
-Each setting is in one of three states: default, set, or glued. A glued setting
-keeps its value through `unset all` until it is unglued. Folder settings belong
-to the folder the command runs in; global settings apply everywhere.
+A module declares its settings in its own code with `text`, `number`,
+`boolean`, `items` and `choice`; the chassis records the module as owner while
+it loads. Each setting is in one of three states: default, set, or glued,
+CLI-013. A folder setting belongs to the folder it was set in and every folder
+below it, CLI-014; a global setting applies everywhere. Nothing is written for
+a default, CLI-023.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from . import home
 
+KINDS = ('str', 'int', 'bool', 'list', 'select')
+
 
 class SettingError(ValueError):
-    """A value a setting cannot take. The message names the next step."""
+    """A value a setting cannot take. It carries the one next step."""
+
+    def __init__(self, message: str, next_step: str | None = None) -> None:
+        super().__init__(message)
+        self.next_step = next_step
 
 
 @dataclass(frozen=True)
 class Setting:
     key: str
-    default: object = None
+    default: Any = None
+    kind: str = 'str'
+    group: str | None = None
+    label: str | None = None
     help: str = ''
-    kind: str = 'str'  # str, int, bool, list or select
-    choices: Callable[[], list[str]] | list[str] | None = None
-    scope: str = 'global'  # global or folder
-    owner: str = 'chassis'
     details: str = ''
-    default_from: Callable[[Path], object] | None = field(default=None, compare=False)
+    switches: tuple[str, ...] = ()
+    short: str | None = None
+    choices: Callable[..., list[str]] | list[str] | tuple[str, ...] | None = field(default=None, compare=False)
+    min: int | None = None
+    max: int | None = None
+    scope: str = 'folder'
+    owner: str = 'chassis'
+    default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
 
     @property
     def switch(self) -> str:
-        return '--' + self.key.replace('_', '-')
+        """The long switch help shows first."""
+        return self.switches[0]
+
+    @property
+    def negative(self) -> str | None:
+        """A boolean's `--no-` form, CLI-015."""
+        return next((item for item in self.switches if item.startswith('--no-')), None)
+
+    def options(self, folder: Path | None = None) -> list[str]:
+        """The current choices of a select: a fixed list, or the owning module's function of a Context, CLI-019."""
+        if callable(self.choices):
+            from .context import build
+            return list(self.choices(build(self.owner, folder or Path.cwd())))
+        return list(self.choices or [])
+
+    def needs_project(self) -> bool:
+        """A module's select reads its choices from the project's store, CLI-019; the chassis's never do."""
+        return callable(self.choices) and self.owner != 'chassis'
 
     @property
     def type(self) -> type:
         return {'int': int, 'bool': bool, 'list': list}.get(self.kind, str)
-
-    def options(self) -> list[str]:
-        return list(self.choices() if callable(self.choices) else self.choices or [])
 
 
 SCHEMA: dict[str, Setting] = {}
@@ -47,7 +77,7 @@ _owner: str | None = None
 
 
 @contextmanager
-def owned_by(module: str):
+def owned_by(module: str) -> Iterator[None]:
     """While a module loads, the settings it declares belong to it."""
     global _owner
     previous, _owner = _owner, module
@@ -58,8 +88,15 @@ def owned_by(module: str):
 
 
 def declare(setting: Setting) -> Setting:
-    if _owner is not None:
-        setting = replace(setting, owner=_owner)
+    if setting.key == 'confirm':
+        raise ValueError('confirm is never a setting; it is a one-call switch of caution verbs, CLI-018.')
+    if setting.kind not in KINDS:
+        raise ValueError(f'Setting {setting.key}: kind must be one of {", ".join(KINDS)}.')
+    owner = _owner or setting.owner
+    hyphens = setting.key.replace('_', '-')
+    switches = setting.switches or ((f'--{hyphens}', f'--no-{hyphens}') if setting.kind == 'bool' else (f'--{hyphens}',))
+    setting = replace(setting, owner=owner, group=setting.group or owner,
+                      label=setting.label or setting.key.replace('_', ' ').capitalize(), switches=tuple(switches))
     existing = SCHEMA.get(setting.key)
     if existing is not None and existing.owner != setting.owner:
         raise ValueError(f'Setting {setting.switch} already belongs to {existing.owner}.')
@@ -67,23 +104,38 @@ def declare(setting: Setting) -> Setting:
     return setting
 
 
-def text(key: str, default: str = '', help: str = '', **extra) -> Setting:
-    return declare(Setting(key=key, default=default, help=help, kind='str', **extra))
+def text(key: str, default: str = '', **common: Any) -> Setting:
+    return declare(Setting(key=key, default=default, kind='str', **common))
 
 
-def number(key: str, default: int = 0, help: str = '', **extra) -> Setting:
-    return declare(Setting(key=key, default=default, help=help, kind='int', **extra))
+def number(key: str, default: int = 0, *, min: int | None = None, max: int | None = None, **common: Any) -> Setting:
+    return declare(Setting(key=key, default=default, kind='int', min=min, max=max, **common))
 
 
-def boolean(key: str, default: bool = False, help: str = '', **extra) -> Setting:
-    return declare(Setting(key=key, default=default, help=help, kind='bool', **extra))
+def boolean(key: str, default: bool = False, **common: Any) -> Setting:
+    return declare(Setting(key=key, default=default, kind='bool', **common))
 
 
-def choice(key: str, choices, default=None, help: str = '', **extra) -> Setting:
-    """A select. choices is a list, or a function returning the current list,
-    for example names the module read from its own data."""
-    return declare(Setting(key=key, default=default, help=help, kind='select', choices=choices, **extra))
+def items(key: str, default: tuple[str, ...] | list[str] = (), **common: Any) -> Setting:
+    return declare(Setting(key=key, default=list(default), kind='list', **common))
 
+
+def choice(key: str, choices: Callable[..., list[str]] | list[str], default: str | None = None,
+           **common: Any) -> Setting:
+    return declare(Setting(key=key, default=default, kind='select', choices=choices, **common))
+
+
+def by_switch(switch: str) -> tuple[Setting, bool] | None:
+    """The setting a long or short switch names, and whether it is a boolean's `--no-` form."""
+    for setting in SCHEMA.values():
+        if switch in setting.switches:
+            return setting, switch == setting.negative
+        if setting.short and switch == f'-{setting.short}':
+            return setting, False
+    return None
+
+
+# Scopes and values ------------------------------------------------------------
 
 def _own_scope(setting: Setting, folder: Path) -> str:
     return 'global' if setting.scope == 'global' else home.path_key(folder)
@@ -94,11 +146,7 @@ def _has(scope: str, setting: Setting) -> bool:
 
 
 def _scope(setting: Setting, folder: Path) -> str:
-    """Where this folder's value lives: the nearest folder at or above it that holds one.
-
-    A folder setting made in a folder applies to every folder below it, until a
-    deeper folder sets its own.
-    """
+    """Where this folder's value lives: the nearest folder at or above it that holds one, CLI-014."""
     if setting.scope == 'global':
         return 'global'
     folder = folder.resolve()
@@ -109,18 +157,18 @@ def _scope(setting: Setting, folder: Path) -> str:
     return home.path_key(folder)
 
 
-def default(setting: Setting, folder: Path):
+def default(setting: Setting, folder: Path) -> Any:
     return setting.default_from(folder) if setting.default_from else setting.default
 
 
-def _stored_value(setting: Setting, scope: str):
+def _stored_value(setting: Setting, scope: str) -> Any:
     members = home.stored(scope, setting.owner, setting.key)
     if members is None:
         return None
     return list(members) if setting.kind == 'list' else members[0]
 
 
-def value(key: str, folder: Path):
+def value(key: str, folder: Path) -> Any:
     setting = SCHEMA[key]
     scope = _scope(setting, folder)
     return _stored_value(setting, scope) if _has(scope, setting) else default(setting, folder)
@@ -134,38 +182,44 @@ def state(key: str, folder: Path) -> str:
     return 'set' if _has(scope, setting) else 'default'
 
 
-def _save(setting: Setting, scope: str, new, folder: Path) -> None:
+def _save(setting: Setting, scope: str, new: Any, folder: Path) -> None:
     members = list(new) if setting.kind == 'list' else [new]
     home.save(scope, setting.owner, setting.key, members, folder=None if scope == 'global' else folder.resolve())
 
 
-def parse(setting: Setting, raw: str):
+def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
+    """A value from its CLI form, CLI-027."""
     if setting.kind == 'int':
         try:
-            return int(raw)
+            number_value = int(raw)
         except ValueError:
             raise SettingError(f'{setting.switch} needs a whole number, not {raw!r}.') from None
+        if setting.min is not None and number_value < setting.min:
+            raise SettingError(f'{setting.switch} is at least {setting.min}.')
+        if setting.max is not None and number_value > setting.max:
+            raise SettingError(f'{setting.switch} is at most {setting.max}.')
+        return number_value
     if setting.kind == 'bool':
-        lowered = raw.lower()
-        if lowered in {'1', 'true', 'yes', 'on'}:
-            return True
-        if lowered in {'0', 'false', 'no', 'off'}:
-            return False
-        raise SettingError(f'{setting.switch} needs on or off, not {raw!r}.')
+        raise SettingError(f'{setting.switch} takes no value: use {setting.switch} or {setting.negative}.')
     if setting.kind == 'list':
         return [item.strip() for item in raw.split(',') if item.strip()]
     if setting.kind == 'select':
-        options = setting.options()
+        options = setting.options(folder)
+        if not options and setting.needs_project():
+            from .context import project_for
+            if folder is not None and project_for(folder) is None:
+                raise SettingError(f'{setting.switch} has no choices here: this folder is not in a registered '
+                                   'project.', 'metaform add project <id> <path>')
         if raw not in options:
             listed = ', '.join(options) if options else 'none yet'
             raise SettingError(f'{setting.switch} has no choice {raw!r}. Choices: {listed}.')
     return raw
 
 
-def assign(key: str, raw: str, folder: Path, *, glue: bool = False):
-    """Set one setting. Returns (old, new)."""
+def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> tuple[Any, Any]:
+    """Store one setting from its CLI form, or a typed boolean. Returns (old, new)."""
     setting = SCHEMA[key]
-    new = parse(setting, raw)
+    new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
     old = value(key, folder)
     scope = _own_scope(setting, folder)
     _save(setting, scope, new, folder)
@@ -174,16 +228,14 @@ def assign(key: str, raw: str, folder: Path, *, glue: bool = False):
     return old, new
 
 
-def put(key: str, value, folder: Path, *, glue: bool = False):
-    """Set one setting from an already typed value, as the settings screen does."""
+def put(key: str, typed: Any, folder: Path, *, glue: bool = False) -> tuple[Any, Any]:
+    """Store one setting from a typed value, as the settings screen does."""
     setting = SCHEMA[key]
-    if setting.kind == 'list' and isinstance(value, list):
-        raw = ','.join(str(item) for item in value)
-    elif setting.kind == 'bool' and isinstance(value, bool):
-        raw = 'on' if value else 'off'
-    else:
-        raw = str(value)
-    return assign(key, raw, folder, glue=glue)
+    if setting.kind == 'list' and isinstance(typed, list):
+        return assign(key, ','.join(str(member) for member in typed), folder, glue=glue)
+    if setting.kind == 'bool':
+        return assign(key, bool(typed), folder, glue=glue)
+    return assign(key, str(typed), folder, glue=glue)
 
 
 def glue(key: str, folder: Path, on: bool) -> None:
@@ -196,11 +248,7 @@ def glue(key: str, folder: Path, on: bool) -> None:
 
 
 def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
-    """Reset one setting.
-
-    Returns the outcome (reset, skipped because glued, or unchanged) and whether
-    it was unglued.
-    """
+    """Reset one setting: (reset, skipped because glued, or unchanged) and whether it was unglued, CLI-016."""
     setting = SCHEMA[key]
     scope = _scope(setting, folder)
     unglued = False
@@ -216,25 +264,18 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
     return ('reset' if before != default(setting, folder) else 'unchanged'), unglued
 
 
-def describe(folder: Path) -> list[dict]:
+def describe(folder: Path) -> list[dict[str, Any]]:
     return [{'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
              'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
              'state': state(key, folder), 'help': setting.help}
-            for key, setting in sorted(SCHEMA.items())]
+            for key, setting in SCHEMA.items()]
 
 
-declare(Setting(
-    key='project', kind='select', scope='folder',
-    choices=lambda: [record.project_id for record in home.projects()],
-    default_from=home.folder_project,
-    help='The project this folder works on.',
-    details='Defaults to the registered project that contains this folder. '
-            'Set it to work on another project from here. Unset it to return to the folder\'s own project.',
-))
+project = choice('project', choices=lambda ctx: [record.project_id for record in home.projects()],
+                 default_from=home.folder_project, help='The project this folder works on.',
+                 details="Defaults to the registered project that contains this folder. Set it to work on another "
+                         "project from here. Unset it to return to the folder's own project.")
 
-declare(Setting(
-    key='commands', kind='list', scope='folder', default=[],
-    help='The command groups shown and run in this folder. Empty means all.',
-    details='A group is chassis or a module id. set, unset, config and help always run, '
-            'so the full set can be restored with unset --commands.',
-))
+commands = items('commands', help='The command groups shown and run in this folder. Empty means all.',
+                 details='A group is chassis or a module id. set, unset, config and help always run, '
+                         'so the full set can be restored with unset --commands.')

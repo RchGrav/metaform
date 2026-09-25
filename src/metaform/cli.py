@@ -5,7 +5,9 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, docs, home, loader, settings
+import asyncio
+
+from . import __version__, context, docs, grammar, home, loader, results, settings
 from .docs import Command, Switch
 from .module import Context, call
 
@@ -55,6 +57,28 @@ def status(args, folder):
     groups = settings.value('commands', folder)
     if groups:
         out('Commands: ' + ', '.join(groups))
+    for line in status_lines(folder, project):
+        out(line)
+
+
+def status_lines(folder: Path, project: str | None) -> list[str]:
+    """Each surfaced module's status hook, in module id order; the chassis names no module, BASE-035."""
+    from .module import Status
+    lines: list[str] = []
+    for module in sorted(loader.enabled(), key=lambda item: item.id):
+        if module.status is None or not shown(module.id, folder):
+            continue
+        try:
+            ctx = context.build(module.id, folder, project=project, resolve=False)
+            got = call(module.status, ctx)
+        except Exception as error:  # A failing hook is one line and nothing else.
+            lines.append(f'{module.id}: status failed: {type(error).__name__}: {error}')
+            continue
+        if isinstance(got, Status):
+            lines.extend(got.lines)
+            if got.notice:
+                lines.append('  ' + got.notice)
+    return lines
 
 
 def add(args, folder):
@@ -88,9 +112,9 @@ def list_(args, folder):
 
 def _toggle(args, on):
     verb = 'enable' if on else 'disable'
-    if len(args) != 2 or args[0] != 'module':
-        raise Stop(f'{verb} needs: module <id>.', f'metaform {verb} module <id>')
-    identifier = args[1]
+    if len(args) != 1:
+        raise Stop(f'{verb} needs one module id.', f'metaform {verb} <module>')
+    identifier = args[0]
     known = {item.id for item in loader.discover()}
     if identifier not in known:
         raise Stop(f'No module {identifier}.', 'metaform list modules')
@@ -106,11 +130,11 @@ def disable(args, folder):
     _toggle(args, False)
 
 
-def _setting_for(switch: str) -> settings.Setting:
-    match = next((item for item in settings.SCHEMA.values() if item.switch == switch), None)
-    if match is None:
+def _setting_for(switch: str) -> tuple[settings.Setting, bool]:
+    found = settings.by_switch(switch)
+    if found is None:
         raise Stop(f'{switch} is not a setting.', 'metaform help switches')
-    return match
+    return found
 
 
 def set_(args, folder):
@@ -124,12 +148,16 @@ def set_(args, folder):
         elif arg in ('-q', '--quiet'):
             quiet = True
         elif arg.startswith('--'):
-            name, _, inline = arg.partition('=')
-            setting = _setting_for(name)
-            if inline:
+            name, equals, inline = arg.partition('=')
+            if name == '--confirm':
+                raise Stop('--confirm is not a setting.', 'metaform help --confirm')
+            setting, negative = _setting_for(name)
+            if setting.kind == 'bool':
+                if equals:
+                    raise Stop(f'{name} takes no value.', f'metaform help {setting.switch}')
+                raw = not negative
+            elif equals:
                 raw = inline
-            elif setting.kind == 'bool' and (index + 1 == len(args) or args[index + 1].startswith('--')):
-                raw = 'on'
             else:
                 if index + 1 == len(args):
                     raise Stop(f'{name} needs a value.', f'metaform set {name} <value>')
@@ -145,7 +173,7 @@ def set_(args, folder):
             old, new = settings.assign(setting.key, raw, folder, glue=glue)
         except settings.SettingError as error:
             nxt = 'metaform list projects' if setting.key == 'project' else f'metaform help {setting.switch}'
-            raise Stop(str(error), nxt) from None
+            raise Stop(str(error), error.next_step or nxt) from None
         if old != new:
             changes.append((setting.key, old, new))
         if glue:
@@ -180,7 +208,7 @@ def unset(args, folder):
         elif arg == '--all':
             raise Stop('--all is not a setting. A switch names one setting.', 'metaform unset all')
         elif arg.startswith('--'):
-            keys.append(_setting_for(arg).key)
+            keys.append(_setting_for(arg)[0].key)
         else:
             raise Stop(f'unset takes switches or all, not {arg!r}.', 'metaform unset --help')
     if everything:
@@ -277,7 +305,7 @@ def _module(identifier, folder, quiet=False):
     if not found.enabled:
         if quiet:
             return None
-        raise Stop(f'Module {identifier} is off.', f'metaform enable module {identifier}')
+        raise Stop(f'Module {identifier} is off.', f'metaform enable {identifier}')
     if found.problem or found.module is None:
         if quiet:
             return None
@@ -293,42 +321,40 @@ def _verb(found, name):
     return next((verb for verb in found.module.verbs if verb.name == name), None)
 
 
+def verb_on_this_system(module_id: str, verb) -> bool:
+    from .module_metadata import current_os
+    return verb.supported_os is None or current_os() in verb.supported_os
+
+
 def run_module(identifier, rest, folder):
     found = _module(identifier, folder)
     if not rest or rest[0] in ('-h', '--help'):
         out(docs.module_syntax(found.module))
         return
     verb = _verb(found, rest[0])
-    if verb is None:
+    if verb is None or 'cli' not in verb.surfaces:
         raise Stop(f'{identifier} has no verb {rest[0]}.', f'metaform help {identifier}')
-    words = rest[1:]
-    if '-h' in words or '--help' in words:
+    if not verb_on_this_system(identifier, verb):
+        raise Stop(f'{identifier} {verb.name} runs on {", ".join(verb.supported_os)}.', f'metaform help {identifier}')
+    parsed = grammar.parse(identifier, verb, rest[1:])
+    if parsed.help:
         out(docs.verb_syntax(found.module, verb))
         return
-    known = {adverb.name: adverb for adverb in verb.adverbs}
-    nouns, adverbs, confirmed, index = [], {}, False, 0
-    while index < len(words):
-        word = words[index]
-        if word == '--confirm' and verb.caution:
-            confirmed = True
-        elif word.startswith('--'):
-            adverb = known.get(word)
-            if adverb is None:
-                raise Stop(f'{identifier} {verb.name} has no switch {word}.', f'metaform {identifier} {verb.name} --help')
-            if adverb.takes_value:
-                if index + 1 == len(words):
-                    raise Stop(f'{word} needs a value.', f'metaform {identifier} {verb.name} --help')
-                index += 1
-                adverbs[word] = words[index]
-            else:
-                adverbs[word] = True
-        else:
-            nouns.append(word)
-        index += 1
-    if verb.caution and not confirmed:
-        confirm = ' '.join(['metaform', identifier, verb.name, *words, '--confirm'])
+    if verb.caution and not parsed.confirm:
+        confirm = ' '.join(['metaform', identifier, verb.name, *rest[1:], '--confirm'])
         raise Stop(verb.caution, f'If you are sure: {confirm}')
-    call(verb.run, Context(module=identifier, folder=folder, nouns=nouns, adverbs=adverbs))
+    messages = sys.stderr if parsed.json else sys.stdout
+    ctx = context.build(identifier, folder, nouns=parsed.nouns, switches=parsed.switches,
+                        sink=lambda text: messages.write(text + '\n'))
+    result = call(verb.run, ctx)
+    if result is None:
+        return
+    if isinstance(result, str):
+        sys.stdout.write(result)
+    elif parsed.json:
+        sys.stdout.write(results.as_json(result) + '\n')
+    else:
+        sys.stdout.write(results.as_text(result))
 
 
 # Help records -------------------------------------------------------------
@@ -415,6 +441,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except Stop as stop:
         sys.stderr.write(f'Error: {stop}\n')
-        if stop.next_step:
-            sys.stderr.write(f'Next: {stop.next_step}\n')
+        sys.stderr.write(f'Next: {stop.next_step}\n')
         return 2
+    except asyncio.CancelledError:
+        sys.stderr.write('Cancelled.\n')
+        return 3
+    except KeyboardInterrupt:
+        sys.stderr.write('Interrupted.\n')
+        return 130
+    except Exception as error:  # Unexpected: one Error and one Next line, exit 1, BASE-031 and CLI-009.
+        sys.stderr.write(f'Error: {type(error).__name__}: {error}\n')
+        sys.stderr.write(f'Next: {"metaform list modules" if args and args[0] not in VERBS else "metaform help"}\n')
+        return 1

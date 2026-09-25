@@ -55,6 +55,7 @@ def test_set_rejects_an_unknown_project(run):
 
 
 def test_glue_cycle_matches_mvm_line_for_line(run, tmp_path):
+    run('enable', 'helloworld')
     a, b = tmp_path / 'a', tmp_path / 'b'
     a.mkdir(); b.mkdir()
     run('add', 'project', 'alpha', str(a))
@@ -73,6 +74,7 @@ def test_glue_cycle_matches_mvm_line_for_line(run, tmp_path):
 
 
 def test_setting_the_same_value_again_is_no_change(run, tmp_path):
+    run('enable', 'helloworld')
     work = tmp_path / 'work'
     work.mkdir()
     run('add', 'project', 'demo', str(work))
@@ -87,6 +89,7 @@ def test_unset_all_is_a_noun_and_dash_all_is_not_a_setting(run):
 
 
 def test_config_show_reports_default_set_and_glued(run, tmp_path):
+    run('enable', 'helloworld')
     work = tmp_path / 'work'
     work.mkdir()
     run('add', 'project', 'demo', str(work))
@@ -118,6 +121,7 @@ def test_every_chassis_command_has_a_man_page_and_a_separate_syntax(run, command
 
 
 def test_indexes_list_each_command_and_switch_as_a_row(run):
+    run('enable', 'helloworld')
     rows = {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
     assert {'add', 'list', 'set', 'unset', 'config', 'help', 'enable', 'disable'} <= rows
     switches = {line.split()[0] for line in lines(run('help', 'switches')) if line.startswith('  ')}

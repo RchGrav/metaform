@@ -298,6 +298,9 @@ class Store:
                     if owner == 'item':
                         db.execute('DELETE FROM challenge_states WHERE item_id=?', (row[1],))
                     db.execute(f'DELETE FROM {table} WHERE row=?', (row[0],))
+                    if owner == 'item':
+                        # item_ids names the item's layer, so it goes with the layer; identities keeps the id.
+                        db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
             db.execute('DELETE FROM plans WHERE layer_id=?', (layer_id,))
             db.execute('DELETE FROM selections WHERE layer_id=?', (layer_id,))
             for table in ('hidden_layers', 'layer_tags', 'layer_fields', 'provenance'):

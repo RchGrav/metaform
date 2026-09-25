@@ -96,14 +96,18 @@ def page(name: str) -> str:
 
 
 def switch_page(name: str) -> str:
-    setting = next((item for item in settings.SCHEMA.values() if item.switch == name), None)
+    found = settings.by_switch(name)
+    setting = found[0] if found else None
     if setting is not None:
         lines = [f'{name} — {setting.help}', '']
         if setting.details:
             lines += [setting.details, '']
         lines += ['Usage', f'  metaform set {name}' + ('' if setting.kind == 'bool' else ' <value>'),
                   f'  metaform unset {name}', '']
-        options = setting.options() if setting.kind == 'select' else []
+        try:
+            options = setting.options() if setting.kind == 'select' else []
+        except Exception:  # A module's choices function that fails shows no choices here.
+            options = []
         if setting.kind == 'select':
             lines += ['Choices: ' + (', '.join(options) if options else 'none yet'), '']
         lines += [f'Owner: {setting.owner}. Kind: {setting.kind}. Applies to: '
@@ -119,7 +123,7 @@ def switch_page(name: str) -> str:
 
 
 def known_switch(name: str) -> bool:
-    return name in SWITCHES or any(item.switch == name for item in settings.SCHEMA.values())
+    return name in SWITCHES or settings.by_switch(name) is not None
 
 
 def overview() -> str:
@@ -159,34 +163,44 @@ command name what it acts on.
 '''
 
 
+def _here(verb) -> bool:
+    from .module_metadata import current_os
+    return 'cli' in verb.surfaces and (verb.supported_os is None or current_os() in verb.supported_os)
+
+
+def _noun_words(verb) -> str:
+    return ' '.join(noun.usage() for noun in verb.nouns)
+
+
 def commands_index(visible=lambda group: True) -> str:
     from . import loader
     lines = []
-    if visible('chassis'):
-        rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)]
-        lines += ['Commands', *_rows(rows), '']
-    else:
-        rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)
-                if record.name in ('help', 'set', 'unset', 'config')]
-        lines += ['Commands', *_rows(rows), '']
-    for module in loader.enabled():
+    rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)
+            if visible('chassis') or record.name in ('help', 'set', 'unset', 'config')]
+    lines += ['Commands', *_rows(rows), '']
+    for module in sorted(loader.enabled(), key=lambda item: item.id):
         if not visible(module.id):
             continue
-        rows = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs]
-        lines += [f'{module.id} — {module.summary}', *_rows(rows), '']
+        rows = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs if _here(verb)]
+        lines += [f'{module.id}: {module.summary}', *_rows(rows), '']
     lines.append("Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.")
     return '\n'.join(lines) + '\n'
 
 
 def module_syntax(module) -> str:
     lines = [f'Usage: metaform {module.id} <verb> [nouns] [switches]', '']
-    lines += _rows([(verb.usage(module.id), verb.summary) for verb in module.verbs])
+    lines += _rows([(verb.usage(module.id), verb.summary) for verb in module.verbs if _here(verb)])
     return '\n'.join(lines) + '\n'
 
 
 def module_page(module) -> str:
-    lines = [f'{module.id} — {module.summary}', '', module.purpose, '', 'Verbs']
-    lines += _rows([(verb.name + (' ' + verb.nouns if verb.nouns else ''), verb.summary) for verb in module.verbs])
+    lines = [f'{module.id}: {module.summary}', '', module.purpose, '', 'Verbs']
+    here = [verb for verb in module.verbs if _here(verb)]
+    elsewhere = [verb for verb in module.verbs if 'cli' in verb.surfaces and not _here(verb)]
+    lines += _rows([(verb.name + (' ' + _noun_words(verb) if verb.nouns else ''), verb.summary) for verb in here])
+    if elsewhere:
+        lines += ['', 'Not on this system']
+        lines += _rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os)}.') for verb in elsewhere])
     owned = [item for item in settings.SCHEMA.values() if item.owner == module.id]
     if owned:
         lines += ['', 'Settings'] + _rows([(item.switch, item.help) for item in owned])
@@ -197,7 +211,14 @@ def module_page(module) -> str:
 
 
 def _verb_switches(verb):
-    rows = [(adverb.name + (' <value>' if adverb.takes_value else ''), adverb.help) for adverb in verb.adverbs]
+    rows = []
+    for noun in verb.nouns:
+        if not noun.required:
+            rows.append((f'{noun.name}=<{noun.kind}>', noun.help))
+    for key in verb.switches:
+        setting = settings.SCHEMA.get(key)
+        if setting is not None:
+            rows.append((', '.join(setting.switches) + ('' if setting.kind == 'bool' else ' <value>'), setting.help))
     if verb.caution:
         rows.append(('--confirm', 'Run it. Without this the verb only explains what it would do.'))
     return rows
@@ -210,7 +231,7 @@ def verb_syntax(module, verb) -> str:
 
 
 def verb_page(module, verb) -> str:
-    lines = [f'{module.id} {verb.name} — {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
+    lines = [f'{module.id} {verb.name}: {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
     rows = _verb_switches(verb)
     if rows:
         lines += ['Switches'] + _rows(rows) + ['']

@@ -1,47 +1,85 @@
-"""The module contract: what a module declares, in the chassis's own terms.
+"""The module contract, BASE-035: what a module declares and what a verb receives.
 
-A module is a folder with an `__init__.py` that sets `SUPPORTED_OS` and
-`MODULE = Module(...)`. Its verbs run as `metaform <module> <verb> <nouns>
-[--adverbs]`. Its settings are declared with `metaform.settings` in the same
-code, and they join the settings schema under the module's name.
+A module is a folder with an `__init__.py` that sets the literals
+`SUPPORTED_OS`, and optionally `DEPENDENCIES` and `SHIPS_DISABLED`, and
+`MODULE = Module(...)`. Each verb runs as `metaform <module> <verb> <nouns>
+[switches]` on the CLI and as the tool `<module>_<verb>` over MCP, both built
+from this one declaration. A verb's switches are settings the module declares
+with `metaform.settings`.
 """
 from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-
+from typing import TYPE_CHECKING, Any
 
 from .errors import Stop
 
+if TYPE_CHECKING:
+    from .data import Store
+
+__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call']
+
+VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
+NOUN_KINDS = ('str', 'int', 'bool', 'json')
+SURFACES = ('cli', 'mcp')
+
 
 @dataclass(frozen=True)
-class Adverb:
-    """A switch that changes how a verb runs. It never names what the verb acts on."""
+class Noun:
+    """What a verb acts on. Required nouns are positional; optional ones are written name=value."""
     name: str
     help: str
-    takes_value: bool = False
+    kind: str = 'str'
+    required: bool = True
+    many: bool = False
+    schema: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in NOUN_KINDS:
+            raise ValueError(f'Noun {self.name}: kind must be one of {", ".join(NOUN_KINDS)}.')
+
+    def usage(self) -> str:
+        if self.many:
+            return f'<{self.name}>...' if self.required else f'[{self.name}...]'
+        return f'<{self.name}>' if self.required else f'[{self.name}]'
 
 
 @dataclass(frozen=True)
 class Verb:
+    """One command of a module. `switches` names the settings the verb reads, CLI-012."""
     name: str
-    run: Callable
+    run: Callable[..., Any]
     summary: str
-    nouns: str = ''
-    adverbs: tuple[Adverb, ...] = ()
+    nouns: tuple[Noun, ...] = ()
+    switches: tuple[str, ...] = ()
     details: str = ''
     examples: tuple[tuple[str, str], ...] = ()
     caution: str = ''
+    supported_os: tuple[str, ...] | None = None
+    surfaces: tuple[str, ...] = SURFACES
+
+    def __post_init__(self) -> None:
+        if not VERB_NAME.fullmatch(self.name):
+            raise ValueError(f'Verb name {self.name!r} must be lowercase letters, digits and hyphens.')
+        if any(noun.many for noun in self.nouns[:-1]):
+            raise ValueError(f'Verb {self.name}: only the last noun may take many words.')
+        if not set(self.surfaces) <= set(SURFACES):
+            raise ValueError(f'Verb {self.name}: surfaces are cli and mcp.')
 
     def usage(self, module: str) -> str:
-        parts = ['metaform', module, self.name]
-        if self.nouns:
-            parts.append(self.nouns)
-        parts += [f'[{item.name}' + (' <value>]' if item.takes_value else ']') for item in self.adverbs]
+        from . import settings
+        parts = ['metaform', module, self.name, *(noun.usage() for noun in self.nouns)]
+        for key in self.switches:
+            setting = settings.SCHEMA.get(key)
+            if setting is not None:
+                parts.append(f'[{setting.switch}]' if setting.kind == 'bool' else f'[{setting.switch} <value>]')
         if self.caution:
             parts.append('[--confirm]')
         return ' '.join(parts)
@@ -50,57 +88,83 @@ class Verb:
 @dataclass(frozen=True)
 class Subscription:
     topic: str
-    handler: Callable
+    handler: Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class Status:
+    """What a module's status hook adds to status, `help agents` and the MCP instructions, BASE-035."""
+    lines: tuple[str, ...] = ()
+    notice: str | None = None
 
 
 @dataclass(frozen=True)
 class Module:
     id: str
-    purpose: str
     summary: str
+    purpose: str
     verbs: tuple[Verb, ...] = ()
     subscriptions: tuple[Subscription, ...] = ()
     details: str = ''
+    start: Callable[..., Any] | None = None
+    stop: Callable[..., Any] | None = None
+    status: Callable[..., Any] | None = None
 
 
 @dataclass
 class Context:
-    """What a verb receives: its nouns, its adverbs, the folder and the module's data folder."""
+    """What one verb call, event delivery or tool call receives. Nothing else carries context, BASE-028."""
     module: str
     folder: Path
-    nouns: list[str] = field(default_factory=list)
-    adverbs: dict[str, object] = field(default_factory=dict)
+    project: str | None = None
+    store: Store | None = None
+    nouns: dict[str, Any] = field(default_factory=dict)
+    switches: dict[str, Any] = field(default_factory=dict)
     sink: Callable[[str], None] | None = None
+    surface: str = 'cli'
 
     def say(self, text: str) -> None:
+        """A message for a person. The data an agent needs back is the verb's return value, BASE-036."""
         if self.sink is not None:
             self.sink(text)
         else:
             sys.stdout.write(text + '\n')
 
-    def setting(self, key: str):
+    def setting(self, key: str) -> Any:
+        """The value passed on this call, otherwise the stored or default value for this folder, CLI-011."""
+        if key in self.switches:
+            return self.switches[key]
         from . import settings
         return settings.value(key, self.folder)
 
-    @property
-    def data(self) -> Path:
-        from . import home
-        path = home.home() / 'data' / self.module
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+    def require_store(self) -> Store:
+        if self.store is None:
+            raise Stop('No project for this folder.', 'metaform add project <id> <path>')
+        return self.store
 
-    def publish(self, topic: str, payload: dict | None = None) -> list[dict]:
+    def publish(self, topic: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         from . import events
         return events.publish(topic, payload or {}, self)
 
+    def spawn(self, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        """Start a task owned by this module; unload, reload and shutdown cancel it, BASE-018."""
+        from . import loader
+        return loader.spawn(self.module, coroutine)
 
-def call(function: Callable, *args):
-    """Run a sync or an async function the same way."""
+
+def call(function: Callable[..., Any], *args: Any) -> Any:
+    """Run a function or a coroutine function the same way, BASE-009."""
     result = function(*args)
     if inspect.isawaitable(result):
-        return asyncio.run(_await(result))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_await(result))
+        # Inside a running loop, asyncio.run is never called on it: the coroutine gets a loop of its own.
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            return worker.submit(asyncio.run, _await(result)).result()
     return result
 
 
-async def _await(awaitable):
+async def _await(awaitable: Any) -> Any:
     return await awaitable

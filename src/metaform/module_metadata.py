@@ -1,94 +1,114 @@
-"""Read module platform declarations without executing their entrypoint."""
+"""Read a module's declarations without running it, BASE-015.
+
+`SUPPORTED_OS` and `DEPENDENCIES` are literal tuples or lists of strings,
+`SHIPS_DISABLED` a literal boolean and `REQUIRES_CHASSIS` a literal string. The
+module's `__init__.py`, and a `manifest.py` beside it, are parsed with `ast` and
+never executed. A name assigned more than once, assigned a non-literal, or
+defined any other way is an error naming the declaration.
+"""
+from __future__ import annotations
+
 import ast
-from pathlib import Path
 import platform
 import tokenize
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+SYSTEMS = ('linux', 'macos', 'windows')
 
 
-class UnsupportedPlatformError(ValueError):
-    """A module explicitly excludes this operating system."""
-
-
-def _canonical(name):
+def canonical(name: str) -> str:
     name = name.lower()
     return 'macos' if name == 'darwin' else name
 
 
-def current_os():
-    return _canonical(platform.system())
+def current_os() -> str:
+    return canonical(platform.system())
 
 
-def _declares(node, name):
+@dataclass(frozen=True)
+class Declared:
+    supported_os: tuple[str, ...] | None
+    dependencies: tuple[str, ...]
+    ships_disabled: bool
+    requires_chassis: str | None
+
+    @property
+    def compatible(self) -> bool:
+        return self.supported_os is not None and current_os() in self.supported_os
+
+    @property
+    def reason(self) -> str | None:
+        if self.supported_os is None:
+            return 'SUPPORTED_OS is required'
+        if not self.compatible:
+            return (f'Unsupported operating system {current_os()}; '
+                    f'SUPPORTED_OS declares {", ".join(self.supported_os)}')
+        return None
+
+
+def _defines(node: ast.AST, name: str) -> bool:
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return node.name == name
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
         return node.id == name
     if isinstance(node, ast.alias):
-        return (node.asname or node.name) == name
-    return any(_declares(child, name) for child in ast.iter_child_nodes(node))
+        return (node.asname or node.name.split('.')[0]) == name
+    return any(_defines(child, name) for child in ast.iter_child_nodes(node))
 
 
-def _literal(tree, entry, name, *, manifest=False):
-    declarations = []
+def _literal(tree: ast.Module, source: Path, name: str, check: Any) -> Any:
+    found: list[ast.stmt] = []
     for statement in tree.body:
-        if (manifest and isinstance(statement, ast.ImportFrom)
-                and statement.level == 1 and statement.module == 'manifest'
-                and any(alias.name == name and alias.asname in {None, name} for alias in statement.names)):
-            continue
+        if isinstance(statement, ast.ImportFrom) and statement.level == 1 and statement.module == 'manifest':
+            if any(alias.name == name for alias in statement.names):
+                continue
         targets = (statement.targets if isinstance(statement, ast.Assign)
-                   else [statement.target] if isinstance(statement, (ast.AnnAssign, ast.AugAssign)) else [])
+                   else [statement.target] if isinstance(statement, ast.AnnAssign) else [])
         if any(isinstance(target, ast.Name) and target.id == name for target in targets):
-            declarations.append(statement)
-        elif _declares(statement, name):
-            raise ValueError(f'{entry}: {name} must be a top-level literal tuple or list of strings')
-    value = None
-    if declarations:
-        message = f'{entry}: {name} must be one literal tuple or list of strings'
-        if len(declarations) != 1 or isinstance(declarations[0], ast.AugAssign):
-            raise ValueError(message)
-        try:
-            value = ast.literal_eval(declarations[0].value)
-        except (ValueError, TypeError, SyntaxError) as error:
-            raise ValueError(message) from error
-        if not isinstance(value, (tuple, list)) or not all(isinstance(name, str) for name in value):
-            raise ValueError(message)
+            found.append(statement)
+        elif _defines(statement, name):
+            raise ValueError(f'{source.name}: {name} must be one top-level literal')
+    if not found:
+        return None
+    value_node = getattr(found[0], 'value', None)
+    if len(found) != 1 or value_node is None:
+        raise ValueError(f'{source.name}: {name} must be one top-level literal')
+    try:
+        value = ast.literal_eval(value_node)
+    except (ValueError, TypeError, SyntaxError) as error:
+        raise ValueError(f'{source.name}: {name} must be one top-level literal') from error
+    if not check(value):
+        raise ValueError(f'{source.name}: {name} has the wrong type')
     return value
 
 
+def _strings(value: Any) -> bool:
+    return isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in value)
 
-def read(source):
-    """Read literal metadata from a file or a package's entrypoint/manifest.py.
 
-    SUPPORTED_OS is required. A module without it is not compatible and is not loaded.
-    Invalid declarations raise ValueError; no module code is imported or executed.
-    """
-    source = Path(source)
-    entry = source / '__init__.py' if source.is_dir() else source
+def read(folder: Path) -> Declared:
+    """The declarations of a module folder, or the package folder of an entry point."""
+    entry = folder / '__init__.py'
     with tokenize.open(entry) as stream:
         tree = ast.parse(stream.read(), filename=str(entry))
-    manifest = entry.parent / 'manifest.py' if entry.name == '__init__.py' else None
-    manifest_tree = None
-    if manifest is not None and manifest.is_file():
-        with tokenize.open(manifest) as stream:
-            manifest_tree = ast.parse(stream.read(), filename=str(manifest))
-    def declaration(name):
-        local = _literal(tree, entry, name, manifest=manifest_tree is not None)
-        declared = _literal(manifest_tree, manifest, name) if manifest_tree is not None else None
-        if local is not None and declared is not None and local != declared:
-            raise ValueError(f'{entry}: {name} conflicts with manifest.py')
-        return declared if declared is not None else local
-    declared = declaration('SUPPORTED_OS')
-    supported_os = None if declared is None else [_canonical(name) for name in declared]
-    dependencies = declaration('DEPENDENCIES') or []
-    operating_system = current_os()
-    compatible = supported_os is not None and operating_system in supported_os
-    reason = None
-    if supported_os is None:
-        reason = 'SUPPORTED_OS is required'
-    elif not compatible:
-        reason = f'Unsupported operating system {operating_system}; SUPPORTED_OS declares {supported_os!r}'
-    return {'supported_os': supported_os, 'compatible': compatible, 'compatibility_reason': reason, 'dependencies': list(dependencies)}
+    manifest_path = folder / 'manifest.py'
+    manifest = None
+    if manifest_path.is_file():
+        with tokenize.open(manifest_path) as stream:
+            manifest = ast.parse(stream.read(), filename=str(manifest_path))
 
+    def declared(name: str, check: Any) -> Any:
+        local = _literal(tree, entry, name, check)
+        other = _literal(manifest, manifest_path, name, check) if manifest is not None else None
+        if local is not None and other is not None and local != other:
+            raise ValueError(f'{entry.name}: {name} differs from manifest.py')
+        return other if other is not None else local
 
-def supported(source):
-    return read(source)['compatible']
+    systems = declared('SUPPORTED_OS', _strings)
+    dependencies = declared('DEPENDENCIES', _strings) or ()
+    ships_disabled = declared('SHIPS_DISABLED', lambda value: isinstance(value, bool)) or False
+    requires = declared('REQUIRES_CHASSIS', lambda value: isinstance(value, str))
+    return Declared(None if systems is None else tuple(canonical(name) for name in systems), tuple(dependencies),
+                    ships_disabled, requires)

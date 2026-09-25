@@ -271,11 +271,14 @@ def test_discarding_a_layer_keeps_identity_and_type_rows(home, store):
     small_map(store)
     draft = knowledge(store, 'draft')
     element = store.add_element(draft.name, 'code.probe.echo')
+    item = store.add_item(draft.name, Node('element', 'code.probe.echo'), 'a draft note')
     store.discard(draft.name)
     db = sqlite3.connect(store_file(home, store))
     assert db.execute('SELECT COUNT(*) FROM element_ids WHERE element_id=?', (element.element_id,)).fetchone() == (1,)
     assert db.execute("SELECT COUNT(*) FROM types WHERE address='code.probe.echo'").fetchone() == (1,)
+    assert db.execute('SELECT COUNT(*) FROM identities WHERE id=?', (item.item_id,)).fetchone() == (1,)
     assert store.element(element.element_id) is None
+    assert store.search('draft').results == ()
     assert 'draft' not in [layer.name for layer in store.layers().results]
     with pytest.raises(StoreError):
         store.discard('intake-1')

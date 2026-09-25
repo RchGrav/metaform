@@ -1,3 +1,4 @@
+"""Fixtures shared by the chassis tests in tests/ and each module's own tests, QUAL-006."""
 import os
 import sqlite3
 import subprocess
@@ -60,3 +61,28 @@ def traced(monkeypatch):
         return db
     monkeypatch.setattr(sqlite3, 'connect', connect)
     return statements
+
+
+@pytest.fixture
+def user_module(home):
+    """Write a module into the user place, `<home>/modules/<name>/__init__.py`."""
+    import textwrap
+
+    def write(name, body):
+        folder = home / 'modules' / name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / '__init__.py').write_text(textwrap.dedent(body))
+        return folder
+    return write
+
+
+@pytest.fixture
+def module_row(run):
+    """One line of `metaform list modules` for a module id: id, state, place, summary or reason."""
+    def row(identifier, cwd=None):
+        for line in run('list', 'modules', cwd=cwd).stdout.splitlines():
+            parts = line.split(None, 3)
+            if parts and parts[0] == identifier:
+                return parts
+        return None
+    return row

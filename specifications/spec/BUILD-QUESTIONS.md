@@ -44,3 +44,15 @@ Blocks: only the D82 case.
 Meanwhile: a bare id not in `identities` is looked up through the `properties` `UNIQUE(property_id, layer_id)` index.
 Blocks: nothing.
 
+## Step 2, common base and modules
+
+**Q9. The template's purpose. (BASE-019, MCP-008)**
+BASE-019 says the template declares every field with none filled and loads when a copy is enabled; MCP-008 says a module whose `purpose` is empty fails to load.
+Meanwhile: the template's `purpose` holds one placeholder sentence telling the author what to write, ending `Details: metaform help template.`, so a copy loads. Its other fields are empty.
+Blocks: nothing.
+
+**Q10. Discarding a layer whose items keep identity rows. (STORE-032, STORE-033)**
+`discard` keeps every identity row and deletes the layer row, but `item_ids.layer_id` references `layers`, so the layer row cannot go while its items' `item_ids` rows stay.
+Meanwhile: `discard` deletes the discarded layer's `item_ids` rows and keeps their `identities` rows, so an item id is still never reused.
+Blocks: nothing.
+
