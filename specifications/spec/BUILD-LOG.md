@@ -145,3 +145,13 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Tests added, each seen failing first: `test_refreshing_the_screen_starts_no_module_again`, `test_set_with_one_value_that_does_not_fit_stores_none_of_them`, `test_a_file_another_connection_creates_between_the_first_reads_is_not_refused`; a reason assertion in the module refusal test; a no-tests assertion in the build test. Whole suite: 406 passed, 3 failed on Q39.
 - Questions raised: Q45.
 
+## Step 15: M6, the installer on partial failure
+
+- Each tool is recorded in `installs` as soon as its registration succeeds, so a later tool's failure never hides it from the next run, which then removes its entry before adding it again, MCP-019.
+- When `add` fails after a `remove` that also failed, the error names both.
+- A merged JSON config is written to a temporary file beside it and moved into place with `os.replace`.
+- A config that is not a JSON object holding an `mcpServers` object, such as one with comments, is left unchanged and refused with a Stop naming the file and its backup, and the next step names the entry to add by hand, MCP-015.
+- Every tool command has a two-minute timeout; one that does not finish fails the install naming the tool.
+- Tests added, each seen failing first: `test_a_tool_that_fails_after_another_registered_leaves_that_one_recorded_for_the_rerun`, `test_a_config_that_is_not_a_json_object_is_refused_naming_it_and_its_backup`, `test_a_tool_command_that_hangs_stops_at_its_timeout`.
+- Not done: the proof still starts the registered command once per tool, and never through the tool's own entry; M6 lists no fix for it, and MCP-017 proves the command.
+

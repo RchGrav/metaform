@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from . import __version__, _build_info, home
 from .errors import Stop
@@ -156,17 +157,43 @@ def _backup(path: Path, folder: Path) -> Path | None:
     return target
 
 
-def _merge(path: Path, command: list[str]) -> None:
-    data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
-    servers = data.setdefault('mcpServers', {})
-    servers['metaform'] = {'command': command[0], 'args': command[1:]}
+def _merge(path: Path, command: list[str], backup: Path | None) -> None:
+    """Add Metaform's server to a tool's JSON config. A config that is not a JSON object is left as it is and
+    refused, naming it and its backup; the merged file replaces the old one whole, so a crash never leaves half."""
+    data: Any = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except ValueError:
+            data = None
+    servers = data.get('mcpServers', {}) if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        kept = f' A copy is at {backup}.' if backup else ''
+        raise Stop(f'{path} is not a JSON object with an mcpServers object, so Metaform did not change it.{kept}',
+                   f'add "metaform": {json.dumps({"command": command[0], "args": command[1:]})} to mcpServers in '
+                   f'{path}')
+    assert isinstance(data, dict)
+    data['mcpServers'] = {**servers, 'metaform': {'command': command[0], 'args': command[1:]}}
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
+    temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    os.replace(temporary, path)
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+TOOL_TIMEOUT = 120  # seconds for one command of a tool, such as claude mcp add, M6
+
+
+def _run(tool: str, command: list[str]) -> subprocess.CompletedProcess[str]:
     resolved = shutil.which(command[0]) or command[0]
-    return subprocess.run([resolved, *command[1:]], capture_output=True, text=True)
+    try:
+        return subprocess.run([resolved, *command[1:]], capture_output=True, text=True, timeout=TOOL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise Failed(f'{tool}: {" ".join(command[:3])} did not finish in {TOOL_TIMEOUT} seconds.',
+                     f'metaform install {tool}') from None
+
+
+def _said(result: subprocess.CompletedProcess[str]) -> str:
+    return result.stderr.strip() or result.stdout.strip() or f'exit code {result.returncode}'
 
 
 def _recorded() -> set[str]:
@@ -258,25 +285,27 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     recorded = _recorded()
     for tool in chosen:
         config = tool.config()
-        if config is not None:
-            _backup(config, backups)
+        backup = _backup(config, backups) if config is not None else None
+        folder = tool.skills()
         if tool.merge and config is not None:
-            _merge(config, command)
-            continue
-        if tool.name in recorded and tool.remove:
-            _run(tool.remove)
-        assert tool.add is not None
-        result = _run(tool.add(command))
-        if result.returncode != 0:
-            raise Failed(f'{tool.name} registration failed: {result.stderr.strip() or result.stdout.strip()}',
-                         f'metaform install {tool.name}')
+            _merge(config, command, backup)
+        else:
+            removed = ''
+            if tool.name in recorded and tool.remove:
+                result = _run(tool.name, tool.remove)
+                if result.returncode != 0:
+                    removed = f' Removing the earlier entry also failed: {_said(result)}'
+            assert tool.add is not None
+            result = _run(tool.name, tool.add(command))
+            if result.returncode != 0:
+                raise Failed(f'{tool.name} registration failed: {_said(result)}{removed}',
+                             f'metaform install {tool.name}')
+        # Recorded as soon as it is registered, so a later failure never hides it from the next run, MCP-019.
+        _record(tool.name, wheel, folder / 'metaform' / 'SKILL.md' if folder else None)
     for path in skill_files:
         _backup(path, backups)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(skill)
-    for tool in chosen:
-        folder = tool.skills()
-        _record(tool.name, wheel, folder / 'metaform' / 'SKILL.md' if folder else None)
     say('Proof:')
     failed = []
     for tool in chosen:

@@ -150,3 +150,44 @@ def test_enabling_a_module_changes_no_skill_file(run, machine, home):
     run('enable', 'helloworld', cwd=machine['folder'], env=machine['env'])
     assert tree(machine['user']) == before
     assert not any(path.name == 'SKILL.md' for path in machine['folder'].glob('*'))
+
+
+@pytest.mark.req('MCP-015')
+@pytest.mark.req('MCP-019')
+def test_a_tool_that_fails_after_another_registered_leaves_that_one_recorded_for_the_rerun(run, machine):
+    codex = machine['bin'] / 'codex.py'
+    working = codex.read_text(encoding='utf-8')
+    codex.write_text('import sys\nprint("codex cannot add", file=sys.stderr)\nsys.exit(1)\n', encoding='utf-8')
+    failed = run('install', 'claude', 'codex', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert failed.returncode != 0 and 'codex' in failed.stderr
+    codex.write_text(working, encoding='utf-8')
+    run('install', 'claude', 'codex', cwd=machine['folder'], env=machine['env'])
+    assert [call[:2] for call in calls(machine['bin'], 'claude')] == [['mcp', 'add'], ['mcp', 'remove'],
+                                                                      ['mcp', 'add']]
+    assert json.loads((machine['bin'] / 'claude.servers').read_text()) == ['metaform']
+
+
+@pytest.mark.req('MCP-015')
+def test_a_config_that_is_not_a_json_object_is_refused_naming_it_and_its_backup(run, machine, home):
+    config = machine['user'] / '.cursor' / 'mcp.json'
+    config.write_text('// my servers\n{"mcpServers": {}}\n', encoding='utf-8')
+    before = config.read_bytes()
+    refused = run('install', 'cursor', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode != 0 and str(config) in refused.stderr
+    backups = list((home / 'backups' / 'install').rglob('mcp.json'))
+    assert len(backups) == 1 and str(backups[0]) in refused.stderr
+    assert config.read_bytes() == before
+
+
+@pytest.mark.req('MCP-015')
+def test_a_tool_command_that_hangs_stops_at_its_timeout(machine, home, monkeypatch):
+    from fakes import executable
+    from metaform import install
+    executable(machine['bin'], 'claude', 'import time\ntime.sleep(30)\n')
+    for key, value in machine['env'].items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(install, 'TOOL_TIMEOUT', 1)
+    said: list[str] = []
+    with pytest.raises(install.Failed) as stopped:
+        install.install(['claude'], said.append)
+    assert 'claude' in str(stopped.value) and 'did not finish' in str(stopped.value)
