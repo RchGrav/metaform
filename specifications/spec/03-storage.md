@@ -192,8 +192,8 @@ It covers the base database, the per-project store, the correction stack, layers
 - Status: confirmed for the tree and prefix rows. Whether Type records live in each project store, as here, or are shared across projects, as MAP-010 recommends, is open; see open question 17.
 
 ### STORE-009 Elements
-- Requirement: Each element is stored with its identity id, current address, informal name, name length and role, and every version of it is kept.
-- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The informal name is prose; the address is how everything refers to it. `name_length` is the number of trailing address segments read backward to form its proper noun. Role is one of AUE, VE, DE, SE or NE, or empty for an element that has none.
+- Requirement: Each element is stored as its identity id and its current address, and every version of it is kept. Everything else about an element is linked to it.
+- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The element record is only that address with its identity: it holds no data of its own, and things are linked to it. The informal name, the `name_length` (the number of trailing address segments read backward to form its proper noun) and the role (AUE, VE, DE, SE or NE) that the intake gives for an element are stored as one descriptor item of the intake layer attached to the element, with any refs owned by that item. A knowledge layer that creates an element may attach its own descriptor item the same way.
 - Why: Elements are real records that everything else points at. The intake names them by address, so the current address must be one direct lookup, while the identity id keeps attachments stable across retyping.
 - How it shows: `element code.bus.event` returns that element's current row in one read.
 - Build:
@@ -203,9 +203,6 @@ It covers the base database, the per-project store, the correction stack, layers
     element_id  TEXT NOT NULL REFERENCES element_ids(element_id),
     layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
     address     TEXT NOT NULL REFERENCES types(address),
-    name        TEXT,
-    name_length INTEGER,
-    role        TEXT CHECK(role IN ('AUE','VE','DE','SE','NE')),
     extra       TEXT,                                   -- STORE-021
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
     reason      TEXT,
@@ -220,13 +217,15 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE INDEX elements_by_layer ON elements(layer_id);
   ```
   The current row carries the address so that address lookup of current elements is one unique-index read, and so that two current elements cannot hold the same address.
-  - `add_element` at an address a current element already holds returns that element, marked `existing: true`, and writes nothing, whichever layer holds it. It never changes the existing element's fields. When the supplied name, name_length, role or extra differ from the existing element's, the result lists those field names under `differs`, so the writer knows and can change it through a correction layer, STORE-017 and STORE-034. The supplied layer is not recorded on the existing element.
-  - A role is stored as given, or NULL when none is given. The store does not refuse a missing role, STORE-026. The intake writes one role on every element it creates, MAP-017.
+  - Descriptor: `add_element(layer, address, name=, name_length=, role=, refs=)` writes the element row and, when any of name, name_length, role or refs is given, one item of the same layer attached to the element with `value` `{"descriptor": {"name": ..., "name_length": ..., "role": ...}}` and the refs owned by that item, STORE-015. Reads of an element return its address and identity together with the current descriptor items attached to it, each with its layer name. A descriptor is changed by a correction layer as an item, STORE-017.
+  - `add_element` at an address a current element already holds returns that element, marked `existing: true`, writes no element row, and adds the descriptor item in the supplied layer only when that layer holds none for the element yet. The address, not the name, is the element's identity, so a repeated address is the same element.
+  - A role is stored as given, or left out when none is given. The store does not refuse a missing role, STORE-026. The intake writes one role on every element it creates, MAP-017.
 - Acceptance:
   - Looking up an element by address after two correction layers changed it returns the version from the higher one, through `current_elements`.
-  - Adding a second element at an address that a current element already holds returns the existing element's id, marked existing, lists the fields that differ, and changes no row.
+  - Adding a second element at an address that a current element already holds returns the existing element's id, marked existing, and writes no element row.
+  - An intake element read back by address returns its name, name_length and role from its intake-layer descriptor item, and the `elements` row has no name, name_length or role column.
 - Relates to: STORE-007, STORE-010, STORE-017, MAP-015, MAP-016, MAP-017.
-- Status: confirmed for the fields. One current element per address in a project is recommended; see open question 1. MAP-017 requires exactly one role on every element, while this table allows an element with no role; whether an element created by a layer other than the intake must carry a role is open, see open question 18.
+- Status: confirmed: the element record holds only identity and address, and name, name_length, role and refs are linked to it as a descriptor item, D78. One current element per address in a project follows from an element being its address. MAP-017 requires exactly one role on every element, while this table allows an element with no role; whether an element created by a layer other than the intake must carry a role is open, see open question 18.
 
 ### STORE-010 Joins are owned by their receiver and run one way
 - Requirement: Each join is stored with its receiver, provider, purpose, function, relation, observation and non-goal as separate columns, owned by the receiver, and pointing from receiver to provider only.
@@ -610,7 +609,7 @@ It covers the base database, the per-project store, the correction stack, layers
   | `edit(thing, changes)` | thing is an element, join, subtype, property or item written in a knowledge layer, or in a correction layer still building; `changes` per STORE-034 | the changed row, in place, with no new version | thing in the intake layer, a finished correction layer or memory; a key not allowed for the thing's kind |
   | `remove(thing)` | thing is an element, join, subtype, property, item or ref written in a knowledge layer, or in a correction layer still building | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | thing in the intake layer, a finished correction layer or memory; the thing is still the receiver, provider or target of a current row in the layer |
   | `discard(layer)` | a knowledge layer, or a correction layer still building | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; the intake layer; a correction layer on the stack; memory |
-  | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
+  | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008; name, name_length, role and refs are written as the element's descriptor item in `layer`, STORE-009 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
   | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
   | `add_subtype(layer, join, address, *, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | a subtype has no purpose, MAP-030 | `Subtype` | join unknown; malformed address; a purpose given |
   | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current version | owner unknown; owner in the intake layer or a finished correction layer, STORE-012 |
@@ -798,7 +797,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Why: A correction format with no rules lets a correction change a join's owner or orphan the joins of a removed element, which breaks the structure that everything reads through.
 - How it shows: `metaform map correct <layer> <element id> address=code.probe.echo reason=...` inside a building correction layer relocates the element, with everything attached to it, when that layer is finished. Finishing a correction layer that removes an element but not the join it still receives is refused, naming that join.
 - Build:
-  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `name`, `name_length`, `role`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `element`, `value`, `extra`. Any other key is refused when the correction is written. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
+  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `extra` (an element's name, name_length and role are its descriptor item, corrected as an item); join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `name`, `name_length`, `role`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `element`, `value`, `extra`. Any other key is refused when the correction is written. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
   - These checks run at `finish`, against the state after the whole correction layer is applied, so one correction layer can remove an element and its joins, or move several things, together:
     - an element's new address is not held by another current element, and its `types` rows are written;
     - every current join where a relocated element is receiver or provider is removed, with its subtypes, as part of applying the layer, STORE-017;

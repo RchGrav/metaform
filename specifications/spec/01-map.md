@@ -146,7 +146,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The address says what kind of thing an element is. The element is this artifact's realization of it. A later intake or a correction can type the same element better, and everything attached to that element, its joins, subtypes, layer items and memory, follows it through the change instead of being orphaned. Names are lexical handles only; identity is never established by string equality of names.
 - Why: Retyping is how the map improves. If identity were the address, every improvement would orphan the knowledge built on the element. Relocating an element through a correction layer takes everything attached to it along; its joins do not survive the move, because a join is the face between a specific receiver and provider, LAYER-011 and STORE-017.
 - How it shows: After an element's address changes, its joins, subtypes and layer items are all still found at the element under its new address.
-- Build: An element record has element id, project id, address, name, name_length, role, and refs as in MAP-021. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. An element is only a namespace address: when a correction layer removes an element, what was attached to it is orphaned, kept and not shown, and when an element is put back at the same address, that same element identity is restored and what was attached shows again, STORE-017.
+- Build: An element record has element id, project id and address, and nothing else. Its name, name_length, role and refs, where given, are a descriptor item linked to it, STORE-009. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. An element is only a namespace address: when a correction layer removes an element, what was attached to it is orphaned, kept and not shown, and when an element is put back at the same address, that same element identity is restored and what was attached shows again, STORE-017.
 - Acceptance:
   1. Relocating an element from `code.probe` to `code.probe.echo` keeps its id, and its layer items and memories are returned when reading it at the new address; its joins as receiver and as provider are no longer current, and joins at the new place are new joins.
 - Relates to: MAP-016, MAP-020, LAYER-011, STORE-007, STORE-009.
@@ -170,7 +170,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: AUE marks the artifact under examination. VE marks a party outside the artifact whose purpose drives changes or improvements to it; it is never the person who asked for the intake, the end user, or whoever performs the operation, and it is named at its most specific reusable type level. DE is the element whose loss would stop the artifact being the same type; its function is stated independently of medium, encoding, genre and style. SE is an element whose Encounter Function helps the DE serve the VE's purpose. NE is a component, interface or specification that states an essential demand on its environment. Inside the AUE, an element is DE, SE or NE. A VE is an element with role VE and never receives an AUE role. PE is not a role; it is a join's other endpoint. A subtype carries DE, SE or NE.
 - Why: Roles tell an agent at once how an element bears on the artifact's identity, which is the first thing it needs to orient.
 - How it shows: Every element listing shows its role.
-- Build: The intake writes exactly one role, from the set above, on every element and subtype it creates. There may be several VEs. The store records the role as given and does not refuse a missing one, STORE-009 and STORE-026, because the store never judges content; a missing role on an intake element is a defect of that intake, visible to any later layer that grades the map.
+- Build: The intake writes exactly one role, from the set above, on every element and subtype it creates: an element's role is in its descriptor item, STORE-009, and a subtype's in its own record, STORE-011. There may be several VEs. The store records the role as given and does not refuse a missing one, STORE-009 and STORE-026, because the store never judges content; a missing role on an intake element is a defect of that intake, visible to any later layer that grades the map.
 - Acceptance: None beyond the intake mapping test in MAP-031.
 - Relates to: MAP-020, MAP-030, MAP-031.
 - Status: confirmed. Whether one VE is recorded as primary is open, see open question 6. STORE-009 allows an element with no role; whether an element created by a layer other than the intake must carry one is open, see open question 13.
@@ -272,25 +272,40 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-040 An intake result becomes map records
 
-- Requirement: An intake result is stored as elements, joins, refs and subtypes in the project's map layer, with nothing lost.
-- What this means: The response schema of the current Canonical Intake, `specifications/Canonical_Intake.xml`, maps onto the records as follows.
-  - The result id is kept on the intake layer written for that intake.
-  - Each root `<element>` becomes an element with its address, name, name_length and role.
-  - Each `<join>` inside a root element becomes a join owned by that element, with its provider resolved by address, every field in MAP-020, and the refs written directly inside the join.
-  - A `<join>` nested inside a `<join>` becomes a subtype of the outer join: its own function is the nested join's function, with its relation and observation, its address is the nested join's provider, and the `<element>` inside it gives the subtype's name, name_length, role and refs. A nested join carries no purpose; the parent join carries it, MAP-030.
-  - Each ref becomes a ref record on its owner, in order.
-  - When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
-  - The intake produces no properties. Nothing in the intake asks for them. Properties come from knowledge layers, MAP-022.
-
-  The intake's instructions are delivered to the performing agent by name. The agent completes the whole method, annealing included through step 11, and then submits the final shape once through the intake module's `intake_submit` tool, or `metaform intake submit` on the CLI, BASE-039. Its inputs mirror the intake schema's fields, and the mapping above applies to them field for field. There is no record-by-record writing during the trace and no XML answer.
-- Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part.
+- Requirement: An intake result is submitted through `intake_submit`'s own input schema and stored as elements, joins, subtypes and refs in one intake layer, with nothing lost.
+- What this means: The intake's instructions are delivered to the performing agent by name. The agent completes the whole method, annealing included through step 11, and submits the final shape once through the intake module's `intake_submit` tool, or `metaform intake submit` on the CLI, BASE-039. The tool has its own input schema and never parses the intake's XML: the agent fills the schema's fields from the result the intake method produced. The tool's schema is the metaform's general data pattern: elements, joins held by receivers with purpose and function, nested subtypes with their own function and no purpose, and refs. The intake text can change as long as its data still follows that pattern, with no change to the tool. There is no record-by-record writing during the trace. The intake produces no properties; properties come from knowledge layers, MAP-022.
+- Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part. A schema owned by the tool keeps storage stable while the intake text improves.
 - How it shows: After an intake, every element, join, subtype and ref in the result is readable from the store.
-- Build: `intake_submit` checks the submission's form and stores the whole mapping above as one intake layer, with its provenance record, LAYER-010, in one atomic write, STORE-024 and STORE-032. A submission with a form error writes nothing. So a half-written intake never exists, and the map appears whole or not at all.
+- Build: `intake_submit` checks the submission and stores it as one intake layer, with its provenance record, LAYER-010, in one atomic write, STORE-024 and STORE-032. A submission that fails a check writes nothing, so a half-written intake never exists. The current intake schema, `specifications/Canonical_Intake.xml`, maps to the tool schema and the store as follows:
+
+  | Intake XML | Tool input schema | Store |
+  |---|---|---|
+  | `result@id` | `id` | `layers.result_id` of the intake layer |
+  | `element@namespace_address` | `elements[].namespace_address` | `elements.address` with a new identity id, STORE-009; the address row in `types`, STORE-008 |
+  | `element/name` text | `elements[].name` | descriptor item of the intake layer on the element, STORE-009 |
+  | `element@name_length` | `elements[].name_length` | descriptor item |
+  | `element@role` AUE, VE, DE, SE, NE | `elements[].role` | descriptor item |
+  | none in the current schema for a root element | `elements[].refs[]` | `refs` rows owned by the descriptor item |
+  | `join`, held inside its receiving element's `joins` | `elements[].joins[]` | `joins` row, receiver the enclosing element, STORE-010 |
+  | `join@type`, always `purpose` | `joins[].type` | `joins.type` |
+  | `join@provider` | `joins[].provider` | `joins.provider`, the provider's identity id resolved by address |
+  | `join@purpose`, `@function`, `@relation`, `@observation`, `@non_goal` | same names | same-named `joins` columns, MAP-020 |
+  | `join/refs/ref@key`, `@value` | `joins[].refs[]` | `refs` rows owned by the join, in order, STORE-012 |
+  | nested `join` inside a `join` | `joins[].subtypes[]` | `subtypes` row in that join, STORE-011 |
+  | nested `join@provider` | `subtypes[].provider` | `subtypes.address`; it must equal the nested element's address |
+  | nested `join@function`, `@relation`, `@observation` | same names | same-named `subtypes` columns |
+  | nested `element@namespace_address` | `subtypes[].element.namespace_address` | `subtypes.address` |
+  | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `subtypes[].element.name`, `name_length`, `role` | same-named `subtypes` columns |
+  | nested `element/refs/ref` | `subtypes[].element.refs[]` | `refs` rows owned by the subtype |
+
+  Built this way the structure follows the pattern that makes it acyclic: each join is held by its receiver and runs one way to its provider, a subtype sits inside its one join with no purpose, and a relationship in the other direction is its own join with its own purpose, MAP-020 and MAP-030. Only the element-to-element view, which ignores purposes, can show a cycle. Whether a submitted join whose provider is its own receiver, or a subtype's address, is stored or refused is open, BASE-039.
+
+  When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 - Acceptance:
-  1. Storing a real intake result, such as the MGM map, then reading the project back yields the same set of root elements, joins with every field, subtypes with their functions, and refs in order.
+  1. Submitting a real intake result, such as the MGM map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
   2. No subtype in the result appears as a root element after storing.
-- Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-013, STORE-024, MCP-009.
-- Status: the mapping of root elements, joins, nested subtype joins and refs is confirmed, and one atomic submission through `intake_submit` after the whole method is confirmed. The handling of a missing AUE is recommended.
+- Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-009, STORE-013, STORE-024, BASE-039, MCP-009.
+- Status: confirmed: submission through the tool's own schema in one atomic write after the whole method; the mapping of root elements, joins, nested subtype joins and refs. The handling of a missing AUE is recommended.
 
 ---
 
@@ -379,4 +394,4 @@ These terms are used exactly as defined in the Canonical Intake.
 15. Answered: the intake text's response protocol will say to submit the final shape through `intake_submit`, with the method word for word, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
 16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
 17. Hard dependency is no longer a join role, MAP-022. Does it survive in any form, for example as a flag on a join marking that losing the provider breaks the receiver, or is it gone?
-18. Element records: the spec's element records carry fields such as name, name_length, role, refs and extra (MAP-015, STORE-009), while element records are described as being just a namespace address, holding no data of their own, with things linked to them. Which fields, if any, does an element record keep, and where do the rest belong? (MAP-015, STORE-009, STORE-017)
+18. Answered: an element record holds only identity and address; name, name_length, role and refs are a descriptor item linked to it, STORE-009, D78. Earlier text: element records carry fields such as name, name_length, role, refs and extra (MAP-015, STORE-009), while element records are described as being just a namespace address, holding no data of their own, with things linked to them. Which fields, if any, does an element record keep, and where do the rest belong? (MAP-015, STORE-009, STORE-017)

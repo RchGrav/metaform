@@ -14,6 +14,8 @@ The first working test in section 6. Follow the build order in `00-index.md`. Bu
 
 ## How to work
 
+- The shape of the metaform comes from `specifications/Canonical_Intake.xml`: its concepts, rules and response schema. It is the proper schema. Read it in full before building anything that stores or reads the map, and where any record, older file or earlier code disagrees with its shape, it wins.
+
 - Build from the records. Each record's why says what the requirement protects. When a Build part and a why seem to disagree, stop and ask; do not pick.
 - A record marked open is built only as far as it is settled. Do not fill the gap. Take the question to the orchestrator, who brings it to Rich.
 - A record marked recommended is built as written.

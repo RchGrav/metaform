@@ -4,10 +4,14 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 ## Open
 
-**D81. What intake_submit takes.** The intake text ends by asking for well-formed XML with no prose.
-Recommendation: `intake_submit` takes the answer in the exact XML shape the intake defines and stores its records, and `metaform intake prompt` serves the intake text unchanged followed by one line from the intake module saying to submit the result with `intake_submit`. The intake text stays word for word.
+**D82. Submissions that break the shape.** The Canonical Intake says intake is never gated or judged. A submitted join whose provider is its own receiver, or whose provider is a subtype, cannot exist in the acyclic mesh. Store it as given for a later correction layer or grading layer to deal with, or refuse the submission?
+Recommendation: store it as given. A refusal makes the agent loop and retry, and the intake is never gated. Reads show it like any other join, and a correction layer removes it.
 
 ## Answered
+
+**D81. intake_submit.** It has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake. The agent submits against it once. The intake text is served unchanged with one module line after it, and can change freely as long as its structure keeps that pattern.
+
+**D10. One element per address.** An element is its namespace address, so a project has one element per address. This replaces the earlier recommendation.
 
 **D60. Origins.** The origin records the commit hash as its base. Diffs are intermediary checkpoints between real commits, only for worktrees and agent work, made with git diff even outside a repository. Collecting a worktree makes the diff and either removes the worktree or leaves it.
 
@@ -53,9 +57,6 @@ Recommendation: no, one level. A subtype lives inside a join, not inside an elem
 
 **D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
 Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.
-
-**D10. Two elements with the same address in one project.** Two photos that are both media.photo, for example.
-Recommendation: yes. The address names the type and the element has its own identity, so two elements of the same type are normal.
 
 **D11. A join whose receiver and provider are the same element.**
 Recommendation: no. A join is one receiver's purpose served by a different provider, and a self join is a cycle, which the mesh cannot express.

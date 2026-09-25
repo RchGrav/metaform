@@ -171,3 +171,6 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. History and provenance are chassis functions. Provenance tracks exactly two things: one record per layer and the intermediary diffs. PROJ-010, LAYER-010.
 - 09-25. Command stacking is dropped; it is not part of the design. CLI-032 keeps only the hierarchy.
 - 09-25. The current Canonical Intake is specifications/Canonical_Intake.xml, the tested version; Canonical_Intake_old.xml is the previous one. The intake produces no properties; properties come from knowledge layers. MAP-022, MAP-040, BASE-039, 00-index.
+- 09-25. intake_submit has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake's response schema; it never parses the intake's XML. The intake text is served unchanged, followed by the intake module's line to submit with intake_submit; intake text changes that keep the pattern need no tool change. BASE-039, MAP-040, MCP-009.
+- 09-25. An element record holds only identity and address; name, name_length, role and refs given for it are a descriptor item linked to it. STORE-009, MAP-015, MAP-017, D78.
+- 09-25. Intake is never gated or judged: intake_submit refuses only what cannot be stored in the pattern; a repeated namespace_address is the same element. BASE-039.
