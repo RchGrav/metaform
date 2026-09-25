@@ -10,9 +10,9 @@ It also defines the first working test, which exercises all three end to end.
 - Requirement: The MCP server is provided by a module named `mcp`, built on the common base like every other module.
 - What this means: The chassis runs completely without MCP. The `mcp` module adds the verb `metaform mcp serve`, which starts the server. The verb is declared for the CLI only, so it is never itself a tool, BASE-035. It uses the same chassis resources as any module: the module registry, the settings, the command surface and the verb declarations. It gets no private access. MCP's library dependencies belong to the module, not the chassis.
 - Why: The chassis must stay usable on its own, and every surface stands on the same base. Keeping MCP a module also keeps its compiled dependencies out of the chassis, so a wheel without the MCP module runs anywhere.
-- How it shows: `metaform list modules` lists `mcp`. With it disabled, `metaform mcp serve` fails with one next step, `metaform enable module mcp`. Everything else in the chassis still works.
+- How it shows: `metaform list modules` lists `mcp`. With it disabled, `metaform mcp serve` fails with one next step, `metaform enable mcp`. Everything else in the chassis still works.
 - Build: Move `src/metaform/mcp_server.py` into `src/metaform/modules/mcp/`, following the template's shape. Remove `mcp` from `VERBS` and `ALWAYS` in `src/metaform/cli.py` and from `RESERVED` in `src/metaform/loader.py`, and remove the `mcp` command page from the chassis docs. Move the `mcp>=1.10` dependency out of the chassis requirements and into the module's `DEPENDENCIES`, BASE-035 and BASE-041. The module ships enabled.
-- Acceptance: With the `mcp` module disabled, `metaform mcp serve` exits 2 with a `Next: metaform enable module mcp` line, and the chassis command tests still pass. Importing the chassis package with the `mcp` library absent succeeds.
+- Acceptance: With the `mcp` module disabled, `metaform mcp serve` exits 2 with a `Next: metaform enable mcp` line, and the chassis command tests still pass. Importing the chassis package with the `mcp` library absent succeeds.
 - Relates to: BASE-003, BASE-026, CLI-001, MCP-002, MCP-003.
 - Status: confirmed.
 

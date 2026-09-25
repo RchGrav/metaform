@@ -33,7 +33,7 @@ Current code referenced below is the `chassis` branch: `src/metaform/module.py`,
 - Requirement: Workflows and the MCP server are modules built on the common base; the chassis contains neither.
 - What this means: The chassis never starts a model, a subagent or a workflow. A workflow is module work. The MCP server is the `mcp` module: it serves the tools and instructions that come from module declarations through the same base every other module uses.
 - Why: Workflows are agent work that modules provide. Keeping MCP a module puts it on the same footing as every other module and keeps its compiled dependencies out of the chassis, so a wheel without MCP runs anywhere.
-- How it shows: `metaform disable module mcp` leaves every chassis verb working. A wheel built without the `mcp` module carries no `mcp` package dependency.
+- How it shows: `metaform disable mcp` leaves every chassis verb working. A wheel built without the `mcp` module carries no `mcp` package dependency.
 - Build: The chassis contains no workflow runner and no model launcher. Moving the MCP server into the `mcp` module, its verb, its dependency and its disabled behavior are specified in MCP-001.
 - Acceptance: With `mcp` disabled, every chassis verb works. The rest is MCP-001's acceptance.
 - Relates to: MCP-001, MCP-007, CLI.
@@ -146,7 +146,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: Each module is enabled or disabled by the chassis, a module's declaration states whether it ships disabled, and the template and demo modules ship disabled.
 - What this means: A module's state is its declared shipping state until the user enables or disables it. The user's choice is stored and wins. A copy of the template starts disabled, and its author enables it.
 - Why: A fresh install runs only real work. Declaring the shipping state in the module means the chassis keeps no list of names.
-- How it shows: On a fresh home, `metaform list modules` shows `template` off. `metaform enable module template` turns it on.
+- How it shows: On a fresh home, `metaform list modules` shows `template` off. `metaform enable template` turns it on.
 - Build: A literal `SHIPS_DISABLED = True` in the module source, read per BASE-015. The base db stores explicit choices in the `module_state` table of STORE-002. The current `disabled_modules` table records only disables, so every module loads on by default, including the template; that changes.
 - Acceptance: Fresh home: template off, map on. Enable template, restart: on. Disable map, restart: off.
 - Relates to: BASE-014, STORE-002.
@@ -156,7 +156,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: Loading a module registers its contributions as one owned unit, and unloading, reloading, shutdown and async cancellation withdraw them completely while durable data stays.
 - What this means: A failed load withdraws whatever it registered. Unload removes its verbs, settings from the schema, help, subscriptions and running tasks. Reload does not accumulate duplicates. Shutdown ends the module's running tasks cleanly. Cancelling an async verb stops it and leaves stored data consistent. Stored settings values, layers and history are never removed by unload.
 - Why: The quality standard requires explicit lifecycle and no resource leakage or state corruption across load, unload, reload and shutdown. Without owned contributions, disabling a module leaves behind ghost commands and subscribers.
-- How it shows: `metaform disable module template` removes its verbs and settings from help at once; enabling it again shows them once.
+- How it shows: `metaform disable template` removes its verbs and settings from help at once; enabling it again shows them once.
 - Build: The loader records every contribution by owner. Existing: failed import restores the settings schema; `loader.reset()` removes settings by owner. Added:
   - `Module(start=None, stop=None)`. Each is a function or coroutine taking one argument, the module's `Context` with no nouns. `start` runs once per process, after the module's verbs, settings and subscriptions are registered and before its first verb, subscriber or tool call runs. `stop` runs once, at process exit or unload, after its running tasks are cancelled. A `start` that raises unloads the module and reports the error as its load problem.
   - `ctx.spawn(coroutine)` starts a task owned by the context's module and returns it. The chassis keeps each module's tasks. Unload, reload and shutdown cancel them, wait for them to finish, then call `stop`.

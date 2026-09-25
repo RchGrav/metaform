@@ -463,7 +463,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `unset` | one or more setting switches, or `all`; `--unglue`; `-q` | `Reset <n> setting(s): <keys>` or `No settings required reset`, then `Skipped (glued): <keys>` and `Unglued: <keys>` when they apply. `--all`: the error and Next line of CLI-002, which owns that text. |
   | `config` | none; `--show`; `--show --json` | none: the settings screen, CLI-026, or `--show`'s output without a terminal. `--show`: one line per setting in schema order, `<mark> <key>: <value>` with `*` as the mark for glued and a space otherwise, followed by `  (set)` or `  (glued)` unless default, then a blank line and `* glued: kept by unset all until unglued.` `--json`: a list of objects with key, switch, owner, kind, value, state, default and help. |
   | `activate` | `metaform <name> [<project>]` | STORE-041, with the output stated there. Unknown name: `No metaform <name> in <project>.` Next `metaform list metaforms`. |
-  | `enable`, `disable` | `module <id>` | `Module <id>: on` or `off`. Unknown id: `No module <id>.` Next `metaform list modules`. Writes the `module_state` row, STORE-002. |
+  | `enable`, `disable` | `<module>` | `Module <id>: on` or `off`. Unknown id: `No module <id>.` Next `metaform list modules`. Writes the `module_state` row, STORE-002. |
   | `install`, `uninstall` | MCP-013 to MCP-020 | As specified there. |
   | `build` | none | BASE-041. |
   | `import`, `export` | STORE-027 | As specified there. |
