@@ -90,6 +90,8 @@ class Element(Record):
     address: str
     layer_id: str
     layer: str
+    reading: str = ''
+    short_name: str = ''
     name: str | None = None
     name_length: int | None = None
     role: str | None = None
@@ -130,6 +132,7 @@ class Subtype(Record):
     layer_id: str
     layer: str
     address: str
+    reading: str
     name: str | None
     name_length: int | None
     role: str | None

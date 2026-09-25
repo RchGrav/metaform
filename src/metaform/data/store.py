@@ -18,6 +18,7 @@ from typing import Any
 from .. import home
 from ..errors import StoreError
 from . import corrections
+from .names import reading, short_name
 from .ids import (check_address, check_layer_name, check_tag, decode_extra, encode_extra, encode_value, is_id,
                   new_id, prefixes, refs_list)
 from .records import (ChallengeState, Citation, ContextView, Descriptor, Element, Item, Join, Layer, LayerGroup,
@@ -411,8 +412,8 @@ class Store:
             if descriptor or pairs:
                 self._write_descriptor(tx, found, element_id, descriptor, pairs)
             if found.kind == 'correction':
-                return Element(element_id, address, found.layer_id, found.name,
-                               descriptor.get('name'), descriptor.get('name_length'), descriptor.get('role'),
+                return Element(element_id, address, found.layer_id, found.name, reading(address),
+                               short_name(address, descriptor.get('name_length')), descriptor.get('name'), descriptor.get('name_length'), descriptor.get('role'),
                                extra=extra)
             record = self._element_record(tx, element_id, None)
             assert record is not None
@@ -926,6 +927,7 @@ class Store:
         first = descriptors[0] if descriptors else None
         plan = tx.db.execute('SELECT 1 FROM plans WHERE element_id=?', (element_id,)).fetchone()
         return Element(element_id, address, current['layer_id'], layers[current['layer_id']].name,
+                       reading(address), short_name(address, first.name_length if first else None),
                        first.name if first else None, first.name_length if first else None,
                        first.role if first else None, tuple(descriptors), self._refs(tx.db, 'element', current['row']),
                        decode_extra(current['extra']), state='plan' if plan else None)
@@ -975,7 +977,8 @@ class Store:
         join_row = tx.db.execute('SELECT j.layer_id FROM current_joins c JOIN joins j ON j.row = c.row '
                                  'WHERE c.join_id=?', (join_id,)).fetchone()
         layer_id = join_row[0] if join_row is not None else row['layer_id']
-        return Subtype(row['subtype_id'], join_id, layer_id, layers[layer_id].name, row['address'], row['name'],
+        return Subtype(row['subtype_id'], join_id, layer_id, layers[layer_id].name, row['address'],
+                       reading(row['address']), row['name'],
                        row['name_length'], row['role'], row['function'], row['relation'], row['observation'],
                        self._refs(tx.db, 'subtype', row['row']), decode_extra(row['extra']))
 

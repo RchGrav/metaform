@@ -9,6 +9,8 @@ a default, CLI-023.
 """
 from __future__ import annotations
 
+import re
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -89,12 +91,26 @@ def owned_by(module: str) -> Iterator[None]:
         _owner = previous
 
 
+_MODULE_NAME = re.compile(r'^(?:metaform\.modules\.|metaform_module_(?:system|user)_)([A-Za-z0-9_-]+)')
+
+
+def _declaring_module() -> str | None:
+    """A module's settings belong to it however its package was imported, such as by a test runner."""
+    frame = sys._getframe(2)
+    while frame is not None:
+        match = _MODULE_NAME.match(str(frame.f_globals.get('__name__', '')))
+        if match:
+            return match.group(1)
+        frame = frame.f_back  # type: ignore[assignment]
+    return None
+
+
 def declare(setting: Setting) -> Setting:
     if setting.key == 'confirm':
         raise ValueError('confirm is never a setting; it is a one-call switch of caution verbs, CLI-018.')
     if setting.kind not in KINDS:
         raise ValueError(f'Setting {setting.key}: kind must be one of {", ".join(KINDS)}.')
-    owner = _owner or setting.owner
+    owner = _owner or _declaring_module() or setting.owner
     hyphens = setting.key.replace('_', '-')
     switches = setting.switches or ((f'--{hyphens}', f'--no-{hyphens}') if setting.kind == 'bool' else (f'--{hyphens}',))
     setting = replace(setting, owner=owner, group=setting.group or owner,

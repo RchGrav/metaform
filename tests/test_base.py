@@ -115,6 +115,8 @@ def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     assert 'show' in page and 'local' in page
     refused = run('scratch', 'show', ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform scratch show --help'
+    early = run('scratch', 'show', 'count=3', 'a', ok=False)
+    assert early.returncode == 2 and early.stderr.splitlines()[-1] == 'Next: metaform scratch show --help'
     wrong = run('scratch', 'show', 'a', 'count=three', ok=False)
     assert wrong.returncode == 2 and 'count' in wrong.stderr
 

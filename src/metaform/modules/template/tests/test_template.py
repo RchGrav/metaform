@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
-import importlib.util
+import importlib
 from pathlib import Path
 
 import pytest
@@ -14,10 +14,7 @@ MODULES = Path(__file__).parents[2]
 
 
 def declaration(name):
-    spec = importlib.util.spec_from_file_location(f'probe_{name}', MODULES / name / '__init__.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module(f'metaform.modules.{name}')
 
 
 def literals(name):

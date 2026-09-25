@@ -68,3 +68,15 @@ Line 5a shows the active metaform's name, but a project has no metaform until it
 Meanwhile: status shows `Metaform: none yet` until then.
 Blocks: nothing.
 
+## Step 4, map and layers
+
+**Q13. BASE-043's example names a verb that does not exist. (BASE-043, BASE-038)**
+The example is `metaform map add-join <layer> <receiver> <provider> ... non_goal=...`, with the fields positional; BASE-038 has no `add-join` verb, and in `knowledge` every field is a named noun.
+Meanwhile: the rule is built in the shared parser (required nouns positional, optional ones `name=value`, an optional noun before the required ones refused) and tested with a scratch module; `knowledge op=add-join` takes every field as `name=value`.
+Blocks: nothing.
+
+**Q14. The kind of the `value` noun of `map knowledge`. (BASE-038, STORE-015)**
+One noun `value` serves an item's or property's value, which is any JSON value, and a ref's value, which is text. BASE-038 does not give its kind.
+Meanwhile: `value` is a `json` noun, so on the CLI a text value is written as JSON, `value='"Profile first."'`; for `add-ref` it must be a JSON string.
+Blocks: nothing.
+
