@@ -50,6 +50,10 @@ def compose(folder: Path, project: str | None = None) -> str:
     for module in surfaced(folder):
         parts.append(f'## {module.id}\n{module.purpose}')
     if chosen is None:
+        from . import home
+        registered = [record.project_id for record in home.projects()]
+        if registered:
+            parts.append('Registered projects: ' + ', '.join(registered) + '.')
         parts.append(NO_PROJECT)
     else:
         parts.extend(notices(folder, chosen))

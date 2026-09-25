@@ -35,11 +35,12 @@ def test_the_chassis_works_with_every_module_off(run, tmp_path):
 
 
 @pytest.mark.req('BASE-001')
+@pytest.mark.req('MCP-001')
 def test_the_chassis_imports_with_every_module_package_unimportable(tmp_path):
     script = ("import importlib.abc, sys\n"
               "class Block(importlib.abc.MetaPathFinder):\n"
               "    def find_spec(self, name, path=None, target=None):\n"
-              "        if name.startswith('metaform.modules') or name.startswith('metaform_module_'):\n"
+              "        if name.startswith(('metaform.modules', 'metaform_module_', 'mcp')):\n"
               "            raise ImportError(name)\n"
               "sys.meta_path.insert(0, Block())\n"
               "import metaform, metaform.cli, metaform.data\n"

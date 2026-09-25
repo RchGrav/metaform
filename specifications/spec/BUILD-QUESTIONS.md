@@ -80,3 +80,20 @@ One noun `value` serves an item's or property's value, which is any JSON value, 
 Meanwhile: `value` is a `json` noun, so on the CLI a text value is written as JSON, `value='"Profile first."'`; for `add-ref` it must be a JSON string.
 Blocks: nothing.
 
+## Step 6, MCP
+
+**Q15. The `set` tool. (PROJ-005, CLI-033, MCP-003, MCP-024)**
+PROJ-005 has an agent call a tool named `set` to select a project for the server's folder, and MCP-024 lists `set` with `layers` among the tools, but MCP-003 makes every tool a module verb named `<module>_<verb>`, and `set` is a chassis verb.
+Meanwhile: the mcp module serves one extra tool named `set`, with one property per setting and `glue`, storing for the server's folder exactly as `metaform set` does.
+Blocks: nothing.
+
+**Q16. The next step when a call has no project. (STORE-023, PROJ-005)**
+STORE-023 gives `Next: metaform add project <id> <path>`; PROJ-005 gives `Next: metaform set --project <id>`. PROJ-005 also has status and the instructions list the registered projects, while CLI-028 and MCP-009 end those texts with the register line.
+Meanwhile: with no project registered the next step is `metaform add project <id> <path>`; with some registered it is `metaform set --project <id>`. The instructions add `Registered projects: <ids>.` just before the register line; status does not list them.
+Blocks: nothing.
+
+**Q17. Toggling layers for one tool call. (CLI-033, MCP-003)**
+CLI-033 says `layers` may be given on a single tool call, but MCP-003 lists only `project` as the property every tool takes.
+Meanwhile: every tool also takes an optional `layers` array for that call only.
+Blocks: nothing.
+

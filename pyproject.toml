@@ -7,13 +7,13 @@ name = "metaform"
 version = "0.1.0"
 description = "Functional maps that give agents a project's purpose before they work on it."
 requires-python = ">=3.11"
-dependencies = ["mcp>=1.10", "prompt_toolkit>=3.0"]
+dependencies = ["prompt_toolkit>=3.0"]
 
 [project.scripts]
 metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "mcp>=2.2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metaform"]

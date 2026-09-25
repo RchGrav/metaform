@@ -24,7 +24,8 @@ from .errors import Stop
 if TYPE_CHECKING:
     from .data import Store
 
-__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call']
+__all__ = ['Context', 'Module', 'Noun', 'Status', 'Stop', 'Subscription', 'Verb', 'call', 'context', 'instructions',
+           'result_json', 'surface']
 
 VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
 NOUN_KINDS = ('str', 'int', 'bool', 'json')
@@ -138,8 +139,12 @@ class Context:
         return settings.value(key, self.folder)
 
     def require_store(self) -> Store:
+        """This call's store; with no project, the one next step is to register or to select one, PROJ-005."""
         if self.store is None:
-            raise Stop('No project for this folder.', 'metaform add project <id> <path>')
+            from . import home
+            registered = home.projects()
+            raise Stop('No project for this folder.',
+                       'metaform set --project <id>' if registered else 'metaform add project <id> <path>')
         return self.store
 
     def publish(self, topic: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -168,3 +173,32 @@ def call(function: Callable[..., Any], *args: Any) -> Any:
 
 async def _await(awaitable: Any) -> Any:
     return await awaitable
+
+
+# The chassis resources every module may use, BASE-004: the module registry, the command surface, the
+# composed instructions and the per-call Context. The mcp module serves tools through these alone, MCP-001.
+
+def surface(folder: Path) -> list[Module]:
+    """The loaded modules on this folder's command surface, in module id order, CLI-022."""
+    from . import instructions as composed
+    return composed.surfaced(folder)
+
+
+def instructions(folder: Path, project: str | None = None) -> str:
+    """The composed instructions for agents working from this folder, MCP-007."""
+    from . import instructions as composed
+    return composed.compose(folder, project)
+
+
+def context(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
+            switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
+            surface: str = 'cli') -> Context:
+    """A Context for one call, with the project and store resolved for its folder, BASE-028."""
+    from . import context as contexts
+    return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface)
+
+
+def result_json(result: Any) -> str:
+    """A verb's result as the JSON every surface shows, BASE-036."""
+    from . import results
+    return results.as_json(result)

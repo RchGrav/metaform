@@ -438,17 +438,10 @@ def query_(args: list[str], folder: Path) -> None:
         sys.stdout.write(results.as_text(result))
 
 
-def mcp(args: list[str], folder: Path) -> None:
-    if args:
-        raise Stop('mcp takes no words.', 'metaform mcp')
-    from . import mcp_server
-    mcp_server.serve(folder)
-
-
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
-    'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_, 'mcp': mcp}
-ALWAYS = {'help', 'set', 'unset', 'config', 'mcp'}
+    'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_}
+ALWAYS = {'help', 'set', 'unset', 'config'}
 
 
 # Module verbs ------------------------------------------------------------------------------
@@ -599,8 +592,6 @@ docs.command(Command('import', 'Add what a JSON document holds and this home doe
 docs.command(Command('query', "Ask one of the design's questions of the folder's project.",
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))
-docs.command(Command('mcp', "Serve this folder's module verbs as MCP tools, over stdio.", ('metaform mcp',),
-                     see_also=('help',)))
 docs.switch(Switch('--glue', 'Keep the settings you set through unset all.',
                    'A glued setting is skipped by unset all until you unset it with --unglue.', ('set',)))
 docs.switch(Switch('--unglue', 'Reset glued settings too, and unglue them.', used_by=('unset',)))
