@@ -29,9 +29,11 @@ This folder is the Metaform contract. A builder builds from these files alone. E
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the settings screen |
 | 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
+| 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history |
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
 | BUILD-BRIEF.md | | How the building agent works from this spec |
+| CAPTURE.md | | Every design point from the design discussion, with the record that carries it |
 
 The Open questions list at the end of each section shows the questions that section raised. OPEN-QUESTIONS.md is the single merged list; answers are recorded there and in the owning records.
 
@@ -53,7 +55,7 @@ A record whose status is recommended is built as written unless Rich changes it.
 
 - Nonces and assignment context. The orchestrator hands work by name until nonces are designed.
 - Remote hosting of the MCP server.
-- Module specs for the rulebook, workflows, artifact history and the web and browser terminal modules, pending D44.
+- Module specs for the rulebook, workflows and the web and browser terminal modules, pending D44.
 - Maintaining users' forks, CI and wheels at release, pending D30.
 
 ## Build order for the first working test
