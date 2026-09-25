@@ -496,14 +496,15 @@ It covers the base database, the per-project store, the correction stack, layers
     layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id),
     module   TEXT NOT NULL,
     workflow TEXT,
-    prompt   TEXT,
+    prompt   TEXT,                   -- the full text as delivered
+    prompt_version_id TEXT REFERENCES prompt_versions(version_id),
     model    TEXT,
     role     TEXT,
     blinded  INTEGER CHECK(blinded IN (0, 1))
   );
   ```
   - The row is written in the same transaction that creates the layer, from the provenance argument of the layer operation, STORE-024. Creating a layer other than memory without provenance writes a provenance row with every field empty except `module`, set to the calling module, and returns a notice, BASE-044.
-  - `prompt` holds the prompt text the layer was produced from, as given.
+  - `prompt` holds the prompt text the layer was produced from, as given. When the prompt came from a stored prompt, `prompt_version_id` names the exact version, STORE-044, and that version's text equals `prompt`. A version a provenance row references is never changed or deleted.
   - The layer's report, feedback and shape files are its provenance refs: the `reports` rows with this layer id, STORE-043. A provenance read returns them as refs `report`, `feedback` and `shape` with their file names. They are refs on the one record, not further provenance.
 - Acceptance:
   - The store has no provenance table or column keyed by item, element, join or read.
@@ -1094,6 +1095,42 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Acceptance: A provenance read of an intake layer submitted with a report and feedback returns exactly those two refs.
 - Relates to: BASE-045, STORE-016, STORE-001.
 - Status: recommended.
+
+### STORE-044 Prompts are versioned records, and provenance references the exact version
+- Requirement: Prompts are stored as their own records with versions, one row per version; editing a prompt creates a new version, and a layer's provenance references the exact version it was created with.
+- What this means: A prompt is a named record. Each saved text is a version with a number, a parent version and the time it was saved. The newest version is what future runs use. No version is ever edited or deleted, so the version a provenance record references always shows the exact text that produced the layer.
+- Why: Prompts are modifiable, and the metaform improves by improving them. Provenance must stay a true record of how each layer was made, so an edit adds a version and never rewrites the one a layer came from.
+- How it shows: `metaform prompts` lists prompts with their current version. `metaform prompt <name>` shows a version's text. Saving an edit in the viewer shows the next version number, and older layers still show their own version.
+- Build:
+  ```sql
+  CREATE TABLE prompts(
+    prompt_id TEXT PRIMARY KEY,
+    name      TEXT NOT NULL UNIQUE,
+    format    TEXT NOT NULL CHECK(format IN ('xml','markdown','text')),
+    created   TEXT NOT NULL
+  );
+  CREATE TABLE prompt_versions(
+    version_id TEXT PRIMARY KEY,
+    prompt_id  TEXT NOT NULL REFERENCES prompts(prompt_id),
+    number     INTEGER NOT NULL,
+    parent_id  TEXT REFERENCES prompt_versions(version_id),
+    text       TEXT NOT NULL,
+    created    TEXT NOT NULL,
+    UNIQUE(prompt_id, number)
+  );
+  CREATE INDEX prompt_versions_by_prompt ON prompt_versions(prompt_id, number DESC);
+  CREATE INDEX provenance_by_prompt_version ON provenance(prompt_version_id);
+  ```
+  - `add_prompt(name, format, text)` creates the prompt and version 1. `add_prompt_version(prompt, text, parent)` creates the next number with the given parent; it never changes an existing row. Saving text identical to the parent returns the parent and a notice, BASE-044.
+  - Reads: `prompts()` lists prompts with their newest version, paged; `prompt_version(prompt, number)` returns one version; `prompt_versions(prompt)` lists versions, newest first; `layers_by_prompt_version(version)` lists the layers a version produced, from `provenance_by_prompt_version`.
+  - A layer created from a stored prompt records the version it used in its provenance, STORE-016.
+  - These are chassis operations, reached through the data access object, served as the verbs `prompts` and `prompt` and the MCP tools of the same names, and written by the viewer, VIEW-013.
+- Acceptance:
+  - Saving an edit to a prompt at version 3 creates version 4 with parent 3; version 3's row is byte-for-byte unchanged.
+  - A layer created from version 3 has `prompt_version_id` naming version 3 after version 4 exists, and `layers_by_prompt_version(3)` lists it.
+  - Every read above is a SEARCH on the named index, STORE-005.
+- Relates to: LAYER-010, STORE-005, STORE-016, BASE-044, VIEW-013.
+- Status: confirmed for prompts as their own versioned records, editing creating a new version for future runs, and provenance referencing the exact version. The tables, operation names and verbs are recommended.
 
 ## Open questions
 

@@ -187,3 +187,9 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. The viewer is built after the intake and debug system is stable and the fix pass is complete. 00-index build order, step 10.
 - 09-25. The web module deferral (D44) no longer covers the viewer, which is in scope. VIEW-001.
 - 09-25. In the 3D view every join is shown uncollapsed in its tripartite form, receiver, purpose and encounter, so two-way pairs are separate joins, and no namespace branch is collapsed; scale is met by worker layout with a cache, instanced WebGL and label level of detail. In the 2D view joins are collapsed into labeled edges. VIEW-005, VIEW-008, VIEW-010.
+- 09-25. The 3D mesh looks like a synaptic map in 3D: glowing element nodes, fiber-like joins in tripartite form, layers as colors. VIEW-005.
+- 09-25. The viewer is for viewing: active viewing never changes settings, and a separate control applies the viewer's layer choice to the folder's --layers. VIEW-007.
+- 09-25. The viewer shows provenance, meaning which prompt produced each layer or object, with model, role, blinded, module and workflow. Prompts are modifiable. Prompts are their own versioned records: an edit creates a new version for future runs, and provenance keeps referencing the exact version that produced the layer. VIEW-013, STORE-044, LAYER-010.
+- 09-25. Prompts are edited in an actual text editor, not forms: syntax highlighting, search and replace, undo, line numbers, and a diff against the source version before saving. The editor is salvaged from Codex's workflow_editor where it fits. VIEW-013, VIEW-003.
+- 09-25. Correction layers depend on order. The viewer removes them one at a time, in reverse from the top, with a warning naming what will change. VIEW-014.
+- 09-25. The viewer writes exactly three things: it applies layers, saves prompt versions, and removes the top correction layer. VIEW-011. This answers the two viewer questions.
