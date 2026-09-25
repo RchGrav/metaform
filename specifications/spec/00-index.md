@@ -1,0 +1,69 @@
+# Metaform specification
+
+This folder is the Metaform contract. A builder builds from these files alone. Every requirement is a full record with its reason, its build detail and the tests that protect it.
+
+## Authority
+
+- This spec is the contract. Where it and any other document, code or test differ, this spec wins, and the difference is either a defect to fix or a question for Rich.
+- Rich's design is the authority over this spec. A record that misstates the design is corrected, not worked around.
+- Requirements state outcomes. The Build part of a record says how to reach the outcome; a builder may reach it another way only when every acceptance test for that record still holds and the record's why is still served, and must say so in the pull request.
+- An open question blocks only the records that depend on it. Everything else is built.
+- Older documents, code, tests and branches are evidence, not requirements. Material from them enters only where it matches this spec.
+
+## Sources absorbed
+
+- `../REQUIREMENTS.md` with `../REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
+- `../SETTLED.md`: design settled in conversation, now carried by the records here.
+- `../Canonical_Intake.xml` and `../Canonical_Intake_test.xml`: the intake procedure. The test file holds changes under test; it is adopted into the main file after Rich's test.
+- `../metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
+- `../code_quality_standards.md`: the quality bar, carried by section 7.
+
+## Sections
+
+| File | Prefix | Covers |
+|---|---|---|
+| 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records |
+| 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, native and latent layers, the blind-spot challenge |
+| 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
+| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging |
+| 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the settings screen |
+| 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions, the first working test |
+| 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
+| OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
+| TRACE.md | | Every source requirement mapped to the records that carry it |
+
+The Open questions list at the end of each section shows the questions that section raised. OPEN-QUESTIONS.md is the single merged list; answers are recorded there and in the owning records.
+
+## Record format
+
+Each record has these parts:
+- **Requirement:** one declarative sentence.
+- **What this means:** enough explanation for a builder with no other context.
+- **Why:** the reason, from Rich's design.
+- **How it shows:** observable behavior.
+- **Build:** records, fields, operations and procedures.
+- **Acceptance:** the tests that protect the requirement and fail on a wrong build.
+- **Relates to:** other record IDs.
+- **Status:** confirmed by Rich, recommended and awaiting his confirmation, open, or deferred.
+
+A record whose status is recommended is built as written unless Rich changes it. A record whose status is open is not built past the point the record settles.
+
+## Out of scope for this spec
+
+- Nonces and assignment context. The orchestrator hands work by name until nonces are designed.
+- Remote hosting of the MCP server.
+- Module specs for the rulebook, workflows, artifact history and the web and browser terminal modules, pending D44.
+- Maintaining users' forks, CI and wheels at release, pending D30.
+
+## Build order for the first working test
+
+1. Storage and the data access object (STORE), with the settings and module-state tables.
+2. The common base and module contract changes (BASE), including the template moving to a layer.
+3. CLI and settings changes (CLI): switches as settings, boolean forms, `--`.
+4. The map and layer records and operations (MAP, LAYER) needed by the intake.
+5. The MCP module (MCP), moved out of the chassis, with live instructions.
+6. The intake module serving its instructions by name and writing the map through its tools.
+7. The installer and the skill.
+8. The first working test scenario in section 6, end to end.
+
+Each step's tests are written first, from the records, and fail before the step is built.
