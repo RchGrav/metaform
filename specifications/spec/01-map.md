@@ -335,6 +335,20 @@ These terms are used exactly as defined in the Canonical Intake.
 - Relates to: MAP-021, MAP-041, LAYER-010, LAYER-015, MCP-009, STORE-025.
 - Status: confirmed.
 
+### MAP-044 A new element joins the metaform on either side of a join
+
+- Requirement: An element or entity that a layer adds joins the metaform through a join on either side, under the same rules as every join: as a receiver it owns the join it holds, and as a provider its join is held by the existing receiving element that names it.
+- What this means: A layer can add a new element or entity anywhere the design is open. Two cases, one rule. As a receiver, the new element holds its own purpose and owns the join it makes to an existing provider, using a function the metaform already has, under whatever name fits. As a provider, the new element serves the purpose of an existing element: the join is made in that existing receiving element, naming the new element as its provider. Either end can be the new one, and nothing else about the join differs from any other join, MAP-002, MAP-003. Functions are not transitive: a new element carrying a function or a purpose reaches the metaform only through its join, never through the namespace tree. The namespace-tree link belongs only to an element a layer creates at a prefix to hold properties, MAP-022.
+- Why: A function exists only because it serves a receiver's purpose, and a purpose exists only because something receives it. A join is the one way either connects to the metaform, and the receiver always owns it, so one rule covers every new element, whichever end it takes.
+- How it shows: A layer adds a new receiver that uses an existing probe: the join appears under the new receiver, naming the probe as provider. A layer adds a new provider for an existing gateway's purpose: the join appears in the gateway's joins, naming the new element as provider. Both reads show the adding layer's name.
+- Build: The new element is written with `add_element` in the adding layer and its join with `add_join` in the same layer, STORE-024. `add_join` takes receiver and provider as element ids; either may be new, and the join is stored with its receiver as owner, STORE-010. The join's layer is the adding layer, so it extends the metaform only where that layer is toggled on, LAYER-016.
+- Acceptance:
+  - A layer adds a new element as receiver with a join to an existing provider: the receiver's `joins` read returns the join, and the provider's `identity` read in context returns it while the layer is on and does not while it is off.
+  - A layer adds a new element as provider for an existing receiver: the join is stored with the existing element as receiver and is returned by that receiver's `joins` read with the adding layer's name.
+  - A new element with a function and no join does not appear in any in-context read of an element of the metaform or of its namespace prefixes.
+- Relates to: MAP-002, MAP-003, MAP-020, MAP-022, LAYER-003, LAYER-016, STORE-010, STORE-024.
+- Status: confirmed.
+
 ## Open questions
 
 1. Root Types: are the roots code, document, media, data and stakeholder as in Canonical Intake 1.1, or does asset replace media and entity or exterior replace stakeholder?
