@@ -195,10 +195,26 @@ def add_project(project_id: str, path: Path | str, target_type: str | None = Non
 def register(record: Project) -> None:
     """Register a project from an exchange document's record, STORE-027. The folder need not exist here."""
     with base(write=True) as db:
-        db.execute('INSERT OR IGNORE INTO projects(project_id, path, path_key, target_type, target_value) '
-                   'VALUES (?, ?, ?, ?, ?)',
-                   (record.project_id, record.path, os.path.normcase(record.path), record.target_type,
-                    record.target_value))
+        register_in(db, record)
+
+
+def register_in(db: sqlite3.Connection, record: Project) -> None:
+    """Register a project inside an open base transaction; a folder another project holds is refused by name."""
+    key = path_key(record.path)
+    holder = db.execute('SELECT project_id FROM projects WHERE path_key=?', (key,)).fetchone()
+    if holder is not None and holder[0] != record.project_id:
+        raise StoreError(f'{record.path} is already registered as project {holder[0]}.', 'metaform list projects')
+    if db.execute('SELECT 1 FROM projects WHERE project_id=?', (record.project_id,)).fetchone() is not None:
+        return
+    db.execute('INSERT INTO projects(project_id, path, path_key, target_type, target_value) VALUES (?, ?, ?, ?, ?)',
+               (record.project_id, record.path, key, record.target_type, record.target_value))
+
+
+def project_at(path: str) -> str | None:
+    """The project registered with this folder, compared through its path key."""
+    with base() as db:
+        row = db.execute('SELECT project_id FROM projects WHERE path_key=?', (path_key(path),)).fetchone()
+    return None if row is None else str(row[0])
 
 
 def folder_project(folder: Path) -> str | None:
@@ -378,11 +394,7 @@ def withdraw_metaform(project_id: str, metaform_id: str) -> None:
     with base(write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=? AND metaform_id=?', (project_id, metaform_id))
         db.execute('DELETE FROM metaforms WHERE metaform_id=? AND project_id=?', (metaform_id, project_id))
-    folder = store_path(project_id, metaform_id).parent
-    for path in sorted(folder.glob('store.sqlite3*')):
-        path.unlink(missing_ok=True)
-    if folder.is_dir() and not any(folder.iterdir()):
-        folder.rmdir()
+    remove_store(store_path(project_id, metaform_id))
 
 
 def activate_metaform(project_id: str, name: str) -> Metaform:
@@ -399,11 +411,32 @@ def activate_metaform(project_id: str, name: str) -> Metaform:
 def import_metaform(project_id: str, metaform_id: str, name: str, created: str, *, activate: bool) -> bool:
     """Record an imported metaform unless its id exists. Returns whether it was added, STORE-027."""
     with base(write=True) as db:
-        if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
-            return False
-        has_active = db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
-        _create_metaform(db, project_id, name, metaform_id, created, activate=activate or has_active is None)
+        return import_metaform_in(db, project_id, metaform_id, name, created, activate=activate)
+
+
+def import_metaform_in(db: sqlite3.Connection, project_id: str, metaform_id: str, name: str, created: str, *,
+                       activate: bool) -> bool:
+    """Record an imported metaform inside an open base transaction, unless its id exists."""
+    if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
+        return False
+    has_active = db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
+    _create_metaform(db, project_id, name, metaform_id, created, activate=activate or has_active is None)
     return True
+
+
+def metaform_owner(metaform_id: str) -> str | None:
+    """The project a metaform id belongs to in this home, if any."""
+    with base() as db:
+        row = db.execute('SELECT project_id FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone()
+    return None if row is None else str(row[0])
+
+
+def remove_store(path: Path) -> None:
+    """Remove a store file, its WAL files and its folder when empty: only for a store this operation created."""
+    for part in sorted(path.parent.glob(path.name + '*')):
+        part.unlink(missing_ok=True)
+    if path.parent.is_dir() and not any(path.parent.iterdir()):
+        path.parent.rmdir()
 
 
 def store_path(project_id: str, metaform_id: str) -> Path:

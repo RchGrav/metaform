@@ -87,3 +87,16 @@ Done first, at Rich's priority, as its own step.
 - Defects fixed: D13 (`map roots`, the entry in the map instructions and in status), D20 (`mcp serve` runs on any surface; narrowing narrows its tools).
 - Tests: `src/metaform/modules/intake/tests/test_intake.py` rewritten from the refusals to the notices; new `tests/test_reports.py` and `tests/test_store_entry.py`; added to `test_mcp.py`, `test_store_reads.py`, `test_store_exchange.py`, `test_store_operations.py` (a table of every write that stores with a notice), `test_home.py` and `test_store_map.py`; `test_first_working_test.py` follows MCP-024 as now written (stored with a notice, flags, report, feedback, `list_reports`, `read_report`, `map_findings`, `feedback`). Every new test was run and seen failing before the code: 30 failed, 23 passed. Whole suite: 376 passed.
 - Questions raised: Q26 to Q37.
+
+## Step 11: high findings H3 to H7, H9 and H10
+
+- Findings fixed:
+  - H3: `search` and `links_to` apply select, mask and hiding at each item's node in context, and a named layer narrows and never widens; `search` takes `raw`. `layer_items` reads a named layer directly, LAYER-008, and with `in_context=True` as an agent's context read; the memory module's `read-graph`, `search-nodes` and `open-nodes` read memory in context. LAYER-006, LAYER-007, STORE-019.
+  - H4: an async CLI verb's spawned tasks are cancelled and waited for on its own loop, and its async generators shut down, before the loop closes; shutdown then finds nothing running and calls `stop`. BASE-018, QUAL-010.
+  - H5: one unload procedure: cancel the tasks, wait for each on its loop, then `stop` in `try/finally`; a failing `stop` is the module's problem in `list modules`, and its settings and code are withdrawn either way. `unload_async` awaits instead of blocking.
+  - H6: unload drops the package and every submodule from `sys.modules`, for every place, so a reload runs changed submodules and an entry-point module's settings return with every load. CLI-024.
+  - H7: import checks the document, the target project of each metaform and each metaform's owner before writing; writes each store in an open transaction, commits the base database, then each store; on any failure rolls every store back and removes every store file it created. Registration refuses a folder another project holds, by name, through `path_key`. STORE-027 as now written: missing `requires` are stored orphaned with a notice naming each and the next step.
+  - H9 in part: discovery checks each `DEPENDENCIES` requirement is installed before import and reports a missing one as the load problem, BASE-015. The repository wheel's own dependencies are Q38.
+  - H10: `probe` creates its session inside its own `try` and always stops the server; a failed proof keeps the server's standard error in its reason. MCP-017.
+- Tests: new `tests/test_lifecycle.py`, 12 tests, each seen failing first (8 failed); `test_store_exchange.py`'s layer-limited import follows STORE-027's notices. Whole suite: 386 passed.
+- Questions raised: Q38.

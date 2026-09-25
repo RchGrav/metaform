@@ -477,7 +477,10 @@ def import_(args: list[str], folder: Path) -> None:
         raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
     report = import_document(document, args[1] if len(args) == 2 else None)
     for key, count in report.items():
-        out(f'{key.replace("_", " ")}: {count}')
+        if key != 'notices':
+            out(f'{key.replace("_", " ")}: {count}')
+    for notice in report['notices']:
+        out(f"Notice: {notice['where']}: {notice['message']}")
 
 
 def query_(args: list[str], folder: Path) -> None:
@@ -561,7 +564,11 @@ def _here(verb: Any) -> bool:
 
 
 def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
-    """Run an async verb: the first Ctrl+C asks it to cancel, a second interrupts at once, BASE-031."""
+    """Run an async verb: the first Ctrl+C asks it to cancel, a second interrupts at once, BASE-031.
+
+    Before its loop closes, the tasks the verb's module spawned on it are cancelled and waited for, and the loop's
+    async generators are shut down, so shutdown finds nothing left running, BASE-018.
+    """
     loop = asyncio.new_event_loop()
     task = loop.create_task(function(ctx))
     presses = 0
@@ -580,7 +587,12 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
         return loop.run_until_complete(task)
     finally:
         signal.signal(signal.SIGINT, previous)
-        loop.close()
+        try:
+            spawned = {item for item in loader.tasks_of(ctx.module) if item.get_loop() is loop}
+            loader.finish_tasks(spawned)
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            loop.close()
 
 
 def run_module(identifier: str, rest: list[str], folder: Path) -> None:

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 from typing import Any
 
 from .. import home
@@ -252,11 +254,19 @@ def _validate(document: Any) -> None:
                          'metaform export > <file>, from the home that holds the project')
 
 
-def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, int]:
-    """Add what the target does not hold, by unique id, STORE-027. Returns what was added and skipped."""
-    _validate(document)
-    report = {'metaforms_added': 0, 'metaforms_skipped': 0, 'layers_added': 0, 'layers_skipped': 0,
-              'things_added': 0, 'things_skipped': 0}
+@dataclass
+class Planned:
+    """One metaform of the document, with the project it goes to and whether that project is registered here."""
+    project_id: str
+    record: home.Project
+    registered: bool
+    metaform: dict[str, Any]
+    activate: bool
+
+
+def _plan(document: dict[str, Any], project: str | None) -> list[Planned]:
+    """Where each metaform goes, checked before anything is written: the project, and who owns each metaform."""
+    planned: list[Planned] = []
     for entry in document.get('projects', []):
         record = home.Project(**entry['project'])
         if project is not None:
@@ -268,49 +278,95 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
             project_id = record.project_id
             registered = home.project(project_id) is not None
             if not registered:
-                home.register(record)
+                holder = home.project_at(record.path)
+                if holder is not None:
+                    raise StoreError(f'{record.path} is already registered as project {holder}.',
+                                     f'metaform import <file> {holder}')
         for metaform in entry.get('metaforms', []):
-            head = metaform['metaform']
-            known = any(item.metaform_id == head['metaform_id'] for item in home.metaforms(project_id))
-            _import_store(project_id, head['metaform_id'], metaform, report)
-            if known:
-                report['metaforms_skipped'] += 1
-            elif home.import_metaform(project_id, head['metaform_id'], head['name'], head['created'],
-                                      activate=not registered and entry.get('active_metaform') == head['metaform_id']):
-                report['metaforms_added'] += 1
-            else:
-                report['metaforms_skipped'] += 1
+            metaform_id = metaform['metaform']['metaform_id']
+            owner = home.metaform_owner(metaform_id)
+            if owner is not None and owner != project_id:
+                raise StoreError(f'Metaform {metaform_id} of the document belongs to project {owner} here.',
+                                 f'metaform import <file> {owner}')
+            planned.append(Planned(project_id, record, registered, metaform,
+                                   not registered and entry.get('active_metaform') == metaform_id))
+    return planned
+
+
+def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, Any]:
+    """Add what the target does not hold, by unique id, as one unit, STORE-027 and STORE-006.
+
+    The document is checked whole and every metaform's place decided before anything is written. Each store's
+    rows are written in an open transaction; the base database's rows are then written and committed, and only
+    then each store. When anything fails, every store transaction rolls back, and every store file this import
+    created is removed. Returns what was added and skipped, and a notice for each identity the document needs
+    that this home does not hold, BASE-044.
+    """
+    _validate(document)
+    planned = _plan(document, project)
+    report: dict[str, Any] = {'metaforms_added': 0, 'metaforms_skipped': 0, 'layers_added': 0, 'layers_skipped': 0,
+                              'things_added': 0, 'things_skipped': 0, 'notices': []}
+    opened: list[sqlite3.Connection] = []
+    created: list[Path] = []
+    try:
+        for item in planned:
+            path = home.store_path(item.project_id, item.metaform['metaform']['metaform_id'])
+            if not path.exists():
+                created.append(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = _open(path, create=True)
+            opened.append(db)
+            db.execute('BEGIN IMMEDIATE')
+            _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
+        with home.base(write=True) as base:
+            for item in planned:
+                if not item.registered:
+                    home.register_in(base, item.record)
+                head = item.metaform['metaform']
+                added = home.import_metaform_in(base, item.project_id, head['metaform_id'], head['name'],
+                                                head['created'], activate=item.activate)
+                report['metaforms_added' if added else 'metaforms_skipped'] += 1
+        for db in opened:
+            db.execute('COMMIT')
+    except BaseException as error:
+        for db in opened:
+            if db.in_transaction:
+                db.execute('ROLLBACK')
+        for db in opened:
+            db.close()
+        opened = []
+        for path in created:
+            home.remove_store(path)
+        if isinstance(error, sqlite3.IntegrityError):
+            raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
+        raise
+    finally:
+        for db in opened:
+            db.close()
     return report
 
 
-def _import_store(project_id: str, metaform_id: str, metaform: dict[str, Any], report: dict[str, int]) -> None:
-    path = home.store_path(project_id, metaform_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = _open(path, create=True)
-    try:
-        db.execute('BEGIN IMMEDIATE')
-        try:
-            _import_rows(db, metaform_id, metaform, report)
-        except BaseException:
-            db.execute('ROLLBACK')
-            raise
-        db.execute('COMMIT')
-    except sqlite3.IntegrityError as error:
-        raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
-    finally:
-        db.close()
+def _missing(db: sqlite3.Connection, need: dict[str, str]) -> bool:
+    if need.get('kind') == 'type':
+        return db.execute('SELECT 1 FROM types WHERE address=?', (need['address'],)).fetchone() is None
+    return (db.execute('SELECT 1 FROM identities WHERE id=?', (need['id'],)).fetchone() is None and
+            db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (need['id'],)).fetchone() is None)
 
 
-def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, Any], report: dict[str, int]) -> None:
-    for need in metaform.get('requires', []):
-        if need.get('kind') == 'type':
-            present = db.execute('SELECT 1 FROM types WHERE address=?', (need['address'],)).fetchone()
-        else:
-            present = db.execute('SELECT 1 FROM identities WHERE id=?', (need['id'],)).fetchone() or \
-                db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (need['id'],)).fetchone()
-        if not present:
-            raise StoreError(f'The document needs {need.get("kind")} {need.get("id") or need.get("address")}, which '
-                             'this store does not hold.', 'metaform import <the project map export>')
+def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, Any], report: dict[str, Any]) -> None:
+    fresh_ids = {row[ID_OF_TABLE[table]] for table in THINGS for row in metaform.get(table, []) if row['op'] == 'add'}
+    for place, need in enumerate(metaform.get('requires', [])):
+        if not _missing(db, need) or need.get('id') in fresh_ids:
+            continue
+        name = need.get('id') or need.get('address')
+        if need.get('kind') == 'element':
+            db.execute('INSERT OR IGNORE INTO element_ids(element_id) VALUES (?)', (need['id'],))
+            db.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'element')", (need['id'],))
+        elif need.get('kind') == 'type':
+            db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, NULL)', (need['address'],))
+        report['notices'].append({'where': f'requires[{place}]', 'message': (
+            f'{need.get("kind")} {name} is not in this store; what points at it was stored orphaned. To attach it, '
+            'import the project\'s map first: metaform import <an export of the project>')})
     new_layers = []
     for layer in metaform.get('layers', []):
         if db.execute('SELECT 1 FROM layers WHERE layer_id=?', (layer['layer_id'],)).fetchone():
@@ -339,6 +395,11 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         column = ID_OF_TABLE[table]
         for row in metaform.get(table, []):
             if row['layer_id'] not in fresh:
+                continue
+            if kind == 'subtype' and not _has_join(db, row['join_id']):
+                report['notices'].append({'where': f'subtypes.{row["subtype_id"]}', 'message': (
+                    f'Subtype {row["subtype_id"]} lives in join {row["join_id"]}, which this store does not hold; it '
+                    "was not imported. Import the project's map first: metaform import <an export of the project>")})
                 continue
             if _identity(db, kind, row):
                 report['things_added'] += 1
@@ -381,6 +442,10 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     positions = corrections.stack_positions(db)
     for kind in corrections.ORDER:
         corrections.recompute(db, kind, touched[kind], kinds, positions)
+
+
+def _has_join(db: sqlite3.Connection, join_id: str) -> bool:
+    return db.execute('SELECT 1 FROM join_ids WHERE join_id=?', (join_id,)).fetchone() is not None
 
 
 def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import importlib
+import inspect
 import importlib.resources
 import importlib.util
 import re
@@ -107,6 +108,30 @@ def _withdraw_settings(owner: str) -> None:
         del settings.SCHEMA[key]
 
 
+def _forget(import_name: str) -> None:
+    """Drop a module's package and every submodule from `sys.modules`, so the next load runs them again."""
+    for name in [name for name in sys.modules if name == import_name or name.startswith(import_name + '.')]:
+        del sys.modules[name]
+
+
+REQUIREMENT = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
+
+
+def missing_dependencies(requirements: tuple[str, ...]) -> list[str]:
+    """The declared requirements whose distribution is not installed, read without importing anything, BASE-015."""
+    missing: list[str] = []
+    for requirement in requirements:
+        match = REQUIREMENT.match(requirement)
+        if match is None:
+            missing.append(requirement)
+            continue
+        try:
+            metadata.distribution(match.group(1))
+        except metadata.PackageNotFoundError:
+            missing.append(requirement)
+    return missing
+
+
 def discover() -> list[Found]:
     """Every module Metaform can see, loaded when enabled and compatible, with the reason when it is not."""
     global _cache
@@ -136,12 +161,16 @@ def discover() -> list[Found]:
             continue
         if not item.enabled:
             continue
+        needed = missing_dependencies(item.declared.dependencies)
+        if needed:
+            item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
+            continue
         try:
             with settings.owned_by(item.id):
                 item.module = _import(item)
-        except Exception as error:  # A broken module is reported and withdrawn; the chassis goes on.
+        except Exception as error:  # noqa: BLE001  a broken module is reported and withdrawn; the chassis goes on
             _withdraw_settings(item.id)
-            sys.modules.pop(item.import_name, None)
+            _forget(item.import_name)
             item.problem = f'{type(error).__name__}: {error}'
     _cache = found
     _register_exit()
@@ -164,6 +193,12 @@ def get(identifier: str) -> Found | None:
     return next((item for item in discover() if item.id == identifier), None)
 
 
+def tasks_of(owner: str) -> set[asyncio.Task[Any]]:
+    """The tasks a module has spawned and that have not finished."""
+    item = next((found for found in discover() if found.id == owner), None)
+    return set() if item is None else {task for task in item.tasks if not task.done()}
+
+
 def spawn(owner: str, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     item = next((found for found in discover() if found.id == owner and found.module is not None), None)
     task = asyncio.get_running_loop().create_task(coroutine)
@@ -173,38 +208,64 @@ def spawn(owner: str, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     return task
 
 
-def _unload(item: Found) -> None:
-    """Withdraw everything a module registered. Its tasks are asked to cancel; stored data stays."""
-    for task in list(item.tasks):
+def finish_tasks(tasks: set[asyncio.Task[Any]]) -> None:
+    """Cancel tasks and wait for each to finish on its own loop, when that loop can still run it, BASE-018.
+
+    A task whose loop is closed has already ended. A task whose loop is running in this thread cannot be waited
+    for from synchronous code; `unload_async` is the path for that case.
+    """
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
         task.cancel()
-    module, item.module = item.module, None
-    if module is not None and module.stop is not None:
-        try:
+    by_loop: dict[asyncio.AbstractEventLoop, list[asyncio.Task[Any]]] = {}
+    for task in pending:
+        by_loop.setdefault(task.get_loop(), []).append(task)
+    for loop, group in by_loop.items():
+        if loop.is_closed() or loop.is_running():
+            continue
+        loop.run_until_complete(asyncio.gather(*group, return_exceptions=True))
+
+
+def _withdraw(item: Found, module: Module) -> None:
+    """Call stop, then withdraw settings and code whatever stop did; a failing stop becomes the module's problem."""
+    try:
+        if module.stop is not None:
             call(module.stop, Context(module=item.id, folder=Path.cwd()))
-        except Exception:  # A failing stop must not keep the module registered.
-            pass
-    _withdraw_settings(item.id)
-    if item.place != 'entry':
-        sys.modules.pop(item.import_name, None)
+    except Exception as error:  # noqa: BLE001  a failing stop is reported, and withdrawal still completes
+        item.problem = f'stop failed: {type(error).__name__}: {error}'
+    finally:
+        _withdraw_settings(item.id)
+        _forget(item.import_name)
+
+
+def _unload(item: Found) -> None:
+    """Withdraw everything a module registered: cancel its tasks and wait for them, then stop; stored data stays."""
+    module, item.module = item.module, None
+    finish_tasks(item.tasks)
+    if module is not None:
+        _withdraw(item, module)
 
 
 async def unload_async(identifier: str) -> None:
     """Unload one module from inside a running loop: cancel its tasks, wait for them, then call stop."""
     item = next((found for found in discover() if found.id == identifier and found.module is not None), None)
-    if item is None:
+    if item is None or item.module is None:
         return
-    tasks = list(item.tasks)
+    module, item.module = item.module, None
+    tasks = [task for task in item.tasks if not task.done()]
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
-    module, item.module = item.module, None
-    if module is not None and module.stop is not None:
-        result = module.stop(Context(module=item.id, folder=Path.cwd()))
-        if asyncio.iscoroutine(result):
-            await result
-    _withdraw_settings(item.id)
-    if item.place != 'entry':
-        sys.modules.pop(item.import_name, None)
+    if module.stop is not None and inspect.iscoroutinefunction(module.stop):
+        try:
+            await module.stop(Context(module=item.id, folder=Path.cwd()))
+        except Exception as error:  # noqa: BLE001  a failing stop is reported, and withdrawal still completes
+            item.problem = f'stop failed: {type(error).__name__}: {error}'
+        finally:
+            _withdraw_settings(item.id)
+            _forget(item.import_name)
+        return
+    _withdraw(item, module)
 
 
 def unload(identifier: str) -> None:

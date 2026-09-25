@@ -52,6 +52,7 @@ def _relation(store: Store, item: Item) -> dict[str, Any]:
 
 
 def _at(store: Store, layer: str, node: Node) -> list[Item]:
+    """Every memory at a node, for changing them: memory's own layer read directly, LAYER-008."""
     return [item for item in store.layer_items(layer, node, limit=0).results if isinstance(item, Item)]
 
 
@@ -144,7 +145,8 @@ def read_graph(ctx: Context) -> Any:
     layer = _memory(store, create=False)
     if layer is None:
         return {'nodes': [], 'relations': []}
-    return _grouped(store, [item for item in store.layer_items(layer, limit=0).results if isinstance(item, Item)])
+    return _grouped(store, [item for item in store.layer_items(layer, in_context=True, limit=0).results
+                            if isinstance(item, Item)])
 
 
 def search_nodes(ctx: Context) -> Any:
@@ -182,7 +184,8 @@ MODULE = Module(
             'map is wrong or incomplete at a node, add an observation there so the next agent reads it where it '
             'looks. Details: metaform help memory.',
     details='An entity is a node of the map. Observations and relations are items of the memory layer, which is '
-            'mutable, hideable and takes part in select and mask like any layer.',
+            'mutable, hideable and takes part in select and mask like any layer: read-graph, search-nodes and '
+            'open-nodes read memory in context, so hiding or masking it hides it there too.',
     verbs=(
         Verb('create-entities', create_entities, 'Make a node for a name the map does not hold yet.',
              nouns=(Noun('name', 'An address.'), Noun('type', 'The entity type.'))),

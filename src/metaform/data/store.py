@@ -1340,22 +1340,35 @@ class Store:
                                      'ORDER BY address LIMIT ?', (address, cursor or '', count)).fetchall()
             return _paged(fetch, lambda row: str(row['key']), limit, after)
 
-    def layer_items(self, layer: str, target: Node | None = None, *, limit: int = LIMIT,
+    def layer_items(self, layer: str, target: Node | None = None, *, in_context: bool = False, limit: int = LIMIT,
                     after: str | None = None) -> Page[Item | Property]:
-        """A whole layer in row order, or a layer at one node: its items, then its properties."""
+        """A whole layer in row order, or a layer at one node: its items, then its properties.
+
+        Named by the caller, the layer is read directly, hidden or masked, LAYER-008. With `in_context=True`, as an
+        agent's context read, only what the layer reaches at its node's address is returned, STORE-019.
+        """
         with self._read() as tx:
             found = self._layer(tx, layer)
             layers = all_layers(tx.db)
+            res = self._resolver(tx, None) if in_context else None
+
+            def shown(row: sqlite3.Row, kind: str) -> bool:
+                if res is None:
+                    return True
+                address = (self._address_of(tx, row['element_id']) if kind == 'property'
+                           else self._node_address(tx, row['target_kind'], row['target_id']))
+                return address is not None and res.reaches(row['layer_id'], address)
             if target is not None:
                 target_id = self._node_id(tx, target)
                 items: list[Item | Property] = [self._item_record(tx, row, layers) for row in tx.db.execute(
                     'SELECT i.* FROM current_items c JOIN items i ON i.row = c.row '
                     'WHERE c.target_kind=? AND c.target_id=? AND c.layer_id=? ORDER BY c.row',
-                    (target.kind, target_id, found.layer_id))]
+                    (target.kind, target_id, found.layer_id)) if shown(row, 'item')]
                 if target.kind == 'element':
                     items += [self._property_record(tx, row, layers) for row in tx.db.execute(
                         'SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
-                        'WHERE c.element_id=? AND c.layer_id=? ORDER BY c.row', (target_id, found.layer_id))]
+                        'WHERE c.element_id=? AND c.layer_id=? ORDER BY c.row', (target_id, found.layer_id))
+                        if shown(row, 'property')]
                 return Page(tuple(items), None)
 
             def fetch(cursor: str | None, count: int) -> list[sqlite3.Row]:
@@ -1376,7 +1389,9 @@ class Store:
                                       (found.layer_id, position.replace(':', ''), count - len(rows))).fetchall()
                 return rows
 
-            def build(row: sqlite3.Row) -> Item | Property:
+            def build(row: sqlite3.Row) -> Item | Property | None:
+                if not shown(row, str(row['thing'])):
+                    return None
                 if row['thing'] == 'item':
                     return self._item_record(tx, row, layers)
                 return self._property_record(tx, row, layers)
@@ -1502,11 +1517,10 @@ class Store:
                 return tx.db.execute(sql, (*params, cursor or '', count)).fetchall()
 
             def build(row: sqlite3.Row) -> Item | None:
-                if raw or layer_id is not None:
-                    return self._item_record(tx, row, res.layers)
-                origin = self._node_address(tx, row['target_kind'], row['target_id'])
-                if origin is None or not res.reaches(row['layer_id'], origin):
-                    return None
+                if not raw:
+                    origin = self._node_address(tx, row['target_kind'], row['target_id'])
+                    if origin is None or not res.reaches(row['layer_id'], origin):
+                        return None
                 return self._item_record(tx, row, res.layers)
             return _paged(fetch, build, limit, after)
 
@@ -1594,8 +1608,13 @@ class Store:
                              tuple(res.unresolved(address)))
 
     def search(self, text: str, layer: str | None = None, *, selection: Sequence[str] | None = None,
-               limit: int = LIMIT, after: str | None = None) -> Page[Item]:
-        """Items whose value holds every word of the text, STORE-020."""
+               raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Item]:
+        """Items whose value holds every word of the text, STORE-020.
+
+        In context, the default, an item is found only where its layer reaches the node it is attached to, so hiding
+        and masking apply here as on every read, STORE-019. Naming a layer narrows the search to it and never
+        widens it; `raw=True` finds every stored item.
+        """
         words = [word for word in str(text).split() if word]
         if not words:
             return Page((), None)
@@ -1612,11 +1631,14 @@ class Store:
                 return [_Keyed(row, str(start + index + 1)) for index, row in enumerate(rows)]  # type: ignore[misc]
 
             def build(row: Any) -> Item | None:
-                if layer_id is not None:
-                    return self._item_record(tx, row.row, res.layers) if row.row['layer_id'] == layer_id else None
-                if row.row['layer_id'] not in res.start:
+                found = row.row
+                if layer_id is not None and found['layer_id'] != layer_id:
                     return None
-                return self._item_record(tx, row.row, res.layers)
+                if not raw:
+                    origin = self._node_address(tx, found['target_kind'], found['target_id'])
+                    if origin is None or not res.reaches(found['layer_id'], origin):
+                        return None
+                return self._item_record(tx, found, res.layers)
             return _paged(fetch, build, limit, after, key=lambda row: row.key)
 
     def roots(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,

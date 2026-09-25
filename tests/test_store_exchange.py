@@ -97,10 +97,12 @@ def test_a_layer_limited_export_names_what_it_requires(home, store, monkeypatch,
     metaform = document['projects'][0]['metaforms'][0]
     assert {layer['name'] for layer in metaform['layers']} == {'notes'}
     assert {'kind': 'element', 'id': store.element('code.timer.kitchen').element_id} in metaform['requires']
+    kitchen = store.element('code.timer.kitchen').element_id
     move_home(monkeypatch, tmp_path, 'empty-home')
-    with pytest.raises(StoreError) as refused:
-        import_document(document)
-    assert refused.value.next_step
+    report = import_document(document)
+    assert report['layers_added'] == 1
+    named = ' '.join(notice['message'] for notice in report['notices'])
+    assert kitchen in named and 'metaform import' in named
 
 
 @pytest.mark.req('STORE-027')

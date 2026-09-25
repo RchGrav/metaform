@@ -37,8 +37,10 @@ class Session:
         self.lines: queue.Queue[str | None] = queue.Queue()
         self.errors: list[str] = []
         self.next_id = 0
-        threading.Thread(target=self._read, daemon=True).start()
-        threading.Thread(target=self._drain, daemon=True).start()
+        self.reader = threading.Thread(target=self._read, daemon=True)
+        self.drainer = threading.Thread(target=self._drain, daemon=True)
+        self.reader.start()
+        self.drainer.start()
 
     def _read(self) -> None:
         assert self.process.stdout is not None
@@ -89,40 +91,54 @@ class Session:
         return self.request('tools/call', {'name': name, 'arguments': arguments}, deadline=time.monotonic() + limit)
 
     def close(self) -> None:
-        try:
-            if self.process.stdin is not None:
-                self.process.stdin.close()
-            self.process.wait(timeout=5)
-        except Exception:  # A server that will not stop is stopped.
-            self.process.kill()
-            self.process.wait()
+        """Close standard input and wait; a server that does not stop within a few seconds is killed."""
+        if self.process.poll() is None:
+            try:
+                if self.process.stdin is not None:
+                    self.process.stdin.close()
+                self.process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                self.process.kill()
+                self.process.wait()
+        self.drainer.join(timeout=1)
+
+
+def initialize(session: Session, limit: float = LIMIT) -> dict[str, Any]:
+    """Initialize a started server. Returns the initialize result."""
+    result = session.request('initialize', {'protocolVersion': PROTOCOL, 'capabilities': {},
+                                            'clientInfo': {'name': 'metaform-install', 'version': '1'}},
+                             deadline=time.monotonic() + limit)
+    session.notify('notifications/initialized')
+    return result
 
 
 def open_session(command: list[str], *, cwd: Path, env: dict[str, str] | None = None,
                  limit: float = LIMIT) -> tuple[Session, dict[str, Any]]:
-    """Start a server and initialize it. Returns the session and the initialize result."""
+    """Start a server and initialize it. Returns the session and the initialize result; on failure the server stops."""
     session = Session(command, cwd=cwd, env=env)
-    deadline = time.monotonic() + limit
-    result = session.request('initialize', {'protocolVersion': PROTOCOL, 'capabilities': {},
-                                            'clientInfo': {'name': 'metaform-install', 'version': '1'}},
-                             deadline=deadline)
-    session.notify('notifications/initialized')
-    return session, result
+    try:
+        return session, initialize(session, limit)
+    except BaseException:
+        session.close()
+        raise
 
 
 def probe(command: list[str], *, cwd: Path, env: dict[str, str] | None = None, limit: float = LIMIT) -> Proof:
-    """Pass when the command answers initialize and tools/list with at least one tool."""
-    session: Session | None = None
+    """Pass when the command answers initialize and tools/list with at least one tool. The server always stops."""
     try:
-        session, initialized = open_session(command, cwd=cwd, env=env, limit=limit)
+        session = Session(command, cwd=cwd, env=env)
+    except OSError as error:
+        return Proof(False, reason=str(error))
+    try:
+        initialized = initialize(session, limit)
         listed = session.request('tools/list', {}, deadline=time.monotonic() + limit)
         tools = listed.get('tools') or []
         if not tools:
             return Proof(False, reason='the server lists no tools')
         return Proof(True, len(tools), instructions=str(initialized.get('instructions') or ''))
     except (OSError, ValueError, RuntimeError, TimeoutError, EOFError) as error:
-        detail = ''.join(session.errors[-3:]).strip() if session else ''
+        session.close()
+        detail = ''.join(session.errors[-3:]).strip()
         return Proof(False, reason=f'{error}' + (f' ({detail})' if detail else ''))
     finally:
-        if session is not None:
-            session.close()
+        session.close()
