@@ -70,7 +70,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 
 ### CLI-006 `metaform help` is a brief overview ending with tips
 - Requirement: `metaform help` prints a brief overview of common commands that ends with tips pointing to the intro, the commands index, the switches index, and `config --show`.
-- What this means: the overview is one screen. It names what Metaform does in one line, lists a few common commands, and ends with tips. It never lists every command.
+- What this means: the overview is one screen. It names what Metaform does in one line, lists a few common commands, and ends with tips. It never lists every command. All help text, here and on every help page, is brief, uses one consistent term for each thing, and is plain, competent English: no pages of text and no filler.
 - Why: a brief first screen is readable, and the tips lead to the full indexes when they are needed.
 - How it shows: the current `docs.overview()` output, ending with:
   ```
@@ -279,7 +279,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 
 ### CLI-021 Working context is made of ordinary folder settings
 - Requirement: the working context is three folder settings: `--project`, `--workflow` and `--commands`.
-- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--commands` lists the command groups on the folder's surface; empty means all.
+- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--commands` lists the command groups on the folder's surface; empty means all. One workflow runs at a time, so the workflow is a single setting and never a list. A workflow may come with its own settings, declared by the module that provides it, like any module setting.
 - Why: context as settings needs no extra machinery, and it is visible and reversible like any setting.
 - How it shows: `metaform set --workflow intake --commands workflow,memory`. `metaform` status shows the project and the narrowed commands.
 - Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `commands`, a folder list whose default is empty. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
@@ -414,7 +414,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   9. For each enabled module on the folder's surface that declares a status hook, BASE-035, in module id order: each of its lines, then its notice, when it returns one, indented two spaces. The chassis prints what the hooks return and names no module. With the intake module on, its hook gives the `Intake:` lines and the no-intake notice shown above, BASE-039.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
 - Acceptance:
-  - In a registered project with no intake and the intake module on, status contains the notice; after an intake is completed, it shows `Intake: complete` and no notice.
+  - In a registered project with no intake and the intake module on, status contains the notice; after a successful `intake_submit`, it shows `Intake: complete` and no notice.
   - A test module with a status hook returning one line and one notice gets both printed in its id order; `cli.py` contains no module id.
 - Relates to: CLI-005, MCP-007, MCP-009, STORE-031, BASE-035, BASE-039.
 - Status: recommended. `metaform help agents` follows D40's intent that status leads an agent without MCP to the instructions.
@@ -472,6 +472,17 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Relates to: CLI-001, CLI-006, CLI-008, CLI-009, CLI-011, CLI-022, CLI-026, CLI-029, BASE-037, STORE-002, STORE-027, STORE-028, STORE-031.
 - Status: recommended.
 
+### CLI-032 The command tree has a few top-level objects
+
+- Requirement: Commands form a hierarchy with a few top-level objects, under which commands are grouped.
+- What this means: The top level holds the chassis verbs and one object per module, CLI-001 and CLI-031. Each module's verbs sit under its id, so `metaform help` stays short and a user finds a command by going one level down. The same hierarchy is what the command surface narrows, CLI-022.
+- Why: A few top-level objects keep the first screen readable and make every command reachable by a predictable path.
+- How it shows: `metaform help commands` lists the chassis verbs and each module with its verbs beneath it.
+- Build: The commands index and the settings screen group commands by chassis and by module id, in the order of CLI-031 and module id order.
+- Acceptance: `help commands` lists every enabled module's verbs under that module's id, and no module verb at the top level.
+- Relates to: CLI-001, CLI-008, CLI-022, CLI-031.
+- Status: confirmed for the hierarchy. How commands stack under an object so that any of them can be run is open, see open question 10.
+
 ## Open questions
 
 1. Scope of settings: every context setting is per folder. Do some settings stay global (applying in every folder), as the chassis `Setting.scope` allows today, and which?
@@ -483,3 +494,4 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 7. Module switches as settings: what scope does a module switch get when stored with `set`: folder, like context settings, or global?
 8. `metaform abort <workflow> --confirm` is written as a chassis verb, but the chassis does not run workflows (BASE-003) and module verbs take the module id first (CLI-001). Is `abort` a chassis verb, or the workflow module's verb, written `metaform workflow abort <workflow> --confirm`?
 9. When a module is absent, does `unset all` leave its stored settings untouched? Recommended: yes. (CLI-024)
+10. NEW The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)

@@ -65,7 +65,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-080 | Work identity by nonce | MCP-012 | deferred |
 | REQ-081 | Assignment delivery is exact | MCP-012 | deferred |
 | REQ-082 | Submission uses the assignment header | MCP-012 | deferred |
-| REQ-083 | The working-folder table lives in the home; nothing marks project folders | STORE-002 | covered |
+| REQ-083 | The working-folder table lives in the home; nothing marks project folders | STORE-002, PROJ-002 | covered |
 | REQ-084 | MCP uses the same work identity | MCP-012 | deferred |
 | REQ-085 | One MCP process serves many assignments | MCP-012 | deferred |
 | REQ-086 | MCP serves the folder's command surface from the CLI declaration | MCP-003, MCP-004 | covered |
@@ -86,7 +86,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-105 | One-reference provenance inspection | LAYER-010, STORE-016 | removed: replaced by the per-layer provenance record |
 | REQ-106 | Immutable layers change by revision; mutable layers in place | LAYER-011, LAYER-012, STORE-017, STORE-018 | covered |
 | REQ-107 | Identity survives relocation | STORE-007, STORE-027 | covered |
-| REQ-108 | All data is global under the home | STORE-001 | covered |
+| REQ-108 | All data is global under the home | STORE-001, PROJ-001 | covered |
 | REQ-109 | Durable writes are recoverable | STORE-006, STORE-027 | covered |
 | REQ-110 | Existing data is preserved | STORE-029 | covered; migration of chassis-branch stores open |
 | New | Direct indexed access; a whole layer or all layers at a node is one read | STORE-005, STORE-025, LAYER-008 | covered |
@@ -115,12 +115,12 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-148 | Human waits remain human waits | none | NOT COVERED |
 | REQ-149 | Workflow execution is CLI-complete | none | NOT COVERED |
 | REQ-150 | Workflow upload preparation is module-owned | none | NOT COVERED |
-| REQ-160 | Artifact boundaries are consistent | none | NOT COVERED |
-| REQ-161 | Navigation markers are not artifact edits | STORE-001 | covered |
-| REQ-162 | Origins and variants stay distinct | none | NOT COVERED |
-| REQ-163 | Reconstruction works without the original repository | none | NOT COVERED |
-| REQ-164 | Portable continuation includes pending physical work | none | NOT COVERED |
-| REQ-165 | Import preserves divergent history | STORE-027 | covered; conflict handling open |
+| REQ-160 | Artifact boundaries are consistent | PROJ-011 | covered |
+| REQ-161 | Navigation markers are not artifact edits | STORE-001, PROJ-011 | covered |
+| REQ-162 | Origins and variants stay distinct | PROJ-014, PROJ-015 | covered |
+| REQ-163 | Reconstruction works without the original repository | PROJ-018, PROJ-020 | covered |
+| REQ-164 | Portable continuation includes pending physical work | PROJ-022 | deferred |
+| REQ-165 | Import preserves divergent history | STORE-027, PROJ-021 | covered; conflict handling open |
 | REQ-170 | The wheel is directly executable | BASE-023 | covered |
 | REQ-171 | Direct wheel use needs no permanent installation | BASE-023 | covered |
 | REQ-172 | Cold offline execution | BASE-024 | covered |
@@ -209,7 +209,6 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 - REQ-087: MCP-009 covers operation from inside any host. Launching a configured harness conflicts with the confirmed rule that Metaform never launches a model, and no correction retires it. The deterministic local fixture is not specified.
 - REQ-130 to REQ-134: the rulebook is not in the spec.
 - REQ-140 to REQ-150: the workflow module is not in the spec. BASE-003 places workflows in modules and MCP-009 delivers intake instructions by name, but workflow execution, representation, snapshots, revisions, replay, human waits and CLI completeness are unspecified.
-- REQ-160, REQ-162, REQ-163, REQ-164: artifact history, origins and variants, reconstruction and portable continuation are not in the spec.
 - REQ-190 to REQ-196: the web and browser terminal modules are not in the spec.
 
 ## Records that carry build detail for other records

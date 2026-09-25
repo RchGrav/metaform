@@ -27,9 +27,6 @@ Recommendation: yes, a primary flag on the VE element, because the VE that drive
 **D7. Join roles.** The Foundation names the roles within a join: hard dependency, property and supportive. The Canonical Intake schema does not emit them. Are they a join field, and do property joins carry transitivity in the map itself?
 Recommendation: yes to both. Property transitivity is part of the Foundation's account of how media flows back to the trunk, so the map should carry it. This needs the intake to emit the role, which is a change to your intake text.
 
-**D8. How the intake result reaches the store.** As one whole submission, or record by record through tool calls?
-Recommendation: record by record through the intake module's tools. The agent runs the intake procedure through MCP and nothing imports a document.
-
 **D9. The Type's single Encounter Function.** C(T) names one encounter function e for the Type, while each join stores the function for its own encounter. Does the Type record store e?
 Recommendation: open. I do not know which reading you intend, and it changes the Type record.
 
@@ -124,8 +121,7 @@ Recommendation: only the settings stored at the current folder. Values inherited
 
 ### MCP and installer
 
-**D37. A host that starts the server outside any project folder.**
-Recommendation: the server uses the working folder when it is inside a registered project. Otherwise every tool takes the project as an argument, and the instructions list the registered projects.
+**D37.** Answered by section 8: PROJ-003, PROJ-005 and PROJ-006 carry project selection as settled in the CLI discussion.
 
 **D38. The intake instructions.** The intake module serves them as `metaform intake prompt` and the tool `intake_prompt`.
 Recommendation: yes.
@@ -168,14 +164,47 @@ Recommendation: no. Receipts belong to the workflow module, since the chassis do
 **D53. Settings of an absent module.** Does `unset all` leave a missing module's stored settings untouched? (CLI-024)
 Recommendation: yes. Configuration survives the module's absence and applies again when it returns.
 
-**D54. How the intake agent writes its answer.** The Canonical Intake text says to return only the final XML shape, while the design has the agent build the map through Metaform's tools. (BASE-039, MAP-040, MCP-009)
-Recommendation: the intake text gets a second response protocol, in your words, that names the intake tools, with the method unchanged. It goes into the test intake first and is adopted after your test. Until then the agent can return its XML answer through one intake tool that stores it by the MAP-040 mapping, which keeps the first test unblocked.
-
 **D55. Record fields on the command line.** Arguments are nouns and switches are settings, so a join's purpose or observation is neither. BASE-043 writes optional fields as `name=value` nouns.
 Recommendation: `name=value` nouns on the CLI. Agents mostly write through MCP, where each field is a named argument, so the CLI form only has to be clear and unambiguous.
 
 **D56. How a root reads.** The Canonical Intake's reading examples disagree on `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` reads as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
 Recommendation: every root reads as its own name, and the example that says program code is corrected in the test intake. One rule is easier to apply than a phrase per root.
+
+## Projects, folders and origins (section 8)
+
+**D57.** A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)
+
+**D58.** Should a worktree created outside the project's source location default to the repository's project with nothing selected, found through the worktree's shared git folder, `git rev-parse --git-common-dir`? Recommended: yes, because it needs no setup and writes nothing. (PROJ-006)
+
+**D59.** How does an orchestrator store the narrowed context for a worker's folder that is not its own? Every long switch is a setting (CLI-011), so a `--path` switch does not fit the grammar. One way is a folder noun, `metaform set --commands workflow,memory folder=<path>`. The other is having the worker's first command store it. (PROJ-007)
+
+**D60.** Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
+
+**D61.** Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
+
+**D62.** Knowledge rows on import follow D23: a new revision, or an in-place change. History units follow PROJ-021: a new suffix, keeping both. Should knowledge import also keep both on any loss, to match? (PROJ-021, STORE-027, D23)
+
+**D63.** Does the first instance of an origin take suffix `0000` or `0001`? Recommended: `0000`. (PROJ-013)
+
+**D64.** Which module serves web variants, and is the serving port OS-assigned? Recommended: the web module, with OS-assigned ports. (PROJ-019, D44)
+
+**D65.** Is the 3 MB line measured on the total size of a variant's changed text, or per file? Recommended: the total. (PROJ-016)
+
+**D66.** Is history owned by the chassis, as recommended in PROJ-010, or by a module?
+
+**D67.** Are ignored files always outside the boundary of a repository, including generated outputs a workflow was asked to produce? Recommended: yes, and a workflow that wants its outputs kept writes them outside ignored paths. (PROJ-011)
+
+**D68.** When a repository's working tree is dirty as an origin is established, is the commit the origin and the uncommitted work its first variant? Recommended: yes. (PROJ-012)
+
+**D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
+Recommendation: open. I do not know which you meant.
+
+**D70. `--layers` as a context setting.** The active layer selection for a folder as a setting, `metaform set --layers intake,memory,practices`, like `--workflow` and `--commands`. Select and mask per address stay map commands.
+Recommendation: yes. It follows the rule that every long switch is a setting.
+
+## Answered
+
+**D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
 
 ## Engineering choices made
 

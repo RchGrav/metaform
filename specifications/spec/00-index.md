@@ -61,10 +61,13 @@ A record whose status is recommended is built as written unless Rich changes it.
 1. Storage and the data access object (STORE), with the settings and module-state tables.
 2. The common base and module contract changes (BASE), including the template moving to a layer.
 3. CLI and settings changes (CLI): switches as settings, boolean forms, `--`.
-4. The map and layer records and operations (MAP, LAYER) needed by the intake.
-5. The MCP module (MCP), moved out of the chassis, with live instructions.
-6. The intake module serving its instructions by name and writing the map through its tools.
-7. The installer and the skill.
-8. The first working test scenario in section 6, end to end.
+4. The map and layer records and operations (MAP, LAYER), including select and mask resolution and direct reads, LAYER-007 and LAYER-008.
+5. The memory module, LAYER-012 and LAYER-013: memory at elements and joins through the reference memory interface.
+6. The MCP module (MCP), moved out of the chassis, with live instructions.
+7. The intake module serving its instructions by name and storing the map through `intake_submit`.
+8. The installer and the skill.
+9. The first working test scenario in section 6, end to end, including a memory written at a node and read back by another agent, and a layer selection that changes what that read returns.
+
+Memory and layer select and mask are part of the first working test because they are what make the map useful to agents: memory corrects a wrong inference at the node, and select and mask decide which layers an agent sees at each place.
 
 Each step's tests are written first, from the records, and fail before the step is built.

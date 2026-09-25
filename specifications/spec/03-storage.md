@@ -581,12 +581,13 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Requirement: The data access object offers exactly these write operations, each one transaction.
 - What this means: These are the operations the intake, knowledge modules, critics and memory use to build and keep the map and its layers.
 - Why: A small fixed set of writes, each matching a thing in the design, means every writer builds the same shapes and every shape has one way to be built.
-- How it shows: An agent running the intake through MCP builds the whole map with `layer`, `add_element`, `add_join`, `add_subtype` and `add_ref`.
+- How it shows: The intake module stores a whole submitted intake with `layer`, `add_element`, `add_join`, `add_subtype` and `add_ref` inside one `atomic()` block, BASE-039.
 - Build:
 
   | Operation | Inputs | Output | Errors |
   |---|---|---|---|
-  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=())` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created open and a mutable one complete, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), complete=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created open, or complete when `complete=True`, and a mutable one complete, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `complete=True` becomes visible, complete, at commit | nested `atomic()` joins the outer block |
   | `complete(layer)` | | `Layer` with `completed` set | layer unknown; already complete |
 | `discard(layer)` | an open immutable layer | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; layer complete; layer mutable |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer complete and immutable; malformed address |
@@ -715,24 +716,24 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 
 ### STORE-032 Layer kinds, open layers and completion
 - Requirement: Every layer has a kind, intake, memory or layer, and an immutable layer is open while it is being written and complete once its writer marks it complete.
-- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, an intake layer is what "has an intake" looks for. An open layer is still being built: its writer may add refs to things it just wrote. A complete layer is finished: an immutable one then changes only by revision. Reads in context leave open layers out, so a half-written intake never appears as the map.
-- Why: MAP-040 requires the map to appear whole or not at all. A layer that became visible item by item would show agents a partial map, and a notice that cleared as soon as the first element was written would tell an orchestrator the intake was done when it was not.
-- How it shows: During an intake run, `metaform` status still shows the no-intake notice, and `map node` in context shows nothing from the intake layer. After `intake complete`, both change at once.
+- What this means: The kind tells the chassis which rules a layer follows without reading its name: memory has no provenance, an intake layer is what "has an intake" looks for. An intake layer is written whole, in one atomic write by `intake_submit`, and is complete from the moment it exists, BASE-039. Other immutable layers that a module builds over several calls are open while being written and complete once their writer marks them complete. A complete layer is finished: an immutable one then changes only by revision. Reads in context leave open layers out.
+- Why: MAP-040 requires the map to appear whole or not at all. Writing the intake in one atomic submission means a half-written intake never exists, so the no-intake notice clears only when a whole intake is stored. A module layer built over several calls stays out of context reads until finished for the same reason.
+- How it shows: During an intake run nothing is stored, so `metaform` status still shows the no-intake notice. When `intake_submit` succeeds, the notice clears and `map node` in context shows the intake layer, at once.
 - Build:
   - `layers.kind` and `layers.completed`, STORE-013. `CREATE INDEX layers_by_kind ON layers(kind, completed);`
   - `layer(...)` creates a layer open, with `completed` NULL. `complete(layer)` sets `completed` to the current time. A mutable layer, including memory, is created complete, because it has no building phase.
   - While an immutable layer is open, `add_element`, `add_join`, `add_subtype`, `add_item` and `add_ref` may write to it. After it is complete, they are refused for that layer with the next step naming `revise`.
-  - `has_intake()` is true when a layer of kind intake has `completed` set. One indexed read.
+  - `has_intake()` is true when a layer of kind intake exists with `completed` set. An intake layer is only ever created complete, inside `atomic()`. One indexed read.
   - Node reads in context, `context`, `search` and the default root selection include only complete layers. A read that names an open layer, or uses `raw=True`, sees it.
-  - An open layer left by an interrupted run stays open and invisible. The intake module lists it and removes it with `discard`, STORE-024 and BASE-039.
+  - An open layer left by an interrupted run of a module that builds a layer over several calls stays open and invisible, and that module removes it with `discard`. The intake never leaves an open layer.
   - `discard(layer)` deletes, in one transaction, the layer's content: its items; the element, join and subtype revision rows written in it; the refs and links attached to those rows; its provenance row, its source rows, and its layer row. It does not delete identity rows, STORE-007, or `types` rows, STORE-008, even those this layer created: STORE-007 keeps every identity id for as long as the store exists, so an id is never reused and a reference to it never points at something else. An identity id whose content was discarded has no current row, so reads by that id return not found and nothing in context shows it. A `types` row with no element under it is an ordinary type in the tree.
 - Acceptance:
-  - An intake layer with elements written and not completed leaves `has_intake()` false and is absent from a node read in context.
+  - An `intake_submit` whose `atomic()` block raises after writing elements leaves no layer, no elements, and `has_intake()` false.
   - After `discard` of an open layer that wrote an element, the element's identity row and its `types` row remain, a read by its identity id returns not found, and `list layers` no longer lists the layer.
-  - After `complete`, `has_intake()` is true and the node read in context includes the layer.
+  - After a successful `intake_submit`, `has_intake()` is true and the node read in context includes the layer.
   - `add_element` into a complete immutable layer is refused and writes nothing.
 - Relates to: STORE-013, STORE-012, STORE-024, MAP-040, LAYER-001, MCP-009, BASE-039.
-- Status: recommended.
+- Status: confirmed for the intake: one atomic write, complete from the moment it exists. Open and complete for module layers built over several calls, and `discard`, are recommended.
 
 ### STORE-033 Every identity id resolves to its kind in one read
 - Requirement: One table maps every identity id to its kind, so operations that take a bare id find the right table in one read.

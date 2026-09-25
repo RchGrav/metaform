@@ -70,6 +70,19 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ---
 
+### MAP-005 A metaform is a multi-dimensional mesh that works through type understanding
+
+- Requirement: A metaform is a non-manifold tripartite triangular mesh built from an ontological, linguistic typology, holding many C(T) at once and extended by layers, so that agents orient through type and function understanding instead of reasoning.
+- What this means: Each join is a triangle of receiver, purpose and encounter, MAP-002. Triangles share elements without forming one closed surface, which is what non-manifold means here, and the map holds a C(T) for every Type in it, so it is many identities joined, not one. Layers add further dimensions over the same nodes, LAYER-001. Understanding what a type is and what a function does is primordial to a model: it happens without reasoning activating. Reading addresses as proper nouns, trunk to leaf and reversed, engages that understanding directly, MAP-011 and MAP-012. The prepared structure keeps work inside the basin of each subsystem, where a basin is the stable semantic definition C(T) of that subsystem: code can be mutated freely while its receiving entities and operative purposes stay the same. The same structure is a meta-prompting surface: prompts and workflows can be preprocessed against it, LAYER-017.
+- Why: The cost Metaform saves is the inference every agent pays to orient itself in a project. Turning an inference-heavy operation, such as working around a frozen core or a gate, or finding one's place in a project, into a structure read at the level of type understanding leaves more of the agent's inference for higher-order reasoning. The shape itself guides agents, so the design needs no rejecting checks or approval gates, and agents work in flow rather than against blockers. Any token savings are a by-product, not the aim.
+- How it shows: An agent given an element's address, its joins and its layers can say what the element is for and what must stay true about it without reading the implementation first.
+- Build: Nothing beyond the records it explains: MAP-001, MAP-002, MAP-011, MAP-012 and LAYER-001. No component computes basins or embeddings; the basin is the C(T) read of MAP-001.
+- Acceptance: None of its own. The acceptance of the records it names protects it.
+- Relates to: MAP-001, MAP-002, MAP-011, MAP-012, LAYER-001, LAYER-017.
+- Status: confirmed.
+
+---
+
 ### MAP-010 The namespace is a tree of Types, and an address names a Type
 
 - Requirement: A namespace address is a dotted path that names a Type, and the namespace is a tree in which each address's parent is the address one segment shorter.
@@ -109,7 +122,7 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-013 The namespace rules govern the functional map, and the store does not judge them
 
 - Requirement: The namespace validity rules of the Canonical Intake govern what an intake places in the functional map, and the store records any well-formed address without judging its validity.
-- What this means: The rules say an entry must be a functional type, not a genre, medium, encoding, style or purpose; it must be the same thing as its parent or a function within it; it must narrow from trunk to leaf and reverse to a proper name. Those rules are for the agent performing intake. Intake is never gated or judged. Only the resulting map may be graded, and it is refined afterward. Knowledge layers may link any address at all, valid or invalid, because medium, encoding and other non-functional things live there.
+- What this means: The rules say an entry must be a functional type, not a genre, medium, encoding, style or purpose; it must be the same thing as its parent or a function within it; it must narrow from trunk to leaf and reverse to a proper name. Those rules are for the agent performing intake. Intake is never gated or judged. Only the resulting map may be graded, and it is refined afterward. The language a project is written in is a medium, so it never appears in an address. A file encoding such as jpg, png or docx never appears in an address under media or document; it may appear under code only where the element is a thing that encodes that file type. A genre or objective, such as platformer, is not a functional type, while fps is, because a first-person view with a targeting reticle is a distinct functionality. Knowledge layers may link any address at all, valid or invalid, because medium, encoding and other non-functional things live there.
 - Why: A rejecting check loops agents and gates inference. Grading belongs in a later layer that observes the map, not in the write path.
 - How it shows: An intake result with a questionable address is stored as written. A later layer or review may flag it.
 - Build: The store checks only address form as in MAP-010. It never checks functional validity. Any grading of addresses is a layer written by a module.
@@ -180,7 +193,7 @@ These terms are used exactly as defined in the Canonical Intake.
   - non_goal: an outcome the receiver does not seek, recorded only where it materially clarifies the purpose.
   - refs: type-specific or artifact-specific references or logic, only where needed.
 
-  A join speaks about this artifact. Its purpose and function state what this artifact actually does in its own particulars. Where the artifact represents something, the join describes the function of that representation within the artifact, not the real-world function of the thing represented.
+  An encounter function states a function. A language, medium or encoding never goes into an encounter. A join speaks about this artifact. Its purpose and function state what this artifact actually does in its own particulars. Where the artifact represents something, the join describes the function of that representation within the artifact, not the real-world function of the thing represented.
 - Why: Functions live in joins, and joins speak to the artifact. Keeping each field separate lets an agent ask one question at a time, who, why, how, what is actually there, and get a direct answer.
 - How it shows: Reading a join returns every field it was written with, each on its own.
 - Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. non_goal is nullable. refs follow MAP-021.
@@ -193,7 +206,7 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-021 Refs are an ordered key and value list
 
 - Requirement: Elements, joins and subtypes carry refs as an ordered list of key and value pairs.
-- What this means: refs hold references such as key path with a relative file path, or other type-specific keys. The same key may appear more than once, for example several member paths.
+- What this means: refs hold references such as key path with a relative file path, or other type-specific keys. The same key may appear more than once, for example several member paths. A file name or path is legal in a ref and never legal as a namespace address.
 - Why: One uniform shape serves any artifact type without a schema per type, and repeated keys let a join list every member of a grouped Artifact Type.
 - How it shows: A join grouping three files lists three path refs in the order written.
 - Build: Each ref is its own record with owner, position, key and value, indexed by owner and by key and value, so an agent can find every element or join citing a given path directly.
@@ -270,15 +283,15 @@ These terms are used exactly as defined in the Canonical Intake.
   - Each ref becomes a ref record on its owner, in order.
   - When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 
-  The intake's instructions are delivered to the performing agent by name, and the agent writes its result back through the same chassis commands and tools, specified in BASE, CLI and MCP.
+  The intake's instructions are delivered to the performing agent by name. The agent completes the whole method, annealing included through step 11, and then submits the final shape once through the intake module's `intake_submit` tool, or `metaform intake submit` on the CLI, BASE-039. Its inputs mirror the intake schema's fields, and the mapping above applies to them field for field. There is no record-by-record writing during the trace and no XML answer.
 - Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part.
 - How it shows: After an intake, every element, join, subtype and ref in the result is readable from the store.
-- Build: The mapping above, written into one intake layer that stays open while it is written and is completed when the intake is done, so the map appears whole or not at all, STORE-032 and BASE-039. The provenance record of the intake layer is written when the layer is created, LAYER-010.
+- Build: `intake_submit` checks the submission's form and stores the whole mapping above as one intake layer, with its provenance record, LAYER-010, in one atomic write, STORE-024 and STORE-032. A submission with a form error writes nothing. So a half-written intake never exists, and the map appears whole or not at all.
 - Acceptance:
   1. Storing a real intake result, such as the MGM map, then reading the project back yields the same set of root elements, joins with every field, subtypes with their ends and pieces, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-013, STORE-024, MCP-009.
-- Status: the mapping of root elements, joins and refs is confirmed; the handling of the 1.1 nested provider element, of test-schema subtype joins, and of a missing AUE is recommended. Whether the agent submits one whole result or builds the map by one call per record is open, see open questions 9 and 15.
+- Status: the mapping of root elements, joins and refs is confirmed, and one atomic submission through `intake_submit` after the whole method is confirmed. The handling of the 1.1 nested provider element, of test-schema subtype joins, and of a missing AUE is recommended.
 
 ---
 
@@ -313,11 +326,11 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The map records where each element lives in the artifact, through refs such as a path. A worker that must judge the artifact itself, such as an intake agent or a sighted critic, is given the project's target and the refs, and reads the real material. A Type's universal description is never a stand-in for looking at the artifact. The blind latent critic is the one deliberate exception: its role is to reason from the map alone, so it receives the map and not the artifact, and its layer's provenance records that it was blinded.
 - Why: A map built or checked from names alone repeats whatever the names suggest, and the errors then look like the artifact's own. Keeping the source identity and the project with the evidence means every conclusion can be traced back to the material it came from.
 - How it shows: The intake instructions a subagent reads name the project's target. Reading an element or a join returns its refs, so an agent can open the exact files or passages behind it.
-- Build: Every element and join read returns its refs in order. The intake instructions served by name carry the project's target, filled into the intake text's `<target>` element, BASE-039. The project id reaches the subagent in the result of `intake begin`, and is filled into the text only where the text holds a `{project_id}` placeholder. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
+- Build: Every element and join read returns its refs in order. The intake instructions served by name carry the project's target, filled into the intake text's `<target>` element, BASE-039. The project id is filled into the text only where the text holds a `{project_id}` placeholder; otherwise `intake_submit` stores into the folder's project, or the project named by its optional project argument, MCP-025. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
 - Acceptance:
   1. Reading a join returns its path refs exactly as written.
   2. The served intake instructions for a registered project contain that project's target type and value in the `<target>` element.
-  3. The result of `intake begin` contains the project id.
+  3. `intake_submit` called with a project argument stores into that project, whatever the folder.
 - Relates to: MAP-021, MAP-041, LAYER-010, LAYER-015, MCP-009, STORE-025.
 - Status: confirmed.
 
@@ -331,11 +344,11 @@ These terms are used exactly as defined in the Canonical Intake.
 6. When there are several VEs, is one recorded as primary, and how?
 7. Roles within a join: are hard dependency, property and supportive recorded on joins, and do property joins carry transitivity in the map itself or only through layers?
 8. May a subtype hold subtypes of its own?
-9. Does the intake agent write its result as one whole submission or record by record through tool calls?
+9. Answered: the agent submits once through `intake_submit` after the whole method, MAP-040. Does the intake agent write its result as one whole submission or record by record through tool calls?
 10. C(T) names the Type's single Encounter Function e, while each join stores the provider's function for that encounter. Does the Type record also store its one Encounter Function, and if so, who writes it?
 11. May a join have the same element as receiver and provider?
 12. Are Type records shared across projects, as MAP-010 recommends, or kept in each project store, as STORE-008 has them?
 13. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 14. When a project holds more than one AUE, how is the set of elements belonging to each AUE recorded? (MAP-042)
-15. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
+15. Answered: the intake text's response protocol will say to submit the final shape through `intake_submit`, with the method word for word, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
 16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)

@@ -31,7 +31,7 @@ It also defines the first working test, which exercises all three end to end.
 
 - Requirement: Every verb of every module on the folder's command surface is served as a tool named `<module>_<verb>`, built from the same declaration that builds its CLI command.
 - What this means: The tool's description is the verb's summary. Its input schema comes from the verb's nouns and switches. A module author declares a verb once and gets the CLI command, its help and its tool. Names must match `^[a-zA-Z0-9_-]{1,64}$` and contain no double underscore. A verb whose name would break that rule is refused when the module loads, with the reason. It is not silently skipped.
-- Why: One declaration for both surfaces means CLI and MCP never disagree, and an agent without MCP loses nothing.
+- Why: One declaration for both surfaces means CLI and MCP never disagree, and an agent without MCP loses nothing. Because every capability is its own tool, a host can grant a capability such as importing prompts or creating memory layers to one permitted agent, and ordinary agents never need that tool.
 - How it shows: The template's `greet` verb appears as the tool `template_greet`, with the same summary as `metaform help template greet`.
 - Build: For each surfaced verb whose `surfaces` include `mcp`: name `<module>_<verb>`; description the verb's summary, followed by ` Caution: <caution>` for a caution verb; input schema `{"type": "object", "properties": {...}, "required": [...], "additionalProperties": false}` with one property per noun, typed by BASE-035, which gives the schema for each noun kind including `bool` and `json`, a many noun as an array, required nouns listed in `required`; one property per switch the verb reads, keyed by the setting key, typed by CLI-027; `confirm` of type boolean for a caution verb; and on every tool, an optional `project` property of type string, MCP-025. An invalid tool name is refused at load, BASE-037. The current code puts all nouns in one `nouns` array and silently skips invalid names; both change.
 - Acceptance: A verb added to a test module appears as a tool with no MCP code written for it. A module declaring an invalid verb name fails to load and says why.
@@ -104,17 +104,17 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-009 A project with no intake gets a notice to delegate the intake to a subagent
 
 - Requirement: When the folder's project has no intake, the instructions say so and tell the agent to have a subagent perform the intake. The subagent reads its instructions from Metaform by name, through the CLI or MCP. The orchestrator passes only where to read them.
-- What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word and writes its result back through the same kind of plain commands and tools. The same notice appears in `metaform` status output, so an agent without MCP sees it too.
+- What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word, performs the whole method, and submits the final shape once through `intake_submit`, or `metaform intake submit`, BASE-039. The same notice appears in `metaform` status output, so an agent without MCP sees it too.
 - Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it. The nonce later replaces the name as the handle, without changing how anything works.
 - How it shows: In a registered project with no intake, the instructions end with:
   ```
   This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.
   ```
   After an intake is completed, the notice is gone.
-- Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a complete layer of kind intake exists, STORE-032. An intake layer that is still open does not count, so a half-written intake never clears the notice. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder.
-- Acceptance: Instructions for a project with no complete intake layer contain the notice, including while an intake layer is open, and the command it names exists on the surface. Instructions for a project with a complete intake layer do not contain it. The text returned by `intake prompt` equals the stored intake file with only the `<target>` element's attributes filled.
+- Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a layer of kind intake exists, STORE-032. An intake layer is written whole in one atomic submission, so a half-written intake never exists and never clears the notice. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder.
+- Acceptance: Instructions for a project with no intake layer contain the notice, including after a submission that failed its form check, and the command it names exists on the surface. Instructions for a project with a complete intake layer do not contain it. The text returned by `intake prompt` equals the stored intake file with only the `<target>` element's attributes filled.
 - Relates to: MCP-007, MCP-024, CLI-028, LAYER-001, STORE-032, BASE-039.
-- Status: confirmed. The intake module, its command names and the notice wording follow D38, recommended. How the served text asks the subagent to write its result is open, BASE question 9.
+- Status: confirmed, including the single atomic submission through `intake_submit`. The intake module, its command names and the notice wording follow D38, recommended.
 
 ### MCP-010 AI tools start the server with uvx
 
@@ -317,7 +317,7 @@ It also defines the first working test, which exercises all three end to end.
 
 ### MCP-024 The first working test runs installer, instructions and delegation end to end
 
-- Requirement: A fresh machine goes from installing Metaform to an agent that sees each module's concise instructions and the no-intake notice, and delegates the intake by name.
+- Requirement: A fresh machine goes from installing Metaform to an agent that sees each module's concise instructions and the no-intake notice, delegates the intake by name, and then shares memory at map nodes whose visibility follows layer select and mask.
 - What this means: The scenario, in order:
   1. A user builds or obtains the wheel, and has `uv` and at least one AI tool installed.
   2. `metaform install` passes its checks, shows the detected tools, previews the changes, registers the uvx entry and writes the skill, proves the server starts, and ends with one next step.
@@ -325,21 +325,27 @@ It also defines the first working test, which exercises all three end to end.
   4. The user opens the AI tool in that project folder. The agent receives the server instructions: the base text, each enabled module's concise instructions, and the no-intake notice.
   5. The agent has a subagent perform the intake, telling it only the command or tool that returns the intake instructions.
   6. The subagent reads the instructions by name, unaltered.
-  7. After an intake is stored, a new connection no longer shows the notice.
+  7. The subagent performs the whole method and submits the final shape once through `intake_submit`. A new connection no longer shows the notice.
+  8. An agent writes a memory at an element and at a join through the memory tools, `memory_add-observations`.
+  9. A second agent, on its own connection, reads both back with `memory_open-nodes`.
+  10. A mask of the memory layer at the element's address makes that memory disappear from the in-context read there, `map_node`, and clearing the mask, or selecting the layer, makes it appear again. The join's memory follows its receiver's selection in the same way, LAYER-007.
 
   The modules on in this test are `map`, `intake`, `memory` and `mcp`, all of which ship enabled. The template is the only module that ships disabled, and it does not appear.
-- Why: This is the smallest run that proves setup works, that agents are oriented by live instructions, and that intake is delegated without rewording.
+- Why: This is the smallest run that proves setup works, that agents are oriented by live instructions, and that intake is delegated without rewording. Memory and layer selection are in it because memory is how a small wrong inference gets fixed right at the node, and select and mask are how a job controls which layers an agent sees; the first test is not a working Metaform without them.
 - How it shows: The steps above, observed in at least one real AI tool.
-- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, STORE-032, and the `purpose` field.
-- Acceptance: An automated run of steps 2 to 7, plus one recorded manual run in a real tool. The automated run:
+- Build: Depends on MCP-001 to MCP-021, BASE-038 to BASE-041, LAYER-007, LAYER-012, LAYER-013, STORE-019, STORE-020, STORE-032, and the `purpose` field. The first test's tool list must include `intake_prompt`, `intake_submit`, `memory_add-observations`, `memory_open-nodes`, `map_select`, `map_mask`, `map_clear` and `map_node`.
+- Acceptance: An automated run of steps 2 to 10, plus one recorded manual run in a real tool. The automated run:
   - Uses a temporary `METAFORM_HOME` and a temporary user home, and puts fake `claude` and `codex` executables first on PATH. Each fake records its arguments to a file and exits 0, so registration is checked without the real tools. The temporary home also holds `.cursor/mcp.json` containing one other server entry, so the Cursor merge and its backup are checked against a real existing file.
   - Every process the test starts inherits its environment, including the temporary `METAFORM_HOME`; the registered command carries no environment of its own, so inheritance is how the probe's server finds the test home. The test needs network access or a warm uv cache for uvx to prepare the server's environment; CI keeps the uv cache between runs.
   - Builds the wheel with `metaform build`, runs `metaform install claude codex cursor`, and checks the recorded registration arguments, the skill copies, the Cursor file holding both its old entry and `metaform`, the backup of the Cursor file byte-identical to the fixture, and a passing proof step against the built wheel.
   - Registers a temporary project folder, then starts the registered command, `uvx --from <wheel> metaform mcp serve`, with that folder as its working folder, using the probe client of MCP-017 as the scripted host. It checks that the instructions hold the base text, the four modules' sections and the notice.
   - Calls `intake_prompt` and checks the text against the stored file with only the target filled.
-  - Writes a three-element fixture intake through `intake_begin`, `map_add-element`, `map_add-join` and `intake_complete`: a VE, a DE and one SE, with two joins.
+  - Submits a three-element fixture intake through `intake_submit`: a VE, a DE and one SE, with two joins. A first submission missing one join's purpose is refused, writes nothing, and the notice remains; the corrected submission is stored whole.
   - Starts a new connection and checks the notice is gone.
-- Relates to: MCP-001 to MCP-023, BASE-017, LAYER-001, STORE-013.
+  - Checks the tool list holds every tool named in Build.
+  - On one connection, calls `memory_add-observations` at the DE element and at one join. On a second connection, calls `memory_open-nodes` on both and gets both observations back.
+  - Calls `map_node` in context at the DE element and sees the memory; calls `map_mask` for the memory layer at the DE's address and no longer sees it; calls `map_clear` for that mask and sees it again; the join's memory is checked the same way through its receiver's address.
+- Relates to: MCP-001 to MCP-023, BASE-017, BASE-039, BASE-040, LAYER-001, LAYER-007, LAYER-012, LAYER-013, STORE-013, STORE-019.
 - Status: confirmed.
 
 
@@ -354,6 +360,24 @@ It also defines the first working test, which exercises all three end to end.
   - A call naming an unregistered project fails with the Next line and writes nothing.
 - Relates to: BASE-028, CLI-021, CLI-030, MCP-003, MCP-005, MCP-011.
 - Status: recommended. The fallback when no project is named and the folder is outside every project is open, D37.
+
+### MCP-026 The nonce design carried forward
+
+- Requirement: After the MVP, a nonce issued by the orchestrator is the handle that carries a job's text and context to a worker exactly as written, on the CLI and over MCP.
+- What this means:
+  - `metaform <nonce>` is the working agent's entry into the CLI. Metaform reads the nonce as a top-level input based on what has been issued. It shows that agent's status and its workflow. It does not launch the MCP server.
+  - `metaform <nonce> next` gives the next step when the same agent performs a sequential workflow; submitting an answer also moves to the next step. `metaform <nonce> list` shows the agent's inputs. Together they are a navigation surface for that one job.
+  - The same nonce works over MCP to reach the assigned workflow. The CLI, or the orchestrator, gives the agent the header it uses on the MCP server for its task-specific surface. An agent without MCP can do everything through the CLI.
+  - The nonce targets the precise knowledge layers an agent gets for its workflow; the orchestrator sets up the job and chooses exactly which layers are available.
+  - The nonce's main purpose is running a prompt chain between agents deterministically, without the orchestrator rewording the work. Where a host cannot pass work between agents, the orchestrator only prompts the next agent to run `metaform <nonce>`.
+  - Changing a project needs a nonce issued for it; without one, an agent can change only memory.
+  - Each agent's stdio MCP server is its own instance, so a nonce is supplied to that agent's instance, never multiplexed across agents.
+- Why: The orchestrator passing only a handle keeps every worker's instructions identical to what was issued, which is the same reason the MVP passes only where to read the intake instructions, MCP-009.
+- How it shows: Not in the MVP.
+- Build: Nothing now. Until nonces are designed, instructions are read by name, MCP-009, and the command surface is narrowed by settings, CLI-022.
+- Acceptance: None now.
+- Relates to: MCP-009, MCP-012, CLI-022, LAYER-007, LAYER-017.
+- Status: deferred. The points above are confirmed design to carry into the nonce design.
 
 ## Open questions
 
