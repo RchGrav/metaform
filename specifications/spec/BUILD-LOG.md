@@ -33,3 +33,10 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: e0c8596.
 - Questions raised: Q13 and Q14.
 
+## Step 5: the memory module
+
+- Records satisfied: BASE-040, LAYER-012, LAYER-013 and STORE-020 through the `memory` module, shipping enabled: the nine reference operations at elements, joins and subtypes; the memory layer made on the first write, recognized by its kind, with no provenance; relations shown when opening either end; memory masked and selected like any layer; D18, an entity named that the map does not hold becomes an element in the memory layer.
+- Tests added: `src/metaform/modules/memory/tests/test_memory.py`, 9 tests. Whole suite: 314 passed.
+- Commit: f2dd73d.
+- Questions raised: none.
+
