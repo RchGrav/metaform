@@ -45,6 +45,8 @@ class Setting:
     scope: str = 'folder'
     owner: str = 'chassis'
     default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
+    check: Callable[[Any, Path], None] | None = field(default=None, compare=False)
+    boundary: Callable[[Path], Path | None] | None = field(default=None, compare=False)
 
     @property
     def switch(self) -> str:
@@ -150,10 +152,13 @@ def _scope(setting: Setting, folder: Path) -> str:
     if setting.scope == 'global':
         return 'global'
     folder = folder.resolve()
+    stop = setting.boundary(folder) if setting.boundary else None
     for candidate in (folder, *folder.parents):
         scope = home.path_key(candidate)
         if _has(scope, setting) or home.glued(scope, setting.owner, setting.key):
             return scope
+        if stop is not None and home.path_key(candidate) == home.path_key(stop):
+            break
     return home.path_key(folder)
 
 
@@ -220,6 +225,8 @@ def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> tuple[Any
     """Store one setting from its CLI form, or a typed boolean. Returns (old, new)."""
     setting = SCHEMA[key]
     new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
+    if setting.check is not None:
+        setting.check(new, folder)
     old = value(key, folder)
     scope = _own_scope(setting, folder)
     _save(setting, scope, new, folder)
@@ -271,11 +278,49 @@ def describe(folder: Path) -> list[dict[str, Any]]:
             for key, setting in SCHEMA.items()]
 
 
+def _project_root(folder: Path) -> Path | None:
+    """A registered project's folder stops a project selection made above it from reaching inside, D57."""
+    found = home.folder_project(folder)
+    record = home.project(found) if found else None
+    return Path(record.path) if record else None
+
+
+def _check_modules(groups: Any, folder: Path) -> None:
+    from . import loader
+    known = ['chassis', *sorted({item.id for item in loader.discover()})]
+    for group in groups:
+        if group not in known:
+            raise SettingError(f"--modules has no group {group!r}. Groups: {', '.join(known)}.",
+                               'metaform list modules')
+
+
+def _check_layers(names: Any, folder: Path) -> None:
+    if not names:
+        return
+    from .context import project_for
+    from .data import Store
+    project_id = project_for(folder)
+    if project_id is None:
+        raise SettingError('--layers names layers of a project, and this folder is not in one.',
+                           'metaform add project <id> <path>')
+    layers = {layer.name: layer for layer in Store(project_id).layers(limit=0).results}
+    for name in names:
+        if name in layers and layers[name].kind == 'correction':
+            raise SettingError(f'{name} is a correction layer; correction layers are always applied.',
+                               'metaform map layers')
+        if name not in layers and not Store(project_id).layers(tag=name, limit=0).results:
+            raise SettingError(f'--layers has no layer or tag {name!r}.', 'metaform map layers')
+
+
 project = choice('project', choices=lambda ctx: [record.project_id for record in home.projects()],
-                 default_from=home.folder_project, help='The project this folder works on.',
+                 default_from=home.folder_project, boundary=_project_root, help='The project this folder works on.',
                  details="Defaults to the registered project that contains this folder. Set it to work on another "
                          "project from here. Unset it to return to the folder's own project.")
 
-commands = items('commands', help='The command groups shown and run in this folder. Empty means all.',
-                 details='A group is chassis or a module id. set, unset, config and help always run, '
-                         'so the full set can be restored with unset --commands.')
+modules = items('modules', check=_check_modules,
+                help='Narrows which modules\' commands this folder shows and runs. It does not enable or disable '
+                     'modules; use metaform enable and disable for that.')
+
+layers = items('layers', check=_check_layers,
+               help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
+                    'is not hidden.')

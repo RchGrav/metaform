@@ -1,0 +1,101 @@
+"""`metaform query`: the design's own questions on the command line, through the reads of STORE-025, STORE-028.
+
+Each read's positional arguments are nouns in order; its named options are
+`name=value` nouns. There is no general SQL surface.
+"""
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from .data import Node, Store
+from .errors import Stop
+
+
+def _node(text: str) -> Node:
+    return Node.parse(text)
+
+
+def _bool(text: str) -> bool:
+    if text not in ('true', 'false'):
+        raise Stop(f'{text!r} is not true or false.', 'metaform query')
+    return text == 'true'
+
+
+def _int(text: str) -> int:
+    try:
+        return int(text)
+    except ValueError:
+        raise Stop(f'{text!r} is not a whole number.', 'metaform query') from None
+
+
+def _list(text: str) -> list[str]:
+    return [item for item in text.split(',') if item]
+
+
+@dataclass(frozen=True)
+class Read:
+    method: str
+    positional: tuple[tuple[str, Callable[[str], Any]], ...]
+    optional: dict[str, Callable[[str], Any]]
+    summary: str
+
+
+PAGING = {'limit': _int, 'after': str}
+CONTEXT = {'selection': _list, 'raw': _bool}
+
+READS: dict[str, Read] = {
+    'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),
+    'joins': Read('joins', (('element', str),), {'as': str, **CONTEXT, **PAGING},
+                  'The joins an element owns, or with as=provider those it serves.'),
+    'identity': Read('identity', (('element', str),), {**CONTEXT, **PAGING}, 'Every join an element provides for.'),
+    'subtypes': Read('subtypes', (('join', str),), {**CONTEXT, **PAGING}, 'The subtypes in a join.'),
+    'where': Read('where', (('address', str),), dict(CONTEXT), 'The element, or the subtype and its join, at an address.'),
+    'children': Read('children', (('address', str),), dict(PAGING), 'The next types toward the leaves.'),
+    'layer-items': Read('layer_items', (('layer', str),), {'node': _node, **PAGING}, 'A whole layer, or it at one node.'),
+    'node': Read('node', (('target', _node),), dict(CONTEXT), "Every layer's items at one node."),
+    'context': Read('context', (('address', str),), {'selection': _list, **PAGING},
+                    'The properties that apply at an address and those visible there.'),
+    'links-to': Read('links_to', (('target', _node),), {'layer': str, **CONTEXT, **PAGING}, 'Items linking to a node.'),
+    'citing': Read('citing', (('key', str), ('value', str)), dict(PAGING), 'Everything whose refs hold a key and value.'),
+    'history': Read('history', (('thing', str),), dict(PAGING), 'Every version of a thing.'),
+    'stack': Read('stack', (), dict(PAGING), 'The correction layers in order.'),
+    'layers': Read('layers', (), {'tag': str, 'kind': str, 'module': str, **PAGING}, 'The layers.'),
+    'provenance': Read('provenance', (('layer', str),), {}, "One layer's provenance."),
+    'effective-selection': Read('effective_selection', (('address', str),), {'root': _list},
+                                'The layers that reach an address.'),
+    'search': Read('search', (('text', str),), {'layer': str, 'selection': _list, **PAGING}, 'Items by their words.'),
+    'has-intake': Read('has_intake', (), {}, 'Whether the active metaform has an intake.'),
+    'metaforms': Read('metaforms', (), dict(PAGING), "The project's metaforms."),
+    'active-metaform': Read('active_metaform', (), {}, "The project's active metaform."),
+    'project': Read('project', (), {}, 'The project record with its target.'),
+}
+
+
+def listing() -> str:
+    width = max(len(name) for name in READS)
+    lines = ['Reads'] + [f'  {name:<{width}}  {read.summary}' for name, read in READS.items()]
+    lines += ['', "Use 'metaform query <read> <arguments> [name=value] [--json]'."]
+    return '\n'.join(lines) + '\n'
+
+
+def run(store: Store, name: str, words: list[str]) -> Any:
+    read = READS.get(name)
+    if read is None:
+        raise Stop(f'No read {name}.', 'metaform query')
+    positional: list[Any] = []
+    named: dict[str, Any] = {}
+    for word in words:
+        key, equals, raw = word.partition('=')
+        if equals and key in read.optional:
+            named['as_' if key == 'as' else key] = read.optional[key](raw)
+        else:
+            positional.append(word)
+    if len(positional) != len(read.positional):
+        usage = ' '.join(f'<{noun}>' for noun, _ in read.positional)
+        raise Stop(f'query {name} takes {usage or "no arguments"}.', f'metaform query {name} {usage}'.rstrip())
+    arguments = [convert(word) for word, (_, convert) in zip(positional, read.positional)]
+    if 'node' in named:
+        arguments.append(named.pop('node'))
+    return getattr(store, read.method)(*arguments, **named)

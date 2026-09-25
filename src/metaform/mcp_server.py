@@ -24,7 +24,7 @@ NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 
 def _surface(folder: Path):
-    groups = settings.value('commands', folder)
+    groups = settings.value('modules', folder)
     return [module for module in loader.enabled() if not groups or module.id in groups]
 
 

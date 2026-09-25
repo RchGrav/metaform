@@ -1,17 +1,20 @@
-"""Help text: one record per command and switch, rendered two ways.
+"""Help text, generated from the live declarations, CLI-006 to CLI-008 and CLI-029.
 
-`metaform help <thing>` renders the man page. `<command> --help` renders the
-syntax only. The indexes list every command and switch.
+`metaform help <thing>` renders the page. `<thing> --help` renders the syntax
+only. The indexes list every command and switch on the folder's surface.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 from . import __version__, settings
 
 
 @dataclass(frozen=True)
 class Command:
+    """One chassis verb's help record."""
     name: str
     summary: str
     usage: tuple[str, ...]
@@ -25,6 +28,7 @@ class Command:
 
 @dataclass(frozen=True)
 class Switch:
+    """A verb control switch: it steers a chassis command and is never a setting, D32."""
     name: str
     summary: str
     details: str = ''
@@ -33,6 +37,7 @@ class Switch:
 
 COMMANDS: dict[str, Command] = {}
 SWITCHES: dict[str, Switch] = {}
+ALWAYS = ('help', 'set', 'unset', 'config')
 
 
 def command(record: Command) -> Command:
@@ -45,12 +50,7 @@ def switch(record: Switch) -> Switch:
     return record
 
 
-def setting_switches() -> tuple[tuple[str, str], ...]:
-    return tuple((item.switch + ('' if item.kind == 'bool' else ' <value>'), item.help)
-                 for item in sorted(settings.SCHEMA.values(), key=lambda item: item.switch))
-
-
-def _rows(pairs, indent=2):
+def rows(pairs: Iterable[tuple[str, str]], indent: int = 2) -> list[str]:
     pairs = list(pairs)
     if not pairs:
         return []
@@ -58,31 +58,30 @@ def _rows(pairs, indent=2):
     return [' ' * indent + f'{left:<{width}}  {right}'.rstrip() for left, right in pairs]
 
 
-def _switches_of(record: Command):
-    rows = list(record.switches)
-    if record.name == 'set':
-        rows = list(setting_switches()) + rows
-    if record.name == 'unset':
-        rows = [(item.switch, item.help) for item in sorted(settings.SCHEMA.values(), key=lambda item: item.switch)] + rows
-    return rows
+def _setting_rows(record: Command) -> list[tuple[str, str]]:
+    found = list(record.switches)
+    if record.name in ('set', 'unset'):
+        found = [(', '.join(setting.switches) + ('' if setting.kind == 'bool' or record.name == 'unset'
+                                                  else ' <value>'), setting.help)
+                 for setting in settings.SCHEMA.values()] + found
+    return found
 
 
 def syntax(name: str) -> str:
     record = COMMANDS[name]
     lines = ['Usage: ' + record.usage[0]] + ['       ' + usage for usage in record.usage[1:]]
-    rows = _switches_of(record) + [('-h, --help', 'Show this syntax.')]
-    return '\n'.join(lines + [''] + _rows(rows)) + '\n'
+    return '\n'.join(lines + [''] + rows(_setting_rows(record) + [('-h, --help', 'Show this syntax.')])) + '\n'
 
 
 def page(name: str) -> str:
     record = COMMANDS[name]
-    lines = [f'{record.name} — {record.summary}', '']
+    lines = [f'{record.name}: {record.summary}', '']
     if record.description:
         lines += [record.description, '']
     lines += ['Usage'] + ['  ' + usage for usage in record.usage] + ['']
-    rows = _switches_of(record)
-    if rows:
-        lines += ['Switches'] + _rows(rows) + ['']
+    found = _setting_rows(record)
+    if found:
+        lines += ['Switches'] + rows(found) + ['']
     if record.details:
         lines += ['Details', '  ' + record.details, '']
     if record.examples:
@@ -95,26 +94,26 @@ def page(name: str) -> str:
     return '\n'.join(lines).rstrip() + '\n'
 
 
-def switch_page(name: str) -> str:
+def switch_page(name: str, folder: Any = None) -> str:
     found = settings.by_switch(name)
-    setting = found[0] if found else None
-    if setting is not None:
-        lines = [f'{name} — {setting.help}', '']
+    if found is not None:
+        setting = found[0]
+        lines = [f'{setting.switch}: {setting.help}', '']
         if setting.details:
             lines += [setting.details, '']
-        lines += ['Usage', f'  metaform set {name}' + ('' if setting.kind == 'bool' else ' <value>'),
-                  f'  metaform unset {name}', '']
-        try:
-            options = setting.options() if setting.kind == 'select' else []
-        except Exception:  # A module's choices function that fails shows no choices here.
-            options = []
+        lines += ['Usage', f'  metaform set {setting.switch}' + ('' if setting.kind == 'bool' else ' <value>'),
+                  f'  metaform unset {setting.switch}', '']
         if setting.kind == 'select':
+            try:
+                options = setting.options(folder)
+            except Exception:  # A module's choices function that fails shows no choices here.
+                options = []
             lines += ['Choices: ' + (', '.join(options) if options else 'none yet'), '']
         lines += [f'Owner: {setting.owner}. Kind: {setting.kind}. Applies to: '
                   + ('this folder' if setting.scope == 'folder' else 'everywhere') + '.']
         return '\n'.join(lines) + '\n'
     record = SWITCHES[name]
-    lines = [f'{name} — {record.summary}', '']
+    lines = [f'{name}: {record.summary}', '']
     if record.details:
         lines += [record.details, '']
     if record.used_by:
@@ -128,13 +127,13 @@ def known_switch(name: str) -> bool:
 
 def overview() -> str:
     return '\n'.join([
-        f'Metaform {__version__} — gives agents a project\'s purpose before they work on it.',
+        f"Metaform {__version__}: gives agents a project's purpose before they work on it.",
         '',
         'Common commands',
-        *_rows([('metaform', 'Show status: home, folder, project.'),
-                ('metaform add project <id> <path>', 'Register a project.'),
-                ('metaform config', 'Open the settings screen.'),
-                ('metaform set --<setting> <value>', 'Save a setting.')]),
+        *rows([('metaform', 'Show status: home, folder, project.'),
+               ('metaform add project <id> <path>', 'Register a project.'),
+               ('metaform config', 'Open the settings screen.'),
+               ('metaform set --<setting> <value>', 'Save a setting.')]),
         '',
         'Tips:',
         '  - start here: metaform help intro',
@@ -144,97 +143,90 @@ def overview() -> str:
     ]) + '\n'
 
 
-INTRO = '''intro — What Metaform is and how to start.
-
-Metaform keeps a functional map of a project: what each part is for, who
-receives what it does, and how it does it. Agents read the map before they
-work, so they start from the project's purpose instead of rebuilding it.
-
-All data lives in the Metaform home. A project is a folder you register. Run
-metaform inside that folder and Metaform works on that project.
-
-Start
-  metaform add project <id> <path>   Register a project.
-  metaform                           Check the status.
-  metaform config                    Review the settings.
-
-Commands are verbs, switches change how a command runs, and the words after a
-command name what it acts on.
-'''
+def intro(home: str) -> str:
+    return (
+        'Metaform keeps a map of what each part of a project is for: which element receives\n'
+        'from which, why, and how. Agents read the map before they work, so they start from\n'
+        "the project's purpose instead of rebuilding it.\n"
+        '\n'
+        f'All data lives in the Metaform home, {home}. Nothing is written into your projects.\n'
+        '\n'
+        'Start:\n'
+        '  metaform add project <id> <path>   Register a project.\n'
+        '  metaform install                   Set up your AI tools to use Metaform.\n'
+        '  metaform                           See status and the next step.\n')
 
 
-def _here(verb) -> bool:
+def _here(verb: Any) -> bool:
     from .module_metadata import current_os
     return 'cli' in verb.surfaces and (verb.supported_os is None or current_os() in verb.supported_os)
 
 
-def _noun_words(verb) -> str:
-    return ' '.join(noun.usage() for noun in verb.nouns)
-
-
-def commands_index(visible=lambda group: True) -> str:
+def commands_index(visible: Callable[[str], bool]) -> str:
     from . import loader
-    lines = []
-    rows = [(record.name, record.summary) for record in sorted(COMMANDS.values(), key=lambda item: item.name)
-            if visible('chassis') or record.name in ('help', 'set', 'unset', 'config')]
-    lines += ['Commands', *_rows(rows), '']
+    found = [(record.name, record.summary) for record in COMMANDS.values()
+             if visible('chassis') or record.name in ALWAYS]
+    lines = ['Commands', *rows(found), '']
     for module in sorted(loader.enabled(), key=lambda item: item.id):
         if not visible(module.id):
             continue
-        rows = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs if _here(verb)]
-        lines += [f'{module.id}: {module.summary}', *_rows(rows), '']
+        verbs = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs if _here(verb)]
+        lines += [f'{module.id}: {module.summary}', *rows(verbs), '']
     lines.append("Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.")
     return '\n'.join(lines) + '\n'
 
 
-def module_syntax(module) -> str:
+def switches_index() -> str:
+    found = [(setting.switch, setting.help) for setting in settings.SCHEMA.values()]
+    found += [(record.name, record.summary) for record in SWITCHES.values()]
+    found.sort()
+    return '\n'.join(['Switches', *rows(found), '', "Use 'metaform help <switch>' for details."]) + '\n'
+
+
+def module_syntax(module: Any) -> str:
     lines = [f'Usage: metaform {module.id} <verb> [nouns] [switches]', '']
-    lines += _rows([(verb.usage(module.id), verb.summary) for verb in module.verbs if _here(verb)])
+    lines += rows([(verb.usage(module.id), verb.summary) for verb in module.verbs if _here(verb)])
     return '\n'.join(lines) + '\n'
 
 
-def module_page(module) -> str:
+def module_page(module: Any) -> str:
     lines = [f'{module.id}: {module.summary}', '', module.purpose, '', 'Verbs']
     here = [verb for verb in module.verbs if _here(verb)]
     elsewhere = [verb for verb in module.verbs if 'cli' in verb.surfaces and not _here(verb)]
-    lines += _rows([(verb.name + (' ' + _noun_words(verb) if verb.nouns else ''), verb.summary) for verb in here])
+    lines += rows([(' '.join([verb.name, *(noun.usage() for noun in verb.nouns)]), verb.summary) for verb in here])
     if elsewhere:
         lines += ['', 'Not on this system']
-        lines += _rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os)}.') for verb in elsewhere])
-    owned = [item for item in settings.SCHEMA.values() if item.owner == module.id]
+        lines += rows([(verb.name, f'{verb.summary} Runs on {", ".join(verb.supported_os)}.') for verb in elsewhere])
+    owned = [setting for setting in settings.SCHEMA.values() if setting.owner == module.id]
     if owned:
-        lines += ['', 'Settings'] + _rows([(item.switch, item.help) for item in owned])
+        lines += ['', 'Settings'] + rows([(setting.switch, setting.help) for setting in owned])
     if module.details:
         lines += ['', 'Details', '  ' + module.details]
     lines += ['', f"Use 'metaform help {module.id} <verb>' for one verb."]
     return '\n'.join(lines) + '\n'
 
 
-def _verb_switches(verb):
-    rows = []
-    for noun in verb.nouns:
-        if not noun.required:
-            rows.append((f'{noun.name}=<{noun.kind}>', noun.help))
+def _verb_rows(verb: Any) -> list[tuple[str, str]]:
+    found = [(f'{noun.name}=<{noun.kind}>', noun.help) for noun in verb.nouns if not noun.required]
     for key in verb.switches:
         setting = settings.SCHEMA.get(key)
         if setting is not None:
-            rows.append((', '.join(setting.switches) + ('' if setting.kind == 'bool' else ' <value>'), setting.help))
+            found.append((', '.join(setting.switches) + ('' if setting.kind == 'bool' else ' <value>'), setting.help))
     if verb.caution:
-        rows.append(('--confirm', 'Run it. Without this the verb only explains what it would do.'))
-    return rows
+        found.append(('--confirm', 'Run it. Without this the verb only explains what it would do.'))
+    return found
 
 
-def verb_syntax(module, verb) -> str:
+def verb_syntax(module: Any, verb: Any) -> str:
     lines = ['Usage: ' + verb.usage(module.id), '']
-    lines += _rows(_verb_switches(verb) + [('-h, --help', 'Show this syntax.')])
-    return '\n'.join(lines) + '\n'
+    return '\n'.join(lines + rows(_verb_rows(verb) + [('-h, --help', 'Show this syntax.')])) + '\n'
 
 
-def verb_page(module, verb) -> str:
+def verb_page(module: Any, verb: Any) -> str:
     lines = [f'{module.id} {verb.name}: {verb.summary}', '', 'Usage', '  ' + verb.usage(module.id), '']
-    rows = _verb_switches(verb)
-    if rows:
-        lines += ['Switches'] + _rows(rows) + ['']
+    found = _verb_rows(verb)
+    if found:
+        lines += ['Switches'] + rows(found) + ['']
     if verb.caution:
         lines += ['Caution', '  ' + verb.caution, '']
     if verb.details:
@@ -246,10 +238,3 @@ def verb_page(module, verb) -> str:
         lines += ['']
     lines.append(f'See also: metaform help {module.id}')
     return '\n'.join(lines).rstrip() + '\n'
-
-
-def switches_index() -> str:
-    rows = [(item.switch, item.help) for item in settings.SCHEMA.values()]
-    rows += [(record.name, record.summary) for record in SWITCHES.values()]
-    rows.sort()
-    return '\n'.join(['Switches', *_rows(rows), '', "Use 'metaform help <switch>' for details."]) + '\n'

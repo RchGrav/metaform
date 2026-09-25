@@ -1,0 +1,537 @@
+"""The command line: grammar, help, errors, settings and context, CLI, through the real CLI."""
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sqlite3
+import subprocess
+import sys
+import time
+
+import pytest
+
+from metaform import __version__
+
+pytestmark = pytest.mark.kind('fixture')
+
+OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
+
+
+def lines(result):
+    return result.stdout.splitlines()
+
+
+def shown(run, cwd=None):
+    return {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=cwd).stdout)}
+
+
+@pytest.fixture
+def toggles(user_module):
+    """A module with a boolean switch `tmux` and a verb that reports it."""
+    user_module('toggles', f'''
+        from metaform import settings
+        from metaform.module import Module, Verb
+        {OS}
+        settings.boolean('tmux', False, help='Run inside tmux.')
+        settings.boolean('fast', False, help='Go fast.')
+        settings.number('panes', 4, min=1, max=9, help='How many panes.')
+        def show(ctx):
+            return f"tmux={{ctx.setting('tmux')}}"
+        MODULE = Module(id='toggles', summary='Toggles.', purpose='Toggles. Details: metaform help toggles.',
+                        verbs=(Verb('show', show, 'Show tmux.', switches=('tmux',)),))
+    ''')
+
+
+@pytest.fixture
+def project(run, tmp_path):
+    folder = tmp_path / 'proj'
+    (folder / 'src').mkdir(parents=True)
+    run('add', 'project', 'proj', str(folder))
+    return folder
+
+
+# Grammar ----------------------------------------------------------------------
+
+@pytest.mark.req('CLI-001')
+def test_an_undeclared_switch_is_refused_with_the_verbs_syntax_as_next(run, toggles):
+    assert run('toggles', 'show', '--tmux').stdout == 'tmux=True'
+    refused = run('toggles', 'show', '--colour', ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines()[-1] == 'Next: metaform toggles show --help'
+
+
+@pytest.mark.req('CLI-002')
+def test_all_is_an_argument_and_never_a_switch(run, toggles):
+    refused = run('unset', '--all', ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines() == ['Error: --all is not a switch. all is an argument.', 'Next: metaform unset all']
+    run('set', '--tmux', '--panes', '6')
+    run('unset', 'all')
+    assert {key: row['state'] for key, row in shown(run).items() if key in ('tmux', 'panes')} == \
+        {'tmux': 'default', 'panes': 'default'}
+
+
+@pytest.mark.req('CLI-003')
+def test_a_word_after_the_double_dash_is_never_a_switch(run, toggles):
+    refused = run('set', '--', '--tmux', ok=False)
+    assert refused.returncode == 2 and "'--tmux'" in refused.stderr
+    assert shown(run)['tmux']['state'] == 'default'
+
+
+@pytest.mark.req('CLI-004')
+def test_a_short_switch_is_one_letter_and_aliases_its_long_form(run, toggles):
+    assert run('set', '--tmux', '-q').stdout == ''
+    assert run('set', '--fast', '--quiet').stdout == ''
+    refused = run('set', '--fast', '-quiet', ok=False)
+    assert refused.returncode == 2 and '--quiet' in refused.stderr.splitlines()[-1]
+
+
+@pytest.mark.req('CLI-015')
+def test_booleans_have_two_forms_and_never_toggle(run, toggles):
+    run('set', '--tmux')
+    run('set', '--panes', '6')
+    assert shown(run)['tmux']['value'] is True
+    run('set', '--tmux')
+    assert shown(run)['tmux']['value'] is True
+    run('set', '--no-tmux')
+    assert shown(run)['tmux']['value'] is False
+    assert run('toggles', 'show', '--tmux').stdout == 'tmux=True'
+    assert shown(run)['tmux']['value'] is False
+    refused = run('set', '--tmux=true', ok=False)
+    assert refused.returncode == 2
+
+
+@pytest.mark.req('CLI-016')
+@pytest.mark.req('CLI-013')
+def test_a_glued_value_inverts_with_the_opposite_form_and_stays_glued(run, toggles):
+    run('set', '--tmux', '--glue')
+    run('set', '--no-tmux')
+    assert (shown(run)['tmux']['value'], shown(run)['tmux']['state']) == (False, 'glued')
+    run('unset', 'all')
+    assert shown(run)['tmux']['value'] is False
+    assert 'Skipped (glued): tmux' in lines(run('unset', '--tmux'))
+    run('unset', '--tmux', '--unglue')
+    assert shown(run)['tmux']['state'] == 'default'
+
+
+@pytest.mark.req('CLI-017')
+def test_unset_all_unglue_returns_every_setting_to_default(run, toggles, project):
+    run('set', '--tmux', '--glue', cwd=project)
+    run('set', '--panes', '7', cwd=project)
+    run('set', '--project', 'proj', '--glue', cwd=project)
+    out = lines(run('unset', 'all', '--unglue', cwd=project))
+    assert out[0].startswith('Reset ') and any(line.startswith('Unglued: ') for line in out)
+    assert {row['state'] for row in shown(run, cwd=project).values()} == {'default'}
+
+
+@pytest.mark.req('CLI-014')
+def test_a_folder_setting_applies_below_until_a_deeper_folder_sets_its_own(run, toggles, tmp_path):
+    parent, child = tmp_path / 'p', tmp_path / 'p' / 'c'
+    child.mkdir(parents=True)
+    run('set', '--panes', '3', cwd=parent)
+    assert shown(run, cwd=child)['panes']['value'] == 3
+    run('set', '--panes', '5', cwd=child)
+    assert shown(run, cwd=child)['panes']['value'] == 5
+    assert shown(run, cwd=parent)['panes']['value'] == 3
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('CLI-027')
+def test_values_of_each_kind_read_back_as_written(run, toggles, project):
+    run('set', '--panes', '6', '--tmux', '--modules', 'chassis,toggles', cwd=project)
+    got = shown(run, cwd=project)
+    assert (got['panes']['value'], got['tmux']['value'], got['modules']['value']) == (6, True, ['chassis', 'toggles'])
+    refused = run('set', '--panes', '12', cwd=project, ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform help --panes'
+
+
+@pytest.mark.req('CLI-018')
+def test_confirm_is_never_a_setting(run):
+    refused = run('set', '--confirm', ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines() == ['Error: --confirm is not a setting.', 'Next: metaform help --confirm']
+
+
+@pytest.mark.req('CLI-023')
+def test_a_default_is_never_written_and_unknown_stored_keys_survive(run, toggles, home):
+    run('config', '--show')
+    run('set', '--panes', '5')
+    db = sqlite3.connect(home / 'metaform.sqlite3')
+    db.execute("INSERT INTO settings(scope, owner, key, position, value) VALUES ('global', 'gone', 'old', 0, '1')")
+    db.commit()
+    assert db.execute("SELECT key FROM settings WHERE owner='toggles'").fetchall() == [('panes',)]
+    db.close()
+    run('unset', 'all', '--unglue')
+    db = sqlite3.connect(home / 'metaform.sqlite3')
+    assert db.execute("SELECT COUNT(*) FROM settings WHERE owner='gone'").fetchone() == (1,)
+
+
+@pytest.mark.req('CLI-024')
+def test_a_modules_glued_setting_survives_its_absence(run, toggles):
+    run('set', '--panes', '8', '--glue')
+    run('disable', 'toggles')
+    refused = run('set', '--panes', '2', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform help switches'
+    assert '--panes' not in run('help', 'switches').stdout
+    run('enable', 'toggles')
+    assert (shown(run)['panes']['value'], shown(run)['panes']['state']) == (8, 'glued')
+
+
+@pytest.mark.req('STORE-004')
+@pytest.mark.req('STORE-002')
+def test_a_list_setting_is_stored_one_row_per_member(run, home, user_module):
+    for name in 'abc':
+        user_module(name, f'''
+            from metaform.module import Module
+            {OS}
+            MODULE = Module(id='{name}', summary='{name}', purpose='{name}. Details: metaform help {name}.')
+        ''')
+    run('set', '--modules', 'a,b,c')
+    db = sqlite3.connect(home / 'metaform.sqlite3')
+    assert db.execute("SELECT position, value FROM settings WHERE key='modules' ORDER BY position").fetchall() == \
+        [(0, '"a"'), (1, '"b"'), (2, '"c"')]
+
+
+@pytest.mark.req('PROJ-002')
+def test_reads_never_write_a_folder_row(run, home, tmp_path, project):
+    for _ in range(3):
+        run(cwd=tmp_path)
+        run('config', '--show', cwd=tmp_path)
+    db = sqlite3.connect(home / 'metaform.sqlite3')
+    assert db.execute('SELECT COUNT(*) FROM folders').fetchone() == (0,)
+
+
+# Context ----------------------------------------------------------------------
+
+@pytest.mark.req('CLI-021')
+@pytest.mark.req('PROJ-003')
+def test_a_folder_inside_a_project_works_on_it_by_default(run, tmp_path, project):
+    other = tmp_path / 'other'
+    other.mkdir()
+    run('add', 'project', 'other', str(other))
+    assert 'Project: proj (' in run(cwd=project / 'src').stdout
+    run('set', '--project', 'other', cwd=project)
+    assert 'Project: other (' in run(cwd=project / 'src').stdout
+    run('unset', '--project', cwd=project)
+    assert 'Project: proj (' in run(cwd=project / 'src').stdout
+
+
+@pytest.mark.req('PROJ-003')
+def test_a_selection_above_a_project_does_not_reach_inside_it(run, tmp_path, project):
+    other = tmp_path / 'other'
+    other.mkdir()
+    run('add', 'project', 'other', str(other))
+    run('set', '--project', 'other', cwd=tmp_path)
+    assert 'Project: other (' in run(cwd=tmp_path).stdout
+    assert 'Project: proj (' in run(cwd=project / 'src').stdout
+
+
+@pytest.mark.req('CLI-022')
+@pytest.mark.req('CLI-008')
+def test_narrowing_the_surface_hides_and_blocks_and_names_the_way_back(run, toggles):
+    out = lines(run('set', '--modules', 'toggles'))
+    assert out == ['Success: updated 1 key', '  modules: all → toggles', 'Commands shown here: toggles.',
+                   'All other commands and help, including yours, are now hidden and will not run.',
+                   'To restore them: metaform unset --modules']
+    refused = run('list', 'projects', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform unset --modules'
+    rows = {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
+    assert 'list' not in rows and {'help', 'set', 'unset', 'config'} <= rows and 'toggles' in rows
+    run('unset', '--modules')
+    run('list', 'projects')
+
+
+@pytest.mark.req('PROJ-007')
+@pytest.mark.req('CLI-022')
+def test_a_worker_folder_is_narrowed_from_the_orchestrators_folder(run, toggles, tmp_path):
+    worker, orchestrator = tmp_path / 'worker', tmp_path / 'orchestrator'
+    worker.mkdir()
+    orchestrator.mkdir()
+    out = lines(run('set', '--modules', 'toggles', f'folder={worker}', cwd=orchestrator))
+    assert out[1] == '  modules: all → toggles'
+    assert run('list', 'projects', cwd=worker, ok=False).returncode == 2
+    run('list', 'projects', cwd=orchestrator)
+    assert shown(run, cwd=worker)['modules']['value'] == ['toggles']
+
+
+@pytest.mark.req('CLI-030')
+def test_the_context_settings_accept_only_real_names(run, toggles):
+    ids = sorted(line.split()[0] for line in lines(run('list', 'modules')))
+    refused = run('set', '--modules', 'mapp', ok=False)
+    assert refused.stderr.splitlines() == [f"Error: --modules has no group 'mapp'. Groups: {', '.join(['chassis', *ids])}.",
+                                           'Next: metaform list modules']
+    assert shown(run)['modules']['state'] == 'default'
+    run('set', '--modules', 'chassis,toggles')
+    refused = run('set', '--project', 'ghost', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform list projects'
+
+
+# Status, help and errors --------------------------------------------------------
+
+@pytest.mark.req('CLI-005')
+@pytest.mark.req('CLI-028')
+def test_status_in_a_folder_with_no_project(run, home, tmp_path):
+    out = lines(run(cwd=tmp_path))
+    assert out == [f'Metaform {__version__}', f'Home: {home}', f'Folder: {tmp_path}', 'Project: none',
+                   '  Register one: metaform add project <id> <path>']
+
+
+@pytest.mark.req('CLI-028')
+@pytest.mark.req('MAP-041')
+def test_status_in_a_registered_project_has_the_fixed_lines(run, home, project):
+    run('set', '--project', 'proj', cwd=project)
+    out = lines(run(cwd=project / 'src'))
+    assert out[:5] == [f'Metaform {__version__}', f'Home: {home}', f'Folder: {project / "src"}',
+                       f'Project: proj ({project}), inherited from {project}', f'Target: path {project}']
+    assert out[5].startswith('Metaform: ')
+    assert out[6] == 'Projects: 1 registered'
+    assert out[7].startswith('Modules: ') and out[-1] == 'Instructions: metaform help agents'
+    assert f'Project: proj ({project}), selected here' in lines(run(cwd=project))
+
+
+@pytest.mark.req('CLI-028')
+@pytest.mark.req('BASE-035')
+def test_a_modules_status_hook_lines_and_notice_are_printed(run, user_module, project):
+    user_module('hooked', f'''
+        from metaform.module import Module, Status
+        {OS}
+        def status(ctx):
+            return Status(lines=('Hooked: ready',), notice='Do the next thing.')
+        MODULE = Module(id='hooked', summary='x', purpose='Hooked. Details: metaform help hooked.', status=status)
+    ''')
+    out = lines(run(cwd=project))
+    at = out.index('Hooked: ready')
+    assert out[at + 1] == '  Do the next thing.' and out[-1] == 'Instructions: metaform help agents'
+
+
+@pytest.mark.req('CLI-006')
+def test_help_is_the_brief_overview_with_its_tips(run):
+    assert run('help').stdout == (
+        f'Metaform {__version__}: gives agents a project\'s purpose before they work on it.\n\n'
+        'Common commands\n'
+        '  metaform                          Show status: home, folder, project.\n'
+        '  metaform add project <id> <path>  Register a project.\n'
+        '  metaform config                   Open the settings screen.\n'
+        '  metaform set --<setting> <value>  Save a setting.\n\n'
+        'Tips:\n'
+        '  - start here: metaform help intro\n'
+        "  - run 'metaform help commands' for an index of all commands\n"
+        "  - run 'metaform help switches' for all switches\n"
+        "  - run 'metaform config --show' to inspect your saved defaults.\n")
+
+
+@pytest.mark.req('CLI-006')
+def test_help_intro_names_the_home(run, home):
+    out = run('help', 'intro').stdout
+    assert out.startswith('Metaform keeps a map of what each part of a project is for: which element receives\n')
+    assert f'All data lives in the Metaform home, {home}. Nothing is written into your projects.' in out
+    assert '  metaform install                   Set up your AI tools to use Metaform.' in out
+
+
+@pytest.mark.req('CLI-007')
+@pytest.mark.req('CLI-029')
+@pytest.mark.parametrize('command', ['help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable',
+                                     'activate', 'export', 'import', 'query'])
+def test_every_chassis_command_has_a_page_and_a_separate_syntax(run, command):
+    page = run('help', command).stdout
+    syntax = run(command, '--help').stdout
+    assert run(command, '-h').stdout == syntax
+    assert page.startswith(f'{command}: ')
+    assert syntax.startswith('Usage: ') and syntax.rstrip().splitlines()[-1].split() == ['-h,', '--help', 'Show', 'this', 'syntax.']
+    assert page != syntax
+
+
+@pytest.mark.req('CLI-029')
+def test_a_verb_page_has_its_sections_in_order(run, user_module):
+    user_module('paged', f'''
+        from metaform.module import Module, Noun, Verb
+        {OS}
+        MODULE = Module(id='paged', summary='Paged.', purpose='Paged. Details: metaform help paged.',
+                        verbs=(Verb('go', lambda ctx: None, 'Go somewhere.', nouns=(Noun('where', 'Where to go.'),),
+                                    caution='This goes.', details='It goes far.',
+                                    examples=(('metaform paged go home', 'Goes home.'),)),))
+    ''')
+    page = run('help', 'paged', 'go').stdout
+    order = [page.index(heading) for heading in ('paged go: Go somewhere.', 'Usage', 'Switches', 'Caution',
+                                                 'Details', 'Examples', 'See also:')]
+    assert order == sorted(order)
+    assert 'Examples' not in run('paged', 'go', '--help').stdout
+
+
+@pytest.mark.req('CLI-008')
+@pytest.mark.req('CLI-032')
+@pytest.mark.req('BASE-029')
+def test_the_indexes_group_commands_by_owner(run, toggles):
+    out = run('help', 'commands').stdout
+    assert out.startswith('Commands\n')
+    assert 'toggles: Toggles.\n  toggles show' in out
+    assert not any(line.startswith('show') for line in out.splitlines())
+    switches = {line.split()[0] for line in lines(run('help', 'switches')) if line.startswith('  ')}
+    assert {'--tmux', '--panes', '--project', '--modules', '--layers', '--glue', '--json'} <= switches
+    assert all(row['owner'] for row in shown(run).values())
+    assert shown(run)['tmux']['owner'] == 'toggles'
+
+
+@pytest.mark.req('CLI-009')
+def test_every_error_names_exactly_one_next_command(run):
+    for args in (['frobnicate'], ['add'], ['list', 'things'], ['set', '--nope', 'x'], ['unset', 'banana'],
+                 ['help', 'nothing'], ['enable', 'ghost'], ['activate', 'metaform', 'ghost'],
+                 ['query', 'nothing'], ['export', 'ghost']):
+        result = run(*args, ok=False)
+        err = result.stderr.splitlines()
+        assert result.returncode == 2, args
+        assert len(err) == 2 and err[0].startswith('Error: ') and err[1].startswith('Next: '), (args, err)
+    assert run('list', 'foo', ok=False).stderr.splitlines() == ['Error: list needs a noun: projects or modules.',
+                                                               'Next: metaform list projects']
+
+
+@pytest.mark.req('CLI-010')
+def test_a_setting_declared_by_a_module_reaches_every_surface(run, toggles):
+    row = shown(run)['panes']
+    assert (row['default'], row['help'], row['kind'], row['switch']) == (4, 'How many panes.', 'int', '--panes')
+    assert '--panes' in run('help', 'switches').stdout
+    run('set', '--panes', '5')
+
+
+@pytest.mark.req('CLI-025')
+def test_json_goes_to_standard_output_alone(run, toggles):
+    result = run('config', '--show', '--json')
+    json.loads(result.stdout)
+
+
+@pytest.mark.req('CLI-031')
+def test_config_show_prints_each_setting_with_its_state(run, toggles):
+    run('set', '--panes', '5')
+    run('set', '--tmux', '--glue')
+    out = lines(run('config', '--show'))
+    assert '  panes: 5  (set)' in out and '* tmux: true  (glued)' in out and '  modules: all' in out
+    assert out[-2:] == ['', '* glued: kept by unset all until unglued.']
+
+
+@pytest.mark.req('CLI-020')
+def test_every_chassis_verb_runs_in_an_empty_home(run, tmp_path):
+    folder = tmp_path / 'w'
+    folder.mkdir()
+    for args in ((), ('help',), ('help', 'intro'), ('help', 'commands'), ('help', 'switches'), ('help', 'agents'),
+                 ('list', 'projects'), ('list', 'modules'), ('config', '--show'), ('query',),
+                 ('add', 'project', 'w', str(folder)), ('list', 'metaforms', 'w'), ('export', 'w')):
+        assert run(*args, cwd=folder).returncode == 0, args
+
+
+# Chassis verbs ------------------------------------------------------------------
+
+@pytest.mark.req('CLI-031')
+@pytest.mark.req('STORE-031')
+def test_add_and_list_projects(run, tmp_path):
+    folder = tmp_path / 'pics'
+    folder.mkdir()
+    assert lines(run('add', 'project', 'photos', str(folder), 'artifact', 'kitchen_photos')) == \
+        [f'Added project photos: {folder} (target artifact kitchen_photos)']
+    assert lines(run('add', 'project', 'photos', str(folder), 'artifact', 'kitchen_photos')) == \
+        ['Project photos is already registered.']
+    assert lines(run('list', 'projects')) == [f'photos  {folder}  artifact kitchen_photos']
+    refused = run('add', 'project', 'Photos', str(folder), ok=False)
+    assert refused.returncode == 2
+
+
+@pytest.mark.req('CLI-031')
+@pytest.mark.req('STORE-041')
+@pytest.mark.req('MAP-045')
+def test_metaforms_are_added_listed_and_activated(run, project):
+    assert lines(run('add', 'metaform', 'fresh', cwd=project)) == [
+        'Added metaform fresh to proj; it is now active. The previous metaform main is kept. To switch back: '
+        'metaform activate metaform main']
+    listed = lines(run('list', 'metaforms', cwd=project))
+    assert [line.split()[0] for line in listed] == ['main', 'fresh'] and listed[1].endswith('(active)')
+    assert lines(run('activate', 'metaform', 'main', cwd=project)) == ['Active metaform for proj: main']
+    assert run(cwd=project).stdout.count('Metaform: main, 2 in project') == 1
+
+
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('BASE-002')
+def test_export_then_import_into_an_empty_home_reproduces_the_project(run, project, tmp_path, home):
+    run('enable', 'helloworld')
+    run('helloworld', 'greet', 'ada', cwd=project)
+    document = tmp_path / 'backup.json'
+    run('export', 'proj', f'file={document}', cwd=project)
+    first = json.loads(document.read_text())
+    other = tmp_path / 'other-home'
+    env = {'METAFORM_HOME': str(other)}
+    report = run('import', str(document), cwd=tmp_path, env=env).stdout
+    assert 'layers added: 1' in report
+    again = run('export', 'proj', cwd=tmp_path, env=env).stdout
+    assert json.loads(again) == first
+    skipped = run('import', str(document), cwd=tmp_path, env=env).stdout
+    assert 'layers skipped: 1' in skipped
+
+
+@pytest.mark.req('STORE-028')
+def test_query_answers_through_the_reads_and_lists_them(run, project):
+    listed = run('query').stdout
+    assert 'element' in listed and 'layer-items' in listed and 'search' in listed
+    run('enable', 'helloworld')
+    run('helloworld', 'greet', 'ada', cwd=project)
+    layers = json.loads(run('query', 'layers', '--json', cwd=project).stdout)
+    assert [layer['name'] for layer in layers['results']] == ['helloworld.greetings']
+    items = json.loads(run('query', 'layer-items', 'helloworld.greetings', '--json', cwd=project).stdout)
+    assert [item['value'] for item in items['results']] == ['ada']
+    node = json.loads(run('query', 'node', 'element:code.module.helloworld', 'raw=true', '--json', cwd=project).stdout)
+    assert node['layers'][0]['layer'] == 'helloworld.greetings'
+
+
+@pytest.mark.req('CLI-033')
+@pytest.mark.req('LAYER-019')
+def test_the_layers_setting_is_the_starting_selection(run, project):
+    from metaform.data import Node, Store
+    store = Store('proj')
+    with store.atomic():
+        base = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
+                           provenance={'module': 'intake'}, ready=True)
+        store.add_element(base.name, 'code.timer', role='DE')
+    for name, tag in (('a', 'practices'), ('b', None)):
+        store.layer(name, 'test', f'{name} notes.', mutable=True, hideable=True, provenance={'module': 'test'},
+                    tags=(tag,) if tag else ())
+        store.add_item(name, Node('element', 'code.timer'), f'from {name}')
+        store.finish(name)
+
+    def read(*extra, cwd=project):
+        view = json.loads(run('query', 'node', 'element:code.timer', '--json', *extra, cwd=cwd).stdout)
+        return {group['layer'] for group in view['layers'] if group['items']} & {'a', 'b'}
+    assert read() == {'a', 'b'}
+    run('set', '--layers', 'practices', cwd=project)
+    assert read(cwd=project / 'src') == {'a'}
+    run('unset', '--layers', cwd=project)
+    assert read() == {'a', 'b'}
+    run('set', '--layers', 'practices', '--glue', cwd=project)
+    run('unset', 'all', cwd=project)
+    assert shown(run, cwd=project)['layers']['value'] == ['practices']
+    run('unset', 'all', '--unglue', cwd=project)
+    assert shown(run, cwd=project)['layers']['value'] == []
+    refused = run('set', '--layers', 'nothing-here', cwd=project, ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform map layers'
+
+
+@pytest.mark.req('BASE-031')
+@pytest.mark.skipif(os.name == 'nt', reason='SIGINT is delivered differently on Windows')
+def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, user_module, tmp_path):
+    user_module('sleeper', f'''
+        import asyncio
+        from metaform.module import Module, Verb
+        {OS}
+        async def sleep(ctx):
+            print('started', flush=True)
+            await asyncio.sleep(60)
+            return 'woke'
+        MODULE = Module(id='sleeper', summary='x', purpose='Sleeps. Details: metaform help sleeper.',
+                        verbs=(Verb('sleep', sleep, 'Sleep.'),))
+    ''')
+    process = subprocess.Popen([sys.executable, '-m', 'metaform', 'sleeper', 'sleep'], cwd=tmp_path,
+                               env={**os.environ, 'METAFORM_HOME': str(home)}, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    assert process.stdout.readline().strip() == 'started'
+    time.sleep(0.2)
+    process.send_signal(signal.SIGINT)
+    out, err = process.communicate(timeout=30)
+    assert process.returncode == 3
+    assert 'Cancelling sleeper sleep...' in err and 'woke' not in out

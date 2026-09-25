@@ -56,3 +56,15 @@ Blocks: nothing.
 Meanwhile: `discard` deletes the discarded layer's `item_ids` rows and keeps their `identities` rows, so an item id is still never reused.
 Blocks: nothing.
 
+## Step 3, CLI and settings
+
+**Q11. Is `--quiet` a setting or a verb control? (D32, CLI-004, CLI-031)**
+D32 says `--quiet` is a setting because people want it to stick, while CLI-031 has `-q` and `--quiet` suppress output on the one `set` or `unset` call they are given on; on `set`, a setting switch is stored, so `set --quiet` cannot mean both.
+Meanwhile: `-q` and `--quiet` stay verb controls of `set` and `unset`, never stored.
+Blocks: nothing in the first working test.
+
+**Q12. The status line for a project with no metaform yet. (CLI-028, STORE-041)**
+Line 5a shows the active metaform's name, but a project has no metaform until its first write creates `main`.
+Meanwhile: status shows `Metaform: none yet` until then.
+Blocks: nothing.
+
