@@ -18,3 +18,11 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: 5ff5870.
 - Questions raised: Q9 and Q10.
 
+## Step 3: CLI and settings
+
+- Records satisfied: CLI-001 to CLI-025 and CLI-027 to CLI-033, CLI-026 kept (settings screen retested), PROJ-002, PROJ-003 with D57 (a project's folder stops a selection made above it), PROJ-007 (`folder=<path>`), BASE-029, BASE-031 (exit codes, Ctrl+C cancels an async verb), and the CLI side of STORE-027 and STORE-028 (`export`, `import`, `query`). `--commands` is now `--modules`; `--layers` is the starting selection; `unset all` resets only what is stored at the folder, D36.
+- Tests added: `tests/test_cli.py`, 49 tests. `tests/test_settings_cli.py` was removed: the spec replaces its page header form, its `enable module <id>` grammar, its value-style booleans and the `--commands` name, and every requirement it protected is now in `tests/test_cli.py`. Whole suite: 295 passed.
+- Not built: `metaform import wheel=<name>-<version>`, BASE-025, which the first working test does not use.
+- Commit: 9b0e2d0.
+- Questions raised: Q11 and Q12.
+
