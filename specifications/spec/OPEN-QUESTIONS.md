@@ -70,9 +70,6 @@ Recommendation: the module's layer creates an element of its own to attach to.
 
 ### Storage
 
-**D23. Import conflicts.** Importing a thing whose identity already exists with different content.
-Recommendation: a new revision for an immutable layer, an in-place change for a mutable one.
-
 **D24. Data written by the current chassis branch.**
 Recommendation: dropped. Before 1.0 the contract changes freely and nothing real is stored yet.
 
@@ -208,6 +205,15 @@ Recommendation: no. Every item attaches to an element or a join, or to an elemen
 
 **D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
 Recommendation: your wording; I will draft one for the test file when you want it.
+
+**D76. Import conflicts under the correction stack.** When an import brings a different version of something the store already holds, is it applied as a new correction layer on top, kept as a separate layer, or reported and skipped? (STORE-027, replaces D23)
+Recommendation: a new correction layer on top, whose provenance names the import.
+
+**D77. Correction layers and locked knowledge layers.** Can a correction layer change things inside a locked knowledge layer, or does it correct only the metaform, the intake map and what earlier correction layers added? (STORE-017, LAYER-011)
+Recommendation: only the metaform. A knowledge layer is replaced by building a new one.
+
+**D78. What an element record holds.** The spec gives element records a name, name length, role, refs and extras, while an element is just a namespace address that things link to. The intake schema also puts a name and refs on the element. Which fields, if any, does an element keep, and where do the rest belong? (MAP-015, STORE-009)
+Recommendation: open.
 
 ## Answered
 

@@ -433,7 +433,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `context` | address | `context` |
   | `links` | node | `links_to` |
   | `citing` | key, value | `citing` |
-  | `revisions` | id | `revisions` |
+  | `history` | id | `history` |
+  | `stack` | | `stack` |
   | `search` | text | `search` |
   | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, tags, and the provenance fields module, workflow, prompt, model, role, blinded | `layer`; an immutable layer is created building and its build token is returned once, STORE-032 |
   | `lock` | layer, token | `lock` |
@@ -446,8 +447,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `add-ref` | owner, key, value; token when the owner's layer is building | `add_ref` |
   | `add-item` | layer, token for a building layer, node, value; optional link, refs, extra | `add_item` |
   | `add-property` | layer, token for a building layer, element, value; optional refs, extra | `add_property` |
-  | `revise` | id, reason; optional evidence and each changed field of STORE-034 | `revise` |
-  | `retire` | id, reason; optional evidence | `retire` |
+  | `correct` | layer, token, id, reason; optional evidence, `remove=true`, and each changed field of STORE-034 | `correct`; writes into a building correction layer, applied when that layer is locked, STORE-017 |
+  | `peel` | layer; only the correction layer on top of the stack | `peel` |
   | `select`, `mask` | address, layer | `select`, `mask` |
   | `clear` | address, layer, kind | `clear` |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
