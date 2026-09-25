@@ -33,7 +33,7 @@ def status(args, folder):
     if args:
         raise Stop(f'Unknown command: {args[0]}.', 'metaform help commands')
     project = settings.value('project', folder)
-    registered = home.projects()
+    registered = {record.project_id: record.path for record in home.projects()}
     out(f'Metaform {__version__}')
     out(f'Home: {home.home()}')
     out(f'Folder: {folder}')
@@ -62,10 +62,7 @@ def add(args, folder):
         raise Stop('add needs: project <id> <path>.', 'metaform add project <id> <path>')
     _, identifier, path = args
     target = (folder / path).resolve() if not Path(path).is_absolute() else Path(path).resolve()
-    if not target.is_dir():
-        raise Stop(f'No folder at {target}.', f'metaform add project {identifier} <existing folder>')
-    home.add_project(identifier, target)
-    out(f'Added project {identifier}: {target}')
+    out(home.add_project(identifier, target))
 
 
 def list_(args, folder):
@@ -80,7 +77,7 @@ def list_(args, folder):
         return
     if args != ['projects']:
         raise Stop('list needs a noun: projects or modules.', 'metaform list projects')
-    registered = home.projects()
+    registered = {record.project_id: record.path for record in home.projects()}
     if not registered:
         out('No projects yet. Register one: metaform add project <id> <path>')
         return

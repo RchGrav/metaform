@@ -1,0 +1,133 @@
+"""Test helpers for the storage records: build layers the way writers do, and diff stored tables.
+
+The diff reads the SQLite file directly. It lets a test state which rows an
+operation must write and that nothing else changed, which STORE-024 asks for.
+The full-text index's shadow tables are left out: they are the index of
+`items`, not rows of their own.
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixture.', 'model': 'none',
+              'role': 'fixture writer', 'blinded': False}
+
+
+def store_file(home: Path, store) -> Path:
+    active = store.active_metaform()
+    assert active is not None, 'the project has no metaform yet'
+    return home / 'projects' / store.project().project_id / 'metaforms' / active.metaform_id / 'store.sqlite3'
+
+
+def dump(path: Path) -> dict[str, frozenset]:
+    if not path.exists():
+        return {}
+    db = sqlite3.connect(path)
+    try:
+        names = [row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'item_text%'")]
+        return {name: frozenset(db.execute(f'SELECT * FROM "{name}"').fetchall()) for name in names}
+    finally:
+        db.close()
+
+
+def diff(before: dict[str, frozenset], after: dict[str, frozenset]) -> dict[str, tuple[int, int]]:
+    """Per table that changed: (rows added, rows removed). A changed row counts once each way."""
+    changed = {}
+    for name in set(before) | set(after):
+        old, new = before.get(name, frozenset()), after.get(name, frozenset())
+        if old != new:
+            changed[name] = (len(new - old), len(old - new))
+    return changed
+
+
+def intake(store, name='intake-1', ready=True):
+    return store.layer(name, 'intake', 'The functional map of the artifact.', kind='intake', mutable=False,
+                       hideable=False, provenance=PROVENANCE, ready=ready)
+
+
+def knowledge(store, name, *, hideable=True, tags=(), sources=()):
+    return store.layer(name, 'test', f'What {name} says at each node.', mutable=True, hideable=hideable,
+                       provenance=PROVENANCE, tags=tags, sources=sources)
+
+
+def correction(store, name):
+    return store.layer(name, 'test', 'Corrections to the metaform.', kind='correction', mutable=False,
+                       hideable=False, provenance=PROVENANCE)
+
+
+def memory(store):
+    return store.layer('memory', 'memory', 'What agents have noted at this node.', kind='memory', mutable=True,
+                       hideable=True, ready=True)
+
+
+def small_map(store):
+    """An intake with a VE receiving from a DE, and the DE receiving from an SE through a join with one subtype."""
+    with store.atomic():
+        layer = intake(store)
+        store.add_element(layer.name, 'stakeholder.cook.home', name='Home cook', name_length=2, role='VE')
+        store.add_element(layer.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
+        outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen',
+                               purpose='Know when each dish is done.', function='Counts down and rings.',
+                               relation='The timer tells the cook.', observation='One countdown per dish.',
+                               refs=[('path', 'src')])
+        inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible',
+                               purpose='Get attention when a countdown ends.', function='Plays a tone.',
+                               relation='The alarm rings for the timer.', observation='A piezo speaker.')
+        store.add_subtype(layer.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
+                          relation='The tick loop drives the timer.', observation='One tick per second.',
+                          name='tick loop', name_length=2, role='SE', refs=[('path', 'src/tick.c')])
+    return layer, outer, inner
+
+
+def values(view, layer=None):
+    """The item values of a node read, per layer name, or for one layer."""
+    grouped = {group.layer: [item.value for item in group.items] for group in view.layers}
+    return grouped if layer is None else grouped.get(layer, [])
+
+
+ALLOWED_SCANS = {'layers', 'projects', 'hidden_layers', 'layer_sources', 'layer_tags', 'correction_stack'}
+PLANNED = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
+
+
+def plans(home, store, statements):
+    base = home / 'metaform.sqlite3'
+    issued = list(statements)
+    paths = (store_file(home, store), base)
+    found = []
+    for statement in issued:
+        if not statement.lstrip().upper().startswith(PLANNED):
+            continue
+        if "'main'.'item_text_" in statement:  # FTS5 reading its own shadow tables, not a query of the store
+            continue
+        for path in paths:
+            db = sqlite3.connect(path)
+            try:
+                found.append((statement, [row[3] for row in db.execute('EXPLAIN QUERY PLAN ' + statement)]))
+                break
+            except sqlite3.OperationalError:
+                continue
+            finally:
+                db.close()
+        else:
+            raise AssertionError(f'Could not plan {statement}')
+    return found
+
+
+def scans(plan_lines):
+    bad = []
+    for line in plan_lines:
+        if not line.startswith('SCAN '):
+            continue
+        table = line.split()[1]
+        if table in ALLOWED_SCANS or line == 'SCAN CONSTANT ROW':
+            continue
+        if table == 'item_text' and 'VIRTUAL TABLE INDEX' in line:
+            continue
+        bad.append(line)
+    return bad
+
+

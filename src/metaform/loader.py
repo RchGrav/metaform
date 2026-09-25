@@ -56,18 +56,11 @@ def _candidates() -> list[Found]:
 
 
 def _disabled() -> set[str]:
-    with home.base() as db:
-        db.execute('CREATE TABLE IF NOT EXISTS disabled_modules(id TEXT PRIMARY KEY)')
-        return {row[0] for row in db.execute('SELECT id FROM disabled_modules')}
+    return {item.id for item in _candidates() if home.module_state(item.id) is False}
 
 
 def set_enabled(identifier: str, on: bool) -> None:
-    with home.base(write=True) as db:
-        db.execute('CREATE TABLE IF NOT EXISTS disabled_modules(id TEXT PRIMARY KEY)')
-        if on:
-            db.execute('DELETE FROM disabled_modules WHERE id=?', (identifier,))
-        else:
-            db.execute('INSERT OR IGNORE INTO disabled_modules(id) VALUES (?)', (identifier,))
+    home.set_module_state(identifier, on)
     reset()
 
 

@@ -86,7 +86,11 @@ def choice(key: str, choices, default=None, help: str = '', **extra) -> Setting:
 
 
 def _own_scope(setting: Setting, folder: Path) -> str:
-    return 'global' if setting.scope == 'global' else 'folder:' + str(folder.resolve())
+    return 'global' if setting.scope == 'global' else home.path_key(folder)
+
+
+def _has(scope: str, setting: Setting) -> bool:
+    return home.stored(scope, setting.owner, setting.key) is not None
 
 
 def _scope(setting: Setting, folder: Path) -> str:
@@ -99,28 +103,40 @@ def _scope(setting: Setting, folder: Path) -> str:
         return 'global'
     folder = folder.resolve()
     for candidate in (folder, *folder.parents):
-        scope = 'folder:' + str(candidate)
-        if home.has_saved(scope, setting.key) or home.glued(scope, setting.key):
+        scope = home.path_key(candidate)
+        if _has(scope, setting) or home.glued(scope, setting.owner, setting.key):
             return scope
-    return 'folder:' + str(folder)
+    return home.path_key(folder)
 
 
 def default(setting: Setting, folder: Path):
     return setting.default_from(folder) if setting.default_from else setting.default
 
 
+def _stored_value(setting: Setting, scope: str):
+    members = home.stored(scope, setting.owner, setting.key)
+    if members is None:
+        return None
+    return list(members) if setting.kind == 'list' else members[0]
+
+
 def value(key: str, folder: Path):
     setting = SCHEMA[key]
     scope = _scope(setting, folder)
-    return home.saved(scope, key) if home.has_saved(scope, key) else default(setting, folder)
+    return _stored_value(setting, scope) if _has(scope, setting) else default(setting, folder)
 
 
 def state(key: str, folder: Path) -> str:
     setting = SCHEMA[key]
     scope = _scope(setting, folder)
-    if home.glued(scope, key):
+    if home.glued(scope, setting.owner, key):
         return 'glued'
-    return 'set' if home.has_saved(scope, key) else 'default'
+    return 'set' if _has(scope, setting) else 'default'
+
+
+def _save(setting: Setting, scope: str, new, folder: Path) -> None:
+    members = list(new) if setting.kind == 'list' else [new]
+    home.save(scope, setting.owner, setting.key, members, folder=None if scope == 'global' else folder.resolve())
 
 
 def parse(setting: Setting, raw: str):
@@ -152,9 +168,9 @@ def assign(key: str, raw: str, folder: Path, *, glue: bool = False):
     new = parse(setting, raw)
     old = value(key, folder)
     scope = _own_scope(setting, folder)
-    home.save(scope, key, new)
+    _save(setting, scope, new, folder)
     if glue:
-        home.set_glue(scope, key, True)
+        home.set_glue(scope, setting.owner, key, True, folder=folder.resolve())
     return old, new
 
 
@@ -174,9 +190,9 @@ def glue(key: str, folder: Path, on: bool) -> None:
     """Glue or unglue a setting. Gluing a default keeps the default through unset all."""
     setting = SCHEMA[key]
     scope = _scope(setting, folder) if not on else _own_scope(setting, folder)
-    if on and not home.has_saved(scope, key):
-        home.save(scope, key, value(key, folder))
-    home.set_glue(scope, key, on)
+    if on and not _has(scope, setting):
+        _save(setting, scope, value(key, folder), folder)
+    home.set_glue(scope, setting.owner, key, on, folder=folder.resolve())
 
 
 def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
@@ -188,15 +204,15 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
     setting = SCHEMA[key]
     scope = _scope(setting, folder)
     unglued = False
-    if home.glued(scope, key):
+    if home.glued(scope, setting.owner, key):
         if not unglue:
             return 'skipped', False
-        home.set_glue(scope, key, False)
+        home.set_glue(scope, setting.owner, key, False)
         unglued = True
-    if not home.has_saved(scope, key):
+    if not _has(scope, setting):
         return 'unchanged', unglued
     before = value(key, folder)
-    home.clear(scope, key)
+    home.clear(scope, setting.owner, key)
     return ('reset' if before != default(setting, folder) else 'unchanged'), unglued
 
 
@@ -209,7 +225,7 @@ def describe(folder: Path) -> list[dict]:
 
 declare(Setting(
     key='project', kind='select', scope='folder',
-    choices=lambda: list(home.projects()),
+    choices=lambda: [record.project_id for record in home.projects()],
     default_from=home.folder_project,
     help='The project this folder works on.',
     details='Defaults to the registered project that contains this folder. '

@@ -1,0 +1,414 @@
+"""Storage of layers: declared behavior, items, provenance, memory, selection, building, tags and properties."""
+from __future__ import annotations
+
+import sqlite3
+
+import pytest
+
+from metaform.data import Node, Store, StoreError
+from storekit import PROVENANCE, diff, dump, intake, knowledge, memory, small_map, store_file, values
+
+pytestmark = pytest.mark.kind('fixture')
+
+KITCHEN = Node('element', 'code.timer.kitchen')
+
+
+@pytest.mark.req('STORE-013')
+@pytest.mark.req('LAYER-006')
+def test_hiding_a_layer_that_is_not_hideable_is_refused(home, store):
+    small_map(store)
+    layer = knowledge(store, 'fixed', hideable=False)
+    before = dump(store_file(home, store))
+    with pytest.raises(StoreError) as refused:
+        store.hide(layer.name)
+    assert refused.value.next_step
+    with pytest.raises(StoreError):
+        store.hide('intake-1')
+    assert dump(store_file(home, store)) == before
+
+
+@pytest.mark.req('STORE-013')
+@pytest.mark.req('LAYER-006')
+def test_a_hidden_layer_is_absent_from_node_reads_and_present_by_name(store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    store.add_item(notes.name, KITCHEN, 'keep it simple')
+    store.finish(notes.name)
+    assert values(store.node(KITCHEN), 'notes') == ['keep it simple']
+    store.hide(notes.name)
+    assert values(store.node(KITCHEN), 'notes') == []
+    assert [item.value for item in store.layer_items(notes.name).results] == ['keep it simple']
+    store.unhide(notes.name)
+    assert values(store.node(KITCHEN), 'notes') == ['keep it simple']
+
+
+@pytest.mark.req('STORE-014')
+@pytest.mark.req('LAYER-001')
+def test_an_element_made_by_a_second_layer_follows_that_layers_selection(store):
+    small_map(store)
+    extra = knowledge(store, 'extra')
+    store.add_element(extra.name, 'code.probe')
+    store.finish(extra.name)
+    assert store.node(Node('element', 'code.probe'), selection=['intake-1']) is None
+    assert store.node(Node('element', 'code.probe'), selection=['intake-1', 'extra']) is not None
+    assert store.element('code.probe').layer == 'extra'
+
+
+@pytest.mark.req('LAYER-001')
+def test_writing_without_a_layer_is_refused(store):
+    small_map(store)
+    with pytest.raises(StoreError):
+        store.add_element('', 'code.x')
+    with pytest.raises(StoreError):
+        store.add_element('no-such-layer', 'code.x')
+    with pytest.raises(StoreError):
+        store.add_item('no-such-layer', KITCHEN, 'x')
+
+
+@pytest.mark.req('STORE-015')
+def test_items_are_read_by_layer_by_node_and_by_link(store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    to_alarm = store.add_item(notes.name, KITCHEN, 'calls the alarm', link=Node('element', 'code.alarm.audible'))
+    back = store.add_item(notes.name, Node('element', 'code.alarm.audible'), 'is called by the timer', link=KITCHEN)
+    store.finish(notes.name)
+    assert {item.item_id for item in store.layer_items(notes.name).results} == {to_alarm.item_id, back.item_id}
+    assert values(store.node(KITCHEN), 'notes') == ['calls the alarm']
+    assert [item.item_id for item in store.links_to(KITCHEN).results] == [back.item_id]
+    assert [item.item_id for item in store.links_to(Node('element', 'code.alarm.audible')).results] == [to_alarm.item_id]
+
+
+@pytest.mark.req('STORE-015')
+def test_an_item_on_a_missing_target_or_with_extra_not_an_object_is_refused(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    before = dump(store_file(home, store))
+    with pytest.raises(StoreError):
+        store.add_item(notes.name, Node('element', 'code.nowhere'), 'x')
+    with pytest.raises(StoreError):
+        store.add_item(notes.name, KITCHEN, 'x', extra=['not', 'an', 'object'])
+    assert dump(store_file(home, store)) == before
+
+
+@pytest.mark.req('STORE-016')
+@pytest.mark.req('LAYER-010')
+def test_a_layer_has_exactly_one_provenance_record(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    record = store.provenance(notes.name)
+    for n in range(100):
+        store.add_item(notes.name, KITCHEN, f'note {n}')
+    assert store.provenance(notes.name) == record
+    db = sqlite3.connect(store_file(home, store))
+    assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (notes.layer_id,)).fetchone() == (1,)
+    assert (record.module, record.prompt, record.role, record.blinded) == (
+        PROVENANCE['module'], PROVENANCE['prompt'], PROVENANCE['role'], False)
+
+
+@pytest.mark.req('STORE-016')
+@pytest.mark.req('LAYER-010')
+@pytest.mark.req('LAYER-012')
+def test_provenance_is_required_except_for_memory(home, store):
+    small_map(store)
+    before = dump(store_file(home, store))
+    with pytest.raises(StoreError):
+        store.layer('bare', 'test', 'Something.', mutable=True, hideable=True)
+    assert dump(store_file(home, store)) == before
+    notes = memory(store)
+    db = sqlite3.connect(store_file(home, store))
+    assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (notes.layer_id,)).fetchone() == (0,)
+
+
+@pytest.mark.req('LAYER-002')
+def test_a_layer_without_a_variable_is_refused(home, store):
+    with pytest.raises(StoreError):
+        store.layer('empty', 'test', '', mutable=True, hideable=True, provenance=PROVENANCE)
+
+
+@pytest.mark.req('STORE-018')
+@pytest.mark.req('LAYER-012')
+def test_memory_changes_in_place_and_keeps_no_history(home, store):
+    small_map(store)
+    notes = memory(store)
+    item = store.add_item(notes.name, KITCHEN, 'first')
+    for n in range(10):
+        store.update_item(item.item_id, f'version {n}')
+    db = sqlite3.connect(store_file(home, store))
+    assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
+    assert values(store.node(KITCHEN), 'memory') == ['version 9']
+    store.delete_item(item.item_id)
+    assert values(store.node(KITCHEN), 'memory') == []
+    assert store.search('version').results == ()
+    assert store.layer_items('memory').results == ()
+
+
+@pytest.mark.req('STORE-019')
+@pytest.mark.req('LAYER-007')
+def test_a_mask_stops_a_layer_flowing_into_its_branch(store):
+    layer = knowledge(store, 'map-els')
+    for address in ('code.installer.bash', 'code.engine'):
+        store.add_element(layer.name, address)
+    store.finish(layer.name)
+    practices = knowledge(store, 'c-practices')
+    store.add_item(practices.name, Node('element', 'code.installer.bash'), 'use strict mode')
+    store.add_item(practices.name, Node('element', 'code.engine'), 'no raw pointers')
+    store.finish(practices.name)
+    store.mask('code.installer', practices.name)
+    assert values(store.node(Node('element', 'code.installer.bash')), 'c-practices') == []
+    assert values(store.node(Node('element', 'code.engine')), 'c-practices') == ['no raw pointers']
+    assert practices.layer_id not in store.effective_selection('code.installer.bash').layer_ids
+
+
+@pytest.mark.req('STORE-019')
+@pytest.mark.req('LAYER-007')
+def test_a_select_below_a_mask_turns_the_layer_on_again_there_and_above(store):
+    layer = knowledge(store, 'map-els')
+    for address in ('code.engine.renderer', 'code.engine.physics', 'code.engine'):
+        store.add_element(layer.name, address)
+    store.finish(layer.name)
+    porting = knowledge(store, 'porting')
+    for address in ('code.engine.renderer', 'code.engine.physics', 'code.engine'):
+        store.add_item(porting.name, Node('element', address), f'port {address}')
+    store.finish(porting.name)
+    store.mask('code.engine', porting.name)
+    store.select('code.engine.renderer', porting.name)
+    assert values(store.node(Node('element', 'code.engine.renderer')), 'porting') == ['port code.engine.renderer']
+    assert values(store.node(Node('element', 'code.engine')), 'porting') == []
+    assert values(store.node(Node('element', 'code.engine.physics')), 'porting') == []
+    store.clear('code.engine', porting.name, 'mask')
+    assert values(store.node(Node('element', 'code.engine.physics')), 'porting') == ['port code.engine.physics']
+
+
+@pytest.mark.req('STORE-019')
+@pytest.mark.req('LAYER-007')
+def test_a_layer_masked_at_the_receiver_does_not_reach_its_joins(store):
+    _, outer, inner = small_map(store)
+    notes = knowledge(store, 'notes')
+    store.add_item(notes.name, Node('join', inner.join_id), 'the tone is too quiet')
+    store.finish(notes.name)
+    assert values(store.node(Node('join', inner.join_id)), 'notes') == ['the tone is too quiet']
+    store.mask('code.timer.kitchen', notes.name)
+    assert values(store.node(Node('join', inner.join_id)), 'notes') == []
+
+
+@pytest.mark.req('STORE-020')
+@pytest.mark.req('LAYER-013')
+def test_an_observation_on_a_node_with_no_memories_writes_one_item(home, store):
+    small_map(store)
+    notes = memory(store)
+    store.add_item(notes.name, Node('element', 'code.alarm.audible'), 'first note elsewhere')
+    before = dump(store_file(home, store))
+    store.add_item(notes.name, KITCHEN, 'the timer keeps time in ticks')
+    # One item: its version row and its current pointer. The full-text index is not a row.
+    assert diff(before, dump(store_file(home, store))) == {'items': (1, 0), 'current_items': (1, 0),
+                                                           'item_ids': (1, 0), 'identities': (1, 0)}
+
+
+@pytest.mark.req('STORE-020')
+@pytest.mark.req('LAYER-013')
+def test_a_relation_shows_at_both_ends_and_search_finds_words(store):
+    small_map(store)
+    notes = memory(store)
+    store.add_item(notes.name, KITCHEN, 'depends_on', link=Node('element', 'code.alarm.audible'))
+    store.add_item(notes.name, KITCHEN, 'Ticks drift when the CPU is busy.')
+    assert 'depends_on' in values(store.node(KITCHEN), 'memory')
+    assert [item.value for item in store.links_to(Node('element', 'code.alarm.audible')).results] == ['depends_on']
+    found = store.search('drift').results
+    assert [item.value for item in found] == ['Ticks drift when the CPU is busy.']
+    # The search text is words, never full-text query syntax: OR is a word no note holds.
+    assert store.search('drift OR nothing').results == ()
+    assert [item.value for item in store.search('drift"').results] == ['Ticks drift when the CPU is busy.']
+
+
+@pytest.mark.req('STORE-032')
+def test_an_intake_that_raises_inside_atomic_leaves_nothing(home, store):
+    with pytest.raises(RuntimeError):
+        with store.atomic():
+            layer = intake(store)
+            store.add_element(layer.name, 'code.timer.kitchen', role='DE')
+            raise RuntimeError('interrupted')
+    assert store.has_intake() is False
+    assert store.layers().results == ()
+    assert store.element('code.timer.kitchen') is None
+
+
+@pytest.mark.req('STORE-032')
+@pytest.mark.req('LAYER-018')
+def test_a_building_layer_is_invisible_in_context_until_finished(store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    store.add_item(notes.name, KITCHEN, 'draft')
+    assert values(store.node(KITCHEN), 'notes') == []
+    assert [item.value for item in store.layer_items(notes.name).results] == ['draft']
+    assert values(store.node(KITCHEN, raw=True), 'notes') == ['draft']
+    store.finish(notes.name)
+    assert values(store.node(KITCHEN), 'notes') == ['draft']
+    assert values(Store('proj', toggled=['intake-1']).node(KITCHEN), 'notes') == []
+
+
+@pytest.mark.req('STORE-032')
+@pytest.mark.req('LAYER-004')
+@pytest.mark.req('LAYER-018')
+def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    item = store.add_item(notes.name, KITCHEN, 'draft')
+    store.finish(notes.name)
+    store.edit(item.item_id, {'value': 'final'})
+    assert values(store.node(KITCHEN), 'notes') == ['final']
+    db = sqlite3.connect(store_file(home, store))
+    assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
+    descriptor = store.element('code.timer.kitchen').descriptors[0]
+    before = dump(store_file(home, store))
+    with pytest.raises(StoreError) as refused:
+        store.edit(descriptor.item_id, {'value': {'descriptor': {'name': 'changed'}}})
+    assert 'correct' in refused.value.next_step
+    assert dump(store_file(home, store)) == before
+
+
+@pytest.mark.req('STORE-032')
+def test_discarding_a_layer_keeps_identity_and_type_rows(home, store):
+    small_map(store)
+    draft = knowledge(store, 'draft')
+    element = store.add_element(draft.name, 'code.probe.echo')
+    store.discard(draft.name)
+    db = sqlite3.connect(store_file(home, store))
+    assert db.execute('SELECT COUNT(*) FROM element_ids WHERE element_id=?', (element.element_id,)).fetchone() == (1,)
+    assert db.execute("SELECT COUNT(*) FROM types WHERE address='code.probe.echo'").fetchone() == (1,)
+    assert store.element(element.element_id) is None
+    assert 'draft' not in [layer.name for layer in store.layers().results]
+    with pytest.raises(StoreError):
+        store.discard('intake-1')
+
+
+@pytest.mark.req('STORE-032')
+def test_a_successful_intake_is_visible_whole(store):
+    assert store.has_intake() is False
+    small_map(store)
+    assert store.has_intake() is True
+    assert 'intake-1' in [group.layer for group in store.node(KITCHEN).layers]
+
+
+@pytest.mark.req('STORE-035')
+@pytest.mark.req('LAYER-005')
+@pytest.mark.req('MAP-022')
+def test_properties_apply_toward_the_leaves_and_are_visible_toward_the_trunk(store):
+    layer = knowledge(store, 'map-els')
+    for address in ('code.engine', 'code.installer', 'code.installer.script', 'code'):
+        store.add_element(layer.name, address)
+    store.finish(layer.name)
+    media = knowledge(store, 'media')
+    store.add_property(media.name, 'code.engine', 'C++')
+    store.add_property(media.name, 'code.installer', 'Bash')
+    store.finish(media.name)
+    at_code = store.context('code')
+    assert sorted(item.value for item in at_code.visible) == ['Bash', 'C++']
+    assert at_code.applying == ()
+    assert [item.value for item in store.context('code.installer.script').applying] == ['Bash']
+    assert 'C++' not in [item.value for item in store.context('code.installer').applying]
+    assert store.context('code.engine').applying[0].value == 'C++'
+
+
+@pytest.mark.req('STORE-035')
+@pytest.mark.req('LAYER-004')
+def test_a_property_follows_its_element_when_it_moves_and_an_item_never_travels(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'code.engine', role='DE')
+        store.add_element(base.name, 'code.engine.game', role='SE')
+        store.add_element(base.name, 'code.runtime.game', role='SE')
+    practices = knowledge(store, 'practices')
+    store.add_property(practices.name, 'code.engine', 'profile before optimizing')
+    store.add_item(practices.name, Node('element', 'code.engine'), 'not inherited')
+    store.finish(practices.name)
+    applying = [item.value for item in store.context('code.engine.game').applying]
+    assert applying == ['profile before optimizing']
+    assert values(store.node(Node('element', 'code.engine.game')), 'practices') == []
+    fix = store.layer('move', 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
+                      provenance=PROVENANCE)
+    store.correct(fix.name, store.element('code.engine').element_id, {'address': 'code.runtime'},
+                  reason='It is the runtime.')
+    store.finish(fix.name)
+    assert [item.value for item in store.context('code.runtime.game').applying] == ['profile before optimizing']
+    assert store.context('code.engine.game').applying == ()
+
+
+@pytest.mark.req('STORE-038')
+@pytest.mark.req('LAYER-019')
+def test_tags_change_on_a_finished_layer_without_touching_it(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes', tags=('practices',))
+    store.add_item(notes.name, KITCHEN, 'x')
+    store.finish(notes.name)
+    before = dump(store_file(home, store))
+    store.tag(notes.name, 'mgm')
+    store.tag(notes.name, 'mgm')
+    assert diff(before, dump(store_file(home, store))) == {'layer_tags': (1, 0)}
+    listed = {layer.name: layer for layer in store.layers(tag='practices').results}
+    assert set(listed) == {'notes'} and set(listed['notes'].tags) == {'practices', 'mgm'}
+    store.untag(notes.name, 'practices')
+    assert store.layers(tag='practices').results == ()
+
+
+@pytest.mark.req('LAYER-019')
+@pytest.mark.req('STORE-035')
+def test_the_toggled_layers_are_the_starting_selection(store):
+    small_map(store)
+    tagged = knowledge(store, 'a', tags=('practices',))
+    plain = knowledge(store, 'b')
+    store.add_item(tagged.name, KITCHEN, 'from a')
+    store.add_item(plain.name, KITCHEN, 'from b')
+    store.finish(tagged.name)
+    store.finish(plain.name)
+    narrowed = Store('proj', toggled=['practices'])
+    assert values(narrowed.node(KITCHEN)) == {'a': ['from a']}
+    everything = values(Store('proj').node(KITCHEN))
+    assert everything['a'] == ['from a'] and everything['b'] == ['from b']
+    on = {layer.name: layer.on for layer in narrowed.layers().results}
+    assert on['a'] is True and on['b'] is False
+    narrowed.mask('code.timer', tagged.name)
+    assert values(narrowed.node(KITCHEN)) == {}
+
+
+@pytest.mark.req('STORE-039')
+@pytest.mark.req('MAP-022')
+def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
+    _, outer, _ = small_map(store)
+    media = knowledge(store, 'media')
+    before = dump(store_file(home, store))
+    store.add_property(media.name, 'code.timer.kitchen', 'C')
+    changed = diff(before, dump(store_file(home, store)))
+    assert 'joins' not in changed and 'current_joins' not in changed and changed['properties'] == (1, 0)
+    for target in (lambda: Node('type', 'code'), lambda: Node('join', outer.join_id),
+                   lambda: Node('subtype', 'code.loop.tick'), lambda: 'code'):
+        with pytest.raises(StoreError):
+            store.add_property(media.name, target(), 'x')
+
+
+@pytest.mark.req('STORE-013')
+@pytest.mark.req('LAYER-006')
+def test_hiding_a_layer_hides_the_layers_built_from_it(store):
+    small_map(store)
+    source = knowledge(store, 'source')
+    built = knowledge(store, 'built', sources=('source',))
+    store.add_item(source.name, KITCHEN, 'from the source')
+    store.add_item(built.name, KITCHEN, 'built on it')
+    store.finish(source.name)
+    store.finish(built.name)
+    store.hide(source.name)
+    assert values(store.node(KITCHEN), 'built') == []
+    store.unhide(source.name)
+    assert values(store.node(KITCHEN), 'built') == ['built on it']
+
+
+@pytest.mark.req('STORE-004')
+@pytest.mark.req('STORE-015')
+def test_a_collection_in_a_value_or_an_extra_is_refused(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    before = dump(store_file(home, store))
+    with pytest.raises(StoreError):
+        store.add_item(notes.name, KITCHEN, 'x', extra={'members': [{'a': 1}, {'b': 2}]})
+    with pytest.raises(StoreError):
+        store.add_item(notes.name, KITCHEN, ['one answer', 'another answer'])
+    assert dump(store_file(home, store)) == before

@@ -20,3 +20,7 @@ packages = ["src/metaform"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "req(id): the spec requirement a test protects, QUAL-009 and E4",
+    "kind(kind): fixture, simulation or real, QUAL-014",
+]

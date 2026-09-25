@@ -15,12 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-class Stop(Exception):
-    """A user error. It says what happened and the one command to run next."""
-
-    def __init__(self, message: str, next_step: str | None = None):
-        super().__init__(message)
-        self.next_step = next_step
+from .errors import Stop
 
 
 @dataclass(frozen=True)
