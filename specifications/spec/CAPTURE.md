@@ -182,3 +182,8 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. A second intake into a metaform that has one is stored as a new active metaform, the old kept. BASE-039.
 - 09-25. `map roots` returns the map's entry, the VE and DE with their joins and the root elements; `map where` with no address returns the same. BASE-038, STORE-025, MCP-008.
 - 09-25. `metaform mcp serve` is the transport and always runs; `--modules` narrows the tools it lists. MCP-004, CLI-022.
+- 09-25. A viewer module shows a floating 3D graph of the metaform and its layers that untangles itself into the shape, with edges colored by layer and styled by kind. VIEW-001, VIEW-005, VIEW-006.
+- 09-25. Clicking an object opens it on a Mermaid-like 2D graph in the left window, salvaged from the earlier branch's graph view where it matches the spec. VIEW-008.
+- 09-25. The viewer is built after the intake and debug system is stable and the fix pass is complete. 00-index build order, step 10.
+- 09-25. The web module deferral (D44) no longer covers the viewer, which is in scope. VIEW-001.
+- 09-25. In the 3D view every join is shown uncollapsed in its tripartite form, receiver, purpose and encounter, so two-way pairs are separate joins, and no namespace branch is collapsed; scale is met by worker layout with a cache, instanced WebGL and label level of detail. In the 2D view joins are collapsed into labeled edges. VIEW-005, VIEW-008, VIEW-010.

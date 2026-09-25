@@ -34,6 +34,7 @@ This spec is frozen for the first release. New design ideas go to a later versio
 | 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
 | 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history |
+| 09-viewer.md | VIEW | The viewer module: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object in the left window |
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
 | BUILD-BRIEF.md | | How the building agent works from this spec |
@@ -59,7 +60,7 @@ A record whose status is recommended is built as written. A record whose status 
 
 - Nonces are dropped. Agents act through the tools they are given and what they are prompted to do; the orchestrator hands work by name.
 - Remote hosting of the MCP server.
-- Module specs for the rulebook, workflows and the web and browser terminal modules, pending D44.
+- Module specs for the rulebook, workflows and the browser terminal module, pending D44. The viewer, section 9, is in scope.
 - Maintaining users' forks, CI and wheels at release, pending D30.
 
 ## Build order for the first working test
@@ -73,6 +74,8 @@ A record whose status is recommended is built as written. A record whose status 
 7. The intake module serving its instructions by name and storing the map through `intake_submit`.
 8. The installer and the skill.
 9. The first working test scenario in section 6, end to end, including a memory written at a node and read back by another agent, and a layer selection that changes what that read returns.
+
+10. After the fix pass is complete and the intake and debug system is stable: the viewer module, section 9.
 
 Memory and layer select and mask are part of the first working test because they are what make the map useful to agents: memory corrects a wrong inference at the node, and select and mask decide which layers an agent sees at each place.
 
