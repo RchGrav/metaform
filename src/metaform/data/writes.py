@@ -1,0 +1,546 @@
+"""Writing the map's objects into a layer: elements, joins, subtypes, refs, items and properties, STORE-024.
+
+Every function works inside one open write transaction and never refuses a
+write for its content, BASE-044 and STORE-026: what does not fit is stored as
+given, and the result carries a notice for it. A write aimed at something that
+cannot change in place, the intake after its write, a finished correction layer
+or memory through the knowledge tool, writes nothing and returns a notice
+naming the operation that does it. Only a reference that cannot be read at all,
+such as an id that names nothing, raises `StoreError`.
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+from collections.abc import Iterable
+from typing import Any, TypeVar, cast
+
+from ..errors import StoreError
+from . import corrections, rows, views
+from .corrections import METAFORM_KINDS
+from .ids import encode_extra, encode_value, is_id, new_id, refs_list
+from .names import reading, short_name
+from .records import (
+    Element,
+    Item,
+    Join,
+    Node,
+    Notice,
+    Outcome,
+    Property,
+    Ref,
+    Subtype,
+    Version,
+)
+from .selection import LayerRow, all_layers
+from .session import Tx
+
+RecordT = TypeVar('RecordT', Element, Join, Subtype, Item, Property, Version)
+
+
+def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
+    """One answer per item: a list given as one value becomes one item per member, STORE-004."""
+    if isinstance(value, (list, tuple)):
+        members: list[Any] = list(cast(Iterable[Any], value))
+        notices.append(Notice('value', f'The value was a list of {len(members)} answers; each was stored as its '
+                                       'own item.'))
+        return members
+    return [value]
+
+
+# Elements, joins and subtypes -------------------------------------------------------------------------------
+
+def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_length: Any = None, role: Any = None,
+                refs: Iterable[Any] = (), extra: Any = None, flag: Any = None,
+                flag_note: Any = None) -> Element | Outcome:
+    """Write an element, or return the one already at the address, STORE-009."""
+    pairs = refs_list(refs)
+    if not isinstance(address, str):
+        raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
+    found = rows.layer(tx, layer)
+    stop = rows.frozen(tx, found)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    kept_extra, split = rows.extra_fields(extra, address, notices)
+    if not rows.address_form(address):
+        notices.append(Notice('address', f'{address!r} is not in the address form, dotted lowercase segments of '
+                                         'letters, digits and underscores; it was stored as given.'))
+    if name is not None and not isinstance(name, str):
+        notices.append(Notice('name', 'name is not text; it was stored as given.'))
+    if name_length is not None and not (rows.whole_number(name_length) and name_length >= 1):
+        notices.append(Notice('name_length', 'name_length is not a whole number of at least 1; it was stored as '
+                                             'given.'))
+    if role is not None and found.kind not in METAFORM_KINDS:
+        notices.append(Notice('role', f'A role is the intake\'s classification of the artifact; an element of '
+                                      f'{found.name} carries none. The role was kept in its descriptor.'))
+    elif role is not None and role not in rows.ROLES:
+        notices.append(Notice('role', f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as given.'))
+    descriptor = {key: value for key, value in (('name', name), ('name_length', name_length), ('role', role))
+                  if value is not None}
+    current = rows.current_element(tx, address)
+    if current is not None:
+        element_id = str(current['element_id'])
+        differs = rows.descriptor_differs(tx, element_id, descriptor)
+        if (descriptor or pairs) and not rows.has_descriptor(tx, element_id, found.layer_id):
+            rows.write_descriptor(tx, found, element_id, descriptor, pairs)
+        rows.split_items(tx, found, 'element', element_id, split)
+        rows.flag(tx, 'element', element_id, found, flag, flag_note, notices)
+        record = views.element(tx, element_id, None)
+        assert record is not None
+        return _with(record, notices, existing=True, differs=differs)
+    holder = rows.subtype_holding(tx, address)
+    if holder is not None:
+        notices.append(Notice('address', f'{address} is also held by subtype {holder}; the element was stored as '
+                                         'given.'))
+    element_id = rows.new_element(tx, found, address, kept_extra)
+    if descriptor or pairs:
+        rows.write_descriptor(tx, found, element_id, descriptor, pairs)
+    rows.split_items(tx, found, 'element', element_id, split)
+    rows.flag(tx, 'element', element_id, found, flag, flag_note, notices)
+    if found.kind == 'correction':
+        length = name_length if rows.whole_number(name_length) else None
+        return Element(element_id, address, found.layer_id, found.name, reading(address), short_name(address, length),
+                       name if isinstance(name, str) else None, length, role if isinstance(role, str) else None,
+                       extra=kept_extra, notices=tuple(notices))
+    record = views.element(tx, element_id, None)
+    assert record is not None
+    return _with(record, notices)
+
+
+def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
+    """The record with the write's notices, BASE-044."""
+    return dataclasses.replace(record, notices=tuple(notices), **changes)
+
+
+def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
+             relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
+             refs: Iterable[Any] = (), extra: Any = None, flag: Any = None, flag_note: Any = None) -> Join | Outcome:
+    """Write one join, owned by its receiver and served by its provider, STORE-010."""
+    pairs = refs_list(refs)
+    found = rows.layer(tx, layer)
+    stop = rows.frozen(tx, found)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    texts = {field: rows.text(value, field, notices) for field, value in (
+        ('purpose', purpose), ('function', function), ('relation', relation), ('observation', observation),
+        ('non_goal', non_goal))}
+    kind = rows.text(type, 'type', notices) or 'purpose'
+    kept_extra, split = rows.extra_fields(extra, 'the join', notices)
+    receiver_id = rows.element_at(tx, receiver, found, 'receiver', notices)
+    provider_id = rows.element_at(tx, provider, found, 'provider', notices)
+    if receiver_id == provider_id:
+        notices.append(Notice('provider', 'The provider is the receiver itself; the join was stored as given, D82.'))
+    if kind != 'purpose' and not rows.address_form(kind):
+        notices.append(Notice('type', f'{kind!r} is not purpose or an address; it was stored as given.'))
+    join_id = new_id()
+    tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
+    rows.identity(tx, join_id, 'join')
+    cursor = tx.db.execute(
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, relation, observation, '
+        'non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'],
+         texts['relation'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
+         rows.top(tx)))
+    row = int(cursor.lastrowid or 0)
+    if found.kind != 'correction':
+        tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
+                      (join_id, row, receiver_id, provider_id))
+    rows.write_refs(tx, 'join', row, pairs)
+    rows.split_items(tx, found, 'join', join_id, split)
+    rows.flag(tx, 'join', join_id, found, flag, flag_note, notices)
+    record = views.join(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
+    return _with(record, notices)
+
+
+def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, relation: Any = None,
+                observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
+                refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
+                flag_note: Any = None) -> Subtype | Outcome:
+    """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
+    pairs = refs_list(refs)
+    if not isinstance(address, str):
+        raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
+    found = rows.layer(tx, layer)
+    stop = rows.frozen(tx, found)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    kept_extra, split = rows.extra_fields(extra, address, notices)
+    moved: dict[str, Any] = {}
+    if purpose is not None:
+        moved['purpose'] = purpose
+        notices.append(Notice('purpose', 'A subtype has no purpose of its own; the purpose was kept in its extra.'))
+    if role is not None and role not in rows.SUBTYPE_ROLES:
+        moved['role'] = role
+        notices.append(Notice('role', f"{role!r} is not DE, SE or NE; it was kept in the subtype's extra."))
+        role = None
+    if name_length is not None and not rows.whole_number(name_length):
+        moved['name_length'] = name_length
+        notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the subtype's "
+                                             'extra.'))
+        name_length = None
+    if moved:
+        kept_extra = {**(kept_extra or {}), **moved}
+    texts = {field: rows.text(value, field, notices) for field, value in (
+        ('function', function), ('relation', relation), ('observation', observation), ('name', name))}
+    join_id = _join_of(tx, join, found)
+    if not rows.address_form(address):
+        notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
+    holder = rows.subtype_holding(tx, address)
+    if holder is not None:
+        notices.append(Notice('address', f'{address} is also held by subtype {holder}; stored as given.'))
+    elif rows.current_element(tx, address) is not None:
+        notices.append(Notice('address', f'{address} is also held by an element; stored as given.'))
+    subtype_id = new_id()
+    tx.db.execute('INSERT INTO subtype_ids(subtype_id, join_id) VALUES (?, ?)', (subtype_id, join_id))
+    rows.identity(tx, subtype_id, 'subtype')
+    rows.types(tx, address)
+    cursor = tx.db.execute(
+        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, relation, observation, '
+        'extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'], texts['relation'],
+         texts['observation'], encode_extra(kept_extra, address)))
+    row = int(cursor.lastrowid or 0)
+    if found.kind != 'correction':
+        tx.db.execute('INSERT INTO current_subtypes(subtype_id, row, join_id, address) VALUES (?, ?, ?, ?)',
+                      (subtype_id, row, join_id, address))
+    rows.write_refs(tx, 'subtype', row, pairs)
+    rows.split_items(tx, found, 'subtype', subtype_id, split)
+    rows.flag(tx, 'subtype', subtype_id, found, flag, flag_note, notices)
+    record = views.subtype(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(), join_id,
+                           all_layers(tx.db))
+    return _with(record, notices)
+
+
+def _join_of(tx: Tx, join: Any, found: LayerRow) -> str:
+    """The join a subtype lives in; a subtype cannot be stored without one, so an unknown join cannot be read."""
+    if isinstance(join, str) and is_id(join) and (
+            tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (join,)).fetchone() or
+            tx.db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (join, found.layer_id)).fetchone()):
+        return join
+    raise StoreError(f'{join} is not a join in this project; a subtype lives inside one join.',
+                     'metaform map joins <element>')
+
+
+def add_ref(tx: Tx, owner: str, key: str, value: str) -> Ref | Outcome:
+    """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
+    (key, value), = refs_list([(key, value)])
+    kind = rows.kind_of(tx, owner)
+    spec = corrections.KINDS[kind]
+    current = tx.db.execute(f'SELECT row FROM {spec.current} WHERE {spec.id_column}=?', (owner,)).fetchone()
+    if current is None:
+        return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
+                                        f'history {owner}'),))
+    layer_id = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (current[0],)).fetchone()[0]
+    found = rows.layer(tx, str(layer_id))
+    if found.kind in METAFORM_KINDS and not (found.kind == 'intake' and found.layer_id in tx.created):
+        return Outcome((Notice('owner', f'{owner} belongs to {found.name}; its refs change only through a correction '
+                                        f'layer: {rows.correct_step(owner)}. Nothing was written.'),))
+    last = tx.db.execute('SELECT MAX(position) FROM refs WHERE owner=? AND owner_row=?',
+                         (kind, current[0])).fetchone()[0]
+    rows.write_refs(tx, kind, int(current[0]), [(key, value)], start=(int(last) + 1) if last is not None else 0)
+    return Ref(key, value)
+
+
+# Items and properties ---------------------------------------------------------------------------------------
+
+def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None = None, refs: Iterable[Any] = (),
+             extra: Any = None) -> Item | Outcome:
+    """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015."""
+    pairs = refs_list(refs)
+    found = rows.layer(tx, layer)
+    stop = rows.frozen(tx, found)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    answers = _as_answers(value, notices)
+    if not answers:
+        return Outcome((Notice('value', 'The value was an empty list; there was nothing to store.'),))
+    kept_extra, split = rows.extra_fields(extra, 'the item', notices)
+    target_kind, target_id = rows.node_at(tx, target, found, 'target', notices)
+    link_kind, link_id = rows.node_at(tx, link, found, 'link', notices) if link is not None else (None, None)
+    made = [rows.insert_item(tx, found, target_kind, target_id, answer, link_kind, link_id, pairs, kept_extra)
+            for answer in answers]
+    rows.split_items(tx, found, target_kind, target_id, split)
+    return _with(views.item_by_id(tx, made[0]), notices)
+
+
+def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable[Any] = (),
+                 extra: Any = None) -> Property | Outcome:
+    """Attach a property to an element; it travels the namespace and has no join, STORE-039.
+
+    Sent to a type address, it goes on the element there, made when the project has none. Sent to a join or a
+    subtype, it is stored as given, orphaned, with the target in its `extra`: properties attach only to elements.
+    """
+    pairs = refs_list(refs)
+    found = rows.layer(tx, layer)
+    stop = rows.frozen(tx, found)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    answers = _as_answers(value, notices)
+    if not answers:
+        return Outcome((Notice('value', 'The value was an empty list; there was nothing to store.'),))
+    kept_extra, split = rows.extra_fields(extra, 'the property', notices)
+    element_id = _property_element(tx, element, found, notices)
+    if isinstance(element, Node) and element.kind in ('join', 'subtype'):
+        kept_extra = {**(kept_extra or {}), 'target': str(element)}
+    made: list[int] = []
+    for answer in answers:
+        property_id = new_id()
+        cursor = tx.db.execute('INSERT INTO properties(property_id, layer_id, element_id, value, extra) '
+                               'VALUES (?, ?, ?, ?, ?)', (property_id, found.layer_id, element_id,
+                                                          encode_value(answer, 'the property'),
+                                                          encode_extra(kept_extra, 'the property')))
+        row = int(cursor.lastrowid or 0)
+        if found.kind != 'correction':
+            tx.db.execute('INSERT INTO current_properties(property_id, row, layer_id, element_id) VALUES (?, ?, ?, ?)',
+                          (property_id, row, found.layer_id, element_id))
+        rows.write_refs(tx, 'property', row, pairs)
+        made.append(row)
+    rows.split_items(tx, found, 'element', element_id, split)
+    record = views.prop(tx, tx.db.execute('SELECT * FROM properties WHERE row=?', (made[0],)).fetchone(),
+                        all_layers(tx.db))
+    return _with(record, notices)
+
+
+def _property_element(tx: Tx, element: Any, found: LayerRow, notices: list[Notice]) -> str:
+    if isinstance(element, Node) and element.kind in ('join', 'subtype'):
+        notices.append(Notice('element', f'{element} is a {element.kind}; properties attach only to elements, so it '
+                                         'was stored as given, orphaned, with its target in its extra.'))
+        return rows.stub_element(tx)
+    ref = element.id if isinstance(element, Node) else element
+    if isinstance(ref, str) and is_id(ref) and rows.current_element(tx, ref) is None:
+        notices.append(Notice('element', f'No current element has the id {ref}; stored as given, orphaned.'))
+        return rows.stub_element(tx, ref)
+    if isinstance(element, Node) and element.kind == 'type' and rows.current_element(tx, element.id) is None:
+        notices.append(Notice('element', f'{element.id} is a type address; an element was created there in layer '
+                                         f'{found.name} to hold the property.'))
+        return rows.new_element(tx, found, element.id)
+    return rows.element_at(tx, ref, found, 'element', notices)
+
+
+def _memory_item(tx: Tx, item_id: str, change: str) -> tuple[Any, LayerRow] | Notice:
+    if rows.kind_of(tx, item_id) != 'item':
+        return Notice('item', f'{item_id} is not an item; nothing was written.')
+    row, found = rows.own_row(tx, 'item', item_id)
+    if found.kind != 'memory':
+        return Notice('item', f'{item_id} is in {found.name}, which is not memory; {change} it with metaform map '
+                              f'knowledge op={"edit" if change == "change" else "remove"} layer={found.name} '
+                              f'id={item_id}. Nothing was written.')
+    return row, found
+
+
+def update_item(tx: Tx, item_id: str, value: Any) -> Item | Outcome:
+    """Change a memory in place, with no history, STORE-018."""
+    found = _memory_item(tx, item_id, 'change')
+    if isinstance(found, Notice):
+        return Outcome((found,))
+    row, _ = found
+    tx.db.execute('UPDATE items SET value=? WHERE row=?', (encode_value(value, item_id), row['row']))
+    return views.item_by_id(tx, item_id)
+
+
+def delete_item(tx: Tx, item_id: str) -> Outcome:
+    found = _memory_item(tx, item_id, 'remove')
+    if isinstance(found, Notice):
+        return Outcome((found,))
+    row, _ = found
+    tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', ('item', row['row']))
+    tx.db.execute('DELETE FROM current_items WHERE item_id=?', (item_id,))
+    tx.db.execute('DELETE FROM items WHERE row=?', (row['row'],))
+    return Outcome()
+
+
+# Edit and remove, in place, in a knowledge layer or a building correction layer --------------------------------
+
+def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
+    """Why a thing cannot change in place: memory has its own operations; the metaform changes only by correction."""
+    if found.kind == 'memory':
+        return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
+                            'delete-observations. Nothing was written.')
+    if found.kind == 'intake' or (found.kind == 'correction' and found.finished):
+        return Notice('id', f'{thing} belongs to {found.name}; the metaform changes only through a correction layer: '
+                            f'{rows.correct_step(thing)}. Nothing was written.')
+    return None
+
+
+def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice],
+                  refused: tuple[str, ...] = ()) -> dict[str, Any]:
+    """The changes a thing of this kind takes; any other key is named in a notice and not applied, STORE-034."""
+    allowed: dict[str, Any] = {}
+    for key, value in changes.items():
+        if key == 'refs' or key in rows.EDITABLE[kind]:
+            allowed[key] = value
+        elif key in refused:
+            notices.append(Notice(key, f'A join keeps its receiver for life; {key} was not applied. To move a join, '
+                                       'remove it and add a new one in the same correction layer.'))
+        else:
+            notices.append(Notice(key, f'{key} is not a field of a {kind}; it was not applied. The fields are '
+                                       f'{", ".join(rows.EDITABLE[kind])} and refs.'))
+    return allowed
+
+
+def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
+                    notices: list[Notice]) -> tuple[dict[str, Any], list[tuple[str, Any]]]:
+    """The column values of a change, each checked the way a write checks it; and records split from an extra."""
+    columns: dict[str, Any] = {}
+    split: list[tuple[str, Any]] = []
+    moved: dict[str, Any] = {}
+    for key, value in changes.items():
+        if key == 'refs':
+            continue
+        if key == 'extra':
+            kept, split = rows.extra_fields(value, kind, notices)
+            columns['extra'] = encode_extra(kept, kind)
+        elif key == 'value':
+            answers = _as_answers(value, notices)
+            columns['value'] = encode_value(answers[0] if answers else None, kind)
+            split += [('value', answer) for answer in answers[1:]]
+        elif key == 'address':
+            address = rows.text(value, 'address', notices) or ''
+            if not rows.address_form(address):
+                notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
+            holder = rows.subtype_holding(tx, address)
+            if holder is not None and kind == 'element':
+                notices.append(Notice('address', f'{address} is also held by subtype {holder}; stored as given.'))
+            rows.types(tx, address)
+            columns['address'] = address
+        elif key == 'provider':
+            columns['provider'] = rows.element_at(tx, value, found, 'provider', notices)
+        elif key == 'element':
+            columns['element_id'] = rows.element_at(tx, value, found, 'element', notices)
+        elif key == 'link':
+            if value is None:
+                columns['link_kind'], columns['link_id'] = None, None
+            else:
+                link = value if isinstance(value, Node) else Node.parse(str(value))
+                columns['link_kind'], columns['link_id'] = rows.node_at(tx, link, found, 'link', notices)
+        elif key == 'role' and value is not None and value not in rows.SUBTYPE_ROLES:
+            moved['role'] = value
+            notices.append(Notice('role', f"{value!r} is not DE, SE or NE; it was kept in the subtype's extra."))
+        elif key == 'name_length' and value is not None and not rows.whole_number(value):
+            moved['name_length'] = value
+            notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the extra."))
+        elif key in rows.TEXT_COLUMNS:
+            columns[key] = rows.text(value, key, notices)
+        else:
+            columns[key] = value
+    if moved:
+        encoded = columns.get('extra')
+        current = json.loads(encoded) if isinstance(encoded, str) else {}
+        columns['extra'] = encode_extra({**current, **moved}, kind)
+    return columns, split
+
+
+def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
+    """Change a thing of a knowledge layer, or of a building correction layer, in place, STORE-032."""
+    kind = rows.kind_of(tx, thing)
+    row, found = rows.own_row(tx, kind, thing)
+    stop = unchangeable(tx, found, thing)
+    if stop is not None:
+        return Outcome((stop,))
+    if not isinstance(changes, dict) or not changes:
+        return Outcome((Notice('changes', 'No field to change was named; nothing was written.'),))
+    notices: list[Notice] = []
+    allowed = split_changes(kind, {str(key): value for key, value in changes.items()}, notices)
+    if not allowed:
+        return Outcome(tuple(notices))
+    spec = corrections.KINDS[kind]
+    columns, split = changed_columns(tx, kind, allowed, found, notices)
+    if columns:
+        assignments = ', '.join(f'{column}=?' for column in columns)
+        tx.db.execute(f'UPDATE {spec.table} SET {assignments} WHERE row=?', (*columns.values(), row['row']))
+    if allowed.get('refs') is not None:
+        tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
+        rows.write_refs(tx, kind, int(row['row']), refs_list(allowed['refs']))
+    if kind == 'item' and row['target_kind'] == 'element' and 'value' in allowed:
+        given = allowed['value']
+        if isinstance(given, dict) and isinstance(given.get('descriptor'), dict):
+            rows.set_role(tx, str(row['target_id']), found, given['descriptor'].get('role'))
+        elif rows.is_descriptor(str(row['value'])):
+            rows.set_role(tx, str(row['target_id']), found, None)
+    if split:
+        target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
+                                  else _node_of(kind, thing, row))
+        rows.split_items(tx, found, target_kind, target_id, split)
+    if tx.db.execute(f'SELECT 1 FROM {spec.current} WHERE row=?', (row['row'],)).fetchone():
+        updated = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row['row'],)).fetchone()
+        tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
+        corrections.insert_current(tx.db, kind, thing, updated, rows.moved(tx, kind, thing))
+    record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?',
+                                                   (row['row'],)).fetchone(), {})
+    return _with(record, notices)
+
+
+def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:
+    """Where items split from a changed row attach: the thing itself, or an item's own node."""
+    if kind == 'item':
+        return str(row['target_kind']), str(row['target_id'])
+    return kind, thing
+
+
+def remove(tx: Tx, thing: str | int) -> Outcome:
+    """Delete a row a knowledge layer or a building correction layer wrote, with its refs, STORE-032.
+
+    What in the same layer still used it as receiver, provider or target is left orphaned and named, STORE-017.
+    """
+    if isinstance(thing, int):
+        return _remove_ref(tx, thing)
+    kind = rows.kind_of(tx, thing)
+    row, found = rows.own_row(tx, kind, thing)
+    stop = unchangeable(tx, found, thing)
+    if stop is not None:
+        return Outcome((stop,))
+    users = _users(tx, kind, thing, found)
+    spec = corrections.KINDS[kind]
+    tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
+    tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
+    if kind == 'item':
+        tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
+        if row['target_kind'] == 'element' and rows.is_descriptor(str(row['value'])):
+            rows.set_role(tx, str(row['target_id']), found, None)
+    if kind in ('element', 'join', 'subtype'):
+        tx.db.execute('DELETE FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
+                      (kind, thing, found.layer_id))
+    tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
+    if not users:
+        return Outcome()
+    return Outcome((Notice('id', f'{thing} was still used in {found.name} by {", ".join(users)}; '
+                                 f'{"that is" if len(users) == 1 else "those are"} now orphaned.'),))
+
+
+def _remove_ref(tx: Tx, ref_id: int) -> Outcome:
+    ref = tx.db.execute('SELECT owner, owner_row FROM refs WHERE ref_id=?', (ref_id,)).fetchone()
+    if ref is None:
+        raise StoreError(f'No ref {ref_id}.', 'metaform map where <address>')
+    table = corrections.KINDS[str(ref['owner'])].table
+    layer_id = tx.db.execute(f'SELECT layer_id FROM {table} WHERE row=?', (ref['owner_row'],)).fetchone()[0]
+    stop = unchangeable(tx, rows.layer(tx, str(layer_id)), str(ref_id))
+    if stop is not None:
+        return Outcome((stop,))
+    tx.db.execute('DELETE FROM refs WHERE ref_id=?', (ref_id,))
+    return Outcome()
+
+
+def _users(tx: Tx, kind: str, thing: str, found: LayerRow) -> list[str]:
+    """The current rows of the same layer that use a thing as receiver, provider or target."""
+    db = tx.db
+    users: list[str] = []
+    if kind == 'element':
+        users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row '
+                                                    'WHERE c.receiver=? AND j.layer_id=?', (thing, found.layer_id))]
+        users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row '
+                                                    'WHERE c.provider=? AND j.layer_id=?', (thing, found.layer_id))]
+        users += [str(row[0]) for row in db.execute('SELECT property_id FROM current_properties WHERE element_id=? '
+                                                    'AND layer_id=?', (thing, found.layer_id))]
+    if kind == 'join':
+        users += [str(row[0]) for row in db.execute('SELECT c.subtype_id FROM current_subtypes c JOIN subtypes s '
+                                                    'ON s.row = c.row WHERE c.join_id=? AND s.layer_id=?',
+                                                    (thing, found.layer_id))]
+    if kind in ('element', 'join', 'subtype'):
+        users += [str(row[0]) for row in db.execute('SELECT item_id FROM current_items WHERE target_kind=? AND '
+                                                    'target_id=? AND layer_id=?', (kind, thing, found.layer_id))]
+    return users

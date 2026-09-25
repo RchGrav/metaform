@@ -68,7 +68,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'element_roles', 'findings',
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'element_roles', 'findings', 'unapplied',
                  'correction_stack', 'requires'):
         document[name] = []
     path = home.store_path(project_id, metaform.metaform_id)
@@ -131,6 +131,8 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                  if row['layer_id'] in chosen]
     document['findings'] = _without_row([row for row in _rows(db, 'SELECT * FROM findings ORDER BY row')
                                          if row['layer_id'] in chosen])
+    document['unapplied'] = [row for row in _rows(db, 'SELECT * FROM unapplied ORDER BY rowid')
+                             if row['layer_id'] in chosen]
     document['correction_stack'] = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack '
                                                                  'ORDER BY position') if row[0] in chosen]
     addresses = {row['address'] for table in ('elements', 'subtypes', 'selections') for row in document[table]}
@@ -166,7 +168,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'element_roles', 'findings')
+              *THINGS, 'challenge_states', 'plans', 'element_roles', 'findings', 'unapplied')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'position', 'key', 'value')
@@ -430,7 +432,7 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for row in metaform.get('plans', []):
         if row['layer_id'] in fresh:
             _insert(db, 'plans', row, ignore=True)
-    for table in ('element_roles', 'findings'):
+    for table in ('element_roles', 'findings', 'unapplied'):
         for row in metaform.get(table, []):
             if row['layer_id'] in fresh:
                 _insert(db, table, row, ignore=True)

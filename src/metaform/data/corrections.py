@@ -10,9 +10,10 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-from ..errors import StoreError
+from .records import Notice
 
 METAFORM_KINDS = ('intake', 'correction')
+RELOCATION = 'generated: relocation'  # the evidence of a remove row that applying a relocation wrote, STORE-017
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ def _sequence(db: sqlite3.Connection, kind: str, thing_id: str, kinds: dict[str,
     for row in rows:
         layer_kind = kinds.get(row['layer_id'])
         if layer_kind == 'correction':
-            if row['layer_id'] in positions:
+            if row['layer_id'] in positions and not unapplied(db, row['layer_id'], kind, thing_id):
                 ordered.append((positions[row['layer_id']], row))
         else:
             ordered.append((0, row))
@@ -85,25 +86,24 @@ def _current_of(sequence: list[tuple[int, sqlite3.Row]]) -> tuple[sqlite3.Row | 
     return current, moved
 
 
+def unapplied(db: sqlite3.Connection, layer_id: str, kind: str, thing_id: str) -> bool:
+    """Whether a correction layer's row for this thing stays unapplied, BASE-044."""
+    return db.execute('SELECT 1 FROM unapplied WHERE layer_id=? AND kind=? AND thing_id=?',
+                      (layer_id, kind, thing_id)).fetchone() is not None
+
+
 def recompute(db: sqlite3.Connection, kind: str, ids: list[str], kinds: dict[str, str],
               positions: dict[str, int]) -> None:
     """Rewrite the current rows of these things from their rows and the stack."""
     spec = KINDS[kind]
-    computed = []
+    computed: list[tuple[str, sqlite3.Row | None, int]] = []
     for thing_id in ids:
         computed.append((thing_id, *_current_of(_sequence(db, kind, thing_id, kinds, positions))))
     for thing_id, _, _ in computed:
         db.execute(f'DELETE FROM {spec.current} WHERE {spec.id_column}=?', (thing_id,))
     for thing_id, row, moved in computed:
-        if row is None:
-            continue
-        try:
+        if row is not None:
             insert_current(db, kind, thing_id, row, moved)
-        except sqlite3.IntegrityError:
-            if kind == 'element':
-                raise StoreError(f'{row["address"]} is already held by another current element.',
-                                 'metaform map stack') from None
-            raise
 
 
 def insert_current(db: sqlite3.Connection, kind: str, thing_id: str, row: sqlite3.Row, moved: int) -> None:
@@ -140,6 +140,8 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
         current = db.execute('SELECT address FROM current_elements WHERE element_id=?', (row['element_id'],)).fetchone()
         if current is None or current[0] == row['address']:
             continue
+        if unapplied(db, layer_id, 'element', row['element_id']):
+            continue
         reason = f'{current[0]} moved to {row["address"]}'
         joins = db.execute('SELECT join_id, row FROM current_joins WHERE receiver=? UNION '
                            'SELECT join_id, row FROM current_joins WHERE provider=?',
@@ -150,10 +152,10 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
             if db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (join_id, layer_id)).fetchone():
                 continue
             db.execute('INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, relation, '
-                       'observation, non_goal, extra, stack_at, op, reason) '
+                       'observation, non_goal, extra, stack_at, op, reason, evidence) '
                        'SELECT join_id, ?, type, receiver, provider, purpose, function, relation, observation, '
-                       "non_goal, extra, ?, 'remove', ? FROM joins WHERE row=?",
-                       (layer_id, position, reason, join_row))
+                       "non_goal, extra, ?, 'remove', ?, ? FROM joins WHERE row=?",
+                       (layer_id, position, reason, RELOCATION, join_row))
             for subtype_id, subtype_row in db.execute('SELECT subtype_id, row FROM current_subtypes WHERE join_id=?',
                                                       (join_id,)).fetchall():
                 if _layer_kind_of_row(db, kinds, 'subtypes', subtype_row) not in METAFORM_KINDS:
@@ -162,9 +164,10 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
                               (subtype_id, layer_id)).fetchone():
                     continue
                 db.execute('INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, '
-                           'relation, observation, extra, op, reason) '
+                           'relation, observation, extra, op, reason, evidence) '
                            'SELECT subtype_id, ?, address, name, name_length, role, function, relation, observation, '
-                           "extra, 'remove', ? FROM subtypes WHERE row=?", (layer_id, reason, subtype_row))
+                           "extra, 'remove', ?, ? FROM subtypes WHERE row=?",
+                           (layer_id, reason, RELOCATION, subtype_row))
 
 
 def _touched(db: sqlite3.Connection, layer_id: str) -> dict[str, list[str]]:
@@ -175,9 +178,40 @@ def _touched(db: sqlite3.Connection, layer_id: str) -> dict[str, list[str]]:
     return touched
 
 
-def _check(db: sqlite3.Connection, layer_id: str, name: str, kinds: dict[str, str]) -> None:
-    """STORE-034: nothing of the metaform is left pointing at what the layer removed."""
-    step = f'metaform map knowledge op=correct layer={name} id={{}} remove=true reason=<why>'
+def _hold_back_retypes(db: sqlite3.Connection, layer_id: str, name: str) -> list[Notice]:
+    """A retype onto an address another current element keeps stays unapplied, STORE-034 and BASE-044.
+
+    An address an earlier retype of the same layer takes is held from then on, so of two retypes onto one free
+    address the first applies and the second stays unapplied.
+    """
+    notices: list[Notice] = []
+    rows = rows_in_layer(db, 'element', layer_id)
+    leaving = {row['element_id'] for row in rows if row['op'] == 'remove'}
+    moving = {row['element_id']: row['address'] for row in rows if row['op'] == 'change'}
+    claimed: dict[str, str] = {}
+    for element_id, address in moving.items():
+        current = db.execute('SELECT address FROM current_elements WHERE element_id=?', (element_id,)).fetchone()
+        if current is not None and current[0] == address:
+            continue
+        found = db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
+        holder = None if found is None else str(found[0])
+        if holder == element_id or holder in leaving or (holder in moving and moving[holder] != address):
+            holder = None
+        if holder is None and claimed.get(address, element_id) != element_id:
+            holder = claimed[address]
+        if holder is None:
+            claimed[address] = element_id
+            continue
+        reason = f'{address} is held by element {holder}; this retype was not applied.'
+        db.execute('INSERT OR REPLACE INTO unapplied(layer_id, kind, thing_id, reason) VALUES (?, ?, ?, ?)',
+                   (layer_id, 'element', element_id, reason))
+        notices.append(Notice(element_id, f'{name}: {reason}'))
+    return notices
+
+
+def _check(db: sqlite3.Connection, layer_id: str, name: str, kinds: dict[str, str]) -> list[Notice]:
+    """STORE-034: what of the metaform is left pointing at what the layer removed is orphaned and named."""
+    notices: list[Notice] = []
     for row in rows_in_layer(db, 'element', layer_id):
         if row['op'] != 'remove':
             continue
@@ -186,21 +220,22 @@ def _check(db: sqlite3.Connection, layer_id: str, name: str, kinds: dict[str, st
                                             'SELECT join_id, row FROM current_joins WHERE provider=?',
                                             (element_id, element_id)).fetchall():
             if _layer_kind_of_row(db, kinds, 'joins', join_row) in METAFORM_KINDS:
-                raise StoreError(f'Finishing {name} would leave join {join_id} pointing at removed element '
-                                 f'{element_id}.', step.format(join_id))
+                notices.append(Notice(join_id, f'{name} removed element {element_id}; join {join_id} still points '
+                                               'at it and is orphaned.'))
         for property_id, property_row in db.execute(
                 'SELECT property_id, row FROM current_properties WHERE element_id=?', (element_id,)).fetchall():
             if _layer_kind_of_row(db, kinds, 'properties', property_row) in METAFORM_KINDS:
-                raise StoreError(f'Finishing {name} would leave property {property_id} on removed element '
-                                 f'{element_id}.', step.format(property_id))
+                notices.append(Notice(property_id, f'{name} removed element {element_id}; property {property_id} '
+                                                   'on it is orphaned.'))
     for row in rows_in_layer(db, 'join', layer_id):
         if row['op'] != 'remove':
             continue
         for subtype_id, subtype_row in db.execute('SELECT subtype_id, row FROM current_subtypes WHERE join_id=?',
                                                   (row['join_id'],)).fetchall():
             if _layer_kind_of_row(db, kinds, 'subtypes', subtype_row) in METAFORM_KINDS:
-                raise StoreError(f'Finishing {name} would leave subtype {subtype_id} in removed join '
-                                 f'{row["join_id"]}.', step.format(subtype_id))
+                notices.append(Notice(subtype_id, f'{name} removed join {row["join_id"]}; subtype {subtype_id} in '
+                                                  'it is orphaned.'))
+    return notices
 
 
 def _mark(db: sqlite3.Connection, layer_id: str, touched: dict[str, list[str]], kinds: dict[str, str]) -> None:
@@ -220,26 +255,42 @@ def _mark(db: sqlite3.Connection, layer_id: str, touched: dict[str, list[str]], 
                                'VALUES (?, ?, ?)', (dependent, layer_id, thing_id))
 
 
-def apply(db: sqlite3.Connection, layer_id: str, name: str) -> None:
-    """Finish a correction layer: stack it, write its relocation removals, apply it, check it, mark dependents."""
+def apply(db: sqlite3.Connection, layer_id: str, name: str) -> list[Notice]:
+    """Finish a correction layer: stack it, write its relocation removals, apply it, mark dependents.
+
+    A row that breaks a rule of STORE-034 stays in the layer unapplied, and what the layer leaves orphaned is named;
+    every other row is applied. Returns the notices, BASE-044.
+    """
     kinds = layer_kinds(db)
     position = top_position(db) + 1
+    notices = _hold_back_retypes(db, layer_id, name)
     _write_relocation_removals(db, layer_id, position, kinds)
     db.execute('INSERT INTO correction_stack(position, layer_id) VALUES (?, ?)', (position, layer_id))
     positions = stack_positions(db)
     touched = _touched(db, layer_id)
     for kind in ORDER:
         recompute(db, kind, touched[kind], kinds, positions)
-    _check(db, layer_id, name, kinds)
+    notices += _check(db, layer_id, name, kinds)
     _mark(db, layer_id, touched, kinds)
+    return notices
 
 
 def peel(db: sqlite3.Connection, layer_id: str) -> None:
-    """Take the top correction layer off the stack and recompute everything it touched."""
+    """Take the top correction layer off the stack and recompute everything it touched.
+
+    The remove rows that applying a relocation wrote, and the marks of rows it left unapplied, are deleted, so
+    finishing the layer again derives them from its content as it is then, STORE-017.
+    """
     kinds = layer_kinds(db)
     db.execute('DELETE FROM correction_stack WHERE layer_id=?', (layer_id,))
     positions = stack_positions(db)
     touched = _touched(db, layer_id)
+    for table in ('joins', 'subtypes'):
+        for row in db.execute(f"SELECT row FROM {table} WHERE layer_id=? AND op='remove' AND evidence=?",
+                              (layer_id, RELOCATION)).fetchall():
+            db.execute("DELETE FROM refs WHERE owner=? AND owner_row=?", (table[:-1], row[0]))
+            db.execute(f'DELETE FROM {table} WHERE row=?', (row[0],))
+    db.execute('DELETE FROM unapplied WHERE layer_id=?', (layer_id,))
     for kind in ORDER:
         recompute(db, kind, touched[kind], kinds, positions)
     _mark(db, layer_id, touched, kinds)

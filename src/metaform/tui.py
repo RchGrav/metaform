@@ -436,6 +436,7 @@ class ChassisTUI:
 
     def _save_changes(self, exit_after=False):
         self.quit_open = False
+        noted: list[str] = []
         async def save():
             folder = self.runtime.folder
             for (module, key), (action, value) in list(self.pending_settings.items()):
@@ -444,7 +445,8 @@ class ChassisTUI:
                 if action == 'reset':
                     settings.reset(key, folder, unglue=glue is False)
                 else:
-                    settings.put(key, value, folder, glue=bool(glue))
+                    noted.extend(f'{key}: {message}' for message in settings.put(key, value, folder,
+                                                                              glue=bool(glue)).notices)
                 self.pending_settings.pop(identity)
                 self.pending_pins.pop(identity, None)
             for (module, key), pinned in list(self.pending_pins.items()):
@@ -455,7 +457,8 @@ class ChassisTUI:
                 self.pending_modules.pop(module)
             if exit_after:
                 self.exit_requested = True
-        self._perform(save, 'Saving settings and module state…')
+        self._perform(save, 'Saving settings and module state…',
+                      success=lambda: ' '.join(['Applied. Changes are saved globally.', *noted]))
 
     def _apply_edit(self):
         if self.filtering:

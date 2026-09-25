@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from metaform.data import Item, Node, Store
+from metaform.data import Element, Item, Node, Store
 from metaform.module import Context, Module, Noun, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -56,6 +56,14 @@ def _at(store: Store, layer: str, node: Node) -> list[Item]:
     return [item for item in store.layer_items(layer, node, limit=0).results if isinstance(item, Item)]
 
 
+def _said(result: dict[str, Any], done: list[Any]) -> dict[str, Any]:
+    """A verb's result with the notices of the writes it made, BASE-044."""
+    notices = [notice for written in done for notice in getattr(written, 'notices', ())]
+    if notices:
+        result['notices'] = notices
+    return result
+
+
 def _grouped(store: Store, items: list[Item]) -> dict[str, Any]:
     nodes: dict[tuple[str, str], list[Item]] = {}
     relations = []
@@ -74,7 +82,10 @@ def create_entities(ctx: Context) -> Any:
         layer = _memory(store, create=True)
         assert layer is not None
         element = store.add_element(layer, name)
-    return {'entities': [{'name': element.address, 'entityType': ctx.nouns['type'], 'existing': element.existing}]}
+    if not isinstance(element, Element):
+        return element
+    return _said({'entities': [{'name': element.address, 'entityType': ctx.nouns['type'],
+                                'existing': element.existing}]}, [element])
 
 
 def create_relations(ctx: Context) -> Any:
@@ -84,7 +95,9 @@ def create_relations(ctx: Context) -> Any:
         layer = _memory(store, create=True)
         assert layer is not None
         item = store.add_item(layer, source, ctx.nouns['relation'], link=target)
-    return _relation(store, item)
+    if not isinstance(item, Item):
+        return item
+    return _said(_relation(store, item), [item])
 
 
 def add_observations(ctx: Context) -> Any:
@@ -93,8 +106,9 @@ def add_observations(ctx: Context) -> Any:
     with store.atomic():
         layer = _memory(store, create=True)
         assert layer is not None
-        added = [store.add_item(layer, node, text).value for text in ctx.nouns['text']]
-    return {'node': _name(store, node), 'added': added}
+        written = [store.add_item(layer, node, text) for text in ctx.nouns['text']]
+    added = [item.value for item in written if isinstance(item, Item)]
+    return _said({'node': _name(store, node), 'added': added}, written)
 
 
 def delete_entities(ctx: Context) -> Any:

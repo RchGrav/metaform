@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -67,10 +68,9 @@ def test_every_prefix_is_a_type_and_properties_apply_from_the_trunk(run, mapped)
     k(run, mapped, 'op=add-element', 'layer=practices', 'address=code')
     k(run, mapped, 'op=add-element', 'layer=practices', 'address=code.engine.game.fps')
     k(run, mapped, 'op=add-property', 'layer=practices', 'element=code', 'value="Name things for what they do."')
-    k(run, mapped, 'op=add-property', 'layer=practices', 'element=code.engine.game', 'value="Fixed timestep."',
-      ok=False)
-    k(run, mapped, 'op=add-element', 'layer=practices', 'address=code.engine.game')
-    k(run, mapped, 'op=add-property', 'layer=practices', 'element=code.engine.game', 'value="Fixed timestep."')
+    made = json.loads(k(run, mapped, 'op=add-property', 'layer=practices', 'element=code.engine.game',
+                        'value="Fixed timestep."').stdout)
+    assert made['address'] == 'code.engine.game' and made['notices']
     k(run, mapped, 'op=finish', 'layer=practices')
     assert j(run, 'children', 'code.engine', cwd=mapped)['results'] == ['code.engine.game']
     at_game = [item['value'] for item in j(run, 'context', 'code.engine.game', cwd=mapped)['applying']]
@@ -165,8 +165,8 @@ def test_a_blind_spot_is_answered_and_only_a_person_approves_it(run, mapped):
     challenge = json.loads(k(run, mapped, 'op=add-item', 'layer=challenge.blind', 'node=element:code.watchdog',
                              'value="Nothing recovers a hung loop."').stdout)
     k(run, mapped, 'op=finish', 'layer=challenge.blind')
-    refused = run('map', 'answer', challenge['item_id'], 'C', cwd=mapped, ok=False)
-    assert refused.returncode == 2
+    unlinked = run('map', 'answer', challenge['item_id'], 'C', cwd=mapped)
+    assert re.search(r'^Notice: link: ', unlinked.stdout, re.M)
     refused = run('map', 'approve', challenge['item_id'], cwd=mapped, ok=False)
     assert refused.returncode == 2
     run('map', 'answer', challenge['item_id'], 'B', cwd=mapped)
@@ -203,3 +203,38 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
     assert [join['receiver_address'] for join in listed] == ['stakeholder.cook.home']
     node = Node('element', 'code.timer.kitchen')
     assert j(run, 'links', str(node), cwd=mapped) == {'results': [], 'next': None}
+
+
+@pytest.mark.req('BASE-043')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('STORE-021')
+def test_an_unknown_named_field_is_kept_in_the_records_extra_with_a_notice(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    added = run('map', 'knowledge', 'op=add-item', 'layer=notes', 'node=element:code.timer.kitchen', 'value="n"',
+                'colour=red', cwd=mapped)
+    assert re.search(r'^Notice: colour: .*extra', added.stdout, re.M)
+    item = Store('proj').layer_items('notes').results[0]
+    assert item.extra == {'colour': 'red'}
+
+
+@pytest.mark.req('LAYER-001')
+@pytest.mark.req('BASE-044')
+def test_a_write_sent_without_a_layer_goes_to_a_new_unnamed_layer(run, mapped):
+    added = json.loads(k(run, mapped, 'op=add-element', 'address=code.orphan.idea').stdout)
+    unnamed = [layer.name for layer in Store('proj').layers(limit=0).results if layer.name.startswith('unnamed-')]
+    assert len(unnamed) == 1 and re.fullmatch(r'unnamed-\d{8}T\d{6}Z', unnamed[0])
+    assert added['layer'] == unnamed[0] and any(unnamed[0] in notice['message'] for notice in added['notices'])
+
+
+@pytest.mark.req('STORE-034')
+@pytest.mark.req('BASE-044')
+def test_a_correction_asking_to_change_a_receiver_says_so_and_writes_the_rest(run, mapped):
+    join = Store('proj').joins('code.timer.kitchen').results[0]
+    k(run, mapped, 'op=create', 'layer=fix-a', 'kind=correction', 'variable=Fixes.', 'mutable=false',
+      'hideable=false', *PROVENANCE)
+    done = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={join.join_id}', 'purpose=First fix.',
+               'receiver=code.alarm.audible', 'reason=r', cwd=mapped)
+    assert re.search(r'^Notice: receiver: ', done.stdout, re.M)
+    k(run, mapped, 'op=finish', 'layer=fix-a')
+    after = Store('proj').joins('code.timer.kitchen').results[0]
+    assert (after.purpose, after.receiver_address) == ('First fix.', 'code.timer.kitchen')

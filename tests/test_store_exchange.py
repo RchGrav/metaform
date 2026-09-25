@@ -56,6 +56,23 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
 
 
 @pytest.mark.req('STORE-027')
+@pytest.mark.req('STORE-034')
+def test_a_retype_left_unapplied_stays_unapplied_through_export_and_import(home, store, monkeypatch, tmp_path):
+    small_map(store)
+    alarm = store.element('code.alarm.audible').element_id
+    fix = correction(store, 'fix-1')
+    store.correct(fix.name, alarm, {'address': 'code.timer.kitchen'}, reason='merge')
+    assert [notice.where for notice in store.finish(fix.name).notices] == [alarm]
+    first = export_document(['proj'])
+    move_home(monkeypatch, tmp_path, 'other-home')
+    import_document(json.loads(json.dumps(first)))
+    assert export_document(['proj']) == first
+    moved = Store('proj')
+    assert moved.element('code.alarm.audible').element_id == alarm
+    assert moved.element('code.timer.kitchen').element_id != alarm
+
+
+@pytest.mark.req('STORE-027')
 def test_importing_what_already_exists_changes_nothing(home, store):
     filled(store)
     document = export_document(['proj'])

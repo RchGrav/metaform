@@ -188,7 +188,7 @@ Blocks: nothing.
 
 **Q34. A tool argument the tool does not declare. (BASE-043, BASE-044, MCP-003)**
 The schema says `additionalProperties: false`, and the SDK does not enforce it; BASE-043 keeps an unknown `name=value` in the record's `extra`, which only verbs with an `extra` noun have.
-Meanwhile: over MCP an unknown argument is named in one `Notice:` line and ignored; the call still runs.
+Meanwhile: since step 12, on both surfaces, an unknown argument of a verb with an `extra` noun is kept in the record's `extra` with one `Notice:` line, BASE-043; for any other verb it is named in a notice and ignored. The call still runs.
 Blocks: nothing.
 
 **Q35. The roles index after a correction. (STORE-009, STORE-017)**
@@ -212,3 +212,21 @@ Blocks: nothing.
 The repository wheel carries every repo module, BASE-022, but the chassis's `[project].dependencies` must stay pure Python, BASE-026, and is copied as `CHASSIS_DEPENDENCIES`, which a `metaform build` without the `mcp` module must not list, BASE-041. So a wheel built by hatchling from `pyproject.toml` carries the `mcp` module without `mcp` in its `Requires-Dist`, and `uvx --from` it cannot start the server. Adding each repo module's `DEPENDENCIES` to the repository wheel means making the dependency list dynamic, which changes where `CHASSIS_DEPENDENCIES` comes from.
 Meanwhile: `mcp>=2.2` stays in the `dev` extra; the installer registers the wheel `metaform build` writes, whose `Requires-Dist` names `mcp`; and discovery now reads each module's `DEPENDENCIES` before import and reports a missing one as the module's load problem, so `list modules` and `mcp serve` say what is missing instead of raising an import error.
 Blocks: publishing a repository wheel that serves MCP.
+
+## Step 12, notices everywhere and the data access object split
+
+**Q39. The Canonical Intake file and the served copy. (BASE-039, MAP-040)**
+`f93c91b` changed VRE to VE in `specifications/Canonical_Intake.xml`, and the same commit also removed text the served copy `resources/Canonical_Intake.xml` still has: the four rules on vested entities ("We call an entity outside the artifact vested...", "The VEs that matter are the ones whose purpose drives changes...", "The VE that drives the most improvement...", "Never the person who asked for the intake..."), "named at its most specific reusable type level" and the rule on one person holding several roles, the five `media.photo` examples, step 9c, the instruction that a VE outside the AUE is an element with role VE, and the nested subtype join in the response schema. It reads as an edit made on a copy older than the served one. Which text is current?
+Meanwhile: neither file is changed. The byte-copy tests fail: `test_the_served_intake_is_the_stored_file_byte_for_byte`, `test_prompt_serves_the_intake_with_only_its_target_filled` and the first working test.
+Blocks: the three tests, and adopting the VE wording in the served intake.
+
+**Q40. The module that owns an unnamed layer. (LAYER-001, STORE-013)**
+A write sent without a layer goes to a new building layer `unnamed-<UTC timestamp>`, and a layer records the module that owns it.
+Meanwhile: it records the module whose verb made the write, which `context.build` passes to `Store`; a `Store` built without a module records an empty module. The layer has no variable and an empty provenance record, and the one notice says so.
+Blocks: nothing.
+
+**Q41. A correction layer named in `--layers`. (CLI-033, BASE-044, LAYER-011)**
+CLI-033 keeps a name that is neither a layer nor a tag, with a notice. It says nothing of a correction layer, which `set --layers` still refuses, although a correction layer's select, mask and hide now write nothing and return a notice.
+Meanwhile: the refusal stays. Recommended: keep the name with a notice that correction layers are always applied, so the setting follows the rule of the operations.
+Blocks: nothing.
+

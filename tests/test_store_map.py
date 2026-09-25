@@ -60,14 +60,18 @@ def test_only_the_form_of_an_address_is_checked_and_a_bad_one_is_stored_with_a_n
 
 @pytest.mark.req('STORE-008')
 @pytest.mark.req('STORE-015')
-def test_an_item_at_a_bare_type_address_is_refused_naming_add_element(home, store):
+def test_an_item_at_a_bare_type_address_makes_an_element_there_and_says_so(home, store):
     layer = knowledge(store, 'notes')
     store.add_element(layer.name, 'code.anchor')
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.add_item(layer.name, Node('type', 'data.bill_of_materials'), 'A note about BOMs.')
-    assert 'add-element' in refused.value.next_step and 'data.bill_of_materials' in refused.value.next_step
-    assert dump(store_file(home, store)) == before
+    item = store.add_item(layer.name, Node('type', 'data.bill_of_materials'), 'A note about BOMs.')
+    made = store.element('data.bill_of_materials', raw=True)
+    assert made is not None and made.layer == layer.name
+    assert item.target == Node('element', made.element_id) and item.value == 'A note about BOMs.'
+    assert [notice.where for notice in item.notices] == ['target']
+    assert 'data.bill_of_materials' in item.notices[0].message
+    changed = diff(before, dump(store_file(home, store)))
+    assert changed['elements'] == (1, 0) and changed['items'] == (1, 0)
 
 
 @pytest.mark.req('STORE-009')
@@ -177,12 +181,12 @@ def test_a_subtype_address_held_by_another_is_stored_with_a_notice_naming_the_ho
 
 
 @pytest.mark.req('STORE-012')
-def test_add_ref_on_the_intake_layer_is_refused_naming_a_correction(home, store):
+def test_add_ref_on_the_intake_layer_writes_nothing_and_names_a_correction(home, store):
     _, outer, _ = small_map(store)
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.add_ref(outer.join_id, 'path', 'more.c')
-    assert 'correct' in refused.value.next_step
+    untouched = store.add_ref(outer.join_id, 'path', 'more.c')
+    assert [notice.where for notice in untouched.notices] == ['owner']
+    assert 'op=correct' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
 

@@ -23,14 +23,14 @@ def critic(store):
 
 @pytest.mark.req('STORE-040')
 @pytest.mark.req('LAYER-015')
-def test_a_c_answer_needs_a_link_and_approval_needs_b(home, store):
+def test_a_c_answer_without_a_link_is_stored_with_a_notice_and_approval_needs_b(home, store):
     challenge, other = critic(store)
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.answer(other.item_id, 'C')
+    unlinked = store.answer(other.item_id, 'C')
+    assert unlinked.state == 'C' and [notice.where for notice in unlinked.notices] == ['link']
     with pytest.raises(StoreError):
         store.approve(challenge.item_id)
-    assert dump(store_file(home, store)) == before
+    assert dump(store_file(home, store)) != before
     store.answer(other.item_id, 'C', link=Node('element', 'code.alarm.audible'))
     store.answer(challenge.item_id, 'A')
     with pytest.raises(StoreError):

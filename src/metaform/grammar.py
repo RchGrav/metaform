@@ -28,6 +28,8 @@ class Parsed:
     json: bool = False
     help: bool = False
     unknown: list[str] = field(default_factory=list)
+    fields: dict[str, Any] = field(default_factory=dict)
+    notices: list[tuple[str, str]] = field(default_factory=list)
 
 
 def convert(noun: Noun, raw: str, where: str) -> Any:
@@ -99,12 +101,38 @@ def parse(module: str, verb: Verb, words: list[str]) -> Parsed:
             if not positional_complete(verb, positional):
                 raise Stop(f'{name}= comes after the required nouns.', f'{where} --help')
             parsed.nouns[name] = convert(optional[name], raw, where)
+        elif 'extra' in optional and '=' in word and word.split('=', 1)[0].isidentifier() and \
+                positional_complete(verb, positional):
+            name, _, raw = word.partition('=')
+            parsed.fields[name] = raw
         else:
             positional.append(word)
     if parsed.help:
         return parsed
     _place(verb, positional, parsed, where)
+    parsed.notices = keep_fields(module, verb, parsed.nouns, parsed.fields)
     return parsed
+
+
+def keep_fields(module: str, verb: Verb, nouns: dict[str, Any], fields: dict[str, Any]) -> list[tuple[str, str]]:
+    """Named fields the verb does not know, kept in the record's `extra`, BASE-043 and BASE-044.
+
+    A verb with no `extra` noun keeps nowhere to put them, so they are ignored. Either way each is named once.
+    """
+    if not fields:
+        return []
+    named = ', '.join(noun.name for noun in verb.nouns if not noun.required)
+    if not any(noun.name == 'extra' for noun in verb.nouns):
+        return [(key, f'{module} {verb.name} has no noun {key}; it was ignored.') for key in fields]
+    given = nouns.get('extra')
+    if given is None:
+        nouns['extra'] = dict(fields)
+    elif isinstance(given, dict):
+        nouns['extra'] = {**fields, **given}
+    else:
+        nouns['extra'] = {'value': given, **fields}
+    return [(key, (f"{key} is not a noun of {module} {verb.name}; it was kept in the record's extra. Its named "
+                   f'nouns are {named}.')) for key in fields]
 
 
 def positional_complete(verb: Verb, positional: list[str]) -> bool:

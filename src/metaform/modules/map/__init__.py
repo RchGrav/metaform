@@ -21,8 +21,9 @@ SHIPS_DISABLED = False
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
-FIELDS = ('address', 'extra', 'provider', 'type', 'purpose', 'function', 'relation', 'observation', 'non_goal',
-          'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+FIELDS = ('address', 'extra', 'receiver', 'provider', 'type', 'purpose', 'function', 'relation', 'observation',
+          'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+UNNAMED = ('add-element', 'add-join', 'add-subtype', 'add-property', 'add-item')
 
 
 def _node(text: str) -> Node:
@@ -39,6 +40,14 @@ def _paging(ctx: Context) -> dict[str, Any]:
 
 def _reading(ctx: Context) -> dict[str, Any]:
     return {'raw': bool(ctx.setting('raw'))}
+
+
+def _said(result: dict[str, Any], done: Any) -> dict[str, Any]:
+    """A verb's own result with the notices of the store operation it ran, BASE-044."""
+    notices = list(getattr(done, 'notices', ()))
+    if notices:
+        result['notices'] = notices
+    return result
 
 
 def _other_project(ctx: Context) -> Store:
@@ -93,13 +102,15 @@ def layers(ctx: Context) -> Any:
 
 
 def tag(ctx: Context) -> Any:
-    _store(ctx).tag(ctx.nouns['layer'], ctx.nouns['tag'])
-    return {'layer': ctx.nouns['layer'], 'tag': ctx.nouns['tag'], 'tagged': True}
+    store = _store(ctx)
+    done = store.tag(ctx.nouns['layer'], ctx.nouns['tag'])
+    tagged = ctx.nouns['tag'] in store.layer_ref(ctx.nouns['layer']).tags
+    return _said({'layer': ctx.nouns['layer'], 'tag': ctx.nouns['tag'], 'tagged': tagged}, done)
 
 
 def untag(ctx: Context) -> Any:
-    _store(ctx).untag(ctx.nouns['layer'], ctx.nouns['tag'])
-    return {'layer': ctx.nouns['layer'], 'tag': ctx.nouns['tag'], 'tagged': False}
+    done = _store(ctx).untag(ctx.nouns['layer'], ctx.nouns['tag'])
+    return _said({'layer': ctx.nouns['layer'], 'tag': ctx.nouns['tag'], 'tagged': False}, done)
 
 
 def layer(ctx: Context) -> Any:
@@ -151,33 +162,33 @@ def search(ctx: Context) -> Any:
 
 
 def select(ctx: Context) -> Any:
-    _store(ctx).select(ctx.nouns['address'], ctx.nouns['layer'])
-    return _store(ctx).effective_selection(ctx.nouns['address'])
+    done = _store(ctx).select(ctx.nouns['address'], ctx.nouns['layer'])
+    return _said(_store(ctx).effective_selection(ctx.nouns['address']).to_dict(), done)
 
 
 def mask(ctx: Context) -> Any:
-    _store(ctx).mask(ctx.nouns['address'], ctx.nouns['layer'])
-    return _store(ctx).effective_selection(ctx.nouns['address'])
+    done = _store(ctx).mask(ctx.nouns['address'], ctx.nouns['layer'])
+    return _said(_store(ctx).effective_selection(ctx.nouns['address']).to_dict(), done)
 
 
 def clear(ctx: Context) -> Any:
-    _store(ctx).clear(ctx.nouns['address'], ctx.nouns['layer'], ctx.nouns['kind'])
-    return _store(ctx).effective_selection(ctx.nouns['address'])
+    done = _store(ctx).clear(ctx.nouns['address'], ctx.nouns['layer'], ctx.nouns['kind'])
+    return _said(_store(ctx).effective_selection(ctx.nouns['address']).to_dict(), done)
 
 
 def hide(ctx: Context) -> Any:
-    _store(ctx).hide(ctx.nouns['layer'])
-    return {'layer': ctx.nouns['layer'], 'hidden': True}
+    done = _store(ctx).hide(ctx.nouns['layer'])
+    return _said({'layer': ctx.nouns['layer'], 'hidden': not done.notices}, done)
 
 
 def unhide(ctx: Context) -> Any:
-    _store(ctx).unhide(ctx.nouns['layer'])
-    return {'layer': ctx.nouns['layer'], 'hidden': False}
+    done = _store(ctx).unhide(ctx.nouns['layer'])
+    return _said({'layer': ctx.nouns['layer'], 'hidden': False}, done)
 
 
 def reexamined(ctx: Context) -> Any:
-    _store(ctx).reexamined(ctx.nouns['layer'])
-    return {'layer': ctx.nouns['layer'], 'reexamine': False}
+    done = _store(ctx).reexamined(ctx.nouns['layer'])
+    return _said({'layer': ctx.nouns['layer'], 'reexamine': False}, done)
 
 
 def answer(ctx: Context) -> Any:
@@ -211,8 +222,10 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 def knowledge(ctx: Context) -> Any:
     """Create, build, edit and finish a knowledge or correction layer, one object per call, LAYER-018."""
     store = _store(ctx)
-    op, name = _need(ctx, 'op', 'layer')
+    (op,) = _need(ctx, 'op')
     nouns = ctx.nouns
+    # A write of an object sent without a layer goes to a new unnamed layer, LAYER-001; every other op names one.
+    name = str(nouns.get('layer') or '') if op in UNNAMED else str(_need(ctx, 'layer')[0])
     if op == 'create':
         variable, mutable, hideable = _need(ctx, 'variable', 'mutable', 'hideable')
         kind = nouns.get('kind', 'layer')
@@ -259,8 +272,7 @@ def knowledge(ctx: Context) -> Any:
         return store.edit(thing, _changes(ctx))
     if op == 'remove':
         (thing,) = _need(ctx, 'id')
-        store.remove(int(thing) if str(thing).isdigit() else thing)
-        return {'removed': thing, 'layer': name}
+        return store.remove(int(thing) if str(thing).isdigit() else thing)
     if op == 'correct':
         thing, reason = _need(ctx, 'id', 'reason')
         return store.correct(name, thing, _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
@@ -270,8 +282,7 @@ def knowledge(ctx: Context) -> Any:
     if op == 'peel':
         return store.peel(name)
     if op == 'discard':
-        store.discard(name)
-        return {'discarded': name}
+        return store.discard(name)
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
 
 
@@ -282,7 +293,8 @@ def _noun(name: str, help: str, kind: str = 'str', schema: dict[str, Any] | None
 KNOWLEDGE_NOUNS = (
     _noun('op', 'create, add-element, add-join, add-subtype, add-property, add-item, add-ref, add-plan, edit, remove, '
                 'correct, finish, peel or discard.'),
-    _noun('layer', 'The layer this call works on, by name or id. Every call names it.'),
+    _noun('layer', 'The layer this call works on, by name or id. An object added without one goes to a new layer '
+                   'named unnamed-<time>.'),
     _noun('variable', 'create: the one question the layer answers.'),
     _noun('mutable', 'create: whether its items change in place.', 'bool'),
     _noun('hideable', 'create: whether it can be hidden.', 'bool'),

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import sqlite3
 import subprocess
@@ -532,8 +533,10 @@ def test_the_layers_setting_is_the_starting_selection(run, project):
     assert shown(run, cwd=project)['layers']['value'] == ['practices']
     run('unset', 'all', '--unglue', cwd=project)
     assert shown(run, cwd=project)['layers']['value'] == []
-    refused = run('set', '--layers', 'nothing-here', cwd=project, ok=False)
-    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform map layers'
+    kept = run('set', '--layers', 'nothing-here', cwd=project)
+    assert re.search(r'^Notice: layers: .*nothing-here.*metaform map layers', kept.stdout, re.M)
+    assert shown(run, cwd=project)['layers']['value'] == ['nothing-here']
+    assert read() == set()
 
 
 @pytest.mark.req('BASE-031')

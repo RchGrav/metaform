@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS layers(
   metaform_id TEXT NOT NULL,
   name        TEXT NOT NULL UNIQUE,
   module      TEXT NOT NULL,
-  variable    TEXT NOT NULL CHECK(variable <> ''),
+  variable    TEXT NOT NULL,
   mutable     INTEGER NOT NULL CHECK(mutable IN (0, 1)),
   hideable    INTEGER NOT NULL CHECK(hideable IN (0, 1)),
   result_id   TEXT,
@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS current_properties(
   element_id  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS current_properties_by_element ON current_properties(element_id, layer_id);
-CREATE INDEX IF NOT EXISTS current_properties_by_layer ON current_properties(layer_id, element_id);
+CREATE INDEX IF NOT EXISTS current_properties_by_layer ON current_properties(layer_id, element_id, property_id);
 CREATE INDEX IF NOT EXISTS properties_by_layer ON properties(layer_id);
 
 CREATE TABLE IF NOT EXISTS selections(
@@ -255,8 +255,7 @@ CREATE TABLE IF NOT EXISTS challenge_states(
   link_kind TEXT CHECK(link_kind IN ('element','join')),
   link_id   TEXT,
   answered  TEXT NOT NULL,
-  approved  TEXT,
-  CHECK((state = 'C') = (link_id IS NOT NULL))
+  approved  TEXT
 );
 CREATE INDEX IF NOT EXISTS challenge_states_by_state ON challenge_states(state);
 CREATE TABLE IF NOT EXISTS plans(
@@ -267,6 +266,14 @@ CREATE TABLE IF NOT EXISTS plans(
   item_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS plans_by_layer ON plans(layer_id);
+
+CREATE TABLE IF NOT EXISTS unapplied(
+  layer_id TEXT NOT NULL REFERENCES layers(layer_id),
+  kind     TEXT NOT NULL CHECK(kind IN ('element','join','subtype','property','item')),
+  thing_id TEXT NOT NULL,
+  reason   TEXT NOT NULL,
+  PRIMARY KEY(layer_id, kind, thing_id)
+);
 
 CREATE TABLE IF NOT EXISTS element_roles(
   element_id TEXT NOT NULL,

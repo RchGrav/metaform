@@ -20,6 +20,15 @@ def _compact(value: Any) -> str:
     return json.dumps(value, separators=(',', ':'), ensure_ascii=False)
 
 
+def noted(result: Any, notices: list[tuple[str, str]]) -> Any:
+    """A result as plain data, with the call's own notices first among its `notices` when it is an object."""
+    data = plain(result)
+    if notices and isinstance(data, dict):
+        data = {**data, 'notices': [{'where': where, 'message': message} for where, message in notices]
+                + list(data.get('notices') or [])}
+    return data
+
+
 def as_text(result: Any) -> str:
     """The CLI's readable form of a result that is not a string; its notices follow as `Notice:` lines, BASE-044."""
     data = plain(result)

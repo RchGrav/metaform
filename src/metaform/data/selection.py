@@ -13,7 +13,6 @@ import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from ..errors import StoreError
 from .ids import is_id, prefixes
 
 
@@ -70,7 +69,10 @@ def hidden_closure(db: sqlite3.Connection) -> set[str]:
 
 
 def resolve_names(db: sqlite3.Connection, layers: dict[str, LayerRow], names: Iterable[str]) -> list[str]:
-    """Layer ids for names, ids and tags, STORE-038: a name that is no layer is a tag."""
+    """Layer ids for names, ids and tags, STORE-038: a name that is no layer is a tag.
+
+    A name that is neither turns nothing on, CLI-033; the `layers` setting names it in a notice when it is set.
+    """
     by_name = {layer.name: layer.layer_id for layer in layers.values()}
     found: list[str] = []
     for name in names:
@@ -79,10 +81,7 @@ def resolve_names(db: sqlite3.Connection, layers: dict[str, LayerRow], names: It
         elif name in by_name:
             found.append(by_name[name])
         else:
-            tagged = [row[0] for row in db.execute('SELECT layer_id FROM layer_tags WHERE tag=?', (name,))]
-            if not tagged:
-                raise StoreError(f'{name} is neither a layer nor a tag.', 'metaform map layers')
-            found.extend(tagged)
+            found.extend(row[0] for row in db.execute('SELECT layer_id FROM layer_tags WHERE tag=?', (name,)))
     return found
 
 

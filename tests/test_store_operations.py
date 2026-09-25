@@ -161,77 +161,18 @@ def test_atomic_commits_every_write_together(home, store):
 
 
 ERRORS: dict[str, tuple[Callable, Callable]] = {
-    'layer name taken with other properties': (
-        lambda s, w: None,
-        lambda s, w: s.layer('k', 'test', 'Something else.', mutable=True, hideable=True,
-                             provenance=PROVENANCE)),
-    'layer empty variable': (
-        lambda s, w: None,
-        lambda s, w: s.layer('new', 'test', '', mutable=True, hideable=True, provenance=PROVENANCE)),
-    'layer without provenance': (
-        lambda s, w: None,
-        lambda s, w: s.layer('new', 'test', 'New.', mutable=True, hideable=True)),
     'finish unknown': (lambda s, w: None, lambda s, w: s.finish('ghost')),
-    'finish twice': (lambda s, w: None, lambda s, w: s.finish('done')),
-    'edit intake': (lambda s, w: None,
-                    lambda s, w: s.edit(w.outer.join_id, {'purpose': 'x'})),
-    'edit finished correction': (added_by_finished_fix, lambda s, w: s.edit(w.fixed.element_id, {'extra': {'a': 1}})),
-    'edit memory': (lambda s, w: None, lambda s, w: s.edit(w.memo.item_id, {'value': 'x'})),
-    'edit key not allowed': (lambda s, w: None, lambda s, w: s.edit(w.k_join.join_id, {'receiver': 'code.k.b'})),
-    'remove intake': (lambda s, w: None, lambda s, w: s.remove(w.outer.join_id)),
-    'remove memory': (lambda s, w: None, lambda s, w: s.remove(w.memo.item_id)),
-    'remove still used': (lambda s, w: None, lambda s, w: s.remove(s.element('code.k.a', raw=True).element_id)),
     'discard unknown': (lambda s, w: None, lambda s, w: s.discard('ghost')),
-    'discard intake': (lambda s, w: None, lambda s, w: s.discard('intake-1')),
-    'discard stacked correction': (finished_fix, lambda s, w: s.discard('fix')),
-    'discard memory': (lambda s, w: None, lambda s, w: s.discard('memory')),
     'add_element unknown layer': (lambda s, w: None, lambda s, w: s.add_element('ghost', 'code.x')),
-    'add_element intake after its write': (lambda s, w: None, lambda s, w: s.add_element('intake-1', 'code.x')),
-    'add_element finished correction': (finished_fix, lambda s, w: s.add_element('fix', 'code.x')),
     'add_join an end that is no element id': (lambda s, w: None,
                                               lambda s, w: s.add_join('k', 'code.k.a', '0' * 32, purpose='p',
                                                                       function='f', relation='r', observation='o')),
     'add_subtype unknown join': (lambda s, w: None,
                                  lambda s, w: s.add_subtype('k', '0' * 32, 'code.k.part', function='f')),
     'add_ref unknown owner': (lambda s, w: None, lambda s, w: s.add_ref('0' * 32, 'path', 'x')),
-    'add_ref intake owner': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.join_id, 'path', 'x')),
-    'add_item unknown target': (lambda s, w: None,
-                                lambda s, w: s.add_item('k', Node('element', 'code.nothing'), 'v')),
-    'add_item unknown link': (lambda s, w: None,
-                              lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v',
-                                                      link=Node('join', '0' * 32))),
-    'add_item extra not an object': (lambda s, w: None,
-                                     lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', extra=[1])),
-    'add_property unknown element': (lambda s, w: None, lambda s, w: s.add_property('k', 'code.nothing', 'v')),
-    'add_property on a join': (lambda s, w: None,
-                               lambda s, w: s.add_property('k', Node('join', w.k_join.join_id), 'v')),
-    'add_property extra not an object': (lambda s, w: None,
-                                         lambda s, w: s.add_property('k', 'code.k.a', 'v', extra='x')),
-    'answer outside a blind-spot layer': (lambda s, w: None, lambda s, w: s.answer(w.memo.item_id, 'A')),
-    'answer plan': (lambda s, w: None, lambda s, w: s.answer(w.challenge.item_id, 'plan')),
-    'answer C without link': (lambda s, w: None, lambda s, w: s.answer(w.challenge.item_id, 'C')),
-    'answer after approval': (lambda s, w: (s.answer(w.challenge.item_id, 'B'), s.approve(w.challenge.item_id)),
-                              lambda s, w: s.answer(w.challenge.item_id, 'A')),
     'approve open': (lambda s, w: None, lambda s, w: s.approve(w.challenge.item_id)),
     'approve A': (lambda s, w: s.answer(w.challenge.item_id, 'A'), lambda s, w: s.approve(w.challenge.item_id)),
-    'add_plan unknown element': (lambda s, w: None, lambda s, w: s.add_plan('k', 'code.nothing', None)),
-    'update_item not memory': (lambda s, w: None, lambda s, w: s.update_item(w.item.item_id, 'x')),
-    'delete_item not memory': (lambda s, w: None, lambda s, w: s.delete_item(w.item.item_id)),
-    'correct in a knowledge layer': (lambda s, w: None,
-                                     lambda s, w: s.correct('k', w.inner.join_id, {'function': 'x'}, reason='r')),
-    'correct key not allowed': (lambda s, w: correction(s, 'fix'),
-                                lambda s, w: s.correct('fix', w.inner.join_id, {'colour': 'x'}, reason='r')),
-    'correct receiver': (lambda s, w: correction(s, 'fix'),
-                         lambda s, w: s.correct('fix', w.inner.join_id, {'receiver': 'code.k.a'}, reason='r')),
-    'peel a knowledge layer': (lambda s, w: None, lambda s, w: s.peel('done')),
-    'peel not on top': (lambda s, w: (finished_fix(s, w), correction(s, 'fix-2'), s.finish('fix-2')),
-                        lambda s, w: s.peel('fix')),
     'reexamined unknown': (lambda s, w: None, lambda s, w: s.reexamined('ghost')),
-    'select unknown layer': (lambda s, w: None, lambda s, w: s.select('code', 'ghost')),
-    'mask unknown layer': (lambda s, w: None, lambda s, w: s.mask('code', 'ghost')),
-    'clear unknown layer': (lambda s, w: None, lambda s, w: s.clear('code', 'ghost', 'mask')),
-    'hide not hideable': (lambda s, w: None, lambda s, w: s.hide('intake-1')),
-    'unhide not hideable': (lambda s, w: None, lambda s, w: s.unhide('intake-1')),
 }
 
 
@@ -262,44 +203,163 @@ def test_an_operation_reaches_every_row_through_an_index(home, store, traced, ca
     assert bad == []
 
 
-def _kept(store, notice_where, found):
-    """The write returned its record with a notice at `notice_where`, and the record reads back raw."""
-    return notice_where in [notice.where for notice in found.notices]
+
+def _unchanged(s, w, got, before):
+    return before is not None
 
 
-NOTICES: dict[str, tuple[Callable, Callable]] = {
-    'add_element malformed': (
-        lambda s, w: s.add_element('k', 'code..x'),
-        lambda s, w, got: _kept(s, 'address', got) and s.where('code..x', raw=True) is not None),
-    'add_join unknown end': (
-        lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', function='f', relation='r',
-                                observation='o'),
-        lambda s, w, got: _kept(s, 'provider', got) and s.element('code.nothing', raw=True).layer == 'k'),
-    'add_join to a subtype address': (
-        lambda s, w: s.add_join('k', 'code.k.a', 'code.loop.tick', purpose='p', function='f', relation='r',
-                                observation='o'),
-        lambda s, w, got: _kept(s, 'provider', got) and got.provider_address == 'code.loop.tick'),
-    'add_join to itself': (
-        lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', function='f', relation='r', observation='o'),
-        lambda s, w, got: _kept(s, 'provider', got) and got.receiver == got.provider),
-    'add_subtype malformed': (
-        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', function='f'),
-        lambda s, w, got: _kept(s, 'address', got) and got.address == 'Code.Part'),
-    'add_subtype purpose': (
-        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.part', function='f', purpose='p'),
-        lambda s, w, got: _kept(s, 'purpose', got) and got.extra == {'purpose': 'p'}),
-    'add_subtype address held': (
-        lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', function='f'),
-        lambda s, w, got: _kept(s, 'address', got) and got.address == 'code.loop.tick'),
+def _raw_element(address):
+    return lambda s, w, got, before: s.element(address, raw=True) is not None
+
+
+NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
+    # name: (setup, act, whether rows change, check on the store afterwards)
+    'layer empty variable': (lambda s, w: None,
+                             lambda s, w: s.layer('new', 'test', '', mutable=True, hideable=True, provenance=PROVENANCE),
+                             True, lambda s, w, got, before: got.variable == ''),
+    'layer without provenance': (lambda s, w: None,
+                                 lambda s, w: s.layer('new', 'test', 'New.', mutable=True, hideable=True),
+                                 True, lambda s, w, got, before: s.provenance('new').module == 'test'),
+    'layer name taken with other properties': (
+        lambda s, w: None,
+        lambda s, w: s.layer('k', 'test', 'Something else.', mutable=True, hideable=True, provenance=PROVENANCE),
+        True, lambda s, w, got, before: got.name == 'k-2'),
+    'finish twice': (lambda s, w: None, lambda s, w: s.finish('done'), False, _unchanged),
+    'edit intake': (lambda s, w: None, lambda s, w: s.edit(w.outer.join_id, {'purpose': 'x'}), False, _unchanged),
+    'edit finished correction': (added_by_finished_fix,
+                                 lambda s, w: s.edit(w.fixed.element_id, {'extra': {'a': 1}}), False, _unchanged),
+    'edit memory': (lambda s, w: None, lambda s, w: s.edit(w.memo.item_id, {'value': 'x'}), False, _unchanged),
+    'edit key not allowed': (lambda s, w: None,
+                             lambda s, w: s.edit(w.k_join.join_id, {'receiver': 'code.k.b', 'purpose': 'new'}), True,
+                             lambda s, w, got, before: s.joins('code.k.a', raw=True).results[0].purpose == 'new'),
+    'edit text that is not text': (lambda s, w: None,
+                                   lambda s, w: s.edit(w.k_join.join_id, {'purpose': {'a': 1}}), True,
+                                   lambda s, w, got, before: s.joins('code.k.a', raw=True).results[0].purpose
+                                   == '{"a": 1}'),
+    'edit address held by a subtype': (lambda s, w: s.add_element('k', 'code.k.c'),
+                                       lambda s, w: s.edit(s.element('code.k.c', raw=True).element_id,
+                                                           {'address': 'code.loop.tick'}), True,
+                                       _raw_element('code.loop.tick')),
+    'remove intake': (lambda s, w: None, lambda s, w: s.remove(w.outer.join_id), False, _unchanged),
+    'remove memory': (lambda s, w: None, lambda s, w: s.remove(w.memo.item_id), False, _unchanged),
+    'remove still used': (lambda s, w: None, lambda s, w: s.remove(s.element('code.k.a', raw=True).element_id), True,
+                          lambda s, w, got, before: s.element('code.k.a', raw=True) is None and
+                          s.joins('code.k.b', 'provider', raw=True).results[0].orphaned),
+    'discard intake': (lambda s, w: None, lambda s, w: s.discard('intake-1'), False, _unchanged),
+    'discard stacked correction': (finished_fix, lambda s, w: s.discard('fix'), False, _unchanged),
+    'discard memory': (lambda s, w: None, lambda s, w: s.discard('memory'), False, _unchanged),
+    'add_element intake after its write': (lambda s, w: None, lambda s, w: s.add_element('intake-1', 'code.x'),
+                                           False, _unchanged),
+    'add_element finished correction': (finished_fix, lambda s, w: s.add_element('fix', 'code.x'), False,
+                                        _unchanged),
+    'add_element role in a knowledge layer': (lambda s, w: None,
+                                              lambda s, w: s.add_element('k', 'code.k.y', role='BOGUS'), True,
+                                              lambda s, w, got, before: got.role is None),
+    'add_ref intake owner': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.join_id, 'path', 'x'), False,
+                             _unchanged),
+    'add_item unknown target': (lambda s, w: None,
+                                lambda s, w: s.add_item('k', Node('element', 'code.nothing'), 'v'), True,
+                                _raw_element('code.nothing')),
+    'add_item at a type address': (lambda s, w: None,
+                                   lambda s, w: s.add_item('k', Node('type', 'data.bill_of_materials'), 'v'), True,
+                                   _raw_element('data.bill_of_materials')),
+    'add_item unknown link': (lambda s, w: None,
+                              lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v',
+                                                      link=Node('join', '0' * 32)), True,
+                              lambda s, w, got, before: got.link == Node('join', '0' * 32)),
+    'add_item extra not an object': (lambda s, w: None,
+                                     lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', extra=[1]),
+                                     True, lambda s, w, got, before: got.extra == {'value': [1]}),
+    'add_item extra holding records': (
+        lambda s, w: None,
+        lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', extra={'steps': [{'n': 1}, {'n': 2}]}),
+        True, lambda s, w, got, before: [item.value for item in s.layer_items('k', Node('element', 'code.k.a')).results
+                                         if isinstance(item.value, dict) and 'steps' in item.value] ==
+        [{'steps': {'n': 1}}, {'steps': {'n': 2}}]),
+    'add_item a list of answers': (
+        lambda s, w: None, lambda s, w: s.add_item('k', Node('element', 'code.k.b'), ['one', 'two']), True,
+        lambda s, w, got, before: [item.value for item in s.layer_items('k', Node('element', 'code.k.b')).results
+                                   if item.value in ('one', 'two')] == ['one', 'two']),
+    'add_property unknown element': (lambda s, w: None, lambda s, w: s.add_property('k', 'code.nothing', 'v'), True,
+                                     _raw_element('code.nothing')),
+    'add_property on a join': (lambda s, w: None,
+                               lambda s, w: s.add_property('k', Node('join', w.k_join.join_id), 'v'), True,
+                               lambda s, w, got, before: got.orphaned),
+    'add_property extra not an object': (lambda s, w: None,
+                                         lambda s, w: s.add_property('k', 'code.k.a', 'v', extra='x'), True,
+                                         lambda s, w, got, before: got.extra == {'value': 'x'}),
+    'answer outside a blind-spot layer': (lambda s, w: None, lambda s, w: s.answer(w.memo.item_id, 'A'), True,
+                                          lambda s, w, got, before: got.state == 'A'),
+    'answer plan': (lambda s, w: None, lambda s, w: s.answer(w.challenge.item_id, 'plan'), False, _unchanged),
+    'answer C without link': (lambda s, w: None, lambda s, w: s.answer(w.challenge.item_id, 'C'), True,
+                              lambda s, w, got, before: got.state == 'C' and got.link is None),
+    'answer after approval': (lambda s, w: (s.answer(w.challenge.item_id, 'B'), s.approve(w.challenge.item_id)),
+                              lambda s, w: s.answer(w.challenge.item_id, 'A'), True,
+                              lambda s, w, got, before: got.state == 'A'),
+    'add_plan unknown element': (lambda s, w: None, lambda s, w: s.add_plan('k', 'code.nothing', None), True,
+                                 _raw_element('code.nothing')),
+    'update_item not memory': (lambda s, w: None, lambda s, w: s.update_item(w.item.item_id, 'x'), False,
+                               _unchanged),
+    'delete_item not memory': (lambda s, w: None, lambda s, w: s.delete_item(w.item.item_id), False, _unchanged),
+    'correct in a knowledge layer': (lambda s, w: None,
+                                     lambda s, w: s.correct('k', w.inner.join_id, {'function': 'x'}, reason='r'),
+                                     False, _unchanged),
+    'correct key not allowed': (lambda s, w: correction(s, 'fix'),
+                                lambda s, w: s.correct('fix', w.inner.join_id, {'colour': 'x', 'function': 'y'},
+                                                       reason='r'), True,
+                                lambda s, w, got, before: got.fields['function'] == 'y'),
+    'correct receiver': (lambda s, w: correction(s, 'fix'),
+                         lambda s, w: s.correct('fix', w.inner.join_id, {'receiver': 'code.k.a'}, reason='r'),
+                         False, _unchanged),
+    'peel a knowledge layer': (lambda s, w: None, lambda s, w: s.peel('done'), False, _unchanged),
+    'peel below the top': (lambda s, w: (finished_fix(s, w), correction(s, 'fix2'),
+                                         s.correct('fix2', w.inner.join_id, {'function': 'z'}, reason='r'),
+                                         s.finish('fix2')),
+                           lambda s, w: s.peel('fix'), False, _unchanged),
+    'select a correction layer': (finished_fix, lambda s, w: s.select('code.timer', 'fix'), False, _unchanged),
+    'mask a correction layer': (finished_fix, lambda s, w: s.mask('code.timer', 'fix'), False, _unchanged),
+    'hide a correction layer': (finished_fix, lambda s, w: s.hide('fix'), False, _unchanged),
+    'hide a layer that is not hideable': (lambda s, w: None, lambda s, w: s.hide('intake-1'), False, _unchanged),
+    'select at an address out of form': (lambda s, w: None, lambda s, w: s.select('Code..Timer', 'done'), True,
+                                         lambda s, w, got, before: True),
+    'add_element malformed': (lambda s, w: None, lambda s, w: s.add_element('k', 'code..x'), True,
+                              lambda s, w, got, before: s.where('code..x', raw=True) is not None),
+    'add_join unknown end': (lambda s, w: None,
+                             lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', function='f',
+                                                     relation='r', observation='o'), True,
+                             lambda s, w, got, before: s.element('code.nothing', raw=True).layer == 'k'),
+    'add_join to a subtype address': (lambda s, w: None,
+                                      lambda s, w: s.add_join('k', 'code.k.a', 'code.loop.tick', purpose='p',
+                                                              function='f', relation='r', observation='o'), True,
+                                      lambda s, w, got, before: got.provider_address == 'code.loop.tick'),
+    'add_join to itself': (lambda s, w: None,
+                           lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', function='f',
+                                                   relation='r', observation='o'), True,
+                           lambda s, w, got, before: got.receiver == got.provider),
+    'add_subtype malformed': (lambda s, w: None,
+                              lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', function='f'), True,
+                              lambda s, w, got, before: got.address == 'Code.Part'),
+    'add_subtype purpose': (lambda s, w: None,
+                            lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.part', function='f',
+                                                       purpose='p'), True,
+                            lambda s, w, got, before: got.extra == {'purpose': 'p'}),
+    'add_subtype address held': (lambda s, w: None,
+                                 lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', function='f'),
+                                 True, lambda s, w, got, before: got.address == 'code.loop.tick'),
 }
 
 
 @pytest.mark.req('STORE-026')
 @pytest.mark.req('BASE-044')
 @pytest.mark.parametrize('case', sorted(NOTICES))
-def test_each_condition_that_does_not_fit_is_stored_with_a_notice(home, store, case):
-    act, check = NOTICES[case]
+def test_each_condition_that_does_not_fit_is_a_notice_and_never_an_error(home, store, case):
+    setup, act, writes, check = NOTICES[case]
     world = build(store)
+    setup(store, world)
+    before = dump(store_file(home, store))
     got = act(store, world)
-    assert got.notices and all(notice.message for notice in got.notices)
-    assert check(store, world, got)
+    notices = getattr(got, 'notices', ())
+    assert notices and all(notice.message and notice.where for notice in notices)
+    after = dump(store_file(home, store))
+    assert (after != before) is writes
+    assert check(store, world, got, before)

@@ -70,9 +70,8 @@ def test_only_the_top_correction_peels_and_peeling_restores_the_reads(home, stor
                   reason='r2')
     store.finish(second.name)
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.peel(first.name)
-    assert 'fix-2' in str(refused.value) and 'fix-2' in refused.value.next_step
+    below = store.peel(first.name)
+    assert 'fix-2' in below.notices[0].message
     assert dump(store_file(home, store)) == before
     peeled = store.peel(second.name)
     assert peeled.ready is None
@@ -90,8 +89,7 @@ def test_correction_layers_are_never_toggled(home, store):
     before = dump(store_file(home, store))
     for act in (lambda: store.select('code', fix.name), lambda: store.mask('code', fix.name),
                 lambda: store.hide(fix.name)):
-        with pytest.raises(StoreError):
-            act()
+        assert act().notices
     assert dump(store_file(home, store)) == before
 
 
@@ -147,43 +145,64 @@ def test_removing_an_element_orphans_knowledge_on_it_and_putting_it_back_restore
 
 
 @pytest.mark.req('STORE-034')
-def test_a_correction_may_not_change_a_joins_receiver(home, store):
+def test_a_correction_never_changes_a_joins_receiver_and_names_what_it_did_not_apply(home, store):
     _, outer, _ = small_map(store)
     fix = correction(store, 'fix-1')
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.correct(fix.name, outer.join_id, {'receiver': 'code.alarm.audible'}, reason='no')
-    with pytest.raises(StoreError):
-        store.correct(fix.name, outer.join_id, {'colour': 'blue'}, reason='no')
+    receiver = store.correct(fix.name, outer.join_id, {'receiver': 'code.alarm.audible'}, reason='no')
+    colour = store.correct(fix.name, outer.join_id, {'colour': 'blue'}, reason='no')
+    assert [notice.where for notice in receiver.notices] == ['receiver']
+    assert [notice.where for notice in colour.notices] == ['colour']
     assert dump(store_file(home, store)) == before
+    both = store.correct(fix.name, outer.join_id, {'receiver': 'code.alarm.audible', 'purpose': 'Fixed.'},
+                         reason='r')
+    assert [notice.where for notice in both.notices] == ['receiver'] and both.fields['purpose'] == 'Fixed.'
+    store.finish(fix.name)
+    join = store.joins('stakeholder.cook.home').results[0]
+    assert join.purpose == 'Fixed.' and join.receiver_address == 'stakeholder.cook.home'
 
 
 @pytest.mark.req('STORE-034')
-def test_finishing_a_removal_that_leaves_a_join_behind_is_refused(home, store):
+def test_finishing_a_removal_that_leaves_a_join_behind_orphans_it_and_names_it(home, store):
     _, _, inner = small_map(store)
     alarm = store.element('code.alarm.audible')
     fix = correction(store, 'fix-1')
     store.correct(fix.name, alarm.element_id, remove=True, reason='gone')
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.finish(fix.name)
-    assert inner.join_id in str(refused.value)
-    assert dump(store_file(home, store)) == before
-    store.correct(fix.name, inner.join_id, remove=True, reason='its provider is gone')
-    store.finish(fix.name)
-    assert store.element('code.alarm.audible') is None
+    finished = store.finish(fix.name)
+    assert inner.join_id in ' '.join(notice.message for notice in finished.notices)
+    assert finished.ready is not None and store.element('code.alarm.audible') is None
+    assert store.joins('code.timer.kitchen').results == ()
+    orphan = store.joins('code.timer.kitchen', raw=True).results[0]
+    assert orphan.join_id == inner.join_id and orphan.orphaned
 
 
 @pytest.mark.req('STORE-034')
-def test_retyping_onto_an_address_another_element_holds_is_refused_at_finish(home, store):
+def test_a_retype_onto_an_address_another_element_holds_stays_unapplied_and_the_rest_applies(home, store):
+    _, outer, _ = small_map(store)
+    fix = correction(store, 'fix-1')
+    alarm = store.element('code.alarm.audible').element_id
+    store.correct(fix.name, alarm, {'address': 'code.timer.kitchen'}, reason='merge')
+    store.correct(fix.name, outer.join_id, {'function': 'Counts down and rings loudly.'}, reason='louder')
+    finished = store.finish(fix.name)
+    assert [notice.where for notice in finished.notices] == [alarm]
+    assert store.element('code.alarm.audible').element_id == alarm
+    assert store.joins('stakeholder.cook.home').results[0].function == 'Counts down and rings loudly.'
+
+
+@pytest.mark.req('STORE-034')
+@pytest.mark.req('BASE-044')
+def test_two_retypes_onto_one_free_address_apply_the_first_and_leave_the_second_unapplied(home, store):
     small_map(store)
     fix = correction(store, 'fix-1')
-    store.correct(fix.name, store.element('code.alarm.audible').element_id, {'address': 'code.timer.kitchen'},
-                  reason='merge')
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.finish(fix.name)
-    assert dump(store_file(home, store)) == before
+    kitchen = store.element('code.timer.kitchen').element_id
+    alarm = store.element('code.alarm.audible').element_id
+    store.correct(fix.name, kitchen, {'address': 'code.device.timer'}, reason='rename')
+    store.correct(fix.name, alarm, {'address': 'code.device.timer'}, reason='rename')
+    finished = store.finish(fix.name)
+    assert finished.ready is not None
+    assert [notice.where for notice in finished.notices] == [alarm]
+    assert store.element('code.device.timer').element_id == kitchen
+    assert store.element('code.alarm.audible').element_id == alarm
 
 
 @pytest.mark.req('STORE-017')

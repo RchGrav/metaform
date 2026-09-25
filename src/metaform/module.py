@@ -217,11 +217,13 @@ def result_json(result: Any) -> str:
 
 
 def tool_arguments(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tuple[str, ...] = (),
-                   folder: Path | None = None) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
-    """A tool call's nouns and switches, checked as the command line checks them, and the names it does not know."""
+                   folder: Path | None = None) -> tuple[dict[str, Any], dict[str, Any], list[tuple[str, str]]]:
+    """A tool call's nouns and switches, checked as the command line checks them, and a notice per name it does
+    not know: kept in the record's `extra` when the verb takes one, BASE-043, otherwise ignored."""
     from . import grammar
     parsed = grammar.from_json(module, verb, arguments, ignore=ignore, folder=folder)
-    return parsed.nouns, parsed.switches, parsed.unknown
+    notices = grammar.keep_fields(module, verb, parsed.nouns, {key: arguments[key] for key in parsed.unknown})
+    return parsed.nouns, parsed.switches, notices
 
 
 def setting_value(key: str, value: Any, folder: Path) -> Any:

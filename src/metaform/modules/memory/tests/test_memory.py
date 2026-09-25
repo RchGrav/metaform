@@ -128,3 +128,13 @@ def test_memory_takes_part_in_select_and_mask(run, mapped):
     run('map', 'clear', 'code.manager', 'memory', 'mask', cwd=mapped)
     view = json.loads(run('map', 'node', 'element:code.manager.route', '--json', cwd=mapped).stdout)
     assert 'memory' in [group['layer'] for group in view['layers']]
+
+
+@pytest.mark.req('LAYER-012')
+@pytest.mark.req('STORE-020')
+@pytest.mark.req('BASE-044')
+def test_an_observation_at_an_element_the_map_does_not_hold_makes_it_in_memory(run, mapped):
+    added = json.loads(m(run, 'add-observations', 'element:code.nosuch.node', 'A note.', cwd=mapped).stdout)
+    assert added['notices'] and 'memory' in added['notices'][0]['message']
+    assert Store('proj').element('code.nosuch.node', raw=True).layer == 'memory'
+    assert opened(run, mapped, 'element:code.nosuch.node')['nodes'][0]['observations'] == ['A note.']

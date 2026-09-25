@@ -313,10 +313,10 @@ def set_(args: list[str], folder: Path) -> None:
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
     before_groups = settings.value('modules', folder)
-    changes, glued = [], []
+    changes, glued, notices = [], [], []
     for setting, raw in pairs:
         try:
-            old, new = settings.assign(setting.key, raw, folder, glue=glue)
+            old, new, noted = settings.assign(setting.key, raw, folder, glue=glue)
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
@@ -324,6 +324,9 @@ def set_(args: list[str], folder: Path) -> None:
             changes.append((setting.key, old, new))
         if glue:
             glued.append(setting.key)
+        notices += [(setting.key, message) for message in noted]
+    for key, message in notices:
+        out(f'Notice: {key}: {message}')
     if quiet:
         return
     if not changes:
@@ -621,14 +624,18 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:
         result = call(verb.run, ctx)
+    data = results.noted(result, parsed.notices)
+    if not isinstance(data, dict):
+        for where, message in parsed.notices:
+            messages.write(f'Notice: {where}: {message}\n')
     if result is None:
         return
     if isinstance(result, str):
         sys.stdout.write(result)
     elif parsed.json:
-        sys.stdout.write(results.as_json(result) + '\n')
+        sys.stdout.write(json.dumps(data, ensure_ascii=False) + '\n')
     else:
-        sys.stdout.write(results.as_text(result))
+        sys.stdout.write(results.as_text(data))
 
 
 # Help records --------------------------------------------------------------------------

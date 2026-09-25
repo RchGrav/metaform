@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import home
 
@@ -47,7 +47,7 @@ class Setting:
     scope: str = 'folder'
     owner: str = 'chassis'
     default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
-    check: Callable[[Any, Path], None] | None = field(default=None, compare=False)
+    check: Callable[[Any, Path], list[str] | None] | None = field(default=None, compare=False)
     boundary: Callable[[Path], Path | None] | None = field(default=None, compare=False)
 
     @property
@@ -237,21 +237,27 @@ def parse(setting: Setting, raw: str, folder: Path | None = None) -> Any:
     return raw
 
 
-def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> tuple[Any, Any]:
-    """Store one setting from its CLI form, or a typed boolean. Returns (old, new)."""
+class Assigned(NamedTuple):
+    """A stored setting: its value before and after, and what did not fit and was kept, BASE-044."""
+    old: Any
+    new: Any
+    notices: tuple[str, ...] = ()
+
+
+def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
+    """Store one setting from its CLI form, or a typed boolean."""
     setting = SCHEMA[key]
     new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
-    if setting.check is not None:
-        setting.check(new, folder)
+    notices = (setting.check(new, folder) or []) if setting.check is not None else []
     old = value(key, folder)
     scope = _own_scope(setting, folder)
     _save(setting, scope, new, folder)
     if glue:
         home.set_glue(scope, setting.owner, key, True, folder=folder.resolve())
-    return old, new
+    return Assigned(old, new, tuple(notices))
 
 
-def put(key: str, typed: Any, folder: Path, *, glue: bool = False) -> tuple[Any, Any]:
+def put(key: str, typed: Any, folder: Path, *, glue: bool = False) -> Assigned:
     """Store one setting from a typed value, as the settings screen does."""
     setting = SCHEMA[key]
     if setting.kind == 'list' and isinstance(typed, list):
@@ -301,18 +307,20 @@ def _project_root(folder: Path) -> Path | None:
     return Path(record.path) if record else None
 
 
-def _check_modules(groups: Any, folder: Path) -> None:
+def _check_modules(groups: Any, folder: Path) -> list[str] | None:
     from . import loader
     known = ['chassis', *sorted({item.id for item in loader.discover()})]
     for group in groups:
         if group not in known:
             raise SettingError(f"--modules has no group {group!r}. Groups: {', '.join(known)}.",
                                'metaform list modules')
+    return None
 
 
-def _check_layers(names: Any, folder: Path) -> None:
+def _check_layers(names: Any, folder: Path) -> list[str] | None:
+    """A name that is neither a layer nor a tag is kept and turns nothing on, with a notice, CLI-033 and BASE-044."""
     if not names:
-        return
+        return None
     from .context import project_for
     from .data import Store
     project_id = project_for(folder)
@@ -320,12 +328,15 @@ def _check_layers(names: Any, folder: Path) -> None:
         raise SettingError('--layers names layers of a project, and this folder is not in one.',
                            'metaform add project <id> <path>')
     layers = {layer.name: layer for layer in Store(project_id).layers(limit=0).results}
+    notices: list[str] = []
     for name in names:
         if name in layers and layers[name].kind == 'correction':
             raise SettingError(f'{name} is a correction layer; correction layers are always applied.',
                                'metaform map layers')
         if name not in layers and not Store(project_id).layers(tag=name, limit=0).results:
-            raise SettingError(f'--layers has no layer or tag {name!r}.', 'metaform map layers')
+            notices.append(f'{name} is not a layer or a tag here; it was kept and turns nothing on. See metaform map '
+                           'layers')
+    return notices
 
 
 project = choice('project', choices=lambda ctx: [record.project_id for record in home.projects()],

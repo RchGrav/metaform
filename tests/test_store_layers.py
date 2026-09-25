@@ -15,15 +15,12 @@ KITCHEN = Node('element', 'code.timer.kitchen')
 
 @pytest.mark.req('STORE-013')
 @pytest.mark.req('LAYER-006')
-def test_hiding_a_layer_that_is_not_hideable_is_refused(home, store):
+def test_hiding_a_layer_that_is_not_hideable_changes_nothing_and_says_why(home, store):
     small_map(store)
     layer = knowledge(store, 'fixed', hideable=False)
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.hide(layer.name)
-    assert refused.value.next_step
-    with pytest.raises(StoreError):
-        store.hide('intake-1')
+    assert 'not hideable' in store.hide(layer.name).notices[0].message
+    assert store.hide('intake-1').notices
     assert dump(store_file(home, store)) == before
 
 
@@ -55,10 +52,8 @@ def test_an_element_made_by_a_second_layer_follows_that_layers_selection(store):
 
 
 @pytest.mark.req('LAYER-001')
-def test_writing_without_a_layer_is_refused(store):
+def test_a_write_naming_a_layer_that_does_not_exist_cannot_be_read(store):
     small_map(store)
-    with pytest.raises(StoreError):
-        store.add_element('', 'code.x')
     with pytest.raises(StoreError):
         store.add_element('no-such-layer', 'code.x')
     with pytest.raises(StoreError):
@@ -79,15 +74,13 @@ def test_items_are_read_by_layer_by_node_and_by_link(store):
 
 
 @pytest.mark.req('STORE-015')
-def test_an_item_on_a_missing_target_or_with_extra_not_an_object_is_refused(home, store):
+def test_an_item_on_a_missing_element_makes_it_and_an_extra_not_an_object_is_kept_as_its_value(home, store):
     small_map(store)
     notes = knowledge(store, 'notes')
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.add_item(notes.name, Node('element', 'code.nowhere'), 'x')
-    with pytest.raises(StoreError):
-        store.add_item(notes.name, KITCHEN, 'x', extra=['not', 'an', 'object'])
-    assert dump(store_file(home, store)) == before
+    made = store.add_item(notes.name, Node('element', 'code.nowhere'), 'x')
+    assert made.notices and store.element('code.nowhere', raw=True).layer == notes.name
+    kept = store.add_item(notes.name, KITCHEN, 'x', extra=['not', 'an', 'object'])
+    assert kept.extra == {'value': ['not', 'an', 'object']} and kept.notices
 
 
 @pytest.mark.req('STORE-016')
@@ -108,21 +101,22 @@ def test_a_layer_has_exactly_one_provenance_record(home, store):
 @pytest.mark.req('STORE-016')
 @pytest.mark.req('LAYER-010')
 @pytest.mark.req('LAYER-012')
-def test_provenance_is_required_except_for_memory(home, store):
+def test_a_layer_without_provenance_gets_an_empty_record_and_a_notice_except_memory(home, store):
     small_map(store)
-    before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.layer('bare', 'test', 'Something.', mutable=True, hideable=True)
-    assert dump(store_file(home, store)) == before
+    bare = store.layer('bare', 'test', 'Something.', mutable=True, hideable=True)
+    assert bare.notices
+    record = store.provenance('bare')
+    assert (record.module, record.workflow, record.prompt, record.model, record.role) == ('test', None, None, None,
+                                                                                          None)
     notes = memory(store)
     db = sqlite3.connect(store_file(home, store))
     assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (notes.layer_id,)).fetchone() == (0,)
 
 
 @pytest.mark.req('LAYER-002')
-def test_a_layer_without_a_variable_is_refused(home, store):
-    with pytest.raises(StoreError):
-        store.layer('empty', 'test', '', mutable=True, hideable=True, provenance=PROVENANCE)
+def test_a_layer_without_a_variable_is_stored_with_a_notice(home, store):
+    empty = store.layer('empty', 'test', '', mutable=True, hideable=True, provenance=PROVENANCE)
+    assert empty.variable == '' and [notice.where for notice in empty.notices] == ['variable']
 
 
 @pytest.mark.req('STORE-018')
@@ -259,9 +253,8 @@ def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home,
     assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
     descriptor = store.element('code.timer.kitchen').descriptors[0]
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError) as refused:
-        store.edit(descriptor.item_id, {'value': {'descriptor': {'name': 'changed'}}})
-    assert 'correct' in refused.value.next_step
+    untouched = store.edit(descriptor.item_id, {'value': {'descriptor': {'name': 'changed'}}})
+    assert 'op=correct' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
 
@@ -279,8 +272,7 @@ def test_discarding_a_layer_keeps_identity_and_type_rows(home, store):
     assert store.element(element.element_id) is None
     assert store.search('draft').results == ()
     assert 'draft' not in [layer.name for layer in store.layers().results]
-    with pytest.raises(StoreError):
-        store.discard('intake-1')
+    assert store.discard('intake-1').notices and store.has_intake()
 
 
 @pytest.mark.req('STORE-032')
@@ -381,10 +373,12 @@ def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
     store.add_property(media.name, 'code.timer.kitchen', 'C')
     changed = diff(before, dump(store_file(home, store)))
     assert 'joins' not in changed and 'current_joins' not in changed and changed['properties'] == (1, 0)
-    for target in (lambda: Node('type', 'code'), lambda: Node('join', outer.join_id),
-                   lambda: Node('subtype', 'code.loop.tick'), lambda: 'code'):
-        with pytest.raises(StoreError):
-            store.add_property(media.name, target(), 'x')
+    at_type = store.add_property(media.name, Node('type', 'code'), 'x')
+    assert at_type.notices and at_type.address == 'code' and not at_type.orphaned
+    for target in (Node('join', outer.join_id), Node('subtype', 'code.loop.tick')):
+        stored = store.add_property(media.name, target, 'x')
+        assert stored.notices and stored.orphaned
+    assert 'joins' not in diff(before, dump(store_file(home, store)))
 
 
 @pytest.mark.req('STORE-013')
@@ -405,12 +399,14 @@ def test_hiding_a_layer_hides_the_layers_built_from_it(store):
 
 @pytest.mark.req('STORE-004')
 @pytest.mark.req('STORE-015')
-def test_a_collection_in_a_value_or_an_extra_is_refused(home, store):
+def test_a_collection_in_a_value_or_an_extra_becomes_one_item_per_member(home, store):
     small_map(store)
     notes = knowledge(store, 'notes')
     before = dump(store_file(home, store))
-    with pytest.raises(StoreError):
-        store.add_item(notes.name, KITCHEN, 'x', extra={'members': [{'a': 1}, {'b': 2}]})
-    with pytest.raises(StoreError):
-        store.add_item(notes.name, KITCHEN, ['one answer', 'another answer'])
-    assert dump(store_file(home, store)) == before
+    split = store.add_item(notes.name, KITCHEN, 'x', extra={'members': [{'a': 1}, {'b': 2}]})
+    assert split.extra is None and split.notices
+    listed = store.add_item(notes.name, KITCHEN, ['one answer', 'another answer'])
+    assert listed.notices
+    values_now = [item.value for item in store.layer_items(notes.name, KITCHEN).results]
+    assert values_now == ['x', {'members': {'a': 1}}, {'members': {'b': 2}}, 'one answer', 'another answer']
+    assert diff(before, dump(store_file(home, store)))['items'] == (5, 0)

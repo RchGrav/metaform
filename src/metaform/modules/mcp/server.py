@@ -128,19 +128,24 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
     """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033."""
     glue = arguments.pop('glue', False)
     changes: list[dict[str, Any]] = []
+    notices: list[dict[str, str]] = []
     try:
         if not isinstance(glue, bool):
             raise Stop('glue is true or false.', 'metaform help --glue')
         typed = {key: setting_value(key, value, folder) for key, value in arguments.items()}
         for key, value in typed.items():
             try:
-                old, new = settings.put(key, value, folder, glue=glue)
+                old, new, noted = settings.put(key, value, folder, glue=glue)
             except settings.SettingError as error:
                 raise Stop(str(error), error.next_step or 'metaform help switches') from None
             changes.append({'key': key, 'old': old, 'new': new})
+            notices += [{'where': key, 'message': message} for message in noted]
     except Stop as stop:
         return _error(stop)
-    return False, [result_json({'updated': changes, 'glued': glue})]
+    result: dict[str, Any] = {'updated': changes, 'glued': glue}
+    if notices:
+        result['notices'] = notices
+    return False, [result_json(result)]
 
 
 def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
@@ -170,8 +175,8 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
     if verb.caution and not confirmed:
         raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
-    nouns, switches, unknown = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
-    lines.extend(f'Notice: {key}: {name} has no argument {key}; it was ignored.' for key in unknown)
+    nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
+    lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:
         switches['layers'] = list(layers)
     return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,

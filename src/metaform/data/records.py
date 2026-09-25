@@ -12,6 +12,7 @@ from typing import Any, Generic, NamedTuple, TypeVar
 from ..errors import StoreError
 
 NODE_KINDS = ('element', 'join', 'subtype')
+PLACE_KINDS = (*NODE_KINDS, 'type')
 
 T = TypeVar('T')
 
@@ -36,15 +37,18 @@ class Record:
 
 @dataclass(frozen=True)
 class Node(Record):
-    """A place an item can attach: an element, a join or a subtype, named by address or identity id."""
+    """A place an item can attach: an element, a join or a subtype, named by address or identity id.
+
+    `type:<address>` names a bare type address; a write there attaches to an element at that address, made by the
+    writing layer when the project has none, with a notice, STORE-008.
+    """
     kind: str
     id: str
 
     def __post_init__(self) -> None:
-        if self.kind not in NODE_KINDS:
-            raise StoreError(f'{self.kind!r} is not a node kind: use element, join or subtype. '
-                             'A bare type address is not a node; create an element there.',
-                             f'metaform map knowledge op=add-element layer=<layer> address={self.id}')
+        if self.kind not in PLACE_KINDS:
+            raise StoreError(f'{self.kind!r} is not a node kind: use element, join, subtype or type.',
+                             'metaform help map node')
 
     @classmethod
     def parse(cls, text: str) -> Node:
@@ -177,6 +181,7 @@ class Item(Record):
     extra: dict[str, Any] | None = None
     state: str | None = None
     orphaned: bool = False
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,6 +195,7 @@ class Property(Record):
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
     orphaned: bool = False
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -225,6 +231,7 @@ class Layer(Record):
     reexamine: bool = False
     position: int | None = None
     provenance: Provenance | None = None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -238,8 +245,9 @@ class Version(Record):
     op: str
     reason: str | None
     evidence: str | None
-    fields: dict[str, Any] = field(default_factory=dict)
+    fields: dict[str, Any] = field(default_factory=dict[str, Any])
     refs: tuple[Ref, ...] = ()
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -300,6 +308,7 @@ class ChallengeState(Record):
     link: Node | None
     answered: str
     approved: str | None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -310,6 +319,7 @@ class Plan(Record):
     layer: str
     source: str
     item_id: str | None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
