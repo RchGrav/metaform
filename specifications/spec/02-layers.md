@@ -9,7 +9,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: A layer is a named body of inferred knowledge laid over the map. The intake produces a layer too: its layer is the one that creates most elements and joins. Every element, join, subtype and layer item records the layer that produced it. The core map is the selection of the intake layer. A new element proposed by a later pass lives in that pass's layer.
 - Why: When everything is a layer, every piece of knowledge attaches, selects, hides and records its origin the same way. That uniformity lets modules compose, and it keeps the map from becoming a special case that every module has to handle separately.
 - How it shows: Asking for an element's or join's origin always names one layer. Selecting only the intake layer shows the core map with nothing else on it.
-- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable, hideable, transitive (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer, created locked in the single atomic write of `intake_submit`, STORE-032, so the map appears whole or not at all. A knowledge layer is built and then locked, LAYER-018. Memory is mutable and never locked against change, LAYER-012.
+- Build: The layer record holds: id, name, the module that owns it, variable (LAYER-002), mutable and hideable (LAYER-004), and created time; an intake layer also holds the intake result id (MAP-040). The project is the store the layer lives in (STORE-003), and hidden state is kept as in STORE-013. Every element, join and subtype record carries a layer id, never empty. Every layer item record carries a layer id, never empty. The intake writes its elements, joins and subtypes under one intake layer, created locked in the single atomic write of `intake_submit`, STORE-032, so the map appears whole or not at all. A knowledge layer is built and then locked, LAYER-018. Memory is mutable and never locked against change, LAYER-012.
 - Acceptance:
   - After an intake through MCP, every stored element, join and subtype names the intake layer, and reading the intake layer returns all of them.
   - Storing an element, join, subtype or layer item without a layer is refused.
@@ -42,20 +42,20 @@ The receiver, purpose and encounter structure itself, element identity and subty
 
 ### LAYER-004 A layer declares its properties
 
-- Requirement: Each layer declares whether it is mutable or immutable, whether it is hideable, and whether it is transitive, and the chassis applies those rules the same way for every layer.
+- Requirement: Each layer declares whether it is mutable or immutable and whether it is hideable, and the chassis applies those rules the same way for every layer.
 - What this means:
   - Mutable: its items change in place. Memory is mutable.
   - Immutable: its items never change in place. The intake layer and correction layers are immutable: the metaform, the intake map and what correction layers added, changes only through correction layers, LAYER-011. Knowledge layers are not immutable: an agent with the knowledge-layer tool can change them at any time, LAYER-018.
   - Hideable: the layer can be hidden from views and agent context while its content and history stay stored (LAYER-006).
-  - Transitive: its items travel along the namespace tree as described in LAYER-005. Transitivity belongs to properties, MAP-022: a property attached to an element is transitive whatever layer holds it. Whether a layer-level transitive flag remains for other items is open, open question 12.
+  - Transitivity is not a layer flag. It belongs to properties, MAP-022: a property attached to an element travels along the namespace tree as described in LAYER-005, whatever layer holds it, and nothing else travels, D73.
 - Why: Declaring the behavior on the layer lets the chassis apply corrections, visibility and propagation once, uniformly. No module rebuilds these rules, and no module can apply them differently.
 - How it shows: A layer's properties are listed with it. Trying to edit an item in place in the intake layer or a correction layer is refused with one next step naming the correction operation.
-- Build: Three required boolean fields on the layer record, mutable, hideable and transitive, set when the layer is created. The chassis enforces them in every write and read path.
+- Build: Two required boolean fields on the layer record, mutable and hideable, declared by the module when it creates the layer and never changed, D12. The chassis enforces them in every write and read path.
 - Acceptance:
   - An in-place edit of an item in the intake layer is refused and names the correction operation.
-  - A transitive item at a parent address is received at a child address; a non-transitive one is not.
+  - A property on an element at a parent address is received at a child address; an item at the same element is not.
 - Relates to: LAYER-005, LAYER-006, LAYER-011, LAYER-013.
-- Status: confirmed that layers declare these properties. Whether each property is fixed for a kind of layer or chosen by the module for each layer it creates is open.
+- Status: confirmed that layers declare these properties. Chosen by the module for each layer it creates, D12; no transitive flag, D73.
 
 ### LAYER-005 Properties apply up toward the leaves and are visible down toward the trunk
 
@@ -157,7 +157,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - What this means: Memory is agents' working notes, kept at the node they concern. Memories tied to places in the metaform belong to no single agent: any agent may read them and add to them, because they exist to share knowledge. Every element and every join can be a root of memory, and memories connect to each other through relations, LAYER-013. Naming a node is enough to attach a memory there; the memory module makes the link to the node itself, and no agent builds it. One memory at a node corrects a small wrong inference right where agents read it, so the map does not have to be perfect to be useful. Memory takes part in select and mask like any other layer, so a job can include it or mask it on a branch.
 - Why: Memory's value is being cheap to add and to fix. History and provenance would make every note heavy.
 - How it shows: An agent adds an observation at an element, and the next agent reading that element receives it. Editing or deleting a memory changes it immediately, and no history is kept.
-- Build: The memory layer is created per metaform, MAP-045, on the first memory write, with kind memory, mutable true and transitive false; its name, module and variable are in STORE-020. It has no provenance record, and LAYER-010's refusal does not apply to it, because it is recognized by its kind. Updates and deletes change the stored item in place.
+- Build: The memory layer is created per metaform, MAP-045, on the first memory write, with kind memory, mutable true; its name, module and variable are in STORE-020. It has no provenance record, and LAYER-010's refusal does not apply to it, because it is recognized by its kind. Updates and deletes change the stored item in place.
 - Acceptance: After an update, a read returns only the new text, and no earlier version is stored.
 - Relates to: LAYER-013, LAYER-007, LAYER-010, STORE-018.
 - Status: confirmed. Transitive false for memory is recommended.
@@ -270,7 +270,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 
 ## Open questions
 
-1. Are mutable, hideable and transitive fixed for each kind of layer, so memory is always mutable and never transitive, or does the module choose them for each layer it creates?
+1. Answered: the module declares mutable and hideable for each layer it creates, D12.
 2. Does hiding a layer also hide the layers built from it? Recommended: yes.
 3. Dependents are re-examined after a correction layer is applied, and hiding may follow dependencies. Both need to know which layers a layer was built from. Recommended: the layer record holds the list of source layers, and the correction stack position it was built against, as part of the one record per layer. Is that acceptable, or should it live elsewhere?
 4. For a layer a person writes directly, with no model or prompt, what does its provenance record hold?
@@ -281,6 +281,6 @@ The receiver, purpose and encounter structure itself, element identity and subty
 9. Can a single item inside a layer be hidden, or only a whole layer?
 10. Properties attach only to elements, and a property at a prefix with no element goes on an element the layer creates there, MAP-022. Can any other layer item, such as a memory or a challenge, attach at a type address that no element holds?
 11. Answered: a C answer's link to the handling element or join is kept with the challenge state, STORE-040, LAYER-015.
-12. Properties carry transitivity, MAP-022, LAYER-005. Does a layer still declare a transitive flag for its other items, such as memories or challenges, or is transitivity only a property's, so the flag is removed?
+12. Answered: transitivity is only a property's, and the layer flag is removed, D73.
 13. Answered: a correction layer never changes a knowledge layer's things. Correction layers sit underneath, knowledge layers on top, and an item left with nothing to attach to is orphaned, LAYER-011.
 14. A removed join whose receiver and provider both exist again at the same places: does it show again, as an element put back at its address does, or does it stay removed until a correction adds a join? (LAYER-011, STORE-017)

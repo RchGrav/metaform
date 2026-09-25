@@ -5,7 +5,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ## Terms used in this section
 
-- **Node:** anything a layer item can attach to. The four kinds are a type address, an element, a join and a subtype.
+- **Node:** anything a layer item can attach to. The three kinds are an element, a join and a subtype. A type address is where a node sits in the namespace, not a node itself.
 - **Identity id:** the stable id of an element, join, subtype or layer item. It never changes, whatever the thing's address or content becomes.
 - **Row:** one stored version of a thing, written by one layer. A thing has one row from the layer that added it and at most one more row from each correction layer that changed or removed it.
 - **Correction stack:** the correction layers, in the order they were applied, on top of the intake map, STORE-017.
@@ -49,11 +49,12 @@ It covers the base database, the per-project store, the correction stack, layers
     path     TEXT NOT NULL             -- as resolved, for display
   );
   CREATE TABLE settings(
-    scope TEXT NOT NULL,               -- 'global' or a folders.path_key
-    owner TEXT NOT NULL,               -- 'chassis' or the declaring module id, CLI-024
-    key   TEXT NOT NULL,
-    value TEXT NOT NULL,               -- JSON encoding of the one value
-    PRIMARY KEY(scope, owner, key)
+    scope    TEXT NOT NULL,            -- 'global' or a folders.path_key
+    owner    TEXT NOT NULL,            -- 'chassis' or the declaring module id, CLI-024
+    key      TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,  -- 0 for a single value; 0, 1, 2 ... for each member of a list value
+    value    TEXT NOT NULL,            -- JSON encoding of one value: the setting's value, or one member of a list
+    PRIMARY KEY(scope, owner, key, position)
   );
   CREATE TABLE glue(
     scope TEXT NOT NULL,
@@ -86,6 +87,7 @@ It covers the base database, the per-project store, the correction stack, layers
   ```
   - A folder row is written the first time a folder-scoped setting is stored for it. Reads never write.
   - A folder's project is its `project` setting when set, otherwise the registered project whose path contains the folder, the deepest match, compared through `path_key`.
+  - A list-valued setting, such as `--modules` or `--layers`, is stored one row per member, in order, never as one list in one row, STORE-004. Reading a setting is one primary-key range read on scope, owner and key.
   - A stored setting is keyed by scope, owner and key, so a module can never read or overwrite another owner's stored value by declaring the same key, CLI-024. The current chassis keys settings by scope and key only; that changes.
   - `module_state` has a row only when a user has enabled or disabled a module. With no row, the module's own declaration decides, so a module that ships disabled stays disabled until enabled, the same three-case pattern as settings.
 - Acceptance:
@@ -112,10 +114,11 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: A join's refs are ref rows pointing at the join, not a list inside the join. A layer's items are item rows, not a document in a layer row. A row may hold the fields of the one thing it is, including one item's structured value, but never a list of other things that could be read or changed on their own.
 - Why: A collection packed into a row makes every read load and parse the whole collection to find one member, and every change rewrite all of it. A join holding a thousand refs, or a layer holding a thousand items, in one row is a document squeezed into a table. One row per thing keeps every member reachable and changeable alone.
 - How it shows: Adding one memory to a node that already has a thousand memories writes one row. Reading one ref of a join with a thousand refs reads one row.
-- Build: The tables in STORE-008 to STORE-020 follow this rule. The only JSON-encoded columns are `settings.value`, which is one setting's one value, `items.value`, which is one item's value, and `extra` on joins and items, which is the unknown fields of that one row, STORE-021.
+- Build: Every table in this section follows this rule. Elements have their own table and joins have their own table, one row per join. The only JSON-encoded columns are `settings.value`, which is one setting's value or one member of a list setting, `items.value` and `properties.value`, which are the value of that one item or property, and `extra` on elements, joins, subtypes, items and properties, which is the unknown fields of that one row, STORE-021. None of them may hold a collection: an item's value is one answer about one node, and a list of answers is written as that many items; an `extra` holding an array of records is refused; a list setting is one row per member, STORE-002. Refs, tags, layer sources, layer fields, selections and the correction stack are each one row per member with an index, never a list in a row.
 - Acceptance:
   - Write a join with 1000 refs, then add one ref. Exactly one row is inserted, and no existing row changes.
   - The schema has no column that holds a list of ids or a list of records of another kind.
+  - `set --modules a,b,c` writes three `settings` rows; `add_item` with an `extra` whose value is an array of objects is refused.
 - Relates to: STORE-005, STORE-021.
 - Status: confirmed.
 
@@ -124,10 +127,35 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: Each question agents ask has an index built for it: a thing by id, an element by address, the joins an element receives, the joins an element provides, the subtypes in a join, all items of a layer, all items at a node, the items that link to a node, and the children of a type. Table size does not change the cost of finding one answer.
 - Why: Agents navigate by meaning, one question at a time: who receives this, why, how, what do other layers say here. Each question must go straight to its answer so the structure does the orienting and the agent keeps its inference for the task.
 - How it shows: A read at one node of a store with a million items takes about as long as the same read in a store with a thousand.
-- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Some reads are allowed to read a whole table, because the table has one row per layer or per project and the answer is that table: `layers()` and the project list; the full read of `hidden_layers` during selection resolution, STORE-019 and STORE-035; and the starting selection falling back to `layers()` when the folder's `--layers` setting is unset. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
-- Acceptance: For every read operation in STORE-025, `EXPLAIN QUERY PLAN` of each SQL statement it issues contains no `SCAN` of any table other than `layers`, `projects` and `hidden_layers`, and no `SCAN` of `item_text` other than `VIRTUAL TABLE INDEX`. Every other table it touches appears with `SEARCH` on an index or primary key. This test fails if a query or an index is changed so that a lookup on `elements`, `joins`, `subtypes`, `items`, `refs`, `selections` or `types` falls back to a scan.
+- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. SQLite is never read by walking records in order: the data access object is the engine around it that reaches every object by key. Some reads are allowed to read a whole table, because the table has at most a few rows per layer or per project and the answer is that table: `layers()` and the project list; `hidden_layers`, `layer_sources` and `correction_stack` during selection resolution and stack reads, STORE-019 and STORE-035; `layer_tags` when resolving `--layers`, where SQLite may choose a scan over the tag index for a table this small; and the starting selection falling back to `layers()` when the folder's `--layers` setting is unset. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
+  - Every read that returns a list takes `limit`, default 500, and `after`, the cursor the previous page returned, and returns its next cursor. `limit=0` returns the whole list in one read, for export and for pulling a whole layer. A page is one index range read.
+  - Measured at scale: a store built from this section's SQL with 105,000 element rows, 300,000 joins, 50,000 subtypes, 1,000,000 items, 50,000 properties, 300,000 refs, 20 layers, 300 selection rows and a correction stack of 10 layers, on SQLite 3.37 under WSL2, gave these medians:
+
+    | Read | Rows | Median |
+    |---|---|---|
+    | `element` by address, with descriptor and refs | 1 | 0.18 ms |
+    | `element` by id | 1 | 0.01 ms |
+    | `joins` by receiver, in context with the relocation check, busiest receiver | 13 | 0.09 ms |
+    | `identity`, busiest provider, selection per receiver | 13 | 0.28 ms |
+    | `subtypes`, `where`, `links_to`, `history`, `stack`, `layers`, `has_intake` | 1 to 20 | 0.01 to 0.02 ms |
+    | `node` in context / raw | 10 / 5 | 0.15 / 0.09 ms |
+    | `effective_selection` at a five-segment address | | 0.04 ms |
+    | `context` at a two-segment address | 80 | 0.32 ms |
+    | `context` at the trunk `code`, first page | 500 | 5.2 ms |
+    | `context` at the trunk `code`, whole | 9,884 | 100 ms |
+    | `layer_items`, one page | 500 | 0.46 ms |
+    | `layer_items`, a whole knowledge layer | 78,772 | 128 ms |
+    | `search`, rare word / common word first page | 1 / 500 | 0.04 / 1.8 ms |
+    | `citing` a path | 20 | 0.12 ms |
+    | `intake_submit`: 500 elements, 1,500 joins, 250 subtypes, 500 descriptor items, one transaction, median of three | | 467 ms |
+    | `finish` of a correction layer: 500 element changes, 100 of them relocations with their join removals | | 105 ms |
+    | `peel` of that layer | | 69 ms |
+    | `discard` of a knowledge layer with 78,737 items | | 3.3 s |
+- Acceptance:
+  - For every read operation in STORE-025 and every write in STORE-024, `EXPLAIN QUERY PLAN` of each SQL statement it issues contains no `SCAN` of any table other than `layers`, `projects`, `hidden_layers`, `layer_sources`, `layer_tags` and `correction_stack`, and no `SCAN` of `item_text` other than `VIRTUAL TABLE INDEX`. Every other table it touches appears with `SEARCH` on an index or primary key. This test fails if a query or an index is changed so that a lookup on `elements`, `joins`, `subtypes`, `items`, `properties`, `refs`, `selections` or `types` falls back to a scan.
+  - On a store loaded to the scale above, each read returning at most one page answers in a median of 5 ms or less, and each whole-list read in a median of 2 ms plus 15 µs per row returned or less. `intake_submit` of 500 elements commits within 1 s, median of three runs, `finish` of a correction layer with 500 changes within 500 ms, and `discard` takes at most 100 µs per row removed. At full scale, each read takes no more than three times as long per row returned as the same read at one-tenth of the scale, so cost follows the answer and not the store's size. Measured: a whole layer 1.5 µs per row at both scales; the trunk `context` 4.3 µs per row at one-tenth and 10.1 µs at full scale.
 - Relates to: STORE-004, STORE-025.
-- Status: confirmed.
+- Status: confirmed. The paging arguments and the thresholds, set from the measurements above, are recommended.
 
 ### STORE-006 Writes are atomic and safe with many writers
 - Requirement: Every write operation is one transaction, and many processes can write to the same store at once without losing or corrupting data.
@@ -172,8 +200,8 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ### STORE-008 Type addresses are rows in a tree
 - Requirement: Every namespace address used in a project is a row in the `types` table, linked to its parent address.
-- What this means: The namespace is a tree of types. `code.engine.game.fps` is a type, and so are `code.engine.game`, `code.engine` and `code`, each a complete type in its own right. Writing any address writes the rows for it and for each of its prefixes that is missing. Layer items can attach to any address, whether or not an element has that type, pending LAYER-003 and D49. The store checks only an address's form, per MAP-010 and MAP-013: one or more segments separated by periods, each segment one or more lowercase letters, digits or underscores, and the whole address not a match for `^[0-9a-f]{32}$`, which is the id form of STORE-007. An address in that form is never refused for being functionally invalid.
-- Why: Selection, masking and transitive layers travel the type tree from trunk to leaf, so the tree must be stored and walkable. Knowledge layers may link any namespace address, so the store records addresses as given and leaves typology judgments to the agents and workflows that make them.
+- What this means: The namespace is a tree of types. `code.engine.game.fps` is a type, and so are `code.engine.game`, `code.engine` and `code`, each a complete type in its own right. Writing any address writes the rows for it and for each of its prefixes that is missing. An address names the same Type in every project, so the Type tree is shared by construction: this table is each store's index of the addresses it uses, identical wherever the same address appears, and needs no shared table. Nothing attaches to a bare type address: items attach to elements, joins and subtypes, and a layer that needs a place at a prefix creates an element there, STORE-039. The store checks only an address's form, per MAP-010 and MAP-013: one or more segments separated by periods, each segment one or more lowercase letters, digits or underscores, and the whole address not a match for `^[0-9a-f]{32}$`, which is the id form of STORE-007. An address in that form is never refused for being functionally invalid.
+- Why: Selection, masking and properties travel the type tree from trunk to leaf, so the tree must be stored and walkable. Knowledge layers may link any namespace address, so the store records addresses as given and leaves typology judgments to the agents and workflows that make them.
 - How it shows: A best practice attached as a property to the element `code.engine`, created by the knowledge layer when the project has none there, applies at every element whose address starts with `code.engine.`.
 - Build:
   ```sql
@@ -187,9 +215,9 @@ It covers the base database, the per-project store, the correction stack, layers
 - Acceptance:
   - Writing an element at `code.engine.game.fps` into an empty store creates exactly four `types` rows with the right parents.
   - Writing an element at `Code..Engine` is refused and writes nothing; writing one at `media.photo.jpg` succeeds.
-  - Attaching an item to an address no element has succeeds and creates its `types` rows.
+  - Attaching an item at a bare type address is refused with `StoreError` naming `add_element` at that address.
 - Relates to: STORE-015, STORE-019, LAYER-005, LAYER-007, MAP-010, MAP-011.
-- Status: confirmed for the tree and prefix rows. Whether Type records live in each project store, as here, or are shared across projects, as MAP-010 recommends, is open; see open question 17.
+- Status: confirmed for the tree and prefix rows. One shared Type tree follows D47: the address is the shared Type, and each store indexes the addresses it uses. No attachment at a bare type address follows D74.
 
 ### STORE-009 Elements
 - Requirement: Each element is stored as its identity id and its current address, and every version of it is kept. Everything else about an element is linked to it.
@@ -212,7 +240,8 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE TABLE current_elements(
     element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
     row        INTEGER NOT NULL UNIQUE REFERENCES elements(row),
-    address    TEXT NOT NULL UNIQUE
+    address    TEXT NOT NULL UNIQUE,
+    moved      INTEGER NOT NULL DEFAULT 0           -- STORE-017: stack position of the last address change
   );
   CREATE INDEX elements_by_layer ON elements(layer_id);
   ```
@@ -225,7 +254,7 @@ It covers the base database, the per-project store, the correction stack, layers
   - Adding a second element at an address that a current element already holds returns the existing element's id, marked existing, and writes no element row.
   - An intake element read back by address returns its name, name_length and role from its intake-layer descriptor item, and the `elements` row has no name, name_length or role column.
 - Relates to: STORE-007, STORE-010, STORE-017, MAP-015, MAP-016, MAP-017.
-- Status: confirmed: the element record holds only identity and address, and name, name_length, role and refs are linked to it as a descriptor item, D78. One current element per address in a project follows from an element being its address. MAP-017 requires exactly one role on every element, while this table allows an element with no role; whether an element created by a layer other than the intake must carry a role is open, see open question 18.
+- Status: confirmed: the element record holds only identity and address, and name, name_length, role and refs are linked to it as a descriptor item, D78. One current element per address in a project follows from an element being its address. An element created by a layer other than the intake carries no role, D48: roles are the intake's classification of the artifact.
 
 ### STORE-010 Joins are owned by their receiver and run one way
 - Requirement: Each join is stored with its receiver, provider, purpose, function, relation, observation and non-goal as separate columns, owned by the receiver, and pointing from receiver to provider only.
@@ -247,6 +276,7 @@ It covers the base database, the per-project store, the correction stack, layers
     observation TEXT,
     non_goal    TEXT,
     extra       TEXT,                                -- STORE-021
+    stack_at    INTEGER NOT NULL DEFAULT 0,          -- STORE-017: top stack position when written
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
     reason      TEXT,
     evidence    TEXT,
@@ -304,8 +334,10 @@ It covers the base database, the per-project store, the correction stack, layers
   );
   CREATE INDEX current_subtypes_by_join ON current_subtypes(join_id);
   CREATE INDEX current_subtypes_by_address ON current_subtypes(address);
+  CREATE INDEX subtypes_by_layer ON subtypes(layer_id);
   ```
   - `subtype_ids.join_id` fixes the join. A subtype never moves to another join.
+  - `subtypes_by_layer`, like `elements_by_layer` and `joins_by_layer`, finds a layer's rows for finishing, peeling, discarding and exporting without a scan, STORE-005.
   - Until MAP-032 is settled, `add_subtype` and a correction refuse an address that a current subtype or a current element already holds, and a current element's address may not be taken by a new subtype. The check is one read on `current_subtypes_by_address` and one on `current_elements`.
 - Acceptance:
   - A subtype written in a join is returned by the subtypes read for that join, and by no element or join read.
@@ -313,7 +345,7 @@ It covers the base database, the per-project store, the correction stack, layers
   - No read that returns elements, or joins by receiver or provider, ever returns a subtype.
   - Writing an item attached to a subtype succeeds and is returned by the node read for that subtype.
 - Relates to: STORE-010, STORE-015, MAP-030, MAP-031, MAP-032.
-- Status: confirmed for placement and storage. The address rule is recommended and follows MAP-032 until open questions 3 and 4 are answered.
+- Status: confirmed for placement and storage. A subtype owns no joins; its joins lift to the parent when it is annealed, D3. A part serving two joins is its own element, so a subtype lives in exactly one join and its address is held by no other subtype or element, D4. A subtype holds no subtypes, D5: `subtype_ids.join_id` references `join_ids`, so a subtype can only live in a join.
 
 ### STORE-012 Refs
 - Requirement: Each ref is one key and value row attached to one version row of an element, join, subtype, property or layer item.
@@ -324,8 +356,8 @@ It covers the base database, the per-project store, the correction stack, layers
   ```sql
   CREATE TABLE refs(
     ref_id    INTEGER PRIMARY KEY,
-    owner     TEXT NOT NULL CHECK(owner IN ('element','join','subtype','item')),
-    owner_row INTEGER NOT NULL,   -- elements.row, joins.row, subtypes.row or items.row
+    owner     TEXT NOT NULL CHECK(owner IN ('element','join','subtype','item','property')),
+    owner_row INTEGER NOT NULL,   -- elements.row, joins.row, subtypes.row, items.row or properties.row
     position  INTEGER NOT NULL,   -- order as written
     key       TEXT NOT NULL,
     value     TEXT NOT NULL
@@ -344,8 +376,8 @@ It covers the base database, the per-project store, the correction stack, layers
 ## Layers
 
 ### STORE-013 Layers and their declared behavior
-- Requirement: Each layer is a row carrying its name, its module and its declared behavior: mutable or immutable, hideable, and transitive.
-- What this means: Everything Metaform holds is a layer, the intake's map included. A layer carries one inferred variable. Declaring behavior on the layer lets the store apply corrections, visibility and propagation the same way for every layer.
+- Requirement: Each layer is a row carrying its name, its module and its declared behavior: mutable or immutable, and hideable.
+- What this means: Everything Metaform holds is a layer, the intake's map included. A layer carries one inferred variable. Declaring behavior on the layer lets the store apply corrections and visibility the same way for every layer. Transitivity is not a layer flag: an item is transitive exactly when it is a property, STORE-039, D73.
 - Why: When every layer attaches the same way and declares its behavior, layers compose, and a module can add one without knowing about any other. No module rebuilds correction, hiding or propagation rules of its own.
 - How it shows: `metaform query layers` and `metaform map layers` show each layer with its id, name, kind, module, completion and its three properties.
 - Build:
@@ -358,7 +390,6 @@ It covers the base database, the per-project store, the correction stack, layers
     variable   TEXT NOT NULL CHECK(variable <> ''),   -- LAYER-002: the one question the layer answers
     mutable    INTEGER NOT NULL CHECK(mutable IN (0, 1)),
     hideable   INTEGER NOT NULL CHECK(hideable IN (0, 1)),
-    transitive INTEGER NOT NULL CHECK(transitive IN (0, 1)),
     result_id  TEXT,                                  -- MAP-040: the intake result id, on an intake layer
     kind       TEXT NOT NULL DEFAULT 'layer'
                CHECK(kind IN ('layer','intake','memory','correction')),  -- STORE-032, STORE-017
@@ -366,15 +397,24 @@ It covers the base database, the per-project store, the correction stack, layers
     ready      TEXT                                   -- STORE-032: NULL while the layer is building, the finish time once finished
   );
   CREATE TABLE hidden_layers(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));
+  CREATE TABLE layer_fields(                          -- D21: the fields of the layer's one variable, one row per field
+    layer_id TEXT NOT NULL REFERENCES layers(layer_id),
+    position INTEGER NOT NULL,
+    name     TEXT NOT NULL,
+    PRIMARY KEY(layer_id, position)
+  );
   ```
-  - A layer's properties are set when it is created and never change.
+  - A layer's behavior is declared by the module that creates it, at creation, and never changes, D12.
+  - A layer may declare the fields of its variable, such as imperative, why and evidence, one `layer_fields` row per field; an item's value is then one object with those fields. A layer with no declared fields takes any single value.
+  - Hiding follows dependencies, D13: a layer whose `layer_sources`, STORE-036, include a hidden layer, directly or through other sources, is left out wherever a hidden layer is. The closure is computed from `hidden_layers` and `layer_sources`, both a few rows per layer, in the same read that resolves the selection.
   - A layer name is one to 128 characters of letters, digits, periods, underscores and hyphens, and is never a match for `^[0-9a-f]{32}$`. Every operation that takes a layer takes a layer reference: a layer id, per STORE-007, or a name, looked up through the `name` unique index.
   - Hiding writes a `hidden_layers` row and is allowed only for a hideable layer. A correction layer is never hideable, STORE-017. Hidden layers are left out of node reads and selection results unless the read asks for them by name.
 - Acceptance:
   - Hiding a layer declared not hideable returns the error in STORE-026 and writes nothing.
   - A hidden layer's items are absent from the node read and present when that layer is read by name.
+  - Hiding layer S hides layer D whose sources include S, and unhiding S shows D again.
 - Relates to: STORE-014, STORE-016, STORE-017, STORE-018, LAYER-001, LAYER-002, LAYER-004, LAYER-006, MAP-040.
-- Status: confirmed for the three properties. Where the properties are declared is open question 5. Hiding by dependency is open question 6.
+- Status: confirmed for mutable and hideable. Declared by the module at creation, D12; hiding follows dependencies, D13; declared variable fields, D21; no transitive flag, D73.
 
 ### STORE-014 Everything belongs to the layer that produced it
 - Requirement: Every element, join, subtype and layer item records the layer that produced it.
@@ -388,7 +428,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ### STORE-015 Layer items carry one variable at one node
 - Requirement: Each layer item is one row holding one value of its layer's variable, attached to one node, with an optional link to another node.
-- What this means: An item attaches to a type address, an element, a join or a subtype. Its value is that layer's variable at that node, such as one best practice, one challenge or one memory observation. The optional link points at another node; a memory relation links one node to another. Links are items, so the whole structure stays navigable from any node, and links may form cycles.
+- What this means: An item attaches to an element, a join or a subtype, never to a bare type address, D74. An item about no map node attaches to an element its own layer creates for it, D22. Its value is that layer's variable at that node, such as one best practice, one challenge or one memory observation. The optional link points at another node; a memory relation links one node to another. Links are items, so the whole structure stays navigable from any node, and links may form cycles.
 - Why: One variable per layer is what lets any set of layers be selected together. Links as items mean an item points at the real node instead of copying it, and following links backward from the map shows everything that refers to a node.
 - How it shows: Reading memory at `code.guard.switch.gateway` by incoming links lists every memory relation that points at it.
 - Build:
@@ -397,10 +437,10 @@ It covers the base database, the per-project store, the correction stack, layers
     row         INTEGER PRIMARY KEY,
     item_id     TEXT NOT NULL,
     layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-    target_kind TEXT NOT NULL CHECK(target_kind IN ('type','element','join','subtype')),
-    target_id   TEXT NOT NULL,     -- types.address, or an identity id
-    value       TEXT NOT NULL,     -- JSON: this one item's value
-    link_kind   TEXT CHECK(link_kind IN ('type','element','join','subtype')),
+    target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join','subtype')),
+    target_id   TEXT NOT NULL,     -- an identity id
+    value       TEXT NOT NULL,     -- JSON: this one item's value, never a list of things
+    link_kind   TEXT CHECK(link_kind IN ('element','join','subtype')),
     link_id     TEXT,
     extra       TEXT,
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
@@ -417,18 +457,20 @@ It covers the base database, the per-project store, the correction stack, layers
     link_kind   TEXT,
     link_id     TEXT
   );
-  CREATE INDEX current_items_by_layer  ON current_items(layer_id, target_kind, target_id);
+  CREATE INDEX current_items_by_layer  ON current_items(layer_id, row);
   CREATE INDEX current_items_by_target ON current_items(target_kind, target_id, layer_id);
   CREATE INDEX current_items_by_link   ON current_items(link_kind, link_id, layer_id);
+  CREATE INDEX items_by_layer          ON items(layer_id);
   ```
-  - The data access object checks that an identity target exists in its identity table, and writes `types` rows for a type target, STORE-008.
-  - `value` is any JSON value: a string, number, boolean, array, object or null. It is the answer to the layer's one variable at this node. The store does not judge its content.
+  - `current_items_by_layer` pages a whole layer in `row` order; a layer at one node is answered by `current_items_by_target`. `items_by_layer` finds a layer's version rows for finishing, peeling, discarding and exporting without a scan, STORE-005.
+  - The data access object checks that the target exists in its identity table.
+  - `value` is one JSON value: a string, number, boolean, object or null, the answer to the layer's one variable at this node. When the layer declares fields, STORE-013, it is one object with those fields. It never holds a list of answers or a list of records: several answers at one node are several items, STORE-004. The store does not judge its content.
   - `extra` is a JSON object or NULL. It holds any further fields the writer supplies for this one item that are not the variable's answer, STORE-021. An `extra` that is not an object is refused.
 - Acceptance:
   - All items of a layer, all items at a node, and all items linking to a node are each returned by one read using the matching index.
   - An item linking from A to B and another from B to A both store and both read back.
 - Relates to: STORE-004, STORE-005, STORE-020, LAYER-003, LAYER-015.
-- Status: confirmed for attachment to elements, joins and subtypes, and for links. Attaching an item at a type address with no element is used by LAYER-005 and MAP-011 but is not in LAYER-003's list of attachment targets; see open question 19. The fields inside a layer's value are open question 7.
+- Status: confirmed for attachment to elements, joins and subtypes, and for links. No attachment at a bare type address, D74. Declared variable fields, D21. One value per item, never a collection, is confirmed, STORE-004.
 
 ### STORE-016 Provenance is one record per layer
 - Requirement: Each layer other than memory has exactly one provenance row, recording the module and workflow that created it, the prompt, the model, the role, and whether it was blinded.
@@ -454,7 +496,7 @@ It covers the base database, the per-project store, the correction stack, layers
   - Creating a layer with provenance and then writing 100 items leaves exactly one provenance row for that layer, with its fields unchanged.
   - A memory layer has no provenance row.
 - Relates to: STORE-013, LAYER-010, REQ-101 to REQ-105 as corrected.
-- Status: confirmed. What a layer written by a person or by a deterministic import records is open question 8. Whether a second run adds to the same layer is open question 9.
+- Status: confirmed. A layer written by a person or a plain import has the same record, with `role` saying who or what wrote it, such as `person` or `import`, and `model` and `prompt` empty, D15. A second run of a workflow creates a new layer with its own record, D16.
 
 ### STORE-017 Correction layers are stacked in order and are the only way to change the metaform
 - Requirement: The metaform changes only through correction layers, applied one on top of another in the order they were finished; they cannot be toggled, and only the top one can be peeled off.
@@ -468,28 +510,29 @@ It covers the base database, the per-project store, the correction stack, layers
     layer_id TEXT NOT NULL UNIQUE REFERENCES layers(layer_id)
   );
   ```
-  - A correction layer is a layer of kind `correction`, immutable, not hideable and not transitive, with its one provenance record, STORE-013 and STORE-016. It is written through the knowledge-layer tool like any layer, STORE-032: while building, its rows are written and edited freely, and nothing in it is applied.
+  - A correction layer is a layer of kind `correction`, immutable and not hideable, with its one provenance record, STORE-013 and STORE-016. It is written through the knowledge-layer tool like any layer, STORE-032: while building, its rows are written and edited freely, and nothing in it is applied.
   - Its rows are versions in the ordinary tables, `elements`, `joins`, `subtypes`, `properties` and `items`, with `layer_id` set to the correction layer and `op` saying what the row does:
     - `add`: a new thing with a new identity id, added to the metaform permanently.
     - `change`: a complete new version of an existing thing, under the same identity id. Fields not being changed are copied forward from the thing's current version, and so are its refs unless a complete new list is given, STORE-012. A subtype's address or end and a join's provider are changes. A join's receiver and a subtype's join never change, STORE-034; moving a join to another receiver, or a subtype to another join, is a removal and an add in the same correction layer.
-    - Relocating an element, changing its address, is a `change` under the same identity id. Everything attached to the element, items, properties and memories of every layer, always follows it, because they point at its identity id, and at that point what is attached is most likely a property. An element is only a namespace address, so removing it does not drop what is attached: those things are orphaned, and they show again if an element is put back at the same address. Putting an element back at an address whose element was removed is an `add` row that reuses that removed element's identity id, so orphaned things reattach without being rewritten. An `add` at an address that has had more than one removed element reuses the most recently removed one. The element's joins never follow: a join is the face between one receiver and one provider, so relocating either end makes it disappear. Applying the relocation removes every current join where the element is receiver or provider, with the subtypes in those joins, and what was attached to those joins is no longer current. A join at the new place is a different join, added in the same correction layer with a new identity id. Element records are only a namespace address and hold no data of their own; things are linked to them, which is why an element's attachments follow it and a join's cannot.
+    - Relocating an element, changing its address, is a `change` under the same identity id. Everything attached to the element, items, properties and memories of every layer, always follows it, because they point at its identity id, and at that point what is attached is most likely a property. An element is only a namespace address, so removing it does not drop what is attached: those things are orphaned, and they show again if an element is put back at the same address. Putting an element back at an address whose element was removed is an `add` row that reuses that removed element's identity id, so orphaned things reattach without being rewritten. An `add` at an address that has had more than one removed element reuses the most recently removed one. The element's joins never follow: a join is the face between one receiver and one provider, so relocating either end makes it disappear. Applying the relocation writes, into the same correction layer, a `remove` row for every current join of the metaform, the intake layer's and earlier correction layers', where the element is receiver or provider, and one for each subtype in those joins, so `history` and `peel` see exactly what the relocation removed. A join of a knowledge or memory layer at either end is not removed, because a correction never changes a knowledge layer's things: it is orphaned. `current_elements.moved` holds the stack position of the correction that last changed the element's address, and every join row holds `stack_at`, the top stack position when it was written; a knowledge or memory join is orphaned when either end's `moved` is greater than its `stack_at`. What was attached to a removed or orphaned join is no longer current. A join at the new place is a different join, added in the same correction layer with a new identity id. Element records are only a namespace address and hold no data of their own; things are linked to them, which is why an element's attachments follow it and a join's cannot.
     - `remove`: the thing is no longer in the metaform.
     Each `change` and `remove` row carries `reason` and, optionally, `evidence`. Rows with `op` `add` in the intake layer, knowledge layers and memory are the things those layers wrote.
   - A correction layer corrects the metaform: the intake layer's things and things added by earlier correction layers. It never changes a knowledge layer's things. Correction layers always beat knowledge layers: they sit underneath, and knowledge layers sit on top of the metaform the stack leaves, LAYER-011.
   - `finish` on a correction layer, in one transaction: checks the rules of STORE-034 against the state after the layer is applied, and refuses the finish naming the first violation, writing nothing; inserts the layer at the next position on top of `correction_stack`; and applies it to the current tables, `current_elements`, `current_joins`, `current_subtypes`, `current_properties` and `current_items`: each `add` and `change` row becomes the thing's current row, and each `remove` deletes the thing's current row. It then writes re-examination marks, STORE-036.
-  - `peel(layer)` accepts only the layer at the highest position. In one transaction it deletes that stack row, recomputes the current row of every thing the layer touched from the remaining stack, and returns the layer to building, STORE-032, so it can be edited and finished again on top, or discarded. Its provenance record stays. It writes re-examination marks for what it undid, STORE-036. Peeling any other layer is refused with `StoreError` whose next step peels the top layer.
+  - `peel(layer)` accepts only the layer at the highest position. In one transaction it deletes that stack row, recomputes the current row of every thing the layer touched from the remaining stack, found through the `_by_layer` indexes, each thing's best remaining version one read on its `UNIQUE(id, layer_id)` index, and recomputes `moved` for every element it relocated, and returns the layer to building, STORE-032, so it can be edited and finished again on top, or discarded. Its provenance record stays. It writes re-examination marks for what it undid, STORE-036. Peeling any other layer is refused with `StoreError` whose next step peels the top layer.
   - The current tables always equal the intake map with the whole stack applied in order, with every knowledge and memory layer's own rows on top, unchanged by any correction; they are what every read uses.
   - `select`, `mask`, `clear`, `hide` and `unhide` on a correction layer are refused, and `--layers` never names one, CLI-033. A correction layer's rows are part of every read, in context and raw.
   - Things a correction removes keep their identity rows, STORE-007, and every row of their history.
-  - Orphans: a row of a knowledge or memory layer, an item, a property or a join, whose target is no longer current after the stack is applied has nothing left to attach to and is orphaned. A target is an item's node, a property's element, or a join's receiver or provider. Items and properties on a relocated element are not orphaned, because they point at its identity id, which is still current. A join where a relocated element was receiver or provider is removed by the relocation, so items and subtypes on it are orphaned. An orphan stays stored. It is absent from every read in context. A raw read returns it with `orphaned: true`. The check is made when a read joins through the current tables; nothing is rewritten when an item becomes orphaned or current again, so peeling the correction that orphaned it shows it again.
+  - Orphans: a row of a knowledge or memory layer, an item, a property or a join, whose target is no longer current after the stack is applied has nothing left to attach to and is orphaned. A target is an item's node, a property's element, or a join's receiver or provider. Items and properties on a relocated element are not orphaned, because they point at its identity id, which is still current. A join of the metaform where a relocated element was receiver or provider is removed by the relocation, and a knowledge or memory join there is orphaned, so items and subtypes on either are orphaned. A knowledge or memory join orphaned because an end was removed shows again when that element is put back at the same address, D80; a join of the metaform that a correction removed stays removed until a correction adds a join. An orphan stays stored. It is absent from every read in context. A raw read returns it with `orphaned: true`. The check is made when a read joins through the current tables; nothing is rewritten when an item becomes orphaned or current again, so peeling the correction that orphaned it shows it again.
 - Acceptance:
   - Two correction layers change the same element's name; after both are finished, reads show the second one's name, and `history` shows the intake's version, then the first, then the second.
   - Peeling the lower of two correction layers is refused and changes nothing; peeling the top one restores exactly the reads that held before it was finished, and it can be finished again.
   - `select`, `mask` and `hide` on a correction layer are refused and write nothing.
   - After a correction layer removes a join, no read in context or raw returns it as current, and `history` still returns every version of it.
+  - A correction layer relocates an element that is the receiver of one intake join and one knowledge-layer join. After `finish`, the correction layer holds a `remove` row for the intake join, the knowledge join's row is unchanged and absent in context, and both are absent from `joins` in context. After `peel`, both joins are current again and the element is back at its old address.
   - After a correction layer removes an element that a finished knowledge layer's item is attached to, the item is absent from `node` in context, `node` with `raw=True` returns it with `orphaned: true`, and the knowledge layer's rows are unchanged; peeling the correction shows the item in context again.
 - Relates to: STORE-007, STORE-012, STORE-013, STORE-032, STORE-034, STORE-036, LAYER-011, MAP-015.
-- Status: confirmed for the model: correction layers are chronological and stacked, the only way to remove, relocate or permanently add something to the metaform, never toggled, and removed only by peeling from the top or covered by a layer on top. Confirmed also: correction layers sit underneath knowledge layers, never change a knowledge layer's things, and an item left with nothing to attach to is orphaned and not shown. A raw read listing orphans marked as orphaned is recommended. The storage mechanics, the `op` column, applying on `lock`, and `peel` returning a layer to building, are recommended.
+- Status: confirmed for the model: correction layers are chronological and stacked, the only way to remove, relocate or permanently add something to the metaform, never toggled, and removed only by peeling from the top or covered by a layer on top. Confirmed also: correction layers sit underneath knowledge layers, never change a knowledge layer's things, and an item left with nothing to attach to is orphaned and not shown. A raw read listing orphans marked as orphaned is recommended. The storage mechanics, the `op` column, applying on `finish`, explicit `remove` rows for joins a relocation removes, the `moved` and `stack_at` check that orphans knowledge and memory joins, and `peel` returning a layer to building, are recommended.
 ### STORE-018 Mutable layers change in place
 - Requirement: Items in a mutable layer are updated and deleted in place, with no history kept.
 - What this means: Memory is the main mutable layer. An agent adds an observation, changes it, or deletes it, and the store holds only the current state, the way the reference memory server does.
@@ -504,7 +547,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ### STORE-019 Selection and mask are stored where the flow changes
 - Requirement: Selection and mask are stored as rows at type addresses, and the effective selection at an address is computed from trunk to leaf as `effective = (incoming & mask) | select`.
-- What this means: The project selects every layer by default. An address selects nothing of its own and masks nothing by default. A mask row at an address stops a layer flowing into that branch. A select row turns a layer on at that address and below. A read may supply its own root selection, such as a workflow's, and masks still apply. An element takes the effective selection at its address. A join taking its receiver's selection is recommended and open, per LAYER-007. A subtype taking its own address's selection is recommended.
+- What this means: The project selects every layer by default. An address selects nothing of its own and masks nothing by default. A mask row at an address stops a layer flowing into that branch. A select row turns a layer on at that address and below. A read may supply its own root selection, such as a workflow's, and masks still apply. An element takes the effective selection at its address. A join takes its receiver's selection, D17, because the receiver owns the join. A subtype takes its own address's selection. Selection, masking and the transitive rules of properties are part of the data access object: every read applies them inside the engine, and no caller computes or bypasses them.
 - Why: A write is needed only where the flow changes, so the stored data is just the places where it changes. The same selection applies on every path an agent reads through, so an excluded layer cannot leak in through a property or provider path.
 - How it shows: With a mask for the C practices layer at `code.installer`, a read at `code.installer.bash` omits C practices, while a read at `code.engine` includes them.
 - Build:
@@ -517,22 +560,22 @@ It covers the base database, the per-project store, the correction stack, layers
   );
   CREATE INDEX selections_by_layer ON selections(layer_id);
   ```
-  Resolution for an address: start from the starting selection: the read's own starting selection when it supplies one, else the layers toggled on by the folder's `--layers` setting, CLI-033, with each tag expanded through `layer_tags`, else every finished layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
+  Resolution for an address: start from the starting selection: the read's own starting selection when it supplies one, else the layers toggled on by the folder's `--layers` setting, CLI-033, with each tag expanded through `layer_tags`, else every finished layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers and every layer that depends on a hidden layer, STORE-013. Each step is one primary-key range read on `selections`. A read that covers a subtree, such as `context` or `identity`, reads the selection rows of the address's prefixes and of the whole subtree once, the subtree as one primary-key range from `A.` up to but not including `A/`, and resolves every address beneath from those rows in memory, parent before child, so the selection costs a fixed number of reads however many addresses the answer spans. The resolved set is what every node read uses.
 - Acceptance:
   - The mask example above gives the stated results.
   - A layer masked at an element's address does not appear in the node read for a join that element receives, nor in the provider read that reaches that element.
 - Relates to: STORE-008, STORE-013, STORE-025, REQ-121, REQ-122, LAYER-006, LAYER-007.
-- Status: confirmed for the rule. Storing it as rows at type addresses is recommended. The selection of joins and subtypes is open, per LAYER-007 and LAYER open question 6.
+- Status: confirmed for the rule, and for joins taking their receiver's selection, D17. Storing it as rows at type addresses, and resolving a subtree from one range read, are recommended.
 
 ## Memory
 
 ### STORE-020 Memory follows the reference memory server over the map's own nodes
 - Requirement: Memory is a mutable layer whose entities are the map's nodes, whose observations are items, and whose relations are linked items, reached through the reference memory server's operations.
-- What this means: The operations are those of LAYER-013: create entities, create relations, add observations, delete entities, delete observations, delete relations, read graph, search nodes and open nodes. An entity is an element, join, subtype or type address, named by its address or its identity id, with its node kind as its type. Each observation is one item in the memory layer attached to that node. Each relation is one item attached to the `from` node, linking to the `to` node, with the relation type as its value. Every node is already an entity of the memory layer without any row being written for it. Memories at the map's nodes are open to every agent to read, because they exist to share knowledge.
+- What this means: The operations are those of LAYER-013: create entities, create relations, add observations, delete entities, delete observations, delete relations, read graph, search nodes and open nodes. An entity is an element, join or subtype, named by its address or its identity id, with its node kind as its type. Creating an entity for a name that is not a node of the map creates a new element at that address in the memory layer, D18. Each observation is one item in the memory layer attached to that node. Each relation is one item attached to the `from` node, linking to the `to` node, with the relation type as its value. Every node is already an entity of the memory layer without any row being written for it. Memories at the map's nodes are open to every agent to read, because they exist to share knowledge.
 - Why: Agents already know the memory server's interface. Attaching memory to the map's own nodes means a single memory corrects a wrong inference where agents read it. The reference server keeps its whole graph in one file that it rewrites on every change; this store keeps each observation and relation as its own indexed row.
 - How it shows: `memory open code.manager.route` returns the node with its observations and relations, including relations other nodes hold toward it.
 - Build:
-  - The default memory layer has the name `memory`, kind `memory`, module `memory`, and the variable `What agents have noted at this node.` It is mutable, hideable and not transitive, with no provenance row. The first memory write operation in a project creates it, inside that operation's transaction. A layer is recognized as memory by its kind, never by its name.
+  - The default memory layer has the name `memory`, kind `memory`, module `memory`, and the variable `What agents have noted at this node.` It is mutable and hideable, with no provenance row. The first memory write operation in a project creates it, inside that operation's transaction. A layer is recognized as memory by its kind, never by its name.
   - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are ready and not hidden, unless the call names a layer, in which case it searches that layer alone:
     ```sql
     CREATE VIRTUAL TABLE item_text USING fts5(value, content='items', content_rowid='row');
@@ -554,7 +597,7 @@ It covers the base database, the per-project store, the correction stack, layers
   - A relation from A to B appears when opening A and when opening B.
   - Search finds an observation by a word in it, on Linux, macOS and Windows.
 - Relates to: STORE-015, STORE-018, LAYER-012, LAYER-013, REQ-126 as corrected, MCP.
-- Status: confirmed for the interface and for elements and joins as its nodes, per LAYER-013. Subtypes and type addresses as memory nodes are recommended; they follow from LAYER-003, where every layer attaches at subtypes. FTS5 for search, and the default layer's fields, are recommended. Whether memory can create a node that is not already in the map is open question 10.
+- Status: confirmed for the interface and for elements and joins as its nodes, per LAYER-013. Subtypes as memory nodes are recommended; they follow from LAYER-003, where every layer attaches at subtypes. No memory at a bare type address, D74. Memory creating a new element for a name not in the map, D18. FTS5 for search, and the default layer's fields, are recommended.
 
 ## Extension and module data
 
@@ -576,7 +619,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - Build: `Context.data`, the per-module folder under the home, is removed from the common base. The helloworld module's history becomes items in a mutable layer it declares. Every template verb and handler that reads or writes that layer calls `ctx.require_store()`, so in a folder with no project it stops with `Next: metaform add project <id> <path>`. The template's event subscriber receives a Context built from the publisher's folder and project, BASE-028, and so writes to the same project's store. Its choices function receives a Context and returns no choices when the store is None, CLI-019.
 - Acceptance: After exercising every helloworld verb, the home contains no file outside the base database and project stores.
 - Relates to: STORE-023, STORE-024, BASE-005, BASE-019.
-- Status: recommended. Where an item goes when it is about no map node is open question 11.
+- Status: recommended. An item about no map node attaches to an element the module's layer creates for it, D22.
 
 ## The data access object
 
@@ -585,7 +628,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: A module never touches SQLite, table names or files. It asks the data access object for things by address or identity id and gets objects back. The CLI and the MCP module use the same object, so every surface reads and writes identically.
 - Why: A module built on the base cannot corrupt the map, cannot drift from the CLI or MCP, and keeps working when the storage underneath changes. Layers only compose if every module writes them the same way.
 - How it shows: A module written from the template stores and reads its data with no import of `sqlite3`.
-- Build: The public import is `from metaform.data import Store, Node, StoreError`. A verb receives the store for its context's project as `ctx.store`, BASE-028. When the folder resolves to no project, `ctx.store` is None, and `ctx.require_store()` raises `Stop('No project for this folder.', 'metaform add project <id> <path>')`. Every map, intake and memory verb calls `ctx.require_store()`. `Store(project_id)` for an id that is not registered raises `StoreError` with the next step `metaform list projects`. Chassis verbs that act on data, such as `export`, `import` and `query`, resolve the project the same way. Objects returned are frozen dataclasses: `Element`, `Join`, `Subtype`, `Item`, `Property`, `Layer`, `Provenance`, `Version`. A `Node` is `(kind, id)` where kind is `type`, `element`, `join` or `subtype` and id is an address or identity id.
+- Build: The public import is `from metaform.data import Store, Node, StoreError`. A verb receives the store for its context's project as `ctx.store`, BASE-028. When the folder resolves to no project, `ctx.store` is None, and `ctx.require_store()` raises `Stop('No project for this folder.', 'metaform add project <id> <path>')`. Every map, intake and memory verb calls `ctx.require_store()`. `Store(project_id)` for an id that is not registered raises `StoreError` with the next step `metaform list projects`. Chassis verbs that act on data, such as `export`, `import` and `query`, resolve the project the same way. Objects returned are frozen dataclasses: `Element`, `Join`, `Subtype`, `Item`, `Property`, `Layer`, `Provenance`, `Version`. A `Node` is `(kind, id)` where kind is `element`, `join` or `subtype` and id is an address or identity id.
   - Results: every object the data access object returns has `to_dict()`, giving plain JSON-ready data with identity ids, addresses and every field. The CLI's `--json` output and the MCP tool's JSON result are both that data, BASE-036.
 - Acceptance:
   - No module under `src/metaform/modules` imports `sqlite3`.
@@ -603,7 +646,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
   | Operation | Inputs | Output | Errors |
   |---|---|---|---|
-  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=(), ready=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: created building, or ready when `ready=True`, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `layer(name, module, variable, *, kind='layer', mutable, hideable, fields=(), tags=(), provenance=None, result_id=None, sources=(), ready=False)` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: created building, or ready when `ready=True`, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable and hideable | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
   | `atomic()` | a context block | every write inside the block commits together when the block ends, or none does if it raises; a layer created in it with `ready=True` becomes visible, ready, at commit | nested `atomic()` joins the outer block |
   | `finish(layer)` | | `Layer` with `ready` set; a correction layer is applied on top of the stack, STORE-017 | layer unknown; already finished; a correction layer failing STORE-034 |
   | `edit(thing, changes)` | thing is an element, join, subtype, property or item written in a knowledge layer, or in a correction layer still building; `changes` per STORE-034 | the changed row, in place, with no new version | thing in the intake layer, a finished correction layer or memory; a key not allowed for the thing's kind |
@@ -645,9 +688,9 @@ It covers the base database, the per-project store, the correction stack, layers
   | `subtypes(join)` | the subtypes in a join | `current_subtypes_by_join` |
   | `where(address)` | the element, or the join holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
   | `children(address)` | the next types up the tree, toward the leaves | `types_by_parent` |
-  | `layer_items(layer, target=None)` | all of a layer, or a layer at one node | `current_items_by_layer` |
+  | `layer_items(layer, target=None)` | all of a layer, paged in row order, or a layer at one node | `current_items_by_layer` on `(layer_id, row)`; `current_items_by_target` for one node |
   | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are finished and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
-  | `context(address, selection=None)` | the applying and the visible transitive items at an address, as two lists, STORE-035 | `current_items_by_target`; `types` primary key range |
+  | `context(address, selection=None)` | the applying and the visible properties at an address, as two lists, the visible list paged in address order, STORE-035 | `current_elements` address, one lookup per prefix and one range for the subtree; `current_properties_by_element`; `selections` primary key |
   | `links_to(target, layer=None)` | items in any layer linking to a node | `current_items_by_link` |
   | `citing(key, value)` | every current element, join, subtype and item whose refs hold that key and value, per MAP-021 | `refs_by_key_value` |
   | `history(thing)` | every version of a thing: the row that added it, then each correction layer's row in stack order, each with its layer, position, op, reason and evidence | `UNIQUE(id, layer_id)`; `correction_stack` |
@@ -659,9 +702,10 @@ It covers the base database, the per-project store, the correction stack, layers
   | `metaforms(project)`, `active_metaform(project)` | the project's metaforms with their names and creation times, and which one is active, STORE-041 | `metaforms` `UNIQUE(project_id, name)`; `active_metaforms` primary key |
   | `project()` | the project record with its target, STORE-031 | `projects` primary key |
 
+- Paging: every read in this table that returns a list takes `limit=500` and `after=None` and returns `(results, next)`, where `next` is the cursor for the following page or None, STORE-005. The cursor is the last row's key in the read's index order: the row for `layer_items`, the address for `context` and `children`, the identity id for `joins` and `identity`, the FTS rank position for `search`. `limit=0` returns the whole list.
 - Joins from layers:
   - Every read that returns a join, `joins`, `identity`, `node`, `context`, `links_to`, `where` for a subtype, and the graph and export reads, returns with each join its `layer_id` and `layer`, the name of the layer it comes from, read from the join row's `layer_id` through the `layers` primary key. Subtypes carry the layer of the join that holds them.
-  - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is finished, not hidden, and in the effective selection at its receiver's address, LAYER-007. With `raw=True`, every stored join is returned, each with its layer name.
+  - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is finished, not hidden, and in the effective selection at its receiver's address, LAYER-007, and, for a knowledge or memory join, when neither end's `moved` exceeds its `stack_at`, STORE-017. Both ends are read through `current_elements` by primary key in the same statement. With `raw=True`, every stored join is returned, each with its layer name.
   - The intake map's joins go through the same filter, so masking the intake layer at an address removes its joins there like any other layer's.
 - Acceptance:
   - STORE-005's plan test covers every row of this table.
@@ -691,7 +735,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - How it shows: A project exported from one machine and imported on another answers every read the same way.
 - Build:
   - Commands: `metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...` and `metaform import <file> [<project>]`. Every argument is a noun, BASE-043: `file` and `layer` are optional nouns written as `name=value`, because what to export is data the verb acts on, not a setting. The project, or the argument `all`, CLI-002, is the one positional noun of `export`, optional, and is read as the first word that contains no `=`; `import` likewise takes its file and then an optional project positionally. With no project, export takes the folder's project. `all` exports every registered project. With no file, export writes the document to standard output. `layer` may repeat and limits the export to those layers. Import with no project uses the project record in the document; with a project id, it imports into that registered project.
-  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "metaforms": [M, ...], "active_metaform": <metaform id>}`, and each `M` is `{"metaform": {"metaform_id", "name", "created"}, "types": [...], "layers": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "refs": [...], "requires": [...]}`. By default export carries every metaform of the project; `metaform=<name>` limits it to one.
+  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "metaforms": [M, ...], "active_metaform": <metaform id>}`, and each `M` is `{"metaform": {"metaform_id", "name", "created"}, "types": [...], "layers": [...], "layer_fields": [...], "layer_tags": [...], "layer_sources": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "properties": [...], "refs": [...], "challenge_states": [...], "plans": [...], "requires": [...]}`. By default export carries every metaform of the project; `metaform=<name>` limits it to one.
   - Each list holds one object per row, including every version. A row object has one member per column of its table, named as the column, except the integer `row` and `owner_row` columns. `M` also holds `"correction_stack"`, the correction layer ids in stack order; import rebuilds `correction_stack` from it and recomputes the current tables. `hidden` is a list of layer ids. `requires` is a list of objects, `{"kind": "element"|"join"|"subtype"|"item", "id": <identity id>}` or `{"kind": "type", "address": <address>}`. Rows refer to each other by identity id and layer id, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and layer id. On import, new `row` values are assigned and every reference is remapped through identity id and layer id.
   - A layer-limited export carries that layer's rows and its provenance, plus `requires`: the identity ids and type addresses its rows point at that belong to other layers. Import refuses a document whose `requires` are not present in the target store, naming the first missing one, with the next step to import the project's map first.
   - Importing a project into a home where it is not registered registers it from the document's project record. Importing into a registered project keeps that project's path and target.
@@ -721,7 +765,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. This section's layout is version 1.
 - Acceptance: A store with `schema_version` set to 999 is refused with a `StoreError`, and nothing is written to it.
 - Relates to: STORE-027, REQ-110, BASE-020.
-- Status: recommended. Whether stores from the current chassis branch, which keep joins as JSON bodies in `objects` and `joins` tables, are migrated is open question 14.
+- Status: recommended. Stores written by the current chassis branch, which keep joins as JSON bodies in `objects` and `joins` tables, are not migrated; pre-1.0 data is dropped, D24.
 
 ### STORE-030 A directly run wheel keeps its data in its own subfolder
 Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.metaform/wheels/<name>-<version>`, never the main data folder. After the wheel is installed, its data can be pulled into the main folder, where each of its metaforms arrives as its own metaform and nothing is merged, STORE-027.
@@ -814,21 +858,21 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Relates to: STORE-017, STORE-024, MAP-015, LAYER-011.
 - Status: recommended. That removal orphans and a put-back element shows its attachments again is confirmed, LAYER-011. Whether a removed join shows again when its receiver and provider exist again at the same places is open question 24.
 ### STORE-035 Context reads: the applying set, the visible set and the starting selection
-- Requirement: The store answers, at any address, which transitive items apply there and which are visible there from above, toward the leaves, after selection, starting from the layers toggled on, LAYER-019.
-- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items above it toward the leaves that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every finished layer that is not hidden starts selected.
+- Requirement: The store answers, at any address, which properties apply there and which are visible there from above, toward the leaves, after selection, starting from the layers toggled on, LAYER-019.
+- What this means: LAYER-005 needs two sets at an address: properties at the address and its prefixes that apply, and properties above it toward the leaves that are visible without applying. Only properties are transitive, D73; a property attached at an element counts as attached at that element's current address. Items, and anything attached at joins and subtypes, do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every finished layer that is not hidden starts selected.
 - Why: A broad question at `code` must see every medium in use above it without spreading a branch's specifics to its siblings, and each answer must be one indexed read, STORE-005.
 - How it shows: `metaform query context code` lists C++ from `code.engine` and Bash from `code.installer` as visible, and neither as applying.
 - Build:
   - The starting selection comes from the folder's `--layers` setting, CLI-033, resolved to layer ids with tags expanded through `layer_tags`, STORE-038. No per-project starting selection is stored.
-  - Applying set at A: for each prefix P of A, root first, the current properties, STORE-039, attached to the current element whose address is P, and the current items of transitive layers attached there, filtered by the effective selection at A.
-  - Visible set at A: the current properties attached to any current element whose address starts with `A.`, and the current items of transitive layers attached at any type or current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is a primary-key range on `types.address` from `A.` up to but not including `A/`, the next character after the period, joined to `current_items_by_target` and to `current_elements.address`.
+  - Applying set at A: for each prefix P of A, root first, the current properties, STORE-039, attached to the current element whose address is P, filtered by the effective selection at A. One unique-index lookup on `current_elements.address` per prefix.
+  - Visible set at A: the current properties attached to any current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is one range on the unique `current_elements.address` index from `A.` up to but not including `A/`, the next character after the period, joined to `current_properties_by_element`, in address order and paged, STORE-025. The selection for every address in the range is resolved from one range read of `selections`, STORE-019.
   - Unresolved selection: a select or mask row whose layer is hidden or still building is kept and returned by `effective_selection` in an `unresolved` list, and is not applied.
 - Acceptance:
   - The C++ and Bash example gives the stated sets.
-  - A transitive item attached at the element `code.engine` applies at `code.engine.game`, and after the element is relocated to `code.runtime` it applies at `code.runtime.game` and not at `code.engine.game`.
+  - A property attached to the element `code.engine` applies at `code.engine.game`, and after the element is relocated to `code.runtime` it applies at `code.runtime.game` and not at `code.engine.game`.
   - The plans for both sets use `SEARCH` only.
 - Relates to: STORE-005, STORE-019, STORE-025, LAYER-005, LAYER-007.
-- Status: recommended. Attachment at a type address with no element depends on open question 19. Whether a project also keeps a stored starting selection of its own, used by every folder where `--layers` is unset, is open question 22.
+- Status: recommended. No stored per-project starting selection: the folder's `--layers` setting, falling back to every finished layer that is not hidden, is the only starting selection, D71.
 
 ### STORE-036 Re-examination marks
 - Requirement: When a correction layer changes or removes a thing that another layer was built from, that layer is marked for re-examination until someone clears the mark.
@@ -917,6 +961,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
   );
   CREATE INDEX current_properties_by_element ON current_properties(element_id, layer_id);
   CREATE INDEX current_properties_by_layer   ON current_properties(layer_id, element_id);
+  CREATE INDEX properties_by_layer           ON properties(layer_id);
   ```
   - Ids, versions, corrections, refs and `extra` follow the same rules as items, STORE-015 and STORE-021. A property in a knowledge layer is edited or removed in place at any time through the knowledge-layer tool, LAYER-018; a property of the metaform, the intake layer or a finished correction layer, changes only through a correction layer, STORE-017.
   - The data access object checks that the element exists and refuses any other target. The element's address, through `current_elements`, places the property in the namespace.
@@ -986,27 +1031,4 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 
 ## Open questions
 
-1. Can two current elements in one project share a type address, for example two photos that are both `media.photo`? The store currently allows one current element per address, because the intake refers to elements by address.
-2. Answered: joins carry no role or kind; a join is always a function encounter, and properties are their own records, MAP-022, STORE-039. Whether hard dependency survives in any form is MAP open question 17.
-3. Can a subtype own joins of its own after annealing? If yes, a subtype can be a receiver but never a provider, and `joins.receiver` must accept subtype ids. If no, its joins lift to the parent when it is annealed.
-4. Can one element be a subtype in two different joins, such as one probe serving two failsafes? The store currently allows it as two subtype rows with separate identity ids. If not, a uniqueness rule on address within `current_subtypes` enforces it.
-5. Are a layer's properties fixed for each kind of layer, so memory is always mutable and never transitive, or chosen by a module for each layer it creates?
-6. Does hiding follow dependencies between layers, so a layer built from a hidden layer is hidden too? If yes, the store needs one row per source layer of each layer, and re-examination of dependents after a correction uses the same rows.
-7. Does each layer declare the fields of its variable, such as imperative, why and evidence for a best practice, so that readers know them, or is an item's value free-form?
-8. What does the provenance record hold for a layer written by a person or by a deterministic import, which has no model, prompt or role?
-9. When a second run of the same workflow writes to an existing layer, is it the same layer with one provenance record, or a new layer with its own?
-10. Can memory create a node that is not already in the map, as the reference server's create operation does? If yes, it would be a new element in the memory layer.
-11. Where does a module's item go when it is about no map node, such as the helloworld module's greeting history? One option is an element the module's layer creates for itself.
-12. Is JSON the exchange document format, or is XML required for any exchange?
-13. Answered: everything exported carries its unique id, and importing something that already exists does nothing; there is no conflict case, STORE-027. Earlier question, kept for reference: on import, when a store already holds a thing with the same identity id but different rows, is the incoming version applied as a new correction layer on top of the stack, kept as a separate layer, or reported and skipped? Recommended: a new correction layer on top, whose provenance names the import.
-14. Are stores written by the current chassis branch migrated, or is pre-1.0 data dropped?
-15. Answered: one folder per wheel name and version, BASE-023.
-16. Answered: an installed Metaform pulls a wheel's data in as its own metaforms, never merged, BASE-025.
-17. Do Type records live in each project store, as STORE-008 has them, or are they shared across projects, as MAP-010 recommends?
-18. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
-19. Properties attach only to elements, STORE-039, MAP-022. Can any other layer item attach at a type address that no element holds? The `items.target_kind` value `type` stays until this is answered.
-20. Answered: a C answer's link is kept with the challenge state, STORE-040.
-21. Resolved by E9: `ctx.store`.
-22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every finished layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)
-23. Answered: a correction layer never changes a knowledge layer's things. Correction layers sit underneath, knowledge layers on top, and an item left with nothing to attach to is orphaned, STORE-017, LAYER-011.
-24. A removed join whose receiver and provider both exist again at the same places: does it show again, or stay removed until a correction adds a join? (STORE-017, STORE-034, LAYER-011)
+None remain in this section. Earlier questions were answered as follows: one element per address, D10; join roles, MAP-022; subtypes own no joins, sit in one join and hold no subtypes, D3, D4, D5; layer behavior declared by the module, D12; hiding follows dependencies, D13; declared variable fields, D21; provenance for a person or an import, D15; a second run is a new layer, D16; memory creates an element for a name not in the map, D18; an item about no map node attaches to an element its layer creates, D22; JSON exchange, E7; import does nothing for what exists, STORE-027; pre-1.0 data dropped, D24; wheel data, BASE-023 and BASE-025; the shared Type tree is the address itself, D47; no role on non-intake elements, D48; no attachment at a bare type address, D74; the C answer's link, STORE-040; `ctx.store`, E9; no stored starting selection, D71; correction and knowledge layers, STORE-017; a removed knowledge join shows again when its ends are put back, D80, while a removed join of the metaform stays removed until a correction adds one.
