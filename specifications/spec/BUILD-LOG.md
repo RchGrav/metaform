@@ -62,3 +62,12 @@ One entry per build step of `00-index.md`: the step, the records it satisfies, t
 - Commit: c86bc51.
 - Questions raised: Q20 to Q23.
 
+## Step 9: the first working test
+
+- Records satisfied: MCP-024, automated as a simulation: `metaform build`; `metaform install claude codex cursor` against fake Claude Code and Codex executables and a real Cursor file with its byte-identical backup; the skill copies; a passing proof through the real `uvx --from <wheel> metaform mcp serve`; a project registered with no intake; a connection whose instructions hold the base text, the sections of intake, map, mcp and memory, and the no-intake notice; `intake_prompt` equal to the stored file but for its target; a submission missing one purpose refused whole with the notice kept; the corrected submission stored; a new connection without the notice; the tool list holding every tool the record names; memory written at the DE element and at a join on one connection and opened on a second; `map_mask` of the memory layer at the element's address hiding it from `map_node` until `map_clear`, with the join's memory following its receiver's address.
+- Also: every test now names its requirement and its kind, and collection fails on a test that does not or that names an ID absent from the spec, QUAL-009, QUAL-014 and E4.
+- Tests added: `tests/test_first_working_test.py`, 1 test, about 14 seconds with a warm uv cache. It was written after steps 1 to 8, whose parts it drives end to end, so it passed when first run. Whole suite: 352 passed.
+- Not done: MCP-024's recorded manual run in a real AI tool. It needs a person, or a host session, with a real Claude Code or Codex, and it would write that tool's real user configuration, which this build does not touch. QUAL-014 counts the first working test done only with that real run.
+- Commit: 2cf8fd2.
+- Questions raised: none new.
+
