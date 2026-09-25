@@ -64,6 +64,12 @@ It covers the base database, the per-project store, revisions, layers, provenanc
     module_id TEXT PRIMARY KEY,
     enabled   INTEGER NOT NULL CHECK(enabled IN (0, 1))
   );
+  CREATE TABLE installs(               -- MCP-019: what the installer set up
+    tool       TEXT PRIMARY KEY,
+    source     TEXT NOT NULL,
+    skill_path TEXT,
+    installed  TEXT NOT NULL             -- ISO 8601 UTC
+  );
   CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- holds schema_version
   ```
   - A folder row is written the first time a folder-scoped setting is stored for it. Reads never write.
@@ -106,8 +112,8 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - What this means: Each question agents ask has an index built for it: a thing by id, an element by address, the joins an element receives, the joins an element provides, the subtypes at one end of a join, all items of a layer, all items at a node, the items that link to a node, and the children of a type. Table size does not change the cost of finding one answer.
 - Why: Agents navigate by meaning, one question at a time: who receives this, why, how, what do other layers say here. Each question must go straight to its answer so the structure does the orienting and the agent keeps its inference for the task.
 - How it shows: A read at one node of a store with a million items takes about as long as the same read in a store with a thousand.
-- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Two reads are listings whose answer is the whole of one small table: `layers()` and the project list. They read that table in full and are the only reads allowed a `SCAN`, and only of that one table. Resolving the root selection reads the layer ids through `layers()` when the project has no starting selection of its own, STORE-035.
-- Acceptance: For every read operation in STORE-025 other than the two listings, `EXPLAIN QUERY PLAN` of its SQL contains `SEARCH` on an index or primary key for every table it touches and no `SCAN` of a table. For the two listings, the only `SCAN` is of `layers` or `projects`. This test fails if a query or an index is changed so that a lookup falls back to a scan.
+- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Some reads are allowed to read a whole table, because the table has one row per layer or per project and the answer is that table: `layers()` and the project list; the full read of `root_selection` and of `hidden_layers` during selection resolution, STORE-019 and STORE-035; and the root selection falling back to `layers()` when the project has no starting selection. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
+- Acceptance: For every read operation in STORE-025, `EXPLAIN QUERY PLAN` of each SQL statement it issues contains no `SCAN` of any table other than `layers`, `projects`, `root_selection` and `hidden_layers`, and no `SCAN` of `item_text` other than `VIRTUAL TABLE INDEX`. Every other table it touches appears with `SEARCH` on an index or primary key. This test fails if a query or an index is changed so that a lookup on `elements`, `joins`, `subtypes`, `items`, `refs`, `selections` or `types` falls back to a scan.
 - Relates to: STORE-004, STORE-025.
 - Status: confirmed.
 
@@ -118,7 +124,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - How it shows: Two agents adding memories to the same node at the same moment both succeed. Killing a process in the middle of an import leaves the store as it was before the import.
 - Build:
   - Every connection sets `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON` and `PRAGMA busy_timeout=5000`.
-  - Each data access operation opens `BEGIN IMMEDIATE`, performs all its statements and commits, or rolls back on any error.
+  - Each write operation opens `BEGIN IMMEDIATE`, performs all its statements and commits, or rolls back on any error. Each read operation opens a plain `BEGIN`, a deferred read transaction, so all its statements see one consistent state; in WAL mode readers never wait for the write lock and never block a writer.
   - Import, STORE-027, runs in one transaction.
 - Acceptance:
   - Two processes each add 500 items to the same node concurrently. All 1000 items are present afterward.
@@ -131,7 +137,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - What this means: An element's address names its type. A later intake or correction can type the same element better, which changes its address but not its identity id. Everything attached to it, joins, subtypes, memory and other layer items, points at the identity id, so it follows the element rather than being orphaned. Identity ids also survive export, import, copying and moving a store.
 - Why: The address says what kind of thing an element is. The element is this artifact's realization of it. Knowledge about the realization must stay with it when understanding of its type improves.
 - How it shows: After an element is retyped from `code.daemon` to `code.manager.gateway.mesh`, its memories, joins and challenges all appear at the new address.
-- Build: Identity ids are random UUID4 strings in lowercase hex without dashes, generated by the data access object. Identity tables hold one row per identity id for as long as the store exists:
+- Build: Identity ids, and layer ids, are random UUID4 values written as 32 lowercase hex characters without dashes, `uuid.uuid4().hex`, generated by the data access object. A 32-character lowercase hex string is never a valid address or layer name, STORE-008 and STORE-013, so every argument that takes an address or an id, or a layer name or a layer id, reads as an id exactly when it matches `^[0-9a-f]{32}$`. Identity tables hold one row per identity id for as long as the store exists:
   ```sql
   CREATE TABLE element_ids(element_id TEXT PRIMARY KEY);
   CREATE TABLE join_ids(
@@ -154,7 +160,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 
 ### STORE-008 Type addresses are rows in a tree
 - Requirement: Every namespace address used in a project is a row in the `types` table, linked to its parent address.
-- What this means: The namespace is a tree of types. `code.engine.game.fps` is a type, and so are `code.engine.game`, `code.engine` and `code`, each a complete type in its own right. Writing any address writes the rows for it and for each of its prefixes that is missing. Layer items can attach to any address, whether or not an element has that type, pending LAYER-003 and D49. The store checks only an address's form, per MAP-010 and MAP-013: one or more segments separated by periods, each segment one or more lowercase letters, digits or underscores. An address in that form is never refused for being functionally invalid.
+- What this means: The namespace is a tree of types. `code.engine.game.fps` is a type, and so are `code.engine.game`, `code.engine` and `code`, each a complete type in its own right. Writing any address writes the rows for it and for each of its prefixes that is missing. Layer items can attach to any address, whether or not an element has that type, pending LAYER-003 and D49. The store checks only an address's form, per MAP-010 and MAP-013: one or more segments separated by periods, each segment one or more lowercase letters, digits or underscores, and the whole address not a match for `^[0-9a-f]{32}$`, which is the id form of STORE-007. An address in that form is never refused for being functionally invalid.
 - Why: Selection, masking and transitive layers travel the type tree from trunk to leaf, so the tree must be stored and walkable. Knowledge layers may link any namespace address, so the store records addresses as given and leaves typology judgments to the agents and workflows that make them.
 - How it shows: Attaching a best practice to `code.engine` makes it visible, through the transitive rule, at every element whose address starts with `code.engine.`.
 - Build:
@@ -299,13 +305,14 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   CREATE INDEX current_subtypes_by_address ON current_subtypes(address);
   ```
   - `subtype_ids.join_id` fixes the join. A subtype never moves to another join.
+  - Until MAP-032 is settled, `add_subtype` and `revise` refuse an address that a current subtype or a current element already holds, and a current element's address may not be taken by a new subtype. The check is one read on `current_subtypes_by_address` and one on `current_elements`.
   - A join may have subtypes at both ends at once.
 - Acceptance:
   - A subtype written at the provider end of a join is returned by the subtypes read for that join and end, and by no element or join read.
   - No read that returns elements, or joins by receiver or provider, ever returns a subtype.
   - Writing an item attached to a subtype succeeds and is returned by the node read for that subtype.
 - Relates to: STORE-010, STORE-015, MAP-030, MAP-031, MAP-032.
-- Status: confirmed for placement and storage. Open questions 3 and 4.
+- Status: confirmed for placement and storage. The address rule is recommended and follows MAP-032 until open questions 3 and 4 are answered.
 
 ### STORE-012 Refs
 - Requirement: Each ref is one key and value row attached to one revision row of an element, join, subtype or layer item.
@@ -339,7 +346,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Requirement: Each layer is a row carrying its name, its module and its declared behavior: mutable or immutable, hideable, and transitive.
 - What this means: Everything Metaform holds is a layer, the intake's map included. A layer carries one inferred variable. Declaring behavior on the layer lets the store apply revisions, visibility and propagation the same way for every layer.
 - Why: When every layer attaches the same way and declares its behavior, layers compose, and a module can add one without knowing about any other. No module rebuilds revision, hiding or propagation rules of its own.
-- How it shows: `list layers` shows each layer with its module and its three properties.
+- How it shows: `metaform query layers` and `metaform map layers` show each layer with its id, name, kind, module, completion and its three properties.
 - Build:
   ```sql
   CREATE TABLE layers(
@@ -359,6 +366,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   CREATE TABLE hidden_layers(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));
   ```
   - A layer's properties are set when it is created and never change.
+  - A layer name is one to 128 characters of letters, digits, periods, underscores and hyphens, and is never a match for `^[0-9a-f]{32}$`. Every operation that takes a layer takes a layer reference: a layer id, per STORE-007, or a name, looked up through the `name` unique index.
   - Hiding writes a `hidden_layers` row and is allowed only for a hideable layer. Hidden layers are left out of node reads and selection results unless the read asks for them by name.
 - Acceptance:
   - Hiding a layer declared not hideable returns the error in STORE-026 and writes nothing.
@@ -461,7 +469,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Acceptance:
   - After a revise, the old row's bytes are unchanged, the new row supersedes it, and an identity read returns the new row.
   - A retired join is absent from receiver and provider reads and present in its revision history.
-  - No `UPDATE` or `DELETE` statement in the data access object targets `elements`, `joins`, `subtypes`, or the `items` rows of an immutable layer.
+  - No `UPDATE` or `DELETE` statement in the data access object targets `elements`, `joins`, `subtypes`, or the `items` rows of an immutable layer, except inside `discard`, which deletes only rows of an open layer, STORE-032. An open layer was never visible in context, so nothing can depend on it.
 - Relates to: STORE-007, STORE-012, STORE-018, LAYER-011, REQ-026, REQ-106 as corrected.
 - Status: confirmed. How dependents are found for re-examination is open question 6.
 
@@ -492,7 +500,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   );
   CREATE INDEX selections_by_layer ON selections(layer_id);
   ```
-  Resolution for an address: start from the root selection, all layers unless the read supplies one; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
+  Resolution for an address: start from the root selection: the read's own root selection when it supplies one, else the project's `root_selection` rows when there are any, else every complete layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
 - Acceptance:
   - The mask example above gives the stated results.
   - A layer masked at an element's address does not appear in the node read for a join that element receives, nor in the provider read that reaches that element.
@@ -511,7 +519,18 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   - Search runs over item values through an SQLite FTS5 table kept in step with `items` by triggers. It indexes every layer's items. A search returns only items of layers in the effective root selection that are complete and not hidden, unless the call names a layer, in which case it searches that layer alone:
     ```sql
     CREATE VIRTUAL TABLE item_text USING fts5(value, content='items', content_rowid='row');
+    CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+      INSERT INTO item_text(rowid, value) VALUES (new.row, new.value);
+    END;
+    CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+      INSERT INTO item_text(item_text, rowid, value) VALUES ('delete', old.row, old.value);
+    END;
+    CREATE TRIGGER items_au AFTER UPDATE OF value ON items BEGIN
+      INSERT INTO item_text(item_text, rowid, value) VALUES ('delete', old.row, old.value);
+      INSERT INTO item_text(rowid, value) VALUES (new.row, new.value);
+    END;
     ```
+    Every `items` row is indexed, superseded revisions included. `search` joins each match through `current_items` on the row, so only current revisions are returned. The default `unicode61` tokenizer treats JSON quotes, braces and colons as separators, so a word inside a JSON value matches as a word. The search text is passed to `MATCH` as one quoted phrase per word, with any double quote in it doubled, so user text is never read as FTS5 query syntax.
   - Open nodes: the node's identity read plus two index reads, items at the node and items linking to it.
 - Acceptance:
   - Adding an observation to a node that has no memories writes one item row and no other row.
@@ -567,10 +586,11 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 
   | Operation | Inputs | Output | Errors |
   |---|---|---|---|
-  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None)` | provenance is a mapping with module, workflow, prompt, model, role, blinded | `Layer`, open, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
+  | `layer(name, module, variable, *, kind='layer', mutable, hideable, transitive, provenance=None, result_id=None, sources=())` | provenance is a mapping with module, workflow, prompt, model, role, blinded; sources are layer references, STORE-036 | `Layer`: an immutable layer is created open and a mutable one complete, STORE-032; the existing layer when the name exists with the same kind, module, variable, mutable, hideable and transitive | name exists with any of those different; empty variable; provenance missing for a layer whose kind is not memory |
   | `complete(layer)` | | `Layer` with `completed` set | layer unknown; already complete |
+| `discard(layer)` | an open immutable layer | nothing; the layer and every row written to it are deleted, STORE-032 | layer unknown; layer complete; layer mutable |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer complete and immutable; malformed address |
-  | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', role=None, refs=(), extra=None)` | receiver and provider as address or element id | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
+  | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', role=None, refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
   | `add_subtype(layer, join, end, address, *, purpose=None, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | end is `receiver` or `provider` | `Subtype` | join unknown; end not one of the two; malformed address |
   | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current revision | owner unknown; owner's layer complete and immutable, STORE-012 |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
@@ -640,7 +660,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Build:
   - Commands: `metaform export [<project>|all] [<file>] [--layer <name>]...` and `metaform import <file> [<project>]`. With no project, export takes the folder's project. `all` exports every registered project. With no file, export writes the document to standard output. `--layer` may repeat and limits the export to those layers. Import with no project uses the project record in the document; with a project id, it imports into that registered project.
   - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "types": [...], "layers": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "refs": [...], "requires": [...]}`.
-  - Each list holds one object per row, including every revision, with a `current` flag. Rows refer to each other by identity id and revision number, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and revision. On import, new `row` values are assigned and every reference is remapped through identity id and revision.
+  - Each list holds one object per row, including every revision. A row object has one member per column of its table, named as the column, except the integer `row`, `owner_row` and `supersedes` columns, plus `current`, true when the row is the one its pointer table points at. `supersedes` is written as the superseded revision number. `hidden` is a list of layer ids. `requires` is a list of objects, `{"kind": "element"|"join"|"subtype"|"item", "id": <identity id>}` or `{"kind": "type", "address": <address>}`. Rows refer to each other by identity id and revision number, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and revision. On import, new `row` values are assigned and every reference is remapped through identity id and revision.
   - A layer-limited export carries that layer's rows and its provenance, plus `requires`: the identity ids and type addresses its rows point at that belong to other layers. Import refuses a document whose `requires` are not present in the target store, naming the first missing one, with the next step to import the project's map first.
   - Importing a project into a home where it is not registered registers it from the document's project record. Importing into a registered project keeps that project's path and target.
   - Import runs in one transaction, STORE-006. Importing a document into a store that already holds the same identity ids with identical rows changes nothing.
@@ -704,7 +724,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
   - While an immutable layer is open, `add_element`, `add_join`, `add_subtype`, `add_item` and `add_ref` may write to it. After it is complete, they are refused for that layer with the next step naming `revise`.
   - `has_intake()` is true when a layer of kind intake has `completed` set. One indexed read.
   - Node reads in context, `context`, `search` and the default root selection include only complete layers. A read that names an open layer, or uses `raw=True`, sees it.
-  - An open layer left by an interrupted run stays open and invisible. The intake module lists it and can remove it, BASE-039.
+  - An open layer left by an interrupted run stays open and invisible. The intake module lists it and removes it with `discard`, STORE-024 and BASE-039.
 - Acceptance:
   - An intake layer with elements written and not completed leaves `has_intake()` false and is absent from a node read in context.
   - After `complete`, `has_intake()` is true and the node read in context includes the layer.

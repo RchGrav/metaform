@@ -38,7 +38,7 @@ The spec in spec/ now carries every entry below; TRACE.md maps each entry to its
 **At release, Metaform offers to maintain a user's personal fork, its CI and the build of their own wheel.** Confirmed.
 *Why:* the community builds on the template, and that upkeep is what keeps their forks working as the chassis changes.
 
-**Packaging uses pyproject.toml and the uv toolchain. AI clients start the MCP server with uvx.** Confirmed. The registration is `uvx --from <wheel or distribution> metaform mcp`.
+**Packaging uses pyproject.toml and the uv toolchain. AI clients start the MCP server with uvx.** Confirmed. The registration is `uvx --from <wheel or distribution> metaform mcp serve`.
 *Why:* uvx runs the server in its own environment with its own dependencies, the same way on every system.
 
 **The PyPI distribution name is undecided.** `metaform` belongs to an unrelated package, last released 2020-06-09. The command and the Python package stay `metaform`. Open; the name only matters when publishing.

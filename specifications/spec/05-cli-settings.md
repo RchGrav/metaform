@@ -96,7 +96,20 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
     - run 'metaform help switches' for all switches
     - run 'metaform config --show' to inspect your saved defaults.
   ```
-  Column alignment pads the left column to its widest entry plus two spaces. `metaform help intro` prints the intro text kept with the chassis help, which says what Metaform is, that data lives in the home, and the three start commands.
+  Column alignment pads the left column to its widest entry plus two spaces. `metaform help intro` prints exactly:
+  ```
+  Metaform keeps a map of what each part of a project is for: which element receives
+  from which, why, and how. Agents read the map before they work, so they start from
+  the project's purpose instead of rebuilding it.
+
+  All data lives in the Metaform home, <home>. Nothing is written into your projects.
+
+  Start:
+    metaform add project <id> <path>   Register a project.
+    metaform install                   Set up your AI tools to use Metaform.
+    metaform                           See status and the next step.
+  ```
+  with `<home>` filled in.
 - Acceptance: the overview includes each of the four tip commands and fits in 24 lines.
 - Relates to: CLI-007, CLI-008.
 - Status: confirmed.
@@ -143,6 +156,14 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: a module author writes settings once and never touches CLI or screen plumbing, and the switches, help and screen cannot drift apart.
 - How it shows: a module that declares `settings.number('panes', 4, ...)` immediately gets `metaform set --panes 6`, `metaform unset --panes`, an entry in `help switches`, a line in `config --show`, and a row in the settings screen.
 - Build: each schema entry holds `key`, `default` (a real declared value, or `default_from` for a value computed from the folder), `kind` (`str`, `int`, `bool`, `list`, `select`), `group` (the owning module id or chassis area), `label` (short name for the screen), `help` (one line), `details` (the longer explanation), `switches` (the long form and, for booleans, the `--no-` form, spelled out), `short` (optional one letter), `choices` (list or function, for selects), `min` and `max` (for numbers), `scope`, and `owner`. The current `Setting` dataclass has key, default, help, kind, choices, scope, owner, details and default_from; the change adds `group`, `label`, `switches`, `short`, `min` and `max`, and makes `switches` explicit rather than derived.
+  - Declaration functions, in `metaform.settings`, one per kind, each returning the declared `Setting`:
+    - `text(key, default='', **common)` for `str`;
+    - `number(key, default=0, *, min=None, max=None, **common)` for `int`;
+    - `boolean(key, default=False, **common)` for `bool`;
+    - `items(key, default=(), **common)` for `list`;
+    - `choice(key, choices, default=None, **common)` for `select`.
+  - `common` is the keyword arguments `help=''`, `details=''`, `group=None`, `label=None`, `short=None`, `switches=None`, `scope='folder'` and `default_from=None`. `group` defaults to the owner, `label` to the key with underscores as spaces and the first letter capitalized, and `switches` to `('--<key with hyphens>',)`, with `'--no-<key with hyphens>'` added for a boolean. A `switches` value given explicitly lists every long form, the first being the one help shows first. `scope` is `folder` or `global`, CLI-014. `short` is one letter, used with one dash, CLI-004.
+  - The owner is set by the chassis while it loads a module, through `owned_by`, so a module never passes it.
 - Acceptance: a setting declared in a test module appears with the same default and help in `config --show --json`, in `help switches`, and is accepted by `set`; a second declaration of the same key by another owner fails at load.
 - Relates to: CLI-011, CLI-012, BASE-008, QUAL-004.
 - Status: confirmed.
@@ -386,7 +407,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   6. `Projects: <n> registered`
   7. `Modules: <n> on`, followed by `, <m> not loaded (metaform list modules)` when any enabled module failed.
   8. When `commands` is not empty: `Commands: <groups> (narrowed; restore: metaform unset --commands)`.
-  9. When the intake module is on: `Intake: complete` or `Intake: none yet` followed by the notice of MCP-009 indented two spaces, or `Intake: open layer <name>` when an intake layer is open.
+  9. When the intake module is on: `Intake: complete` when `has_intake()` is true. Otherwise `Intake: none yet`, followed by the notice of MCP-009 indented two spaces, and, when an intake layer is open, a further line indented two spaces: `An intake run is open in layer <name>. To continue it, keep writing to that layer; to drop it: metaform intake discard <name> --confirm`. The notice stays until an intake layer is complete, STORE-032.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
 - Acceptance: In a registered project with no intake and the intake module on, status contains the notice; after an intake is completed, it shows `Intake: complete` and no notice.
 - Relates to: CLI-005, MCP-007, MCP-009, STORE-031, BASE-039.
@@ -416,6 +437,35 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Acceptance: The example fails and stores nothing; `set --commands chassis,map` succeeds.
 - Relates to: CLI-021, CLI-022, BASE-037.
 - Status: recommended.
+
+### CLI-031 The chassis verbs in full
+- Requirement: Each chassis verb takes exactly the nouns and switches below and prints exactly the lines below, so a builder needs no earlier code to reproduce them.
+- What this means: The chassis runs completely on its own as a CLI. These verbs are that CLI. Module verbs follow BASE-035; these are the chassis's own.
+- Why: The spec is the contract. Behavior that exists only in earlier code cannot be rebuilt from the spec, and a rebuild would drift.
+- How it shows: The examples in each row.
+- Build: Every error below is a `Stop` with its one Next line, CLI-009. `-q` and `--quiet` suppress success output on `set` and `unset`. `--json` prints the result as JSON, BASE-036, on `list`, `config --show` and `query`.
+
+  | Verb | Nouns and switches | Output and errors |
+  |---|---|---|
+  | `help` | none; `intro`; `commands`; `switches`; `agents`; a switch such as `--loud`; a chassis verb; a module id; a module id and verb | The overview, CLI-006; the intro, CLI-006; the indexes, CLI-008; the composed instructions, MCP-007; the pages, CLI-029. Unknown thing: `No command, module or switch <thing>.` Next `metaform help commands`. |
+  | `add` | `project <id> <path> [<target type> <target value>]` | STORE-031. Success: `Added project <id>: <path> (target <type> <value>)`. |
+  | `list` | `projects` or `modules` | projects: one line per project, `<id>  <path>  <target type> <target value>`, ids padded to the widest; none: `No projects yet. Register one: metaform add project <id> <path>`. modules: BASE-037's line per module, `<id>  <on|off|error>  <system|user|entry>  <summary or reason>`, ids padded to the widest. Any other noun: `list needs a noun: projects or modules.` Next `metaform list projects`. |
+  | `set` | one or more setting switches with values, CLI-011 and CLI-015; `--glue`; `-q` | Success: `Success: updated <n> key(s)` and one line per change, `  <key>: <old> → <new>`, then `  glued: <keys>` when glued; no change: `Success: no changes`. When `commands` narrows the surface, the three lines of CLI-022. A word that is not a switch: `set takes switches, not '<word>'.` Next `metaform set --help`. An unknown switch: `<switch> is not a setting.` Next `metaform help switches`. An invalid value: the error of CLI-027 with Next `metaform help <switch>`. |
+  | `unset` | one or more setting switches, or `all`; `--unglue`; `-q` | `Reset <n> setting(s): <keys>` or `No settings required reset`, then `Skipped (glued): <keys>` and `Unglued: <keys>` when they apply. `--all`: `--all is not a setting. A switch names one setting.` Next `metaform unset all`. |
+  | `config` | none; `--show`; `--show --json` | none: the settings screen, CLI-026, or `--show`'s output without a terminal. `--show`: one line per setting in schema order, `<mark> <key>: <value>` with `*` as the mark for glued and a space otherwise, followed by `  (set)` or `  (glued)` unless default, then a blank line and `* glued: kept by unset all until unglued.` `--json`: a list of objects with key, switch, owner, kind, value, state, default and help. |
+  | `enable`, `disable` | `module <id>` | `Module <id>: on` or `off`. Unknown id: `No module <id>.` Next `metaform list modules`. Writes the `module_state` row, STORE-002. |
+  | `install`, `uninstall` | MCP-013 to MCP-020 | As specified there. |
+  | `build` | none | BASE-041. |
+  | `import`, `export` | STORE-027 | As specified there. |
+  | `query` | STORE-028 | As specified there. |
+
+  A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value.
+- Acceptance:
+  - `metaform list foo` exits 2 with the stated error and Next line.
+  - `metaform set --favorite world` then `metaform config --show` shows `  favorite: world  (set)`.
+- Relates to: CLI-001, CLI-006, CLI-008, CLI-009, CLI-011, CLI-022, CLI-026, CLI-029, BASE-037, STORE-002, STORE-027, STORE-028, STORE-031.
+- Status: recommended.
+
 ## Open questions
 
 1. Scope of settings: every context setting is per folder. Do some settings stay global (applying in every folder), as the chassis `Setting.scope` allows today, and which?

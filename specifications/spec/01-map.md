@@ -97,14 +97,14 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-012 An address reads as its name when reversed
 
 - Requirement: An address is read as a name by reversing its segments and replacing periods and underscores with spaces, and an element's name_length gives how many trailing segments form its short name.
-- What this means: `code.loop.main` reads as main loop program code. `code.bus.data.event` reads as event data bus program code. `data.bill_of_materials` reads as bill of materials data. A root Type may carry a reading phrase that stands for it when the address is read: `code` reads as program code, as the Canonical Intake's reading example shows. Every other root reads as its own name. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity.
+- What this means: `code.bus.data.event` reads as event data bus code. `data.bill_of_materials` reads as bill of materials data. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity.
 - Why: Reading addresses as proper nouns engages the model's existing understanding of types directly, without reasoning. Short names keep references readable.
 - How it shows: Every element and Type listing shows the address and its reading.
-- Build: reading(address) reverses the segments, replaces underscores with spaces, replaces the root segment with its reading phrase from the root list data, MAP-014, and joins with spaces. short_name(address, n) reverses the last n segments, replaces underscores with spaces and joins them, without the root phrase unless the root is among those n segments. When n is null, zero, or larger than the number of segments, short_name returns reading(address). Readings are computed, never stored as identity.
+- Build: reading(address) reverses the segments, replaces underscores with spaces, and joins with spaces. Every root reads as its own name. short_name(address, n) reverses the last n segments, replaces underscores with spaces and joins them. When n is null, zero, or larger than the number of segments, short_name returns reading(address). Readings are computed, never stored as identity.
 - Acceptance:
-  1. reading of `code.bus.data.event` is event data bus program code; short_name of `code.engine.game` with name_length 2 is game engine; short_name with name_length 9 is game engine program code.
+  1. reading of `code.bus.data.event` is event data bus code; short_name of `code.engine.game` with name_length 2 is game engine; short_name with name_length 9 is game engine code.
 - Relates to: MAP-010, MAP-015.
-- Status: confirmed. The root reading phrase for `code` follows the Canonical Intake's own example; the edge cases of short_name are recommended.
+- Status: confirmed for the reading rule. The Canonical Intake has two reading examples that disagree on the root: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. The build reads every root as its own name until open question 16 is answered. The edge cases of short_name are recommended.
 
 ### MAP-013 The namespace rules govern the functional map, and the store does not judge them
 
@@ -251,7 +251,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: Three cases are not yet settled: whether a subtype may be the receiver of joins of its own after annealing; whether one element may be a subtype in two different joins; whether a subtype may itself hold subtypes.
 - Why: Each answer changes what the store must allow or forbid, and guessing would bake a wrong rule into the schema.
 - How it shows: Not yet specified.
-- Build: Not specified until the open questions are answered. Until then the store allows none of the three.
+- Build: Until the open questions are answered the store allows none of the three: a join's receiver and provider must be elements, never subtypes, STORE-010; a subtype address is held by at most one current subtype, and never by a current element, STORE-011; a subtype has no subtypes, because `add_subtype` takes a join, never a subtype.
 - Acceptance: None yet.
 - Relates to: MAP-030, MAP-031.
 - Status: open, see open questions 3, 4 and 8.
@@ -265,7 +265,7 @@ These terms are used exactly as defined in the Canonical Intake.
   - The result id is kept on the intake layer written for that intake.
   - Each root `<element>` becomes an element with its address, name, name_length, role and refs.
   - Each `<join>` inside a root element becomes a join owned by that element, with its provider resolved by address, every field in MAP-020, and the refs written directly inside the join, which only the test schema has.
-  - An `<element>` nested directly inside a `<join>`, as in the 1.1 schema, is the definition of that join's provider: its address equals the join's provider. It becomes, or adds to, the provider's element: when no element holds that address yet, one is created with the nested element's address, name, name_length, role and refs; when one exists, the existing element is kept, STORE-009, and the nested element's refs are added to it while the intake layer is open, STORE-012. A nested element whose address differs from its join's provider is recorded as written, as an element, and its join is not changed.
+  - An `<element>` nested directly inside a `<join>`, as in the 1.1 schema, is the definition of that join's provider: its address equals the join's provider. It becomes, or adds to, the provider's element: when no element holds that address yet, one is created with the nested element's address, name, name_length, role and refs; when one exists in the intake layer being written, the existing element is kept, STORE-009, and the nested element's refs are added to it, STORE-012; when the existing element belongs to another layer that is complete, the nested element's refs are written onto the join that holds it, in order and unchanged, because a complete layer changes only by revision. A nested element whose address differs from its join's provider is recorded as written, as an element, and its join is not changed.
   - A `<join>` nested inside a `<join>`, as in the test schema, becomes a subtype of the outer join at the provider end: its own piece is the nested join's function, with its relation and observation, its address is the nested join's provider, and the `<element>` inside it gives the subtype's name, name_length, role and refs.
   - Each ref becomes a ref record on its owner, in order.
   - When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
@@ -338,3 +338,4 @@ These terms are used exactly as defined in the Canonical Intake.
 13. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 14. When a project holds more than one AUE, how is the set of elements belonging to each AUE recorded? (MAP-042)
 15. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
+16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
