@@ -98,10 +98,10 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-011 Every prefix of an address is a Type, and inference runs from trunk to leaf
 
 - Requirement: Each prefix of an address is a complete Type in its own right, and meaning narrows from trunk to leaf.
-- What this means: `code.engine.game.fps` contains four valid Types. Running inference on them in order, trunk to leaf, goes from general practice for all code, to engines, to game engines, to first-person game engines. The trunk and branch keep the inference in the right domain. The leaf carries most of the specific content. Inheritance runs one way: what holds at a parent holds for every child, and what holds at a child never flows up to its parent. Something that still holds after its leaf segment is removed belongs higher in the tree or in a sibling branch.
-- Why: The address itself is a prompting surface. An agent given only an address can produce distinct, useful guidance, and the prefixes give that guidance a place to live once and be inherited by everything beneath it.
+- What this means: `code.engine.game.fps` contains four valid Types. Running inference on them in order, trunk to leaf, goes from general practice for all code, to engines, to game engines, to first-person game engines. The trunk and branch keep the inference in the right domain. The leaf carries most of the specific content. Inheritance runs one way: what holds at a parent holds for every child, and what holds at a child never flows down to its parent. Orientation: the trunk is down and the leaves are up. Something that still holds after its leaf segment is removed belongs lower in the tree, toward the trunk, or in a sibling branch.
+- Why: The address itself is a prompting surface. An agent given only an address can produce distinct, useful guidance, and the prefixes give that guidance a place to live once and be inherited by everything above it toward the leaves.
 - How it shows: Content attached at `code.engine` applies when reading `code.engine.game.fps`. Content attached at `code.engine.game.fps` does not appear when reading `code.engine`.
-- Build: Reading a Type's inherited context walks its prefixes from the root down to the Type itself, in that order. The walk never visits children. Attaching and selecting content along this walk is specified in LAYER.
+- Build: Reading a Type's inherited context walks its prefixes from the trunk up to the Type itself, in that order. The walk never visits children. Attaching and selecting content along this walk is specified in LAYER.
 - Acceptance:
   1. An item attached at `code` is returned when reading inherited context at `code.engine.game`; an item attached at `code.engine.game` is not returned when reading inherited context at `code`.
 - Relates to: MAP-010, LAYER-005, LAYER-007.
@@ -218,13 +218,13 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-022 Roles within a join
 
 - Requirement: A join may state the role the provider plays for the receiver.
-- What this means: The Metaform foundation names three roles in a join: hard dependency, property and supportive. Property joins are transitive: their effect branches forward to the elements named beneath and flows backward to the Defining Element or the trunk, so a property placed near the trunk applies to every branch after it. The Canonical Intake currently writes only join type purpose and does not record a role in the join.
+- What this means: The Metaform foundation names three roles in a join: hard dependency, property and supportive. Property joins carry transitivity in the map itself. A property typically follows the transitive rule of where it is linked: from the address where the property is linked, inference goes down to the trunk, and going up it follows to the leaves. Orientation: the trunk is down and the leaves are up. So Bash linked as a property of the installer applies up toward the leaves at every address above the installer and is visible down at `code`, and a property linked near the trunk applies to every branch after it. The Canonical Intake currently writes only join type purpose and does not record a role in the join.
 - Why: The role in a join tells an agent whether losing the provider breaks the receiver, changes one of its properties, or only weakens its support.
 - How it shows: Not yet observable.
-- Build: Not specified until the open question is answered.
-- Acceptance: None yet.
+- Build: A property join's transitivity follows LAYER-005 along the namespace from the address where the property is linked: it applies up toward the leaves and is visible down toward the trunk. How a join records its role is not specified until the open question is answered.
+- Acceptance: With Bash linked as a property join at `code.installer`: a read at `code.installer.script` receives Bash as applying; a read at `code` shows Bash as visible and not applying; a read at `code.engine` does not receive it.
 - Relates to: MAP-020, MAP-011, LAYER-005, STORE-010.
-- Status: open, see open question 7.
+- Status: confirmed that property joins carry transitivity in the map itself, with the orientation above. Whether and how the roles hard dependency, property and supportive are recorded on joins is open, see open question 7.
 
 ---
 
@@ -342,7 +342,7 @@ These terms are used exactly as defined in the Canonical Intake.
 4. Can one element be a subtype in two different joins, such as one probe serving two failsafes?
 5. May a subtype share an address with a root element of the same project?
 6. When there are several VEs, is one recorded as primary, and how?
-7. Roles within a join: are hard dependency, property and supportive recorded on joins, and do property joins carry transitivity in the map itself or only through layers?
+7. Roles within a join: are hard dependency, property and supportive recorded on joins, and how? That property joins carry transitivity in the map itself is settled, MAP-022.
 8. May a subtype hold subtypes of its own?
 9. Answered: the agent submits once through `intake_submit` after the whole method, MAP-040. Does the intake agent write its result as one whole submission or record by record through tool calls?
 10. C(T) names the Type's single Encounter Function e, while each join stores the provider's function for that encounter. Does the Type record also store its one Encounter Function, and if so, who writes it?

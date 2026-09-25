@@ -112,8 +112,8 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - What this means: Each question agents ask has an index built for it: a thing by id, an element by address, the joins an element receives, the joins an element provides, the subtypes at one end of a join, all items of a layer, all items at a node, the items that link to a node, and the children of a type. Table size does not change the cost of finding one answer.
 - Why: Agents navigate by meaning, one question at a time: who receives this, why, how, what do other layers say here. Each question must go straight to its answer so the structure does the orienting and the agent keeps its inference for the task.
 - How it shows: A read at one node of a store with a million items takes about as long as the same read in a store with a thousand.
-- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Some reads are allowed to read a whole table, because the table has one row per layer or per project and the answer is that table: `layers()` and the project list; the full read of `root_selection` and of `hidden_layers` during selection resolution, STORE-019 and STORE-035; and the root selection falling back to `layers()` when the project has no starting selection. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
-- Acceptance: For every read operation in STORE-025, `EXPLAIN QUERY PLAN` of each SQL statement it issues contains no `SCAN` of any table other than `layers`, `projects`, `root_selection` and `hidden_layers`, and no `SCAN` of `item_text` other than `VIRTUAL TABLE INDEX`. Every other table it touches appears with `SEARCH` on an index or primary key. This test fails if a query or an index is changed so that a lookup on `elements`, `joins`, `subtypes`, `items`, `refs`, `selections` or `types` falls back to a scan.
+- Build: The indexes are listed with each table. The data access object issues only the queries listed in STORE-025, each written against those indexes. Some reads are allowed to read a whole table, because the table has one row per layer or per project and the answer is that table: `layers()` and the project list; the full read of `hidden_layers` during selection resolution, STORE-019 and STORE-035; and the starting selection falling back to `layers()` when the folder's `--layers` setting is unset. `search` matches through the FTS5 index of `item_text`, whose plan reports `SCAN item_text VIRTUAL TABLE INDEX`: that is the full-text index answering the match, not a table scan. No other read may scan.
+- Acceptance: For every read operation in STORE-025, `EXPLAIN QUERY PLAN` of each SQL statement it issues contains no `SCAN` of any table other than `layers`, `projects` and `hidden_layers`, and no `SCAN` of `item_text` other than `VIRTUAL TABLE INDEX`. Every other table it touches appears with `SEARCH` on an index or primary key. This test fails if a query or an index is changed so that a lookup on `elements`, `joins`, `subtypes`, `items`, `refs`, `selections` or `types` falls back to a scan.
 - Relates to: STORE-004, STORE-025.
 - Status: confirmed.
 
@@ -501,7 +501,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   );
   CREATE INDEX selections_by_layer ON selections(layer_id);
   ```
-  Resolution for an address: start from the root selection: the read's own root selection when it supplies one, else the project's `root_selection` rows when there are any, else every locked layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
+  Resolution for an address: start from the starting selection: the read's own starting selection when it supplies one, else the layers toggled on by the folder's `--layers` setting, CLI-033, with each tag expanded through `layer_tags`, else every locked layer, STORE-035; for each prefix from the root segment to the full address, remove the layers masked there, then add the layers selected there; finally remove hidden layers. Each step is one primary-key range read on `selections`. The resolved set is what every node read uses.
 - Acceptance:
   - The mask example above gives the stated results.
   - A layer masked at an element's address does not appear in the node read for a join that element receives, nor in the provider read that reaches that element.
@@ -624,7 +624,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `identity(element)` | C(T): every current join where it is the provider | `current_joins_by_provider` |
   | `subtypes(join, end=None)` | the subtypes at one or both ends of a join | `current_subtypes_by_join_end` |
   | `where(address)` | the element, or the join and end holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
-  | `children(address)` | the next types down the tree | `types_by_parent` |
+  | `children(address)` | the next types up the tree, toward the leaves | `types_by_parent` |
   | `layer_items(layer, target=None)` | all of a layer, or a layer at one node | `current_items_by_layer` |
   | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are locked and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |
   | `context(address, selection=None)` | the applying and the visible transitive items at an address, as two lists, STORE-035 | `current_items_by_target`; `types` primary key range |
@@ -632,7 +632,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `citing(key, value)` | every current element, join, subtype and item whose refs hold that key and value, per MAP-021 | `refs_by_key_value` |
   | `revisions(thing)` | every revision with reason and evidence | `UNIQUE(id, revision)` |
   | `revision(thing, n)` | one named revision | `UNIQUE(id, revision)` |
-  | `layers()`, `provenance(layer)` | the layers with properties, kind and whether each is building or locked; one layer's provenance | full read of `layers`, STORE-005; primary key |
+  | `layers(tag=None, kind=None, module=None)`, `provenance(layer)` | the layers with properties, kind, module, tags, whether each is building or locked, whether it is hidden, and whether it is toggled on for the current context, LAYER-019, filtered by tag, kind and module; one layer's provenance | full read of `layers`, STORE-005, or `layer_tags_by_tag` when filtering by tag; primary key |
   | `effective_selection(address, root=None)` | the resolved layer set at an address, and any unresolved selection rows, STORE-035 | `selections` primary key |
   | `search(text, layer=None)` | items whose value matches, per STORE-020 | `item_text` |
   | `has_intake()` | whether the project holds a locked intake layer, STORE-032 | `layers_by_kind` |
@@ -778,12 +778,12 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Status: recommended.
 
 ### STORE-035 Context reads: the applying set, the visible set and the starting selection
-- Requirement: The store answers, at any address, which transitive items apply there and which are visible there from beneath, after selection, starting from the project's starting selection.
-- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items beneath it that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The project may store its own starting selection; when it has none, every locked layer starts selected.
-- Why: A broad question at `code` must see every medium in use beneath it without spreading a branch's specifics to its siblings, and each answer must be one indexed read, STORE-005.
+- Requirement: The store answers, at any address, which transitive items apply there and which are visible there from above, toward the leaves, after selection, starting from the layers toggled on, LAYER-019.
+- What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items above it toward the leaves that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every locked layer that is not hidden starts selected.
+- Why: A broad question at `code` must see every medium in use above it without spreading a branch's specifics to its siblings, and each answer must be one indexed read, STORE-005.
 - How it shows: `metaform query context code` lists C++ from `code.engine` and Bash from `code.installer` as visible, and neither as applying.
 - Build:
-  - `CREATE TABLE root_selection(layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id));` Empty means every locked layer. The map module's `select-root` and `clear-root` verbs write it, BASE-038.
+  - The starting selection comes from the folder's `--layers` setting, CLI-033, resolved to layer ids with tags expanded through `layer_tags`, STORE-038. No per-project starting selection is stored.
   - Applying set at A: for each prefix P of A, root first, the current items of transitive layers attached at type P or at the current element whose address is P, filtered by the effective selection at A.
   - Visible set at A: the current items of transitive layers attached at any type or current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is a primary-key range on `types.address` from `A.` up to but not including `A/`, the next character after the period, joined to `current_items_by_target` and to `current_elements.address`.
   - Unresolved selection: a select or mask row whose layer is hidden or still building is kept and returned by `effective_selection` in an `unresolved` list, and is not applied.
@@ -792,7 +792,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
   - A transitive item attached at the element `code.engine` applies at `code.engine.game`, and after the element is retyped to `code.runtime` it applies at `code.runtime.game` and not at `code.engine.game`.
   - The plans for both sets use `SEARCH` only.
 - Relates to: STORE-005, STORE-019, STORE-025, LAYER-005, LAYER-007.
-- Status: recommended. Attachment at a type address with no element depends on open question 19.
+- Status: recommended. Attachment at a type address with no element depends on open question 19. Whether a project also keeps a stored starting selection of its own, used by every folder where `--layers` is unset, is open question 22.
 
 ### STORE-036 Re-examination marks
 - Requirement: When a revision supersedes a thing that another layer was built from, that layer is marked for re-examination until someone clears the mark.
@@ -830,6 +830,31 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: STORE-006, BASE-028, MCP-002.
 - Status: recommended.
 
+### STORE-038 Layer tags
+- Requirement: A layer's tags are stored one row per tag, indexed by tag, and can be changed at any time.
+- What this means: Tags let layers be found and toggled by what they are for, LAYER-019. They are not layer content, so adding or removing a tag is allowed on a locked layer and does not create a revision or touch provenance.
+- Why: An orchestrator toggles layers by tag, so finding every layer with a tag must be one indexed read, STORE-005, and a tag must be changeable after a layer is locked without disturbing the locked content.
+- How it shows: `metaform map tag practices-cpp practices` then `metaform map layers tag=practices` lists that layer.
+- Build:
+  ```sql
+  CREATE TABLE layer_tags(
+    layer_id TEXT NOT NULL REFERENCES layers(layer_id),
+    tag      TEXT NOT NULL CHECK(length(tag) BETWEEN 1 AND 64),
+    PRIMARY KEY(layer_id, tag)
+  );
+  CREATE INDEX layer_tags_by_tag ON layer_tags(tag, layer_id);
+  ```
+  - A tag is one to 64 characters of lowercase letters, digits, periods, underscores and hyphens.
+  - `tag(layer, tag)` inserts a row and is a no-op when the row exists; `untag(layer, tag)` deletes it and is a no-op when it is absent. Both work on building and locked layers, need no build token, and are recorded in no revision.
+  - `new-layer` accepts an optional list of tags, written in the same transaction as the layer row.
+  - Discarding a building layer deletes its `layer_tags` rows with its other content rows, STORE-032.
+  - Resolving a `--layers` value: each name is looked up as a layer reference, STORE-013; a name that is not a layer is read as a tag and expands through `layer_tags_by_tag` to every layer carrying it. A name that is neither is an error naming it.
+- Acceptance:
+  1. Tagging a locked layer adds the tag, and the layer's revision count and provenance row are unchanged.
+  2. `EXPLAIN QUERY PLAN` for listing by tag shows `SEARCH layer_tags USING COVERING INDEX layer_tags_by_tag`.
+- Relates to: STORE-005, STORE-013, STORE-025, STORE-032, STORE-035, LAYER-019, CLI-033, BASE-038.
+- Status: recommended. Tags being editable after locking is recommended; that layers carry tags is confirmed.
+
 ## Open questions
 
 1. Can two current elements in one project share a type address, for example two photos that are both `media.photo`? The store currently allows one current element per address, because the intake refers to elements by address.
@@ -853,3 +878,4 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 19. Can a layer item attach at a type address that no element holds? LAYER-005 and MAP-011 attach practices at addresses such as `code.engine`, while LAYER-003 lists only elements, joins, subtypes, and new elements and joins as targets.
 20. Is a C verdict's link to the handling element or join stored in the item's link fields, as STORE-015 has it, or inside the item's value, as LAYER-015 states?
 21. Resolved by E9: `ctx.store`.
+22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every locked layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)

@@ -24,8 +24,8 @@ Recommendation: no, one level. A subtype lives inside a join, not inside an elem
 **D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
 Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.
 
-**D7. Join roles.** The Foundation names the roles within a join: hard dependency, property and supportive. The Canonical Intake schema does not emit them. Are they a join field, and do property joins carry transitivity in the map itself?
-Recommendation: yes to both. Property transitivity is part of the Foundation's account of how media flows back to the trunk, so the map should carry it. This needs the intake to emit the role, which is a change to your intake text.
+**D7. Join roles.** The Foundation names the roles within a join: hard dependency, property and supportive. The Canonical Intake schema does not emit them. Is the role a field on every join? Property joins carrying transitivity in the map itself is settled, MAP-022.
+Recommendation: yes, a field on every join. This needs the intake to emit the role, which is a change to your intake text.
 
 **D9. The Type's single Encounter Function.** C(T) names one encounter function e for the Type, while each join stores the function for its own encounter. Does the Type record store e?
 Recommendation: open. I do not know which reading you intend, and it changes the Type record.
@@ -199,10 +199,12 @@ Recommendation: every root reads as its own name, and the example that says prog
 **D69. Stacking commands.** The command tree has a few top-level objects where commands stack so any of them can be run. Does stacking mean several commands chained in one invocation, or only that commands are grouped under their object? (CLI-032)
 Recommendation: open. I do not know which you meant.
 
-**D70. `--layers` as a context setting.** The active layer selection for a folder as a setting, `metaform set --layers intake,memory,practices`, like `--workflow` and `--commands`. Select and mask per address stay map commands.
-Recommendation: yes. It follows the rule that every long switch is a setting.
-
 ## Answered
+
+**D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
+
+**D71. A stored starting selection per project.** Should a project also keep a starting selection used wherever `--layers` is unset?
+Recommendation: no. The setting already falls back to every locked, unhidden layer, and one mechanism is simpler.
 
 **D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
 

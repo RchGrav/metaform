@@ -426,7 +426,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `identity` | element | `identity` |
   | `subtypes` | join, optional `end` | `subtypes` |
   | `children` | address | `children` |
-  | `layers` | none | `layers` |
+  | `layers` | optional tag, kind, module | `layers` |
+  | `tag`, `untag` | layer, tag | `tag`, `untag`, STORE-038 |
   | `layer` | layer, optional node | `layer_items` |
   | `node` | node; switch `--raw` | `node` |
   | `context` | address | `context` |
@@ -434,7 +435,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `citing` | key, value | `citing` |
   | `revisions` | id | `revisions` |
   | `search` | text | `search` |
-  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, and the provenance fields module, workflow, prompt, model, role, blinded | `layer`; an immutable layer is created building and its build token is returned once, STORE-032 |
+  | `new-layer` | name, variable, mutable, hideable, transitive; optional kind, sources, tags, and the provenance fields module, workflow, prompt, model, role, blinded | `layer`; an immutable layer is created building and its build token is returned once, STORE-032 |
   | `lock` | layer, token | `lock` |
   | `edit` | id, token; each changed field of STORE-034 | `edit` |
   | `remove` | id, token | `remove` |
@@ -448,7 +449,6 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `retire` | id, reason; optional evidence | `retire` |
   | `select`, `mask` | address, layer | `select`, `mask` |
   | `clear` | address, layer, kind | `clear` |
-  | `select-root`, `clear-root` | layer | STORE-035 |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
   | `reexamined` | layer | `reexamined` |
 

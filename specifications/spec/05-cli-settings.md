@@ -278,11 +278,11 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 ## Context and the command surface
 
 ### CLI-021 Working context is made of ordinary folder settings
-- Requirement: the working context is three folder settings: `--project`, `--workflow` and `--commands`.
-- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--commands` lists the command groups on the folder's surface; empty means all. One workflow runs at a time, so the workflow is a single setting and never a list. A workflow may come with its own settings, declared by the module that provides it, like any module setting.
+- Requirement: the working context is four folder settings: `--project`, `--workflow`, `--commands` and `--layers`.
+- What this means: `--project` defaults to the registered project that contains the folder. `--workflow` names the active workflow, with choices from the workflow module's data. `--commands` lists the command groups on the folder's surface; empty means all. `--layers` lists the layers toggled on, by name or tag; empty means every locked layer that is not hidden, CLI-033. One workflow runs at a time, so the workflow is a single setting and never a list. A workflow may come with its own settings, declared by the module that provides it, like any module setting.
 - Why: context as settings needs no extra machinery, and it is visible and reversible like any setting.
 - How it shows: `metaform set --workflow intake --commands workflow,memory`. `metaform` status shows the project and the narrowed commands.
-- Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `commands`, a folder list whose default is empty. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
+- Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `commands`, a folder list whose default is empty, and `layers`, a folder list whose default is empty, CLI-033. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
 - Acceptance: in a subfolder of a registered project with nothing set, `--project` is that project; `unset --project` returns to it.
 - Relates to: CLI-014, CLI-022, STORE-002, MCP-011.
 - Status: confirmed.
@@ -482,6 +482,31 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Acceptance: `help commands` lists every enabled module's verbs under that module's id, and no module verb at the top level.
 - Relates to: CLI-001, CLI-008, CLI-022, CLI-031.
 - Status: confirmed for the hierarchy. How commands stack under an object so that any of them can be run is open, see open question 10.
+
+### CLI-033 `--layers` toggles the layers on for a folder
+- Requirement: the layers toggled on for a folder are the context setting `--layers`, which follows every settings rule.
+- What this means: `--layers` holds a list of layer names and tags. A tag turns on every layer carrying it. The listed layers are the starting selection for every in-context read from this folder and its subfolders, on the CLI and over MCP; per-address select and mask apply on top, LAYER-007. Like any setting, it is given on one call to apply to that call only, stored with `set`, cleared with `unset`, protected with `--glue`, and `unset all` returns it to its default. The default, empty, means every locked layer that is not hidden. The orchestrator sets it for the work it hands out, choosing the layers by how it is prompted, LAYER-019.
+- Why: Toggling layers is part of the working context, like the workflow and the command surface, so it is an ordinary setting: visible, reversible, stored per folder and needing no machinery of its own.
+- How it shows:
+  ```
+  $ metaform set --layers practices,memory
+  Success: updated 1 key
+    layers: all → practices,memory
+  $ metaform map layers
+  practices-cpp   layer   map   practices        locked  on
+  mgm-foresight   layer   map   foresight        locked  off
+  memory          memory  memory                 locked  on
+  $ metaform unset --layers
+  Reset 1 setting(s): layers
+  ```
+  Over MCP, the same value is passed to the `set` tool as `layers`, or as `layers` on a single tool call to apply to that call only.
+- Build: the chassis declares `layers` as a folder list setting with default empty, value syntax per CLI-030 for lists. Validation resolves each entry through STORE-038 and rejects an entry that is neither a layer nor a tag, with one Next line naming `metaform map layers`. A building layer named in the list is not turned on until it is locked; a hidden layer named in the list stays out, LAYER-006. The set's output follows CLI-022's format, showing an empty value as `all`.
+- Acceptance:
+  1. `set --layers practices` in a folder, then an in-context read in a subfolder, returns only layers tagged `practices`.
+  2. `--layers memory` given on one call changes that call's read and leaves the stored setting unchanged.
+  3. `set --layers practices --glue` then `unset all` keeps `layers` at `practices`; `unset all --unglue` returns it to empty.
+- Relates to: CLI-011, CLI-013, CLI-014, CLI-021, CLI-022, CLI-030, LAYER-007, LAYER-019, STORE-035, STORE-038, MCP-003.
+- Status: confirmed that layers are toggled on and off and that toggling is a context setting following every settings rule. The name `--layers`, the default and the listing format are recommended.
 
 ## Open questions
 

@@ -57,18 +57,18 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Relates to: LAYER-005, LAYER-006, LAYER-011, LAYER-013.
 - Status: confirmed that layers declare these properties. Whether each property is fixed for a kind of layer or chosen by the module for each layer it creates is open.
 
-### LAYER-005 Transitive items apply down the tree and are visible up toward the trunk
+### LAYER-005 Transitive items apply up toward the leaves and are visible down toward the trunk
 
-- Requirement: A transitive layer item placed at a namespace address applies to every address beneath it, and is visible, without applying, at every address above it toward the trunk.
-- What this means: Inheritance runs one way. A practice for `code` holds for every engine, every game engine and every FPS engine. A practice for `code.engine.game.fps` means nothing for code in general. Toward the trunk, the item is visible without applying: C++ attached at the engine and Bash attached at the installer both show at `code`, so `code` shows every medium in use in the project, yet the installer does not inherit C++ because C++ is visible at `code`. Where an item is placed is therefore strategic. Placed near the trunk, it applies to every branch after it. Placed further from the trunk, the branches beside it do not inherit it. An item that still holds with its leaf segment removed belongs higher in the tree.
-- Why: Every prefix of an address is a complete type with its own inference, and practice passes from parent to child. Visibility toward the trunk lets a broad question see everything in use beneath it without spreading a branch's specifics to its siblings.
-- How it shows: Reading an address lists the transitive items that apply there, and separately the items visible there from beneath.
+- Requirement: A transitive layer item placed at a namespace address applies to every address above it toward the leaves, and is visible, without applying, at every address below it toward the trunk.
+- What this means: Orientation: the trunk is down and the leaves are up. From the address where an item is linked, it goes down to the trunk as visibility and up to the leaves as inheritance. Inheritance runs one way. A practice for `code` holds for every engine, every game engine and every FPS engine. A practice for `code.engine.game.fps` means nothing for code in general. Toward the trunk, the item is visible without applying: C++ attached at the engine and Bash attached at the installer both show at `code`, so `code` shows every medium in use in the project, yet the installer does not inherit C++ because C++ is visible at `code`. Where an item is placed is therefore strategic. Placed near the trunk, it applies to every branch after it. Placed further from the trunk, the branches beside it do not inherit it. An item that still holds with its leaf segment removed belongs lower in the tree, toward the trunk.
+- Why: Every prefix of an address is a complete type with its own inference, and practice passes from parent to child. Visibility toward the trunk lets a broad question see everything in use above it without spreading a branch's specifics to its siblings.
+- How it shows: Reading an address lists the transitive items that apply there, and separately the items visible there from above, toward the leaves.
 - Build: Transitive travel follows the namespace tree only, never the purpose graph, so it always terminates. For an address A, the applying set is the transitive items attached at A and at every prefix of A, after select and mask. The visible set is the transitive items attached at any address that has A as a prefix, after select and mask. Reads return the two sets separately.
 - Acceptance:
   - With C++ attached at `code.engine` and Bash at `code.installer`: `code` shows both as visible and neither as applying; `code.installer` does not receive C++.
   - An item at `code` applies at `code.engine.game.fps`.
-- Relates to: LAYER-003, LAYER-004, LAYER-007, MAP-011.
-- Status: confirmed.
+- Relates to: LAYER-003, LAYER-004, LAYER-007, MAP-011, MAP-022.
+- Status: confirmed, including the orientation: down is toward the trunk, up is toward the leaves.
 
 ### LAYER-006 Hiding removes a layer from view and keeps it stored
 
@@ -84,15 +84,15 @@ The receiver, purpose and encounter structure itself, element identity and subty
 ### LAYER-007 Select and mask decide which layers reach each address
 
 - Requirement: At each namespace address, the effective selection is (incoming & mask) | select, computed from trunk to leaf, and it applies on every path by which knowledge reaches an agent.
-- What this means: Selection is a set of layers. The project supplies the starting selection at the trunk. At each address, a mask can block layers coming down from above, and a select can turn layers on from that address downward. An address with no select and no mask passes its incoming selection through unchanged. A mask on `code.engine` can block porting notes for everything under it, and `code.engine.renderer` can select them again for itself. The same selection governs direct element reads, property and provider context, workflow context and MCP reads. A layer excluded at an address cannot reach an agent there through a property or provider path.
+- What this means: Selection is a set of layers. The layers toggled on for the working context supply the starting selection at the trunk, LAYER-019. At each address, a mask can block layers coming up from the trunk, and a select can turn layers on from that address downward. An address with no select and no mask passes its incoming selection through unchanged. A mask on `code.engine` can block porting notes for everything under it, and `code.engine.renderer` can select them again for itself. The same selection governs direct element reads, property and provider context, workflow context and MCP reads. A layer excluded at an address cannot reach an agent there through a property or provider path.
 - Why: Select and mask let one map serve many jobs, each seeing exactly the knowledge meant for it at each place, without copying knowledge or building a separate map per job. Applying the same rule on every path is what makes the selection trustworthy: an excluded layer that leaks in through a side path defeats it.
-- How it shows: Two jobs with different starting selections read the same element and receive different layers. Selecting a layer at a child address makes it appear there and below, and nowhere else.
+- How it shows: Two jobs with different starting selections read the same element and receive different layers. Selecting a layer at a child address makes it appear there and above it toward the leaves, and nowhere else.
 - Build:
   - A selection entry holds: project, address, layer id, kind (select or mask). A mask entry names a layer blocked at that address; the mask applied is all layers except those named.
-  - Resolution at address A: start with the project's starting selection; for each prefix of A from the trunk to A itself, set selection to (selection minus the layers masked there) plus the layers selected there.
+  - Resolution at address A: start with the starting selection, the layers toggled on, LAYER-019; for each prefix of A from the trunk to A itself, set selection to (selection minus the layers masked there) plus the layers selected there.
   - Resolution follows the namespace tree only, never the purpose graph.
   - An element's effective selection is the effective selection at its address. Every context assembly path calls this one resolution.
-  - The project's starting selection is stored as in STORE-035; when none is stored, every locked layer starts selected.
+  - The starting selection is the folder's `--layers` setting, CLI-033; when it is unset, every locked layer that is not hidden starts selected.
   - Selection data that cannot be applied faithfully, a select or mask row whose layer is hidden or still building, is kept and reported as unresolved by the resolution read, STORE-035, never replaced by a broad default.
 - Acceptance:
   - With layer L masked at `code.engine` and selected at `code.engine.renderer`: L reaches `code.engine.renderer`, and does not reach `code.engine` or `code.engine.physics`.
@@ -241,6 +241,19 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - After `lock`, `edit` is refused and writes nothing, and a correction writes a revision.
 - Relates to: LAYER-001, LAYER-007, LAYER-010, LAYER-011, LAYER-012, LAYER-016, STORE-024, STORE-032, BASE-038.
 - Status: confirmed for building with full edit ability, locking when the task is done, immutability and provenance fixed after locking, and toggling through select and mask. The build token and the verb names are recommended.
+
+### LAYER-019 Layers are tagged, listed and toggled
+- Requirement: Every layer carries tags; layers can be listed and filtered by tag, kind and module; and the layers active for a piece of work are toggled on and off by name or by tag.
+- What this means: A layer carries any number of tags, short words that say what it is for, such as `practices`, `foresight`, `porting` or `mgm-review`. Tags are given when the layer is built and can be added or removed at any time, including after the layer is locked, because tags are for finding and toggling layers and are not part of the layer's content. Listing shows every layer with its name, kind, module, tags, whether it is building or locked, whether it is hidden, and whether it is toggled on for the current context, and it filters by tag, kind and module. Toggling decides which layers are on: the toggled set is the starting selection at the trunk, LAYER-007, and per-address select and mask apply on top of it. A tag toggles every layer that carries it. The orchestrator takes a prompt and toggles on and off whatever layers it wants for that work. Choosing is the orchestrator's job, done by how it is prompted: Metaform provides the tags, the listing and the toggle, and nothing in Metaform decides which layers a piece of work gets.
+- Why: Knowledge layers are only useful when the right ones reach an agent for the job in hand. Tags let an orchestrator find layers by what they are for without knowing every layer's name, and toggling lets one project carry many layers while each job sees only the ones chosen for it. Keeping the choice with the orchestrator keeps judgment where the prompt is, and adds no machinery that second-guesses it.
+- How it shows: `metaform map layers tag=practices` lists the practice layers with their state and whether each is on. `metaform set --layers practices,memory` turns on every layer tagged `practices` and the memory layer for this folder; an in-context read then returns those layers and no others, subject to select and mask at each address. `metaform unset --layers` returns to every locked layer that is not hidden.
+- Build: Tags are stored as in STORE-038, listed through the `layers` read, STORE-025, and edited with the map module's `tag` and `untag` verbs, BASE-038. Toggling is the `--layers` context setting, CLI-033. A building layer is never toggled on, and a hidden layer stays out even when toggled, LAYER-006.
+- Acceptance:
+  1. A layer locked with tag `practices`, then given tag `mgm` after locking, lists with both tags; its content and provenance are unchanged.
+  2. With two locked layers A tagged `practices` and B untagged, `set --layers practices` makes an in-context node read return A's items and not B's; `unset --layers` makes it return both.
+  3. With `--layers` naming A and a mask of A at `code.engine`, a read at `code.engine.game` omits A.
+- Relates to: LAYER-006, LAYER-007, LAYER-016, LAYER-018, STORE-013, STORE-019, STORE-025, STORE-035, STORE-038, BASE-038, CLI-021, CLI-033, MCP-024.
+- Status: confirmed that layers are tagged, listed and toggled on and off, and that the orchestrator chooses which layers a piece of work gets. Tags being editable after locking, the listing fields and filters, and toggling as the `--layers` setting are recommended.
 
 ## Open questions
 

@@ -124,3 +124,11 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 
 - 09-24 05:52 to 06:05. Jev: optional, never a requirement; low confidence bounces back to the entering agent, never to a stronger model; candidate checks that an address reverses for full and short names, narrows, has its reversed short name as a child of its parent, and that the join describes something the element would do. Parked with the Jev work; such checks would be a grading layer under MAP-013, never a gate.
 - 09-24 02:51. One Encounter Function per Type at the represented resolution, from a pasted text not written by Rich. Relevant to D9.
+
+## Added 09-25, later
+
+- 09-25. Knowledge layers are tagged, can be listed, and can be toggled on and off. LAYER-019 added; STORE-038 added for tag storage; STORE-025 `layers` read gains tags, state, hidden, toggled and filters; BASE-038 gains `tag` and `untag` and `layers` filters.
+- 09-25. The orchestrator takes a prompt and toggles on and off whatever layers it wants for that work; the choosing is how the orchestrator is prompted, and Metaform only provides tags, listing and toggling. LAYER-019.
+- 09-25. Toggling is the context setting `--layers`, following every settings rule. CLI-033 added; CLI-021 now names four context settings; LAYER-007, STORE-019 and STORE-035 take the starting selection from `--layers`; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed, with STORE open question 22 asking whether a per-project starting selection is also wanted.
+- 09-25. Orientation: the trunk is down and the leaves are up. From the address where a property is linked, inference goes down to the trunk and up to the leaves. LAYER-005 reworded with the same behavior; MAP-011's wording, LAYER-007, STORE-025 and STORE-035 reworded to match.
+- 09-25. Property joins carry transitivity in the map itself, following the transitive rule of where they are linked. MAP-022 corrected, that part confirmed; MAP open question 7 keeps only how roles are recorded on joins.
