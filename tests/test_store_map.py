@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from metaform.data import Node, StoreError
-from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import diff, dump, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 

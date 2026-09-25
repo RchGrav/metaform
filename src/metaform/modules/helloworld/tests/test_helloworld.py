@@ -1,7 +1,6 @@
 """helloworld exercises each chassis feature once; each test fails if the chassis drops that feature, BASE-019."""
 from __future__ import annotations
 
-import json
 
 import pytest
 

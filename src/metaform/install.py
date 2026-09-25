@@ -22,7 +22,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from . import __version__, _build_info, home
+from . import _build_info, home
 from .errors import Stop
 from .probe import probe
 

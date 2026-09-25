@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from metaform.data import Node, StoreError
+from metaform.data import Node
 from storekit import correction, dump, intake, knowledge, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')

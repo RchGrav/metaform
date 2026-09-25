@@ -1,12 +1,11 @@
 """Reads: every read goes through an index, every join names its layer, errors name one next step."""
 from __future__ import annotations
 
-import sqlite3
 
 import pytest
 
-from metaform.data import Node, Store, StoreError
-from storekit import correction, knowledge, memory, plans, scans, small_map, store_file
+from metaform.data import Node, Store
+from storekit import correction, knowledge, memory, plans, scans, small_map
 
 pytestmark = pytest.mark.kind('fixture')
 

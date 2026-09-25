@@ -5,7 +5,6 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import Path
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
@@ -279,13 +278,13 @@ def test_a_masked_layer_is_absent_from_the_tool_read_too(run, home, mapped):
 @pytest.mark.req('BASE-009')
 def test_a_declared_verb_is_a_tool_with_its_summary_unless_it_is_cli_only_or_elsewhere(run, home, mapped,
                                                                                         user_module):
-    user_module('declared', f'''
+    user_module('declared', '''
         import asyncio
         from metaform.module import Module, Verb
         SUPPORTED_OS = ('linux', 'macos', 'windows', 'plan9')
         async def later(ctx):
             await asyncio.sleep(0)
-            return {{'done': True}}
+            return {'done': True}
         MODULE = Module(id='declared', summary='x', purpose='Declares. Details: metaform help declared.',
                         verbs=(Verb('later', later, 'Finish later.'),
                                Verb('local', later, 'Only here.', surfaces=('cli',)),
