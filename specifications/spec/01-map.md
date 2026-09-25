@@ -12,7 +12,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - PE, Providing Element: the element at the other end of a join, whose Encounter Function serves the receiver's Operative Purpose. PE is a position in a join, not a role.
 - OP, Operative Purpose: the why, held by the receiver in its join.
 - EF, Encounter Function: the how, the provider's function for that specific encounter, stored in the receiver's join.
-- DE, Defining Element; SE, Supportive Element; NE, Notable Element: roles of elements inside the AUE.
+- DE, Defining Element; SE, Supportive Element; NE, Notable Element: roles of elements inside the AUE. A Supportive Element's encounter is a function, MAP-022.
 - AT, Artifact Type. Type: a namespace address and the reusable functional meaning it names.
 - Element: a project's realization of a Type. Join: the receiver-owned record of one encounter.
 - Subtype: an element that annealing absorbed into a join it shares with its parent functionality.
@@ -100,12 +100,12 @@ These terms are used exactly as defined in the Canonical Intake.
 - Requirement: Each prefix of an address is a complete Type in its own right, and meaning narrows from trunk to leaf.
 - What this means: `code.engine.game.fps` contains four valid Types. Running inference on them in order, trunk to leaf, goes from general practice for all code, to engines, to game engines, to first-person game engines. The trunk and branch keep the inference in the right domain. The leaf carries most of the specific content. Inheritance runs one way: what holds at a parent holds for every child, and what holds at a child never flows down to its parent. Orientation: the trunk is down and the leaves are up. Something that still holds after its leaf segment is removed belongs lower in the tree, toward the trunk, or in a sibling branch.
 - Why: The address itself is a prompting surface. An agent given only an address can produce distinct, useful guidance, and the prefixes give that guidance a place to live once and be inherited by everything above it toward the leaves.
-- How it shows: Content attached at `code.engine` applies when reading `code.engine.game.fps`. Content attached at `code.engine.game.fps` does not appear when reading `code.engine`.
+- How it shows: A property attached to the element at `code.engine` applies when reading `code.engine.game.fps`. A property attached to the element at `code.engine.game.fps` does not appear as applying when reading `code.engine`.
 - Build: Reading a Type's inherited context walks its prefixes from the trunk up to the Type itself, in that order. The walk never visits children. Attaching and selecting content along this walk is specified in LAYER.
 - Acceptance:
-  1. An item attached at `code` is returned when reading inherited context at `code.engine.game`; an item attached at `code.engine.game` is not returned when reading inherited context at `code`.
+  1. A property attached to the element at `code` is returned when reading inherited context at `code.engine.game`; a property attached to the element at `code.engine.game` is not returned as applying when reading inherited context at `code`.
 - Relates to: MAP-010, LAYER-005, LAYER-007.
-- Status: confirmed. Attaching content at a type address that no element holds is open, per LAYER open question 10.
+- Status: confirmed. A property at a prefix with no element goes on an element the layer creates there, MAP-022, recommended. Whether other items may attach at a type address that no element holds is open, per LAYER open question 10.
 
 ### MAP-012 An address reads as its name when reversed
 
@@ -215,18 +215,19 @@ These terms are used exactly as defined in the Canonical Intake.
 - Relates to: MAP-020, MAP-030, STORE-012, STORE-025.
 - Status: confirmed.
 
-### MAP-022 Roles within a join
+### MAP-022 Every encounter is a function or a property
 
-- Requirement: A join may state the role the provider plays for the receiver.
-- What this means: The Metaform foundation names three roles in a join: hard dependency, property and supportive. Property joins carry transitivity in the map itself. A property typically follows the transitive rule of where it is linked: from the address where the property is linked, inference goes down to the trunk, and going up it follows to the leaves. Orientation: the trunk is down and the leaves are up. So Bash linked as a property of the installer applies up toward the leaves at every address above the installer and is visible down at `code`, and a property linked near the trunk applies to every branch after it. The Canonical Intake currently writes only join type purpose and does not record a role in the join.
-- Why: The role in a join tells an agent whether losing the provider breaks the receiver, changes one of its properties, or only weakens its support.
-- How it shows: Not yet observable.
-- Build: A property join's transitivity follows LAYER-005 along the namespace from the address where the property is linked: it applies up toward the leaves and is visible down toward the trunk. How a join records its role is not specified until the open question is answered.
-- Acceptance: With Bash linked as a property join at `code.installer`: a read at `code.installer.script` receives Bash as applying; a read at `code` shows Bash as visible and not applying; a read at `code.engine` does not receive it.
-- Relates to: MAP-020, MAP-011, LAYER-005, STORE-010.
-- Status: confirmed that property joins carry transitivity in the map itself, with the orientation above. Whether and how the roles hard dependency, property and supportive are recorded on joins is open, see open question 7.
-
----
+- Requirement: Every encounter is either a function, carried by a join, or a property, carried by a transitive property record attached to an element; properties never have joins.
+- What this means: Both are encounters. A function encounter is a join: a receiver's purpose served by a provider's function, MAP-020. A join is always a function encounter; there is no property join and no join kind. Supportive is a kind of encounter function: a Supportive Element's encounter is a function, carried by a join. A property is its own record: the element it is attached to, its value, and the layer that owns it, STORE-039. A property attaches only to an element, never to a bare namespace address, a join or a subtype. When a property belongs at a namespace prefix where the project has no element, such as a practice for `code` in general, the knowledge layer creates an element at that prefix, as a layer may create a new element, and attaches the property to it. The namespace tree itself links that element to every element above it, so no join is needed, and its properties apply up to the leaves from there. It is transitive along the namespace from that element's address, LAYER-005: from the address where it is linked, inference goes down to the trunk, and going up it follows to the leaves. Orientation: the trunk is down and the leaves are up. So Bash attached as a property to the installer element applies up toward the leaves at every address above the installer and is visible down at `code`, and a property linked near the trunk applies to every branch after it. Knowledge layers work the same way, LAYER-016: a knowledge item is either a property, transitive and attached to an element, including an element the knowledge layer created and linked to the metaform, or a function, a join. Hard dependency, property and supportive are no longer join roles.
+- Why: A function stays with the one receiver it serves, so it belongs in that receiver's join. A property describes what something is, so it flows along the namespace to everything above it and shows at the trunk; giving it a join would tie it to one receiver and stop it flowing. Two kinds of encounter, one carried by joins and one by properties, keep one model for the map and every knowledge layer.
+- How it shows: A property linked at an address appears as applying at every address above it toward the leaves and as visible at the trunk; a join appears only as its receiver's join.
+- Build: Joins are stored as in STORE-010, with no kind column. Properties are stored as in STORE-039 and read through STORE-035: the applying set at an address holds the properties attached to the elements at it and at every prefix; the visible set holds the properties attached to elements above it toward the leaves. The intake must emit properties as properties attached to elements, not as joins; that needs a line in the Canonical Intake text, in Rich's wording, which is open, open question 7. Until the intake text emits them, `intake_submit` stores only joins, and properties come from knowledge layers.
+- Acceptance:
+  - With Bash attached as a property to the element at `code.installer`: a read at `code.installer.script` receives Bash as applying; a read at `code` shows Bash as visible and not applying; a read at `code.engine` does not receive it.
+  - A join from `code.installer` to a provider is received only as that receiver's join and at no other address.
+  - No write path accepts a join marked as a property.
+- Relates to: MAP-020, MAP-011, LAYER-005, LAYER-016, STORE-010, STORE-035, STORE-039.
+- Status: creating an element at a prefix to hold a property there, linked by the namespace tree with no join, is recommended. Confirmed that every encounter is a function or a property, that properties are transitive records attached only to elements with no joins, that supportive is a function, and the orientation above. The intake text's wording for emitting properties is open, open question 7. Whether hard dependency survives in any form is open, open question 17.
 
 ### MAP-030 Annealing produces subtypes inside the one join they share
 
@@ -342,7 +343,7 @@ These terms are used exactly as defined in the Canonical Intake.
 4. Can one element be a subtype in two different joins, such as one probe serving two failsafes?
 5. May a subtype share an address with a root element of the same project?
 6. When there are several VEs, is one recorded as primary, and how?
-7. Roles within a join: are hard dependency, property and supportive recorded on joins, and how? That property joins carry transitivity in the map itself is settled, MAP-022.
+7. The Canonical Intake must emit properties as properties attached to elements, not as joins, MAP-022. What line in the intake text asks for it, in Rich's wording?
 8. May a subtype hold subtypes of its own?
 9. Answered: the agent submits once through `intake_submit` after the whole method, MAP-040. Does the intake agent write its result as one whole submission or record by record through tool calls?
 10. C(T) names the Type's single Encounter Function e, while each join stores the provider's function for that encounter. Does the Type record also store its one Encounter Function, and if so, who writes it?
@@ -352,3 +353,4 @@ These terms are used exactly as defined in the Canonical Intake.
 14. When a project holds more than one AUE, how is the set of elements belonging to each AUE recorded? (MAP-042)
 15. Answered: the intake text's response protocol will say to submit the final shape through `intake_submit`, with the method word for word, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
 16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
+17. Hard dependency is no longer a join role, MAP-022. Does it survive in any form, for example as a flag on a join marking that losing the provider breaks the receiver, or is it gone?

@@ -162,7 +162,7 @@ It covers the base database, the per-project store, revisions, layers, provenanc
 - Requirement: Every namespace address used in a project is a row in the `types` table, linked to its parent address.
 - What this means: The namespace is a tree of types. `code.engine.game.fps` is a type, and so are `code.engine.game`, `code.engine` and `code`, each a complete type in its own right. Writing any address writes the rows for it and for each of its prefixes that is missing. Layer items can attach to any address, whether or not an element has that type, pending LAYER-003 and D49. The store checks only an address's form, per MAP-010 and MAP-013: one or more segments separated by periods, each segment one or more lowercase letters, digits or underscores, and the whole address not a match for `^[0-9a-f]{32}$`, which is the id form of STORE-007. An address in that form is never refused for being functionally invalid.
 - Why: Selection, masking and transitive layers travel the type tree from trunk to leaf, so the tree must be stored and walkable. Knowledge layers may link any namespace address, so the store records addresses as given and leaves typology judgments to the agents and workflows that make them.
-- How it shows: Attaching a best practice to `code.engine` makes it visible, through the transitive rule, at every element whose address starts with `code.engine.`.
+- How it shows: A best practice attached as a property to the element `code.engine`, created by the knowledge layer when the project has none there, applies at every element whose address starts with `code.engine.`.
 - Build:
   ```sql
   CREATE TABLE types(
@@ -238,7 +238,6 @@ It covers the base database, the per-project store, revisions, layers, provenanc
     relation    TEXT,
     observation TEXT,
     non_goal    TEXT,
-    role        TEXT,                                -- open question 2
     extra       TEXT,                                -- STORE-021
     supersedes  INTEGER REFERENCES joins(row),
     reason      TEXT,
@@ -594,10 +593,11 @@ It covers the base database, the per-project store, revisions, layers, provenanc
   | `remove(thing, token)` | thing is an element, join, subtype, item or ref written in a building layer | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | layer locked or mutable; wrong token; the thing is still the receiver, provider or target of a current row in the layer |
   | `discard(layer, token)` | a building layer | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; layer locked; layer mutable; wrong token |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
-  | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', role=None, refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
+  | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
   | `add_subtype(layer, join, end, address, *, purpose=None, function=None, relation=None, observation=None, name=None, name_length=None, role=None, refs=(), extra=None)` | end is `receiver` or `provider` | `Subtype` | join unknown; end not one of the two; malformed address |
   | `add_ref(owner, key, value)` | owner is an element, join, subtype or item id | the ref, attached to the owner's current revision | owner unknown; owner's layer locked and immutable, STORE-012; wrong token for a building layer |
   | `add_item(layer, target, value, *, link=None, refs=(), extra=None)` | target and link are `Node`s | `Item` | target or link unknown for identity kinds; `extra` not an object |
+  | `add_property(layer, element, value, *, refs=(), extra=None)` | element as address or element id | `Property` | element unknown; a target that is not an element; `extra` not an object |
   | `update_item(item, value)` | an item of a mutable layer | `Item` | layer is immutable; use `edit` while building |
   | `delete_item(item)` | an item of a mutable layer | nothing | layer is immutable; use `remove` while building |
   | `revise(thing, changes, *, reason, evidence=None)` | thing is an element, join, subtype or item id; `changes` per STORE-034 | the new revision | layer is mutable; receiver change requested; a key not allowed for the thing's kind |
@@ -767,7 +767,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Why: A revision format with no rules lets a correction change a join's owner or orphan the joins of a retired element, which breaks the structure that everything reads through.
 - How it shows: `metaform map revise <element id> --address code.probe.echo --reason "..."` retypes an element. Retiring an element that still receives a join is refused, naming that join.
 - Build:
-  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `role`, `extra`; subtype `address`, `name`, `name_length`, `role`, `purpose`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`. Any other key is refused. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
+  - `changes` is a mapping of field name to new value. Allowed fields: element `address`, `name`, `name_length`, `role`, `extra`; join `provider`, `type`, `purpose`, `function`, `relation`, `observation`, `non_goal`, `extra`; subtype `address`, `name`, `name_length`, `role`, `purpose`, `function`, `relation`, `observation`, `extra`; item `value`, `link`, `extra`; property `value`, `extra`. Any other key is refused. `refs` may be given as the complete new list of key and value pairs; when absent, the current refs are carried forward.
   - A revision that changes an element's address writes the `types` rows for the new address, updates `current_elements.address` in the same transaction, and is refused if another current element holds the new address.
   - Retiring an element is refused while any current join has it as receiver or provider. Retiring a join is refused while it has current subtypes. The error names the first dependent and the next step to retire it. Items attached to a retired node stay stored and are returned only by raw reads and by revision history.
 - Acceptance:
@@ -784,8 +784,8 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - How it shows: `metaform query context code` lists C++ from `code.engine` and Bash from `code.installer` as visible, and neither as applying.
 - Build:
   - The starting selection comes from the folder's `--layers` setting, CLI-033, resolved to layer ids with tags expanded through `layer_tags`, STORE-038. No per-project starting selection is stored.
-  - Applying set at A: for each prefix P of A, root first, the current items of transitive layers attached at type P or at the current element whose address is P, filtered by the effective selection at A.
-  - Visible set at A: the current items of transitive layers attached at any type or current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is a primary-key range on `types.address` from `A.` up to but not including `A/`, the next character after the period, joined to `current_items_by_target` and to `current_elements.address`.
+  - Applying set at A: for each prefix P of A, root first, the current properties, STORE-039, attached to the current element whose address is P, and the current items of transitive layers attached there, filtered by the effective selection at A.
+  - Visible set at A: the current properties attached to any current element whose address starts with `A.`, and the current items of transitive layers attached at any type or current element whose address starts with `A.`, each filtered by the effective selection at its own address. The descendant read is a primary-key range on `types.address` from `A.` up to but not including `A/`, the next character after the period, joined to `current_items_by_target` and to `current_elements.address`.
   - Unresolved selection: a select or mask row whose layer is hidden or still building is kept and returned by `effective_selection` in an `unresolved` list, and is not applied.
 - Acceptance:
   - The C++ and Bash example gives the stated sets.
@@ -855,10 +855,50 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: STORE-005, STORE-013, STORE-025, STORE-032, STORE-035, LAYER-019, CLI-033, BASE-038.
 - Status: recommended. Tags being editable after locking is recommended; that layers carry tags is confirmed.
 
+### STORE-039 Properties are their own records
+
+- Requirement: Each property is one row holding the element it is attached to, its value and the layer that owns it, and it has no join.
+- What this means: A property is an encounter that describes what something is, MAP-022. It attaches only to an element, never to a bare type address, a join or a subtype, and travels along the namespace from that element's address by LAYER-005. When a property belongs at a namespace prefix where the project has no element, such as a practice for `code` in general, the layer creates an element at that prefix, as a layer may create a new element, and attaches the property to it. The namespace tree itself links that element to every element above it, so no join is needed, and its properties apply up to the leaves from there. That element is written with `add_element` in the same layer, STORE-024, and needs no join: it applies up toward the leaves and is visible down toward the trunk. It is never stored as a join and never inside an element row. A knowledge layer's property items are rows here; its function items are joins, STORE-010.
+- Why: Properties flow along the namespace and functions stay with their receiver, so they need different records. One row per property keeps them directly readable by address and by layer.
+- How it shows: `context code.installer.script` lists Bash, attached as a property to the element `code.installer`, as applying; `context code` lists it as visible.
+- Build:
+  ```sql
+  CREATE TABLE properties(
+    row         INTEGER PRIMARY KEY,
+    property_id TEXT NOT NULL,
+    revision    INTEGER NOT NULL,
+    layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
+    element_id  TEXT NOT NULL REFERENCES element_ids(element_id),
+    value       TEXT NOT NULL,     -- JSON: the property's value
+    extra       TEXT,
+    supersedes  INTEGER REFERENCES properties(row),
+    reason      TEXT,
+    evidence    TEXT,
+    retired     INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(property_id, revision)
+  );
+  CREATE TABLE current_properties(
+    property_id TEXT PRIMARY KEY,
+    row         INTEGER NOT NULL UNIQUE REFERENCES properties(row),
+    layer_id    TEXT NOT NULL,
+    element_id  TEXT NOT NULL
+  );
+  CREATE INDEX current_properties_by_element ON current_properties(element_id, layer_id);
+  CREATE INDEX current_properties_by_layer   ON current_properties(layer_id, element_id);
+  ```
+  - Ids, revisions, corrections, refs and `extra` follow the same rules as items, STORE-015 and STORE-021. A property written to a building layer is edited or removed in place until the layer is locked, LAYER-018; after that it changes only by correction.
+  - The data access object checks that the element exists and refuses any other target. The element's address, through `current_elements`, places the property in the namespace.
+  - Written by `add_property`, STORE-024; read through `node`, `layer` and `context`, STORE-025 and STORE-035.
+- Acceptance:
+  - A property attached to the element `code.installer` applies at `code.installer.script`, is visible at `code`, and is absent at `code.engine`.
+  - Adding a property never writes a row to `joins`, and adding one at a type address, a join or a subtype is refused.
+- Relates to: MAP-022, LAYER-005, LAYER-016, STORE-008, STORE-010, STORE-015, STORE-024, STORE-035.
+- Status: confirmed that properties are their own transitive records attached only to elements. Creating an element at a prefix to hold a property, linked by the namespace tree with no join, is recommended. The table shape is recommended.
+
 ## Open questions
 
 1. Can two current elements in one project share a type address, for example two photos that are both `media.photo`? The store currently allows one current element per address, because the intake refers to elements by address.
-2. Does a join carry a role of hard dependency, property or supportive as its own field? The Foundation names these roles in the join. The Canonical Intake schema does not emit one. The `role` column is kept until this is settled.
+2. Answered: joins carry no role or kind; a join is always a function encounter, and properties are their own records, MAP-022, STORE-039. Whether hard dependency survives in any form is MAP open question 17.
 3. Can a subtype own joins of its own after annealing? If yes, a subtype can be a receiver but never a provider, and `joins.receiver` must accept subtype ids. If no, its joins lift to the parent when it is annealed.
 4. Can one element be a subtype in two different joins, such as one probe serving two failsafes? The store currently allows it as two subtype rows with separate identity ids. If not, a uniqueness rule on address within `current_subtypes` enforces it.
 5. Are a layer's properties fixed for each kind of layer, so memory is always mutable and never transitive, or chosen by a module for each layer it creates?
@@ -875,7 +915,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 16. What merging does when a wheel is installed: see BASE open question 3.
 17. Do Type records live in each project store, as STORE-008 has them, or are they shared across projects, as MAP-010 recommends?
 18. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
-19. Can a layer item attach at a type address that no element holds? LAYER-005 and MAP-011 attach practices at addresses such as `code.engine`, while LAYER-003 lists only elements, joins, subtypes, and new elements and joins as targets.
+19. Properties attach only to elements, STORE-039, MAP-022. Can any other layer item attach at a type address that no element holds? The `items.target_kind` value `type` stays until this is answered.
 20. Is a C verdict's link to the handling element or join stored in the item's link fields, as STORE-015 has it, or inside the item's value, as LAYER-015 states?
 21. Resolved by E9: `ctx.store`.
 22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every locked layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)

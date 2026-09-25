@@ -441,10 +441,11 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `remove` | id, token | `remove` |
   | `discard` | layer, token | `discard` |
   | `add-element` | layer, address, token for a building layer; optional name, name_length, role, refs, extra | `add_element` |
-  | `add-join` | layer, token for a building layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, role, refs, extra | `add_join` |
+  | `add-join` | layer, token for a building layer, receiver, provider, purpose, function, relation, observation; optional non_goal, type, refs, extra | `add_join` |
   | `add-subtype` | layer, token for a building layer, join, end, address; optional purpose, function, relation, observation, name, name_length, role, refs, extra | `add_subtype` |
   | `add-ref` | owner, key, value; token when the owner's layer is building | `add_ref` |
   | `add-item` | layer, token for a building layer, node, value; optional link, refs, extra | `add_item` |
+  | `add-property` | layer, token for a building layer, element, value; optional refs, extra | `add_property` |
   | `revise` | id, reason; optional evidence and each changed field of STORE-034 | `revise` |
   | `retire` | id, reason; optional evidence | `retire` |
   | `select`, `mask` | address, layer | `select`, `mask` |

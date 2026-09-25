@@ -24,9 +24,6 @@ Recommendation: no, one level. A subtype lives inside a join, not inside an elem
 **D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
 Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.
 
-**D7. Join roles.** The Foundation names the roles within a join: hard dependency, property and supportive. The Canonical Intake schema does not emit them. Is the role a field on every join? Property joins carrying transitivity in the map itself is settled, MAP-022.
-Recommendation: yes, a field on every join. This needs the intake to emit the role, which is a change to your intake text.
-
 **D9. The Type's single Encounter Function.** C(T) names one encounter function e for the Type, while each join stores the function for its own encounter. Does the Type record store e?
 Recommendation: open. I do not know which reading you intend, and it changes the Type record.
 
@@ -149,9 +146,6 @@ Recommendation: one shared Type tree, with elements per project. A Type keeps it
 **D48. Roles on elements a non-intake layer creates.** MAP-017 requires a role; STORE-009 allows none.
 Recommendation: no role. DE, SE, NE and VE are the intake's classification of the artifact. An element a memory or challenge layer creates is not part of that classification.
 
-**D49. A layer item attached at a Type address that no element holds.**
-Recommendation: allowed. A best practice attached at a Type is inherited by every element beneath it, which is the point of attaching it there.
-
 **D50. `metaform abort <workflow> --confirm`.** The chassis does not run workflows.
 Recommendation: abort is the workflow module's verb, and the narrowing message names it as that module's command.
 
@@ -203,7 +197,21 @@ Recommendation: open. I do not know which you meant.
 Recommendation: no. The setting already falls back to every locked, unhidden layer, and one mechanism is simpler.
 
 
+**D72. Hard dependency.** With join roles gone, does hard dependency survive in any form, for example a mark on a function join saying the receiver cannot work without the provider?
+Recommendation: gone. How hard a need is already shows in the purpose the join serves.
+
+**D73. The transitive flag on layers.** Transitivity belongs to properties. Does a layer still declare a transitive flag?
+Recommendation: no. An item is transitive exactly when it is a property, so the flag would only repeat that.
+
+**D74. Items at a type address with no element.** Properties attach only to elements. Can a memory or a verdict attach at a bare type address?
+Recommendation: no. Every item attaches to an element or a join, or to an element its layer creates, which the namespace tree links to the metaform. One rule for every item.
+
+**D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
+Recommendation: your wording; I will draft one for the test file when you want it.
+
 ## Answered
+
+**D7 and D49. Encounters.** Every encounter is a function or a property. A join is always a function. A property is its own record, attached only to an element, transitive up to the leaves and visible down to the trunk. A property at a prefix with no element goes on an element the layer creates there. MAP-022, STORE-039.
 
 **D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
 
