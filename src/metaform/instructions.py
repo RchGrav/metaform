@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import context, loader, settings
-from .module import Status, call
+from .module import Module, Status, call
 
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
         'Read the map before you change the project, so you work from the purpose of each part. Each tool comes '
@@ -30,12 +30,12 @@ def on_surface(group: str, folder: Path) -> bool:
     return not groups or group in groups
 
 
-def surfaced(folder: Path) -> list:
+def surfaced(folder: Path) -> list[Module]:
     return [module for module in sorted(loader.enabled(), key=lambda item: item.id) if on_surface(module.id, folder)]
 
 
 def notices(folder: Path, project: str | None) -> list[str]:
-    found = []
+    found: list[str] = []
     for module in surfaced(folder):
         if module.status is None:
             continue

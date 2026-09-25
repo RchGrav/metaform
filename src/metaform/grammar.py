@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import settings
 from .errors import Stop
@@ -23,14 +23,14 @@ CONTEXT = ('project', 'layers')  # every module verb takes these for one call, a
 
 @dataclass
 class Parsed:
-    nouns: dict[str, Any] = field(default_factory=dict)
-    switches: dict[str, Any] = field(default_factory=dict)
+    nouns: dict[str, Any] = field(default_factory=dict[str, Any])
+    switches: dict[str, Any] = field(default_factory=dict[str, Any])
     confirm: bool = False
     json: bool = False
     help: bool = False
-    unknown: list[str] = field(default_factory=list)
-    fields: dict[str, Any] = field(default_factory=dict)
-    notices: list[tuple[str, str]] = field(default_factory=list)
+    unknown: list[str] = field(default_factory=list[str])
+    fields: dict[str, Any] = field(default_factory=dict[str, Any])
+    notices: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
 
 
 def convert(noun: Noun, raw: str, where: str) -> Any:
@@ -180,9 +180,10 @@ def _noun_value(noun: Noun, value: Any, where: str) -> Any:
     if noun.schema is not None or noun.kind == 'json':
         return value
     if noun.many:
-        if not isinstance(value, list) or not all(_typed(noun.kind, member) for member in value):
+        members = cast(list[Any], value) if isinstance(value, list) else None
+        if members is None or not all(_typed(noun.kind, member) for member in members):
             raise Stop(f'{noun.name} is a list of {KIND_WORDS[noun.kind]} values.', f'{where} --help')
-        return list(value)
+        return list(members)
     if not _typed(noun.kind, value):
         raise Stop(f'{noun.name} is {KIND_WORDS[noun.kind]}, not {json.dumps(value)}.', f'{where} --help')
     return value
@@ -195,9 +196,10 @@ def switch_value(setting: settings.Setting, value: Any, folder: Path | None = No
             raise settings.SettingError(f'{setting.key} is true or false, not {json.dumps(value)}.')
         return value
     if setting.kind == 'list':
-        if not isinstance(value, list) or not all(isinstance(member, str) for member in value):
+        members = cast(list[Any], value) if isinstance(value, list) else None
+        if members is None or not all(isinstance(member, str) for member in members):
             raise settings.SettingError(f'{setting.key} is a list of text values.')
-        return [member.strip() for member in value if member.strip()]
+        return [str(member).strip() for member in members if str(member).strip()]
     if setting.kind == 'int':
         if not isinstance(value, int) or isinstance(value, bool):
             raise settings.SettingError(f'{setting.key} is a whole number, not {json.dumps(value)}.')

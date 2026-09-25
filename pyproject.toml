@@ -13,7 +13,7 @@ dependencies = ["prompt_toolkit>=3.0"]
 metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "mcp>=2.2"]
+dev = ["pytest>=8", "mcp>=2.2", "pyright==1.1.414", "ruff==0.16.9"]  # the checkers pinned, so CI is repeatable
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metaform"]
@@ -24,3 +24,19 @@ markers = [
     "req(id): the spec requirement a test protects, QUAL-009 and E4",
     "kind(kind): fixture, simulation or real, QUAL-014",
 ]
+
+[tool.pyright]
+# Strict over the common base, the chassis and the shipped modules, QUAL-004; tests are checked by running them.
+include = ["src/metaform"]
+exclude = ["**/tests", "**/__pycache__"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+# One lint configuration for the whole repository, QUAL-005. The rule set is open, section 07 question 1;
+# until it is chosen, Ruff's default rules apply.
+line-length = 120
+target-version = "py311"
+

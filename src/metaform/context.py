@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import settings
 from .data import Store
@@ -30,7 +30,7 @@ def toggled_for(folder: Path) -> list[str]:
     if 'layers' not in settings.SCHEMA:
         return []
     value = settings.value('layers', folder)
-    return list(value) if isinstance(value, list) else []
+    return [str(item) for item in cast(list[Any], value)] if isinstance(value, list) else []
 
 
 def build(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,

@@ -14,9 +14,9 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
-from metaform.data import Notice, Store
+from metaform.data import Join, Notice, Store
 
 from .schema import ELEMENT, JOIN, ROLES, SUBTYPE, SUBTYPE_ELEMENT, fields
 
@@ -58,7 +58,7 @@ class Writer:
 
     def _object(self, value: Any, path: str, what: str) -> dict[str, Any] | None:
         if isinstance(value, dict):
-            return {str(key): member for key, member in value.items()}
+            return {str(key): member for key, member in cast(dict[Any, Any], value).items()}
         self.note(path, f'This {what} is not an object; it was skipped.')
         return None
 
@@ -66,7 +66,7 @@ class Writer:
         if value is None:
             return []
         if isinstance(value, list):
-            return list(value)
+            return list(cast(list[Any], value))
         self.note(path, f'{what} is not an array; it was skipped.')
         return []
 
@@ -86,8 +86,8 @@ class Writer:
     def _refs(self, value: Any, path: str) -> list[tuple[str, str]]:
         pairs: list[tuple[str, str]] = []
         for index, ref in enumerate(self._list(value, f'{path}.refs', 'refs')):
-            key = ref.get('key') if isinstance(ref, dict) else None
-            text = ref.get('value') if isinstance(ref, dict) else None
+            given = cast(dict[str, Any], ref) if isinstance(ref, dict) else {}
+            key, text = given.get('key'), given.get('value')
             if isinstance(key, str) and isinstance(text, str):
                 pairs.append((key, text))
             else:
@@ -149,6 +149,8 @@ class Writer:
                                    type=given.get('type', 'purpose'), refs=refs, extra=extra or None,
                                    flag=given.get('flag'), flag_note=given.get('flag_note'))
         self.noted(path, made.notices, {'provider': path, 'receiver': path})
+        if not isinstance(made, Join):
+            return
         self.counts.joins += 1
         self.counts.refs += len(refs)
         for number, entry in enumerate(self._list(given.get('subtypes'), f'{path}.subtypes', 'subtypes')):
@@ -168,7 +170,7 @@ class Writer:
         if inner is None:
             self.note(path, 'element is missing; the subtype was stored at its provider.')
         elif isinstance(inner, dict):
-            element = {str(key): member for key, member in inner.items()}
+            element = {str(key): member for key, member in cast(dict[Any, Any], inner).items()}
             extra.update(self._unknown(element, fields(SUBTYPE_ELEMENT), f'{path}.element', "a subtype's element"))
         else:
             self.note(f'{path}.element', 'element is not an object; the subtype was stored at its provider.')

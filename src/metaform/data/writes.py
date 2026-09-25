@@ -18,9 +18,10 @@ from typing import Any, TypeVar, cast
 from ..errors import StoreError
 from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
-from .ids import encode_extra, encode_value, is_id, new_id, refs_list
+from .ids import as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
-from .records import (Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype, Version)
+from .records import (ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
+                      Version)
 from .selection import LayerRow, all_layers
 from .session import Tx
 
@@ -63,7 +64,7 @@ def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_leng
     if role is not None and found.kind not in METAFORM_KINDS:
         notices.append(Notice('role', f'A role is the intake\'s classification of the artifact; an element of '
                                       f'{found.name} carries none. The role was kept in its descriptor.'))
-    elif role is not None and role not in rows.ROLES:
+    elif role is not None and role not in ROLES:
         notices.append(Notice('role', f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as given.'))
     descriptor = {key: value for key, value in (('name', name), ('name_length', name_length), ('role', role))
                   if value is not None}
@@ -161,7 +162,7 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     if purpose is not None:
         moved['purpose'] = purpose
         notices.append(Notice('purpose', 'A subtype has no purpose of its own; the purpose was kept in its extra.'))
-    if role is not None and role not in rows.SUBTYPE_ROLES:
+    if role is not None and role not in SUBTYPE_ROLES:
         moved['role'] = role
         notices.append(Notice('role', f"{role!r} is not DE, SE or NE; it was kept in the subtype's extra."))
         role = None
@@ -407,7 +408,7 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             else:
                 link = value if isinstance(value, Node) else Node.parse(str(value))
                 columns['link_kind'], columns['link_id'] = rows.node_at(tx, link, found, 'link', notices)
-        elif key == 'role' and value is not None and value not in rows.SUBTYPE_ROLES:
+        elif key == 'role' and value is not None and value not in SUBTYPE_ROLES:
             moved['role'] = value
             notices.append(Notice('role', f"{value!r} is not DE, SE or NE; it was kept in the subtype's extra."))
         elif key == 'name_length' and value is not None and not rows.whole_number(value):
@@ -419,7 +420,7 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             columns[key] = value
     if moved:
         encoded = columns.get('extra')
-        current = json.loads(encoded) if isinstance(encoded, str) else {}
+        current = (as_object(json.loads(encoded)) if isinstance(encoded, str) else None) or {}
         columns['extra'] = encode_extra({**current, **moved}, kind)
     return columns, split
 
@@ -431,10 +432,11 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     stop = unchangeable(tx, found, thing)
     if stop is not None:
         return Outcome((stop,))
-    if not isinstance(changes, dict) or not changes:
+    given_changes = as_object(changes)
+    if not given_changes:
         return Outcome((Notice('changes', 'No field to change was named; nothing was written.'),))
     notices: list[Notice] = []
-    allowed = split_changes(kind, {str(key): value for key, value in changes.items()}, notices)
+    allowed = split_changes(kind, {str(key): value for key, value in given_changes.items()}, notices)
     if not allowed:
         return Outcome(tuple(notices))
     spec = corrections.KINDS[kind]
@@ -446,9 +448,9 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
         tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
         rows.write_refs(tx, kind, int(row['row']), refs_list(allowed['refs']))
     if kind == 'item' and row['target_kind'] == 'element' and 'value' in allowed:
-        given = allowed['value']
-        if isinstance(given, dict) and isinstance(given.get('descriptor'), dict):
-            rows.set_role(tx, str(row['target_id']), found, given['descriptor'].get('role'))
+        given = descriptor_of(allowed['value'])
+        if given is not None:
+            rows.set_role(tx, str(row['target_id']), found, given.get('role'))
         elif rows.is_descriptor(str(row['value'])):
             rows.set_role(tx, str(row['target_id']), found, None)
     if split:

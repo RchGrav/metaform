@@ -61,7 +61,7 @@ def _sources(tx: Tx, sources: Sequence[Any], notices: list[Notice]) -> list[str]
     return found
 
 
-def create(tx: Tx, name: str, module: str, variable: Any, *, kind: str = 'layer', mutable: bool, hideable: bool,
+def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'layer', mutable: bool, hideable: bool,
            fields: Sequence[str] = (), tags: Sequence[Any] = (), provenance: dict[str, Any] | None = None,
            result_id: str | None = None, sources: Sequence[Any] = (), ready: bool = False) -> Layer:
     """Create a layer, or return the one with this name and the same declaration, STORE-024 and LAYER-002."""

@@ -163,3 +163,18 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Spec: BASE-009, BASE-010 and the `Context` methods say so.
 - Tests added: `test_an_async_publish_never_blocks_its_loop_and_a_sync_one_there_is_refused`, seen failing first; `test_the_screen_loads_and_turns_off_a_module_whose_start_and_stop_are_async`, which passed before, since the old `call` hid a blocking thread, and guards the screen after `call` changed.
 
+## Step 17: strict typing, the settings screen, and the checks in CI
+
+- QUAL-004: `[tool.pyright]` in `pyproject.toml` sets strict mode over `src/metaform`, tests excluded, with Python 3.11. Strict errors went from 702 to 0. The main changes:
+  - JSON is narrowed through `as_object`, `as_list` and `descriptor_of` in `data/ids.py`, and elsewhere by a `cast` after each check.
+  - A parameter that checks what an agent sent is typed as what it accepts.
+  - Context managers return `Generator`.
+  - Default factories name their element types.
+  - `add_join`'s `Outcome` is handled where the intake writer reads a join id.
+- M9: the settings screen is typed. Its groups are `_Row` records. Its names follow the spec: `backend`, `modules`, `glued`, `_toggle_glue`. The unused `module` and `declarations` parameters are gone. A refresh that fails after a failed change adds its error to the status line instead of passing. The dead text naming `compatible`, a `metaform modules load` command and single-file modules is gone. F5 reads the stored values again.
+- M8 in part: `settings.scope_of` and `own_scope_of` are public and the CLI uses them. `session.open_store` is public and export uses it. A setting's owner outside `owned_by` is still read from the call stack, now through `inspect.currentframe`, because pytest imports a module's package outside the loader when it collects the module's tests. Moving `Context` construction and the registries into one module is not done.
+- QUAL-003: `.github/workflows/checks.yml` runs pyright, ruff and pytest with uv on ubuntu, macOS and Windows, with Python 3.11 and 3.14. The template carries `.github/workflows/checks.yml`, which checks out Metaform, places the module among its modules and runs the same three checks on it, Q46.
+- QUAL-005 in part: `[tool.ruff]` sets 120-character lines and Python 3.11, with ruff's default rules until the rule set is chosen, section 07 question 1, Q47. The dev extra pins pyright 1.1.414 and ruff 0.16.9, so the checks give the same results everywhere. Ruff's defaults find 107 problems, 27 of them import order in a form the repository does not use; none is fixed until the rule set is chosen, so the lint step fails.
+- Tests: the screen tests use the new names. Whole suite: 411 passed, 3 failed on Q39.
+- Questions raised: Q46 and Q47.
+

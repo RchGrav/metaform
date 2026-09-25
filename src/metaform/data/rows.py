@@ -17,8 +17,8 @@ from typing import Any
 from ..errors import StoreError
 from . import corrections
 from .corrections import METAFORM_KINDS
-from .ids import ADDRESS, encode_extra, encode_value, is_id, new_id, prefixes
-from .records import FLAGS, ROLES, SUBTYPE_ROLES, Node, Notice, Ref
+from .ids import ADDRESS, as_list, as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, prefixes
+from .records import FLAGS, Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
@@ -58,7 +58,8 @@ def whole_number(value: Any) -> bool:
 
 
 def holds_records(value: Any) -> bool:
-    return isinstance(value, list) and any(isinstance(member, dict) for member in value)
+    members = as_list(value)
+    return members is not None and any(isinstance(member, dict) for member in members)
 
 
 def extra_fields(extra: Any, where: str,
@@ -70,14 +71,16 @@ def extra_fields(extra: Any, where: str,
     """
     if extra is None:
         return None, []
-    if not isinstance(extra, dict):
+    fields = as_object(extra)
+    if fields is None:
         notices.append(Notice('extra', f'extra on {where} is not an object; it was kept as {{"value": ...}}.'))
         return {'value': extra}, []
     kept: dict[str, Any] = {}
     split: list[tuple[str, Any]] = []
-    for key, value in extra.items():
-        if holds_records(value):
-            split += [(str(key), member) for member in value]
+    for key, value in fields.items():
+        members = as_list(value)
+        if members is not None and holds_records(members):
+            split += [(str(key), member) for member in members]
             notices.append(Notice('extra', f'extra.{key} on {where} held a list of records; each was stored as its '
                                            'own item.'))
         else:
@@ -86,13 +89,12 @@ def extra_fields(extra: Any, where: str,
 
 
 def is_descriptor(value: str) -> bool:
-    decoded = json.loads(value)
-    return isinstance(decoded, dict) and isinstance(decoded.get('descriptor'), dict)
+    return descriptor_of(json.loads(value)) is not None
 
 
 # Finding layers and things -------------------------------------------------------------------------------------
 
-def layer(tx: Tx, ref: str) -> LayerRow:
+def layer(tx: Tx, ref: object) -> LayerRow:
     """A layer by id or name; a reference to no layer cannot be read, STORE-013."""
     if not isinstance(ref, str) or not ref:
         raise StoreError('Every write names its layer.', 'metaform map layers')
@@ -326,9 +328,8 @@ def descriptor_differs(tx: Tx, element_id: str, descriptor: dict[str, Any]) -> b
         return False
     for row in tx.db.execute('SELECT i.value FROM current_items c JOIN items i ON i.row = c.row '
                              "WHERE c.target_kind='element' AND c.target_id=?", (element_id,)):
-        value = json.loads(str(row[0]))
-        if isinstance(value, dict) and isinstance(value.get('descriptor'), dict):
-            known: dict[str, Any] = value['descriptor']
+        known = descriptor_of(json.loads(str(row[0])))
+        if known is not None:
             return any(known.get(key) != given for key, given in descriptor.items())
     return True
 

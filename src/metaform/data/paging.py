@@ -10,10 +10,15 @@ LIMIT = 500
 T = TypeVar('T')
 
 
+def _cursor(row: Any) -> str:
+    """The key a row of a page is resumed after, read from its `key` column."""
+    return str(row['key'])
+
+
 def paged(fetch: Callable[[str | None, int], list[Any]], build: Callable[[Any], T | None], limit: int,
           after: str | None, *, key: Callable[[Any], str] | None = None) -> Page[T]:
     """Fill one page from index range reads, skipping rows the build step leaves out."""
-    keyed = key or (lambda row: str(row['key']))
+    keyed = key or _cursor
     results: list[T] = []
     cursor = after
     batch = limit if limit else LIMIT

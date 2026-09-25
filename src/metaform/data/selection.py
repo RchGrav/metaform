@@ -144,7 +144,7 @@ class Resolver:
 
     def unresolved(self, address: str) -> list[dict[str, str]]:
         """Select and mask rows on the way to an address whose layer is hidden or still building."""
-        found = []
+        found: list[dict[str, str]] = []
         for prefix in prefixes(address):
             for layer_id, kind in self.rows(prefix):
                 layer = self.layers[layer_id]

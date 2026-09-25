@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import anyio
 
@@ -174,7 +174,8 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     confirmed = arguments.get('confirm', False)
     if project is not None and not isinstance(project, str):
         raise Stop('project is a registered project id, as text.', 'metaform list projects')
-    if layers is not None and (not isinstance(layers, list) or not all(isinstance(item, str) for item in layers)):
+    if layers is not None and (not isinstance(layers, list)
+                               or not all(isinstance(item, str) for item in cast(list[Any], layers))):
         raise Stop('layers is a list of layer names or tags.', 'metaform map layers')
     if not isinstance(confirmed, bool):
         raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
@@ -183,7 +184,7 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:
-        switches['layers'] = list(layers)
+        switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     return context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp')
 

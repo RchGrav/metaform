@@ -13,7 +13,7 @@ from typing import Any
 
 from . import corrections
 from .corrections import METAFORM_KINDS
-from .ids import decode_extra
+from .ids import decode_extra, descriptor_of
 from .names import reading, short_name
 from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Property, Provenance, Ref, Report,
                       Subtype, Version)
@@ -59,12 +59,11 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     descriptors: list[Descriptor] = []
     for row in tx.db.execute('SELECT c.item_id, i.* FROM current_items c JOIN items i ON i.row = c.row '
                              "WHERE c.target_kind='element' AND c.target_id=?", (element_id,)):
-        value = json.loads(str(row['value']))
-        if not (isinstance(value, dict) and isinstance(value.get('descriptor'), dict)):
+        given = descriptor_of(json.loads(str(row['value'])))
+        if given is None:
             continue
         if res is not None and not res.reaches(str(row['layer_id']), address):
             continue
-        given: dict[str, Any] = value['descriptor']
         length = given.get('name_length')
         name = given.get('name')
         role = given.get('role')

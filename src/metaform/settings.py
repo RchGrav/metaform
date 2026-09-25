@@ -10,12 +10,12 @@ a default, CLI-023.
 from __future__ import annotations
 
 import re
-import sys
-from collections.abc import Callable, Iterator
+import inspect
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 from . import home
 
@@ -81,7 +81,7 @@ _owner: str | None = None
 
 
 @contextmanager
-def owned_by(module: str) -> Iterator[None]:
+def owned_by(module: str) -> Generator[None, None, None]:
     """While a module loads, the settings it declares belong to it."""
     global _owner
     previous, _owner = _owner, module
@@ -96,12 +96,12 @@ _MODULE_NAME = re.compile(r'^(?:metaform\.modules\.|metaform_module_(?:system|us
 
 def _declaring_module() -> str | None:
     """A module's settings belong to it however its package was imported, such as by a test runner."""
-    frame = sys._getframe(2)
+    frame = inspect.currentframe()
     while frame is not None:
         match = _MODULE_NAME.match(str(frame.f_globals.get('__name__', '')))
         if match:
             return match.group(1)
-        frame = frame.f_back  # type: ignore[assignment]
+        frame = frame.f_back
     return None
 
 
@@ -155,7 +155,7 @@ def by_switch(switch: str) -> tuple[Setting, bool] | None:
 
 # Scopes and values ------------------------------------------------------------
 
-def _own_scope(setting: Setting, folder: Path) -> str:
+def own_scope_of(setting: Setting, folder: Path) -> str:
     return 'global' if setting.scope == 'global' else home.path_key(folder)
 
 
@@ -163,7 +163,7 @@ def _has(scope: str, setting: Setting) -> bool:
     return home.stored(scope, setting.owner, setting.key) is not None
 
 
-def _scope(setting: Setting, folder: Path) -> str:
+def scope_of(setting: Setting, folder: Path) -> str:
     """Where this folder's value lives: the nearest folder at or above it that holds one, CLI-014."""
     if setting.scope == 'global':
         return 'global'
@@ -191,13 +191,13 @@ def _stored_value(setting: Setting, scope: str) -> Any:
 
 def value(key: str, folder: Path) -> Any:
     setting = SCHEMA[key]
-    scope = _scope(setting, folder)
+    scope = scope_of(setting, folder)
     return _stored_value(setting, scope) if _has(scope, setting) else default(setting, folder)
 
 
 def state(key: str, folder: Path) -> str:
     setting = SCHEMA[key]
-    scope = _scope(setting, folder)
+    scope = scope_of(setting, folder)
     if home.glued(scope, setting.owner, key):
         return 'glued'
     return 'set' if _has(scope, setting) else 'default'
@@ -250,7 +250,7 @@ def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
     new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
     notices = (setting.check(new, folder) or []) if setting.check is not None else []
     old = value(key, folder)
-    scope = _own_scope(setting, folder)
+    scope = own_scope_of(setting, folder)
     _save(setting, scope, new, folder)
     if glue:
         home.set_glue(scope, setting.owner, key, True, folder=folder.resolve())
@@ -260,7 +260,7 @@ def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
 def _raw(setting: Setting, typed: Any) -> Any:
     """A typed value in the form `assign` reads: the CLI text, or a boolean."""
     if setting.kind == 'list' and isinstance(typed, list):
-        return ','.join(str(member) for member in typed)
+        return ','.join(str(member) for member in cast(list[Any], typed))
     if setting.kind == 'bool':
         return bool(typed)
     return str(typed)
@@ -284,7 +284,7 @@ def checked(key: str, value: Any, folder: Path, *, typed: bool = False) -> None:
 def glue(key: str, folder: Path, on: bool) -> None:
     """Glue or unglue a setting. Gluing a default keeps the default through unset all."""
     setting = SCHEMA[key]
-    scope = _scope(setting, folder) if not on else _own_scope(setting, folder)
+    scope = scope_of(setting, folder) if not on else own_scope_of(setting, folder)
     if on and not _has(scope, setting):
         _save(setting, scope, value(key, folder), folder)
     home.set_glue(scope, setting.owner, key, on, folder=folder.resolve())
@@ -293,7 +293,7 @@ def glue(key: str, folder: Path, on: bool) -> None:
 def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
     """Reset one setting: (reset, skipped because glued, or unchanged) and whether it was unglued, CLI-016."""
     setting = SCHEMA[key]
-    scope = _scope(setting, folder)
+    scope = scope_of(setting, folder)
     unglued = False
     if home.glued(scope, setting.owner, key):
         if not unglue:
@@ -352,7 +352,11 @@ def _check_layers(names: Any, folder: Path) -> list[str] | None:
     return notices
 
 
-project = choice('project', choices=lambda ctx: [record.project_id for record in home.projects()],
+def _project_choices(ctx: Any) -> list[str]:
+    return [record.project_id for record in home.projects()]
+
+
+project = choice('project', choices=_project_choices,
                  default_from=home.folder_project, boundary=_project_root, help='The project this folder works on.',
                  details="Defaults to the registered project that contains this folder. Set it to work on another "
                          "project from here. Unset it to return to the folder's own project.")

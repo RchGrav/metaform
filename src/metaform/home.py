@@ -13,7 +13,7 @@ import os
 import re
 import sqlite3
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -100,7 +100,7 @@ def path_key(path: Path | str) -> str:
 
 
 @contextmanager
-def base(write: bool = False) -> Iterator[sqlite3.Connection]:
+def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the base database. A read of a home with no base database creates nothing."""
     path = base_path()
     if not write and not path.exists():

@@ -254,3 +254,15 @@ MCP-025 says every tool accepts an optional `project`; the `set` tool stores set
 Meanwhile: `set` takes no `project`. Recommended: record in MCP-025 that `set` is the exception, since it stores folder settings.
 Blocks: nothing.
 
+## Step 17, the checks
+
+**Q46. What a template fork's CI checks out. (QUAL-003, BASE-019)**
+A fork of the template is one module folder. Its tests use the Metaform repository's fixtures and live under `metaform.modules`, so they run only inside a Metaform checkout.
+Meanwhile: the template's workflow checks out `RchGrav/metaform` at `chassis`, places the module under `src/metaform/modules/<repository name>`, and runs pyright, ruff and pytest on it. Recommended: the same, with the reference moved to the release branch once `chassis` is merged.
+Blocks: a fork's CI, if the repository is private or the branch moves.
+
+**Q47. Ruff's rule set and the form of a reasoned suppression. (QUAL-005, section 07 question 1)**
+Ruff 0.16.9's defaults find 107 problems. The largest group, 27, is import order: ruff wraps a long import one name per line, and the repository aligns continuation lines under the opening parenthesis, which ruff cannot write. The others are real or near: unused imports, `subprocess.run` without `check`, blind excepts without a reason, `datetime.UTC`.
+Meanwhile: ruff's defaults, nothing fixed, and the lint step fails. Recommended: ruff's defaults without `I001`, so the import style stays; and a suppression written `# noqa: <code>  <reason>`, as the code already writes them.
+Blocks: a green lint step in CI.
+

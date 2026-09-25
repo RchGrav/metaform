@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import __version__, _build_info, home
 from .errors import Stop
@@ -58,7 +58,7 @@ class Tool:
     config: Callable[[], Path | None]
     skills: Callable[[], Path | None]
     add: Callable[[list[str]], list[str]] | None = None
-    remove: list[str] = field(default_factory=list)
+    remove: list[str] = field(default_factory=list[str])
     merge: bool = False
     verified: bool = True
 
@@ -166,14 +166,14 @@ def _merge(path: Path, command: list[str], backup: Path | None) -> None:
             data = json.loads(path.read_text(encoding='utf-8'))
         except ValueError:
             data = None
-    servers = data.get('mcpServers', {}) if isinstance(data, dict) else None
+    servers = cast(dict[str, Any], data).get('mcpServers', {}) if isinstance(data, dict) else None
     if not isinstance(servers, dict):
         kept = f' A copy is at {backup}.' if backup else ''
         raise Stop(f'{path} is not a JSON object with an mcpServers object, so Metaform did not change it.{kept}',
                    f'add "metaform": {json.dumps({"command": command[0], "args": command[1:]})} to mcpServers in '
                    f'{path}')
-    assert isinstance(data, dict)
-    data['mcpServers'] = {**servers, 'metaform': {'command': command[0], 'args': command[1:]}}
+    data = cast(dict[str, Any], data)
+    data['mcpServers'] = {**cast(dict[str, Any], servers), 'metaform': {'command': command[0], 'args': command[1:]}}
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
     temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
@@ -213,7 +213,7 @@ def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: 
     if everything:
         return list(offered.values())
     if names:
-        chosen = []
+        chosen: list[Tool] = []
         for name in names:
             if name not in offered:
                 reason = 'is not verified yet' if name in detected else 'is not detected here'
@@ -222,7 +222,7 @@ def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: 
         return chosen
     if not sys.stdin.isatty():
         raise Stop('Name the tools to set up; without a terminal nothing is asked.', BOTH_FORMS)
-    chosen = []
+    chosen: list[Tool] = []
     for tool in offered.values():
         answer = input(f'Set up {tool.label} ({tool.name})? [Y/n] ').strip().lower()
         if answer in ('', 'y', 'yes'):
@@ -231,7 +231,8 @@ def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: 
 
 
 def install(words: list[str], say: Callable[[str], None]) -> None:
-    names, everything, ended = [], False, False
+    names: list[str] = []
+    everything = ended = False
     for word in words:
         if not ended and word == '--':
             ended = True
@@ -307,7 +308,7 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(skill)
     say('Proof:')
-    failed = []
+    failed: list[str] = []
     for tool in chosen:
         proof = probe(command, cwd=user_home())
         if proof.ok:

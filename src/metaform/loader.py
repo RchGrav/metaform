@@ -45,7 +45,7 @@ class Found:
     module: Module | None = None
     problem: str = ''
     declared: module_metadata.Declared | None = None
-    tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+    tasks: set[asyncio.Task[Any]] = field(default_factory=set[asyncio.Task[Any]])
 
 
 _cache: list[Found] | None = None
@@ -53,7 +53,7 @@ _exit_registered = False
 
 
 def _candidates() -> list[Found]:
-    found = []
+    found: list[Found] = []
     for place, root in (('system', SYSTEM), ('user', home.home() / 'modules')):
         if root.is_dir():
             for folder in sorted(root.iterdir(), key=lambda item: item.name):

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import Any, Generic, NamedTuple, TypeVar
+from collections.abc import Sequence
+from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 from ..errors import StoreError
 
@@ -25,9 +26,9 @@ def plain(value: Any) -> Any:
     if hasattr(value, 'to_dict') and callable(value.to_dict):
         return value.to_dict()
     if isinstance(value, (list, tuple)):
-        return [plain(item) for item in value]
+        return [plain(item) for item in cast(Sequence[Any], value)]
     if isinstance(value, dict):
-        return {str(key): plain(item) for key, item in value.items()}
+        return {str(key): plain(item) for key, item in cast(dict[Any, Any], value).items()}
     return value
 
 

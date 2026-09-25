@@ -17,7 +17,7 @@ import sys
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from metaform import settings
 from metaform.data import Store
@@ -109,7 +109,7 @@ def _elements(ctx: Context) -> tuple[list[Any] | None, str]:
             return None, f'{"Standard input" if given == "-" else given} is not JSON.'
     if not isinstance(given, list):
         return None, 'elements is not an array of elements.'
-    return given, ''
+    return cast(list[Any], given), ''
 
 
 def _text_noun(ctx: Context, name: str, notices: list[dict[str, str]]) -> str | None:
@@ -160,7 +160,7 @@ def submit(ctx: Context) -> Any:
             receivers = [writer.element(index, raw) for index, raw in enumerate(elements)]
             for index, (raw, receiver) in enumerate(zip(elements, receivers)):
                 if receiver is not None and isinstance(raw, dict):
-                    writer.joins(index, raw, receiver)
+                    writer.joins(index, cast(dict[str, Any], raw), receiver)
     except BaseException:
         if fresh is not None:
             store.withdraw_metaform(fresh)

@@ -8,7 +8,7 @@ transaction, and nested blocks join the outer one.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -26,14 +26,14 @@ class Tx:
     metaform_id: str | None
     project_id: str
     writing: bool
-    created: set[str] = field(default_factory=set)
+    created: set[str] = field(default_factory=set[str])
     named: bool = False
 
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
 
 
-def _open(path: Path, *, create: bool) -> sqlite3.Connection:
+def open_store(path: Path, *, create: bool) -> sqlite3.Connection:
     db = sqlite.connect(path)
     try:
         sqlite.prepare(db, path, STORE_SCHEMA, create=create)
@@ -65,7 +65,7 @@ class Session:
         return None if active.named else active
 
     @contextmanager
-    def write(self) -> Iterator[Tx]:
+    def write(self) -> Generator[Tx, None, None]:
         joined = self._joined()
         if joined is not None:
             yield joined
@@ -75,7 +75,7 @@ class Session:
             raise StoreError(f'Project {self.project_id} has no metaform {self.metaform_id}.', 'metaform list metaforms')
         path = home.store_path(self.project_id, metaform.metaform_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        db = _open(path, create=True)
+        db = open_store(path, create=True)
         try:
             db.execute('BEGIN IMMEDIATE')
             try:
@@ -88,7 +88,7 @@ class Session:
             db.close()
 
     @contextmanager
-    def read(self) -> Iterator[Tx]:
+    def read(self) -> Generator[Tx, None, None]:
         joined = self._joined()
         if joined is not None:
             yield joined
@@ -103,7 +103,7 @@ class Session:
             finally:
                 db.close()
             return
-        db = _open(path, create=False)
+        db = open_store(path, create=False)
         try:
             db.execute('BEGIN')
             try:
@@ -114,7 +114,7 @@ class Session:
             db.close()
 
     @contextmanager
-    def atomic(self) -> Iterator[Tx]:
+    def atomic(self) -> Generator[Tx, None, None]:
         joined = self._joined()
         if joined is not None:
             yield joined

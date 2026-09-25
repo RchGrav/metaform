@@ -43,7 +43,7 @@ def test_screen_edits_and_glues_through_its_own_keys(home, tmp_path):
             screen._edit()
             screen.editor.text = 'other'
             screen._apply_edit()
-            screen._toggle_pin()
+            screen._toggle_glue()
             screen._save_changes()
             await screen.last_task
         asyncio.run(drive())
@@ -57,7 +57,7 @@ def test_screen_turns_a_module_off_and_on(home, tmp_path):
         with pipe:
             async def drive():
                 await screen.refresh()
-                screen.module_index = [row['id'] for row in screen.rows].index('template')
+                screen.module_index = [row.id for row in screen.rows].index('template')
                 screen._toggle_module()
                 screen._save_changes()
                 await screen.last_task
@@ -79,7 +79,7 @@ def test_screen_rows_read_as_config_show_rows(home, tmp_path, capsys):
     with pipe:
         async def drive():
             await screen.refresh()
-            screen.module_index = [row['id'] for row in screen.rows].index('chassis')
+            screen.module_index = [row.id for row in screen.rows].index('chassis')
             return [text for _, text in screen._setting_lines()]
         rows = asyncio.run(drive())
     for key in ('debug', 'report', 'layers', 'modules'):
@@ -133,8 +133,8 @@ def test_the_screen_loads_and_turns_off_a_module_whose_start_and_stop_are_async(
     with pipe:
         async def drive():
             await screen.refresh()
-            assert 'asyncer' not in screen.runtime.load_errors
-            screen.module_index = [row['id'] for row in screen.rows].index('asyncer')
+            assert 'asyncer' not in screen.backend.load_errors
+            screen.module_index = [row.id for row in screen.rows].index('asyncer')
             screen._toggle_module()
             screen._save_changes()
             await screen.last_task

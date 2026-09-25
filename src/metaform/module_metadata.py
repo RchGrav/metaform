@@ -13,7 +13,8 @@ import platform
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, cast
 
 SYSTEMS = ('linux', 'macos', 'windows')
 
@@ -99,7 +100,15 @@ def _summary(tree: ast.Module) -> str | None:
 
 
 def _strings(value: Any) -> bool:
-    return isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in value)
+    return isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in cast(Sequence[Any], value))
+
+
+def _boolean(value: Any) -> bool:
+    return isinstance(value, bool)
+
+
+def _text(value: Any) -> bool:
+    return isinstance(value, str)
 
 
 def _source(path: Any) -> str:
@@ -127,7 +136,7 @@ def read(folder: Any) -> Declared:
 
     systems = declared('SUPPORTED_OS', _strings)
     dependencies = declared('DEPENDENCIES', _strings) or ()
-    ships_disabled = declared('SHIPS_DISABLED', lambda value: isinstance(value, bool)) or False
-    requires = declared('REQUIRES_CHASSIS', lambda value: isinstance(value, str))
+    ships_disabled = declared('SHIPS_DISABLED', _boolean) or False
+    requires = declared('REQUIRES_CHASSIS', _text)
     return Declared(None if systems is None else tuple(canonical(name) for name in systems), tuple(dependencies),
                     ships_disabled, requires, _summary(tree))

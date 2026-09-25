@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, cast
 
 from ..errors import StoreError
 
@@ -23,7 +23,23 @@ def is_id(text: str) -> bool:
     return bool(ID.fullmatch(text))
 
 
-def check_address(address: str, layer: str = '<layer>') -> str:
+def as_object(value: Any) -> dict[str, Any] | None:
+    """A JSON value that is an object, typed, or None when it is not one."""
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+
+def as_list(value: Any) -> list[Any] | None:
+    """A JSON value that is an array, typed, or None when it is not one."""
+    return cast(list[Any], value) if isinstance(value, list) else None
+
+
+def descriptor_of(value: Any) -> dict[str, Any] | None:
+    """The descriptor an item value holds, `{"descriptor": {...}}`, STORE-009, or None."""
+    held = as_object(value)
+    return None if held is None else as_object(held.get('descriptor'))
+
+
+def check_address(address: object, layer: str = '<layer>') -> str:
     if not isinstance(address, str) or not ADDRESS.fullmatch(address) or is_id(address):
         raise StoreError(f'{address!r} is not an address: write dotted lowercase segments of letters, digits and '
                          'underscores, such as code.engine.game.',
@@ -37,14 +53,14 @@ def prefixes(address: str) -> list[str]:
     return ['.'.join(parts[:count]) for count in range(1, len(parts) + 1)]
 
 
-def check_layer_name(name: str) -> str:
+def check_layer_name(name: object) -> str:
     if not isinstance(name, str) or not LAYER_NAME.fullmatch(name) or is_id(name):
         raise StoreError(f'{name!r} is not a layer name: use 1 to 128 letters, digits, ., _ and -.',
                          'metaform map knowledge op=create layer=<name> variable=<question> mutable=true hideable=true')
     return name
 
 
-def check_tag(tag: str) -> str:
+def check_tag(tag: object) -> str:
     if not isinstance(tag, str) or not TAG.fullmatch(tag):
         raise StoreError(f'{tag!r} is not a tag: use 1 to 64 lowercase letters, digits, ., _ and -.',
                          'metaform map layers')
@@ -52,10 +68,12 @@ def check_tag(tag: str) -> str:
 
 
 def _holds_records(value: Any) -> bool:
-    if isinstance(value, list):
-        return any(isinstance(member, dict) or _holds_records(member) for member in value)
-    if isinstance(value, dict):
-        return any(_holds_records(member) for member in value.values())
+    members = as_list(value)
+    if members is not None:
+        return any(isinstance(member, dict) or _holds_records(member) for member in members)
+    mapping = as_object(value)
+    if mapping is not None:
+        return any(_holds_records(member) for member in mapping.values())
     return False
 
 
@@ -90,12 +108,15 @@ def refs_list(refs: Iterable[Any] | None) -> list[tuple[str, str]]:
     """Refs as key and value pairs in order, from pairs or from objects with key and value."""
     found: list[tuple[str, str]] = []
     for ref in refs or ():
-        if isinstance(ref, dict):
-            key, value = ref.get('key'), ref.get('value')
-        elif isinstance(ref, (list, tuple)) and len(ref) == 2:
-            key, value = ref[0], ref[1]
-        else:
-            key = value = None
+        mapping = as_object(ref)
+        key: Any = None
+        value: Any = None
+        if mapping is not None:
+            key, value = mapping.get('key'), mapping.get('value')
+        elif isinstance(ref, (list, tuple)):
+            pair = cast(Sequence[Any], ref)
+            if len(pair) == 2:
+                key, value = pair[0], pair[1]
         if not isinstance(key, str) or not isinstance(value, str):
             raise StoreError(f'{ref!r} is not a ref: give a key and a value, both text.', 'metaform help map knowledge')
         found.append((key, value))

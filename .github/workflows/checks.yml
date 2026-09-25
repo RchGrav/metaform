@@ -1,0 +1,30 @@
+# Type check, lint and tests on Linux, macOS and Windows for every change, QUAL-003.
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # The declared minimum, the requires-python lower bound, and the newest released Python, E6.
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: uv sync --extra dev
+      - name: Type check, QUAL-004
+        run: uv run pyright
+      - name: Lint, QUAL-005
+        run: uv run ruff check src tests conftest.py
+      - name: Tests
+        run: uv run pytest -q

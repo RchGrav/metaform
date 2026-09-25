@@ -14,7 +14,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PROTOCOL = '2025-06-18'
 LIMIT = 30.0
@@ -75,16 +75,17 @@ class Session:
                 raise TimeoutError(f'no answer to {method} in time') from None
             if line is None:
                 raise EOFError(f'the server exited before answering {method}')
-            message = json.loads(line)
-            if not isinstance(message, dict):
+            decoded = json.loads(line)
+            if not isinstance(decoded, dict):
                 raise ValueError('a line of standard output is not a JSON object')
+            message = cast(dict[str, Any], decoded)
             if 'method' in message and 'id' in message:
                 self._send({'id': message['id'], 'error': {'code': -32601, 'message': 'not supported'}})
                 continue
             if message.get('id') == ident:
                 if 'error' in message:
                     raise RuntimeError(f'{method} failed: {message["error"]}')
-                return dict(message.get('result') or {})
+                return dict(cast(dict[str, Any], message.get('result') or {}))
 
     def call(self, name: str, arguments: dict[str, Any], *, limit: float = LIMIT) -> dict[str, Any]:
         """Call one tool; the result holds its content blocks and whether it is an error."""
@@ -132,7 +133,7 @@ def probe(command: list[str], *, cwd: Path, env: dict[str, str] | None = None, l
     try:
         initialized = initialize(session, limit)
         listed = session.request('tools/list', {}, deadline=time.monotonic() + limit)
-        tools = listed.get('tools') or []
+        tools = cast(list[Any], listed.get('tools') or [])
         if not tools:
             return Proof(False, reason='the server lists no tools')
         return Proof(True, len(tools), instructions=str(initialized.get('instructions') or ''))

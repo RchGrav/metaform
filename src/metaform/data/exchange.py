@@ -18,10 +18,10 @@ from typing import Any
 from .. import home
 from ..errors import StoreError
 from . import corrections
-from .ids import prefixes
+from .ids import as_list, as_object, prefixes
 from ..sqlite import SCHEMA_VERSION
 from .schema import STORE_SCHEMA
-from .session import _open
+from .session import open_store
 
 FORMAT = 1
 THINGS = ('elements', 'joins', 'subtypes', 'items', 'properties')
@@ -44,13 +44,13 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
     if not project_ids or list(project_ids) == ['all']:
         chosen = list(home.projects())
     else:
-        chosen = []
+        chosen: list[home.Project] = []
         for project_id in project_ids:
             record = home.project(project_id)
             if record is None:
                 raise StoreError(f'No project {project_id} is registered.', 'metaform list projects')
             chosen.append(record)
-    exported = []
+    exported: list[dict[str, Any]] = []
     for record in chosen:
         metaforms = [item for item in home.metaforms(record.project_id) if metaform is None or item.name == metaform]
         if metaform is not None and not metaforms:
@@ -74,7 +74,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     path = home.store_path(project_id, metaform.metaform_id)
     if not path.exists():
         return document
-    db = _open(path, create=False)
+    db = open_store(path, create=False)
     try:
         db.execute('BEGIN')
         _fill(db, document, layer_names)
@@ -115,7 +115,7 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
         for row in rows:
             owner_ids[(KIND_OF_TABLE[table], row['row'])] = (row[ID_OF_TABLE[table]], row['layer_id'])
         document[table] = _without_row(rows)
-    refs = []
+    refs: list[tuple[int, dict[str, Any]]] = []
     for (owner, owner_row), (owner_id, owner_layer) in sorted(owner_ids.items(), key=lambda pair: pair[0][1]):
         for ref in _rows(db, 'SELECT ref_id, position, key, value FROM refs WHERE owner=? AND owner_row=? '
                              'ORDER BY position', (owner, owner_row)):
@@ -192,63 +192,75 @@ def _scalar(value: Any) -> bool:
 
 def _record(value: Any, path: str, keys: Sequence[str], problems: list[str]) -> None:
     """One object of the document: exactly these keys, each holding text, a number or null."""
-    if not isinstance(value, dict):
+    fields = as_object(value)
+    if fields is None:
         problems.append(f'{path}: not an object')
         return
-    problems += [f'{path}.{key}: not a field here' for key in value if key not in keys]
-    problems += [f'{path}.{key}: missing' for key in keys if key not in value]
-    problems += [f'{path}.{key}: not text, a number or null' for key in keys if key in value
-                 and not _scalar(value[key])]
+    problems += [f'{path}.{key}: not a field here' for key in fields if key not in keys]
+    problems += [f'{path}.{key}: missing' for key in keys if key not in fields]
+    problems += [f'{path}.{key}: not text, a number or null' for key in keys if key in fields
+                 and not _scalar(fields[key])]
 
 
 def _strings(value: Any, path: str, problems: list[str]) -> None:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+    members = as_list(value)
+    if members is None or not all(isinstance(item, str) for item in members):
         problems.append(f'{path}: not a list of ids')
 
 
 def _validate(document: Any) -> None:
     """Check the whole document before anything is written; every problem is named with its path, H8."""
-    if not isinstance(document, dict) or document.get('metaform_export') != FORMAT:
+    whole = as_object(document)
+    if whole is None or whole.get('metaform_export') != FORMAT:
         raise StoreError('This is not a Metaform export document.', 'metaform export > <file>')
-    if str(document.get('schema_version')) != SCHEMA_VERSION:
-        raise StoreError(f'The document has schema version {document.get("schema_version")}; this Metaform '
+    if str(whole.get('schema_version')) != SCHEMA_VERSION:
+        raise StoreError(f'The document has schema version {whole.get("schema_version")}; this Metaform '
                          f'supports version {SCHEMA_VERSION}.', 'install the Metaform release that wrote it')
     problems: list[str] = []
-    entries = document.get('projects')
-    if not isinstance(entries, list):
+    entries = as_list(whole.get('projects'))
+    if entries is None:
         problems.append('projects: not a list')
         entries = []
-    for number, entry in enumerate(entries):
+    for number, given in enumerate(entries):
         path = f'projects[{number}]'
-        if not isinstance(entry, dict):
+        entry = as_object(given)
+        if entry is None:
             problems.append(f'{path}: not an object')
             continue
         _record(entry.get('project'), f'{path}.project', PROJECT_KEYS, problems)
         if not _scalar(entry.get('active_metaform')):
             problems.append(f'{path}.active_metaform: not an id or null')
-        metaforms = entry.get('metaforms')
-        if not isinstance(metaforms, list):
+        metaforms = as_list(entry.get('metaforms'))
+        if metaforms is None:
             problems.append(f'{path}.metaforms: not a list')
             continue
-        for index, metaform in enumerate(metaforms):
+        for index, held in enumerate(metaforms):
             where = f'{path}.metaforms[{index}]'
-            if not isinstance(metaform, dict):
+            metaform = as_object(held)
+            if metaform is None:
                 problems.append(f'{where}: not an object')
                 continue
             _record(metaform.get('metaform'), f'{where}.metaform', HEAD_KEYS, problems)
             for table in ROW_TABLES:
-                rows = metaform.get(table, [])
-                if not isinstance(rows, list):
+                rows = as_list(metaform.get(table, []))
+                if rows is None:
                     problems.append(f'{where}.{table}: not a list')
                     continue
                 for place, row in enumerate(rows):
                     _record(row, f'{where}.{table}[{place}]', columns(table), problems)
-            for place, ref in enumerate(metaform.get('refs', [])):
+            refs = as_list(metaform.get('refs', []))
+            if refs is None:
+                problems.append(f'{where}.refs: not a list')
+            for place, ref in enumerate(refs or []):
                 _record(ref, f'{where}.refs[{place}]', REF_KEYS, problems)
             for key in ('hidden', 'correction_stack'):
                 _strings(metaform.get(key, []), f'{where}.{key}', problems)
-            for place, need in enumerate(metaform.get('requires', [])):
-                keys = ('kind', 'address') if isinstance(need, dict) and need.get('kind') == 'type' else ('kind', 'id')
+            requires = as_list(metaform.get('requires', []))
+            if requires is None:
+                problems.append(f'{where}.requires: not a list')
+            for place, need in enumerate(requires or []):
+                wanted = as_object(need)
+                keys = ('kind', 'address') if wanted is not None and wanted.get('kind') == 'type' else ('kind', 'id')
                 _record(need, f'{where}.requires[{place}]', keys, problems)
     if problems:
         raise StoreError('The document does not fit an export document:\n' +
@@ -316,7 +328,7 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
             if not path.exists():
                 created.append(path)
             path.parent.mkdir(parents=True, exist_ok=True)
-            db = _open(path, create=True)
+            db = open_store(path, create=True)
             opened.append(db)
             db.execute('BEGIN IMMEDIATE')
             _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
@@ -369,7 +381,7 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         report['notices'].append({'where': f'requires[{place}]', 'message': (
             f'{need.get("kind")} {name} is not in this store; what points at it was stored orphaned. To attach it, '
             'import the project\'s map first: metaform import <an export of the project>')})
-    new_layers = []
+    new_layers: list[str] = []
     for layer in metaform.get('layers', []):
         if db.execute('SELECT 1 FROM layers WHERE layer_id=?', (layer['layer_id'],)).fetchone():
             report['layers_skipped'] += 1

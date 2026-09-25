@@ -164,7 +164,7 @@ def layer_items(tx: Tx, res: Resolver | None, layer: str, target: Node | None, l
     return paged(fetch, build, limit, after)
 
 
-def _locate(tx: Tx, target: Node, raw: bool) -> tuple[str, str | None, Callable[[Resolver], bool]] | None:
+def _locate(tx: Tx, target: object, raw: bool) -> tuple[str, str | None, Callable[[Resolver], bool]] | None:
     """A node's identity id, the address its selection is read at, and whether it shows in context."""
     if not isinstance(target, Node):
         raise StoreError(f'{target!r} is not a node.', 'metaform help map node')

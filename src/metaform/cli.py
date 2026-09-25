@@ -14,7 +14,7 @@ import signal
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
 from .data import Store, export_document, import_document
@@ -36,7 +36,7 @@ def show(key: str, value: Any) -> str:
     if isinstance(value, list):
         if not value:
             return 'all' if key in EMPTY_IS_ALL else '(none)'
-        return ','.join(str(item) for item in value)
+        return ','.join(str(item) for item in cast(list[Any], value))
     if value is None or value == '':
         return '(none)'
     return str(value)
@@ -70,7 +70,7 @@ def status(args: list[str], folder: Path) -> None:
     where = settings.state('project', folder)
     line = f'Project: {record.project_id} ({record.path})'
     if where != 'default':
-        scope = settings._scope(settings.SCHEMA['project'], folder)
+        scope = settings.scope_of(settings.SCHEMA['project'], folder)
         line += ', selected here' if scope == home.path_key(folder) else f', inherited from {_folder_of(scope)}'
     out(line)
     out(f'Target: {record.target_type} {record.target_value}')
@@ -265,7 +265,7 @@ def disable(args: list[str], folder: Path) -> None:
 
 def _split_folder(args: list[str], folder: Path) -> tuple[list[str], Path]:
     """The `folder=<path>` noun stores settings for another folder, PROJ-007."""
-    rest = []
+    rest: list[str] = []
     for arg in args:
         if arg.startswith('folder='):
             folder = _named_folder(folder, arg.split('=', 1)[1])
@@ -328,7 +328,9 @@ def set_(args: list[str], folder: Path) -> None:
             raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
                                                        else f'metaform help {setting.switch}')) from None
     before_groups = settings.value('modules', folder)
-    changes, glued, notices = [], [], []
+    changes: list[tuple[str, Any, Any]] = []
+    glued: list[str] = []
+    notices: list[tuple[str, str]] = []
     for setting, raw in pairs:
         before = settings.state(setting.key, folder)
         try:
@@ -382,7 +384,7 @@ def unset(args: list[str], folder: Path) -> None:
     if everything:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
-                if settings._scope(setting, folder) == settings._own_scope(setting, folder)]
+                if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
     results_by_key = {key: settings.reset(key, folder, unglue=unglue) for key in keys}
     if quiet:
         return

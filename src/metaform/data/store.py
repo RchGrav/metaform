@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import sqlite3
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
@@ -62,13 +62,13 @@ class Store:
         return self._record.project_id
 
     @contextmanager
-    def atomic(self) -> Iterator[None]:
+    def atomic(self) -> Generator[None, None, None]:
         """Every write inside the block commits together, or none does, STORE-024."""
         with self._session.atomic():
             yield
 
     @contextmanager
-    def _write(self) -> Iterator[Tx]:
+    def _write(self) -> Generator[Tx, None, None]:
         try:
             with self._session.write() as tx:
                 yield tx
@@ -76,7 +76,7 @@ class Store:
             raise StoreError(f'The write does not fit the store: {error}.', 'metaform help map knowledge') from None
 
     @contextmanager
-    def _read(self) -> Iterator[Tx]:
+    def _read(self) -> Generator[Tx, None, None]:
         with self._session.read() as tx:
             yield tx
 

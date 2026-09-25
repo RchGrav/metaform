@@ -7,7 +7,7 @@ over MCP, or readable `key: value` lines on the CLI.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from .data.records import Layer, plain
 
@@ -24,8 +24,9 @@ def noted(result: Any, notices: list[tuple[str, str]]) -> Any:
     """A result as plain data, with the call's own notices first among its `notices` when it is an object."""
     data = plain(result)
     if notices and isinstance(data, dict):
-        data = {**data, 'notices': [{'where': where, 'message': message} for where, message in notices]
-                + list(data.get('notices') or [])}
+        fields = cast(dict[str, Any], data)
+        return {**fields, 'notices': [{'where': where, 'message': message} for where, message in notices]
+                + list(cast(list[Any], fields.get('notices') or []))}
     return data
 
 
@@ -47,7 +48,7 @@ def _rows(result: Any) -> list[list[str]] | None:
     found = getattr(result, 'results', None)
     if not isinstance(found, tuple) or not found:
         return None
-    items: tuple[Any, ...] = found
+    items = cast(tuple[Any, ...], found)
     if all(isinstance(item, Layer) for item in items):
         return [_layer_row(item) for item in items]
     if all(isinstance(item, Metaform) for item in items):
@@ -72,11 +73,12 @@ def as_text(result: Any) -> str:
         return '\n'.join([*lines, *([f'next: {next_page}'] if next_page else [])]) + '\n'
     data = plain(result)
     if isinstance(data, list):
-        return ''.join(_compact(entry) + '\n' for entry in data)
+        return ''.join(_compact(entry) + '\n' for entry in cast(list[Any], data))
     if isinstance(data, dict):
-        notices = data.pop('notices', None) or []
-        lines = []
-        for key, value in data.items():
+        fields = cast(dict[str, Any], data)
+        notices = cast(list[dict[str, str]], fields.pop('notices', None) or [])
+        lines: list[str] = []
+        for key, value in fields.items():
             shown = _compact(value) if isinstance(value, (list, dict)) else ('' if value is None else str(value))
             lines.append(f'{key}: {shown}')
         lines += [f"Notice: {notice['where']}: {notice['message']}" for notice in notices]

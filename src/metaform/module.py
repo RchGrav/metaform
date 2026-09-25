@@ -124,8 +124,8 @@ class Context:
     folder: Path
     project: str | None = None
     store: Store | None = None
-    nouns: dict[str, Any] = field(default_factory=dict)
-    switches: dict[str, Any] = field(default_factory=dict)
+    nouns: dict[str, Any] = field(default_factory=dict[str, Any])
+    switches: dict[str, Any] = field(default_factory=dict[str, Any])
     sink: Callable[[str], None] | None = None
     surface: str = 'cli'
 

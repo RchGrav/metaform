@@ -66,7 +66,7 @@ def _said(result: dict[str, Any], done: list[Any]) -> dict[str, Any]:
 
 def _grouped(store: Store, items: list[Item]) -> dict[str, Any]:
     nodes: dict[tuple[str, str], list[Item]] = {}
-    relations = []
+    relations: list[dict[str, Any]] = []
     for item in items:
         nodes.setdefault((item.target.kind, item.target.id), []).append(item)
         if item.link is not None:
@@ -175,7 +175,8 @@ def open_nodes(ctx: Context) -> Any:
     """Each node with its observations and the relations it holds and receives; memory read in context."""
     store = ctx.require_store()
     layer = _memory(store, create=False)
-    nodes, relations = [], []
+    nodes: list[dict[str, Any]] = []
+    relations: list[dict[str, Any]] = []
     for text in ctx.nouns['node']:
         node = _node(text)
         view = store.node(node)
