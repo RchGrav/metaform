@@ -23,9 +23,14 @@
     </core_concepts>
     <vested_entity_rules>
         <rules>
+            <rule>We call an entity outside the artifact vested because all we can do is infer its purpose.</rule>
+            <rule>Assume an artifact is converted into a metaform to improve it. The VEs that matter are the ones whose purpose drives changes or improvements to the artifact. Enumerate each of them.</rule>
+            <rule>The VE that drives the most improvement gives the best inference.</rule>
+            <rule>Never the person who asked for the intake, and never the end user.</rule>
             <rule>The VE is the party vested in the type of thing the artifact is.</rule>
             <rule>The VE is especially important because it forms the tripartite join that makes each join artifact specific: the VE as receiver, its Operative Purpose as the why, and the Providing Element's Encounter Function as the how.</rule>
-            <rule>Elements are types, so the VE is a type: the type of party that holds an objective purpose for this type of object.</rule>
+            <rule>Elements are types, so the VE is a type: the type of party that holds an objective purpose for this type of object, named at its most specific reusable type level.</rule>
+            <rule>When one person can hold several roles, name the role that changes the artifact, by the title that role carries.</rule>
             <rule>Identify the VE by asking who drives the most improvement in an artifact of this type.</rule>
             <rule>Deciding on the VE takes deep consideration because it is not a present element in what you are examining. Infer it from what the artifact is; do not look for it in the artifact.</rule>
             <rule>The VE is not the developer, the user, or anyone performing the operation. That could be said of every artifact, so it identifies nothing about this one, and it is the wrong way to be reasoning.</rule>
@@ -33,6 +38,11 @@
         <examples type="vested_entity">
             <example artifact_type="media.photo" ve="seller" valid="true" reason="the owner, the insurance agent, and the buyer seeking proof of condition all have goals for the photo, but only the seller goes out of their way to show the object in the very best light: placing it in a photobox, presenting it well, showing how it is used" />
             <example artifact_type="media.photo" ve="operator" valid="false" reason="the party performing the operation could be named for every artifact, so it identifies nothing about this one" />
+            <example artifact_type="media.photo" ve="asset owner" valid="false" reason="a category that covers the seller, the collector, and the estate alike; it identifies no one who improves the photo" />
+            <example artifact_type="media.photo" ve="buyer" valid="false" reason="the buyer judges the photo; judging does not change or improve it" />
+            <example artifact_type="media.photo" ve="insurance company" valid="false" reason="the insurance company records the photo and does not want it changed" />
+            <example artifact_type="media.photo" ve="social media poster" valid="true" reason="a social media post drives changes or improvements to the photo" />
+            <example artifact_type="media.photo" ve="blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
         </examples>
     </vested_entity_rules>
     <join_types>
@@ -70,7 +80,7 @@
             <example namespace_address="code.game.engine" valid="false" reason="reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent." />
             <example namespace_address="code.engine.game" valid="true" reason="represents game engine program code; 'game engine' is a functional type because it provides the runtime a game runs on (the main loop, rendering, input, and simulation) independent of any particular game's genre or content, and it is widely known by that exact name" />
             <example namespace_address="code.engine.game.fps" valid="true" reason="valid as a functional type — a distinct functionality" note="load-bearing example; initial intake references this via a join as a major core functionality in code.engine.game, with code.engine.game.fps as a supportive element" proof="first-person camera viewpoint with a targeting reticle" />
-            <example namespace_address="code.engine.game.platformer" valid="false" reason="invalid as a functional Vested Entity; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
+            <example namespace_address="code.engine.game.platformer" valid="false" reason="invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
             <example namespace_address="media.image" valid="true" reason="images are a base valid functional type under the media root." />
             <example namespace_address="media.asset.image" valid="true" reason="Images are assets when they are named as a functional element type in a AUE." />
             <example namespace_address="media.photo" valid="true" reason="represents a photograph, photos have defining elements, and sometimes supportive elements, a couple (DE) at the eiffel tower (SE), a car (DE) in the street, a car (DE) racing at the racetrack (SE), a photo of the grand canyon (DE) in the distance a man and a mule (SE)" />
@@ -85,8 +95,8 @@
     </namespace_rules>
     <method deliverable_format="xml">
         <steps>
-            <step n="1" text="FOR each AUE; organize into AT groups capable of generating a useful imperative for an agent based on the (OP of the VE) and the (EF of the PE) of the AUE's DE in service of the VE's OP as the stakeholder; NEXT AUE. Where the intake receives a folder or collection, survey every member before grouping is finalized: observe each member, reason its AT, its DE, its SE and DET elements, and the OP and EF relationships that distinguish its functionality; group only members whose shared functionality supports the same AT-level imperative, while retaining member identity through refs where needed." />
-            <step n="2" text="FOR each AT; create a namespace entry for the entity as a VE, add its OP and EF from step 1 in a join as ref elements using key='path' and value='[relative path]' to identify the members; NEXT AT." />
+            <step n="1" text="FOR each AUE; organize into AT groups capable of generating a useful imperative for an agent based on the (OP of the VE) and the (EF of the PE) of the AUE's DE in service of the VE's OP as the stakeholder; NEXT AUE. Where the intake receives a folder or collection, survey every member before grouping is finalized: observe each member, reason its AT, its DE, its SE and NE elements, and the OP and EF relationships that distinguish its functionality; group only members whose shared functionality supports the same AT-level imperative, while retaining member identity through refs where needed." />
+            <step n="2" text="FOR each AT; create a namespace entry for the entity as a VE, add its OP and EF from step 1 in a join, and identify the members in that join's refs using key='path' and value='[relative path]'; NEXT AT." />
             <step n="3" text="FOR each AUE; FOR each AT; observe DE as a VE and decompose its requirements and dependencies as EF of other elements. The DE simultaneously remains the PE serving the external VE's OP where that relationship exists. Whenever an encountered element itself bears an OP, trace it as a VE without creating a duplicate namespace record. NEXT AT; NEXT AUE." />
             <step n="4" text="For each element with an EF that serves the intent of an OP, create a join record in the VE of type purpose; add the active OP statement as the purpose, the non_goal where the VE holds one, the Providing Element's Encounter Function as function, the Providing Element's namespace address in the provider field, the active-voice relation, the observation of the actual real-world condition, format, layout, or limitations of what is there, and refs where needed." />
             <step n="5" text="Perform this task recursively, starting with the element named in the first OP: move to the next element and treat it as the VE where it bears requirements or an OP of its own." />
@@ -95,8 +105,9 @@
             <step n="8" text="When the trace ends, return to the survey of step 1. No aspect of the functionality of the AUE is left out: for each functionality the trace has not reached, find the VE whose OP it serves and record the join. Where it is only a part of a functionality already named, the function of that parent's join states it." />
             <step n="9" text="Anneal and combine elements where you can infer a functionality that can further refine the structure by absorbing functional subparts because they logically share the same join, and never absorb a subpart whose objective purpose the parent functionality cannot itself carry." />
             <step n="9b" text="Combining never optimizes a functionality away. Combine only where a bigger functionality describes both, and let the purpose join carry the combined encounter." />
+            <step n="9c" text="A subpart is absorbed only when the parent's purpose join already states its purpose. A subpart with an objective purpose of its own stays its own element." />
             <step n="10" text="When combining elements, seek a common element name that can be placed in the namespace and that adheres to the namespace naming rules while logically containing the combined elements." />
-            <step n="11" text="Converge to the final shape. The result is a defining map of parent functionalities: an element absorbed under steps 9-10 is retained strictly as an internal Vested Entity of its load-bearing parent functionality. It is not mapped to the external global graph; its atomic completeness, unique active-voice relation, and specific encounter functions are preserved within a private, internal Vested Entity join." />
+            <step n="11" text="Converge to the final shape. The result is a defining map of parent functionalities: an element absorbed under steps 9-10 is retained strictly as an internal subtype of its load-bearing parent functionality. It is not mapped to the external global graph; its atomic completeness, unique active-voice relation, and specific encounter functions are preserved within a private, internal subtype join." />
         </steps>
         <persistent_directive applies_from="step_5" text="Keep this document." />
         <output_instruction applies_from="step_11" text="Return only the final xml shape." />
@@ -124,9 +135,9 @@
         <instructions>
             <instruction>result carries an id. This file never uses it internally — it exists so this result can later be pasted into digital-typology-expand.xml's canonical_input, whose deep_result links back via a matching ref. Generate it even though nothing in this file's own output points to it.</instruction>
             <instruction>Respond with well-formed XML matching the schema below — no prose, no markdown, no commentary outside the XML. result is the document root — do not wrap it in any outer tag, including the process's own name or title.</instruction>
-            <instruction>Elements and joins express the final annealed shape after Method step 11. Keep the root element list minimal, coarse, and shallow per Goal and Constraints by absorbing subparts. Do not emit absorbed subparts as independent root elements; instead, preserve their atomic realities exclusively as nested join Vested Entitys inside the load-bearing parent's matching purpose join.</instruction>
+            <instruction>Elements and joins express the final annealed shape after Method step 11. Keep the root element list minimal, coarse, and shallow per Goal and Constraints by absorbing subparts. Do not emit absorbed subparts as independent root elements; instead, preserve their atomic realities exclusively as nested join subtypes inside the load-bearing parent's matching purpose join.</instruction>
             <instruction>An element's identity is its namespace_address attribute, not its readable name. "tool registry" is prose; code.registry.tool is the element. Any reference to an element, in a join or anywhere else, must use that namespace_address value, never the name alone. A name with no matching namespace_address isn't a valid reference to anything.</instruction>
-            <instruction>All namespace records are elements. An element inside the AUE carries exactly one role of DE, SE, or NE. A VE outside the AUE is still represented as an element but does not receive an AUE role merely to fit the schema. PE is not a role attribute: it is the join's other endpoint. The same element may bear an OP as a VE in one join and provide an EF as a PE in another without duplication.</instruction>
+            <instruction>All namespace records are elements. An element inside the AUE carries exactly one role of DE, SE, or NE. A VE outside the AUE is represented as an element with role VE; it does not receive an AUE role of DE, SE, or NE. PE is not a role attribute: it is the join's other endpoint. The same element may bear an OP as a VE in one join and provide an EF as a PE in another without duplication.</instruction>
             <instruction>Joins connect the VE bearing the OP to the PE providing for it, and carry purpose, function, relation in active voice, observation of the actual real-world condition, format, layout, or limitations of what is there, optional non_goal, and refs where required. This applies to every join.</instruction>
             <instruction>Include refs on a join only when it needs type-specific or artifact-specific references or logic beyond purpose, function, relation, observation, or non_goal.</instruction>
             <instruction>non_goal is optional and records a pertinent outcome the VE does not seek where it materially clarifies the OP. Omit it when it does not apply.</instruction>
@@ -140,13 +151,20 @@
                         <name/>
                         <joins>
                             <join type="purpose" provider="[namespace address of the Providing Element]" purpose="[State the intended goal, standard, or reason why this element or action is needed.]" function="[Encounter Function of the Providing Element serving this VE's OP]" relation="[active-voice relation]" observation="[State the actual real-world condition, format, layout, or limitations of what is there.]" non_goal="[State what this element or action is explicitly NOT trying to do, fix, or include.]">
-                                <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[AUE|DE|SE|NE]">
-                                    <name/>
-                                    <refs>
-                                        <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
-                                        <ref key="[key]" value="[value]" />
-                                    </refs>
-                                </element>
+                                <refs>
+                                    <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
+                                    <ref key="[key]" value="[value]" />
+                                </refs>
+                                <!-- Internal subtype join: no purpose, the parent join carries it -->
+                                <join provider="[namespace address of the absorbed subtype]" function="[Encounter Function of the subtype within the parent]" relation="[active-voice relation of the subtype]" observation="[State the actual real-world condition, format, layout, or limitations of the subtype.]">
+                                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[DE|SE|NE]">
+                                        <name/>
+                                        <refs>
+                                            <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
+                                            <ref key="[key]" value="[value]" />
+                                        </refs>
+                                    </element>
+                                </join>
                             </join>
                         </joins>
                     </element>

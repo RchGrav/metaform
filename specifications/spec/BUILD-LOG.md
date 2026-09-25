@@ -189,3 +189,12 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The help pages and the CLI take `Module`, `Verb` and `Found`. The loader types module places as `Traversable`. Typing them found two unguarded paths, now guarded: a verb lookup on a module that did not load, and the systems of a verb that names none.
 - Whole suite: 411 passed, 3 failed on Q39. Strict pyright: 0 errors.
 
+## The Canonical Intake reconciled
+
+- `f93c91b` changed VRE to VE on a copy of the intake taken from `cd8dadb`, older than the tested version adopted in `e1acea0`, so it dropped that version's vested-entity rules, the `media.photo` examples, step 9c, the role VE instruction and the nested subtype join. Rich: an obvious fix.
+- `specifications/Canonical_Intake.xml` and the served copy are now the tested version with every change `f93c91b` made: VRE to VE, 17 places; `traverse`; `variants`; `Supportive Element`, already in the tested version; the name comment `Canonical Name (Project official terminology) or Informal Name`. `of of` was already fixed there.
+- Not carried over: `f93c91b`'s replacement of `subtype` by `Vested Entity` in step 11, the platformer example and the response instruction, where a VE, a party outside the AUE, cannot be an absorbed internal part; the words stay `subtype`.
+- Also fixed: step 1's `DET elements`, a term the file never defines, now reads `NE elements`.
+- The response schema is the tested version's, which `intake_submit` already follows: a purpose join holds its refs and its subtype joins; AUE stays in the top-level element's role list. The older copy's provider element nested inside a purpose join is not restored.
+- The handoff's four intake questions are answered by this. The byte-copy tests and the first working test pass.
+
