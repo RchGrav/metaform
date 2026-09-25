@@ -63,6 +63,7 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
         names = archive.namelist()
     modules = {name.split('/')[2] for name in names if name.startswith('metaform/modules/') and name.count('/') > 2}
     assert modules == {'map'}
+    assert not [name for name in names if name.startswith('metaform/modules/') and '/tests/' in name]
     requires = [line.split(': ', 1)[1] for line in metadata(wheel).splitlines() if line.startswith('Requires-Dist: ')]
     from metaform import _build_info
     assert requires == list(_build_info.CHASSIS_DEPENDENCIES)

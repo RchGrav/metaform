@@ -66,3 +66,51 @@ def test_a_reported_write_survives_its_process(home, store, tmp_path):
                       "import os; os._exit(9)\n")
     subprocess.run([sys.executable, str(script)], env={**os.environ, 'METAFORM_HOME': str(home)}, check=False)
     assert [item.value for item in Store('proj').layer_items('memory').results] == ['kept']
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.req('STORE-006')
+def test_a_file_another_connection_creates_between_the_first_reads_is_not_refused(tmp_path):
+    from metaform import sqlite
+    from metaform.data.schema import STORE_SCHEMA
+    path = tmp_path / 'race.sqlite3'
+    done = threading.Event()
+
+    def competitor():
+        other = sqlite.connect(path)
+        try:
+            sqlite.prepare(other, path, STORE_SCHEMA, create=True)
+        finally:
+            other.close()
+            done.set()
+
+    class Racing:
+        """A connection that lets another one create the file right after its first read."""
+
+        def __init__(self, db):
+            self.db = db
+            self.raced = False
+
+        def execute(self, sql, *args):
+            try:
+                return self.db.execute(sql, *args)
+            finally:
+                if not self.raced and sql.lstrip().upper().startswith('SELECT'):
+                    self.raced = True
+                    threading.Thread(target=competitor).start()
+                    done.wait(1.0)
+
+        def __getattr__(self, name):
+            return getattr(self.db, name)
+
+    db = sqlite.connect(path)
+    try:
+        sqlite.prepare(Racing(db), path, STORE_SCHEMA, create=True)
+    finally:
+        db.close()
+    assert done.wait(10)
+    check = sqlite.connect(path)
+    try:
+        assert check.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == (sqlite.SCHEMA_VERSION,)
+    finally:
+        check.close()

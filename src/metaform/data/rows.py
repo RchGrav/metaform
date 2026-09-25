@@ -18,13 +18,10 @@ from ..errors import StoreError
 from . import corrections
 from .corrections import METAFORM_KINDS
 from .ids import ADDRESS, encode_extra, encode_value, is_id, new_id, prefixes
-from .records import Node, Notice, Ref
+from .records import FLAGS, ROLES, SUBTYPE_ROLES, Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
-ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')
-SUBTYPE_ROLES = ('DE', 'SE', 'NE')
-FLAGS = ('missing', 'broken', 'cruft')
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('address', 'extra'),
     'join': ('provider', 'type', 'purpose', 'function', 'relation', 'observation', 'non_goal', 'extra'),

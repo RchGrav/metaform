@@ -167,8 +167,8 @@ def intro(home: str) -> str:
 
 
 def _here(verb: Any) -> bool:
-    from .module_metadata import current_os
-    return 'cli' in verb.surfaces and (verb.supported_os is None or current_os() in verb.supported_os)
+    from .module import on_this_system
+    return 'cli' in verb.surfaces and on_this_system(verb)
 
 
 def commands_index(visible: Callable[[str], bool]) -> str:

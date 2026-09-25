@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-ROLES = ['AUE', 'VE', 'DE', 'SE', 'NE']
-SUBTYPE_ROLES = ['DE', 'SE', 'NE']
-FLAGS = ['missing', 'broken', 'cruft']
+from metaform.data import FLAGS as FLAG_NAMES
+from metaform.data import ROLES as ROLE_NAMES
+from metaform.data import SUBTYPE_ROLES as SUBTYPE_ROLE_NAMES
+
+ROLES = list(ROLE_NAMES)
+SUBTYPE_ROLES = list(SUBTYPE_ROLE_NAMES)
+FLAGS = list(FLAG_NAMES)
 
 Schema = dict[str, Any]
 

@@ -45,8 +45,7 @@ class _Backend:
         self.load_errors = {}
 
     def rows(self):
-        loader.reset()
-        found = loader.discover()
+        found = loader.discover()  # cached; only enable and disable reset it, BASE-037
         self.plugins = {'chassis': _Owner(tuple(item for item in settings.SCHEMA.values() if item.owner == 'chassis'),
                                           description='Settings of the chassis itself.')}
         self.load_errors = {}

@@ -20,7 +20,7 @@ from . import __version__, context, docs, grammar, home, instructions, loader, q
 from .data import Store, export_document, import_document
 from .docs import Command, Switch
 from .errors import Stop
-from .module import call
+from .module import call, on_this_system
 
 EMPTY_IS_ALL = ('modules', 'layers')
 
@@ -321,6 +321,12 @@ def set_(args: list[str], folder: Path) -> None:
             pairs.append((setting, inline))
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
+    for setting, raw in pairs:
+        try:
+            settings.checked(setting.key, raw, folder)
+        except settings.SettingError as error:
+            raise Stop(str(error), error.next_step or ('metaform list projects' if setting.key == 'project'
+                                                       else f'metaform help {setting.switch}')) from None
     before_groups = settings.value('modules', folder)
     changes, glued, notices = [], [], []
     for setting, raw in pairs:
@@ -533,12 +539,11 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'build': build_, 'feedback': feedback, 'read': read}
-ALWAYS = {'help', 'set', 'unset', 'config', 'feedback', 'read'}
 
 
 def always(verb: str, rest: list[str]) -> bool:
     """Whether a chassis command runs whatever the surface: restoring it, and reporting, CLI-022 and BASE-045."""
-    return verb in ALWAYS or (verb == 'list' and rest[:1] == ['reports'])
+    return verb in docs.ALWAYS or (verb == 'list' and rest[:1] == ['reports'])
 
 
 # Module verbs ------------------------------------------------------------------------------
@@ -573,8 +578,7 @@ def _verb(found: Any, name: str) -> Any:
 
 
 def _here(verb: Any) -> bool:
-    from .module_metadata import current_os
-    return verb.supported_os is None or current_os() in verb.supported_os
+    return on_this_system(verb)
 
 
 def _elsewhere(identifier: str, verb: Any) -> Stop:
@@ -635,8 +639,10 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         raise Stop(verb.caution, f'If you are sure: {confirm}')
     messages = sys.stderr if parsed.json else sys.stdout
     project = parsed.switches.pop('project', None)
-    ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches,
-                        sink=lambda text: messages.write(text + '\n'))
+
+    def sink(text: str) -> None:
+        messages.write(text + '\n')
+    ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches, sink=sink)
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:

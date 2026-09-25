@@ -247,3 +247,10 @@ Blocks: nothing.
 Meanwhile: unchanged; the verb stops with `knowledge op=<op> needs layer.` when one is missing. Recommended: a noun marked required and named, shown as `op=<op>` in usage, with the parser reading it by name.
 Blocks: nothing.
 
+## Step 14, low findings
+
+**Q45. The `set` tool and `project`. (MCP-025, L7 of the code review)**
+MCP-025 says every tool accepts an optional `project`; the `set` tool stores settings for the server's folder, and settings belong to folders, not projects, so a per-call project has nothing to act on.
+Meanwhile: `set` takes no `project`. Recommended: record in MCP-025 that `set` is the exception, since it stores folder settings.
+Blocks: nothing.
+

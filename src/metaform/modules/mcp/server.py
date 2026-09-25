@@ -135,6 +135,11 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
         typed = {key: setting_value(key, value, folder) for key, value in arguments.items()}
         for key, value in typed.items():
             try:
+                settings.checked(key, value, folder, typed=True)
+            except settings.SettingError as error:
+                raise Stop(str(error), error.next_step or 'metaform help switches') from None
+        for key, value in typed.items():
+            try:
                 old, new, noted = settings.put(key, value, folder, glue=glue)
             except settings.SettingError as error:
                 raise Stop(str(error), error.next_step or 'metaform help switches') from None

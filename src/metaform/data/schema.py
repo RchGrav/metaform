@@ -9,8 +9,6 @@ without a scan, STORE-042 and STORE-032.
 """
 from __future__ import annotations
 
-SCHEMA_VERSION = '1'
-
 STORE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 

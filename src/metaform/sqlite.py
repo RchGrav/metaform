@@ -33,14 +33,22 @@ def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool) ->
     """Check the schema version, creating the schema first when the file is new and creation is allowed."""
     version = _version(db)
     if version is None:
-        tables = db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
-        if tables or not create:
-            raise StoreError(f'{path} was written by an earlier Metaform and has no schema version.',
-                             f'rename {path} and run metaform again')
-        db.executescript('BEGIN IMMEDIATE;\n' + schema +
-                         f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');"
-                         '\nCOMMIT;')
-        version = _version(db)
+        # The tables and the version are read in one transaction, so a file another connection creates between
+        # the two reads is seen whole, with its version, and never taken for an earlier one.
+        db.execute('BEGIN')
+        try:
+            tables = db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+            version = _version(db) if tables else None
+        finally:
+            db.execute('COMMIT')
+        if version is None:
+            if tables or not create:
+                raise StoreError(f'{path} was written by an earlier Metaform and has no schema version.',
+                                 f'rename {path} and run metaform again')
+            db.executescript('BEGIN IMMEDIATE;\n' + schema +
+                             f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');"
+                             '\nCOMMIT;')
+            version = _version(db)
     if version != SCHEMA_VERSION:
         raise StoreError(f'{path} has schema version {version}; this Metaform supports version {SCHEMA_VERSION}.',
                          'install the Metaform release that wrote it')

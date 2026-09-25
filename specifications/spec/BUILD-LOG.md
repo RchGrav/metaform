@@ -131,3 +131,17 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Open: D1 is Q42, D4 is Q43, D14 waits on Q1, D18 comes after the viewer, D19 is deferred by D41.
 - Questions raised: Q42 to Q44.
 
+## Step 14: the remaining low findings and M2
+
+- Findings fixed:
+  - M2: the settings screen reads the cached discovery and no longer resets the loader on every refresh, so no module's `start` runs again; enabling or disabling still resets, BASE-037 and BASE-018.
+  - L1: the roles, subtype roles and flags are defined once in `data/records.py` and exported by `metaform.data`, which the intake schema imports; the store's unused `SCHEMA_VERSION` is gone and export and import use `sqlite.SCHEMA_VERSION`; `ALWAYS` lives in `docs.py`; the CLI and help check a verb's systems through `module.on_this_system`.
+  - L2: `set`, on the CLI and through the `set` tool, parses and checks every value before it stores any, so one that does not fit stores none. Each is still stored in its own transaction, since `home.base` opens one per write.
+  - L3: a new file's table count and version are read in one transaction, so a file another process creates between the two reads is never refused as an earlier Metaform's, STORE-029.
+  - L4: helloworld looks for its layer instead of catching every error; the loader's reason for a module with no purpose no longer carries a `Next:` line naming helloworld.
+  - L6: a failed uv step names its last line of error text; each uv step has a ten-minute timeout; a module's `tests/` folder is left out of built wheels.
+  - Pyright's basic error in `cli.py`: the sink passed to the context is a function returning None.
+- Open: L7 is Q45.
+- Tests added, each seen failing first: `test_refreshing_the_screen_starts_no_module_again`, `test_set_with_one_value_that_does_not_fit_stores_none_of_them`, `test_a_file_another_connection_creates_between_the_first_reads_is_not_refused`; a reason assertion in the module refusal test; a no-tests assertion in the build test. Whole suite: 406 passed, 3 failed on Q39.
+- Questions raised: Q45.
+

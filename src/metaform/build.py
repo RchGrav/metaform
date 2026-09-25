@@ -82,14 +82,21 @@ def _requirements() -> tuple[list[str], dict[str, list[str]]]:
     return ordered, per_module
 
 
+UV_TIMEOUT = 600  # seconds for one uv step, L6
+
+
 def _uv(*args: str) -> None:
     uv = shutil.which('uv')
     if uv is None:
         raise Stop('metaform build needs uv to carry dependencies.', 'curl -LsSf https://astral.sh/uv/install.sh | sh')
-    result = subprocess.run([uv, *args], capture_output=True, text=True)
+    step = f'uv {args[0]} {args[1]}'
+    try:
+        result = subprocess.run([uv, *args], capture_output=True, text=True, timeout=UV_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise Stop(f'{step} did not finish in {UV_TIMEOUT // 60} minutes.', 'metaform build') from None
     if result.returncode != 0:
-        raise Stop(f'uv {args[0]} {args[1]} failed: {result.stderr.strip().splitlines()[-1:]}',
-                   'metaform build')
+        tail = result.stderr.strip().splitlines()
+        raise Stop(f'{step} failed: {tail[-1] if tail else "it gave no reason"}', 'metaform build')
 
 
 def _pinned(requirements: list[str], work: Path, label: str) -> list[str]:
@@ -152,7 +159,8 @@ def build() -> tuple[Path, list[str]]:
         files[name] = data
     carried = [item for item in loader.discover() if item.module is not None]
     for item in carried:
-        files.update(_walk(item.path, f'metaform/modules/{item.id}'))
+        files.update({name: data for name, data in _walk(item.path, f'metaform/modules/{item.id}').items()
+                      if name.split('/')[3] != 'tests'})
     files['__main__.py'] = BOOTSTRAP.replace('{name}', NAME).replace('{version}', __version__).encode()
     with tempfile.TemporaryDirectory() as temporary:
         vendored, notes = _carry(requirements, per_module, Path(temporary))

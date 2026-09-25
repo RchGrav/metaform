@@ -13,6 +13,9 @@ from ..errors import StoreError
 
 NODE_KINDS = ('element', 'join', 'subtype')
 PLACE_KINDS = (*NODE_KINDS, 'type')
+ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
+SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # a subtype's role, MAP-030
+FLAGS = ('missing', 'broken', 'cruft')  # an intake finding, MAP-046
 
 T = TypeVar('T')
 

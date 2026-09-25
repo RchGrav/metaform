@@ -328,7 +328,7 @@ def test_a_module_that_cannot_load_is_listed_with_its_reason_and_adds_nothing(ru
     folder.mkdir(parents=True)
     (folder / '__init__.py').write_text(body.replace('{leftover}', LEFTOVER.format(name=name)) + '\n')
     row = module_row(name)
-    assert row[1] == 'error' and reason in row[3], row
+    assert row[1] == 'error' and reason in row[3] and 'Next:' not in row[3], row
     assert f'{name}_leftover' not in run('help', 'switches').stdout.replace('-', '_')
     assert f'{name} ' not in run('help', 'commands').stdout
 

@@ -91,8 +91,7 @@ def _import(item: Found) -> Module:
     if declared.id != item.id:
         raise ValueError(f'MODULE.id is {declared.id!r}; it must match its name {item.id!r}.')
     if not declared.purpose.strip():
-        raise ValueError(f'The module has no purpose, the concise instructions for agents. '
-                         f'Next: metaform help helloworld')
+        raise ValueError('The module has no purpose, the concise instructions for agents.')
     names = [verb.name for verb in declared.verbs]
     if len(names) != len(set(names)):
         raise ValueError('Two verbs share one name.')

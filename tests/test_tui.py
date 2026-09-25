@@ -85,3 +85,27 @@ def test_screen_rows_read_as_config_show_rows(home, tmp_path, capsys):
     for key in ('debug', 'report', 'layers', 'modules'):
         assert any(row.rstrip('\n').endswith(expected[key]) for row in rows), (key, expected[key], rows)
 
+
+
+@pytest.mark.req('BASE-037')
+@pytest.mark.req('BASE-018')
+def test_refreshing_the_screen_starts_no_module_again(home, tmp_path, user_module):
+    marks = tmp_path / 'starts.txt'
+    user_module('counted', f'''
+        from pathlib import Path
+        from metaform.module import Module
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def start(ctx):
+            with Path({str(marks)!r}).open('a') as out:
+                out.write('start\\n')
+        MODULE = Module(id='counted', summary='Counts.', purpose='Counts. Details: metaform help counted.',
+                        start=start)
+    ''')
+    loader.reset()
+    pipe, screen = _screen(tmp_path)
+    with pipe:
+        async def drive():
+            for _ in range(3):
+                await screen.refresh()
+        asyncio.run(drive())
+    assert marks.read_text().splitlines() == ['start']

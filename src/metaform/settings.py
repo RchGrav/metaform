@@ -257,14 +257,28 @@ def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
     return Assigned(old, new, tuple(notices))
 
 
+def _raw(setting: Setting, typed: Any) -> Any:
+    """A typed value in the form `assign` reads: the CLI text, or a boolean."""
+    if setting.kind == 'list' and isinstance(typed, list):
+        return ','.join(str(member) for member in typed)
+    if setting.kind == 'bool':
+        return bool(typed)
+    return str(typed)
+
+
 def put(key: str, typed: Any, folder: Path, *, glue: bool = False) -> Assigned:
     """Store one setting from a typed value, as the settings screen does."""
+    return assign(key, _raw(SCHEMA[key], typed), folder, glue=glue)
+
+
+def checked(key: str, value: Any, folder: Path, *, typed: bool = False) -> None:
+    """Parse and check a value as `assign` or `put` would, storing nothing, so a `set` of several settings stores
+    them only when every one fits. Raises `SettingError`."""
     setting = SCHEMA[key]
-    if setting.kind == 'list' and isinstance(typed, list):
-        return assign(key, ','.join(str(member) for member in typed), folder, glue=glue)
-    if setting.kind == 'bool':
-        return assign(key, bool(typed), folder, glue=glue)
-    return assign(key, str(typed), folder, glue=glue)
+    raw = _raw(setting, value) if typed else value
+    new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
+    if setting.check is not None:
+        setting.check(new, folder)
 
 
 def glue(key: str, folder: Path, on: bool) -> None:

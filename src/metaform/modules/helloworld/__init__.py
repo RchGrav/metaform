@@ -31,10 +31,10 @@ PROVENANCE = {'module': 'helloworld', 'workflow': 'greet', 'role': 'module'}
 
 
 def _names(store: Store) -> list[str]:
-    try:
-        items = store.layer_items(LAYER, limit=0).results
-    except Exception:  # No layer yet means no names yet.
+    """The names greeted so far. No layer yet means no names yet; any other failure is real and raises."""
+    if not any(layer.name == LAYER for layer in store.layers(limit=0).results):
         return []
+    items = store.layer_items(LAYER, limit=0).results
     return [str(item.value) for item in items if getattr(item, 'item_id', None)]
 
 

@@ -19,11 +19,11 @@ from .. import home
 from ..errors import StoreError
 from . import corrections
 from .ids import prefixes
+from ..sqlite import SCHEMA_VERSION
 from .schema import STORE_SCHEMA
 from .session import _open
 
 FORMAT = 1
-SCHEMA = '1'
 THINGS = ('elements', 'joins', 'subtypes', 'items', 'properties')
 KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'subtypes': 'subtype', 'items': 'item',
                  'properties': 'property'}
@@ -61,7 +61,7 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
             'metaforms': [_export_metaform(record.project_id, item, layers) for item in metaforms],
             'active_metaform': active.metaform_id if active else None,
         })
-    return {'metaform_export': FORMAT, 'schema_version': SCHEMA, 'projects': exported}
+    return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'projects': exported}
 
 
 def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequence[str]) -> dict[str, Any]:
@@ -210,9 +210,9 @@ def _validate(document: Any) -> None:
     """Check the whole document before anything is written; every problem is named with its path, H8."""
     if not isinstance(document, dict) or document.get('metaform_export') != FORMAT:
         raise StoreError('This is not a Metaform export document.', 'metaform export > <file>')
-    if str(document.get('schema_version')) != SCHEMA:
+    if str(document.get('schema_version')) != SCHEMA_VERSION:
         raise StoreError(f'The document has schema version {document.get("schema_version")}; this Metaform '
-                         f'supports version {SCHEMA}.', 'install the Metaform release that wrote it')
+                         f'supports version {SCHEMA_VERSION}.', 'install the Metaform release that wrote it')
     problems: list[str] = []
     entries = document.get('projects')
     if not isinstance(entries, list):

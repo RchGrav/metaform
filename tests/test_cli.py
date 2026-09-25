@@ -608,6 +608,14 @@ def test_set_and_unset_report_what_is_stored_whatever_the_value(run, toggles):
 
 
 @pytest.mark.req('CLI-022')
+@pytest.mark.req('CLI-027')
+def test_set_with_one_value_that_does_not_fit_stores_none_of_them(run, toggles):
+    refused = run('set', '--tmux', '--panes', '99', ok=False)
+    assert refused.returncode == 2 and 'panes' in refused.stderr
+    assert shown(run)['tmux']['state'] == 'default'
+
+
+@pytest.mark.req('CLI-022')
 @pytest.mark.req('PROJ-007')
 def test_set_for_another_folder_names_that_folder(run, tmp_path):
     job = tmp_path / 'job1'
