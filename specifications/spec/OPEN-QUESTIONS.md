@@ -206,16 +206,20 @@ Recommendation: no. Every item attaches to an element or a join, or to an elemen
 **D75. The intake line for properties.** The intake must give properties as properties attached to elements, not as joins. What line in the intake text asks for it?
 Recommendation: your wording; I will draft one for the test file when you want it.
 
-**D76. Import conflicts under the correction stack.** When an import brings a different version of something the store already holds, is it applied as a new correction layer on top, kept as a separate layer, or reported and skipped? (STORE-027, replaces D23)
-Recommendation: a new correction layer on top, whose provenance names the import.
-
-**D77. Correction layers and locked knowledge layers.** Can a correction layer change things inside a locked knowledge layer, or does it correct only the metaform, the intake map and what earlier correction layers added? (STORE-017, LAYER-011)
-Recommendation: only the metaform. A knowledge layer is replaced by building a new one.
-
 **D78. What an element record holds.** The spec gives element records a name, name length, role, refs and extras, while an element is just a namespace address that things link to. The intake schema also puts a name and refs on the element. Which fields, if any, does an element keep, and where do the rest belong? (MAP-015, STORE-009)
 Recommendation: open.
 
+**D79. Importing history units.** Importing something that already exists does nothing. Section 8 instead keeps both copies of a history unit when they diverge, with the next suffix. Does the does-nothing rule govern history units too? (PROJ-021, STORE-027)
+Recommendation: yes for a unit whose id already exists. A diverged unit has a different id, so it is simply new, and keeping both follows without a special rule.
+
+**D80. A removed join when both ends come back.** If an element is removed and put back at the same address, its attached items show again. Does a join whose receiver and provider both exist again at the same places show again too?
+Recommendation: yes, by the same logic: the join has both ends to attach to again.
+
 ## Answered
+
+**D77. Correction and knowledge layers.** Correction layers always beat knowledge layers and sit underneath them. A knowledge item left with nothing to attach to is orphaned: kept, and no longer shown.
+
+**D23 and D76. Import.** Everything exported carries its unique id, and importing something that already exists does nothing. Agent work brought in is a new layer. Backup and restore is separate. A project can have several metaforms, each with its own layers; one is active, and starting over creates a new, empty metaform while the old one is kept.
 
 **D7 and D49. Encounters.** Every encounter is a function or a property. A join is always a function. A property is its own record, attached only to an element, transitive up to the leaves and visible down to the trunk. A property at a prefix with no element goes on an element the layer creates there. MAP-022, STORE-039.
 

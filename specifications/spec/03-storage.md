@@ -20,7 +20,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - How it shows: After any sequence of commands in a project folder, `git status` in that folder shows nothing new. Deleting `~/.metaform` removes every trace of Metaform's data.
 - Build: The chassis resolves the home once per process as `Path(os.environ.get('METAFORM_HOME') or Path.home() / '.metaform').expanduser()`. Every path the chassis writes is built from that value with `pathlib`, never with string joins or `/` literals. Layout under the home:
   - `metaform.sqlite3`: the base database, STORE-002.
-  - `projects/<project id>/store.sqlite3`: one store per project, STORE-003.
+  - `projects/<project id>/metaforms/<metaform id>/store.sqlite3`: one store per metaform, STORE-003 and STORE-041.
   - `modules/`: the user place for modules, owned by the chassis loader, not by storage.
   - `skills/`: the installer's source copy of the skill, owned by the installer.
 - Acceptance:
@@ -71,6 +71,17 @@ It covers the base database, the per-project store, the correction stack, layers
     skill_path TEXT,
     installed  TEXT NOT NULL             -- ISO 8601 UTC
   );
+  CREATE TABLE metaforms(               -- STORE-041
+    metaform_id TEXT PRIMARY KEY,        -- 32 lowercase hex, STORE-007 form
+    project_id  TEXT NOT NULL REFERENCES projects(project_id),
+    name        TEXT NOT NULL,
+    created     TEXT NOT NULL,           -- ISO 8601 UTC
+    UNIQUE(project_id, name)
+  );
+  CREATE TABLE active_metaforms(        -- STORE-041: one active metaform per project
+    project_id  TEXT PRIMARY KEY REFERENCES projects(project_id),
+    metaform_id TEXT NOT NULL REFERENCES metaforms(metaform_id)
+  );
   CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- holds schema_version
   ```
   - A folder row is written the first time a folder-scoped setting is stored for it. Reads never write.
@@ -84,15 +95,15 @@ It covers the base database, the per-project store, the correction stack, layers
 - Relates to: STORE-001, STORE-031, CLI-013, CLI-014, CLI-021, CLI-024, BASE-017, MAP-041.
 - Status: confirmed for projects, folders, settings and glue. The target columns follow MAP-041, which is confirmed. The owner column follows CLI-024, which is confirmed. `module_state` replacing the current `disabled_modules` table is recommended.
 
-### STORE-003 Each project has one store
-- Requirement: Each registered project has one SQLite store at `projects/<project id>/store.sqlite3` under the home, holding its whole map and every layer.
-- What this means: Types, elements, joins, subtypes, refs, layers, provenance, layer items, selection and hidden state for one project live in one file. Nothing about the project's map lives in the base database.
-- Why: One file per project can be exported, copied, backed up or deleted as a unit. Writers on different projects never contend for the same file.
-- How it shows: Removing a project's store removes its map and layers and nothing else. Other projects and all settings are unaffected.
-- Build: The store is created on the first write to the project. A read against a project with no store returns empty results and creates no file.
-- Acceptance: A read of a project that has never been written leaves no `store.sqlite3` behind.
-- Relates to: STORE-001, STORE-027.
-- Status: recommended.
+### STORE-003 Each metaform has one store
+- Requirement: Each metaform of a registered project has one SQLite store at `projects/<project id>/metaforms/<metaform id>/store.sqlite3` under the home, holding its whole map and every layer attached to it.
+- What this means: Types, elements, joins, subtypes, refs, layers, provenance, layer items, the correction stack, selection and hidden state for one metaform live in one file. A project with two metaforms has two stores, and nothing of one is in the other. Nothing about a map lives in the base database.
+- Why: One file per metaform can be exported, copied, backed up or kept aside as a unit, which is what lets a project start over with a new metaform and keep the old one whole, MAP-045. Writers on different projects or metaforms never contend for the same file.
+- How it shows: Starting a new metaform creates no rows in the old store. Other projects and all settings are unaffected by anything done in one metaform's store.
+- Build: The store is created on the first write to the metaform. A read against a metaform with no store returns empty results and creates no file. Which metaform a project uses is its active metaform, STORE-041.
+- Acceptance: A read of a metaform that has never been written leaves no `store.sqlite3` behind.
+- Relates to: STORE-001, STORE-027, STORE-041, MAP-045.
+- Status: recommended. More than one metaform per project, and every layer belonging to one metaform, are confirmed, MAP-045.
 
 ## Storage rules
 
@@ -345,6 +356,7 @@ It covers the base database, the per-project store, the correction stack, layers
   ```sql
   CREATE TABLE layers(
     layer_id   TEXT PRIMARY KEY,
+    metaform_id TEXT NOT NULL,                        -- STORE-041: the metaform this layer belongs to, equal to its store's metaform
     name       TEXT NOT NULL UNIQUE,
     module     TEXT NOT NULL,
     variable   TEXT NOT NULL CHECK(variable <> ''),   -- LAYER-002: the one question the layer answers
@@ -465,22 +477,24 @@ It covers the base database, the per-project store, the correction stack, layers
   - Its rows are versions in the ordinary tables, `elements`, `joins`, `subtypes`, `properties` and `items`, with `layer_id` set to the correction layer and `op` saying what the row does:
     - `add`: a new thing with a new identity id, added to the metaform permanently.
     - `change`: a complete new version of an existing thing, under the same identity id. Fields not being changed are copied forward from the thing's current version, and so are its refs unless a complete new list is given, STORE-012. A subtype's address or end and a join's provider are changes. A join's receiver and a subtype's join never change, STORE-034; moving a join to another receiver, or a subtype to another join, is a removal and an add in the same correction layer.
-    - Relocating an element, changing its address, is a `change` under the same identity id. Everything attached to the element, items, properties and memories of every layer, always follows it, because they point at its identity id, and at that point what is attached is most likely a property. To drop what is attached, a correction layer removes the element and adds a new one. The element's joins never follow: a join is the face between one receiver and one provider, so relocating either end makes it disappear. Applying the relocation removes every current join where the element is receiver or provider, with the subtypes in those joins, and what was attached to those joins is no longer current. A join at the new place is a different join, added in the same correction layer with a new identity id. Element records are only a namespace address and hold no data of their own; things are linked to them, which is why an element's attachments follow it and a join's cannot.
+    - Relocating an element, changing its address, is a `change` under the same identity id. Everything attached to the element, items, properties and memories of every layer, always follows it, because they point at its identity id, and at that point what is attached is most likely a property. An element is only a namespace address, so removing it does not drop what is attached: those things are orphaned, and they show again if an element is put back at the same address. Putting an element back at an address whose element was removed is an `add` row that reuses that removed element's identity id, so orphaned things reattach without being rewritten. An `add` at an address that has had more than one removed element reuses the most recently removed one. The element's joins never follow: a join is the face between one receiver and one provider, so relocating either end makes it disappear. Applying the relocation removes every current join where the element is receiver or provider, with the subtypes in those joins, and what was attached to those joins is no longer current. A join at the new place is a different join, added in the same correction layer with a new identity id. Element records are only a namespace address and hold no data of their own; things are linked to them, which is why an element's attachments follow it and a join's cannot.
     - `remove`: the thing is no longer in the metaform.
     Each `change` and `remove` row carries `reason` and, optionally, `evidence`. Rows with `op` `add` in the intake layer, knowledge layers and memory are the things those layers wrote.
-  - A correction layer corrects the metaform: the intake layer's things and things added by earlier correction layers. Whether it can also change a locked knowledge layer's things is open question 23.
+  - A correction layer corrects the metaform: the intake layer's things and things added by earlier correction layers. It never changes a knowledge layer's things. Correction layers always beat knowledge layers: they sit underneath, and knowledge layers sit on top of the metaform the stack leaves, LAYER-011.
   - `lock` on a correction layer, in one transaction: checks the rules of STORE-034 against the state after the layer is applied, and refuses the lock naming the first violation, writing nothing; inserts the layer at the next position on top of `correction_stack`; and applies it to the current tables, `current_elements`, `current_joins`, `current_subtypes`, `current_properties` and `current_items`: each `add` and `change` row becomes the thing's current row, and each `remove` deletes the thing's current row. It then writes re-examination marks, STORE-036.
   - `peel(layer)` accepts only the layer at the highest position. In one transaction it deletes that stack row, recomputes the current row of every thing the layer touched from the remaining stack, and returns the layer to building with a new build token returned once, STORE-032, so it can be edited and locked again on top, or discarded. Its provenance record stays. It writes re-examination marks for what it undid, STORE-036. Peeling any other layer is refused with `StoreError` whose next step peels the top layer.
-  - The current tables always equal the intake map and every knowledge and memory layer's own rows with the whole stack applied in order; they are what every read uses.
+  - The current tables always equal the intake map with the whole stack applied in order, with every knowledge and memory layer's own rows on top, unchanged by any correction; they are what every read uses.
   - `select`, `mask`, `clear`, `hide` and `unhide` on a correction layer are refused, and `--layers` never names one, CLI-033. A correction layer's rows are part of every read, in context and raw.
-  - Things a correction removes keep their identity rows, STORE-007, and every row of their history. Items of other layers attached to a removed thing stay stored and are returned only by raw reads and by history.
+  - Things a correction removes keep their identity rows, STORE-007, and every row of their history.
+  - Orphans: a row of a knowledge or memory layer, an item, a property or a join, whose target is no longer current after the stack is applied has nothing left to attach to and is orphaned. A target is an item's node, a property's element, or a join's receiver or provider. Items and properties on a relocated element are not orphaned, because they point at its identity id, which is still current. A join where a relocated element was receiver or provider is removed by the relocation, so items and subtypes on it are orphaned. An orphan stays stored. It is absent from every read in context. A raw read returns it with `orphaned: true`. The check is made when a read joins through the current tables; nothing is rewritten when an item becomes orphaned or current again, so peeling the correction that orphaned it shows it again.
 - Acceptance:
   - Two correction layers change the same element's name; after both are locked, reads show the second one's name, and `history` shows the intake's version, then the first, then the second.
   - Peeling the lower of two correction layers is refused and changes nothing; peeling the top one restores exactly the reads that held before it was locked, and it can be locked again.
   - `select`, `mask` and `hide` on a correction layer are refused and write nothing.
   - After a correction layer removes a join, no read in context or raw returns it as current, and `history` still returns every version of it.
+  - After a correction layer removes an element that a locked knowledge layer's item is attached to, the item is absent from `node` in context, `node` with `raw=True` returns it with `orphaned: true`, and the knowledge layer's rows are unchanged; peeling the correction shows the item in context again.
 - Relates to: STORE-007, STORE-012, STORE-013, STORE-032, STORE-034, STORE-036, LAYER-011, MAP-015.
-- Status: confirmed for the model: correction layers are chronological and stacked, the only way to remove, relocate or permanently add something to the metaform, never toggled, and removed only by peeling from the top or covered by a layer on top. The storage mechanics, the `op` column, applying on `lock`, and `peel` returning a layer to building, are recommended.
+- Status: confirmed for the model: correction layers are chronological and stacked, the only way to remove, relocate or permanently add something to the metaform, never toggled, and removed only by peeling from the top or covered by a layer on top. Confirmed also: correction layers sit underneath knowledge layers, never change a knowledge layer's things, and an item left with nothing to attach to is orphaned and not shown. A raw read listing orphans marked as orphaned is recommended. The storage mechanics, the `op` column, applying on `lock`, and `peel` returning a layer to building, are recommended.
 ### STORE-018 Mutable layers change in place
 - Requirement: Items in a mutable layer are updated and deleted in place, with no history kept.
 - What this means: Memory is the main mutable layer. An agent adds an observation, changes it, or deletes it, and the store holds only the current state, the way the reference memory server does.
@@ -646,7 +660,8 @@ It covers the base database, the per-project store, the correction stack, layers
   | `layers(tag=None, kind=None, module=None)`, `provenance(layer)` | the layers with properties, kind, module, tags, whether each is building or locked, whether it is hidden, and whether it is toggled on for the current context, LAYER-019, filtered by tag, kind and module; one layer's provenance | full read of `layers`, STORE-005, or `layer_tags_by_tag` when filtering by tag; primary key |
   | `effective_selection(address, root=None)` | the resolved layer set at an address, and any unresolved selection rows, STORE-035 | `selections` primary key |
   | `search(text, layer=None)` | items whose value matches, per STORE-020 | `item_text` |
-  | `has_intake()` | whether the project holds a locked intake layer, STORE-032 | `layers_by_kind` |
+  | `has_intake()` | whether the active metaform holds a locked intake layer, STORE-032 | `layers_by_kind` |
+  | `metaforms(project)`, `active_metaform(project)` | the project's metaforms with their names and creation times, and which one is active, STORE-041 | `metaforms` `UNIQUE(project_id, name)`; `active_metaforms` primary key |
   | `project()` | the project record with its target, STORE-031 | `projects` primary key |
 
 - Joins from layers:
@@ -675,22 +690,23 @@ It covers the base database, the per-project store, the correction stack, layers
 ## Moving data in and out
 
 ### STORE-027 Export and import carry a project whole
-- Requirement: `export` writes a project, or chosen layers of it, to one exchange document, and `import` reads such a document into a store, keeping every identity id, every version of every thing, the order of the correction stack, every provenance record and every extension field.
-- What this means: Documents are the exchange format only. The store is always the tables above. An intake is never loaded by importing its answer document; the agent builds the map through the write operations. Export and import move a project between homes, back it up, and let a wheel carry data.
+- Requirement: `export` writes a project, or chosen layers of it, to one exchange document in which everything carries its unique id, and `import` adds to a store only what it does not already hold, keeping every identity id, every version of every thing, the order of the correction stack, every provenance record and every extension field.
+- What this means: Documents are the exchange format only. The store is always the tables above. An intake is never loaded by importing its answer document; the agent builds the map through the write operations. Export and import move a project between homes and let a wheel carry data. Everything exported carries its unique id, so importing something that already exists does nothing: there is no conflict case. Work an agent does is never brought in by import; it is written through the write operations as a new layer, STORE-032. Backup and restore are separate from import and export and are not yet specified.
 - Why: Identity and history must survive moving storage, or everything attached to the map breaks when it moves. Keeping documents out of the working store keeps the one-row-per-thing rules true everywhere.
 - How it shows: A project exported from one machine and imported on another answers every read the same way.
 - Build:
-  - Commands: `metaform export [<project>|all] [file=<file>] [layer=<name>]...` and `metaform import <file> [<project>]`. Every argument is a noun, BASE-043: `file` and `layer` are optional nouns written as `name=value`, because what to export is data the verb acts on, not a setting. The project, or the argument `all`, CLI-002, is the one positional noun of `export`, optional, and is read as the first word that contains no `=`; `import` likewise takes its file and then an optional project positionally. With no project, export takes the folder's project. `all` exports every registered project. With no file, export writes the document to standard output. `layer` may repeat and limits the export to those layers. Import with no project uses the project record in the document; with a project id, it imports into that registered project.
-  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "types": [...], "layers": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "refs": [...], "requires": [...]}`.
-  - Each list holds one object per row, including every version. A row object has one member per column of its table, named as the column, except the integer `row` and `owner_row` columns. `P` also holds `"correction_stack"`, the correction layer ids in stack order; import rebuilds `correction_stack` from it and recomputes the current tables. `hidden` is a list of layer ids. `requires` is a list of objects, `{"kind": "element"|"join"|"subtype"|"item", "id": <identity id>}` or `{"kind": "type", "address": <address>}`. Rows refer to each other by identity id and layer id, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and layer id. On import, new `row` values are assigned and every reference is remapped through identity id and layer id.
+  - Commands: `metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...` and `metaform import <file> [<project>]`. Every argument is a noun, BASE-043: `file` and `layer` are optional nouns written as `name=value`, because what to export is data the verb acts on, not a setting. The project, or the argument `all`, CLI-002, is the one positional noun of `export`, optional, and is read as the first word that contains no `=`; `import` likewise takes its file and then an optional project positionally. With no project, export takes the folder's project. `all` exports every registered project. With no file, export writes the document to standard output. `layer` may repeat and limits the export to those layers. Import with no project uses the project record in the document; with a project id, it imports into that registered project.
+  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "metaforms": [M, ...], "active_metaform": <metaform id>}`, and each `M` is `{"metaform": {"metaform_id", "name", "created"}, "types": [...], "layers": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "refs": [...], "requires": [...]}`. By default export carries every metaform of the project; `metaform=<name>` limits it to one.
+  - Each list holds one object per row, including every version. A row object has one member per column of its table, named as the column, except the integer `row` and `owner_row` columns. `M` also holds `"correction_stack"`, the correction layer ids in stack order; import rebuilds `correction_stack` from it and recomputes the current tables. `hidden` is a list of layer ids. `requires` is a list of objects, `{"kind": "element"|"join"|"subtype"|"item", "id": <identity id>}` or `{"kind": "type", "address": <address>}`. Rows refer to each other by identity id and layer id, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and layer id. On import, new `row` values are assigned and every reference is remapped through identity id and layer id.
   - A layer-limited export carries that layer's rows and its provenance, plus `requires`: the identity ids and type addresses its rows point at that belong to other layers. Import refuses a document whose `requires` are not present in the target store, naming the first missing one, with the next step to import the project's map first.
   - Importing a project into a home where it is not registered registers it from the document's project record. Importing into a registered project keeps that project's path and target.
-  - Import runs in one transaction, STORE-006. Importing a document into a store that already holds the same identity ids with identical rows changes nothing.
+  - Import runs in one transaction, STORE-006. It adds only what the target does not hold, by unique id, with no comparison of content: a metaform whose id exists is not created again; a layer whose layer id exists in the target metaform's store is skipped whole, with every row it carries; a thing whose identity id exists is not added again. There is no conflict case. Correction layers the target does not hold are placed on top of its stack in the document's stack order. Import reports how many metaforms, layers and things it added and how many it skipped because they already existed.
 - Acceptance:
   - Export, import into an empty home, export again: the two documents are identical.
   - An import killed partway leaves the target store unchanged.
-- Relates to: STORE-006, STORE-007, STORE-021, BASE-002, BASE-025.
-- Status: confirmed for the requirement. JSON as the document format follows E7. The command grammar and the document shape are recommended. Import into a store holding different rows with the same identity ids is open question 13.
+  - Importing a document whose layers already exist in the target, with any content, changes nothing and reports them skipped.
+- Relates to: STORE-006, STORE-007, STORE-021, STORE-041, BASE-002, BASE-025.
+- Status: confirmed for the requirement. JSON as the document format follows E7. Confirmed also: everything exported carries its unique id, importing what already exists does nothing, agent work comes in as a new layer, and backup and restore are separate. The command grammar, the document shape and the order in which imported correction layers are stacked are recommended.
 
 ### STORE-028 Query goes through the read operations
 - Requirement: Every query surface, the CLI, MCP and modules, answers through the read operations of STORE-025, and there is no general SQL surface.
@@ -791,15 +807,16 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
     - every current join where a relocated element is receiver or provider is removed, with its subtypes, as part of applying the layer, STORE-017;
     - no current join has a removed element as receiver or provider;
     - no current subtype belongs to a removed join;
-    - no current property is attached to a removed element.
+    - no current property of the metaform is attached to a removed element.
     A failed check refuses the lock, names the first violation and the next step to add the missing removal to the layer, and applies nothing.
-  - Items of other layers attached to a removed thing stay stored and are returned only by raw reads and by history.
+  - The checks above apply to things of the metaform, the intake layer and correction layers. Items, properties and joins of knowledge and memory layers attached to a removed thing never block a lock; they are orphaned, STORE-017, and show again if the thing is put back at the same address.
 - Acceptance:
   - A correction with the key `receiver` is refused.
+  - A correction layer removes an element carrying a knowledge layer's property and locks; a later correction layer adds an element at the same address; the property shows again in context under the same element id, with no row of the knowledge layer changed.
   - Locking a correction layer that retypes an element to an address held by another current element is refused and applies nothing.
   - Locking a correction layer that removes an element with a current join is refused; after the join's removal is added to the same layer, the lock succeeds.
-- Relates to: STORE-017, STORE-024, MAP-015.
-- Status: recommended.
+- Relates to: STORE-017, STORE-024, MAP-015, LAYER-011.
+- Status: recommended. That removal orphans and a put-back element shows its attachments again is confirmed, LAYER-011. Whether a removed join shows again when its receiver and provider exist again at the same places is open question 24.
 ### STORE-035 Context reads: the applying set, the visible set and the starting selection
 - Requirement: The store answers, at any address, which transitive items apply there and which are visible there from above, toward the leaves, after selection, starting from the layers toggled on, LAYER-019.
 - What this means: LAYER-005 needs two sets at an address: items at the address and its prefixes that apply, and items above it toward the leaves that are visible without applying. Transitive items attached at an element count as attached at that element's current address. Items attached at joins and subtypes do not travel. The starting selection is the layers toggled on for the working context, LAYER-019; when the folder's `--layers` setting is unset, every locked layer that is not hidden starts selected.
@@ -950,6 +967,27 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 - Relates to: LAYER-015, LAYER-018, STORE-015, STORE-025, BASE-038, MAP-044.
 - Status: recommended.
 
+### STORE-041 Metaforms and the active metaform
+- Requirement: The base database records each project's metaforms and its one active metaform, each metaform has its own store, and every layer records the metaform it belongs to.
+- What this means: A project can have more than one metaform, MAP-045. The base database lists them and records which one is active, so every surface finds the active one without opening any store. Each metaform's layers live in that metaform's store, STORE-003, and each layer row carries its metaform id so the layer names its container in exports and reads.
+- Why: The active metaform decides what every agent reads for the project, so it must be one stored choice per project that every folder and every surface sees the same way. A separate store per metaform keeps an old metaform whole and untouched while a new one is built.
+- How it shows: `metaform list metaforms` prints one line per metaform, `<name>  <created>`, with `(active)` after the active one. `metaform add metaform fresh` prints `Added metaform fresh to <project>; it is now active. The previous metaform main is kept. To switch back: metaform activate metaform main`. `metaform activate metaform main` prints `Active metaform for <project>: main`.
+- Build:
+  - The `metaforms` and `active_metaforms` tables, STORE-002. `layers.metaform_id`, STORE-013, equals the id of the metaform whose store holds the layer; the data access object writes it and refuses a layer whose metaform id differs from its store's.
+  - The first write to a project that has no metaform creates one named `main`, with a new id, and makes it active, in one transaction on the base database, then creates its store, STORE-003.
+  - `add_metaform(project, name)` creates a metaform with a new id and makes it active. The new metaform is empty: no intake layer, no correction stack, no layers. Its store is created on its first write. The name follows the layer name rules, STORE-013, and is unique in the project; a taken name is refused, next step `metaform list metaforms`.
+  - `activate_metaform(project, name)` sets the active row. Nothing in any store changes.
+  - `ctx.store`, BASE-028, is the store of the active metaform of the context's project. Every read and write goes to it. `has_intake()` answers for it, STORE-032.
+  - A metaform is never deleted by these operations.
+  - Chassis verbs: `metaform add metaform <name> [<project>]`, `metaform list metaforms [<project>]`, `metaform activate metaform <name> [<project>]`, CLI-031. The map module exposes the same operations as the tools `map_metaforms`, `map_add-metaform` and `map_activate`, BASE-038.
+  - Status shows the active metaform, CLI-028.
+- Acceptance:
+  - After `add metaform fresh`, a read of an element from `main` returns not found, `has_intake()` is false, and `main`'s store file is byte-identical to before.
+  - After `activate metaform main`, reads return what they returned before `fresh` was added.
+  - Adding a second metaform with a name already in the project is refused and writes nothing.
+- Relates to: STORE-002, STORE-003, STORE-013, STORE-027, STORE-032, MAP-045, CLI-028, CLI-031, BASE-028, BASE-038.
+- Status: confirmed for more than one metaform per project, every layer attached to one metaform, one active metaform per project, and starting over with a new empty metaform while the old one is kept. The active metaform as a stored per-project choice, not a folder setting, and the tables, the store per metaform, the name `main`, making a new metaform active, and the verbs, are recommended.
+
 ## Open questions
 
 1. Can two current elements in one project share a type address, for example two photos that are both `media.photo`? The store currently allows one current element per address, because the intake refers to elements by address.
@@ -964,7 +1002,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 10. Can memory create a node that is not already in the map, as the reference server's create operation does? If yes, it would be a new element in the memory layer.
 11. Where does a module's item go when it is about no map node, such as the template's greeting history? One option is an element the module's layer creates for itself.
 12. Is JSON the exchange document format, or is XML required for any exchange?
-13. On import, when a store already holds a thing with the same identity id but different rows, is the incoming version applied as a new correction layer on top of the stack, kept as a separate layer, or reported and skipped? Recommended: a new correction layer on top, whose provenance names the import.
+13. Answered: everything exported carries its unique id, and importing something that already exists does nothing; there is no conflict case, STORE-027. Earlier question, kept for reference: on import, when a store already holds a thing with the same identity id but different rows, is the incoming version applied as a new correction layer on top of the stack, kept as a separate layer, or reported and skipped? Recommended: a new correction layer on top, whose provenance names the import.
 14. Are stores written by the current chassis branch migrated, or is pre-1.0 data dropped?
 15. The directly run wheel's subfolder naming: see BASE open question 2.
 16. What merging does when a wheel is installed: see BASE open question 3.
@@ -974,4 +1012,5 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its home in its o
 20. Answered: a C answer's link is kept with the challenge state, STORE-040.
 21. Resolved by E9: `ctx.store`.
 22. Does a project keep a stored starting selection of its own, used in every folder where `--layers` is unset, or is the folder's `--layers` setting, with every locked layer as its default, the only starting selection? The spec now has only the setting; the per-project `root_selection` table and the `select-root` and `clear-root` verbs are removed. (STORE-035, LAYER-019, CLI-033)
-23. Can a correction layer also change a locked knowledge layer's things, or does it correct only the metaform, the intake map and what earlier correction layers added, so that a locked knowledge layer changes only by building a new one? (STORE-017, LAYER-011)
+23. Answered: a correction layer never changes a knowledge layer's things. Correction layers sit underneath, knowledge layers on top, and an item left with nothing to attach to is orphaned, STORE-017, LAYER-011.
+24. A removed join whose receiver and provider both exist again at the same places: does it show again, or stay removed until a correction adds a join? (STORE-017, STORE-034, LAYER-011)

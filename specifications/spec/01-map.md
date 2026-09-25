@@ -148,7 +148,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The address says what kind of thing an element is. The element is this artifact's realization of it. A later intake or a correction can type the same element better, and everything attached to that element, its joins, subtypes, layer items and memory, follows it through the change instead of being orphaned. Names are lexical handles only; identity is never established by string equality of names.
 - Why: Retyping is how the map improves. If identity were the address, every improvement would orphan the knowledge built on the element. Relocating an element through a correction layer takes everything attached to it along; its joins do not survive the move, because a join is the face between a specific receiver and provider, LAYER-011 and STORE-017.
 - How it shows: After an element's address changes, its joins, subtypes and layer items are all still found at the element under its new address.
-- Build: An element record has element id, project id, address, name, name_length, role, and refs as in MAP-021. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. To drop what is attached, a correction layer removes the element and recreates it, STORE-017.
+- Build: An element record has element id, project id, address, name, name_length, role, and refs as in MAP-021. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. An element is only a namespace address: when a correction layer removes an element, what was attached to it is orphaned, kept and not shown, and when an element is put back at the same address, that same element identity is restored and what was attached shows again, STORE-017.
 - Acceptance:
   1. Relocating an element from `code.probe` to `code.probe.echo` keeps its id, and its layer items and memories are returned when reading it at the new address; its joins as receiver and as provider are no longer current, and joins at the new place are new joins.
 - Relates to: MAP-016, MAP-020, LAYER-011, STORE-007, STORE-009.
@@ -348,6 +348,19 @@ These terms are used exactly as defined in the Canonical Intake.
   - A new element with a function and no join does not appear in any in-context read of an element of the metaform or of its namespace prefixes.
 - Relates to: MAP-002, MAP-003, MAP-020, MAP-022, LAYER-003, LAYER-016, STORE-010, STORE-024.
 - Status: confirmed.
+
+### MAP-045 A project can have more than one metaform
+
+- Requirement: A project can hold more than one metaform, each the container of one intake map, its correction stack and every layer built on it, and exactly one of them is the project's active metaform.
+- What this means: A metaform is the intake map of an artifact together with the correction layers stacked on it and every knowledge and memory layer attached to it. Every layer belongs to exactly one metaform, the correction stack included. A project starts with one metaform. Starting over is creating a new metaform for the same project: it starts empty, with no intake map, no corrections and no layers, and the old metaform is kept whole with all its layers. One metaform is selected as the project's active metaform, and every read, write, status line and agent instruction for the project uses the active one. Selecting an older metaform again makes it active again exactly as it was left.
+- Why: A map can be redone from scratch, for example after the intake procedure improves, without losing the work built on the earlier one. Keeping each metaform whole, with its own layers and corrections, means nothing from one can leak into or corrupt the other, and switching back is always possible.
+- How it shows: `metaform add metaform fresh` in a project with an intake creates an empty metaform and makes it active; status then shows the no-intake notice, because the active metaform has no intake. `metaform list metaforms` shows both, marking the active one. `metaform activate metaform main` switches back, and every layer of `main` reads exactly as before.
+- Build: The metaform records, the one store per metaform, and the active selection are STORE-041. The verbs are CLI-031: `add metaform`, `list metaforms` and `activate metaform`, and the map module's tools, BASE-038. `has_intake()` answers for the active metaform, STORE-032.
+- Acceptance:
+  1. After `add metaform fresh`, the node read of an element that existed in the old metaform returns not found, and status shows the no-intake notice.
+  2. After `activate metaform main`, every read returns exactly what it returned before `fresh` was added.
+- Relates to: MAP-040, LAYER-001, LAYER-011, STORE-003, STORE-041, CLI-031, BASE-038.
+- Status: confirmed for more than one metaform per project, every layer and the correction stack belonging to one metaform, one active metaform per project, starting over as a new empty metaform, and the old one kept and selectable. The storage and verbs are recommended.
 
 ## Open questions
 

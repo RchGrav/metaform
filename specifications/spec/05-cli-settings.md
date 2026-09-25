@@ -9,7 +9,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 
 ### CLI-001 Commands are verbs, arguments are nouns, switches are adverbs
 - Requirement: every metaform command line reads as a verb, the nouns it acts on, and switches that change how it runs.
-- What this means: the first word after `metaform` is a chassis verb (`help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `install`, `uninstall`, `build`, `import`, `export`, `query`) or a module id followed by that module's verb. `mcp` is not a chassis verb; the MCP server is `metaform mcp serve`, MCP-001. Words that name what the verb acts on are arguments. Words starting with a dash change how the verb runs and never name what it acts on.
+- What this means: the first word after `metaform` is a chassis verb (`help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `install`, `uninstall`, `build`, `import`, `export`, `query`) or a module id followed by that module's verb. `mcp` is not a chassis verb; the MCP server is `metaform mcp serve`, MCP-001. Words that name what the verb acts on are arguments. Words starting with a dash change how the verb runs and never name what it acts on.
 - Why: one consistent grammar makes every command predictable for people and agents, so a user who knows one command can guess the next, and an agent does not have to read source to find out how to call something.
 - How it shows: `metaform add project mgm ~/mgm-main` (verb add, nouns project, mgm, path). `metaform template greet world --loud` (module template, verb greet, noun world, adverb --loud).
 - Build: the parser takes `argv[0]` as the verb; if it is not a chassis verb it is looked up as a module id and `argv[1]` as that module's verb. Remaining words are split into arguments and switches by CLI-004, optional nouns are read by BASE-043, and `--` ends switch parsing, CLI-003. Module verbs declare their nouns and switches in `Verb`, BASE-035; the parser rejects an unknown switch, a missing required noun, or an extra word with one Next line naming `metaform <module> <verb> --help`.
@@ -396,6 +396,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   Folder: /home/rich/mgm-main/src
   Project: mgm (/home/rich/mgm-main), inherited from /home/rich/mgm-main
   Target: path /home/rich/mgm-main
+  Metaform: main
   Projects: 2 registered
   Modules: 4 on
   Intake: none yet
@@ -408,6 +409,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   3. `Folder: <folder>`
   4. `Project: <id> (<path>)`, followed by `, selected here` when the `project` setting is stored at this folder, `, inherited from <folder>` when it is stored at a parent, and nothing when it comes from the default. With no project: `Project: none` and the line `  Register one: metaform add project <id> <path>`, and status ends there.
   5. `Target: <type> <value>`, STORE-031.
+  5a. `Metaform: <name>`, the project's active metaform, STORE-041, followed by `, <n> in project` when the project has more than one. Omitted when there is no project.
   6. `Projects: <n> registered`
   7. `Modules: <n> on`, followed by `, <m> not loaded (metaform list modules)` when any enabled module failed.
   8. When `commands` is not empty: `Commands: <groups> (narrowed; restore: metaform unset --commands)`.
@@ -454,11 +456,12 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | Verb | Nouns and switches | Output and errors |
   |---|---|---|
   | `help` | none; `intro`; `commands`; `switches`; `agents`; a switch such as `--loud`; a chassis verb; a module id; a module id and verb | The overview, CLI-006; the intro, CLI-006; the indexes, CLI-008; the composed instructions, MCP-007; the pages, CLI-029. Unknown thing: `No command, module or switch <thing>.` Next `metaform help commands`. |
-  | `add` | `project <id> <path> [<target type> <target value>]` | STORE-031. Success: `Added project <id>: <path> (target <type> <value>)`. |
-  | `list` | `projects` or `modules` | projects: one line per project, `<id>  <path>  <target type> <target value>`, ids padded to the widest; none: `No projects yet. Register one: metaform add project <id> <path>`. modules: BASE-037's line per module, `<id>  <on|off|error>  <system|user|entry>  <summary or reason>`, ids padded to the widest. Any other noun: `list needs a noun: projects or modules.` Next `metaform list projects`. |
+  | `add` | `project <id> <path> [<target type> <target value>]`; `metaform <name> [<project>]` | project: STORE-031. Success: `Added project <id>: <path> (target <type> <value>)`. metaform: STORE-041, with the output stated there. |
+  | `list` | `projects`, `modules` or `metaforms [<project>]` (STORE-041) | projects: one line per project, `<id>  <path>  <target type> <target value>`, ids padded to the widest; none: `No projects yet. Register one: metaform add project <id> <path>`. modules: BASE-037's line per module, `<id>  <on|off|error>  <system|user|entry>  <summary or reason>`, ids padded to the widest. Any other noun: `list needs a noun: projects or modules.` Next `metaform list projects`. |
   | `set` | one or more setting switches with values, CLI-011 and CLI-015; `--glue`; `-q` | Success output: exactly as CLI-022's Build states, which owns the text of `set` output with or without narrowing. A word that is not a switch: `set takes switches, not '<word>'.` Next `metaform set --help`. An unknown switch: `<switch> is not a setting.` Next `metaform help switches`. An invalid value: the error of CLI-027 with Next `metaform help <switch>`. |
   | `unset` | one or more setting switches, or `all`; `--unglue`; `-q` | `Reset <n> setting(s): <keys>` or `No settings required reset`, then `Skipped (glued): <keys>` and `Unglued: <keys>` when they apply. `--all`: the error and Next line of CLI-002, which owns that text. |
   | `config` | none; `--show`; `--show --json` | none: the settings screen, CLI-026, or `--show`'s output without a terminal. `--show`: one line per setting in schema order, `<mark> <key>: <value>` with `*` as the mark for glued and a space otherwise, followed by `  (set)` or `  (glued)` unless default, then a blank line and `* glued: kept by unset all until unglued.` `--json`: a list of objects with key, switch, owner, kind, value, state, default and help. |
+  | `activate` | `metaform <name> [<project>]` | STORE-041, with the output stated there. Unknown name: `No metaform <name> in <project>.` Next `metaform list metaforms`. |
   | `enable`, `disable` | `module <id>` | `Module <id>: on` or `off`. Unknown id: `No module <id>.` Next `metaform list modules`. Writes the `module_state` row, STORE-002. |
   | `install`, `uninstall` | MCP-013 to MCP-020 | As specified there. |
   | `build` | none | BASE-041. |

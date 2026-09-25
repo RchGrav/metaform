@@ -259,7 +259,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   - Importing a divergent unit leaves the local unit byte-identical and adds a second unit with the next suffix.
   - Importing a unit that includes the local one leaves one unit.
 - Relates to: PROJ-013, PROJ-020, STORE-027.
-- Status: confirmed, carrying REQ-165. The inclusion test and the result shape are recommended. How this rule relates to knowledge rows is open question 6.
+- Status: confirmed, carrying REQ-165. The inclusion test and the result shape are recommended. This record conflicts with the later confirmed rule that everything exported carries its unique id and importing something that already exists does nothing, STORE-027: a unit arriving with an `mform_id` already present would, by that rule, do nothing, where this record keeps both or advances the local unit. Which rule governs history units is open question 13.
 
 ### PROJ-022 Pending physical work travels with continuation
 - Requirement: When work is handed on to continue elsewhere, the working files it needs travel with it.
@@ -343,10 +343,11 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 3. How does an orchestrator store the narrowed context for a worker's folder that is not its own? Every long switch is a setting (CLI-011), so a `--path` switch does not fit the grammar. One way is a folder noun, `metaform set --commands workflow,memory folder=<path>`. The other is having the worker's first command store it. (PROJ-007)
 4. Is it confirmed that a repository origin keeps no copy of the commit? This replaces the earlier reading, in which the origin folder always held a copy. (PROJ-012)
 5. Is there one export or two? One option is a single wheel carrying the origin unit and the project's store. The other keeps them separate: STORE-027's JSON document for the map and layers, and the unit wheel for history. Recommended: one command, where exporting a project includes its selected origin unit, and the unit wheel carries the project document inside it. (PROJ-020, STORE-027)
-6. Knowledge rows on import follow D23: a new correction layer on top of the stack, or an in-place change. History units follow PROJ-021: a new suffix, keeping both. Should knowledge import also keep both on any loss, to match? (PROJ-021, STORE-027, D23)
+6. Answered: knowledge import adds only what the target does not hold, by unique id; importing something that already exists does nothing, STORE-027.
 7. Does the first instance of an origin take suffix `0000` or `0001`? Recommended: `0000`. (PROJ-013)
 8. Which module serves web variants, and is the serving port OS-assigned? Recommended: the web module, with OS-assigned ports. (PROJ-019, D44)
 9. Is the 3 MB line measured on the total size of a variant's changed text, or per file? Recommended: the total. (PROJ-016)
 10. Is history owned by the chassis, as recommended in PROJ-010, or by a module?
 11. Are ignored files always outside the boundary of a repository, including generated outputs a workflow was asked to produce? Recommended: yes, and a workflow that wants its outputs kept writes them outside ignored paths. (PROJ-011)
 12. When a repository's working tree is dirty as an origin is established, is the commit the origin and the uncommitted work its first variant? Recommended: yes. (PROJ-012)
+13. Everything exported carries its unique id, and importing something that already exists does nothing, STORE-027. PROJ-021 instead keeps both on divergence, with the next suffix, or advances the local unit when the incoming one includes it. Does the does-nothing rule govern history units too, so a unit whose `mform_id` already exists is skipped, or do history units keep PROJ-021's rule? (PROJ-021, STORE-027)
