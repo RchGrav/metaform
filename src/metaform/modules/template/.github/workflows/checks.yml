@@ -37,11 +37,14 @@ jobs:
         working-directory: metaform
         run: uv sync --extra dev
       - name: Type check, QUAL-004
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         working-directory: metaform
         run: uv run pyright src/metaform/modules/${{ github.event.repository.name }}
       - name: Lint, QUAL-005
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         working-directory: metaform
         run: uv run ruff check src/metaform/modules/${{ github.event.repository.name }}
       - name: Tests
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         working-directory: metaform
         run: uv run pytest -q src/metaform/modules/${{ github.event.repository.name }}

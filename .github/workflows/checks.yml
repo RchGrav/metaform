@@ -23,8 +23,11 @@ jobs:
       - name: Install
         run: uv sync --extra dev
       - name: Type check, QUAL-004
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run pyright
       - name: Lint, QUAL-005
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run ruff check src tests conftest.py
       - name: Tests
+        if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run pytest -q
