@@ -124,19 +124,19 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: LAYER-005, LAYER-010, LAYER-013, LAYER-015, MAP-046, STORE-025, STORE-044, VIEW-004, VIEW-013.
 - Status: confirmed that the selected object's details are shown. The inspector layout is recommended.
 
-### VIEW-010 The viewer meets the storage scale through rendering technique, not by hiding structure
-- Requirement: The viewer opens and stays responsive on a metaform at the scale STORE-005 measures, 100,000 elements and a million layer items, while showing the full structure.
-- What this means: Scale is met by how the graph is computed and drawn. No namespace branch is collapsed and no join is merged to save work. The layout is computed off the main thread and cached, the geometry is drawn with instanced WebGL rendering, and labels appear by level of detail as the camera comes close. The graph data arrives through paged reads streamed in the background, and the page draws what has arrived while the rest loads.
-- Why: A viewer that freezes on a large project is useless exactly where the picture is most needed, and one that hides structure to keep up shows a shape that is not the metaform's.
-- How it shows: On the 100,000-element test store, the first vertices appear within two seconds, the whole mesh fills in while the view stays interactive, and reopening the same metaform shows the settled layout at once from the cache.
+### VIEW-010 The viewer stays responsive through rendering technique, not by hiding structure
+- Requirement: The viewer opens and stays responsive on the metaforms intake produces, with their knowledge layers and memory on, while showing the full structure.
+- What this means: Responsiveness comes from how the graph is computed and drawn. No namespace branch is collapsed and no join is merged to save work. The layout is computed off the main thread, the geometry is drawn with instanced WebGL rendering, and labels are drawn only for the nearest elements. The graph data arrives through paged reads, and the page draws what has arrived while the rest loads.
+- Why: A viewer that hides structure to keep up shows a shape that is not the metaform's.
+- How it shows: This repository's own map opens, draws its first vertices in under a second, and settles within seconds.
 - Build:
-  - Loading: the server streams `/api/graph` in pages of the paged reads of STORE-005, roots first.
-  - Layout: the force simulation runs in a Web Worker, d3-force-3d, fed as pages arrive. On a map of more than 20,000 vertices the page applies the worker's newest positions at most four times a second, so settling never starves orbiting. Settled positions are cached by the viewer under `~/.metaform/cache/viewer/<project>/<metaform>/`, keyed by the metaform, the correction stack's top and the visible layer set, and reused when unchanged. The cache is viewer data, never part of the store.
-  - Drawing: vertices and edges are drawn as instanced meshes and line segments, one draw call per style, so the frame cost does not grow with the number of objects drawn separately: eight draw calls for 8 elements and for 100,000. The batches are rebuilt when the map has doubled since the last build and once when the last page is in, not for each page.
+  - Loading: the server serves `/api/graph` in pages of the paged reads of STORE-005.
+  - Layout: the force simulation runs in a Web Worker, d3-force-3d, fed as pages arrive. On a map of more than 20,000 vertices the page applies the worker's newest positions at most four times a second, so settling never starves orbiting. Settled positions may be cached by the viewer under `~/.metaform/cache/viewer/<project>/<metaform>/`, keyed by the metaform, the correction stack's top and the visible layer set, and reused when unchanged; the cache is viewer data, never part of the store, and waits on Q51.
+  - Drawing: vertices and edges are drawn as instanced meshes and line segments, one draw call per style, so the number of draw calls stays the same whatever the size of the map. The batches are rebuilt when the map has doubled since the last build and once when the last page is in, not for each page.
   - Labels: element labels are drawn for the selected element and its joined elements first, then the nearest in view, up to 80, chosen again four times a second.
-- Acceptance: On the storage test store from STORE-005: the first vertices render in under 2 seconds on the test machine; the full graph finishes loading with the page staying above 30 frames per second while orbiting; every visible element and join is present in the drawn data; and a second open with an unchanged store uses the cached layout.
+- Acceptance: Every visible element and join is present in the drawn data, in the same number of draw calls for a small map and a large one, with at most 80 labels.
 - Relates to: STORE-005, STORE-025, VIEW-005.
-- Status: confirmed that scale is met by rendering technique, not by hiding structure. The worker layout, the cache, instanced rendering and label level of detail are recommended.
+- Status: confirmed that the viewer keeps up by rendering technique, not by hiding structure. The target of 100,000 elements and a million layer items that stood here was not Rich's and misquoted STORE-005, which speaks only of reads among a million items; it was removed, Rich 2026-09-26. The worker layout, the cache, instanced rendering and the label budget are recommended.
 
 ### VIEW-011 The viewer writes exactly three things
 - Requirement: The viewer writes exactly three things: it applies its layer choice to the folder's `--layers`, it saves an edited prompt as a new prompt version, and it removes the top correction layer after a warning; it writes nothing else.

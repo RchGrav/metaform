@@ -290,6 +290,7 @@ Recommended: VIEW-011's three writes are the three changes to Metaform's data; a
 Blocks: VIEW-010's cache.
 
 **Q52. The 2D map of a map too large for Mermaid. (VIEW-008, VIEW-010)**
+Withdrawn, 2026-09-26: the 100,000-element target it came from was removed from VIEW-010, since it was not Rich's and no intake produces maps near that size. The Mermaid limit of 5,000 elements stays as a guard.
 VIEW-008 puts the whole map in the 2D view, laid out by Mermaid, and VIEW-010 meets scale by technique without hiding structure. Mermaid lays out a few thousand elements; laying out 100,000 did not finish, and a browser doing it, with the 3D page, was the likely cause of a machine running out of memory during a measurement.
 Meanwhile: the 2D view lays out up to 5,000 elements with Mermaid; above that it says how many the layers show and that the 3D view shows them all. The 3D view and the panel are unaffected; the arrow keys follow joins by the 2D map's positions, so above the limit they do nothing.
 Recommended: above the limit the 2D view draws the whole map itself, on a canvas, from a 2D layout computed in the same worker, with the same camera moving node to node and the same arrow keys; Mermaid stays for maps under the limit, where its layered layout reads best.
