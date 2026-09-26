@@ -22,8 +22,8 @@ from .schema import ELEMENT, JOIN, ROLES, SUBTYPE, SUBTYPE_ELEMENT, fields
 
 UNREADABLE = ('Nothing was stored. Do not retry: save your result as it stands with the feedback tool, putting it '
               'in the shape field with your report, so it can be reviewed and fixed.')
-JOIN_TEXT = ('purpose', 'function', 'relation', 'observation')
-SUBTYPE_TEXT = ('function', 'relation', 'observation')
+JOIN_TEXT = ('purpose', 'function', 'relation', 'verb', 'observation')
+SUBTYPE_TEXT = ('function', 'relation', 'verb', 'observation')
 
 
 def unreadable(why: str) -> dict[str, str]:

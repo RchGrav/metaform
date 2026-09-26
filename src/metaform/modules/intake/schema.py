@@ -34,15 +34,17 @@ SUBTYPE_ELEMENT: Schema = {'type': 'object', 'required': ['namespace_address', '
                                           'name_length': {'type': 'integer', 'minimum': 1},
                                           'role': {'type': 'string', 'enum': SUBTYPE_ROLES}, 'name': {'type': 'string'},
                                           'refs': REFS}}
-SUBTYPE: Schema = {'type': 'object', 'required': ['provider', 'function', 'ef', 'relation', 'observation', 'element'],
+SUBTYPE: Schema = {'type': 'object',
+                   'required': ['provider', 'function', 'ef', 'relation', 'verb', 'observation', 'element'],
                    'properties': {'provider': {'type': 'string'}, 'function': {'type': 'string'}, 'ef': EF,
-                                  'relation': {'type': 'string'}, 'observation': {'type': 'string'},
-                                  'flag': FLAG, 'flag_note': FLAG_NOTE, 'element': SUBTYPE_ELEMENT}}
-JOIN: Schema = {'type': 'object', 'required': ['provider', 'purpose', 'function', 'ef', 'relation', 'observation'],
+                                  'relation': {'type': 'string'}, 'verb': {'type': 'string'},
+                                  'observation': {'type': 'string'}, 'flag': FLAG, 'flag_note': FLAG_NOTE, 'element': SUBTYPE_ELEMENT}}
+JOIN: Schema = {'type': 'object',
+                'required': ['provider', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation'],
                 'properties': {'type': {'type': 'string', 'enum': ['purpose']}, 'provider': {'type': 'string'},
                                'purpose': {'type': 'string'}, 'function': {'type': 'string'}, 'ef': EF,
-                               'relation': {'type': 'string'}, 'observation': {'type': 'string'},
-                               'non_goal': {'type': 'string'}, 'flag': FLAG, 'flag_note': FLAG_NOTE, 'refs': REFS,
+                               'relation': {'type': 'string'}, 'verb': {'type': 'string'},
+                               'observation': {'type': 'string'}, 'non_goal': {'type': 'string'}, 'flag': FLAG, 'flag_note': FLAG_NOTE, 'refs': REFS,
                                'subtypes': {'type': 'array', 'items': SUBTYPE}}}
 ELEMENT: Schema = {'type': 'object', 'required': ['namespace_address', 'role'],
                    'properties': {'namespace_address': {'type': 'string'}, 'flag': FLAG, 'flag_note': FLAG_NOTE,

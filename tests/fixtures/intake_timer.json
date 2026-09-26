@@ -10,6 +10,7 @@
           "function": "The timer counts down each named dish and rings when one reaches zero.",
           "ef": "Function",
           "relation": "The kitchen timer tells the cook when a dish is done.",
+          "verb": "tells",
           "observation": "A kitchen timer counts down a set time.",
           "non_goal": "Plan the meal.",
           "refs": [{"key": "path", "value": "src"}]
@@ -26,6 +27,7 @@
           "function": "The alarm plays a tone on the speaker until the cook presses stop.",
           "ef": "Encounter",
           "relation": "The alarm rings for the timer.",
+          "verb": "rings",
           "observation": "A piezo speaker driven by one GPIO pin.",
           "refs": [{"key": "path", "value": "src/alarm.c"}, {"key": "path", "value": "src/pins.h"}],
           "subtypes": [
@@ -34,6 +36,7 @@
               "function": "tick_all subtracts one second from each running countdown.",
               "ef": "Function",
               "relation": "The tick loop advances every running countdown.",
+              "verb": "advances",
               "observation": "One timer interrupt per second.",
               "element": {"namespace_address": "code.loop.tick", "name_length": 2, "role": "SE",
                           "name": "one-second tick loop", "refs": [{"key": "path", "value": "src/tick.c"}]}

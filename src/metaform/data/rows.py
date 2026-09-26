@@ -24,12 +24,13 @@ from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('address', 'extra'),
-    'join': ('provider', 'type', 'purpose', 'function', 'ef', 'relation', 'observation', 'non_goal', 'extra'),
-    'subtype': ('address', 'name', 'name_length', 'role', 'function', 'ef', 'relation', 'observation', 'extra'),
+    'join': ('provider', 'type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'extra'),
+    'subtype': ('address', 'name', 'name_length', 'role', 'function', 'ef', 'relation', 'verb', 'observation',
+                'extra'),
     'item': ('value', 'link', 'extra'),
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'function', 'relation', 'observation', 'non_goal', 'type', 'name')
+TEXT_COLUMNS = ('purpose', 'function', 'relation', 'verb', 'observation', 'non_goal', 'type', 'name')
 
 Row = sqlite3.Row
 

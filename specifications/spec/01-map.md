@@ -179,7 +179,7 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-020 A join records one encounter in full
 
-- Requirement: A join records its type, receiver, provider, purpose, function, ef, relation, observation, optional non_goal and optional refs.
+- Requirement: A join records its type, receiver, provider, purpose, function, ef, relation, verb, observation, optional non_goal and optional refs.
 - What this means:
   - type: the kind of join. Intake writes type purpose. Modules may define other join types, and unknown valid content survives reads, edits, copies and export.
   - receiver: the element that owns the join and holds the purpose.
@@ -187,7 +187,8 @@ These terms are used exactly as defined in the Canonical Intake.
   - purpose: the active Operative Purpose statement, the why.
   - function: the provider's Encounter Function for this specific encounter, the how.
   - ef: the Encounter Function's word, one of two: Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter. A subtype join carries its own, MAP-030.
-  - relation: the relation stated in active voice.
+  - relation: the relation stated in active voice. Its subject follows ef: the provider when ef is Function, the receiver when ef is Encounter.
+  - verb: the verb of the relation, as the intake agent infers it. It is the agent's word, never a set list. A subtype join carries its own, MAP-030.
   - observation: the actual real-world condition, format, layout or limitations of what is there.
   - non_goal: an outcome the receiver does not seek, recorded only where it materially clarifies the purpose.
   - refs: type-specific or artifact-specific references or logic, only where needed.
@@ -195,13 +196,13 @@ These terms are used exactly as defined in the Canonical Intake.
   An encounter function states a function. A language, medium or encoding never goes into an encounter. A join speaks about this artifact. Its purpose and function state what this artifact actually does in its own particulars. Where the artifact represents something, the join describes the function of that representation within the artifact, not the real-world function of the thing represented.
 - Why: Functions live in joins, and joins speak to the artifact. Keeping each field separate lets an agent ask one question at a time, who, why, how, what is actually there, and get a direct answer.
 - How it shows: Reading a join returns every field it was written with, each on its own.
-- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. `ef` holds only `Function` or `Encounter`; any other value is kept in the join's `extra` and named in a notice, and a missing one is named, BASE-044. non_goal is nullable. refs follow MAP-021.
+- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. `ef` holds only `Function` or `Encounter`; any other value is kept in the join's `extra` and named in a notice, and a missing one is named, BASE-044. `verb` is stored as given, and a missing one is named. non_goal is nullable. refs follow MAP-021.
 - Acceptance:
   1. A join written with every field, including a non_goal and two refs, reads back with each field equal to what was written.
   2. A join of a module-defined type with extension content survives export and import unchanged.
   3. A join or subtype written with an `ef` of `Both` reads back with no `ef`, the word kept in its `extra` and a notice naming `ef`; a correction that changes another field keeps the `ef`.
 - Relates to: MAP-003, MAP-021, MAP-022, STORE-010, STORE-021.
-- Status: confirmed. `ef`: Rich, 2026-09-26, on the Encounter Function: the model writes "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter", and "this is a binary choice.. its not freeform inference".
+- Status: confirmed. `verb` and the relation's subject: Rich, 2026-09-26, the agent infers the verb "into a field during intake and yes it does change the grammar rules, this does not change the intake semantics it adds a prompt and a field". `ef`: Rich, 2026-09-26, on the Encounter Function: the model writes "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter", and "this is a binary choice.. its not freeform inference".
 
 ### MAP-021 Refs are an ordered key and value list
 
@@ -239,7 +240,7 @@ These terms are used exactly as defined in the Canonical Intake.
   Absorbing is legal only when the parts share that join and the combined encounter covers each part's encounter function. Combining never optimizes a functionality away.
 - Why: Annealing keeps the root map minimal, coarse and shallow without discarding any functionality. A subtype exists only because it shares that join, so the join is where it lives. A purpose is what gives a part its own join, so a part with a purpose cannot live inside another's join.
 - How it shows: Reading a join returns its purpose and combined function, and beneath them each subtype with its own function.
-- Build: A subtype record has subtype id, join id, address, name, name_length, role, its own function, its own ef, relation, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
+- Build: A subtype record has subtype id, join id, address, name, name_length, role, its own function, its own ef, relation, its own verb, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
 - Acceptance:
   1. A join with two subtypes reads back with the purpose and combined function on the join and each subtype's own function, relation and observation under it.
   2. A submission that gives a subtype a purpose is stored as given: the purpose is kept in the subtype's `extra`, and the result carries a notice naming the subtype, BASE-044.
@@ -291,11 +292,11 @@ These terms are used exactly as defined in the Canonical Intake.
   | `join`, held inside its receiving element's `joins` | `elements[].joins[]` | `joins` row, receiver the enclosing element, STORE-010 |
   | `join@type`, always `purpose` | `joins[].type` | `joins.type` |
   | `join@provider` | `joins[].provider` | `joins.provider`, the provider's identity id resolved by address |
-  | `join@purpose`, `@function`, `@ef`, `@relation`, `@observation`, `@non_goal` | same names | same-named `joins` columns, MAP-020 |
+  | `join@purpose`, `@function`, `@ef`, `@relation`, `@verb`, `@observation`, `@non_goal` | same names | same-named `joins` columns, MAP-020 |
   | `join/refs/ref@key`, `@value` | `joins[].refs[]` | `refs` rows owned by the join, in order, STORE-012 |
   | nested `join` inside a `join` | `joins[].subtypes[]` | `subtypes` row in that join, STORE-011 |
   | nested `join@provider` | `subtypes[].provider` | `subtypes.address`; it must equal the nested element's address |
-  | nested `join@function`, `@ef`, `@relation`, `@observation` | same names | same-named `subtypes` columns |
+  | nested `join@function`, `@ef`, `@relation`, `@verb`, `@observation` | same names | same-named `subtypes` columns |
   | nested `element@namespace_address` | `subtypes[].element.namespace_address` | `subtypes.address` |
   | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `subtypes[].element.name`, `name_length`, `role` | same-named `subtypes` columns |
   | nested `element/refs/ref` | `subtypes[].element.refs[]` | `refs` rows owned by the subtype |

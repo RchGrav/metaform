@@ -153,8 +153,8 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
             if db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (join_id, layer_id)).fetchone():
                 continue
             db.execute('INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, '
-                       'observation, non_goal, extra, stack_at, op, reason, evidence) '
-                       'SELECT join_id, ?, type, receiver, provider, purpose, function, ef, relation, observation, '
+                       'verb, observation, non_goal, extra, stack_at, op, reason, evidence) '
+                       'SELECT join_id, ?, type, receiver, provider, purpose, function, ef, relation, verb, observation, '
                        "non_goal, extra, ?, 'remove', ?, ? FROM joins WHERE row=?",
                        (layer_id, position, reason, RELOCATION, join_row))
             for subtype_id, subtype_row in db.execute('SELECT subtype_id, row FROM current_subtypes WHERE join_id=?',
@@ -165,8 +165,9 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
                               (subtype_id, layer_id)).fetchone():
                     continue
                 db.execute('INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, '
-                           'ef, relation, observation, extra, op, reason, evidence) '
-                           'SELECT subtype_id, ?, address, name, name_length, role, function, ef, relation, observation, '
+                           'ef, relation, verb, observation, extra, op, reason, evidence) '
+                           'SELECT subtype_id, ?, address, name, name_length, role, function, ef, relation, verb, '
+                           'observation, '
                            "extra, 'remove', ?, ? FROM subtypes WHERE row=?",
                            (layer_id, reason, RELOCATION, subtype_row))
 

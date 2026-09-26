@@ -126,6 +126,7 @@ def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
     assert (tick.address, tick.function, tick.role, tick.name) == (
         'code.loop.tick', 'tick_all subtracts one second from each running countdown.', 'SE', 'one-second tick loop')
     assert (cook_join.ef, alarm_join.ef, tick.ef) == ('Function', 'Encounter', 'Function')
+    assert (cook_join.verb, alarm_join.verb, tick.verb) == ('tells', 'rings', 'advances')
     assert store.element('code.loop.tick') is None
     layer = next(item for item in store.layers().results if item.name == report['layer'])
     assert (layer.kind, layer.mutable, layer.hideable, layer.result_id) == ('intake', False, False,
@@ -138,6 +139,7 @@ def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
     assert len(document['elements']) == 3 and len(document['joins']) == 2 and len(document['subtypes']) == 1
     assert sorted(row['ef'] for row in document['joins']) == ['Encounter', 'Function']
     assert [row['ef'] for row in document['subtypes']] == ['Function']
+    assert sorted(row['verb'] for row in document['joins']) == ['rings', 'tells']
 
 
 @pytest.mark.req('MAP-020')
@@ -160,6 +162,26 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or
 
 
 @pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-039')
+def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_the_verb_of_its_relation():
+    """The agent infers the relation's verb into its own field, and the relation's subject follows the word: the
+    Providing Element for Function, the Vested Entity for Encounter, Rich 2026-09-26; the verb is the agent's word."""
+    import xml.etree.ElementTree as ET
+    from metaform.modules.intake.schema import JOIN, SUBTYPE
+    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
+    join = root.find('.//schema//join')
+    inner = join.find('join')
+    for found in (join, inner):
+        assert found.get('verb') == '[the verb of the relation]'
+        assert 'the Providing Element when ef is Function, the Vested Entity when ef is Encounter' in found.get('relation')
+    step = root.find(".//step[@n='4']").get('text')
+    assert ('with the Providing Element as its subject when ef is Function and the Vested Entity as its subject when '
+            'ef is Encounter, the verb of that relation as verb') in step
+    for schema in (JOIN, SUBTYPE):
+        assert 'verb' in schema['required'] and schema['properties']['verb'] == {'type': 'string'}
+
+
+@pytest.mark.req('MAP-020')
 @pytest.mark.req('BASE-044')
 def test_a_join_or_subtype_join_without_ef_is_stored_and_named_in_a_notice(run, project, tmp_path):
     given = copy.deepcopy(FIXTURE)
@@ -172,6 +194,20 @@ def test_a_join_or_subtype_join_without_ef_is_stored_and_named_in_a_notice(run, 
     store = Store('timer')
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert cook_join.ef is None and store.subtypes(store.joins('code.timer.kitchen').results[0].join_id).results[0].ef is None
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-044')
+def test_a_join_or_subtype_join_without_its_verb_is_stored_and_named_in_a_notice(run, project, tmp_path):
+    given = copy.deepcopy(FIXTURE)
+    del given['elements'][0]['joins'][0]['verb']
+    del given['elements'][1]['joins'][0]['subtypes'][0]['verb']
+    found = notices(submit(run, project, given, tmp_path))
+    assert re.match(r'verb is missing\b', found['elements[0].joins[0]'])
+    assert re.match(r'verb is missing\b', found['elements[1].joins[0].subtypes[0]'])
+    store = Store('timer')
+    cook_join = store.joins('stakeholder.cook.home').results[0]
+    assert cook_join.verb is None and store.subtypes(store.joins('code.timer.kitchen').results[0].join_id).results[0].verb is None
 
 
 @pytest.mark.req('BASE-039')
@@ -334,7 +370,7 @@ def test_two_elements_with_one_address_are_one_element_holding_both_joins(run, p
     doubled = copy.deepcopy(FIXTURE)
     doubled['elements'].append({'namespace_address': 'stakeholder.cook.home', 'role': 'VE', 'joins': [
         {'provider': 'code.alarm.audible', 'purpose': 'Hear it from the next room.', 'function': 'Rings loudly.',
-         'ef': 'Encounter', 'relation': 'The alarm reaches the cook.', 'observation': 'Loud.'}]})
+         'ef': 'Encounter', 'relation': 'The alarm reaches the cook.', 'verb': 'reaches', 'observation': 'Loud.'}]})
     report = submit(run, project, doubled, tmp_path)
     assert report['notices'] == []
     joins = Store('timer').joins('stakeholder.cook.home').results

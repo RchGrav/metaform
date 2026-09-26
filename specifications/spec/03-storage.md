@@ -288,6 +288,7 @@ It covers the base database, the per-project store, the correction stack, layers
     function    TEXT,
     ef          TEXT CHECK(ef IN ('Function','Encounter')),  -- MAP-020
     relation    TEXT,
+    verb        TEXT,      -- the verb of the relation, MAP-020
     observation TEXT,
     non_goal    TEXT,
     extra       TEXT,                                -- STORE-021
@@ -335,6 +336,7 @@ It covers the base database, the per-project store, the correction stack, layers
     function    TEXT,      -- its own encounter function; a subtype has no purpose, MAP-030
     ef          TEXT CHECK(ef IN ('Function','Encounter')),  -- MAP-020
     relation    TEXT,
+    verb        TEXT,      -- the verb of the relation, MAP-020
     observation TEXT,
     extra       TEXT,
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017

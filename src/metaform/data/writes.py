@@ -104,7 +104,8 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 
 
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
-             ef: Any = None, relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
+             ef: Any = None, relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
+             type: Any = 'purpose',
              refs: Iterable[Any] = (), extra: Any = None, flag: Any = None, flag_note: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010."""
     pairs = refs_list(refs)
@@ -114,8 +115,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
         return Outcome((stop,))
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('purpose', purpose), ('function', function), ('relation', relation), ('observation', observation),
-        ('non_goal', non_goal))}
+        ('purpose', purpose), ('function', function), ('relation', relation), ('verb', verb),
+        ('observation', observation), ('non_goal', non_goal))}
     kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
     ef, kept_extra = _ef(ef, kept_extra, "the join's", notices)
@@ -129,10 +130,10 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
     tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, observation, '
-        'non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, verb, '
+        'observation, non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'], ef,
-         texts['relation'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
+         texts['relation'], texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
          rows.top(tx)))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':
@@ -146,8 +147,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
 
 
 def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, ef: Any = None,
-                relation: Any = None,
-                observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
+                relation: Any = None, verb: Any = None, observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
                 refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
                 flag_note: Any = None) -> Subtype | Outcome:
     """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
@@ -177,7 +177,8 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
         kept_extra = {**(kept_extra or {}), **moved}
     ef, kept_extra = _ef(ef, kept_extra, "the subtype's", notices)
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('function', function), ('relation', relation), ('observation', observation), ('name', name))}
+        ('function', function), ('relation', relation), ('verb', verb), ('observation', observation),
+        ('name', name))}
     join_id = _join_of(tx, join, found)
     if not rows.address_form(address):
         notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
@@ -191,9 +192,10 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     rows.identity(tx, subtype_id, 'subtype')
     rows.types(tx, address)
     cursor = tx.db.execute(
-        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, ef, relation, '
-        'observation, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, ef, relation, verb, '
+        'observation, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'], ef, texts['relation'],
+         texts['verb'],
          texts['observation'], encode_extra(kept_extra, address)))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':

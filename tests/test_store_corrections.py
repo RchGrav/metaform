@@ -377,3 +377,29 @@ def test_ef_holds_only_function_or_encounter_and_any_other_word_is_kept_in_extra
     stored = store.joins('code.a').results[0]
     stored_tick = store.subtypes(stored.join_id).results[0]
     assert (stored.ef, stored.extra, stored_tick.ef, stored_tick.extra) == (None, {'ef': 'Both'}, None, {'ef': 'function'})
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-017')
+def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_corrections_and_relocation(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'code.a', role='DE')
+        store.add_element(base.name, 'code.b', role='SE')
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Encounter',
+                              relation='People drive the a through the b.', verb='drive', observation='o')
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='Function',
+                                 relation='The tick loop advances every countdown.', verb='advances', observation='o',
+                                 role='SE')
+    assert (join.verb, tick.verb, join.notices, tick.notices) == ('drive', 'advances', (), ())
+    fix = correction(store, 'fix-1')
+    store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
+    store.correct(fix.name, tick.subtype_id, {'verb': 'moves'}, reason='plainer')
+    store.finish(fix.name)
+    kept = store.joins('code.a').results[0]
+    assert (kept.purpose, kept.verb, store.subtypes(kept.join_id).results[0].verb) == ('q', 'drive', 'moves')
+    move = correction(store, 'fix-2')
+    store.correct(move.name, store.element('code.a').element_id, {'address': 'code.c'}, reason='moved')
+    store.finish(move.name)
+    assert store.history(join.join_id).results[-1].fields['verb'] == 'drive'
+    assert store.history(tick.subtype_id).results[-1].fields['verb'] == 'moves'

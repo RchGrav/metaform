@@ -157,6 +157,7 @@ class Join(Record):
     function: str | None
     ef: str | None
     relation: str | None
+    verb: str | None
     observation: str | None
     non_goal: str | None
     refs: tuple[Ref, ...] = ()
@@ -182,6 +183,7 @@ class Subtype(Record):
     function: str | None
     ef: str | None
     relation: str | None
+    verb: str | None
     observation: str | None
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
