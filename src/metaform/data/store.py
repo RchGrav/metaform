@@ -28,8 +28,8 @@ from ..errors import StoreError
 from . import challenges, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
 from .records import (ChallengeState, Citation, ContextView, Element, Finding, Item, Join, Layer, Node, NodeView,
-                      Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Ref, Report, Roots,
-                      Selection, Subtype, Version, Where)
+                      GraphPage, Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Ref, Report,
+                      Roots, Selection, Subtype, Version, Where)
 from .selection import Resolver
 from .session import Session, Tx
 
@@ -363,6 +363,12 @@ class Store:
         """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025."""
         with self._read() as tx:
             return reads.roots(tx, None if raw else self._resolver(tx, selection), limit, after)
+
+    def graph(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
+              after: str | None = None) -> GraphPage:
+        """A page of the whole map in address order, with parents, joins and subtypes, for the viewer, VIEW-010."""
+        with self._read() as tx:
+            return reads.graph(tx, None if raw else self._resolver(tx, selection), limit, after)
 
     def findings(self, flag: str | None = None, layer: str | None = None, *, selection: Sequence[str] | None = None,
                  raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Finding]:

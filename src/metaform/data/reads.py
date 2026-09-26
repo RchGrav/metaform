@@ -7,6 +7,7 @@ page is one index range read resumed after the last key, STORE-005.
 """
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -16,9 +17,9 @@ from ..errors import StoreError
 from . import corrections, rows, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
-from .records import (Citation, ContextView, Element, Finding, Item, Join, Layer, LayerGroup, Node, NodeView, Notice,
-                      Page, PeelPreview, Property, Provenance, Report, RootElement, RootEntry, Roots, Selection,
-                      Subtype, Version, Where)
+from .records import (Citation, ContextView, Element, Finding, GraphElement, GraphJoin, GraphPage, Item, Join, Layer,
+                      LayerGroup, Node, NodeView, Notice, Page, PeelPreview, Property, Provenance, Report, RootElement,
+                      RootEntry, Roots, Selection, Subtype, Version, Where)
 from .selection import Resolver, all_layers
 from .session import Tx
 
@@ -485,12 +486,42 @@ def peel_preview(tx: Tx, layer: str) -> PeelPreview:
     """What removing a correction layer would change, and whether it is the top one, VIEW-014."""
     found = rows.layer(tx, layer)
     if found.kind != 'correction':
-        return PeelPreview(found.name, False, notices=(Notice('layer', f'{found.name} is not a correction layer; only '
-                                                                       'a correction layer is removed from the stack.'),))
+        return PeelPreview(found.name, False, notices=(
+            Notice('layer', f'{found.name} is not a correction layer; only a correction layer is removed from the stack.'),))
     top = tx.db.execute('SELECT layer_id FROM correction_stack ORDER BY position DESC LIMIT 1').fetchone()
     stacked = tx.db.execute('SELECT 1 FROM correction_stack WHERE layer_id=?', (found.layer_id,)).fetchone()
     if stacked is None:
-        return PeelPreview(found.name, False, notices=(Notice('layer', f'{found.name} is not on the stack; it changes '
-                                                                       'nothing yet.'),))
+        return PeelPreview(found.name, False, notices=(
+            Notice('layer', f'{found.name} is not on the stack; it changes nothing yet.'),))
     return PeelPreview(found.name, top is not None and top[0] == found.layer_id,
                        tuple(corrections.preview(tx.db, found.layer_id)))
+
+
+def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphPage:
+    """A page of the map in address order, VIEW-005 and VIEW-010: each element in context with its nearest parent
+    element in context, and each join it receives, in context, with its subtypes. One read; every lookup by index."""
+    found = tx.db.execute('SELECT element_id, address FROM current_elements WHERE address > ? ORDER BY address '
+                          'LIMIT ?', (after or '', limit + 1 if limit else -1)).fetchall()
+    more = bool(limit) and len(found) > limit
+    found = found[:limit] if limit else found
+    shown: dict[str, bool] = {}
+
+    def in_context(address: str) -> bool:
+        if address not in shown:
+            current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
+            shown[address] = current is not None and views.element(tx, str(current[0]), res) is not None
+        return shown[address]
+
+    elements: list[GraphElement] = []
+    held: list[GraphJoin] = []
+    for row in found:
+        element_view = views.element(tx, str(row['element_id']), res)
+        shown[str(row['address'])] = element_view is not None
+        if element_view is None:
+            continue
+        parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
+        elements.append(GraphElement(element_view, parent))
+        for join in joins(tx, res, element_view.element_id, 'receiver', 0, None).results:
+            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
+            held.append(GraphJoin(**fields, subtypes=subtypes(tx, res, join.join_id, 0, None).results))
+    return GraphPage(tuple(elements), tuple(held), str(found[-1]['address']) if more else None)

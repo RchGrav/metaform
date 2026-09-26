@@ -312,6 +312,27 @@ class Where(Record):
 
 
 @dataclass(frozen=True)
+class GraphJoin(Join):
+    """A join with the subtypes it holds, as a page of the whole map carries it, VIEW-005."""
+    subtypes: tuple[Subtype, ...] = ()
+
+
+@dataclass(frozen=True)
+class GraphElement(Record):
+    """An element in context, with the address of its nearest parent element in context, if any."""
+    element: Element
+    parent: str | None
+
+
+@dataclass(frozen=True)
+class GraphPage(Record):
+    """A page of the map in address order, VIEW-010: its elements, and the joins they receive."""
+    elements: tuple[GraphElement, ...]
+    joins: tuple[GraphJoin, ...]
+    next: str | None = None
+
+
+@dataclass(frozen=True)
 class PeelChange(Record):
     """One change removing a correction layer would make: what, and whether it disappears, comes back, moves back,
     reverts, shows again or becomes orphaned, VIEW-014."""

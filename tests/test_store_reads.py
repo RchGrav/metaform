@@ -61,6 +61,7 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'history': lambda: store.history(inner.join_id).results,
         'stack': lambda: store.stack().results,
         'peel_preview': lambda: store.peel_preview('fix-1'),
+        'graph': lambda: store.graph(limit=2),
         'layers': lambda: store.layers().results,
         'layers by tag': lambda: store.layers(tag='practices').results,
         'provenance': lambda: store.provenance('notes'),
@@ -170,3 +171,33 @@ def test_a_write_that_does_not_fit_is_stored_with_a_notice_and_text_is_never_jud
     odd = store.add_element(extra.name, 'Code..Engine')
     assert [notice.where for notice in odd.notices] == ['address'] and store.where('Code..Engine', raw=True)
     assert store.add_element(extra.name, 'media.photo.jpg').notices == ()
+
+@pytest.mark.req('VIEW-010')
+@pytest.mark.req('STORE-025')
+def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_the_joins_it_receives(store):
+    populated(store)
+    entries, after, pages = [], None, 0
+    while True:
+        page = store.graph(limit=2, after=after)
+        entries += page.elements
+        pages += 1
+        after = page.next
+        if after is None:
+            break
+    addresses = [entry.element.address for entry in entries]
+    assert pages > 1 and addresses == sorted(set(addresses))
+    assert addresses == ['code.alarm.audible', 'code.timer.kitchen', 'code.timer.kitchen.display',
+                         'stakeholder.cook.home']
+    assert {entry.element.address: entry.parent for entry in entries}['code.timer.kitchen.display'] == \
+        'code.timer.kitchen'
+    assert all(entry.element == store.element(entry.element.address) for entry in entries)
+    everything = store.graph(limit=0)
+    assert [entry.element.address for entry in everything.elements] == addresses and everything.next is None
+    for entry in everything.elements:
+        held = [join for join in everything.joins if join.receiver == entry.element.element_id]
+        assert [join.join_id for join in held] == [join.join_id for join in store.joins(entry.element.address).results]
+        for join in held:
+            assert join.subtypes == store.subtypes(join.join_id, limit=0).results
+    assert 'code.timer.kitchen.display' not in [e.element.address for e in store.graph(selection=['intake-1']).elements]
+    raw = store.graph(raw=True, limit=0)
+    assert set(addresses) <= {entry.element.address for entry in raw.elements}

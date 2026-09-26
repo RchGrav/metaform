@@ -705,6 +705,7 @@ It covers the base database, the per-project store, the correction stack, layers
   | `subtypes(join)` | the subtypes in a join | `current_subtypes_by_join` |
   | `where(address)` | the element, or the join holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
   | `children(address)` | the next types up the tree, toward the leaves; the empty address gives the top types | `types_by_parent` |
+  | `graph(after, limit)` | a page of the map in address order: each element in context with its nearest parent element in context, and each join it receives with its subtypes, for the viewer, VIEW-010 | `current_elements` by address, `current_joins_by_receiver`, `current_subtypes_by_join` |
   | `peel_preview(layer)` | what removing a stacked correction layer would change, and whether it is the top one, VIEW-014 | `elements_by_layer`, `joins_by_layer`, `subtypes_by_layer`, `properties_by_layer`, `items_by_layer`, `current_items_by_target` |
   | `roots()` | the map's entry: the VE and DE elements with their joins, and every root element with its address and role, paged | `element_roles_by_role` for VE and DE in the intake layer, then `current_joins_by_receiver` for their joins; root elements by `element_roles_by_layer` in the intake layer |
   | `layer_items(layer, target=None)` | all of a layer, paged in row order, or a layer at one node | `current_items_by_layer` on `(layer_id, row)`; `current_items_by_target` for one node |

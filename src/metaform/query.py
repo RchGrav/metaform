@@ -48,6 +48,8 @@ CONTEXT = {'selection': _list, 'raw': _bool}
 READS: dict[str, Read] = {
     'roots': Read('roots', (), {**CONTEXT, **PAGING}, "The map's entry: the VE and the DE with their joins, and every "
                                                     'root element.'),
+    'graph': Read('graph', (), {**CONTEXT, **PAGING}, 'A page of the whole map in address order, with parents, '
+                                                      'joins and subtypes.'),
     'findings': Read('findings', (), {'flag': str, 'layer': str, **CONTEXT, **PAGING},
                      'The elements, joins and subtypes flagged missing, broken or cruft.'),
     'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),

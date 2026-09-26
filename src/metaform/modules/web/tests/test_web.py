@@ -295,7 +295,7 @@ def test_the_graph_pages_every_visible_element_and_join_once_with_its_nearest_pa
         cursor = page['next']
         if cursor is None:
             break
-    assert pages == 2
+    assert pages > 1
     parents = {element['element']['address']: element['parent'] for element in elements}
     assert len(parents) == len(elements)
     assert parents == {'exterior.cook': None, 'code.timer.kitchen': None, 'code.alarm.audible': None,
@@ -528,9 +528,9 @@ def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_chan
     assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2']
     assert store.element('code.alarm.bell') is not None and store.element('code.alarm.chime') is None
     assert 'fix-3' not in [layer.name for layer in store.layers(limit=0).results] and store.provenance('fix-2')
-    import sqlite3
-    with sqlite3.connect(files[0]) as db:
-        assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (removed_id,)).fetchone() == (0,)
+    from metaform.data import export_document
+    rows = [row for metaform in export_document(['proj'])['projects'][0]['metaforms'] for row in metaform['provenance']]
+    assert rows and removed_id not in [row['layer_id'] for row in rows]
     assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is True
 
 

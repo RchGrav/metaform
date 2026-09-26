@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import socket
+import socketserver
 import sys
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
@@ -26,7 +27,6 @@ from urllib.parse import parse_qs, urlsplit
 from metaform import home, query, results, settings
 from metaform.context import toggled_for
 from metaform.data import Outcome, Store
-from metaform.data.paging import LIMIT
 from metaform.data.records import plain
 from metaform.errors import Stop, StoreError
 
@@ -52,13 +52,16 @@ class Server(ThreadingHTTPServer):
         self.token = None if loopback(bind) else token()
         super().__init__((bind, port), Handler)
         self.port = int(self.server_address[1])
-        names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname(), socket.getfqdn()}
+        names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
         self.hosts = {host_port(name, self.port).lower() for name in names}
 
     def server_bind(self) -> None:
+        """Bind without `HTTPServer`'s own reverse lookup of the address, which can stall for many seconds on macOS
+        before the server answers; the server never uses the name it looks up."""
         if os.name == 'nt':
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)  # type: ignore[attr-defined]
-        super().server_bind()
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.bind, int(self.server_address[1])
 
     def own_host(self, host: str | None) -> bool:
         """The Host header names this server. On a wildcard bind every name of the machine is its own, so only the
@@ -123,12 +126,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def read(self, name: str, given: dict[str, str]) -> None:
         """One store read of STORE-025 by its query name, for one project, with the page's layers or the folder's."""
-        if name != 'graph' and name not in query.READS:
+        if name not in query.READS:
             return self.send(404, {'error': f'No read {name}.'})
         try:
             store = opened(given)
-            arguments = {key: value for key, value in given.items() if key not in RESERVED}
-            found = graph(store, arguments) if name == 'graph' else query.call(store, name, arguments)
+            found = query.call(store, name, {key: value for key, value in given.items() if key not in RESERVED})
         except (Stop, StoreError) as error:
             return self.send(404 if isinstance(error, StoreError) else 400,
                              {'error': str(error), 'next': getattr(error, 'next_step', None)})
@@ -223,57 +225,6 @@ def opened(given: dict[str, str]) -> Store:
     chosen = given.get('layers')
     toggled = [name for name in chosen.split(',') if name] if chosen is not None else toggled_for(Path(project.path))
     return Store(project.project_id, toggled=toggled, metaform=given.get('metaform') or None)
-
-
-def following(store: Store, address: str) -> str | None:
-    """The next address after this one in the namespace tree, depth first, through `children`."""
-    first = store.children(address, limit=1).results
-    if first:
-        return first[0]
-    while address:
-        parent = address.rpartition('.')[0]
-        sibling = store.children(parent, after=address, limit=1).results
-        if sibling:
-            return sibling[0]
-        address = parent
-    return None
-
-
-def graph(store: Store, given: dict[str, str]) -> dict[str, Any]:
-    """A page of the whole map for the 3D view: each element at its address in namespace order, with its nearest
-    parent element, and each join it receives with its subtypes, VIEW-005 and VIEW-010. Only reads of STORE-025."""
-    raw = given.get('raw') == 'true'
-    limit = int(given.get('limit') or LIMIT)
-    elements: list[dict[str, Any]] = []
-    joins: list[dict[str, Any]] = []
-    known: dict[str, bool] = {}
-
-    def element_at(address: str) -> Any:
-        found = store.where(address, raw=raw)
-        known[address] = found is not None and found.element is not None
-        return found.element if found is not None else None
-
-    def parent_of(address: str) -> str | None:
-        prefix = address.rpartition('.')[0]
-        while prefix:
-            if known.get(prefix) if prefix in known else element_at(prefix) is not None:
-                return prefix
-            prefix = prefix.rpartition('.')[0]
-        return None
-
-    address = following(store, given.get('after') or '')
-    while address is not None and (limit == 0 or len(elements) < limit):
-        element = element_at(address)
-        if element is not None:
-            elements.append({'element': plain(element), 'parent': parent_of(address)})
-            for join in store.joins(element.element_id, raw=raw, limit=0).results:
-                held = store.subtypes(join.join_id, raw=raw, limit=0).results
-                joins.append({**cast(dict[str, Any], plain(join)),
-                              'subtypes': [plain(subtype) for subtype in held]})
-        last, address = address, following(store, address)
-        if address is not None and limit and len(elements) >= limit:
-            return {'elements': elements, 'joins': joins, 'next': last}
-    return {'elements': elements, 'joins': joins, 'next': None}
 
 
 def main(argv: list[str] | None = None) -> int:
