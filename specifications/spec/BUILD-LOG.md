@@ -240,3 +240,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The manual test of step 20, `MANUAL-TEST-4.md`: 6 of 6 pass, no defects.
 - Step 2 is clean. The critic review found nothing in round three and nothing left in round four. The test reviews found nothing unresolved. The manual test passes every check but those open by Rich's decision or not built: D1, Q42; D2's rest, Q44; D4, Q43; D14, Q1; D19, deferred by D41; D18; the web GUI. Q48, a rare lock on Windows, is being diagnosed.
 
+## Step 22: Q48, and the first unit of the web GUI
+
+- Q48: a diagnosis job on a throwaway branch ran the thread-writers test many times on Windows. The two failures both met `SQLITE_BUSY` at `BEGIN IMMEDIATE` after 8.55 and 7.19 seconds, so the five-second busy wait, which polls and is not fair, was starved by the other threads of the same process. Writers of one process to one store now take turns on a lock of that store, and the busy wait is 30 seconds for writers of different processes. STORE-006's build text says both. The throwaway branch is deleted.
+- Unit 1 of step 3, a module's default verb, BASE-035: `Module(default=...)` names one of its verbs, which `metaform <id>` runs when no verb follows, so `metaform web` can start the web GUI, VIEW-002. The loader refuses a default that names no verb. `metaform <id> --help` still prints the module's syntax.
+- Tests added, each seen failing first: `test_a_module_named_alone_runs_its_default_verb_and_help_still_shows_its_syntax`. `test_threads_of_one_process_writing_to_one_node_lose_nothing` guards Q48 on the Windows CI jobs.
+

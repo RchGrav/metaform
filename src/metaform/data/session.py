@@ -8,6 +8,7 @@ transaction, and nested blocks join the outer one.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -31,6 +32,15 @@ class Tx:
 
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
+_WRITERS: dict[str, threading.RLock] = {}
+_WRITERS_GUARD = threading.Lock()
+
+
+def _writer(path: Path) -> threading.RLock:
+    """One lock per store file in this process. Its writers take turns here, so SQLite's busy wait, which polls and
+    is not fair, settles only writers of other processes, and a thread is never starved past it, STORE-006."""
+    with _WRITERS_GUARD:
+        return _WRITERS.setdefault(str(path), threading.RLock())
 
 
 def open_store(path: Path, *, create: bool) -> sqlite3.Connection:
@@ -75,17 +85,18 @@ class Session:
             raise StoreError(f'Project {self.project_id} has no metaform {self.metaform_id}.', 'metaform list metaforms')
         path = home.store_path(self.project_id, metaform.metaform_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        db = open_store(path, create=True)
-        try:
-            db.execute('BEGIN IMMEDIATE')
+        with _writer(path):
+            db = open_store(path, create=True)
             try:
-                yield Tx(db, metaform.metaform_id, self.project_id, True, named=self.metaform_id is not None)
-            except BaseException:
-                db.execute('ROLLBACK')
-                raise
-            db.execute('COMMIT')
-        finally:
-            db.close()
+                db.execute('BEGIN IMMEDIATE')
+                try:
+                    yield Tx(db, metaform.metaform_id, self.project_id, True, named=self.metaform_id is not None)
+                except BaseException:
+                    db.execute('ROLLBACK')
+                    raise
+                db.execute('COMMIT')
+            finally:
+                db.close()
 
     @contextmanager
     def read(self) -> Generator[Tx, None, None]:

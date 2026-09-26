@@ -13,12 +13,13 @@ from pathlib import Path
 from .errors import StoreError
 
 SCHEMA_VERSION = '1'
+BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
     """A connection in autocommit mode: every transaction is begun explicitly."""
-    db = sqlite3.connect(str(path), isolation_level=None, timeout=5.0)
-    db.execute('PRAGMA busy_timeout=5000')
+    db = sqlite3.connect(str(path), isolation_level=None, timeout=BUSY_SECONDS)
+    db.execute(f'PRAGMA busy_timeout={BUSY_SECONDS * 1000}')
     return db
 
 

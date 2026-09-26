@@ -164,7 +164,8 @@ It covers the base database, the per-project store, the correction stack, layers
 - Why: A store that half-applies a write gives agents a map that is neither the old state nor the new one. Agents trust what they read, so partial state is worse than a failed write.
 - How it shows: Two agents adding memories to the same node at the same moment both succeed. Killing a process in the middle of an import leaves the store as it was before the import.
 - Build:
-  - Every connection sets `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON` and `PRAGMA busy_timeout=5000`.
+  - Every connection sets `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON` and `PRAGMA busy_timeout=30000`.
+  - Inside one process, writers to one store take turns on a lock of that store, so SQLite's busy wait, which polls and is not fair, only ever settles writers of different processes. Without it, one of four threads in one process waited past five seconds on Windows and its write failed, Q48.
   - Each write operation opens `BEGIN IMMEDIATE`, performs all its statements and commits, or rolls back on any error. Each read operation opens a plain `BEGIN`, a deferred read transaction, so all its statements see one consistent state; in WAL mode readers never wait for the write lock and never block a writer.
   - Import, STORE-027, runs in one transaction.
 - Acceptance:
