@@ -1,0 +1,19 @@
+# Vendored files
+
+Every file the web GUI loads is served from this folder or `page/`, so it works offline and sends nothing to a third party, VIEW-003. Each file is an unchanged release file with its license beside it.
+
+| File | What | Version | License | Source | SHA-256 |
+| --- | --- | --- | --- | --- | --- |
+| `3d-force-graph.min.js` | the 3D force graph, with three.js r168 and its force layout bundled in | 3d-force-graph 1.73.4 | MIT, `3d-force-graph.LICENSE`; three.js, MIT, `three.LICENSE` | https://registry.npmjs.org/3d-force-graph/-/3d-force-graph-1.73.4.tgz, `package/dist/3d-force-graph.min.js` | `0ddfb909b551f4fdeb6b43cca567e71f2bc82b2e2eadf1d7cda65af8961b2d0f` |
+| `mermaid.min.js` | the 2D layout | Mermaid 12.0.0, the build vetted on branch `main-wip-2026-09-24` | MIT, `mermaid.LICENSE` | https://registry.npmjs.org/mermaid/-/mermaid-12.0.0.tgz, `package/dist/mermaid.min.js` | `28fca7ae6ebc7ed7bb63bde63136a74bfef14f296a57e403657eeb8b32836073` |
+| `fonts/IBMPlexSans-Regular.woff2` | IBM Plex Sans 400 | @ibm/plex-sans 1.1.0 | SIL Open Font License 1.1, `fonts/IBM-Plex.LICENSE` | https://registry.npmjs.org/@ibm/plex-sans/-/plex-sans-1.1.0.tgz, `package/fonts/complete/woff2/` | `ba711a3085ff9f27440b6b9c4550cfc47c97bf36591d5da958b975bb3add8c1a` |
+| `fonts/IBMPlexSans-Medium.woff2` | IBM Plex Sans 500 | @ibm/plex-sans 1.1.0 | as above | as above | `5660f8a658f8bb50dbc005232f885eadffd2bc1c235c4f6fbb63469d1f9cde6d` |
+| `fonts/IBMPlexSans-SemiBold.woff2` | IBM Plex Sans 600 | @ibm/plex-sans 1.1.0 | as above | as above | `f78048030eab62e860efa39a0df79e2e5581bf122eb95b9bc42c0b8a4988d205` |
+| `fonts/IBMPlexMono-Regular.woff2` | IBM Plex Mono 400 | @ibm/plex-mono 2.5.0 | as above | https://registry.npmjs.org/@ibm/plex-mono/-/plex-mono-2.5.0.tgz, `package/fonts/complete/woff2/` | `ba204497f16b6d334cee9d1e963a831b73e3a56e1d6300a8489d18df7214b350` |
+| `fonts/IBMPlexMono-Medium.woff2` | IBM Plex Mono 500 | @ibm/plex-mono 2.5.0 | as above | as above | `33faf307fa6031fb4062276d7320a6d632de890cbb347576fd80cfa01077bc25` |
+| `fonts/IBMPlexSansCondensed-Medium.woff2` | IBM Plex Sans Condensed 500 | @ibm/plex-sans-condensed 2.0.0 | as above | https://registry.npmjs.org/@ibm/plex-sans-condensed/-/plex-sans-condensed-2.0.0.tgz, `package/fonts/complete/woff2/` | `eb93da02ace70c39e4c4e811b8b02dd5f5d4804d186202d6668bea60d22f57d0` |
+| `fonts/IBMPlexSansCondensed-SemiBold.woff2` | IBM Plex Sans Condensed 600 | @ibm/plex-sans-condensed 2.0.0 | as above | as above | `385a082a1eac88343eab01fb6746be04b7175dacaf4550b17dee76ea0f78126d` |
+
+The three Plex packages carry the same license text. `three.LICENSE` is three.js's license as published in three 0.180.0.
+
+To update a file, take it unchanged from the named package, replace its license, update this table, and run the web module's tests and the browser checks.

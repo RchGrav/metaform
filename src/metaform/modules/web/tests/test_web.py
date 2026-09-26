@@ -32,7 +32,7 @@ def request(port, path='/', *, address='127.0.0.1', host=None, method='GET', bod
             connection.putheader('Content-Length', str(len(data)))
         connection.endheaders(data or None)
         response = connection.getresponse()
-        return response.status, response.read().decode('utf-8'), dict(response.getheaders())
+        return response.status, response.read().decode('utf-8', errors='replace'), dict(response.getheaders())
     finally:
         connection.close()
 
@@ -344,3 +344,45 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
     for method in ('PUT', 'PATCH', 'DELETE'):
         assert request(web, '/api/apply-layers', method=method, body=body, headers={**as_json, 'Origin': own})[0] == 501
     assert request(web, '/api/other', method='POST', body=body, headers={**as_json, 'Origin': own})[0] == 404
+
+
+NAMESPACES = ('http://www.w3.org/2000/svg',)  # a namespace name the script uses to make SVG nodes, never fetched
+
+
+@pytest.mark.req('VIEW-003')
+def test_the_page_loads_only_the_servers_own_files(run, web):
+    import re
+    started(run)
+    status, page, headers = request(web, '/')
+    assert status == 200 and headers['Content-Security-Policy'].startswith("default-src 'self'")
+    loaded = re.findall(r'(?:src|href)="([^"]+)"', page)
+    assert loaded and all(path.startswith('/') and not path.startswith('//') for path in loaded)
+    texts = [page]
+    for path in loaded:
+        status, body, headers = request(web, path)
+        assert status == 200, path
+        if path.startswith('/page/'):
+            texts.append(body)
+        if path.endswith('.js'):
+            assert headers['Content-Type'].startswith('text/javascript'), path
+    remote = [found for text in texts for found in re.findall(r'(?:https?:)?//[\w.-]+\.[a-z]{2,}[^\s"\')]*', text)
+              if not found.startswith(NAMESPACES)]
+    assert remote == []
+    fonts = re.findall(r'url\((/vendor/[^)]+)\)', next(text for text in texts if '@font-face' in text))
+    assert fonts and all(request(web, font)[0] == 200 for font in fonts)
+
+
+@pytest.mark.req('VIEW-003')
+def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, home):
+    import zipfile
+    from pathlib import Path
+    folder = Path(__file__).parents[1]
+    built = run('build').stdout
+    wheel = Path(next(line.split(':', 1)[1].strip() for line in built.splitlines() if line.startswith('Wheel:')))
+    names = set(zipfile.ZipFile(wheel).namelist())
+    shipped = [path.relative_to(folder).as_posix() for part in ('page', 'vendor')
+               for path in (folder / part).rglob('*') if path.is_file()]
+    assert shipped and {f'metaform/modules/web/{name}' for name in shipped} <= names
+    for bundle in ('3d-force-graph', 'mermaid', 'three'):
+        assert f'metaform/modules/web/vendor/{bundle}.LICENSE' in names
+    assert 'metaform/modules/web/vendor/fonts/IBM-Plex.LICENSE' in names
