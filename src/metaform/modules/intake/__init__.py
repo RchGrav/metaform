@@ -150,7 +150,8 @@ def submit(ctx: Context) -> Any:
     target, previous, metaform, fresh = _target(store, project)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     name = f'intake-{stamp}-{secrets.token_hex(3)}'
-    provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': served(ctx),
+    # No copy of the intake text is kept: the Canonical Intake's purpose never changes, STORE-016.
+    provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': None,
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role'), 'blinded': ctx.nouns.get('blinded')}
     writer = Writer(target, name)
     try:

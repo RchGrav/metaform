@@ -132,7 +132,7 @@ def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
     provenance = store.provenance(report['layer'])
     assert (provenance.module, provenance.workflow, provenance.model, provenance.role) == (
         'intake', 'canonical-intake', 'claude', 'intake agent')
-    assert provenance.prompt == run('intake', 'prompt', cwd=project).stdout
+    assert provenance.prompt is None  # the Canonical Intake's purpose never changes, so no copy is kept, STORE-016
     document = export_document(['timer'], layers=[report['layer']])['projects'][0]['metaforms'][0]
     assert len(document['elements']) == 3 and len(document['joins']) == 2 and len(document['subtypes']) == 1
 
@@ -364,7 +364,7 @@ def test_the_intake_serves_the_shipped_file_and_keeps_nothing_in_the_prompt_stor
     layer = store.layer_ref(result['layer'])
     assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
     provenance = store.provenance(result['layer'])
-    assert provenance.prompt_version is None and provenance.prompt == first
+    assert provenance.prompt_version is None and provenance.prompt is None
     assert [(prompt.name, prompt.newest) for prompt in prompts.prompts()] == [('canonical-intake', 1)]
 
 
@@ -378,3 +378,4 @@ def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, proje
     result = submit(run, project, FIXTURE, tmp_path)
     layer = Store('timer').layer_ref(result['layer'])
     assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
+    assert Store('timer').provenance(result['layer']).prompt is None
