@@ -115,6 +115,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #labels3d span.near{color:var(--text)}
 #labels3d span.sel{color:var(--signal);font-size:13px;font-weight:600}
 #labels3d span.dim{opacity:.35}
+#tip3d{position:absolute;pointer-events:none;z-index:2}
+#tip3d[hidden]{display:none}
 .tip3d{font:12px var(--sans);max-width:280px;background:#0c1117ee;border:1px solid var(--line-2);padding:6px 8px;border-radius:6px;color:var(--text)}
 .tip3d span{display:block;font-family:var(--mono);color:var(--signal);word-break:break-word}
 .hint{position:absolute;right:14px;top:12px;font:11px var(--mono);color:var(--faint);pointer-events:none}

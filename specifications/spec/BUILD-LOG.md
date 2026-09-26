@@ -320,3 +320,8 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Rich's home: the one metaform, `main`, from the intake at 01:39 that day, was withdrawn with `home.withdraw_metaform`, its row and store file; the project shows no intake until the next one runs. Its report and feedback files stay under `reports/`.
 - Not changed: the `map` module's knowledge verbs take no `ef` noun yet, so a knowledge layer's joins and a correction through the CLI cannot set it.
 
+## Step 28: the 3D hover text sits above the node
+
+- Rich, 2026-09-26: "when pointing to elements the text is under the hand and cant be read it should float above not below the node". 3d-force-graph placed its tooltip 21 pixels below the pointer. The page now shows its own tooltip, anchored above the hovered node by the node's projected radius, so it stays put while the pointer moves over the node and clears the sphere at any zoom; it goes below the node only where it would leave the top of the view. VIEW-005 says so.
+- Test added, seen failing first: `test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer` points at the kitchen timer and requires the whole tooltip above the pointer, and gone when the pointer leaves.
+

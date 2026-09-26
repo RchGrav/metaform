@@ -152,6 +152,7 @@ function linkColor(link) {
   return layerColor(link.layer);
 }
 let G = null;
+const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9 : 0.35;
 function start3D() {
   if (typeof ForceGraph3D !== 'function') {
     fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
@@ -161,11 +162,16 @@ function start3D() {
     .backgroundColor(css('--ground'))
     .showNavInfo(false)
     .nodeRelSize(3)
-    .nodeVal(node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9 : 0.35)
+    .nodeVal(nodeSize)
     .nodeColor(node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id) ? '#2b3644' : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
-    .nodeLabel(node => tipFor(node).outerHTML)
+    .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
+    .onNodeHover(node => {
+      hovered = node || null;
+      $('#tip3d').hidden = !hovered;
+      if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); }
+    })
     .linkColor(linkColor)
     .linkOpacity(0.55)
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' ? 0.25 : 0.9)
@@ -199,10 +205,24 @@ function start3D() {
   };
 }
 function tipFor(node) {
-  const tip = h('div', {class: 'tip3d'});
-  if (node.t === 'el') return fill(tip, h('b', {}, node.name), h('span', {}, node.address));
+  if (node.t === 'el') return [h('b', {}, node.name), h('span', {}, node.address)];
   const join = S.joins.find(item => item.join_id === node.join);
-  return fill(tip, node.t === 'purpose' ? (join?.purpose || 'purpose') : node.name || '');
+  return [node.t === 'purpose' ? (join?.purpose || 'purpose') : node.name || ''];
+}
+/* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
+ * below the node only where it would leave the top of the view. */
+let hovered = null;
+function placeTip() {
+  const tip = $('#tip3d');
+  if (!G || !hovered || hovered.x === undefined) return;
+  const point = G.graph2ScreenCoords(hovered.x, hovered.y, hovered.z);
+  const camera = G.camera(), box = $('#stage').getBoundingClientRect();
+  const distance = Math.hypot(camera.position.x - hovered.x, camera.position.y - hovered.y, camera.position.z - hovered.z);
+  const radius = Math.cbrt(nodeSize(hovered)) * 3 / (distance * Math.tan(camera.fov * Math.PI / 360)) * box.height / 2;
+  const above = point.y - radius - 10 - tip.offsetHeight >= 0;
+  tip.style.left = point.x + 'px';
+  tip.style.top = (above ? point.y - radius - 10 : point.y + radius + 10) + 'px';
+  tip.style.transform = `translate(-${Math.min(100, Math.max(0, point.x / box.width * 100))}%, ${above ? '-100%' : '0'})`;
 }
 const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
 const tags = new Map();
@@ -220,6 +240,7 @@ function labels() {
       tag.style.top = point.y + 'px';
       tag.className = node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '';
     }
+    placeTip();
   }
   requestAnimationFrame(labels);
 }
@@ -233,6 +254,8 @@ function draw3D() {
       fx: known.fx, fy: known.fy, fz: known.fz});
   }
   for (const [id, tag] of tags) if (!S.elements.has(id)) { tag.remove(); tags.delete(id); }
+  if (hovered) hovered = data.nodes.find(node => node.id === hovered.id) || null;
+  $('#tip3d').hidden = !hovered;
   G.graphData(data);
 }
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }

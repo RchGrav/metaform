@@ -639,6 +639,31 @@ def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_lege
     assert problems == []
 
 
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-012')
+def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(run, web, mapped, browser):
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.wait_for_timeout(2500)
+    page.click('#pauseBtn')  # hold the layout still so the node stays where the pointer goes
+    stage = page.locator('#stage').bounding_box()
+    kitchen = page.evaluate('(() => { const tag = [...document.querySelectorAll("#labels3d span")]'
+                            '.find(span => span.textContent === "kitchen timer");'
+                            ' return {x: parseFloat(tag.style.left), y: parseFloat(tag.style.top)}; })()')
+    x, y = stage['x'] + kitchen['x'], stage['y'] + kitchen['y']
+    page.mouse.move(x - 40, y - 40)
+    page.mouse.move(x, y, steps=4)
+    tip = page.locator('#tip3d')
+    tip.wait_for(state='visible')
+    assert 'kitchen timer' in tip.inner_text()
+    box = tip.bounding_box()
+    assert box['y'] + box['height'] < y - 4, (box, y)  # the whole text sits above the node, not under the hand
+    page.mouse.move(stage['x'] + 5, stage['y'] + stage['height'] - 5)
+    tip.wait_for(state='hidden')
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-010')
 @pytest.mark.req('VIEW-012')
 def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, browser, tmp_path):
