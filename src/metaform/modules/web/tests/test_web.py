@@ -452,13 +452,18 @@ def test_the_page_draws_each_join_as_a_face_and_both_views_select_together(run, 
     cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
     assert page.evaluate('window.metaform.selected()') == cook['element_id']
     assert page.text_content('#p-object h2') == 'cook'
+    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
     page.focus('#map2d')
-    joined = {join['provider'] for join in expected['joins'] if join['receiver'] == cook['element_id']}
-    for key in ('ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'):
-        page.keyboard.press(key)
-        if page.evaluate('window.metaform.selected()') != cook['element_id']:
-            break
-    assert page.evaluate('window.metaform.selected()') in joined
+    kitchen = by_address['code.timer.kitchen']
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    # This small map is laid out left to right, each join drawn from receiver to provider, so the alarm the kitchen
+    # receives from lies to its right, and the cook and the display, which receive from it, to its left.
+    page.keyboard.press('ArrowRight')
+    assert page.evaluate('window.metaform.selected()') == by_address['code.alarm.audible']
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('ArrowLeft')
+    assert page.evaluate('window.metaform.selected()') in {by_address['exterior.cook'],
+                                                           by_address['code.timer.kitchen.display']}
     page.keyboard.press('f')
     page.wait_for_timeout(300)
     assert problems == [] and remote == []
@@ -512,6 +517,7 @@ def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_chan
     assert [(change['what'], change['effect'], change['detail']) for change in preview['changes']
             if change['kind'] == 'element'] == [('code.alarm.chime', 'moves back', 'from code.alarm.chime to code.alarm.bell')]
     files = sorted((home / 'projects').rglob('store.sqlite3'))
+    removed_id = store.layer_ref('fix-3').layer_id
     before = [path.read_bytes() for path in files]
     status, answer = remove(web, 'fix-2')
     assert status == 200 and answer['removed'] is False and 'fix-3' in answer['notices'][0]['message']
@@ -522,6 +528,9 @@ def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_chan
     assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2']
     assert store.element('code.alarm.bell') is not None and store.element('code.alarm.chime') is None
     assert 'fix-3' not in [layer.name for layer in store.layers(limit=0).results] and store.provenance('fix-2')
+    import sqlite3
+    with sqlite3.connect(files[0]) as db:
+        assert db.execute('SELECT COUNT(*) FROM provenance WHERE layer_id=?', (removed_id,)).fetchone() == (0,)
     assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is True
 
 
