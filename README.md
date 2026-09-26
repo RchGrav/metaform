@@ -96,7 +96,7 @@ flowchart LR
 
 The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements, joins, and internal subtypes, rather than detached from the functionality it concerns.
 
-This also supports criticism. A critic can inspect the code together with its Metaform, or examine the Metaform on its own. A blindspot challenge asks the project for substantive reasoning: why a concern was already considered and adds no benefit, why an unexplored concern matters, or where another part of the system already fulfills the apparent omission.
+It also lets a critic find gaps in the design: functions and Encounters the system should have and does not. Code alone shows how a system behaves, not what it is for, so the recorded purposes are what make a missing piece visible. The critic examines the Metaform on its own, or the Metaform together with the code. Each gap becomes a blindspot challenge, which asks the project for substantive reasoning: why a concern was already considered and adds no benefit, why an unexplored concern matters, or where another part of the system already fulfills the apparent omission.
 
 ## What it looks like
 
@@ -199,7 +199,7 @@ Metaform connects several parts of the work process rather than treating them as
 | Prepare a task | Project names and functional addresses through which a reusable operation can be interpreted. |
 | Retain findings | Meaningful locations for observations about a part, a relationship, or an internal subtype. |
 | Change perspective | Reason from a receiver's need, a provider's effects, a broader type, or a particular Encounter. |
-| Examine blindspots | Compare a concern with the project's actual reasoning and other places where it may already be handled. |
+| Find gaps | Functions and Encounters the design lacks, found from the Metaform alone or with the code, each answered with the project's reasoning or the place that already handles it. |
 | Shape the workpiece | Preserve relevant identity while changing a realization, or deliberately transform the purposes and effects that define it. |
 
 A workpiece can be software, a document, a narrative, an image, a collection, or an idea under construction. The same method asks what the artifact is doing in its context. A photograph used as an asset has a different relationship to the surrounding work from the same photograph examined on its own; a functional type does not erase its particular subject or occasion.

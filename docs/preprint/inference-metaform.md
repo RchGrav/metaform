@@ -239,7 +239,7 @@ This distinction keeps the design usable as a construction account without inven
 
 ### 9.1 Functional grounding and implementation inspection cooperate
 
-A critic can inspect the actual artifact together with its Metaform, or examine the Metaform alone. Giving the critic source code does not, by itself, prevent independent examination. The critic's role is to analyze the technical design; the functional representation supplies a perspective separable from the implementation arrangement.
+Blind spot analysis looks for gaps in the design of the system: functions and Encounters it should have and does not. Code records how a system behaves, not what it is for, so the purposes the Metaform records are what let a critic see what is missing. A critic can examine the Metaform alone, or inspect the actual artifact together with its Metaform. Giving the critic source code does not, by itself, prevent independent examination. The critic's role is to analyze the technical design; the functional representation supplies a perspective separable from the implementation arrangement.
 
 That combination supports specific criticism. An agent can ask whether an actual mechanism satisfies a receiver's purpose, whether a dependency is necessary for the function it serves, or whether a proposed improvement concerns the function itself or only its current realization. The represented purposes make those questions more precise without forcing a specification-only-first sequence.
 
@@ -247,7 +247,7 @@ The perspectives are not a closed menu of permitted reasoning. Diagnosis, foresi
 
 ### 9.2 The blindspot challenge elicits project reasoning
 
-A **blindspot challenge** asks the project to respond substantively to an apparent omission or opportunity. Three responses distinguish materially different situations:
+A **blindspot challenge** presents a gap the critic found in the design, a function or Encounter the system appears to lack, and asks the project to respond substantively. Three responses distinguish materially different situations:
 
 | Response | Reasoning supplied by the project |
 |---|---|

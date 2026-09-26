@@ -710,20 +710,20 @@ For example, the plugin contract is not only related to the command line. Its de
 
 The reduced-hallucination mechanism is the same preparation viewed from another consequence. Project names, functions, reasons, and prior conclusions are provided rather than left for the working agent to invent or reconstruct. The author's measured experience underlies this account; the mechanism is described here without substituting fabricated rates or numerical guarantees.
 
-### Criticism can examine the actual code
+### Blind spot analysis finds gaps in the design
 
-An agent involved in building a realization can develop blind spots around the arrangement it has been constructing. A critic has a different operation: examine the technical design and its mechanisms. Supplying the code does not itself prevent that operation. The Inference Metaform grounds the critic in functionality so that it can separate what the system serves from how the existing code happens to be arranged.
+Blind spot analysis looks for gaps in the design of the system: functions and Encounters it should have and does not. Code records how a system behaves, not what it is for, so a critic reading code alone can check what is written but can rarely see what is missing. The Inference Metaform records the purposes, and a purpose with nothing serving it, or an Encounter the artifact's type calls for and the map lacks, becomes visible. The Inference Metaform grounds the critic in functionality so that it can separate what the system serves from how the existing code happens to be arranged.
 
-There are two useful modes, neither prescribed as a mandatory first pass:
+There is one metaform and two types of blind spot analysis over it, each producing its own layer, neither prescribed as a mandatory first pass:
 
-- **Actual-realization criticism:** examine the code or other artifact together with the functional map. Findings can be specific to real mechanisms, their dependencies, and their receiving purposes.
-- **Metaform-only criticism:** examine the represented functionality and Encounters without the realization. The map can have been derived from code, a specification, or another artifact.
+- **Metaform-only:** examine the represented functionality and Encounters without the realization. Like a critic of a specification, it finds omissions in the design, because what the artifact is tells it what should exist. Some of what it raises will already be handled in the implementation. The map can have been derived from code, a specification, or another artifact.
+- **Metaform plus code:** examine the code or other artifact together with the functional map. Its findings are specific to real mechanisms, their dependencies, and their receiving purposes, and directly actionable, though the code anchors it and it seldom sees that a whole approach is wrong.
 
-The first mode can identify a mismatch in an implemented interface. The second can reveal a meaningful consideration in the functional account. The system does not require withholding code before permitting either form of reasoning.
+The system does not require withholding code before permitting either type.
 
 ### The blindspot challenge elicits the project's reasoning
 
-A blindspot challenge presents a consideration to the agents working in the project. Their answer must resolve its relationship to existing project understanding, not merely mark it accepted or rejected.
+A blindspot challenge presents one gap the critic found, a function or Encounter the design appears to lack, to the agents working in the project. Their answer must resolve its relationship to existing project understanding, not merely mark it accepted or rejected.
 
 | Response | Substantive meaning | What the exchange adds |
 |---|---|---|

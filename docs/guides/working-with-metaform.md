@@ -242,7 +242,7 @@ Selected memory may be **information** to reason from, or **additional imperativ
 
 ### Respond substantively to a blindspot challenge
 
-A critic can work with the actual source and Metaform together, or examine the Metaform alone. The project response establishes one of three substantive outcomes:
+A blindspot challenge presents a gap in the design: a function or Encounter the system should have and appears not to. The critic finds it by examining the Metaform alone, or the actual source and Metaform together. The project response establishes one of three substantive outcomes:
 
 **A:** The concern was considered and adds no benefit, with the reasoning why. **B:** It was not considered and has relevant consequences to explore. **C:** Another part of the system already handles it, identifying the location and functional relationship.
 

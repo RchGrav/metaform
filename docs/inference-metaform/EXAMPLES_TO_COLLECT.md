@@ -137,7 +137,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="blindspots"></a>
 ### Target 8. A, B, and C with their substantive reasoning
 
-**Mechanism.** A blindspot challenge asks what the project has done with potentially relevant functionality. It elicits already-considered/no-benefit reasoning (A), unexplored relevance (B), or an existing location where the functionality is handled (C). See [blindspot challenges](REFERENCE.md#criticism).
+**Mechanism.** A blindspot challenge presents a gap in the design, a function or Encounter the system appears to lack, and asks what the project has done about it. It elicits already-considered/no-benefit reasoning (A), unexplored relevance (B), or an existing location where the functionality is handled (C). See [blindspot challenges](REFERENCE.md#criticism).
 
 **Material to retain.** For each original case, keep the critic's finding, addressed element or relationship, relevant code or other workpiece, project response, and the explanation supporting the selected outcome. For C, retain the cited implementation or graph location and why it handles the function. For B, retain any later approval, plan, implementation, or decision as separate records rather than implying the answer itself performed them.
 
