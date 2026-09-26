@@ -15,6 +15,7 @@ import sqlite3
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,9 +81,25 @@ ID = re.compile(r'^[0-9a-f]{32}$')
 TARGET_TYPES = ('path', 'url', 'artifact', 'inline', 'inferred')
 
 
+_AT: ContextVar[Path | None] = ContextVar('metaform_home_at', default=None)
+
+
 def home() -> Path:
     """The Metaform home: METAFORM_HOME when set, otherwise ~/.metaform, STORE-001."""
+    chosen = _AT.get()
+    if chosen is not None:
+        return chosen
     return Path(os.environ.get('METAFORM_HOME') or Path.home() / '.metaform').expanduser()
+
+
+@contextmanager
+def at(folder: Path) -> Generator[None, None, None]:
+    """Read another home, such as a directly run wheel's data folder, for the length of the block, BASE-025."""
+    token = _AT.set(folder)
+    try:
+        yield
+    finally:
+        _AT.reset(token)
 
 
 def base_path() -> Path:
@@ -415,13 +432,25 @@ def import_metaform(project_id: str, metaform_id: str, name: str, created: str, 
 
 
 def import_metaform_in(db: sqlite3.Connection, project_id: str, metaform_id: str, name: str, created: str, *,
-                       activate: bool) -> bool:
-    """Record an imported metaform inside an open base transaction, unless its id exists."""
+                       activate: bool, never_active: bool = False) -> bool:
+    """Record an imported metaform inside an open base transaction, unless its id exists. It becomes active when
+    asked, or when its project has no active metaform, unless it must never be made active, BASE-025."""
     if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
         return False
     has_active = db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
-    _create_metaform(db, project_id, name, metaform_id, created, activate=activate or has_active is None)
+    _create_metaform(db, project_id, name, metaform_id, created,
+                     activate=not never_active and (activate or has_active is None))
     return True
+
+
+def free_name(db: sqlite3.Connection, project_id: str, name: str, taken: set[str] | None = None) -> str:
+    """The name, or it with `-2` or the next free number, so no two metaforms of a project share one, STORE-041."""
+    chosen, number = name, 1
+    while chosen in (taken or set()) or db.execute('SELECT 1 FROM metaforms WHERE project_id=? AND name=?',
+                                                  (project_id, chosen)).fetchone():
+        number += 1
+        chosen = f'{name}-{number}'
+    return chosen
 
 
 def metaform_owner(metaform_id: str) -> str | None:

@@ -146,3 +146,65 @@ def test_an_import_document_is_checked_whole_before_any_write_and_its_keys_never
     assert refused.value.next_step and '\n' not in refused.value.next_step
     assert not any('SELECT * FROM items' in statement for statement in traced)
     assert not (other / 'metaform.sqlite3').exists() and not (other / 'projects').exists()
+
+
+def wheel_home(home, label):
+    return home / 'wheels' / label
+
+
+def submit_intake(run, folder, env, elements):
+    path = folder.parent / f'{folder.name}-elements.json'
+    path.write_text(json.dumps(elements), encoding='utf-8')
+    run('intake', 'submit', f'elements={path}', cwd=folder, env=env)
+
+
+def roots_of(run, folder):
+    return run('map', 'roots', '--json', cwd=folder).stdout
+
+
+ELEMENTS_MAIN = [{'namespace_address': 'code.timer.kitchen', 'name': 'kitchen timer', 'name_length': 2, 'role': 'DE'}]
+ELEMENTS_WHEEL = [{'namespace_address': 'code.alarm.audible', 'name': 'audible alarm', 'name_length': 2, 'role': 'DE'}]
+
+
+@pytest.mark.req('BASE-025')
+@pytest.mark.req('STORE-030')
+def test_a_wheels_data_is_pulled_in_as_its_own_metaforms_never_active_and_only_once(run, home, tmp_path):
+    folder, other = tmp_path / 'proj', tmp_path / 'other'
+    folder.mkdir()
+    other.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    submit_intake(run, folder, {}, ELEMENTS_MAIN)
+    before = roots_of(run, folder)
+    wheel = {'METAFORM_HOME': str(wheel_home(home, 'metaform-9.9.9'))}
+    run('add', 'project', 'proj', str(folder), env=wheel)
+    submit_intake(run, folder, wheel, ELEMENTS_WHEEL)
+    run('add', 'project', 'other', str(other), env=wheel)
+    submit_intake(run, other, wheel, ELEMENTS_WHEEL)
+    pulled = run('import', 'wheel=metaform-9.9.9').stdout
+    assert 'metaforms added: 2' in pulled
+    rows = [line.split() for line in run('list', 'metaforms', 'proj').stdout.splitlines()]
+    names = {row[0]: row for row in rows}
+    assert set(names) == {'main', 'main-from-metaform-9.9.9'}
+    assert 'active' in ' '.join(names['main']) and 'active' not in ' '.join(names['main-from-metaform-9.9.9'])
+    assert roots_of(run, folder) == before
+    assert [row.split()[0] for row in run('list', 'metaforms', 'other').stdout.splitlines()] == [
+        'main-from-metaform-9.9.9']
+    assert 'active' not in run('list', 'metaforms', 'other').stdout
+    run('activate', 'metaform', 'main-from-metaform-9.9.9', 'proj')
+    assert 'code.alarm.audible' in roots_of(run, folder) and 'code.timer.kitchen' not in roots_of(run, folder)
+    run('activate', 'metaform', 'main', 'proj')
+    stores = sorted((home / 'projects').rglob('store.sqlite3'))
+    kept = [path.read_bytes() for path in stores]
+    again = run('import', 'wheel=metaform-9.9.9').stdout
+    assert 'metaforms added: 0' in again and 'things added: 0' in again
+    assert sorted((home / 'projects').rglob('store.sqlite3')) == stores
+    assert run('list', 'metaforms', 'proj').stdout.count('from-metaform') == 1
+    assert wheel_home(home, 'metaform-9.9.9').is_dir() and [path.read_bytes() for path in stores] == kept
+
+
+@pytest.mark.req('BASE-025')
+def test_a_wheel_folder_that_is_not_there_names_the_folders_that_are(run, home):
+    (wheel_home(home, 'metaform-1.0.0')).mkdir(parents=True)
+    missing = run('import', 'wheel=metaform-8.8.8', ok=False)
+    assert missing.returncode != 0 and 'metaform-8.8.8' in missing.stderr
+    assert 'Next: metaform import wheel=metaform-1.0.0' in missing.stderr

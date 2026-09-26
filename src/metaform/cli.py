@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
-from .data import Store, export_document, import_document
+from .data import Store, export_document, import_document, pull_wheel
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
@@ -492,14 +492,19 @@ def export(args: list[str], folder: Path) -> None:
 def import_(args: list[str], folder: Path) -> None:
     if len(args) not in (1, 2):
         raise Stop('import takes a file, and then an optional project.', 'metaform import --help')
-    source = _named_folder(folder, args[0])
-    if not source.is_file():
-        raise Stop(f'No file at {source}.', 'metaform export > <file>')
-    try:
-        document = json.loads(source.read_text(encoding='utf-8'))
-    except ValueError:
-        raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
-    report = import_document(document, args[1] if len(args) == 2 else None)
+    if args[0].startswith('wheel='):
+        if len(args) != 1:
+            raise Stop('import wheel= takes nothing more.', 'metaform import wheel=<name>-<version>')
+        report = pull_wheel(args[0].partition('=')[2])
+    else:
+        source = _named_folder(folder, args[0])
+        if not source.is_file():
+            raise Stop(f'No file at {source}.', 'metaform export > <file>')
+        try:
+            document = json.loads(source.read_text(encoding='utf-8'))
+        except ValueError:
+            raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
+        report = import_document(document, args[1] if len(args) == 2 else None)
     for key, count in report.items():
         if key != 'notices':
             out(f'{key.replace("_", " ")}: {count}')
@@ -731,9 +736,12 @@ docs.command(Command('export', "Write a project's data to one JSON document.",
                      ('metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...',),
                      details='With no file the document goes to standard output. Everything carries its unique id.',
                      see_also=('import',)))
-docs.command(Command('import', 'Add what a JSON document holds and this home does not.',
-                     ('metaform import <file> [<project>]',),
-                     details='Importing something that already exists does nothing.', see_also=('export',)))
+docs.command(Command('import', "Add what a JSON document or a directly run wheel's data holds and this home "
+                               'does not.',
+                     ('metaform import <file> [<project>]', 'metaform import wheel=<name>-<version>'),
+                     details='Importing something that already exists does nothing. wheel= pulls in the data a '
+                             'wheel kept while it ran directly: each of its metaforms arrives as its own, named '
+                             '<name>-from-<name>-<version>, and is never made active.', see_also=('export',)))
 docs.command(Command('query', "Ask one of the design's questions of the folder's project.",
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))

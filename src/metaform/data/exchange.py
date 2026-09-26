@@ -8,6 +8,7 @@ metaform's store is imported in one transaction, STORE-006.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -276,10 +277,22 @@ class Planned:
     registered: bool
     metaform: dict[str, Any]
     activate: bool
+    never_active: bool = False
 
 
-def _plan(document: dict[str, Any], project: str | None,
-          notices: list[dict[str, str]]) -> tuple[list[Planned], int]:
+def _pulled(metaform: dict[str, Any], project_id: str, label: str, taken: set[str]) -> dict[str, Any]:
+    """A wheel's metaform as it arrives in the main home: an id made from the wheel and its own, so pulling the same
+    folder again finds it, and its name followed by `-from-<wheel>`, numbered when taken, BASE-025."""
+    head = metaform['metaform']
+    derived = hashlib.sha256(f'{label}/{head["metaform_id"]}'.encode('utf-8')).hexdigest()[:32]
+    with home.base() as db:
+        name = home.free_name(db, project_id, f'{head["name"]}-from-{label}', taken)
+    taken.add(name)
+    return {**metaform, 'metaform': {**head, 'metaform_id': derived, 'name': name}}
+
+
+def _plan(document: dict[str, Any], project: str | None, notices: list[dict[str, str]],
+          pulled: str | None = None) -> tuple[list[Planned], int]:
     """Where each metaform goes, decided before anything is written, and how many are skipped.
 
     A metaform another project owns here is not created again, STORE-027: nothing of it is written, and a notice
@@ -287,6 +300,7 @@ def _plan(document: dict[str, Any], project: str | None,
     """
     planned: list[Planned] = []
     skipped = 0
+    names: dict[str, set[str]] = {}
     for entry in document.get('projects', []):
         record = home.Project(**entry['project'])
         if project is not None:
@@ -303,6 +317,8 @@ def _plan(document: dict[str, Any], project: str | None,
                     raise StoreError(f'{record.path} is already registered as project {holder}.',
                                      f'metaform import <file> {holder}')
         for metaform in entry.get('metaforms', []):
+            if pulled is not None:
+                metaform = _pulled(metaform, project_id, pulled, names.setdefault(project_id, set()))
             metaform_id = metaform['metaform']['metaform_id']
             owner = home.metaform_owner(metaform_id)
             if owner is not None and owner != project_id:
@@ -312,11 +328,13 @@ def _plan(document: dict[str, Any], project: str | None,
                     f'what it holds to that project: metaform import <file> {owner}')})
                 continue
             planned.append(Planned(project_id, record, registered, metaform,
-                                   not registered and entry.get('active_metaform') == metaform_id))
+                                   pulled is None and not registered and entry.get('active_metaform') == metaform_id,
+                                   never_active=pulled is not None))
     return planned, skipped
 
 
-def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, Any]:
+def import_document(document: dict[str, Any], project: str | None = None, *,
+                    pulled: str | None = None) -> dict[str, Any]:
     """Add what the target does not hold, by unique id, as one unit, STORE-027 and STORE-006.
 
     The document is checked whole and every metaform's place decided before anything is written. Each store's
@@ -327,7 +345,7 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
     """
     _validate(document)
     notices: list[dict[str, str]] = []
-    planned, skipped = _plan(document, project, notices)
+    planned, skipped = _plan(document, project, notices, pulled)
     report: dict[str, Any] = {'metaforms_added': 0, 'metaforms_skipped': skipped, 'layers_added': 0,
                               'layers_skipped': 0, 'things_added': 0, 'things_skipped': 0, 'notices': notices}
     opened: list[sqlite3.Connection] = []
@@ -348,7 +366,8 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
                     home.register_in(base, item.record)
                 head = item.metaform['metaform']
                 added = home.import_metaform_in(base, item.project_id, head['metaform_id'], head['name'],
-                                                head['created'], activate=item.activate)
+                                                head['created'], activate=item.activate,
+                                                never_active=item.never_active)
                 report['metaforms_added' if added else 'metaforms_skipped'] += 1
         for db in opened:
             db.execute('COMMIT')
@@ -498,3 +517,17 @@ def _insert(db: sqlite3.Connection, table: str, row: dict[str, Any], *, ignore: 
     marks = ', '.join('?' for _ in names)
     verb = 'INSERT OR IGNORE' if ignore else 'INSERT'
     return db.execute(f'{verb} INTO {table}({", ".join(names)}) VALUES ({marks})', tuple(row[key] for key in names))
+
+
+def pull_wheel(label: str) -> dict[str, Any]:
+    """Pull a directly run wheel's data into this home: each of its metaforms arrives as its own, never active and
+    never merged into one that is here; pulling again adds nothing; the wheel's folder is left in place, BASE-025."""
+    wheels = home.home() / 'wheels'
+    folder = wheels / label
+    if not (folder / 'metaform.sqlite3').is_file():
+        found = sorted(path.name for path in wheels.iterdir() if path.is_dir()) if wheels.is_dir() else []
+        raise StoreError(f'No data of a wheel {label} at {folder}.',
+                         f'metaform import wheel={found[0]}' if found else 'metaform list projects')
+    with home.at(folder):
+        document = export_document()
+    return import_document(document, pulled=label)

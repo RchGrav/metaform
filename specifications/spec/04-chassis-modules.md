@@ -243,6 +243,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   - Each incoming metaform is added under a new metaform id. Its name is its original name followed by `-from-<name>-<version>`; if that name is taken, a numeric suffix is added. It is never made active by the pull; the user selects it with `activate metaform`.
   - Identity ids that already exist are not added again, STORE-027, so pulling the same folder twice adds nothing the second time.
   - The wheel's folder is left in place. Removing it is a separate, explicit act by the user.
+  - The wheel's folder is read as a home of its own: its export document, STORE-027, is imported with each metaform's id replaced by one made from the wheel's name and version and the metaform's own id, so a second pull finds each one and adds nothing. A project the pull registers gets the metaform too, not active, so it has no active metaform until the user activates one or writes, STORE-041. A folder that holds no wheel data stops with the first wheel folder there as the next step.
 - Acceptance:
   1. A project with an active metaform in the main folder, and a wheel folder holding a metaform for the same project: after the pull, the project has both metaforms, the original is still active, and every read of the original returns what it returned before.
   2. Pulling the same wheel folder a second time adds no metaform and no rows.
