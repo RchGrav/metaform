@@ -198,3 +198,10 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The response schema is the tested version's, which `intake_submit` already follows: a purpose join holds its refs and its subtype joins; AUE stays in the top-level element's role list. The older copy's provider element nested inside a purpose join is not restored.
 - The handoff's four intake questions are answered by this. The byte-copy tests and the first working test pass.
 
+## Windows, from the first CI run
+
+- CI ran the suite on Windows for the first time. 42 tests failed there, from two causes that never show on Linux or macOS, QUAL-002:
+  - A pipe on Windows defaults to cp1252. `set` writes an arrow and the intake prompt has other characters cp1252 lacks, so the CLI raised `UnicodeEncodeError`. The CLI now reads and writes UTF-8 whatever the system gives a pipe; a Windows console and every other system is UTF-8 already. The tests decode what the CLI prints as UTF-8.
+  - The installer's proof started its command by its bare name, and Windows cannot start a `.cmd` launcher that way. The proof now starts the full path `shutil.which` finds, as registration already did.
+- Test added, seen failing first on Linux with `PYTHONIOENCODING=cp1252`, which gives any system the Windows pipe: `test_output_is_utf8_whatever_the_encoding_the_system_gives_a_pipe`.
+

@@ -24,7 +24,7 @@ def run(home, tmp_path):
         folder.mkdir(parents=True, exist_ok=True)
         result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder,
                                 env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})},
-                                capture_output=True, text=True, input=input)
+                                capture_output=True, text=True, encoding='utf-8', input=input)
         if ok and result.returncode != 0:
             raise AssertionError(f'metaform {" ".join(args)} failed ({result.returncode}):\n'
                                  f'{result.stdout}{result.stderr}')

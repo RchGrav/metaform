@@ -45,7 +45,7 @@ def test_the_chassis_imports_with_every_module_package_unimportable(tmp_path):
               "sys.meta_path.insert(0, Block())\n"
               "import metaform, metaform.cli, metaform.data\n"
               "print('imported')\n")
-    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
+    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, encoding='utf-8',
                             env={**os.environ, 'METAFORM_HOME': str(tmp_path / 'h')})
     assert result.stdout.strip() == 'imported', result.stderr
 
@@ -82,7 +82,7 @@ def test_importing_the_public_base_creates_no_files(tmp_path):
     home = tmp_path / 'missing-home'
     result = subprocess.run([sys.executable, '-c', 'import metaform.module, metaform.settings, metaform.data, '
                                                    'metaform.events'],
-                            env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True, text=True)
+                            env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True, text=True, encoding='utf-8')
     assert result.returncode == 0, result.stderr
     assert not home.exists()
 
@@ -277,7 +277,7 @@ def test_a_second_module_with_one_id_is_refused_naming_the_first(home, tmp_path,
     ''')
     env = {**os.environ, 'METAFORM_HOME': str(home), 'PYTHONPATH': str(site)}
     lines = subprocess.run([sys.executable, '-m', 'metaform', 'list', 'modules'], env=env, cwd=tmp_path,
-                           capture_output=True, text=True).stdout.splitlines()
+                           capture_output=True, text=True, encoding='utf-8').stdout.splitlines()
     shelves = [line.split(None, 3) for line in lines if line.startswith('shelf')]
     assert [row[1:3] for row in shelves] == [['on', 'user'], ['error', 'entry']]
     assert 'user' in shelves[1][3]
@@ -296,7 +296,7 @@ def test_an_entry_point_module_loads(home, tmp_path):
     ''')
     env = {**os.environ, 'METAFORM_HOME': str(home), 'PYTHONPATH': str(site)}
     out = subprocess.run([sys.executable, '-m', 'metaform', 'books', 'count'], env=env, cwd=tmp_path,
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, encoding='utf-8').stdout
     assert out == '3 books'
 
 

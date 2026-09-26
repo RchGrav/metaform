@@ -8,7 +8,9 @@ line and one Next line, CLI-009; exit codes are those of BASE-031.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import inspect
+import io
 import json
 import signal
 import sys
@@ -756,7 +758,16 @@ docs.switch(Switch('--json', 'Print machine-readable JSON.', used_by=('config', 
 docs.switch(Switch('--confirm', 'Run a caution verb. It is never a setting.', used_by=('caution verbs',)))
 
 
+def _utf8_streams() -> None:
+    """Read and write UTF-8 on every system, QUAL-002: a pipe on Windows defaults to cp1252, which cannot write
+    the arrow of `set` or the intake's text. A Windows console, and every other system, is UTF-8 already."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and codecs.lookup(stream.encoding).name != 'utf-8':
+            stream.reconfigure(encoding='utf-8')
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_streams()
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
     if args[:1] == ['--version']:

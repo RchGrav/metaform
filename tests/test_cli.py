@@ -607,6 +607,14 @@ def test_set_and_unset_report_what_is_stored_whatever_the_value(run, toggles):
     assert 'Reset 1 setting(s): tmux' in unglued and 'Unglued: tmux' in unglued
 
 
+@pytest.mark.req('QUAL-002')
+@pytest.mark.req('CLI-022')
+def test_output_is_utf8_whatever_the_encoding_the_system_gives_a_pipe(run, toggles):
+    # A pipe on Windows defaults to cp1252, which has no arrow; PYTHONIOENCODING gives any system the same pipe.
+    result = run('set', '--tmux', env={'PYTHONIOENCODING': 'cp1252'})
+    assert '  tmux: false → true' in result.stdout.splitlines()
+
+
 @pytest.mark.req('CLI-022')
 @pytest.mark.req('CLI-027')
 def test_set_with_one_value_that_does_not_fit_stores_none_of_them(run, toggles):
@@ -639,7 +647,7 @@ def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, use
     ''')
     process = subprocess.Popen([sys.executable, '-m', 'metaform', 'sleeper', 'sleep'], cwd=tmp_path,
                                env={**os.environ, 'METAFORM_HOME': str(home)}, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
+                               stderr=subprocess.PIPE, text=True, encoding='utf-8')
     assert process.stdout.readline().strip() == 'started'
     time.sleep(0.2)
     process.send_signal(signal.SIGINT)

@@ -8,7 +8,9 @@ error is kept only to show in a failure. The whole exchange has a time limit.
 from __future__ import annotations
 
 import json
+import os
 import queue
+import shutil
 import subprocess
 import threading
 import time
@@ -32,7 +34,9 @@ class Session:
     """One scripted connection: requests go out as lines, responses come back matched by id."""
 
     def __init__(self, command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
-        self.process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        # The full path, so a launcher that is a .cmd file starts on Windows as it does elsewhere, QUAL-002.
+        resolved = [shutil.which(command[0], path=(env or os.environ).get('PATH')) or command[0], *command[1:]]
+        self.process = subprocess.Popen(resolved, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, text=True, encoding='utf-8', bufsize=1)
         self.lines: queue.Queue[str | None] = queue.Queue()
         self.errors: list[str] = []

@@ -82,19 +82,19 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     env['HOME'] = env['USERPROFILE'] = str(tmp_path / 'user')
     env['PYTHONPATH'] = ''
     (tmp_path / 'user').mkdir()
-    status = subprocess.run([sys.executable, '-I', str(wheel)], cwd=folder, env=env, capture_output=True, text=True)
+    status = subprocess.run([sys.executable, '-I', str(wheel)], cwd=folder, env=env, capture_output=True, text=True, encoding='utf-8')
     assert status.returncode == 0, status.stderr
     wheel_home = tmp_path / 'user' / '.metaform' / 'wheels'
     assert f'Home: {wheel_home}' in status.stdout
     subprocess.run([sys.executable, '-I', str(wheel), 'add', 'project', 'proj', str(folder)], cwd=folder, env=env,
                    check=True, capture_output=True)
     layers = subprocess.run([sys.executable, '-I', str(wheel), 'query', 'layers'], cwd=folder, env=env,
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding='utf-8')
     assert layers.returncode == 0, layers.stderr
     document = tmp_path / 'export.json'
     for args in (('help',), ('set', '--layers', ''), ('export', f'file={document}'), ('import', str(document))):
         done = subprocess.run([sys.executable, '-I', str(wheel), *args], cwd=folder, env=env, capture_output=True,
-                              text=True)
+                              text=True, encoding='utf-8')
         assert done.returncode == 0, (args, done.stderr)
     import sqlite3
     main = sqlite3.connect(home / 'metaform.sqlite3')
@@ -108,9 +108,9 @@ def test_the_wheel_installs_with_pip(run, tmp_path):
     subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
     python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
     result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding='utf-8')
     assert result.returncode == 0, result.stderr
-    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True)
+    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8')
     assert version.stdout.startswith('metaform ')
 
 
@@ -133,7 +133,7 @@ def test_uvx_runs_the_built_wheel(run, tmp_path):
     if uvx is None:
         pytest.fail('uvx is required to check the entry points of a built wheel, MCP-013')
     wheel, _ = build(run)
-    result = subprocess.run([uvx, '--from', str(wheel), 'metaform', '--version'], capture_output=True, text=True,
+    result = subprocess.run([uvx, '--from', str(wheel), 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8',
                             cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().startswith('metaform ')
