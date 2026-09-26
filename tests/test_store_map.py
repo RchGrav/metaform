@@ -45,6 +45,8 @@ def test_an_address_writes_itself_and_every_prefix_as_types(home, store):
         ('code.engine.game.fps', 'code.engine.game')}
     assert store.children('code').results == ('code.engine',)
     assert store.children('code.engine.game').results == ('code.engine.game.fps',)
+    store.add_element(layer.name, 'exterior.person')
+    assert store.children('').results == ('code', 'exterior')
 
 
 @pytest.mark.req('STORE-008')

@@ -95,14 +95,21 @@ _MODULE_NAME = re.compile(r'^(?:metaform\.modules\.|metaform_module_(?:system|us
 
 
 def _declaring_module() -> str | None:
-    """A module's settings belong to it however its package was imported, such as by a test runner."""
+    """The module whose code made the declaration, however its package was imported, such as by a test runner.
+
+    Only the frame that called `declare` or one of its helpers counts: a chassis setting declared while a module's
+    import first loads this file stays the chassis's, BASE-029.
+    """
     frame = inspect.currentframe()
-    while frame is not None:
-        match = _MODULE_NAME.match(str(frame.f_globals.get('__name__', '')))
-        if match:
-            return match.group(1)
+    while frame is not None and frame.f_globals.get('__name__') == __name__ and frame.f_code.co_name in _DECLARING:
         frame = frame.f_back
-    return None
+    if frame is None:
+        return None
+    match = _MODULE_NAME.match(str(frame.f_globals.get('__name__', '')))
+    return match.group(1) if match else None
+
+
+_DECLARING = ('_declaring_module', 'declare', 'text', 'number', 'boolean', 'items', 'choice')
 
 
 def declare(setting: Setting) -> Setting:

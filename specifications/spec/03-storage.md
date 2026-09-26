@@ -704,7 +704,7 @@ It covers the base database, the per-project store, the correction stack, layers
   | `identity(element)` | every current join where it is the provider, each as receiver, purpose and function | `current_joins_by_provider` |
   | `subtypes(join)` | the subtypes in a join | `current_subtypes_by_join` |
   | `where(address)` | the element, or the join holding a subtype, at an address | `current_elements`, `current_subtypes_by_address` |
-  | `children(address)` | the next types up the tree, toward the leaves | `types_by_parent` |
+  | `children(address)` | the next types up the tree, toward the leaves; the empty address gives the top types | `types_by_parent` |
   | `roots()` | the map's entry: the VE and DE elements with their joins, and every root element with its address and role, paged | `element_roles_by_role` for VE and DE in the intake layer, then `current_joins_by_receiver` for their joins; root elements by `element_roles_by_layer` in the intake layer |
   | `layer_items(layer, target=None)` | all of a layer, paged in row order, or a layer at one node | `current_items_by_layer` on `(layer_id, row)`; `current_items_by_target` for one node |
   | `node(target, selection=None, raw=False)` | every layer's items at one node, grouped by layer. In context, the default, only layers in the effective selection that are finished and not hidden; with `raw=True`, every stored layer, building, hidden or masked included | `current_items_by_target`; `selections` primary key |

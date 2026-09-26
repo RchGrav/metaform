@@ -629,8 +629,8 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     module = found.module
     if module is None:
         raise Stop(f'Module {identifier} did not load: {found.problem}', 'metaform list modules')
-    if not rest and module.default is not None:
-        rest = [module.default]  # the module named alone runs its default verb, BASE-035
+    if module.default is not None and (not rest or rest[0].startswith('-') and rest[0] not in ('-h', '--help')):
+        rest = [module.default, *rest]  # with no verb named, the module runs its default verb, BASE-035
     verb = _verb(found, rest[0]) if rest else None
     if not (verb is not None and verb.transport) and not shown(identifier, folder):
         raise off_surface(identifier)

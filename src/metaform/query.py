@@ -5,7 +5,7 @@ Each read's positional arguments are nouns in order; its named options are
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +46,10 @@ PAGING = {'limit': _int, 'after': str}
 CONTEXT = {'selection': _list, 'raw': _bool}
 
 READS: dict[str, Read] = {
+    'roots': Read('roots', (), {**CONTEXT, **PAGING}, "The map's entry: the VE and the DE with their joins, and every "
+                                                    'root element.'),
+    'findings': Read('findings', (), {'flag': str, 'layer': str, **CONTEXT, **PAGING},
+                     'The elements, joins and subtypes flagged missing, broken or cruft.'),
     'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),
     'joins': Read('joins', (('element', str),), {'as': str, **CONTEXT, **PAGING},
                   'The joins an element owns, or with as=provider those it serves.'),
@@ -80,22 +84,41 @@ def listing() -> str:
     return '\n'.join(lines) + '\n'
 
 
-def run(store: Store, name: str, words: list[str]) -> Any:
+def _read(name: str) -> Read:
     read = READS.get(name)
     if read is None:
         raise Stop(f'No read {name}.', 'metaform query')
-    positional: list[Any] = []
-    named: dict[str, Any] = {}
+    return read
+
+
+def run(store: Store, name: str, words: list[str]) -> Any:
+    read = _read(name)
+    positional: list[str] = []
+    given: dict[str, str] = {}
     for word in words:
         key, equals, raw = word.partition('=')
         if equals and key in read.optional:
-            named['as_' if key == 'as' else key] = read.optional[key](raw)
+            given[key] = raw
         else:
             positional.append(word)
     if len(positional) != len(read.positional):
         usage = ' '.join(f'<{noun}>' for noun, _ in read.positional)
         raise Stop(f'query {name} takes {usage or "no arguments"}.', f'metaform query {name} {usage}'.rstrip())
-    arguments = [convert(word) for word, (_, convert) in zip(positional, read.positional)]
+    given.update({noun: word for word, (noun, _) in zip(positional, read.positional)})
+    return call(store, name, given)
+
+
+def call(store: Store, name: str, given: Mapping[str, str]) -> Any:
+    """One read by name, its arguments given by their names, as `run` and the web GUI's endpoints give them, VIEW-004.
+    Names the read does not take are left out."""
+    read = _read(name)
+    missing = [noun for noun, _ in read.positional if noun not in given]
+    if missing:
+        usage = ' '.join(f'<{noun}>' for noun, _ in read.positional)
+        raise Stop(f'{name} needs {", ".join(missing)}.', f'metaform query {name} {usage}'.rstrip())
+    arguments = [convert(given[noun]) for noun, convert in read.positional]
+    named = {('as_' if key == 'as' else key): convert(given[key]) for key, convert in read.optional.items()
+             if key in given}
     if 'node' in named:
         arguments.append(named.pop('node'))
     return getattr(store, read.method)(*arguments, **named)

@@ -48,6 +48,7 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'where element': lambda: store.where('code.timer.kitchen'),
         'where subtype': lambda: store.where('code.loop.tick'),
         'children': lambda: store.children('code.timer').results,
+        'children of the top': lambda: store.children('').results,
         'layer_items': lambda: store.layer_items('notes').results,
         'layer_items at node': lambda: store.layer_items('notes', kitchen).results,
         'node': lambda: store.node(kitchen),

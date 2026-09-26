@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metaform</title>
+<link rel="stylesheet" href="/page/app.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><span>meta<b>form</b></span></div>
+    <div class="ctx">
+      <label for="proj">project</label>
+      <select id="proj"></select>
+      <label for="mf">metaform</label>
+      <select id="mf"></select>
+    </div>
+    <div class="layers" id="layers" role="group" aria-label="Layers shown in this view"></div>
+    <button class="apply" id="apply" disabled>Apply to folder</button>
+    <p class="note" id="note"></p>
+  </header>
+
+  <aside>
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Arrow keys follow joins; F fits the whole map.">
+      <div class="viewport" id="viewport"></div>
+      <div class="mapbtns"><button id="fitBtn" title="Fit the whole map (F)">Fit</button></div>
+      <span class="kbd">click or use arrows to follow joins · F fits</span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="t-object" aria-selected="true">Object</button>
+      <button role="tab" id="t-prov" aria-selected="false">Provenance</button>
+      <button role="tab" id="t-corr" aria-selected="false">Corrections</button>
+    </div>
+    <section class="pane" id="p-object"></section>
+    <section class="pane" id="p-prov" hidden></section>
+    <section class="pane" id="p-corr" hidden></section>
+  </aside>
+
+  <main>
+    <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
+    <div id="labels3d" aria-hidden="true"></div>
+    <div class="hint">drag to orbit · scroll to zoom · click a node</div>
+    <div class="legend" id="legend"></div>
+    <div class="count" id="count"></div>
+  </main>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+<script src="/vendor/3d-force-graph.min.js"></script>
+<script src="/vendor/mermaid.min.js"></script>
+<script src="/page/app.js"></script>
+</body>
+</html>

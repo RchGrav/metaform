@@ -692,7 +692,7 @@ def test_a_module_named_alone_runs_its_default_verb_and_help_still_shows_its_syn
         MODULE = Module(id='plain', summary='Plain.', purpose='Plain. Details: metaform help plain.',
                         verbs=(Verb('go', lambda ctx: 'went', 'Go.'),))
     ''')
-    assert run('dflt').stdout == 'went'
+    assert run('dflt').stdout == 'went' and run('dflt', '--json').stdout == 'went'
     assert run('dflt', 'go').stdout == 'went' and run('dflt', 'stop').stdout == 'stopped'
     assert run('dflt', '--help').stdout.startswith('Usage: metaform dflt')
     assert run('plain').stdout.startswith('Usage: metaform plain')
@@ -704,3 +704,13 @@ def test_a_module_named_alone_runs_its_default_verb_and_help_still_shows_its_syn
     ''')
     row = next(line for line in lines(run('list', 'modules')) if line.split()[0] == 'wrong')
     assert row.split()[1] == 'error' and 'nope' in row
+
+
+@pytest.mark.req('BASE-029')
+def test_chassis_settings_stay_the_chassiss_when_a_module_is_what_first_imports_them(home):
+    probe = ('import metaform.modules.web\n'
+             'from metaform import settings\n'
+             "print(settings.SCHEMA['layers'].owner, settings.SCHEMA['web_port'].owner)\n")
+    result = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8',
+                            env={**os.environ, 'METAFORM_HOME': str(home)})
+    assert result.stdout.split() == ['chassis', 'web'], result.stderr

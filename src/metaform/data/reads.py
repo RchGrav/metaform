@@ -96,10 +96,10 @@ def where(tx: Tx, res: Resolver | None, address: str) -> Where | None:
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
-    """The next types up the tree, toward the leaves."""
+    """The next types up the tree, toward the leaves; the empty address reads the top types, which have no parent."""
     def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT address AS key FROM types WHERE parent=? AND address > ? ORDER BY address LIMIT ?',
-                             (address, cursor or '', count)).fetchall()
+        return tx.db.execute('SELECT address AS key FROM types WHERE parent IS ? AND address > ? ORDER BY address '
+                             'LIMIT ?', (address or None, cursor or '', count)).fetchall()
     return paged(fetch, lambda row: str(row['key']), limit, after)
 
 

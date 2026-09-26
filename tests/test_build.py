@@ -33,7 +33,7 @@ def metadata(wheel):
 
 @pytest.mark.req('BASE-026')
 def test_a_build_with_no_modules_is_pure_python(run):
-    wheel, out = build(run, 'map', 'mcp', 'memory', 'intake')
+    wheel, out = build(run, 'map', 'mcp', 'memory', 'intake', 'web')
     assert wheel.name.endswith('-py3-none-any.whl')
     # BUILD-QUESTIONS Q24: wcwidth, which prompt_toolkit needs, now ships compiled; it must be named, not carried.
     compiled = [line.split(':')[0] for line in out.splitlines() if ': compiled, not carried' in line]
@@ -56,7 +56,7 @@ def test_the_chassis_depends_only_on_pure_python_packages():
 @pytest.mark.req('BASE-041')
 @pytest.mark.req('BASE-022')
 def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, home):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake')
+    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
     assert re.fullmatch(r'metaform-.+-py3-none-any\.whl', wheel.name)
     assert wheel.parent.parent == home / 'builds'
     with zipfile.ZipFile(wheel) as archive:
@@ -75,7 +75,7 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
 @pytest.mark.req('BASE-042')
 @pytest.mark.req('BASE-024')
 def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake')
+    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
     folder = tmp_path / 'proj'
     folder.mkdir()
     env = {k: v for k, v in os.environ.items() if k != 'METAFORM_HOME'}
@@ -103,7 +103,7 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
 
 @pytest.mark.req('BASE-041')
 def test_the_wheel_installs_with_pip(run, tmp_path):
-    wheel, _ = build(run, 'mcp', 'memory', 'intake')
+    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
     environment = tmp_path / 'venv'
     subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
     python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
