@@ -383,9 +383,10 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
     shipped = [path.relative_to(folder).as_posix() for part in ('page', 'vendor')
                for path in (folder / part).rglob('*') if path.is_file()]
     assert shipped and {f'metaform/modules/web/{name}' for name in shipped} <= names
-    for bundle in ('3d-force-graph', 'mermaid', 'three'):
-        assert f'metaform/modules/web/vendor/{bundle}.LICENSE' in names
-    assert 'metaform/modules/web/vendor/fonts/IBM-Plex.LICENSE' in names
+    licenses = ['mermaid.LICENSE', 'three/LICENSE', 'fonts/IBM-Plex.LICENSE',
+                *(f'd3/{name}.LICENSE' for name in ('d3-force-3d', 'd3-binarytree', 'd3-octree', 'd3-quadtree',
+                                                    'd3-dispatch', 'd3-timer'))]
+    assert all(f'metaform/modules/web/vendor/{license}' in names for license in licenses)
 
 
 @pytest.fixture
@@ -580,4 +581,47 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
                   'provider · audible alarm', 'receiver · cook', 'receiver · display', 'tick loop', 'Advances each countdown.',
                   'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
         assert shown in panel, shown
+    assert problems == []
+
+
+DRAW_CALLS = 12  # one per vertex kind, per edge style, the glow and the tie arrows, with room to spare
+
+
+def drawn_when_loaded(page, joins):
+    page.wait_for_function('([joins]) => window.metaform.loaded() && window.metaform.drawn() '
+                           '&& window.metaform.drawn().ties === joins', arg=[joins], timeout=60000)
+    page.wait_for_timeout(500)
+    return page.evaluate('window.metaform.drawn()')
+
+
+@pytest.mark.req('VIEW-010')
+@pytest.mark.req('VIEW-012')
+def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whatever_the_size(run, home, web, mapped,
+                                                                                          browser, tmp_path):
+    from metaform.data import Store
+    started(run)
+    page, problems, _ = opened(browser, web)
+    small = page.evaluate('window.metaform.graph()')
+    counts = {kind: len([node for node in small['nodes'] if node['t'] == kind]) for kind in ('el', 'purpose', 'sub')}
+    drawn = drawn_when_loaded(page, counts['purpose'])
+    assert (drawn['elements'], drawn['purposes'], drawn['encounters'], drawn['faces'], drawn['subtypes']) == (
+        counts['el'], counts['purpose'], counts['purpose'], counts['purpose'], counts['sub'])
+    assert 0 < drawn['calls'] <= DRAW_CALLS
+    folder = tmp_path / 'big'
+    folder.mkdir()
+    run('add', 'project', 'big', str(folder))
+    big = Store('big')
+    with big.atomic():
+        layer = big.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
+                          provenance=PROVENANCE, ready=True)
+        for n in range(3000):
+            big.add_element(layer.name, f'code.g{n % 30}.e{n}', role='SE')
+        for n in range(3000):
+            big.add_join(layer.name, f'code.g{n % 30}.e{n}', f'code.g{(n + 1) % 30}.e{(n + 1) % 3000}', purpose='p',
+                         function='f', relation='r', observation='o')
+    page.goto(f'http://127.0.0.1:{web}/#p=big')
+    page.reload()
+    drawn = drawn_when_loaded(page, 3000)
+    assert (drawn['elements'], drawn['purposes'], drawn['faces'], drawn['ties']) == (3000, 3000, 3000, 3000)
+    assert 0 < drawn['calls'] <= DRAW_CALLS and drawn['labels'] <= 80
     assert problems == []

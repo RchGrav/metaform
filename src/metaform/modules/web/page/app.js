@@ -2,6 +2,7 @@
  * Every piece of data comes from the server's reads, VIEW-004; the page never decides what is visible. Text from the
  * store is always set as text, never as HTML, VIEW-009. */
 'use strict';
+import {Scene} from '/page/scene.js';
 
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -124,22 +125,21 @@ function graphData() {
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.name || subtype.address, flag: subtype.flag});
-      links.push({source: encounter, target: 's:' + subtype.subtype_id, k: 'sub', layer: subtype.layer});
+      links.push({source: encounter, target: 's:' + subtype.subtype_id, k: 'sub', layer: subtype.layer, join: join.join_id});
     }
     for (const end of [join.receiver, join.provider]) count.set(end, (count.get(end) || 0) + 1);
   }
   for (const node of nodes) if (node.t === 'el') node.joins = count.get(node.id) || 0;
   return {nodes, links};
 }
-window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true)};
+window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
+  drawn: () => G ? G.drawn() : null, loaded: () => !S.loading};
 
-/* ---------- 3D: a synaptic map ---------- */
-let G = null;
+/* ---------- 3D: a synaptic map, drawn by scene.js ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
-function nodeColor(node) {
+function nodeColor(node, selected, neighbors) {
   if (node.flag && FLAGS[node.flag]) return css(FLAGS[node.flag]);
-  const dim = S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
-  if (dim) return '#2b3644';
+  if (selected && node.t === 'el' && node.id !== selected && !neighbors.has(node.id)) return '#2b3644';
   if (node.t === 'el') return node.role === 'DE' ? '#ffffff' : node.role === 'VE' ? css('--signal') : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
@@ -149,85 +149,46 @@ function linkColor(link) {
   if (link.k === 'tie') return css('--signal');
   return layerColor(link.layer);
 }
+let G = null;
 function start3D() {
-  if (typeof ForceGraph3D !== 'function') {
-    fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
+  const stage = $('#stage');
+  const probe = document.createElement('canvas');
+  if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) {
+    fill(stage, h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
     return;
   }
-  G = ForceGraph3D({controlType: 'orbit'})($('#stage'))
-    .backgroundColor(css('--ground'))
-    .showNavInfo(false)
-    .nodeRelSize(3)
-    .nodeVal(node => node.t === 'el' ? 3 + Math.min(10, node.joins * 1.5) + (node.role === 'DE' ? 4 : node.role === 'VE' ? 2 : 0)
-      : node.t === 'purpose' ? 0.9 : node.t === 'encounter' ? 0.6 : 0.35)
-    .nodeColor(nodeColor)
-    .nodeOpacity(0.95)
-    .nodeResolution(16)
-    .nodeLabel(node => {
-      const tip = h('div', {class: 'tip'});
-      tip.style.cssText = 'font:12px var(--sans);max-width:280px;background:#0c1117ee;border:1px solid #2a3747;padding:6px 8px;border-radius:6px;color:#d9e2ec';
-      if (node.t === 'el') tip.append(h('b', {}, node.name), h('br'), h('span', {style: {color: '#62e3d3', font: '11px var(--mono)'}}, node.address));
-      else {
-        const join = S.joins.find(item => item.join_id === node.join);
-        tip.append(node.t === 'purpose' ? (join?.purpose || 'purpose') : node.t === 'encounter' ? (join?.function || 'encounter') : node.name);
-      }
-      return tip.outerHTML;
-    })
-    .linkColor(linkColor)
-    .linkOpacity(0.55)
-    .linkWidth(link => link.k === 'tree' ? 0.3 : link.k === 'sub' ? 0.25 : link.k === 'tie' ? 0.9 : 0.6)
-    .linkCurvature(link => link.k === 'face' || link.k === 'tie' ? 0.18 : 0)
-    .linkDirectionalArrowLength(link => link.k === 'tie' ? 3 : 0)
-    .linkDirectionalArrowRelPos(1)
-    .linkDirectionalParticles(link => link.k === 'tie' || link.k === 'face' ? 1 : 0)
-    .linkDirectionalParticleSpeed(0.006)
-    .linkDirectionalParticleWidth(1.4)
-    .linkDirectionalParticleColor(linkColor)
-    .onNodeClick(node => {
+  G = new Scene(stage, {
+    reduced,
+    colors: {ground: css('--ground'), tree: css('--tree'), signal: css('--signal'), node: nodeColor, link: linkColor,
+      neighbors: id => new Set(S.selected === id ? S.neighbors : []),
+      joinsOf: id => new Set(S.joins.filter(join => join.receiver === id || join.provider === id).map(join => join.join_id))},
+    onPick: node => {
       const join = node.join && S.joins.find(item => item.join_id === node.join);
       select(node.t === 'el' ? node.id : join ? join.receiver : null, true);
-    });
-  G.d3Force('charge').strength(node => node.t === 'el' ? -140 : -18);
-  G.d3Force('link')
-    .distance(link => link.k === 'tree' ? 60 : link.k === 'sub' ? 8 : link.k === 'tie' ? 30 : 14)
-    .strength(link => link.k === 'tree' ? 0.15 : 0.8);
-  if (reduced()) G.cooldownTicks(0);
-  resize();
-  requestAnimationFrame(labels);
+    },
+    onHover: (node, event) => showTip(node, event),
+  });
+  $('#pauseBtn').onclick = () => {
+    const paused = $('#pauseBtn').dataset.paused === 'true';
+    paused ? G.resume() : G.pause();
+    $('#pauseBtn').dataset.paused = String(!paused);
+    $('#pauseBtn').textContent = paused ? 'Pause layout' : 'Resume layout';
+  };
+  $('#relayoutBtn').onclick = () => G.relayout();
 }
-const tags = new Map();
-function labels() {
-  if (G) {
-    const box = $('#labels3d');
-    const nodes = G.graphData().nodes.filter(node => node.t === 'el');
-    const few = nodes.length <= 300;
-    for (const node of nodes) {
-      let tag = tags.get(node.id);
-      if (!tag) { tag = h('span', {}, node.name); box.append(tag); tags.set(node.id, tag); }
-      const show = node.x !== undefined && (few || node.id === S.selected || S.neighbors.has(node.id));
-      tag.hidden = !show;
-      if (!show) continue;
-      const point = G.graph2ScreenCoords(node.x, node.y, node.z);
-      tag.style.left = point.x + 'px';
-      tag.style.top = point.y + 'px';
-      tag.className = node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '';
-    }
-  }
-  requestAnimationFrame(labels);
+function showTip(node, event) {
+  const tip = $('#tip');
+  if (!node) { tip.hidden = true; return; }
+  const join = node.join && S.joins.find(item => item.join_id === node.join);
+  const title = node.t === 'el' ? node.name : node.t === 'purpose' ? 'purpose' : node.t === 'encounter' ? 'encounter' : node.name;
+  const text = node.t === 'el' ? node.address : node.t === 'purpose' ? join?.purpose : node.t === 'encounter' ? join?.function : 'subtype';
+  fill(tip, h('b', {}, title || ''), h('span', {}, text || ''));
+  const box = $('#stage').getBoundingClientRect();
+  tip.style.left = (event.clientX - box.left + 14) + 'px';
+  tip.style.top = (event.clientY - box.top + 14) + 'px';
+  tip.hidden = false;
 }
-function draw3D() {
-  if (!G) return;
-  const previous = new Map(G.graphData().nodes.map(node => [node.id, node]));
-  const data = graphData();
-  for (const node of data.nodes) {  // keep drawn positions, so the picture does not jump as pages arrive
-    const known = previous.get(node.id);
-    if (known) Object.assign(node, {x: known.x, y: known.y, z: known.z, vx: known.vx, vy: known.vy, vz: known.vz});
-  }
-  for (const [id, tag] of tags) if (!S.elements.has(id)) { tag.remove(); tags.delete(id); }
-  G.graphData(data);
-}
-function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
-addEventListener('resize', resize);
+function draw3D(final = false) { if (G) G.update(graphData(), final); }
 
 function renderLegend() {
   const inView = new Set([...S.elements.values()].map(entry => entry.element.layer).concat(S.joins.map(join => join.layer)));
@@ -244,6 +205,7 @@ function renderLegend() {
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
 const M = {svg: null, nodes: new Map(), edges: [], cam: null, fit: null, frame: 0, generation: 0};
+const MAP2D = 5000;  // the most elements Mermaid lays out; above it the 2D map is not drawn, BUILD-QUESTIONS Q52
 const plain2d = text => String(text || '').replace(/["[\]{}()<>|#;`]/g, '').slice(0, 30);
 let mermaidReady = false;
 async function build2D() {
@@ -264,6 +226,11 @@ async function build2D() {
   const drawn = S.joins.filter(join => keys.has(join.receiver) && keys.has(join.provider));
   drawn.forEach((join, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(join.provider)}`));
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'This metaform has no elements in these layers.')); return; }
+  if (S.elements.size > MAP2D) {
+    M.svg = null; M.nodes.clear(); M.edges = [];
+    fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. The 3D view shows them all.`));
+    return;
+  }
   let result;
   try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
@@ -357,7 +324,7 @@ function focus2D(id, animate = true) {
     setCam({x: c.x + (c.w - c.w * f) * px, y: c.y + (c.h - c.h * f) * py, w: c.w * f, h: c.h * f});
   }, {passive: false});
 })();
-function fitAll() { fit2D(); if (G) G.zoomToFit(reduced() ? 0 : 700, 60); }
+function fitAll() { fit2D(); if (G) G.fit(!reduced()); }
 
 /* Arrow keys follow joins: to the joined element that lies furthest the pressed way in the 2D map. F fits. */
 document.addEventListener('keydown', event => {
@@ -387,14 +354,7 @@ function select(id, fly) {
   S.selected = id;
   S.neighbors = new Set([id, ...S.joins.filter(join => join.receiver === id).map(join => join.provider),
     ...S.joins.filter(join => join.provider === id).map(join => join.receiver)]);
-  if (G) {
-    G.nodeColor(G.nodeColor());
-    const node = G.graphData().nodes.find(item => item.id === id);
-    if (fly && node && node.x !== undefined) {
-      const distance = 90, ratio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-      G.cameraPosition({x: node.x * ratio, y: node.y * ratio, z: node.z * ratio}, node, reduced() ? 0 : 900);
-    }
-  }
+  if (G) G.select(id, fly);
   focus2D(id, fly);
   showTab('object');
   renderObject(id);
@@ -573,6 +533,7 @@ async function loadGraph() {
   } catch (error) { toast(error.message); }
   if (generation !== S.loading) return;
   S.loading = 0;
+  draw3D(true);
   renderLegend();
   await build2D();
   const keep = S.selected && S.elements.has(S.selected) ? S.selected : null;
@@ -580,7 +541,6 @@ async function loadGraph() {
     || S.elements.keys().next().value;
   if (start) select(start, false);
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
-  if (!keep) setTimeout(() => G && G.zoomToFit(reduced() ? 0 : 800, 60), 1500);
 }
 async function loadMetaform() {
   S.view = null; S.selected = null;

@@ -289,3 +289,9 @@ Meanwhile: the cache is not built, and nor are the rest of VIEW-010's worker lay
 Recommended: VIEW-011's three writes are the three changes to Metaform's data; a fourth POST that writes only the viewer's own cache under `cache/viewer/`, checked like the others, is allowed and named in VIEW-011.
 Blocks: VIEW-010's cache.
 
+**Q52. The 2D map of a map too large for Mermaid. (VIEW-008, VIEW-010)**
+VIEW-008 puts the whole map in the 2D view, laid out by Mermaid, and VIEW-010 meets scale by technique without hiding structure. Mermaid lays out a few thousand elements; laying out 100,000 did not finish, and a browser doing it, with the 3D page, was the likely cause of a machine running out of memory during a measurement.
+Meanwhile: the 2D view lays out up to 5,000 elements with Mermaid; above that it says how many the layers show and that the 3D view shows them all. The 3D view and the panel are unaffected; the arrow keys follow joins by the 2D map's positions, so above the limit they do nothing.
+Recommended: above the limit the 2D view draws the whole map itself, on a canvas, from a 2D layout computed in the same worker, with the same camera moving node to node and the same arrow keys; Mermaid stays for maps under the limit, where its layered layout reads best.
+Blocks: nothing below 5,000 elements.
+
