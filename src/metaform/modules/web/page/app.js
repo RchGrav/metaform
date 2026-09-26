@@ -32,7 +32,7 @@ const fill = (node, ...children) => put(node, children);
 /* ---------- reads ---------- */
 const S = {
   projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
-  elements: new Map(), joins: [], selected: null, neighbors: new Set(), loading: 0,
+  elements: new Map(), joins: [], selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0,
 };
 
 async function read(name, params = {}) {
@@ -130,7 +130,15 @@ function graphData() {
   }
   return {nodes, links};
 }
+/* A selection is an element's id, a subtype as 's:<id>' or a join as 'p:<id>', the same keys the 3D view uses. */
+const subtypeOf = new Map();
+function indexSubtypes() {
+  subtypeOf.clear();
+  for (const join of S.joins) for (const subtype of join.subtypes || []) subtypeOf.set('s:' + subtype.subtype_id, {subtype, join});
+}
+const joinOf = key => S.joins.find(join => 'p:' + join.join_id === key);
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
+  click3d: id => clicked3d(G?.graphData().nodes.find(node => node.id === id)),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
@@ -180,10 +188,7 @@ function start3D() {
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
-    .onNodeClick(node => {
-      const join = node.join && S.joins.find(item => item.join_id === node.join);
-      select(node.t === 'el' ? node.id : join ? join.receiver : null, true);
-    });
+    .onNodeClick(clicked3d);
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'tree' ? 60 : 34);
   resize();
@@ -204,6 +209,8 @@ function start3D() {
     G.graphData(data);  // the layout gives vertices without a position new ones and settles again
   };
 }
+/* A click on any vertex selects that object itself: an element, a join's purpose vertex or a subtype. */
+function clicked3d(node) { if (node) select(node.id, true); }
 function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), h('span', {}, node.address)];
   const join = S.joins.find(item => item.join_id === node.join);
@@ -296,9 +303,26 @@ async function build2D() {
     mermaidReady = true;
   }
   const keys = new Map([...S.elements.keys()].map((id, index) => [id, `n${index}`]));
-  const lines = [S.elements.size > 5 ? 'flowchart TB' : 'flowchart LR'];
-  for (const [id, {element}] of S.elements) lines.push(`${keys.get(id)}["${plain2d(element.short_name || element.address)}"]`);
   const drawn = S.joins.filter(join => keys.has(join.receiver) && keys.has(join.provider));
+  // The nodes inside an element are the subtypes of the joins it provides; it is drawn as a box holding them.
+  const held = new Map();
+  for (const join of drawn) for (const subtype of join.subtypes || [])
+    held.set(join.provider, [...(held.get(join.provider) || []), subtype]);
+  const inner = new Map();
+  M.vertical = S.elements.size > 5;
+  const lines = [M.vertical ? 'flowchart TB' : 'flowchart LR'];
+  for (const [id, {element}] of S.elements) {
+    const label = plain2d(element.short_name || element.address);
+    if (!held.has(id)) { lines.push(`${keys.get(id)}["${label}"]`); continue; }
+    lines.push(`subgraph ${keys.get(id)} ["${label}"]`, 'direction TB');
+    for (const subtype of held.get(id)) {
+      const key = `s${inner.size}`;
+      inner.set('s:' + subtype.subtype_id, key);
+      lines.push(`${key}["${plain2d(subtype.name || subtype.address)}"]:::sub`);
+    }
+    lines.push('end');
+  }
+  if (inner.size) lines.push('classDef sub font-size:11px');
   drawn.forEach((join, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(join.provider)}`));
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'This metaform has no elements in these layers.')); return; }
   if (S.elements.size > MAP2D) {
@@ -316,19 +340,26 @@ async function build2D() {
   M.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   fill(host, M.svg);
   M.nodes.clear();
-  for (const [id, key] of keys) {
-    const group = M.svg.querySelector(`[id*="-flowchart-${key}-"]`);
-    if (!group) continue;
+  const place = (id, group, address, flag) => {
     const box = group.getBBox();
     const matrix = group.transform.baseVal.consolidate()?.matrix;
     const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
     M.nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
-    const flag = S.elements.get(id).element.flag;
     if (flag) group.classList.add(`flag-${flag}`);
     const title = document.createElementNS(SVG, 'title');
-    title.textContent = S.elements.get(id).element.address;
+    title.textContent = address;
     group.append(title);
-    group.addEventListener('click', event => { event.stopPropagation(); select(id, true); });
+    group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
+  };
+  for (const [id, key] of keys) {
+    const group = held.has(id) ? M.svg.querySelector(`g.cluster[id="${key}"], g.cluster[id$="-${key}"]`)
+      : M.svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    if (group) place(id, group, S.elements.get(id).element.address, S.elements.get(id).element.flag);
+  }
+  for (const [id, key] of inner) {
+    const group = M.svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    const {subtype} = subtypeOf.get(id) || {};
+    if (group && subtype) place(id, group, subtype.address, subtype.flag);
   }
   M.edges = drawn.map((join, index) => ({join, path: M.svg.querySelector(`[data-id="e${index}"]`)
     || M.svg.querySelectorAll('.edgePaths path')[index]}));
@@ -360,23 +391,35 @@ function moveCam(target, animate = true) {
   M.frame = requestAnimationFrame(step);
 }
 function fit2D() {
+  M.view = 'out';
   $('#map2d').classList.remove('focused');
   for (const edge of M.edges) edge.path?.classList.remove('on');
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
   if (M.fit) moveCam(M.fit);
 }
-function focus2D(id, animate = true) {
-  const node = M.nodes.get(id);
+function focus2D(id, animate = true, framing = 'around') {
+  const join = id.startsWith('p:') ? joinOf(id) : null;
+  const node = M.nodes.get(join ? join.provider : id);
   if (!node || !M.svg) return;
   $('#map2d').classList.add('focused');
   for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
-  for (const edge of M.edges) edge.path?.classList.toggle('on', edge.join.receiver === id || edge.join.provider === id);
-  const w = Math.max(node.w * 3.4, 380), height = Math.max(node.h * 5, 260);
+  for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
+    : edge.join.receiver === id || edge.join.provider === id);
+  // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
+  // 'close' moves nearer to a node that holds nothing.
+  M.view = framing === 'around' ? 'around' : 'in';
+  const [w, height] = framing === 'inside' ? [node.w * 1.25, node.h * 1.25]
+    : framing === 'close' ? [Math.max(node.w * 1.8, 160), Math.max(node.h * 2.6, 110)]
+    : [Math.max(node.w * 3.4, 380), Math.max(node.h * 5, 260)];
   moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height}, animate);
 }
+/* One click selects; a click on the selected node goes inside it. */
+function clicked2d(id) { if (id === S.selected) goInside(id); else select(id, true); }
 (function wire2D() {
   const host = $('#map2d');
-  $('#fitBtn').onclick = event => { event.stopPropagation(); fitAll(); };
+  $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
+  $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
+  $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
   let drag = null;
   host.addEventListener('pointerdown', event => {
     if (event.target.closest('button') || !M.cam) return;
@@ -401,35 +444,116 @@ function focus2D(id, animate = true) {
   }, {passive: false});
 })();
 function fitAll() { fit2D(); if (G) G.zoomToFit(reduced() ? 0 : 700, 60); }
+/* Fit and F go through three views, Rich 2026-09-26: zoomed out to the whole map, zoomed in on the selected node,
+ * with the nodes inside it when it holds any, and regular, the node with its joined nodes. */
+function cycleView() {
+  const here = S.selected;
+  const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
+  if (!here || next === 'out') return fitAll();
+  if (next === 'in') return focus2D(here, true, insideOf(here).length ? 'inside' : 'close');
+  focus2D(here, true, 'around');
+}
+/* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
+function step(by) {
+  const to = S.at + by;
+  if (to < 0 || to >= S.history.length) return;
+  S.at = to;
+  select(S.history[to], true, false, true);
+}
+function showSteps() {
+  $('#backBtn').disabled = S.at <= 0;
+  $('#forwardBtn').disabled = S.at >= S.history.length - 1;
+}
 
-/* Arrow keys follow joins: to the joined element that lies furthest the pressed way in the 2D map. F fits. */
+/* The keys walk the join tree, Rich 2026-09-26: Down goes deeper, to the providers of the node's joins and then to
+ * the nodes inside it; Up goes back to the parent; Left and Right move between the nodes connected to the parent.
+ * Enter goes inside a node; Escape or Shift+Enter backs out. F fits. */
+function across(keys) {  // in their order across the 2D map
+  const at = key => M.nodes.get(key) || {x: Infinity, y: Infinity};
+  return [...keys].sort((a, b) => M.vertical ? at(a).x - at(b).x || at(a).y - at(b).y : at(a).y - at(b).y || at(a).x - at(b).x);
+}
+function insideOf(key) {
+  return across(S.joins.filter(join => join.provider === key).flatMap(join => (join.subtypes || []).map(subtype => 's:' + subtype.subtype_id)));
+}
+function childrenOf(key) {
+  if (key.startsWith('p:')) return [joinOf(key)?.provider].filter(Boolean);
+  if (key.startsWith('s:')) return [];
+  const providers = across(new Set(S.joins.filter(join => join.receiver === key && S.elements.has(join.provider)).map(join => join.provider)));
+  return [...providers, ...insideOf(key)];
+}
+function parentOf(key) {
+  if (key.startsWith('p:')) return joinOf(key)?.receiver || null;
+  if (key.startsWith('s:')) return subtypeOf.get(key)?.join.provider || null;
+  return across(new Set(S.joins.filter(join => join.provider === key && S.elements.has(join.receiver)).map(join => join.receiver)))[0] || null;
+}
+function roots() {  // the nodes nothing receives from, vested entities first; then any part of the map they do not reach
+  const top = [...S.elements.keys()].filter(key => !parentOf(key));
+  const ordered = [...across(top.filter(key => S.elements.get(key).element.role === 'VE')), ...across(top.filter(key => S.elements.get(key).element.role !== 'VE'))];
+  const reached = new Set(ordered), queue = [...ordered];
+  while (queue.length) for (const next of childrenOf(queue.shift())) if (!reached.has(next)) { reached.add(next); queue.push(next); }
+  for (const key of across([...S.elements.keys()].filter(key => !reached.has(key)))) {
+    if (reached.has(key)) continue;
+    ordered.push(key); reached.add(key);
+    const more = [key];
+    while (more.length) for (const next of childrenOf(more.shift())) if (!reached.has(next)) { reached.add(next); more.push(next); }
+  }
+  return ordered;
+}
+function goInside(key) {
+  const first = insideOf(key)[0];
+  if (!first) return focus2D(key, true, 'close');
+  S.trail.push(key);
+  select(first, true, true);
+  focus2D(key, true, 'inside');
+  for (const [id, value] of M.nodes) value.g.classList.toggle('sel', id === first);
+}
+function backOut() {
+  const here = S.selected;
+  if (!here) return;
+  if (here.startsWith('s:') || here.startsWith('p:')) {
+    const up = S.trail.length ? S.trail.pop() : parentOf(here);
+    if (up) select(up, true, true);
+  } else fitAll();
+}
 document.addEventListener('keydown', event => {
   if (event.target.closest('select, input, textarea, .CodeMirror')) return;
-  if (event.key === 'f' || event.key === 'F' || event.key === 'Home') { event.preventDefault(); fitAll(); return; }
-  const way = {ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1]}[event.key];
-  if (!way || !S.selected) return;
-  event.preventDefault();
-  const from = M.nodes.get(S.selected);
-  if (!from) return;
-  let best = null, score = Infinity;
-  for (const id of S.neighbors) {
-    if (id === S.selected) continue;
-    const node = M.nodes.get(id);
-    if (!node) continue;
-    const dx = node.x - from.x, dy = node.y - from.y, along = dx * way[0] + dy * way[1];
-    if (along <= 0) continue;
-    const cost = Math.hypot(dx, dy) * (1 + Math.abs(dx * way[1] - dy * way[0]) / (along + 1));
-    if (cost < score) { score = cost; best = id; }
+  if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
+  if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
+  if (!S.selected) return;
+  const here = S.selected;
+  if (event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey)) { event.preventDefault(); backOut(); return; }
+  if (event.key === 'Enter') { event.preventDefault(); goInside(here); return; }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    const next = childrenOf(here)[0];
+    if (next) { S.trail.push(here); select(next, true, true); }
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    const parent = S.trail.length ? S.trail.pop() : parentOf(here);
+    if (parent) select(parent, true, true);
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    const parent = S.trail.length ? S.trail[S.trail.length - 1] : parentOf(here);
+    const row = parent ? childrenOf(parent) : roots();
+    const at = row.indexOf(here);
+    if (at < 0 || row.length < 2) return;
+    select(row[(at + (event.key === 'ArrowRight' ? 1 : -1) + row.length) % row.length], true, true);
   }
-  if (best) select(best, true);
 });
 
 /* ---------- selection: both views move together; the long text goes in the panel ---------- */
-function select(id, fly) {
-  if (!id || !S.elements.has(id)) return;
+function select(id, fly, keepTrail = false, stepping = false) {
+  if (!id) return;
+  const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
+  if (!subtype && !join && !S.elements.has(id)) return;
+  if (!keepTrail) S.trail = [];
+  if (!stepping && S.history[S.at] !== id) { S.history = [...S.history.slice(0, S.at + 1), id]; S.at = S.history.length - 1; }
+  showSteps();
   S.selected = id;
-  S.neighbors = new Set([id, ...S.joins.filter(join => join.receiver === id).map(join => join.provider),
-    ...S.joins.filter(join => join.provider === id).map(join => join.receiver)]);
+  S.neighbors = subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
+    : join ? new Set([join.receiver, join.provider])
+    : new Set([id, ...S.joins.filter(item => item.receiver === id).map(item => item.provider),
+      ...S.joins.filter(item => item.provider === id).map(item => item.receiver)]);
   if (G) {
     G.nodeColor(G.nodeColor());
     const node = G.graphData().nodes.find(item => item.id === id);
@@ -440,7 +564,7 @@ function select(id, fly) {
   }
   focus2D(id, fly);
   showTab('object');
-  renderObject(id);
+  if (subtype) renderSubtype(subtype); else if (join) renderJoin(join); else renderObject(id);
 }
 
 function refsOf(refs) {
@@ -471,13 +595,40 @@ function joinCard(join, side) {
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
     join.flag ? h('div', {class: 'pills'}, flagPill(join), join.flag_note ? h('span', {class: 'empty'}, join.flag_note) : null) : null,
     refsOf(join.refs),
-    (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('b', {}, subtype.name || subtype.address), ' ',
+    (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
+      event.preventDefault(); select('s:' + subtype.subtype_id, true); }}, h('b', {}, subtype.name || subtype.address)), ' ',
       h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
       subtype.observation ? h('div', {}, subtype.observation) : null, flagPill(subtype), refsOf(subtype.refs))));
 }
 function itemText(value) {
   if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
   return String(value ?? '');
+}
+/* A selected subtype or join shows only itself, so nothing needs finding in its parent's text. */
+function renderSubtype({subtype, join}) {
+  fill($('#p-object'),
+    h('div', {class: 'eyebrow'}, 'Subtype'),
+    h('h2', {}, subtype.name || subtype.address),
+    h('div', {class: 'addr'}, subtype.address),
+    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null, efPill(subtype), flagPill(subtype),
+      layerPill(subtype.layer)),
+    h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
+      elementLink(join.receiver, join.receiver_address), '.'),
+    subtype.function ? h('p', {}, subtype.function) : null,
+    subtype.relation ? h('p', {class: 'fn'}, subtype.relation) : null,
+    subtype.observation ? h('p', {class: 'obs'}, subtype.observation) : null,
+    subtype.flag_note ? h('p', {class: 'empty'}, subtype.flag_note) : null,
+    refsOf(subtype.refs),
+    h('div', {class: 'eyebrow'}, 'The join it sits in'),
+    joinCard(join, 'provider'));
+}
+function renderJoin(join) {
+  fill($('#p-object'),
+    h('div', {class: 'eyebrow'}, 'Join'),
+    h('h2', {}, join.relation || `${join.receiver_address} receives from ${join.provider_address}`),
+    h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
+      elementLink(join.provider, join.provider_address), '.'),
+    joinCard(join, 'provider'));
 }
 async function renderObject(id) {
   const {element} = S.elements.get(id);
@@ -509,7 +660,7 @@ async function renderObject(id) {
     }
     const context = await read('context', {address: element.address, limit: 0, ...viewLayers()});
     if (S.selected !== id) return;
-    for (const [title, found] of [['Properties that apply here', context.applying], ['Properties visible from above', context.visible]]) {
+    for (const [title, found] of [['Properties that apply here', context.applying], ['Properties attached toward the leaves', context.visible]]) {
       if (!found.length) continue;
       box.append(h('div', {class: 'eyebrow'}, title), ...found.map(property => h('div', {class: 'item', style: {'--c': `var(${colorVar(property.layer)})`}},
         itemText(property.value), h('div', {class: 'refs'}, `${property.layer}${property.address && property.address !== element.address ? ' · at ' + property.address : ''}`),
@@ -688,6 +839,7 @@ async function loadGraph() {
       if (generation !== S.loading) return;
       for (const entry of page.elements) S.elements.set(entry.element.element_id, entry);
       S.joins.push(...page.joins);
+      indexSubtypes();
       draw3D(); renderLegend();
       after = page.next;
     } while (after);
@@ -697,7 +849,7 @@ async function loadGraph() {
   draw3D();
   renderLegend();
   await build2D();
-  const keep = S.selected && S.elements.has(S.selected) ? S.selected : null;
+  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (start) select(start, false);

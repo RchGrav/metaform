@@ -472,18 +472,6 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
     assert page.evaluate('window.metaform.selected()') == cook['element_id']
     assert page.text_content('#p-object h2') == 'cook'
-    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
-    page.focus('#map2d')
-    kitchen = by_address['code.timer.kitchen']
-    page.evaluate(f'window.metaform.select("{kitchen}")')
-    # This small map is laid out left to right, each join drawn from receiver to provider, so the alarm the kitchen
-    # receives from lies to its right, and the cook and the display, which receive from it, to its left.
-    page.keyboard.press('ArrowRight')
-    assert page.evaluate('window.metaform.selected()') == by_address['code.alarm.audible']
-    page.evaluate(f'window.metaform.select("{kitchen}")')
-    page.keyboard.press('ArrowLeft')
-    assert page.evaluate('window.metaform.selected()') in {by_address['exterior.cook'],
-                                                           by_address['code.timer.kitchen.display']}
     page.keyboard.press('f')
     page.wait_for_timeout(300)
     assert problems == [] and remote == []
@@ -636,6 +624,178 @@ def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_lege
     page.evaluate(f'window.metaform.select("{kitchen}")')
     assert sorted(page.evaluate('[...document.querySelectorAll("#p-object .join .ef")].map(e => e.textContent)')) \
         == ['Encounter', 'Function', 'Function']
+    assert problems == []
+
+
+def keys_of(web):
+    expected = api(web, '/api/graph?project=proj&limit=0')[1]
+    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
+    subtypes = {subtype['address']: 's:' + subtype['subtype_id'] for join in expected['joins'] for subtype in join['subtypes']}
+    return expected, by_address, subtypes
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-012')
+def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(run, web, mapped, browser):
+    """Rich, 2026-09-26: left and right move between the nodes connected to the parent, down goes deeper, up goes
+    back to the parent."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, inside = keys_of(web)
+    cook, kitchen, alarm, display = (at[address] for address in (
+        'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display'))
+    tick = inside['code.loop.tick']
+    page.evaluate(f'window.metaform.select("{cook}")')
+    walk = []
+    for key in ('ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowUp', 'ArrowRight', 'ArrowLeft'):
+        page.keyboard.press(key)
+        walk.append(page.evaluate('window.metaform.selected()'))
+    # cook receives from the kitchen timer, which receives from the alarm and holds the tick loop inside it; the
+    # display, which nothing receives from, sits beside the cook at the root.
+    assert walk == [kitchen, alarm, tick, alarm, kitchen, cook, display, cook]
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-012')
+def test_every_element_and_subtype_can_be_reached_with_the_arrow_keys(run, web, mapped, browser):
+    started(run)
+    page, problems, _ = opened(browser, web)
+    expected, at, inside = keys_of(web)
+    everything = set(at.values()) | set(inside.values())
+    start = page.evaluate('window.metaform.selected()')
+    reached, queue = {start}, [start]
+    while queue:
+        here = queue.pop()
+        for key in ('ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'):
+            page.evaluate(f'window.metaform.select("{here}")')
+            page.keyboard.press(key)
+            there = page.evaluate('window.metaform.selected()')
+            if there not in reached:
+                reached.add(there)
+                queue.append(there)
+    assert everything <= reached, everything - reached
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-009')
+@pytest.mark.req('VIEW-012')
+def test_clicking_a_subtype_or_a_join_in_3d_shows_that_object_and_the_2d_map_holds_subtypes_inside_their_element(
+        run, web, mapped, browser):
+    started(run)
+    page, problems, _ = opened(browser, web)
+    expected, at, inside = keys_of(web)
+    tick = inside['code.loop.tick']
+    page.evaluate(f'window.metaform.click3d("{tick}")')
+    assert page.evaluate('window.metaform.selected()') == tick
+    assert page.text_content('#p-object .eyebrow') == 'Subtype'
+    assert page.text_content('#p-object h2') == 'tick loop'
+    assert 'Advances each countdown.' in page.inner_text('#p-object')
+    assert 'Joins held by this element' not in page.inner_text('#p-object')
+    outer = next(join for join in expected['joins'] if join['subtypes'])
+    page.evaluate(f'window.metaform.click3d("p:{outer["join_id"]}")')
+    assert page.evaluate('window.metaform.selected()') == 'p:' + outer['join_id']
+    assert page.text_content('#p-object .eyebrow') == 'Join'
+    assert outer['purpose'] in page.inner_text('#p-object')
+    held = page.evaluate("""() => {
+        const box = title => [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === title)
+            ?.parentNode.getBoundingClientRect();
+        const outer = box('code.timer.kitchen'), inner = box('code.loop.tick');
+        return outer && inner && inner.left >= outer.left && inner.right <= outer.right
+            && inner.top >= outer.top && inner.bottom <= outer.bottom;
+    }""")
+    assert held
+    page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
+    assert 'visible from above' not in page.inner_text('#p-object')
+    assert problems == []
+
+
+def box_of(page, address):
+    return page.evaluate(f"""() => {{
+        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === '{address}');
+        const box = title?.parentNode.getBoundingClientRect();
+        return box && {{x: box.left, y: box.top, w: box.width, h: box.height}};
+    }}""")
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-012')
+def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_out(run, web, mapped, browser):
+    """Rich, 2026-09-26: one click selects a node, a click on the selected node goes inside it, and so does Enter;
+    Escape or Shift+Enter backs out."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, inside = keys_of(web)
+    kitchen, cook, tick = at['code.timer.kitchen'], at['exterior.cook'], inside['code.loop.tick']
+    selected = lambda: page.evaluate('window.metaform.selected()')
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('Enter')
+    assert selected() == tick
+    page.keyboard.press('Escape')
+    assert selected() == kitchen and 'focused' in page.get_attribute('#map2d', 'class')
+    page.keyboard.press('Escape')
+    assert selected() == kitchen and 'focused' not in page.get_attribute('#map2d', 'class')
+    page.evaluate(f'window.metaform.select("{cook}")')
+    box = box_of(page, 'code.timer.kitchen')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # the element's own box, clear of the nodes inside it
+    assert selected() == kitchen
+    page.wait_for_timeout(900)  # the camera settles on it
+    box = box_of(page, 'code.timer.kitchen')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # a click on the selected node goes inside
+    assert selected() == tick
+    page.keyboard.press('Shift+Enter')
+    assert selected() == kitchen
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.wait_for_timeout(900)  # the camera eases for 700 ms
+    before = page.get_attribute('#map2d svg', 'viewBox')
+    page.keyboard.press('Enter')  # nothing is inside the cook: the camera only moves closer
+    page.wait_for_timeout(900)
+    after = page.get_attribute('#map2d svg', 'viewBox')
+    assert selected() == cook and float(after.split()[2]) < float(before.split()[2])
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-012')
+def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_views(run, web, mapped, browser):
+    """Rich, 2026-09-26: back and forward buttons in the 2D map's top left corner; Fit goes through three modes,
+    zoomed out, zoomed in and regular."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, inside = keys_of(web)
+    cook, kitchen, alarm, display = (at[address] for address in (
+        'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display'))
+    selected = lambda: page.evaluate('window.metaform.selected()')
+    for key in (cook, kitchen, alarm):
+        page.evaluate(f'window.metaform.select("{key}")')
+    page.click('#backBtn')
+    assert selected() == kitchen
+    page.click('#backBtn')
+    assert selected() == cook
+    page.click('#forwardBtn')
+    assert selected() == kitchen
+    page.evaluate(f'window.metaform.select("{display}")')
+    assert page.is_disabled('#forwardBtn')
+    page.click('#backBtn')
+    assert selected() == kitchen
+    width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
+    page.wait_for_timeout(900)
+    regular = width()
+    page.click('#fitBtn')
+    page.wait_for_timeout(900)
+    out = width()
+    assert 'focused' not in page.get_attribute('#map2d', 'class')
+    page.keyboard.press('Home')  # Home always shows the whole map
+    page.wait_for_timeout(900)
+    assert abs(width() - out) < 1
+    page.click('#fitBtn')
+    page.wait_for_timeout(900)
+    zoomed = width()
+    page.click('#fitBtn')
+    page.wait_for_timeout(900)
+    assert regular > zoomed and abs(width() - regular) < 1
+    assert selected() == kitchen
     assert problems == []
 
 

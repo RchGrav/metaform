@@ -69,11 +69,21 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .edgePaths path{stroke:var(--line-2)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}
 .map2d.focused .edgePaths path:not(.on){opacity:.18}
+.map2d .cluster rect{fill:#0a1017!important;stroke:var(--line-2)!important;stroke-width:1px!important;rx:6px;cursor:pointer}
+.map2d .cluster .nodeLabel,.map2d .cluster text,.map2d .cluster-label text{fill:var(--text)!important;font:500 12px var(--sans)!important}
+.map2d .cluster.sel rect{stroke:var(--signal)!important;stroke-width:2px!important}
+.map2d .cluster.near rect{stroke:var(--intake)!important}
+.map2d .node.sub rect{fill:#0d1a22!important}
+.map2d .node.sub .nodeLabel,.map2d .node.sub text{font:500 11px var(--sans)!important;fill:var(--muted)!important}
+.map2d .node.sub.sel .nodeLabel,.map2d .node.sub.sel text{fill:var(--text)!important}
 .map2d .edgePaths path.ef-function{stroke:var(--function)!important}
 .map2d .edgePaths path.ef-encounter{stroke:var(--encounter)!important}
 .map2d marker path{fill:var(--line-2)!important;stroke:none!important}
 .map2d .kbd{position:absolute;left:10px;bottom:8px;font:11px var(--mono);color:var(--faint);pointer-events:none}
 .map2d .mapbtns{position:absolute;right:8px;top:8px;display:flex;gap:4px}
+.map2d .navbtns{position:absolute;left:8px;top:8px;display:flex;gap:4px}
+.map2d .navbtns button{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;cursor:pointer;font:12px var(--mono);color:var(--muted)}
+.map2d .navbtns button:disabled{opacity:.35;cursor:default}
 .map2d .mapbtns button{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;cursor:pointer;font:12px var(--mono);color:var(--muted)}
 .join{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:4px}
 .join .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
