@@ -1,35 +1,36 @@
-# Viewer
+# Web GUI and viewer
 
-This section specifies the viewer module: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object and its joins.
-The viewer is built after the intake and debug system is stable and the fix pass is complete.
+This section specifies Metaform's one web GUI, user global, and its first view, the viewer: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object and its joins.
+The GUI is built after the intake and debug system is stable and the fix pass is complete.
 
-### VIEW-001 The viewer is a module
-- Requirement: A module named `viewer` shows the active metaform of a project as a floating 3D graph, and shows one object at a time as a 2D graph in the left window.
-- What this means: The viewer is an ordinary module built from `template`, BASE-019. It owns no data. It holds a local web server, the bundled browser scripts and the page. The web module was deferred under D44. This viewer is now in scope. The rest of that deferral still stands: workflows, the rulebook and the browser terminal are not part of this module.
-- Why: The shape of a metaform is hard to hold in the head from text reads. Seeing the mesh, its layers and its flagged objects in one place lets a person check an intake, find orphans and broken parts, and see what a layer adds, without reading records one by one.
-- How it shows: `metaform list modules` lists `viewer`. `metaform help viewer` gives its man page.
-- Build: The module lives at `src/metaform/modules/viewer/` with `__init__.py`, `server.py`, `page/` for the HTML, CSS and scripts, `vendor/` for the bundled libraries, and `README.md`. It declares `SUPPORTED_OS = ('linux', 'macos', 'windows')`. It ships enabled. Its verbs are in VIEW-002.
-- Acceptance: With the viewer module disabled, every chassis verb and every other module works. `metaform viewer open` then stops with `Next: metaform enable viewer`.
-- Relates to: BASE-017, BASE-019, BASE-035, VIEW-002, D44.
-- Status: confirmed for the viewer and its two views. Shipping enabled is recommended.
+### VIEW-001 Metaform has one web GUI, and the viewer is its first view
+- Requirement: One module, `web`, holds Metaform's single web GUI for the user: one server and one app that serve every project registered in the home. The viewer, the floating 3D graph of a project's active metaform and the 2D graph of one object in the left window, is the GUI's first view. Every view a person uses in a browser is part of this one GUI; no module runs a web server of its own.
+- What this means: The GUI is user global, not per project: it lists every registered project and switches between them and their metaforms. It owns no data. Three things stay outside it. Web variants of a user's artifact are the artifact running, not Metaform's GUI, so each is served on its own port, PROJ-019; the GUI can list and launch them. MCP stays on stdio, one server per AI tool, MCP-002, since agents, not people, use it. The terminal settings screen stays for people in a terminal, CLI-026; the GUI reads and writes the same settings through the same settings module. The deferral of the workflow editor, the rulebook and the browser terminal under D44 still stands; when they come, they are views of this GUI. How a module adds a view to it is open, question 3.
+- Why: One GUI gives one address for everything Metaform shows a person, one process to start and stop, and one place to move between projects and between the map, its layers, its provenance and its prompts. Separate servers per module or per project would each need their own port, token and start, and could not show two projects side by side.
+- How it shows: `metaform list modules` lists `web`. `metaform help web` gives its man page. The page opens on the 3D view of a project's active metaform, with a project switcher that lists every registered project.
+- Build: The module lives at `src/metaform/modules/web/` with `__init__.py`, `server.py`, `page/` for the HTML, CSS and scripts of the app and its views, `vendor/` for the bundled libraries, and `README.md`. It declares `SUPPORTED_OS = ('linux', 'macos', 'windows')`. It ships enabled. Its verbs are in VIEW-002. Until question 3 is answered, the map views, the provenance view and the prompt editor are the web module's own.
+- Acceptance: With the web module disabled, every chassis verb and every other module works. `metaform web` then stops with `Next: metaform enable web`.
+- Relates to: BASE-017, BASE-019, BASE-035, CLI-026, MCP-002, PROJ-019, VIEW-002, D44.
+- Status: confirmed for one unified web GUI, user global, serving every project, with the viewer as its first view, Rich 2026-09-25. The module name `web` and shipping enabled are recommended.
 
-### VIEW-002 The viewer is opened with a verb and served locally
-- Requirement: `metaform viewer open` starts a local web server for the folder's project and opens the viewer in the default browser; `metaform viewer stop` stops it; `metaform viewer status` reports it.
-- What this means: The server binds to the loopback address only, on a port the operating system assigns, unless the `--viewer-port` setting names one. `open` prints the address and opens it with the platform's default browser. If a viewer server for the same home is already running, `open` reuses it. The server resolves the project the same way every surface does, PROJ-003, and the page shows which project and metaform it is showing.
-- Why: A local server keeps all data on the machine and needs no account. Loopback only means nothing on the network can read the metaform.
-- How it shows: `metaform viewer open` prints `Viewer: http://127.0.0.1:<port>/?t=<token>` and a browser tab opens on the 3D view of the active metaform.
+### VIEW-002 The web GUI is one server for the user, on one fixed port
+- Requirement: One server per Metaform home serves the web GUI for every registered project on one fixed loopback port. `metaform web` opens the GUI in the default browser, starting the server when it is not running; `metaform web stop` stops it; `metaform web status` reports it.
+- What this means: The home is the user's Metaform data folder, so in practice this is one server per user; a second home, such as a test's, has its own server and needs another port. Opening from any folder, or for any project, reuses the running server and opens a tab on it; there is never a second server for the same home. The folder it is opened from chooses only which project the page shows first. The port is fixed, so the address stays the same across restarts and a bookmark keeps working. When and how the server starts is open, question 4. Which folder's settings, such as `--layers`, the GUI shows and changes is open, question 5.
+- Why: A local server keeps all data on the machine and needs no account. Loopback only means nothing on the network can read the metaform. A fixed address lets a person keep the GUI open while agents work.
+- How it shows: `metaform web` prints `Web: http://127.0.0.1:<port>/?t=<token>` and a browser tab opens. Running it again from another project's folder opens a second tab on the same server, showing that project.
 - Build:
-  - The server uses the standard library, `http.server` with a threading server, so the viewer adds no compiled dependency.
-  - Each launch generates a random token. The page URL carries it, and every request without it is refused with 403. This stops other local pages from reading the metaform through the browser.
+  - The server uses the standard library, `http.server` with a threading server, so the GUI adds no compiled dependency.
+  - The home has one token, made on the server's first start and stored in the home. The page URL carries it, and every request without it is refused with 403. This stops other local pages from reading the metaform through the browser, and the address stays the same across restarts.
   - The browser is opened with `webbrowser.open`, which covers Linux, macOS and Windows. When no browser can be opened, the address is printed and the command still succeeds.
-  - The server records its address and process id under `~/.metaform/run/viewer.json`. `stop` ends that process. `status` reads the file and checks the process is alive.
-  - `--viewer-port` is a chassis-schema setting declared by the module, an integer, default 0 for OS-assigned.
+  - The server records its address and process id under `~/.metaform/run/web.json`. Whatever would start it reads that file first and reuses a live server. `stop` ends that process. `status` reads the file and checks the process is alive.
+  - `--web-port` is a chassis-schema setting declared by the module, an integer, with a fixed default, question 6. When the port is held by another program, `metaform web` stops with the port named and `Next: metaform set --web-port <port>`.
 - Acceptance:
-  - `open`, then `status`, reports the running address. `stop`, then `status`, reports it stopped.
-  - A request without the launch token is refused.
+  - `web`, then `status`, reports the running address. `stop`, then `status`, reports it stopped.
+  - `web` run twice, from the folders of two projects, leaves one server running, and both tabs are served by it.
+  - A request without the home's token is refused.
   - The server accepts no connection on a non-loopback address.
-- Relates to: CLI-011, PROJ-003, VIEW-001, VIEW-004.
-- Status: confirmed for a locally served viewer. The verb names, the token and the port setting are recommended.
+- Relates to: CLI-011, PROJ-003, PROJ-019, VIEW-001, VIEW-004.
+- Status: confirmed for one server for the user serving every project on one fixed port, Rich 2026-09-25, and for a locally served GUI. The verb names, the token kept in the home and the port setting are recommended.
 
 ### VIEW-003 The viewer works offline with every script bundled
 - Requirement: The viewer loads nothing from the network: every script, style and font it uses is bundled in the module with its license.
@@ -185,3 +186,7 @@ The viewer is built after the intake and debug system is stable and the fix pass
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
 2. Answered: the viewer writes exactly three things, applying layers, new prompt versions, and removing the top correction layer with a warning, VIEW-011.
+3. NEW How does a module add a view to the web GUI? Recommended: a module declares its views as a page folder and the read endpoints they need, and the web module serves them under the module's id; decided when a second module has a view. (VIEW-001)
+4. NEW When does the GUI's server start? Recommended: on demand, `metaform web` starting it detached so it outlives the terminal, until `metaform web stop` or logout; starting at login, through a systemd user service, a launchd agent or a Windows startup task written by `metaform install`, offered later. Starting it from every `metaform` command or from each MCP server is not recommended, since an agent's session would start a web server as a side effect. (VIEW-002)
+5. NEW Which folder's settings does the GUI show and change, such as `--layers`, CLI-033, since a browser has no folder? Recommended: the folder it was opened from, shown with its path at the top of the page. (VIEW-002, VIEW-004, VIEW-007)
+6. NEW What is the default of `--web-port`? (VIEW-002)

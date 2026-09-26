@@ -193,3 +193,5 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. Prompts are edited in an actual text editor, not forms: syntax highlighting, search and replace, undo, line numbers, and a diff against the source version before saving. The editor is salvaged from Codex's workflow_editor where it fits. VIEW-013, VIEW-003.
 - 09-25. Correction layers depend on order. The viewer removes them one at a time, in reverse from the top, with a warning naming what will change. VIEW-014.
 - 09-25. The viewer writes exactly three things: it applies layers, saves prompt versions, and removes the top correction layer. VIEW-011. This answers the two viewer questions.
+- 09-25. One unified web GUI, user global: "Why wouldnt we have a single unified web gui?", then "yes that what I was saying USER global", after first reading "one server per home" as per project. His open question was how it starts. VIEW-001, VIEW-002.
+
