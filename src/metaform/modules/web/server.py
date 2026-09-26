@@ -25,7 +25,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from metaform import home, query, results, settings
 from metaform.context import toggled_for
-from metaform.data import Store
+from metaform.data import Outcome, Store
 from metaform.data.paging import LIMIT
 from metaform.data.records import plain
 from metaform.errors import Stop, StoreError
@@ -143,13 +143,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
-        if path != '/api/apply-layers':
+        writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction}
+        if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
             body: Any = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'null')
         except ValueError:
             return self.send(400, {'error': 'The body is not JSON.'})
-        given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
+        writes[path](cast(dict[str, Any], body) if isinstance(body, dict) else {})
+
+    def remove_correction(self, given: dict[str, Any]) -> None:
+        """Peel the top correction layer and discard it, in one write, only while it is still the top, VIEW-014."""
+        layer = str(given.get('layer', ''))
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                peeled = store.peel(layer)
+                if isinstance(peeled, Outcome):
+                    return self.send(200, {'layer': layer, 'removed': False, 'notices': plain(peeled.notices)})
+                done = store.discard(layer)
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, {'layer': layer, 'removed': True, 'notices': plain(done.notices)})
+
+    def apply_layers(self, given: dict[str, Any]) -> None:
         project = home.project(str(given.get('project', '')))
         layers = given.get('layers')
         if project is None or not isinstance(layers, list):

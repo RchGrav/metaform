@@ -312,6 +312,26 @@ class Where(Record):
 
 
 @dataclass(frozen=True)
+class PeelChange(Record):
+    """One change removing a correction layer would make: what, and whether it disappears, comes back, moves back,
+    reverts, shows again or becomes orphaned, VIEW-014."""
+    kind: str
+    id: str
+    what: str
+    effect: str
+    detail: str | None = None
+
+
+@dataclass(frozen=True)
+class PeelPreview(Record):
+    """What removing a correction layer would change, and whether it is on top, so it can be removed, VIEW-014."""
+    layer: str
+    top: bool
+    changes: tuple[PeelChange, ...] = ()
+    notices: tuple[Notice, ...] = ()
+
+
+@dataclass(frozen=True)
 class Citation(Record):
     kind: str
     id: str

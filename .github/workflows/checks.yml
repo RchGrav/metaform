@@ -22,6 +22,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install
         run: uv sync --extra dev
+      - name: Browser for the web GUI's checks, VIEW-012
+        run: uv run playwright install --with-deps chromium
       - name: Type check, QUAL-004
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run pyright

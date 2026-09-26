@@ -7,10 +7,11 @@ and the stack, applies a finished correction layer, and peels the top one.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 
-from .records import Notice
+from .records import Notice, PeelChange
 
 METAFORM_KINDS = ('intake', 'correction')
 RELOCATION = 'generated: relocation'  # the evidence of a remove row that applying a relocation wrote, STORE-017
@@ -294,3 +295,77 @@ def peel(db: sqlite3.Connection, layer_id: str) -> None:
     for kind in ORDER:
         recompute(db, kind, touched[kind], kinds, positions)
     _mark(db, layer_id, touched, kinds)
+
+
+def _address(db: sqlite3.Connection, element_id: str) -> str:
+    current = db.execute('SELECT address FROM current_elements WHERE element_id=?', (element_id,)).fetchone()
+    if current is not None:
+        return str(current[0])
+    latest = db.execute('SELECT address FROM elements WHERE element_id=? ORDER BY row DESC LIMIT 1',
+                        (element_id,)).fetchone()
+    return str(latest[0]) if latest else element_id
+
+
+def _what(db: sqlite3.Connection, kind: str, row: sqlite3.Row) -> str:
+    if kind in ('element', 'subtype'):
+        return str(row['address'])
+    if kind == 'join':
+        return f"{_address(db, str(row['receiver']))} -> {_address(db, str(row['provider']))}"
+    if kind == 'property':
+        return f"{_address(db, str(row['element_id']))}: {_text(str(row['value']))}"
+    return _text(str(row['value']))
+
+
+def _text(value: str) -> str:
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        return value
+    return decoded if isinstance(decoded, str) else json.dumps(decoded, ensure_ascii=False)
+
+
+def preview(db: sqlite3.Connection, layer_id: str) -> list[PeelChange]:
+    """What peeling this stacked correction layer would change, from its own rows, writing nothing, VIEW-014.
+
+    What it added disappears; what it removed, the relocation removals included, comes back; an element it moved
+    moves back; anything else it changed reverts. Knowledge and memory items at what it removed show again, and
+    those at what it added become orphaned. A row the layer left unapplied changed nothing, so it is left out.
+    """
+    kinds, positions = layer_kinds(db), stack_positions(db)
+    held = {(str(row[0]), str(row[1])) for row in db.execute('SELECT kind, thing_id FROM unapplied WHERE layer_id=?',
+                                                               (layer_id,))}
+    changes: list[PeelChange] = []
+    added: list[tuple[str, str]] = []
+    removed: list[tuple[str, str]] = []
+    for kind in ORDER:
+        spec = KINDS[kind]
+        for row in rows_in_layer(db, kind, layer_id):
+            thing = str(row[spec.id_column])
+            if (kind, thing) in held:
+                continue
+            what = _what(db, kind, row)
+            if row['op'] == 'add':
+                changes.append(PeelChange(kind, thing, what, 'disappears'))
+                added.append((kind, thing))
+            elif row['op'] == 'remove':
+                changes.append(PeelChange(kind, thing, what, 'comes back',
+                                          'the move removed it' if row['evidence'] == RELOCATION else None))
+                removed.append((kind, thing))
+            else:
+                earlier = [earlier for position, earlier in _sequence(db, kind, thing, kinds, positions)
+                           if position < positions.get(layer_id, 0)]
+                before = earlier[-1] if earlier else None
+                if kind == 'element' and before is not None and before['address'] != row['address']:
+                    changes.append(PeelChange(kind, thing, what, 'moves back',
+                                              f"from {row['address']} to {before['address']}"))
+                else:
+                    changes.append(PeelChange(kind, thing, what, 'reverts'))
+    for effect, things in (('shows again', removed), ('becomes orphaned', added)):
+        for kind, thing in things:
+            if kind not in ('element', 'join', 'subtype'):
+                continue
+            for item in db.execute('SELECT i.item_id, i.value, i.layer_id FROM current_items c JOIN items i '
+                                   'ON i.row = c.row WHERE c.target_kind=? AND c.target_id=?', (kind, thing)).fetchall():
+                if kinds.get(str(item[2])) not in METAFORM_KINDS:  # an element's own name and role go with it
+                    changes.append(PeelChange('item', str(item[0]), _text(str(item[1])), effect))
+    return changes

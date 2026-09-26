@@ -28,8 +28,8 @@ from ..errors import StoreError
 from . import challenges, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
 from .records import (ChallengeState, Citation, ContextView, Element, Finding, Item, Join, Layer, Node, NodeView,
-                      Notice, Outcome, Page, Plan, Property, Provenance, Record, Ref, Report, Roots, Selection,
-                      Subtype, Version, Where)
+                      Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Ref, Report, Roots,
+                      Selection, Subtype, Version, Where)
 from .selection import Resolver
 from .session import Session, Tx
 
@@ -337,6 +337,11 @@ class Store:
         """The layers with their declaration, tags, state, hidden and toggled flags, LAYER-019."""
         with self._read() as tx:
             return reads.layers(tx, self._resolver(tx, None), tag, kind, module, limit, after)
+
+    def peel_preview(self, layer: str) -> PeelPreview:
+        """What removing a correction layer would change, and whether it is on top, writing nothing, VIEW-014."""
+        with self._read() as tx:
+            return reads.peel_preview(tx, layer)
 
     def provenance(self, layer: str) -> Provenance | None:
         with self._read() as tx:

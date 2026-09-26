@@ -386,3 +386,189 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
     for bundle in ('3d-force-graph', 'mermaid', 'three'):
         assert f'metaform/modules/web/vendor/{bundle}.LICENSE' in names
     assert 'metaform/modules/web/vendor/fonts/IBM-Plex.LICENSE' in names
+
+
+@pytest.fixture
+def browser():
+    """Headless Chromium through Playwright, a dev dependency; WebGL runs in software, VIEW-012."""
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as driver:
+        launched = driver.chromium.launch(args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+                                                '--ignore-gpu-blocklist'])
+        yield launched
+        launched.close()
+
+
+def opened(browser, port):
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    own = f'http://127.0.0.1:{port}/'
+    problems, remote = [], []
+    page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.on('request', lambda sent: None if sent.url.startswith((own, 'data:', 'blob:')) else remote.append(sent.url))
+    page.goto(own + '#p=proj')
+    page.wait_for_function('() => window.metaform && document.querySelectorAll("#map2d svg g.node").length > 0',
+                           timeout=30000)
+    return page, problems, remote
+
+
+def config_layers(run, folder):
+    return next(row for row in json.loads(run('config', '--show', '--json', cwd=folder).stdout)
+                if row['key'] == 'layers')['value']
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-003')
+@pytest.mark.req('VIEW-012')
+def test_the_page_draws_each_join_as_a_face_and_both_views_select_together(run, web, mapped, browser):
+    started(run)
+    page, problems, remote = opened(browser, web)
+    graph = page.evaluate('window.metaform.graph()')
+    expected = api(web, '/api/graph?project=proj&limit=0')[1]
+    elements = {entry['element']['element_id'] for entry in expected['elements']}
+    links = graph['links']
+    assert sorted(node['id'] for node in graph['nodes'] if node['t'] == 'el') == sorted(elements)
+    for join in expected['joins']:
+        purpose, encounter = 'p:' + join['join_id'], 'e:' + join['join_id']
+        face = sorted((link['source'], link['target']) for link in links
+                      if link['k'] == 'face' and link['join'] == join['join_id'])
+        assert face == sorted([(join['receiver'], purpose), (purpose, encounter), (encounter, join['receiver'])])
+        assert [(link['source'], link['target']) for link in links
+                if link['k'] == 'tie' and link['join'] == join['join_id']] == [(encounter, join['provider'])]
+    assert len([link for link in links if link['k'] == 'tree']) == len([e for e in expected['elements'] if e['parent']])
+    assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
+    assert len([node for node in graph['nodes'] if node['t'] == 'sub']) == sum(len(j['subtypes']) for j in expected['joins'])
+    assert page.locator('#map2d svg g.node').count() == len(elements)
+    assert page.locator('#map2d svg .edgePaths path').count() == len(expected['joins'])
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
+                         '.filter(Boolean)') == []
+    alarm = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'code.alarm.audible')
+    page.evaluate(f'window.metaform.select("{alarm["element_id"]}")')
+    assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel title")].map(t => t.textContent)') == [
+        'code.alarm.audible']
+    page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].find(g => g.querySelector("title").textContent '
+                  '=== "exterior.cook").dispatchEvent(new MouseEvent("click", {bubbles: true}))')
+    cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
+    assert page.evaluate('window.metaform.selected()') == cook['element_id']
+    assert page.text_content('#p-object h2') == 'cook'
+    page.focus('#map2d')
+    joined = {join['provider'] for join in expected['joins'] if join['receiver'] == cook['element_id']}
+    for key in ('ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'):
+        page.keyboard.press(key)
+        if page.evaluate('window.metaform.selected()') != cook['element_id']:
+            break
+    assert page.evaluate('window.metaform.selected()') in joined
+    page.keyboard.press('f')
+    page.wait_for_timeout(300)
+    assert problems == [] and remote == []
+
+
+@pytest.mark.req('VIEW-007')
+@pytest.mark.req('VIEW-012')
+def test_toggling_layers_in_the_page_changes_only_the_view_until_apply(run, web, mapped, browser):
+    started(run)
+    page, problems, _ = opened(browser, web)
+    before = config_layers(run, mapped)
+    page.click('#layers .chip:has-text("notes")')
+    page.wait_for_function('() => !document.querySelector("#apply").disabled')
+    assert page.get_attribute('#layers .chip:has-text("notes")', 'aria-pressed') == 'false'
+    page.wait_for_timeout(1000)
+    assert config_layers(run, mapped) == before
+    assert 'display' not in page.evaluate('window.metaform.graph().nodes.map(n => n.name)')
+    page.click('#apply')
+    page.wait_for_function('() => document.querySelector("#apply").disabled')
+    assert set(config_layers(run, mapped)) == {'intake-1', 'extra'}
+    assert problems == []
+
+
+def stacked(store):
+    """Two more correction layers on the fixture's fix-1: fix-2 moves the alarm to code.alarm.bell, fix-3 to chime."""
+    for name, old, new in (('fix-2', 'code.alarm.audible', 'code.alarm.bell'), ('fix-3', 'code.alarm.bell',
+                                                                                  'code.alarm.chime')):
+        layer = store.layer(name, 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
+                            provenance=PROVENANCE)
+        store.correct(layer.name, store.element(old).element_id, {'address': new}, reason=f'it is a {new[11:]}')
+        store.finish(layer.name)
+
+
+def remove(port, layer, headers=None):
+    body = json.dumps({'project': 'proj', 'layer': layer})
+    return api(port, '/api/remove-correction', method='POST', body=body,
+               headers=headers or {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{port}'})
+
+
+@pytest.mark.req('VIEW-014')
+@pytest.mark.req('VIEW-011')
+def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_changes_nothing(run, home, web, mapped):
+    from metaform.data import Store
+    store = Store('proj')
+    stacked(store)
+    started(run)
+    assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2', 'fix-3']
+    assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is False
+    preview = api(web, '/api/peel-preview?project=proj&layer=fix-3')[1]
+    assert preview['top'] is True
+    assert [(change['what'], change['effect'], change['detail']) for change in preview['changes']
+            if change['kind'] == 'element'] == [('code.alarm.chime', 'moves back', 'from code.alarm.chime to code.alarm.bell')]
+    files = sorted((home / 'projects').rglob('store.sqlite3'))
+    before = [path.read_bytes() for path in files]
+    status, answer = remove(web, 'fix-2')
+    assert status == 200 and answer['removed'] is False and 'fix-3' in answer['notices'][0]['message']
+    assert [path.read_bytes() for path in files] == before
+    assert remove(web, 'fix-3', {'Content-Type': 'application/json'})[0] == 403
+    status, answer = remove(web, 'fix-3')
+    assert status == 200 and answer['removed'] is True
+    assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2']
+    assert store.element('code.alarm.bell') is not None and store.element('code.alarm.chime') is None
+    assert 'fix-3' not in [layer.name for layer in store.layers(limit=0).results] and store.provenance('fix-2')
+    assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is True
+
+
+@pytest.mark.req('VIEW-014')
+@pytest.mark.req('VIEW-012')
+def test_the_page_offers_removal_only_on_the_top_layer_and_warns_first(run, web, mapped, browser):
+    from metaform.data import Store
+    stacked(Store('proj'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.click('#t-corr')
+    page.wait_for_selector('#p-corr .lyr.top')
+    assert page.locator('#p-corr button.remove').count() == 1
+    assert page.text_content('#p-corr .lyr.top b') == 'fix-3'
+    assert page.locator('#p-corr .lyr.top button.remove').count() == 1
+    page.click('#p-corr button.remove')
+    page.wait_for_selector('#p-corr .warn')
+    warning = page.text_content('#p-corr .warn')
+    assert 'code.alarm.chime' in warning and 'moves back' in warning and 'code.alarm.bell' in warning
+    assert [layer.name for layer in Store('proj').stack(limit=0).results] == ['fix-1', 'fix-2', 'fix-3']
+    page.click('#p-corr .warn button.confirm')
+    page.wait_for_function('() => document.querySelector("#p-corr .lyr.top b")?.textContent === "fix-2"')
+    assert [layer.name for layer in Store('proj').stack(limit=0).results] == ['fix-1', 'fix-2']
+    assert page.locator('#p-corr button.remove').count() == 1
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-009')
+@pytest.mark.req('VIEW-012')
+def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(run, web, mapped, browser):
+    from metaform.data import Node, Store
+    store = Store('proj')
+    store.add_property('notes', 'code.timer.kitchen', 'written in C')
+    remembered = store.layer('memory', 'memory', 'What agents noted.', kind='memory', mutable=True, hideable=True,
+                             ready=True)
+    store.add_item(remembered.name, Node('element', 'code.timer.kitchen'), 'drifts under load')
+    challenged = store.add_item('notes', Node('element', 'code.timer.kitchen'), 'Nothing recovers a hung loop.')
+    store.answer(challenged.item_id, 'A')
+    run('set', '--layers', ','.join([*TOGGLED, 'memory']), cwd=mapped)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    kitchen = store.element('code.timer.kitchen').element_id
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("written in C")')
+    panel = page.inner_text('#p-object')
+    for shown in ('kitchen timer', 'code.timer.kitchen', 'DE', 'broken', 'drifts', 'intake-1',
+                  'provider · audible alarm', 'receiver · cook', 'receiver · display', 'tick loop', 'Advances each countdown.',
+                  'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
+        assert shown in panel, shown
+    assert problems == []

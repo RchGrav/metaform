@@ -456,13 +456,18 @@ async function renderObject(id) {
     const box = $('#items');
     for (const group of node.layers || []) {
       const items = (group.items || []).filter(item => !(item.value && typeof item.value === 'object' && 'descriptor' in item.value));
-      const properties = group.properties || [];
-      if (!items.length && !properties.length) continue;
+      if (!items.length) continue;
       box.append(h('div', {class: 'eyebrow'}, group.kind === 'memory' ? 'Memory' : group.layer),
         ...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''), style: {'--c': `var(${colorVar(group.layer)})`}},
-          itemText(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))),
-        ...properties.map(property => h('div', {class: 'item', style: {'--c': `var(${colorVar(group.layer)})`}},
-          'property: ' + itemText(property.value), refsOf(property.refs))));
+          itemText(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
+    }
+    const context = await read('context', {address: element.address, limit: 0, ...viewLayers()});
+    if (S.selected !== id) return;
+    for (const [title, found] of [['Properties that apply here', context.applying], ['Properties visible from above', context.visible]]) {
+      if (!found.length) continue;
+      box.append(h('div', {class: 'eyebrow'}, title), ...found.map(property => h('div', {class: 'item', style: {'--c': `var(${colorVar(property.layer)})`}},
+        itemText(property.value), h('div', {class: 'refs'}, `${property.layer}${property.address && property.address !== element.address ? ' · at ' + property.address : ''}`),
+        refsOf(property.refs))));
     }
   } catch (error) { /* the joins above still show; the node read names its own trouble in the toast */ toast(error.message); }
 }
@@ -498,19 +503,46 @@ async function renderProv() {
   } catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); }
 }
 
-/* ---------- corrections ---------- */
-async function renderCorr() {
+/* ---------- corrections: removed one at a time from the top, after a warning, VIEW-014 ---------- */
+async function renderCorr(warning = null) {
   const pane = $('#p-corr');
   fill(pane, h('div', {class: 'eyebrow'}, 'Correction stack · applied in order, newest on top'),
-    h('p', {class: 'empty'}, 'Correction layers always apply and cannot be toggled.'));
-  try {
-    const stack = (await read('stack', {limit: 0})).results.slice().reverse();
-    pane.append(stack.length ? h('div', {class: 'stack'}, stack.map((layer, index) => h('div', {class: 'lyr' + (index === 0 ? ' top' : '')},
-      h('div', {style: {display: 'flex', 'justify-content': 'space-between', gap: '8px'}}, h('b', {}, layer.name), h('span', {class: 'meta'}, layer.ready || '')),
-      layer.provenance?.role ? h('div', {class: 'meta'}, `${layer.provenance.role}${layer.provenance.model ? ' · ' + layer.provenance.model : ''}`) : null,
-      h('div', {class: 'meta'}, layer.variable || ''))))
-      : h('p', {class: 'empty'}, 'No correction layers. The metaform reads as the intake left it.'));
-  } catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); }
+    h('p', {class: 'empty'}, 'Correction layers always apply and cannot be toggled. Only the top one can be removed.'));
+  let stack;
+  try { stack = (await read('stack', {limit: 0})).results.slice().reverse(); }
+  catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); return; }
+  if (!stack.length) return pane.append(h('p', {class: 'empty'}, 'No correction layers. The metaform reads as the intake left it.'));
+  pane.append(h('div', {class: 'stack'}, stack.map((layer, index) => h('div', {class: 'lyr' + (index === 0 ? ' top' : '')},
+    h('div', {style: {display: 'flex', 'justify-content': 'space-between', gap: '8px'}}, h('b', {}, layer.name),
+      h('span', {class: 'meta'}, layer.ready || '')),
+    layer.provenance?.role ? h('div', {class: 'meta'}, `${layer.provenance.role}${layer.provenance.model ? ' · ' + layer.provenance.model : ''}`) : null,
+    h('div', {class: 'meta'}, layer.variable || ''),
+    index === 0 && !warning ? h('div', {}, h('button', {class: 'btn danger remove', onclick: () => warn(layer.name)},
+      'Remove this layer')) : null))));
+  if (warning) pane.append(warning);
+}
+async function warn(name) {
+  let preview;
+  try { preview = await read('peel-preview', {layer: name}); } catch (error) { return toast(error.message); }
+  if (!preview.top) { toast((preview.notices || []).map(notice => notice.message).join(' ') || `${name} is no longer on top.`); return renderCorr(); }
+  const lines = preview.changes.map(change => h('li', {}, `${change.kind} ${change.what} ${change.effect}` + (change.detail ? `, ${change.detail}` : '')));
+  const box = h('div', {class: 'warn'}, h('b', {}, `Remove ${name}?`), h('span', {}, 'This changes the metaform every agent reads:'),
+    lines.length ? h('ul', {}, lines) : h('p', {class: 'empty'}, 'It changed nothing that is still applied.'),
+    h('div', {class: 'toolbar'},
+      h('button', {class: 'btn danger confirm', onclick: () => removeTop(name)}, 'Remove it'),
+      h('button', {class: 'btn', onclick: () => renderCorr()}, 'Keep it')));
+  renderCorr(box);
+}
+async function removeTop(name) {
+  const response = await fetch('/api/remove-correction', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project: S.project, metaform: S.metaform, layer: name})});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.removed) toast(body.error || (body.notices || []).map(notice => notice.message).join(' ') || 'Nothing was removed.');
+  else toast(`${name} removed. The layer below it is now on top.`);
+  S.layers = (await read('layers', {limit: 0})).results;
+  renderChips();
+  await renderCorr();
+  loadGraph();
 }
 
 /* ---------- tabs, toast ---------- */

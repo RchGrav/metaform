@@ -13,7 +13,8 @@ dependencies = ["prompt_toolkit>=3.0"]
 metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "mcp>=2.2", "pyright==1.1.414", "ruff==0.16.9"]  # the checkers pinned, so CI is repeatable
+# The checkers and the browser driver are pinned, so CI is repeatable.
+dev = ["pytest>=8", "mcp>=2.2", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metaform"]

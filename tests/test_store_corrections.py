@@ -293,3 +293,42 @@ def test_a_relocation_removes_metaform_joins_and_orphans_knowledge_joins_until_p
     store.peel(fix.name)
     assert {join.join_id for join in store.joins(kitchen).results} == {inner.join_id, known.join_id}
     assert store.element(kitchen).address == 'code.timer.kitchen'
+
+
+@pytest.mark.req('VIEW-014')
+@pytest.mark.req('STORE-017')
+def test_the_peel_preview_names_what_removing_a_correction_layer_would_change_and_writes_nothing(home, store):
+    small_map(store)
+    kitchen = store.element('code.timer.kitchen').element_id
+    alarm = store.element('code.alarm.audible').element_id
+    notes = knowledge(store, 'notes')
+    store.add_item(notes.name, Node('element', alarm), 'loud enough?')
+    store.finish(notes.name)
+    first = correction(store, 'fix-1')
+    store.correct(first.name, kitchen, {'address': 'code.timer.egg'}, reason='egg timer')
+    added = store.add_join(first.name, 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it.',
+                           function='Rings.', relation='The alarm tells the cook.', observation='Loud.')
+    store.finish(first.name)
+    later = knowledge(store, 'later')
+    store.add_item(later.name, Node('join', added.join_id), 'rings twice')
+    store.finish(later.name)
+    second = correction(store, 'fix-2')
+    store.correct(second.name, alarm, remove=True, reason='no alarm')
+    store.finish(second.name)
+    before = dump(store_file(home, store))
+    top = store.peel_preview('fix-2')
+    below = store.peel_preview('fix-1')
+    assert dump(store_file(home, store)) == before
+    assert top.top is True and below.top is False
+    assert [(change.kind, change.what, change.effect) for change in top.changes] == [
+        ('element', 'code.alarm.audible', 'comes back'), ('item', 'loud enough?', 'shows again')]
+    found = {(change.kind, change.what, change.effect): change.detail for change in below.changes}
+    assert found[('element', 'code.timer.egg', 'moves back')] == 'from code.timer.egg to code.timer.kitchen'
+    assert ('join', 'stakeholder.cook.home -> code.alarm.audible', 'disappears') in found
+    assert sorted(key for key in found if key[2] == 'comes back') == sorted([
+        ('join', 'stakeholder.cook.home -> code.timer.egg', 'comes back'),
+        ('join', 'code.timer.egg -> code.alarm.audible', 'comes back'),
+        ('subtype', 'code.loop.tick', 'comes back')])
+    assert all(found[key] == 'the move removed it' for key in found if key[2] == 'comes back')
+    assert ('item', 'rings twice', 'becomes orphaned') in found
+    assert store.peel_preview('notes').changes == () and store.peel_preview('notes').notices

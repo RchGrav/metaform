@@ -60,6 +60,7 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'citing': lambda: store.citing('path', 'src/tick.c').results,
         'history': lambda: store.history(inner.join_id).results,
         'stack': lambda: store.stack().results,
+        'peel_preview': lambda: store.peel_preview('fix-1'),
         'layers': lambda: store.layers().results,
         'layers by tag': lambda: store.layers(tag='practices').results,
         'provenance': lambda: store.provenance('notes'),

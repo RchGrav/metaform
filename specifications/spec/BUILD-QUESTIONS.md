@@ -283,3 +283,9 @@ Meanwhile: unit 2 of step 3, prompt storage, waits; the web GUI's other units go
 Recommended: one prompt store per Metaform home, like the web GUI, holding every prompt and its versions. A module's shipped prompt becomes version 1 the first time it is served, and the newest version is what later runs serve. A layer's provenance keeps the text it was made from, as now, with the version id beside it, a reference across files that the home store keeps valid by never changing or deleting a version.
 Blocks: VIEW-013 and STORE-044.
 
+**Q51. Where the viewer's layout cache is written. (VIEW-010, VIEW-011)**
+VIEW-010 keeps settled positions under `~/.metaform/cache/viewer/<project>/<metaform>/`, written by the viewer. The page cannot write files, so the server would take the positions in a fourth POST, while VIEW-011 says the viewer writes exactly three things. The cache is not the store and not a setting, so the conflict may be only in wording.
+Meanwhile: the cache is not built, and nor are the rest of VIEW-010's worker layout, instancing and label budget; the page lays out and draws the whole map directly.
+Recommended: VIEW-011's three writes are the three changes to Metaform's data; a fourth POST that writes only the viewer's own cache under `cache/viewer/`, checked like the others, is allowed and named in VIEW-011.
+Blocks: VIEW-010's cache.
+

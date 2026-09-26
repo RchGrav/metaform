@@ -16,8 +16,9 @@ from ..errors import StoreError
 from . import corrections, rows, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
-from .records import (Citation, ContextView, Element, Finding, Item, Join, Layer, LayerGroup, Node, NodeView, Page,
-                      Property, Provenance, Report, RootElement, RootEntry, Roots, Selection, Subtype, Version, Where)
+from .records import (Citation, ContextView, Element, Finding, Item, Join, Layer, LayerGroup, Node, NodeView, Notice,
+                      Page, PeelPreview, Property, Provenance, Report, RootElement, RootEntry, Roots, Selection,
+                      Subtype, Version, Where)
 from .selection import Resolver, all_layers
 from .session import Tx
 
@@ -478,3 +479,18 @@ def save_report(tx: Tx, name: str, run_id: str, kind: str, size: int, layer: str
 def has_intake(tx: Tx) -> bool:
     return tx.db.execute("SELECT 1 FROM layers WHERE kind='intake' AND ready IS NOT NULL LIMIT 1").fetchone() \
         is not None
+
+
+def peel_preview(tx: Tx, layer: str) -> PeelPreview:
+    """What removing a correction layer would change, and whether it is the top one, VIEW-014."""
+    found = rows.layer(tx, layer)
+    if found.kind != 'correction':
+        return PeelPreview(found.name, False, notices=(Notice('layer', f'{found.name} is not a correction layer; only '
+                                                                       'a correction layer is removed from the stack.'),))
+    top = tx.db.execute('SELECT layer_id FROM correction_stack ORDER BY position DESC LIMIT 1').fetchone()
+    stacked = tx.db.execute('SELECT 1 FROM correction_stack WHERE layer_id=?', (found.layer_id,)).fetchone()
+    if stacked is None:
+        return PeelPreview(found.name, False, notices=(Notice('layer', f'{found.name} is not on the stack; it changes '
+                                                                       'nothing yet.'),))
+    return PeelPreview(found.name, top is not None and top[0] == found.layer_id,
+                       tuple(corrections.preview(tx.db, found.layer_id)))

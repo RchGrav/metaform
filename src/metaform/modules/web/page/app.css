@@ -95,6 +95,11 @@ pre.prompt{font:12px/1.5 var(--mono);background:var(--ground);border:1px solid v
 .stack .lyr{border:1px solid var(--line-2);border-radius:6px;padding:10px;background:var(--panel-2);display:grid;gap:4px}
 .stack .lyr.top{border-color:var(--correction)}
 .stack .meta{font:12px var(--mono);color:var(--muted)}
+.btn{padding:6px 12px;border-radius:6px;border:1px solid var(--line-2);background:var(--panel-2);cursor:pointer;font-size:13px}
+.btn.danger{border-color:var(--correction);color:var(--correction)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.warn{border:1px solid var(--correction);border-radius:6px;padding:12px;background:color-mix(in srgb,var(--correction) 8%,transparent);display:grid;gap:8px;font-size:13px}
+.warn ul{margin:0;padding-left:18px}
 main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #stage{position:absolute;inset:0}
 .legend{position:absolute;left:14px;bottom:14px;display:grid;gap:4px;font:11px var(--mono);color:var(--muted);background:color-mix(in srgb,var(--ground) 80%,transparent);padding:10px 12px;border:1px solid var(--line);border-radius:8px;pointer-events:none;max-width:calc(100% - 28px)}
