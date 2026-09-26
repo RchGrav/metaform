@@ -384,9 +384,8 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
     shipped = [path.relative_to(folder).as_posix() for part in ('page', 'vendor')
                for path in (folder / part).rglob('*') if path.is_file()]
     assert shipped and {f'metaform/modules/web/{name}' for name in shipped} <= names
-    licenses = ['mermaid.LICENSE', 'three/LICENSE', 'fonts/IBM-Plex.LICENSE', 'codemirror/LICENSE',
-                *(f'd3/{name}.LICENSE' for name in ('d3-force-3d', 'd3-binarytree', 'd3-octree', 'd3-quadtree',
-                                                    'd3-dispatch', 'd3-timer'))]
+    licenses = ['mermaid.LICENSE', '3d-force-graph.LICENSE', 'three.LICENSE', 'fonts/IBM-Plex.LICENSE',
+                'codemirror/LICENSE']
     assert all(f'metaform/modules/web/vendor/{license}' in names for license in licenses)
 
 
@@ -419,28 +418,46 @@ def config_layers(run, folder):
                 if row['key'] == 'layers')['value']
 
 
+def drawn_as_paths(graph, expected):
+    """The page's graph against the store's: one vertex per element, each join one path from its receiver to its own
+    purpose vertex and on to its provider with nothing back to the receiver, MAP-002, its subtypes hung from its
+    purpose vertex, and each element's namespace edge from its nearest parent element, VIEW-005."""
+    elements = {entry['element']['element_id'] for entry in expected['elements']}
+    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
+    links = graph['links']
+    assert sorted(node['id'] for node in graph['nodes'] if node['t'] == 'el') == sorted(elements)
+    by_join = {}
+    for link in links:
+        if link.get('join'):
+            by_join.setdefault(link['join'], []).append((link['source'], link['target'], link['k']))
+    for join in expected['joins']:
+        purpose = 'p:' + join['join_id']
+        assert sorted(by_join.pop(join['join_id'])) == sorted(
+            [(join['receiver'], purpose, 'purpose'), (purpose, join['provider'], 'encounter')]
+            + [(purpose, 's:' + subtype['subtype_id'], 'layer') for subtype in join['subtypes']])
+    assert by_join == {}
+    assert sorted((link['source'], link['target']) for link in links if link['k'] == 'tree') == sorted(
+        (by_address[entry['parent']], entry['element']['element_id']) for entry in expected['elements'] if entry['parent'])
+    assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
+    assert len([node for node in graph['nodes'] if node['t'] == 'purpose']) == len(expected['joins'])
+    assert len([node for node in graph['nodes'] if node['t'] == 'sub']) == sum(len(j['subtypes']) for j in expected['joins'])
+
+
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-003')
 @pytest.mark.req('VIEW-012')
-def test_the_page_draws_each_join_as_a_face_and_both_views_select_together(run, web, mapped, browser):
+def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run, web, mapped, browser):
     started(run)
     page, problems, remote = opened(browser, web)
     graph = page.evaluate('window.metaform.graph()')
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
     elements = {entry['element']['element_id'] for entry in expected['elements']}
-    links = graph['links']
-    assert sorted(node['id'] for node in graph['nodes'] if node['t'] == 'el') == sorted(elements)
-    for join in expected['joins']:
-        purpose, encounter = 'p:' + join['join_id'], 'e:' + join['join_id']
-        face = sorted((link['source'], link['target']) for link in links
-                      if link['k'] == 'face' and link['join'] == join['join_id'])
-        assert face == sorted([(join['receiver'], purpose), (purpose, encounter), (encounter, join['receiver'])])
-        assert [(link['source'], link['target']) for link in links
-                if link['k'] == 'tie' and link['join'] == join['join_id']] == [(encounter, join['provider'])]
-    assert len([link for link in links if link['k'] == 'tree']) == len([e for e in expected['elements'] if e['parent']])
-    assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
-    assert len([node for node in graph['nodes'] if node['t'] == 'sub']) == sum(len(j['subtypes']) for j in expected['joins'])
+    drawn_as_paths(graph, expected)
+    page.wait_for_function('([count]) => document.querySelectorAll("#labels3d span:not([hidden])").length === count',
+                           arg=[len(elements)])
+    names = {entry['element'].get('short_name') or entry['element']['address'] for entry in expected['elements']}
+    assert set(page.evaluate('[...document.querySelectorAll("#labels3d span")].map(s => s.textContent)')) == names
     assert page.locator('#map2d svg g.node').count() == len(elements)
     assert page.locator('#map2d svg .edgePaths path').count() == len(expected['joins'])
     assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
@@ -585,30 +602,11 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
     assert problems == []
 
 
-DRAW_CALLS = 12  # one per vertex kind, per edge style, the glow and the tie arrows, with room to spare
-
-
-def drawn_when_loaded(page, joins):
-    page.wait_for_function('([joins]) => window.metaform.loaded() && window.metaform.drawn() '
-                           '&& window.metaform.drawn().ties === joins', arg=[joins], timeout=60000)
-    page.wait_for_timeout(500)
-    return page.evaluate('window.metaform.drawn()')
-
-
 @pytest.mark.req('VIEW-010')
 @pytest.mark.req('VIEW-012')
-def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whatever_the_size(run, home, web, mapped,
-                                                                                          browser, tmp_path):
+def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, browser, tmp_path):
     from metaform.data import Store
     started(run)
-    page, problems, _ = opened(browser, web)
-    small = page.evaluate('window.metaform.graph()')
-    counts = {kind: len([node for node in small['nodes'] if node['t'] == kind]) for kind in ('el', 'purpose', 'sub')}
-    drawn = drawn_when_loaded(page, counts['purpose'])
-    assert (drawn['elements'], drawn['purposes'], drawn['encounters'], drawn['faces'], drawn['subtypes']) == (
-        counts['el'], counts['purpose'], counts['purpose'], counts['purpose'], counts['sub'])
-    assert 0 < drawn['calls'] <= DRAW_CALLS
-    calls = drawn['calls']
     folder = tmp_path / 'big'
     folder.mkdir()
     run('add', 'project', 'big', str(folder))
@@ -616,31 +614,27 @@ def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whateve
     with big.atomic():
         layer = big.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
                           provenance=PROVENANCE, ready=True)
-        # The same kinds as the small map, subtypes and namespace edges included, so the draw calls can match.
-        for group in range(30):
+        # More elements than one page of /api/graph holds, 500, so the drawing has to take in a second page.
+        for group in range(20):
             big.add_element(layer.name, f'code.g{group}', role='SE')
-        for n in range(3000):
-            big.add_element(layer.name, f'code.g{n % 30}.e{n}', role='SE')
-        for n in range(3000):
-            join = big.add_join(layer.name, f'code.g{n % 30}.e{n}', f'code.g{(n + 1) % 30}.e{(n + 1) % 3000}',
+        for n in range(600):
+            big.add_element(layer.name, f'code.g{n % 20}.e{n}', role='SE')
+        for n in range(600):
+            join = big.add_join(layer.name, f'code.g{n % 20}.e{n}', f'code.g{(n + 1) % 20}.e{(n + 1) % 600}',
                                 purpose='p', function='f', relation='r', observation='o')
-            if n < 30:
+            if n < 10:
                 big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', function='f', relation='r',
                                 observation='o', role='SE')
+        # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
+        big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', function='g', relation='r', observation='o')
+    page, problems, _ = opened(browser, web)
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
-    drawn = drawn_when_loaded(page, 3000)
-    assert (drawn['elements'], drawn['purposes'], drawn['faces'], drawn['ties'], drawn['subtypes']) == (
-        3030, 3000, 3000, 3000, 30)
-    assert drawn['calls'] == calls and drawn['labels'] <= 80
-    before = set(page.evaluate('window.metaform.labelled()'))
-    box = page.locator('#stage canvas').bounding_box()
-    page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
-    for step in range(12):  # zooming in and out brings other elements nearest, so other labels are chosen
-        page.mouse.wheel(0, -600 if step % 2 == 0 else 450)
-        page.wait_for_timeout(300)
-    after = set(page.evaluate('window.metaform.labelled()'))
-    assert after != before and len(after) <= 80 and page.evaluate('window.metaform.drawn().labels') <= 80
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn() '
+                           '&& window.metaform.drawn().nodes > 1000', timeout=60000)
+    assert page.evaluate('window.metaform.drawn()') == {'nodes': 620 + 601 + 10, 'links': 600 + 2 * 601 + 10}
+    assert page.inner_text('#count').startswith('620 elements · 601 joins')
+    drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=big&limit=0')[1])
     assert problems == []
 
 

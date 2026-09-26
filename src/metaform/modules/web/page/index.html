@@ -53,14 +53,15 @@
 
   <main>
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
-    <div class="tip" id="tip" hidden></div>
-    <div class="hint">drag to orbit · right-drag or shift-drag to pan · scroll to zoom · click a node</div>
+    <div id="labels3d" aria-hidden="true"></div>
+    <div class="hint">drag to orbit · scroll to zoom · click a node</div>
     <div class="stagebtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
   </main>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
+<script src="/vendor/3d-force-graph.min.js"></script>
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/vendor/codemirror/codemirror.js"></script>
 <script src="/vendor/codemirror/xml.js"></script>

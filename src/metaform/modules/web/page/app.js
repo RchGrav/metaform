@@ -2,7 +2,6 @@
  * Every piece of data comes from the server's reads, VIEW-004; the page never decides what is visible. Text from the
  * store is always set as text, never as HTML, VIEW-009. */
 'use strict';
-import {Scene} from '/page/scene.js';
 
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -102,106 +101,149 @@ $('#apply').onclick = async () => {
   toast(['Applied to the folder.', ...(body.notices || []).map(notice => notice.message)].join(' '));
 };
 
-/* ---------- the graph data: every join in its tripartite form, VIEW-005 ---------- */
+/* ---------- the graph data ---------- */
+/* The graph as the approved prototype draws it: each join uncollapsed as its receiver, a purpose vertex and the
+ * encounter, the link on to its provider; subtypes hang from their join's purpose; the namespace joins each element to
+ * its nearest parent element, VIEW-005. */
 function graphData() {
   const nodes = [], links = [];
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.element_id]));
   for (const {element, parent} of S.elements.values()) {
     nodes.push({id: element.element_id, t: 'el', name: element.short_name || element.address, address: element.address,
-      role: element.role, flag: element.flag, layer: element.layer, joins: 0});
+      role: element.role, flag: element.flag, layer: element.layer});
     if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.element_id, k: 'tree'});
   }
   const ids = new Set(nodes.map(node => node.id));
-  const count = new Map();
   for (const join of S.joins) {
     if (!ids.has(join.receiver) || !ids.has(join.provider)) continue;
-    const purpose = 'p:' + join.join_id, encounter = 'e:' + join.join_id;
+    const purpose = 'p:' + join.join_id;
     nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, flag: join.flag});
-    nodes.push({id: encounter, t: 'encounter', join: join.join_id, layer: join.layer, flag: join.flag});
-    links.push({source: join.receiver, target: purpose, k: 'face', layer: join.layer, join: join.join_id});
-    links.push({source: purpose, target: encounter, k: 'face', layer: join.layer, join: join.join_id});
-    links.push({source: encounter, target: join.receiver, k: 'face', layer: join.layer, join: join.join_id});
-    links.push({source: encounter, target: join.provider, k: 'tie', layer: join.layer, join: join.join_id});
+    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id});
+    links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.name || subtype.address, flag: subtype.flag});
-      links.push({source: encounter, target: 's:' + subtype.subtype_id, k: 'sub', layer: subtype.layer, join: join.join_id});
+      links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id});
     }
-    for (const end of [join.receiver, join.provider]) count.set(end, (count.get(end) || 0) + 1);
   }
-  for (const node of nodes) if (node.t === 'el') node.joins = count.get(node.id) || 0;
   return {nodes, links};
 }
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
-  drawn: () => G ? G.drawn() : null, labelled: () => G ? G.labelled() : [], loaded: () => !S.loading,
-  editor: () => P.editor};
+  drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
+  loaded: () => !S.loading, editor: () => P.editor};
 
-/* ---------- 3D: a synaptic map, drawn by scene.js ---------- */
+/* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
-function nodeColor(node, selected, neighbors) {
-  if (node.flag && FLAGS[node.flag]) return css(FLAGS[node.flag]);
-  if (selected && node.t === 'el' && node.id !== selected && !neighbors.has(node.id)) return '#2b3644';
-  if (node.t === 'el') return node.role === 'DE' ? '#ffffff' : node.role === 'VE' ? css('--signal') : layerColor(node.layer);
+function colorOf(node) {
+  if (node.t === 'el') return node.flag && FLAGS[node.flag] ? css(FLAGS[node.flag]) : node.role === 'VE' ? css('--signal')
+    : node.role === 'DE' ? '#ffffff' : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
-  if (link.k === 'tie') return css('--signal');
-  return layerColor(link.layer);
+  if (colorVar(link.layer) !== '--intake') return layerColor(link.layer);
+  return link.k === 'encounter' ? css('--signal') : css('--intake');
 }
 let G = null;
 function start3D() {
-  const stage = $('#stage');
-  const probe = document.createElement('canvas');
-  if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) {
-    fill(stage, h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
+  if (typeof ForceGraph3D !== 'function') {
+    fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
     return;
   }
-  G = new Scene(stage, {
-    reduced,
-    colors: {ground: css('--ground'), tree: css('--tree'), signal: css('--signal'), node: nodeColor, link: linkColor,
-      neighbors: id => new Set(S.selected === id ? S.neighbors : []),
-      joinsOf: id => new Set(S.joins.filter(join => join.receiver === id || join.provider === id).map(join => join.join_id))},
-    onPick: node => {
+  G = ForceGraph3D({controlType: 'orbit'})($('#stage'))
+    .backgroundColor(css('--ground'))
+    .showNavInfo(false)
+    .nodeRelSize(3)
+    .nodeVal(node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9 : 0.35)
+    .nodeColor(node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id) ? '#2b3644' : colorOf(node))
+    .nodeOpacity(0.95)
+    .nodeResolution(16)
+    .nodeLabel(node => tipFor(node).outerHTML)
+    .linkColor(linkColor)
+    .linkOpacity(0.55)
+    .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' ? 0.25 : 0.9)
+    .linkCurvature(link => link.k === 'layer' ? 0 : 0.18)
+    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
+    .linkDirectionalParticleSpeed(0.006)
+    .linkDirectionalParticleWidth(1.6)
+    .linkDirectionalParticleColor(linkColor)
+    .onNodeClick(node => {
       const join = node.join && S.joins.find(item => item.join_id === node.join);
       select(node.t === 'el' ? node.id : join ? join.receiver : null, true);
-    },
-    onHover: (node, event) => showTip(node, event),
-  });
-  $('#pauseBtn').onclick = () => {
+    });
+  G.d3Force('charge').strength(node => node.t === 'el' ? -140 : -18);
+  G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'tree' ? 60 : 34);
+  resize();
+  requestAnimationFrame(labels);
+  $('#pauseBtn').onclick = () => {  // pausing pins every vertex where it is; resuming frees them and warms the layout
     const paused = $('#pauseBtn').dataset.paused === 'true';
-    paused ? G.resume() : G.pause();
+    for (const node of G.graphData().nodes) Object.assign(node, paused ? {fx: undefined, fy: undefined, fz: undefined}
+      : {fx: node.x, fy: node.y, fz: node.z});
+    if (paused) G.d3ReheatSimulation();
     $('#pauseBtn').dataset.paused = String(!paused);
     $('#pauseBtn').textContent = paused ? 'Pause layout' : 'Resume layout';
   };
-  $('#relayoutBtn').onclick = () => G.relayout();
+  $('#relayoutBtn').onclick = () => {
+    const data = G.graphData();
+    for (const node of data.nodes) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz']) delete node[key];
+    $('#pauseBtn').dataset.paused = 'false';
+    $('#pauseBtn').textContent = 'Pause layout';
+    G.graphData(data);  // the layout gives vertices without a position new ones and settles again
+  };
 }
-function showTip(node, event) {
-  const tip = $('#tip');
-  if (!node) { tip.hidden = true; return; }
-  const join = node.join && S.joins.find(item => item.join_id === node.join);
-  const title = node.t === 'el' ? node.name : node.t === 'purpose' ? 'purpose' : node.t === 'encounter' ? 'encounter' : node.name;
-  const text = node.t === 'el' ? node.address : node.t === 'purpose' ? join?.purpose : node.t === 'encounter' ? join?.function : 'subtype';
-  fill(tip, h('b', {}, title || ''), h('span', {}, text || ''));
-  const box = $('#stage').getBoundingClientRect();
-  tip.style.left = (event.clientX - box.left + 14) + 'px';
-  tip.style.top = (event.clientY - box.top + 14) + 'px';
-  tip.hidden = false;
+function tipFor(node) {
+  const tip = h('div', {class: 'tip3d'});
+  if (node.t === 'el') return fill(tip, h('b', {}, node.name), h('span', {}, node.address));
+  const join = S.joins.find(item => item.join_id === node.join);
+  return fill(tip, node.t === 'purpose' ? (join?.purpose || 'purpose') : node.name || '');
 }
-function draw3D(final = false) { if (G) G.update(graphData(), final); }
+const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
+const tags = new Map();
+function labels() {
+  if (G) {
+    const box = $('#labels3d');
+    for (const node of G.graphData().nodes) {
+      if (node.t !== 'el') continue;
+      let tag = tags.get(node.id);
+      if (!tag) { tag = h('span', {}, short(node.name, 26)); box.append(tag); tags.set(node.id, tag); }
+      tag.hidden = node.x === undefined;
+      if (tag.hidden) continue;
+      const point = G.graph2ScreenCoords(node.x, node.y, node.z);
+      tag.style.left = point.x + 'px';
+      tag.style.top = point.y + 'px';
+      tag.className = node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '';
+    }
+  }
+  requestAnimationFrame(labels);
+}
+function draw3D() {
+  if (!G) return;
+  const previous = new Map(G.graphData().nodes.map(node => [node.id, node]));
+  const data = graphData();
+  for (const node of data.nodes) {  // keep drawn positions, so the picture does not jump as pages arrive
+    const known = previous.get(node.id);
+    if (known) Object.assign(node, {x: known.x, y: known.y, z: known.z, vx: known.vx, vy: known.vy, vz: known.vz,
+      fx: known.fx, fy: known.fy, fz: known.fz});
+  }
+  for (const [id, tag] of tags) if (!S.elements.has(id)) { tag.remove(); tags.delete(id); }
+  G.graphData(data);
+}
+function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
+addEventListener('resize', resize);
 
 function renderLegend() {
   const inView = new Set([...S.elements.values()].map(entry => entry.element.layer).concat(S.joins.map(join => join.layer)));
-  const rows = [...inView].map(name => [colorVar(name), name, '']);
-  rows.push(['--signal', 'encounter tie to the provider', ''], ['--tree', 'namespace', 'dash']);
+  const rows = [['--intake', 'purpose · receiver to join', ''], ['--signal', 'encounter · join to provider', ''],
+    ['--tree', 'namespace', ''], ...[...inView].map(name => [colorVar(name), name, ''])];
   const legend = $('#legend');
   fill(legend, ...rows.map(([color, text, kind]) =>
     h('span', {style: {'--c': `var(${color})`}}, h('i', {class: kind}), text)));
   const flags = new Set([...S.elements.values()].map(entry => entry.element.flag).concat(S.joins.map(join => join.flag)));
   for (const flag of ['missing', 'broken', 'cruft']) if (flags.has(flag))
     legend.append(h('span', {style: {'--c': `var(--${flag})`}}, h('i', {class: 'dot'}), `flag: ${flag}`));
-  $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins` + (S.loading ? ' · loading' : '');
+  const shown = G ? G.graphData().nodes.length : 0;
+  $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '');
 }
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
@@ -325,7 +367,7 @@ function focus2D(id, animate = true) {
     setCam({x: c.x + (c.w - c.w * f) * px, y: c.y + (c.h - c.h * f) * py, w: c.w * f, h: c.h * f});
   }, {passive: false});
 })();
-function fitAll() { fit2D(); if (G) G.fit(!reduced()); }
+function fitAll() { fit2D(); if (G) G.zoomToFit(reduced() ? 0 : 700, 60); }
 
 /* Arrow keys follow joins: to the joined element that lies furthest the pressed way in the 2D map. F fits. */
 document.addEventListener('keydown', event => {
@@ -355,7 +397,14 @@ function select(id, fly) {
   S.selected = id;
   S.neighbors = new Set([id, ...S.joins.filter(join => join.receiver === id).map(join => join.provider),
     ...S.joins.filter(join => join.provider === id).map(join => join.receiver)]);
-  if (G) G.select(id, fly);
+  if (G) {
+    G.nodeColor(G.nodeColor());
+    const node = G.graphData().nodes.find(item => item.id === id);
+    if (fly && node && node.x !== undefined) {
+      const ratio = 1 + 90 / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+      G.cameraPosition({x: node.x * ratio, y: node.y * ratio, z: node.z * ratio}, node, reduced() ? 0 : 900);
+    }
+  }
   focus2D(id, fly);
   showTab('object');
   renderObject(id);
@@ -609,13 +658,14 @@ async function loadGraph() {
   } catch (error) { toast(error.message); }
   if (generation !== S.loading) return;
   S.loading = 0;
-  draw3D(true);
+  draw3D();
   renderLegend();
   await build2D();
   const keep = S.selected && S.elements.has(S.selected) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (start) select(start, false);
+  if (start && !keep) setTimeout(() => { if (G) G.zoomToFit(reduced() ? 0 : 800, 60); }, 2200);
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
 async function loadMetaform() {
