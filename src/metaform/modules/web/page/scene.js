@@ -43,7 +43,7 @@ export class Scene {
     const ids = new Set(data.nodes.map(node => node.id));
     if (!this.nodes.length || this.nodes.some(node => !ids.has(node.id))) {  // a changed view starts a new layout
       this.worker.postMessage({type: 'reset'}); this.nodes = []; this.links = []; this.index = new Map(); this.fitted = false;
-      this.built = 0;
+      this.built = 0; this.chosen = []; this.tags.clear(); this.labels.replaceChildren();
     }
     const fresh = data.nodes.filter(node => !this.index.has(node.id));
     for (const node of fresh) { this.index.set(node.id, this.nodes.length); this.nodes.push({...node, x: 0, y: 0, z: 0}); }
@@ -332,7 +332,7 @@ export class Scene {
       const rest = inView.filter(([node]) => !(node.id === this.selected || this.neighbors.has(node.id)));
       this.chosen = [...first, ...rest].slice(0, LABELS).map(([node]) => node);
       const keep = new Set(this.chosen.map(node => node.id));
-      for (const [id, tag] of this.tags) if (!keep.has(id)) tag.hidden = true;
+      for (const [id, tag] of this.tags) if (!keep.has(id)) { tag.remove(); this.tags.delete(id); }  // at most LABELS exist
       moved = true;
     }
     if (!moved) return;
@@ -355,7 +355,7 @@ export class Scene {
     return {calls: this.renderer.info.render.calls, elements: this.meshes.el?.count || 0, purposes: this.meshes.purpose?.count || 0,
       encounters: this.meshes.encounter?.count || 0, subtypes: this.meshes.sub?.count || 0,
       faces: (this.lines.fiber?.userData.links.filter(link => link.k === 'face').length || 0) / 3,
-      ties: this.meshes.arrow?.count || 0, tree: count('tree'), labels: [...this.tags.values()].filter(tag => !tag.hidden).length};
+      ties: this.meshes.arrow?.count || 0, tree: count('tree'), labels: this.labels.childElementCount};
   }
 }
 

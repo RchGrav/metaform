@@ -18,6 +18,9 @@ from typing import Any, cast
 import anyio
 
 from metaform import settings
+from metaform.context import project_for
+from metaform.data import Store, StoreError
+from metaform.instructions import on_surface
 from metaform.module import (Context, Module, Stop, Verb, call, context, feedback, instructions, list_reports,
                              on_this_system, read_report, result_json, setting_value, surface, tool_arguments)
 
@@ -121,7 +124,39 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                     {'type': 'object', 'required': ['name'], 'additionalProperties': False,
                      'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
 }
-JSON_TYPES: dict[str, type] = {'string': str, 'integer': int}
+ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
+HISTORY: dict[str, tuple[str, dict[str, Any]]] = {
+    'add_origin': ("Establish an origin from the project's current state, as metaform add origin does, PROJ-014.",
+                   {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
+    'list_origins': ("The project's origins, as metaform list origins lists them.",
+                     {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
+    'add_variant': ('Collect a folder as a variant of an origin, as metaform add variant does, PROJ-017.',
+                    {'type': 'object', 'required': ['folder'], 'additionalProperties': False,
+                     'properties': {
+                         'folder': _text('The folder to collect, such as a worker\'s worktree.'),
+                         'origin': ORIGIN,
+                         'remove': {'type': 'boolean', 'description': 'Remove the git worktree once its variant '
+                                                                      'holds it.'},
+                         'module': _text('The module that produced the work.'),
+                         'workflow': _text('The workflow that produced the work.'),
+                         'prompt': _text('The prompt the work was done from.'),
+                         'model': _text('The model that did the work.'),
+                         'role': _text('The role of the agent that did the work.'),
+                         'blinded': {'type': 'boolean', 'description': 'Whether the agent saw only the map.'},
+                         'project': PROJECT}}),
+    'list_variants': ("An origin's variants, as metaform list variants lists them.",
+                      {'type': 'object', 'additionalProperties': False,
+                       'properties': {'origin': ORIGIN, 'project': PROJECT}}),
+    'extract': ('Write variants out to folders with Python alone, as metaform extract does, PROJ-018.',
+                {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
+                 'properties': {
+                     'variants': {'type': 'array', 'items': {'type': 'string'},
+                                  'description': 'Variant ids, or ["all"] for every variant of the origin.'},
+                     'folder': _text('An empty folder; each of several variants goes into a subfolder named by '
+                                     'its id.'),
+                     'origin': ORIGIN, 'project': PROJECT}}),
+}
+JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
 
 
 def _error(stop: Stop) -> Outcome:
@@ -140,9 +175,9 @@ def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any]) -> di
         if expected is None:
             raise Stop(f'{name} has no argument {key}.', 'metaform help commands')
         wanted = JSON_TYPES[expected['type']]
-        if not isinstance(value, wanted) or isinstance(value, bool):
-            raise Stop(f'{key} is {"text" if wanted is str else "a whole number"}, not {value!r}.',
-                       'metaform help commands')
+        if not isinstance(value, wanted) or (isinstance(value, bool) and wanted is not bool):
+            kind = {str: 'text', int: 'a whole number', bool: 'true or false', list: 'a list'}[wanted]
+            raise Stop(f'{key} is {kind}, not {value!r}.', 'metaform help commands')
         checked[key] = value
     return checked
 
@@ -190,6 +225,43 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
         return _error(stop)
 
 
+def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
+    """The history commands as tools, on the surface while the chassis is, PROJ-024 and MCP-004."""
+    try:
+        given = _checked(name, arguments, HISTORY[name][1])
+        store = Store(project_for(folder, given.pop('project', None)) or _no_project())
+        if name == 'add_origin':
+            known = {item.mform_sha_id for item in store.origins()}
+            made = store.add_origin()
+            first = store.variants(made.mform_id)
+            return False, [result_json({'origin': made, 'added': made.mform_sha_id not in known,
+                                        'first_variant': first[0].variant_id if first else None})]
+        if name == 'list_origins':
+            return False, [result_json(list(store.origins()))]
+        if name == 'add_variant':
+            folder_given = _within(folder, given.pop('folder'))
+            origin_given = given.pop('origin', None)
+            remove = bool(given.pop('remove', False))
+            return False, [result_json(store.add_variant(folder_given, origin_given, remove=remove,
+                                                         provenance=given))]
+        if name == 'list_variants':
+            return False, [result_json(list(store.variants(given.get('origin'))))]
+        written = store.extract([str(item) for item in given['variants']], _within(folder, given['folder']),
+                                given.get('origin'))
+        return False, [result_json([str(path) for path in written])]
+    except (Stop, StoreError) as stop:
+        return _error(stop)
+
+
+def _within(folder: Path, given: Any) -> Path:
+    """A folder argument, taken from the server's folder when it is relative."""
+    return (folder / str(given)).resolve()
+
+
+def _no_project() -> str:
+    raise Stop('No project for this folder.', 'metaform add project <id> <path>')
+
+
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
              lines: list[str]) -> Context:
     project = arguments.get('project')
@@ -217,6 +289,8 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> Outcom
         return await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
     if name in CHASSIS:
         return await anyio.to_thread.run_sync(run_chassis, folder, name, dict(arguments))
+    if name in HISTORY and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
+        return await anyio.to_thread.run_sync(run_history, folder, name, dict(arguments))
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
         return True, [f'Error: No tool {name} on this surface.\nNext: metaform help commands']
@@ -254,6 +328,9 @@ def serve(folder: Path) -> None:
                                                         'does.', input_schema=set_schema(folder)))
         found += [types.Tool(name=name, description=description, input_schema=schema)
                   for name, (description, schema) in CHASSIS.items()]
+        if on_surface('chassis', folder):
+            found += [types.Tool(name=name, description=description, input_schema=schema)
+                      for name, (description, schema) in HISTORY.items()]
         return found
 
     async def list_tools(ctx: Any, params: Any) -> Any:

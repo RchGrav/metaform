@@ -385,8 +385,9 @@ def test_every_error_names_exactly_one_next_command(run):
         err = result.stderr.splitlines()
         assert result.returncode == 2, args
         assert len(err) == 2 and err[0].startswith('Error: ') and err[1].startswith('Next: '), (args, err)
-    assert run('list', 'foo', ok=False).stderr.splitlines() == ['Error: list needs a noun: projects or modules.',
-                                                               'Next: metaform list projects']
+    assert run('list', 'foo', ok=False).stderr.splitlines() == [
+        'Error: list needs a noun: projects, modules, metaforms, reports, origins or variants.',
+        'Next: metaform list projects']
 
 
 @pytest.mark.req('CLI-010')

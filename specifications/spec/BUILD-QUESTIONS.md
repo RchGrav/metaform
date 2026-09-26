@@ -295,3 +295,9 @@ Meanwhile: the 2D view lays out up to 5,000 elements with Mermaid; above that it
 Recommended: above the limit the 2D view draws the whole map itself, on a canvas, from a 2D layout computed in the same worker, with the same camera moving node to node and the same arrow keys; Mermaid stays for maps under the limit, where its layered layout reads best.
 Blocks: nothing below 5,000 elements.
 
+**Q53. Which database holds a project's history rows. (PROJ-023, STORE-003, STORE-041)**
+PROJ-023 puts the `origins`, `variants` and `variant_files` rows "in the project's store", but a project has one store per metaform, and a second intake starts a new metaform, BASE-039. History belongs to the project's artifact, not to one map of it, so rows in the active metaform's store would split a project's history across its metaforms and hide it when another metaform is activated.
+Meanwhile: built with one history database per project, `~/.metaform/projects/<project id>/history.sqlite3`, beside its metaforms, with the tables PROJ-023 gives; payloads stay under `~/.metaform/origins/<mform_sha_id>/`.
+Recommended: that database, for the reason above; it keeps the base database small and moves with the project folder in the home.
+Blocks: nothing built; the export of a unit, PROJ-020, reads it.
+

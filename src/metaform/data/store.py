@@ -21,11 +21,12 @@ import sqlite3
 from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from .. import home
 from ..errors import StoreError
-from . import challenges, layering, reads, rows, views, writes
+from . import challenges, history, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
 from .records import (ChallengeState, Citation, ContextView, Element, Finding, Item, Join, Layer, Node, NodeView,
                       GraphPage, Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Ref, Report,
@@ -337,6 +338,27 @@ class Store:
         """The layers with their declaration, tags, state, hidden and toggled flags, LAYER-019."""
         with self._read() as tx:
             return reads.layers(tx, self._resolver(tx, None), tag, kind, module, limit, after)
+
+    # ------------------------------------------------------------------ history, PROJ-010 to PROJ-024
+
+    def add_origin(self) -> history.Origin:
+        """Establish an origin from the project's current state, or report the one of the same content, PROJ-014."""
+        return history.add_origin(self.project_id)
+
+    def origins(self) -> tuple[history.Origin, ...]:
+        return history.origins(self.project_id)
+
+    def add_variant(self, folder: Path, origin: str | None = None, *, remove: bool = False,
+                    provenance: dict[str, object] | None = None) -> history.Variant:
+        """Collect a folder as a variant of an origin, the selected one unless named, PROJ-017."""
+        return history.add_variant(self.project_id, folder, origin, remove=remove, provenance=provenance)
+
+    def variants(self, origin: str | None = None) -> tuple[history.Variant, ...]:
+        return history.variants(self.project_id, origin)
+
+    def extract(self, ids: Sequence[str], folder: Path, origin: str | None = None) -> list[Path]:
+        """Reconstruct variants into folders with Python alone, PROJ-018."""
+        return history.extract(self.project_id, ids, folder, origin)
 
     def peel_preview(self, layer: str) -> PeelPreview:
         """What removing a correction layer would change, and whether it is on top, writing nothing, VIEW-014."""

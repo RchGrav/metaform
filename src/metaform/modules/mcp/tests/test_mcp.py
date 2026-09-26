@@ -407,3 +407,41 @@ def test_a_string_for_elements_over_mcp_is_one_notice_and_never_reads_a_file_or_
         assert error is False and len(report['notices']) == 1 and report['notices'][0]['where'] == 'elements'
     assert still_error is False
     assert Store('proj').element('code.leak', raw=True) is None
+
+
+HISTORY_TOOLS = {'add_origin', 'list_origins', 'add_variant', 'list_variants', 'extract'}
+
+
+@pytest.mark.req('PROJ-024')
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('MCP-004')
+def test_the_history_commands_are_tools_while_the_chassis_is_on_the_surface(run, home, mapped, tmp_path):
+    import shutil
+    (mapped / 'notes.txt').write_text('first\n', encoding='utf-8')
+    work = tmp_path / 'work'
+    shutil.copytree(mapped, work)
+    (work / 'notes.txt').write_text('second\n', encoding='utf-8')
+    out = tmp_path / 'out'
+
+    async def check(client, init):
+        tools = await tool_names(client)
+        origin = json.loads(text(await client.call_tool('add_origin', {}))[-1])
+        variant = json.loads(text(await client.call_tool('add_variant', {'folder': str(work), 'workflow': 'mutate',
+                                                                           'blinded': False}))[-1])
+        listed = json.loads(text(await client.call_tool('list_variants', {}))[-1])
+        written = json.loads(text(await client.call_tool('extract', {'variants': [variant['variant_id']],
+                                                                     'folder': str(out)}))[-1])
+        return tools, origin, variant, listed, written
+    tools, origin, variant, listed, written = session(home, mapped, check)
+    assert HISTORY_TOOLS <= set(tools)
+    for name in HISTORY_TOOLS:
+        assert all(value.get('description') for value in tools[name].input_schema['properties'].values()), name
+    assert origin['added'] is True and origin['origin']['kind'] == 'folder'
+    assert (variant['variant_id'], variant['workflow'], variant['blinded']) == ('v000001', 'mutate', False)
+    assert [item['variant_id'] for item in listed] == ['v000001'] and written == [str(out)]
+    assert (out / 'notes.txt').read_text(encoding='utf-8') == 'second\n'
+    run('set', '--modules', 'map', cwd=mapped)
+
+    async def narrowed(client, init):
+        return set(await tool_names(client))
+    assert not HISTORY_TOOLS & session(home, mapped, narrowed)

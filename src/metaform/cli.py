@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
-from .data import Store, export_document, import_document, pull_wheel
+from .data import Store, export_document, history, import_document, pull_wheel
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
@@ -149,7 +149,40 @@ def add(args: list[str], folder: Path) -> None:
             out(f'Notice: name: {project_id} already has a metaform named {args[1]}; this one was named '
                 f'{created.name}.')
         return
-    raise Stop('add needs: project <id> <path>, or metaform <name>.', 'metaform add project <id> <path>')
+    if args[:1] == ['origin'] and len(args) in (1, 2):
+        store = Store(_project_arg(folder, args[1] if len(args) == 2 else None))
+        known = {item.mform_sha_id for item in store.origins()}
+        made = store.add_origin()
+        if made.mform_sha_id in known:
+            out(f'Origin {made.mform_id} already holds this content; nothing was added.')
+            return
+        where = f'at commit {made.commit_id}' if made.commit_id else f'copied from {made.source_path}'
+        out(f'Added origin {made.mform_id}, {made.kind} {where}.')
+        first = store.variants(made.mform_id)
+        if first:
+            out(f'Uncommitted work was collected as variant {first[0].variant_id}.')
+        return
+    if args[:1] == ['variant']:
+        positional, named = _nouns(args[1:], ('origin', 'remove', *history.PROVENANCE), 'add')
+        if len(positional) != 1:
+            raise Stop('add variant takes one folder.', 'metaform add variant <folder>')
+        given = {key: values[-1] for key, values in named.items()}
+        provenance: dict[str, object] = {key: given[key] for key in history.PROVENANCE if key in given}
+        if 'blinded' in provenance:
+            provenance['blinded'] = _truth(str(provenance['blinded']), 'blinded')
+        store = Store(_project_arg(folder, None))
+        made = store.add_variant(_named_folder(folder, positional[0]), given.get('origin'),
+                                 remove=_truth(given.get('remove', 'false'), 'remove'), provenance=provenance)
+        out(f'Collected variant {made.variant_id} of origin {made.mform_id}: {len(made.files)} files changed.')
+        return
+    raise Stop('add needs: project <id> <path>, metaform <name>, origin, or variant <folder>.',
+               'metaform add project <id> <path>')
+
+
+def _truth(text: str, noun: str) -> bool:
+    if text not in ('true', 'false'):
+        raise Stop(f'{noun}= takes true or false.', 'metaform help add')
+    return text == 'true'
 
 
 def list_(args: list[str], folder: Path) -> None:
@@ -170,8 +203,21 @@ def list_(args: list[str], folder: Path) -> None:
         for form in home.metaforms(project_id):
             out(f'{form.name}  {form.created}' + ('  (active)' if form.active else ''))
         return
+    if args[:1] == ['origins'] and len(args) in (1, 2):
+        for item in Store(_project_arg(folder, args[1] if len(args) == 2 else None)).origins():
+            out(f'{item.mform_id}  {item.kind}  {item.commit_id or item.source_path}  {item.established}  '
+                f'{item.variants} variants')
+        return
+    if args[:1] == ['variants']:
+        positional, named = _nouns(args[1:], ('origin',), 'list')
+        if positional:
+            raise Stop('list variants takes only origin=.', 'metaform list variants')
+        for made in Store(_project_arg(folder, None)).variants((named.get('origin') or [None])[0]):
+            out(f'{made.variant_id}  {made.collected}  {made.source_path}  {made.workflow or "-"}')
+        return
     if args != ['projects']:
-        raise Stop('list needs a noun: projects or modules.', 'metaform list projects')
+        raise Stop('list needs a noun: projects, modules, metaforms, reports, origins or variants.',
+                   'metaform list projects')
     registered = home.projects()
     if not registered:
         out('No projects yet. Register one: metaform add project <id> <path>')
@@ -534,6 +580,16 @@ def install_(args: list[str], folder: Path) -> None:
     install.install(args, out)
 
 
+def extract(args: list[str], folder: Path) -> None:
+    positional, named = _nouns(args, ('origin',), 'extract')
+    if len(positional) < 2:
+        raise Stop('extract takes variant ids, or all, and then a folder.', 'metaform extract <variant id> <folder>')
+    store = Store(_project_arg(folder, None))
+    for written in store.extract(positional[:-1], _named_folder(folder, positional[-1]),
+                                 (named.get('origin') or [None])[0]):
+        out(f'Extracted into {written}')
+
+
 def uninstall_(args: list[str], folder: Path) -> None:
     from . import install
     install.uninstall(args, out)
@@ -552,7 +608,8 @@ def build_(args: list[str], folder: Path) -> None:
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
-    'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read}
+    'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
+    'extract': extract}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -690,7 +747,9 @@ docs.command(Command('help', 'Show an overview, an index, or the page for one co
                      details='Each command also takes --help, which shows only its syntax.', see_also=('intro',)))
 docs.command(Command('add', 'Register a project, or start a new metaform for one.',
                      ('metaform add project <id> <path> [<target type> <target value>]',
-                      'metaform add metaform <name> [<project>]'),
+                      'metaform add metaform <name> [<project>]', 'metaform add origin [<project>]',
+                      'metaform add variant <folder> [origin=<id>] [remove=true] [workflow=<text>] [prompt=<text>] '
+                      '[model=<text>] [role=<text>] [module=<text>] [blinded=true|false]'),
                      description='Metaform keeps its data in the home, never in the project folder.',
                      details='The target type is path, url, artifact, inline or inferred; with none given it is the '
                              'folder itself.',
@@ -698,7 +757,8 @@ docs.command(Command('add', 'Register a project, or start a new metaform for one
                      see_also=('list', 'activate')))
 docs.command(Command('list', "List registered projects, modules, a project's metaforms, or its reports.",
                      ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]',
-                      'metaform list reports [<project>] [kind=<kind>] [layer=<layer>] [--json]'),
+                      'metaform list reports [<project>] [kind=<kind>] [layer=<layer>] [--json]',
+                      'metaform list origins [<project>]', 'metaform list variants [origin=<id>]'),
                      details='list modules shows each module, whether it is on, where it was found, and why it did '
                              'not load when it did not.', see_also=('add', 'enable', 'disable')))
 docs.command(Command('activate', "Make one of a project's metaforms the active one.",
@@ -751,6 +811,14 @@ docs.command(Command('install', 'Set up your AI tools to use Metaform.',
                                  'server with each tool, writes the skill, and proves each tool can start the server.',
                      details='With no tool named it asks; naming tools, or all, sets up without asking.',
                      see_also=('build',)))
+docs.command(Command('extract', 'Write variants of an origin out to folders, with Python alone.',
+                     ('metaform extract <variant id>... <folder> [origin=<id>]', 'metaform extract all <folder> '
+                      '[origin=<id>]'),
+                     description="Starts from the origin's files, applies each variant's changes, and checks every "
+                                 'file against its recorded hash. Needs no git and no access to the repository.',
+                     details='One named variant goes into the folder itself; several, or all, each go into a '
+                             'subfolder named by the variant id. A folder that is not empty is refused.',
+                     see_also=('add', 'list')))
 docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
                      ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
                      description="Previews every change with its backup, then removes Metaform's registration and "

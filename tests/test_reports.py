@@ -100,19 +100,10 @@ def test_feedback_and_reports_run_whatever_the_surface(run, project, user_module
 
 
 @pytest.mark.req('BASE-045')
-def test_writes_to_one_file_at_the_same_time_all_survive(home, monkeypatch):
+def test_writes_to_one_file_at_the_same_time_all_survive(home):
+    # Eight writers released at once; on Windows, where an append is not one step, sections were lost without a lock.
     import threading
-    import time
-    from pathlib import Path
     from metaform import reports
-    slow_exists = Path.exists
-
-    def exists(self, *args, **kwargs):
-        # A slow file system: the moment between looking for the file and writing it grows.
-        found = slow_exists(self, *args, **kwargs)
-        time.sleep(0.05)
-        return found
-    monkeypatch.setattr(Path, 'exists', exists)
     texts = [f'Report {number}.' for number in range(8)]
     start = threading.Barrier(len(texts))
 

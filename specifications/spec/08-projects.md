@@ -333,7 +333,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 
 - Why: History uses the same grammar and the same data access object as everything else, so it needs nothing new to learn and works the same way over MCP.
 - How it shows: The table.
-- Build: The data access object gains `add_origin`, `origins`, `add_variant`, `variants`, `extract` and `export_unit`, with the inputs and outputs above. Each command's tool follows BASE-036 and MCP-003. Without `origin=`, a command uses the project's selected origin, and a project with no origin stops with `Next: metaform add origin`.
+- Build: The data access object gains `add_origin`, `origins`, `add_variant`, `variants`, `extract` and `export_unit`, with the inputs and outputs above. Each command's tool follows BASE-036 and MCP-003: `add_origin`, `list_origins`, `add_variant`, `list_variants` and `extract`, listed and callable while the chassis is on the folder's command surface, like the chassis commands on the command line, CLI-022; they are not among the tools that always run, MCP-004. Without `origin=`, a command uses the project's selected origin, and a project with no origin stops with `Next: metaform add origin`. The rows are in the project's history database, Q53.
 - Acceptance: Covered by the records each command names.
 - Relates to: CLI-001, CLI-031, STORE-023, PROJ-012 to PROJ-021.
 - Status: recommended.
