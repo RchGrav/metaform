@@ -298,4 +298,11 @@ def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored
     finished = json.loads(k(run, mapped, 'op=finish', 'layer=notes', 'reason=done').stdout)
     assert [notice['where'] for notice in finished['notices']] == ['reason']
     assert 'ignored' in finished['notices'][0]['message'] and finished['ready']
+    join = Store('proj').joins('code.timer.kitchen').results[0]
+    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
+      'hideable=false', *PROVENANCE)
+    corrected = json.loads(k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'purpose=Fixed.',
+                             'reason=r', 'flag=broken').stdout)
+    assert [notice['where'] for notice in corrected['notices']] == ['flag']
+    assert 'ignored' in corrected['notices'][0]['message'] and corrected['fields']['extra'] is None
 

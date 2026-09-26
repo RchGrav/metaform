@@ -232,3 +232,11 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - CI: every test passes on Linux, macOS and Windows with Python 3.11 and 3.14. One Windows run met `database is locked` once in the thread-writers test, Q48; a diagnosis job runs on a throwaway branch.
 - Tests added, each seen failing first: `test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored`, `test_a_reports_recorded_size_never_falls_below_one_already_recorded`, `test_a_row_of_up_to_40_characters_stays_on_its_line_and_a_longer_one_wraps`, and descriptions required of the chassis tools in the MCP schema test.
 
+## Step 21: the fourth round, and step 2 is clean
+
+- The review of step 20's code and tests, `REVIEW-CODE-4.md`, found two things:
+  - Medium: `op=correct` names a noun it does not read as ignored, where the reviewer read BASE-043's "adds a record" as covering a correction's new version row. A correction or an edit changes a thing that already exists, and writing an unread noun into it would change the metaform beyond what the agent asked. BASE-043 now says "the add operations" and why; a test covers `correct`'s ignored path and checks the join's `extra` is untouched. For Rich's veto.
+  - Low: the report-size test named BASE-045, which it does not exercise; it names only STORE-043 now.
+- The manual test of step 20, `MANUAL-TEST-4.md`: 6 of 6 pass, no defects.
+- Step 2 is clean. The critic review found nothing in round three and nothing left in round four. The test reviews found nothing unresolved. The manual test passes every check but those open by Rich's decision or not built: D1, Q42; D2's rest, Q44; D4, Q43; D14, Q1; D19, deferred by D41; D18; the web GUI. Q48, a rare lock on Windows, is being diagnosed.
+

@@ -129,7 +129,6 @@ def test_writes_to_one_file_at_the_same_time_all_survive(home, monkeypatch):
 
 
 @pytest.mark.req('STORE-043')
-@pytest.mark.req('BASE-045')
 def test_a_reports_recorded_size_never_falls_below_one_already_recorded(home, tmp_path):
     # Writers appending at once each record the size they saw; the last to record may have seen the file earlier.
     from metaform import home as metaform_home
