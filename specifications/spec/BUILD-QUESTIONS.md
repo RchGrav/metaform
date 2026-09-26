@@ -265,3 +265,10 @@ Ruff 0.16.9's defaults find 107 problems. The largest group, 27, is import order
 Meanwhile: ruff's defaults, nothing fixed, and the lint step fails. Recommended: ruff's defaults without `I001`, so the import style stays; and a suppression written `# noqa: <code>  <reason>`, as the code already writes them.
 Blocks: a green lint step in CI.
 
+## Step 19, CI
+
+**Q48. A write that meets `database is locked` on Windows. (STORE-006, STORE-037, QUAL-002)**
+`test_threads_of_one_process_writing_to_one_node_lose_nothing`, four threads writing 250 items each to one node, failed once in four Windows runs, on Python 3.14, with `OperationalError('database is locked')`; every other run passed, and on Linux sixteen threads writing 300 items each never fail. Each store operation opens its own connection, so the test opens and closes a thousand connections, and each one also sends `PRAGMA journal_mode=WAL`, which STORE-006 asks of every connection though WAL is kept in the file. Which statement met the lock, and why the five-second wait did not cover it, is not known.
+Meanwhile: nothing changed; the failure is rare and CI shows it. Recommended: a CI job that runs this test many times on Windows and reports SQLite's extended error code with the statement, then the fix that evidence points to, such as setting WAL only when a store is made.
+Blocks: nothing, but a lost write under contention on Windows breaks STORE-006 until it is found.
+
