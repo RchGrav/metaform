@@ -299,7 +299,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   All other commands and help, including yours, are now hidden and will not run.
   To restore them: metaform unset --modules
   ```
-  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50. `metaform set --modules workflow,memory folder=~/wt/job1` stores the same value for that folder and prints the same lines, naming the folder.
+  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50. `metaform set --modules workflow,memory folder=~/wt/job1` stores the same value for that folder and prints the same lines, naming the folder at the end of the first: `Success: updated 1 key for <folder>`, or `Success: no changes for <folder>`.
   `metaform help --modules` says: `Narrows which modules' commands this folder shows and runs. It does not enable or disable modules; use metaform enable and disable for that.`
 - Build:
   - The exact text of `set` output is owned here. Line 1: `Success: updated <n> key` when one setting changed, `Success: updated <n> keys` otherwise. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `modules` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `modules` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
@@ -431,6 +431,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   - Page: `<name>: <summary>`, blank line, description when present, `Usage` and each usage line indented two spaces, `Switches` and one row per switch with its one-line help, `Caution` for a caution verb, `Details` when present, `Examples` with each example and its meaning on the next line indented four spaces, then `See also: <names>`. Empty sections are left out.
   - Syntax: `Usage: <first usage line>`, further usage lines aligned under it, a blank line, then one row per switch including `-h, --help  Show this syntax.`
   - Module page: `<id>: <summary>`, blank line, the module's purpose, `Verbs` with one row per verb, `Settings` with one row per owned setting, `Details` when present, and `Use 'metaform help <id> <verb>' for one verb.`
+  - Rows: the left column is padded to its widest entry of at most 40 characters, plus two spaces. An entry longer than that goes on its own line with its help on the next, under the others' help, so one long usage never widens every row.
   - Switch page for a setting: `<switch>: <help>`, details, `Usage` with `metaform set <switch>` and `metaform unset <switch>`, the choices for a select, and `Owner: <owner>. Kind: <kind>. Applies to: this folder` or `everywhere`.
   - `metaform help agents` prints the composed instructions of MCP-007 for the folder.
 - Acceptance: A newly declared verb's page has exactly the sections its declaration fills, in this order.
