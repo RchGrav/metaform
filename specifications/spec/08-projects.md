@@ -131,7 +131,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - How it shows: Establishing an origin for mgm records the commit hash and copies no files. Establishing one for a photo folder copies the folder into the origin unit.
 - Build:
   - For a repository, the origin records the full commit hash of `HEAD` at the moment it is established. Its files are read with `git archive <commit>` when needed.
-  - If the working tree is dirty at that moment, the commit is still the origin, and the uncommitted changes are collected at once as the unit's first variant, PROJ-017.
+  - If the working tree is dirty at that moment, the commit is still the origin, and the uncommitted changes are collected at once as the unit's first variant, PROJ-017. Dirty means what `git status --porcelain` reports for the project's folder, so a file git calls unchanged, such as one whose line endings git normalizes, never makes a first variant.
   - For a folder, the boundary's files are copied to `origin/` in the unit's payload folder, PROJ-023.
 - Acceptance:
   - A repository origin stores its commit hash and no file payload.
@@ -312,7 +312,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
   );
   ```
 
-  A variant's payload is `variants/<variant id>/files/<path>` for whole files and `variants/<variant id>/diffs/<path>.diff` for diffs. A variant's rows and payload are written in one step: the payload goes to a temporary folder in the same unit, then the rows are committed, then the folder is renamed into place. A crash leaves either no variant or a complete one.
+  A variant's payload is `variants/<variant id>/files/<path>` for whole files and `variants/<variant id>/diffs/<path>.diff` for diffs. A variant's rows and payload are written in one step: the payload goes to a temporary folder in the same unit and is renamed to `.pending-<variant id>` inside the transaction that writes the rows, the rows are committed, then the folder is renamed into place. A read that finds the rows and a pending folder finishes the rename, and a folder left for the next variant id by an interrupted write is cleared before it is used. A crash leaves either no variant or a complete one.
 - Acceptance: A collection killed partway leaves no variant rows and no `variants/<id>/` folder.
 - Relates to: STORE-003, STORE-004, STORE-006, PROJ-013, PROJ-016, PROJ-017.
 - Status: recommended. The folder name `origins` is recommended.

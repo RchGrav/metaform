@@ -350,6 +350,8 @@ export class Scene {
     }
   }
 
+  labelled() { return [...this.tags.keys()]; }
+
   drawn() {
     const count = style => this.lines[style]?.userData.links.length || 0;
     return {calls: this.renderer.info.render.calls, elements: this.meshes.el?.count || 0, purposes: this.meshes.purpose?.count || 0,

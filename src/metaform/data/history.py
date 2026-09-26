@@ -285,34 +285,52 @@ def add_origin(project_id: str) -> Origin:
         files = _read(boundary(folder))
     listing = manifest(files)
     digest = _sha(listing)
-    with _db(project_id) as db:
-        same = db.execute('SELECT * FROM origins WHERE origin_sha256=? ORDER BY established DESC LIMIT 1',
-                          (digest,)).fetchone()
-    if same is not None:
-        return _origin(same)
-    suffix = next(f'{number:04x}' for number in range(0x10000) if not _unit(digest[:60] + f'{number:04x}').exists())
-    made = Origin(digest[:12] + suffix, digest[:60] + suffix, digest, suffix, 'repo' if commit else 'folder', commit,
-                  str(folder), home.now())
-    unit = _unit(made.mform_sha_id)
-    staging = origins_folder() / f'.{made.mform_sha_id}-{secrets.token_hex(4)}'
+    staging = origins_folder() / f'.staging-{secrets.token_hex(8)}'
     staging.mkdir(parents=True)
+    made: Origin | None = None
     try:
         (staging / 'manifest.txt').write_bytes(listing)
         if commit is None:
             for path, (data, mode) in files.items():
                 _write(staging / 'origin' / path, data, mode)
+        # One writer at a time for the project, so an origin of the same content found here is not made twice.
         with _db(project_id, write=True) as db:
+            same = db.execute('SELECT * FROM origins WHERE origin_sha256=? ORDER BY established DESC LIMIT 1',
+                              (digest,)).fetchone()
+            if same is not None:
+                return _origin(same)
+            for number in range(0x10000):
+                suffix = f'{number:04x}'
+                unit = _unit(digest[:60] + suffix)
+                if unit.exists():
+                    continue
+                try:
+                    os.replace(staging, unit)
+                except OSError:
+                    if unit.exists():  # another project's origin of the same content took this suffix meanwhile
+                        continue
+                    raise
+                made = Origin(digest[:12] + suffix, digest[:60] + suffix, digest, suffix,
+                              'repo' if commit else 'folder', commit, str(folder), home.now())
+                break
+            if made is None:
+                raise StoreError(f'Every suffix of origin {digest[:12]} is taken.', 'metaform list origins')
             db.execute('INSERT INTO origins(mform_sha_id, mform_id, origin_sha256, suffix, kind, commit_id, '
                        'source_path, established) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                       (made.mform_sha_id, made.mform_id, digest, suffix, made.kind, commit, made.source_path,
+                       (made.mform_sha_id, made.mform_id, digest, made.suffix, made.kind, commit, made.source_path,
                         made.established))
-            os.replace(staging, unit)
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-    if commit is not None and _changes(files, _read(boundary(folder))):
+    if commit is not None and _dirty(folder):
         add_variant(project_id, folder, made.mform_id)
     return made
+
+
+def _dirty(folder: Path) -> bool:
+    """Whether git sees uncommitted work under the folder, by its own rules for line endings and attributes, so a
+    file git calls unchanged never makes a first variant, PROJ-012."""
+    return bool(_git(folder, 'status', '--porcelain', '--', '.').stdout.strip())
 
 
 # ---------------------------------------------------------------- variants, PROJ-015 to PROJ-017 and PROJ-023
@@ -365,6 +383,8 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
     """Collect a folder as a variant of an origin: the files that differ from it, stored against it alone. The
     payload is written to a staging folder, the rows committed, then the folder moved into place, PROJ-023."""
     item = origin(project_id, mform_id)
+    if remove:
+        _removable(folder)  # a refusal collects nothing
     base = origin_files(item)
     entries = boundary(folder)
     current = _read(entries)
@@ -402,7 +422,14 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
                         None if blinded is None else int(bool(blinded))))
             db.executemany('INSERT INTO variant_files(mform_sha_id, variant_id, path, change, storage, sha256, mode) '
                            'VALUES (?, ?, ?, ?, ?, ?, ?)', [(item.mform_sha_id, variant_id, *row) for row in rows])
-            os.replace(staging, unit / 'variants' / variant_id)
+            pending, final = unit / 'variants' / f'.pending-{variant_id}', unit / 'variants' / variant_id
+            for stale in (pending, final):  # left by an interrupted write; no row names this id yet
+                if stale.exists():
+                    shutil.rmtree(stale)
+            os.replace(staging, pending)
+        # The rows are committed; moving the payload into place finishes the variant, and a read finishes a move a
+        # crash left undone, so a variant is either absent or complete, PROJ-023.
+        os.replace(pending, final)
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -412,13 +439,20 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
     return made
 
 
-def _remove_collected(project_id: str, folder: Path, made: Variant) -> None:
-    """Remove a collected git worktree once its variant reconstructs to what it held, PROJ-017."""
-    common = _git(folder, 'rev-parse', '--git-common-dir', check=False).stdout.decode('utf-8').strip()
-    own = _git(folder, 'rev-parse', '--git-dir', check=False).stdout.decode('utf-8').strip()
+def _removable(folder: Path) -> str:
+    """The shared git folder of a linked worktree, which Metaform may remove; any other folder is refused."""
+    common = _git(folder, 'rev-parse', '--git-common-dir', check=False).stdout.decode('utf-8').strip() \
+        if repository(folder) is not None else ''
+    own = _git(folder, 'rev-parse', '--git-dir', check=False).stdout.decode('utf-8').strip() if common else ''
     if not common or Path(folder, common).resolve() == Path(folder, own).resolve():
         raise StoreError(f'{folder} is not a git worktree, so Metaform does not remove it.',
                          f'metaform add variant {folder}')
+    return common
+
+
+def _remove_collected(project_id: str, folder: Path, made: Variant) -> None:
+    """Remove a collected git worktree once its variant reconstructs to what it held, PROJ-017."""
+    common = _removable(folder)
     rebuilt = reconstruct(project_id, made)
     if rebuilt != _read(boundary(folder)):
         raise StoreError(f'Variant {made.variant_id} does not reconstruct what {folder} holds; the folder was kept.',
@@ -503,6 +537,9 @@ def reconstruct(project_id: str, made: Variant, base: dict[str, tuple[bytes, str
     item = origin(project_id, made.mform_id)
     files = dict(base if base is not None else origin_files(item))
     payload = _unit(item.mform_sha_id) / 'variants' / made.variant_id
+    pending = payload.with_name(f'.pending-{made.variant_id}')
+    if not payload.exists() and pending.exists():
+        os.replace(pending, payload)  # a crash came between committing the rows and moving the payload in
     for change in made.files:
         if change.change == 'removed':
             files.pop(change.path, None)

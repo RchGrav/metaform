@@ -133,7 +133,7 @@ function graphData() {
   return {nodes, links};
 }
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
-  drawn: () => G ? G.drawn() : null, loaded: () => !S.loading};
+  drawn: () => G ? G.drawn() : null, labelled: () => G ? G.labelled() : [], loaded: () => !S.loading};
 
 /* ---------- 3D: a synaptic map, drawn by scene.js ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};

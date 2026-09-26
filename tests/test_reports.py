@@ -130,3 +130,27 @@ def test_a_reports_recorded_size_never_falls_below_one_already_recorded(home, tm
     store.save_report('run-1-feedback.md', 'run-1', 'feedback', 207)
     assert store.report('run-1-feedback.md').size == 717
 
+
+
+@pytest.mark.req('BASE-045')
+def test_writes_from_separate_processes_to_one_file_all_survive(home, tmp_path):
+    # Separate processes share no lock but the file's own, so this is what keeps them apart.
+    import os
+    import subprocess
+    import sys
+    from metaform import reports
+    go = tmp_path / 'go'
+    code = ('import pathlib, sys, time\n'
+            'from metaform import reports\n'
+            'go = pathlib.Path(sys.argv[1])\n'
+            'while not go.exists():\n'
+            '    time.sleep(0.01)\n'
+            "reports.write(None, 'run-2', 'feedback', sys.argv[2])\n")
+    texts = [f'Process report {number}.' for number in range(6)]
+    writers = [subprocess.Popen([sys.executable, '-c', code, str(go), text],
+                                env={**os.environ, 'METAFORM_HOME': str(home)}) for text in texts]
+    go.write_text('now', encoding='utf-8')
+    assert [writer.wait(timeout=60) for writer in writers] == [0] * len(texts)
+    content = (reports.folder(None) / 'run-2-feedback.md').read_text(encoding='utf-8')
+    assert [text for text in texts if text not in content] == []
+    assert content.count('\n## ') == len(texts) - 1

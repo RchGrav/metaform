@@ -128,9 +128,16 @@ def test_the_same_content_in_another_project_is_a_new_instance_with_the_next_suf
 
 
 @pytest.mark.req('PROJ-014')
-def test_an_origin_is_never_rewritten_and_a_new_baseline_is_a_new_unit(repo, home):
+@pytest.mark.req('PROJ-018')
+def test_an_origin_is_never_rewritten_and_a_new_baseline_is_a_new_unit(repo, home, tmp_path):
     store = Store('app')
     first = store.add_origin()
+    worker = tmp_path / 'worker'
+    git(repo, 'worktree', 'add', '-q', str(worker))
+    (worker / 'logo.png').write_bytes(b'a variant of the first origin')
+    early = store.add_variant(worker)
+    unit = home / 'origins' / first.mform_sha_id
+    kept = {path.relative_to(unit).as_posix(): path.read_bytes() for path in unit.rglob('*') if path.is_file()}
     again = store.add_origin()
     assert again.mform_sha_id == first.mform_sha_id and [origin.mform_id for origin in store.origins()] == [
         first.mform_id]
@@ -139,7 +146,11 @@ def test_an_origin_is_never_rewritten_and_a_new_baseline_is_a_new_unit(repo, hom
     second = store.add_origin()
     assert second.mform_sha_id != first.mform_sha_id and second.commit_id != first.commit_id
     assert [origin.mform_id for origin in store.origins()] == [first.mform_id, second.mform_id]
-    assert store.origins()[0] == first
+    assert store.origins()[0].mform_sha_id == first.mform_sha_id and store.origins()[0].variants == 1
+    assert {path.relative_to(unit).as_posix(): path.read_bytes() for path in unit.rglob('*') if path.is_file()} == kept
+    store.extract([early.variant_id], tmp_path / 'out', origin=first.mform_id)
+    assert (tmp_path / 'out' / 'logo.png').read_bytes() == b'a variant of the first origin'
+    assert (tmp_path / 'out' / 'src' / 'main.py').read_bytes() == b'print("hello")\n'
 
 
 @pytest.mark.req('PROJ-012')
@@ -276,6 +287,7 @@ def test_remove_takes_a_worktree_away_only_after_its_variant_holds_it_and_refuse
     with pytest.raises(StoreError) as refused:
         plain.add_variant(photos, remove=True)
     assert refused.value.next_step == f'metaform add variant {photos}' and photos.exists()
+    assert plain.variants() == ()  # a refusal collects nothing
 
 
 @pytest.mark.req('PROJ-023')
@@ -324,3 +336,72 @@ def test_the_history_commands_work_with_every_feature_module_off(run, repo, tmp_
     full = run('extract', 'v000001', str(out), cwd=repo, ok=False)
     assert full.returncode != 0 and full.stderr.splitlines()[-1] == 'Next: metaform extract v000001 <empty folder>'
     assert 'already' in run('add', 'origin', cwd=repo).stdout
+
+
+@pytest.mark.req('PROJ-012')
+def test_a_clean_tree_git_normalizes_line_endings_for_gets_no_first_variant(repo):
+    git(repo, 'config', 'core.autocrlf', 'input')
+    (repo / 'crlf.txt').write_bytes(b'one\r\ntwo\r\n')
+    git(repo, 'add', 'crlf.txt')
+    git(repo, 'commit', '-q', '-m', 'crlf')
+    assert git(repo, 'status', '--porcelain') == ''
+    store = Store('app')
+    origin = store.add_origin()
+    assert store.variants(origin=origin.mform_id) == ()
+
+
+@pytest.mark.req('PROJ-023')
+def test_a_variant_whose_rows_committed_before_its_folder_moved_is_completed_when_read(repo, worktree, home,
+                                                                                      monkeypatch, tmp_path):
+    store = Store('app')
+    origin = store.add_origin()
+    (worktree / 'logo.png').write_bytes(b'changed')
+    import metaform.data.history as history
+    real = history.os.replace
+
+    def last_step_fails(source, target):
+        if not Path(target).name.startswith('.'):
+            raise OSError('power lost')
+        real(source, target)
+    with monkeypatch.context() as patched, pytest.raises(OSError):
+        patched.setattr(history.os, 'replace', last_step_fails)
+        store.add_variant(worktree)
+    [made] = store.variants()
+    store.extract([made.variant_id], tmp_path / 'out')
+    assert (tmp_path / 'out' / 'logo.png').read_bytes() == b'changed'
+    assert sorted(path.name for path in (home / 'origins' / origin.mform_sha_id / 'variants').iterdir()) == [
+        made.variant_id]
+
+
+@pytest.mark.req('PROJ-023')
+def test_a_leftover_folder_for_the_next_variant_id_does_not_block_collecting(repo, worktree, home):
+    store = Store('app')
+    origin = store.add_origin()
+    stale = home / 'origins' / origin.mform_sha_id / 'variants' / 'v000001'
+    stale.mkdir(parents=True)
+    (stale / 'left.txt').write_text('from an interrupted write', encoding='utf-8')
+    (worktree / 'logo.png').write_bytes(b'changed')
+    made = store.add_variant(worktree)
+    assert made.variant_id == 'v000001' and not (stale / 'left.txt').exists()
+    assert [change.path for change in made.files] == ['logo.png']
+
+
+@pytest.mark.req('PROJ-014')
+def test_two_origins_added_at_once_for_the_same_content_make_one(repo):
+    import threading
+    store = Store('app')
+    start = threading.Barrier(4)
+    made, errors = [], []
+
+    def add():
+        start.wait()
+        try:
+            made.append(store.add_origin().mform_id)
+        except Exception as error:  # noqa: BLE001  the test reports any failure of a racing call
+            errors.append(error)
+    threads = [threading.Thread(target=add) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == [] and len(set(made)) == 1 and len(store.origins()) == 1

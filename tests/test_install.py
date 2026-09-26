@@ -232,6 +232,7 @@ def test_uninstalling_one_tool_keeps_the_others_and_a_users_own_later_entries(ru
     assert json.loads((machine['bin'] / 'claude.servers').read_text()) == ['metaform']
     assert skills(machine['user']) == [str(Path('.agents/skills/metaform/SKILL.md')),
                                        str(Path('.claude/skills/metaform/SKILL.md'))]
+    assert (home / 'skills' / 'metaform' / 'SKILL.md').is_file()
     refused = run('uninstall', 'cursor', cwd=machine['folder'], env=machine['env'], ok=False)
     assert refused.returncode == 2 and 'cursor' in refused.stderr
 

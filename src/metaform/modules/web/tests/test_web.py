@@ -633,10 +633,12 @@ def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whateve
     assert (drawn['elements'], drawn['purposes'], drawn['faces'], drawn['ties'], drawn['subtypes']) == (
         3030, 3000, 3000, 3000, 30)
     assert drawn['calls'] == calls and drawn['labels'] <= 80
+    before = set(page.evaluate('window.metaform.labelled()'))
     box = page.locator('#stage canvas').bounding_box()
     page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
     for step in range(12):  # zooming in and out brings other elements nearest, so other labels are chosen
         page.mouse.wheel(0, -600 if step % 2 == 0 else 450)
         page.wait_for_timeout(300)
-    assert page.evaluate('window.metaform.drawn().labels') <= 80
+    after = set(page.evaluate('window.metaform.labelled()'))
+    assert after != before and len(after) <= 80 and page.evaluate('window.metaform.drawn().labels') <= 80
     assert problems == []
