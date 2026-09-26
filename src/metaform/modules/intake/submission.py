@@ -145,9 +145,9 @@ class Writer:
             self.note(path, 'provider is missing; stored empty.')
             provider = ''
         refs = self._refs(given.get('refs'), path)
-        made = self.store.add_join(self.layer, receiver, provider, **texts, non_goal=given.get('non_goal'),
-                                   type=given.get('type', 'purpose'), refs=refs, extra=extra or None,
-                                   flag=given.get('flag'), flag_note=given.get('flag_note'))
+        made = self.store.add_join(self.layer, receiver, provider, **texts, ef=self._text(given, 'ef', path),
+                                   non_goal=given.get('non_goal'), type=given.get('type', 'purpose'), refs=refs,
+                                   extra=extra or None, flag=given.get('flag'), flag_note=given.get('flag_note'))
         self.noted(path, made.notices, {'provider': path, 'receiver': path})
         if not isinstance(made, Join):
             return
@@ -183,7 +183,8 @@ class Writer:
                             "element's address with the provider kept in its extra.")
         texts = {name: self._text(given, name, path) for name in SUBTYPE_TEXT}
         refs = self._refs(element.get('refs'), f'{path}.element')
-        made = self.store.add_subtype(self.layer, join_id, address, **texts, name=element.get('name'),
+        made = self.store.add_subtype(self.layer, join_id, address, **texts, ef=self._text(given, 'ef', path),
+                                      name=element.get('name'),
                                       name_length=element.get('name_length'), role=element.get('role'), refs=refs,
                                       extra=extra or None, flag=given.get('flag', element.get('flag')),
                                       flag_note=given.get('flag_note', element.get('flag_note')))

@@ -286,6 +286,7 @@ It covers the base database, the per-project store, the correction stack, layers
     provider    TEXT NOT NULL REFERENCES element_ids(element_id),
     purpose     TEXT,
     function    TEXT,
+    ef          TEXT CHECK(ef IN ('Function','Encounter')),  -- MAP-020
     relation    TEXT,
     observation TEXT,
     non_goal    TEXT,
@@ -332,6 +333,7 @@ It covers the base database, the per-project store, the correction stack, layers
     name_length INTEGER,
     role        TEXT CHECK(role IN ('DE','SE','NE')),
     function    TEXT,      -- its own encounter function; a subtype has no purpose, MAP-030
+    ef          TEXT CHECK(ef IN ('Function','Encounter')),  -- MAP-020
     relation    TEXT,
     observation TEXT,
     extra       TEXT,

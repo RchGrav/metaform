@@ -166,25 +166,26 @@ class Store:
                                                   refs=refs, extra=extra, flag=flag, flag_note=flag_note), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
-                 relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
+                 ef: Any = None, relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
                  refs: Iterable[Any] = (), extra: Any = None, flag: Any = None,
                  flag_note: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_join(tx, named, receiver, provider, purpose=purpose, function=function,
-                                               relation=relation, observation=observation, non_goal=non_goal,
+                                               ef=ef, relation=relation, observation=observation, non_goal=non_goal,
                                                type=type, refs=refs, extra=extra, flag=flag, flag_note=flag_note),
                                notice)
 
-    def add_subtype(self, layer: str | None, join: Any, address: Any, *, function: Any = None, relation: Any = None,
+    def add_subtype(self, layer: str | None, join: Any, address: Any, *, function: Any = None, ef: Any = None,
+                    relation: Any = None,
                     observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
                     refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
                     flag_note: Any = None) -> Subtype | Outcome:
         """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_subtype(tx, named, join, address, function=function, relation=relation,
+            return self._noted(writes.add_subtype(tx, named, join, address, function=function, ef=ef, relation=relation,
                                                   observation=observation, name=name, name_length=name_length,
                                                   role=role, refs=refs, extra=extra, purpose=purpose, flag=flag,
                                                   flag_note=flag_note), notice)

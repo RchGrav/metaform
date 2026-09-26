@@ -183,12 +183,13 @@ def build(store):
         store.add_element(intake.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
         store.add_element(intake.name, 'code.gone', name='gone', name_length=1, role='SE')
         outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', purpose='Know when food is done.',
-                               function='Counts down and rings.', relation='The timer tells the cook.',
+                               function='Counts down and rings.', ef='Function', relation='The timer tells the cook.',
                                observation='One countdown per dish.')
         store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       function='Plays a tone.', relation='The alarm rings for the timer.', observation='A piezo.')
+                       function='Plays a tone.', ef='Encounter', relation='The alarm rings for the timer.',
+                       observation='A piezo.')
         store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
-                          relation='The tick loop drives the timer.', observation='One tick a second.',
+                          ef='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
                           name='tick loop', name_length=2, role='SE')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
@@ -599,6 +600,42 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
                   'provider · audible alarm', 'receiver · cook', 'receiver · display', 'tick loop', 'Advances each countdown.',
                   'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
         assert shown in panel, shown
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-006')
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('VIEW-012')
+def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_legend_and_panel(run, web, mapped,
+                                                                                           browser):
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    color = {name: page.evaluate(f'getComputedStyle(document.documentElement).getPropertyValue("--{name}").trim()')
+             for name in ('function', 'encounter', 'k1')}
+    assert color['function'] != color['encounter']
+    expected = api(web, '/api/graph?project=proj&limit=0')[1]
+    drawn = page.evaluate('window.metaform.linkColors()')
+    for join in expected['joins']:
+        encounter = next(link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter')
+        if join['ef']:
+            assert encounter['color'] == color[join['ef'].lower()]
+        else:  # a knowledge join with no word keeps its layer's color, never one of the two
+            assert join['layer'] == 'notes' and encounter['color'] == color['k1']
+        for subtype in join['subtypes']:
+            link = next(link for link in drawn if link['target'] == 's:' + subtype['subtype_id'])
+            assert link['color'] == color[subtype['ef'].lower()]
+    assert sorted(join['ef'] or '' for join in expected['joins']) == ['', 'Encounter', 'Function']
+    assert page.locator('#map2d svg .edgePaths path.ef-function').count() == 1
+    assert page.locator('#map2d svg .edgePaths path.ef-encounter').count() == 1
+    legend = page.inner_text('#legend')
+    assert 'Function · the encounter of a functionality' in legend
+    assert 'Encounter · the functionality of the encounter' in legend
+    kitchen = next(entry['element']['element_id'] for entry in expected['elements']
+                   if entry['element']['address'] == 'code.timer.kitchen')
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    assert sorted(page.evaluate('[...document.querySelectorAll("#p-object .join .ef")].map(e => e.textContent)')) \
+        == ['Encounter', 'Function', 'Function']
     assert problems == []
 
 

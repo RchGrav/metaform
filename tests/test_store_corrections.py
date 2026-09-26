@@ -332,3 +332,48 @@ def test_the_peel_preview_names_what_removing_a_correction_layer_would_change_an
     assert all(found[key] == 'the move removed it' for key in found if key[2] == 'comes back')
     assert ('item', 'rings twice', 'becomes orphaned') in found
     assert store.peel_preview('notes').changes == () and store.peel_preview('notes').notices
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-017')
+def test_a_joins_and_a_subtypes_ef_is_kept_through_every_correction_and_relocation(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'code.a', role='DE')
+        store.add_element(base.name, 'code.b', role='SE')
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Encounter', relation='r',
+                              observation='o')
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='Function',
+                                 relation='r', observation='o', role='SE')
+    assert (join.ef, tick.ef, join.notices, tick.notices) == ('Encounter', 'Function', (), ())
+    fix = correction(store, 'fix-1')
+    store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
+    store.correct(fix.name, tick.subtype_id, {'ef': 'Encounter'}, reason='relabel')
+    store.finish(fix.name)
+    kept = store.joins('code.a').results[0]
+    assert (kept.purpose, kept.ef, store.subtypes(kept.join_id).results[0].ef) == ('q', 'Encounter', 'Encounter')
+    move = correction(store, 'fix-2')
+    store.correct(move.name, store.element('code.a').element_id, {'address': 'code.c'}, reason='moved')
+    store.finish(move.name)
+    removed = store.history(join.join_id).results[-1]
+    assert (removed.op, removed.fields['ef']) == ('remove', 'Encounter')
+    removed_tick = store.history(tick.subtype_id).results[-1]
+    assert (removed_tick.op, removed_tick.fields['ef']) == ('remove', 'Encounter')
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-044')
+def test_ef_holds_only_function_or_encounter_and_any_other_word_is_kept_in_extra_with_a_notice(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'code.a', role='DE')
+        store.add_element(base.name, 'code.b', role='SE')
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Both', relation='r',
+                              observation='o')
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='function',
+                                 relation='r', observation='o', role='SE')
+    assert (join.ef, join.extra, [notice.where for notice in join.notices]) == (None, {'ef': 'Both'}, ['ef'])
+    assert (tick.ef, tick.extra, [notice.where for notice in tick.notices]) == (None, {'ef': 'function'}, ['ef'])
+    stored = store.joins('code.a').results[0]
+    stored_tick = store.subtypes(stored.join_id).results[0]
+    assert (stored.ef, stored.extra, stored_tick.ef, stored_tick.extra) == (None, {'ef': 'Both'}, None, {'ef': 'function'})

@@ -8,6 +8,7 @@
           "type": "purpose", "provider": "code.timer.kitchen",
           "purpose": "Know when each dish is done without watching the clock.",
           "function": "The timer counts down each named dish and rings when one reaches zero.",
+          "ef": "Function",
           "relation": "The kitchen timer tells the cook when a dish is done.",
           "observation": "A kitchen timer counts down a set time.",
           "non_goal": "Plan the meal.",
@@ -23,6 +24,7 @@
           "provider": "code.alarm.audible",
           "purpose": "Get the cook's attention the moment a countdown ends.",
           "function": "The alarm plays a tone on the speaker until the cook presses stop.",
+          "ef": "Encounter",
           "relation": "The alarm rings for the timer.",
           "observation": "A piezo speaker driven by one GPIO pin.",
           "refs": [{"key": "path", "value": "src/alarm.c"}, {"key": "path", "value": "src/pins.h"}],
@@ -30,6 +32,7 @@
             {
               "provider": "code.loop.tick",
               "function": "tick_all subtracts one second from each running countdown.",
+              "ef": "Function",
               "relation": "The tick loop advances every running countdown.",
               "observation": "One timer interrupt per second.",
               "element": {"namespace_address": "code.loop.tick", "name_length": 2, "role": "SE",

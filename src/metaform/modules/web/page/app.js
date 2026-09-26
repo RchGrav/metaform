@@ -119,17 +119,21 @@ function graphData() {
     const purpose = 'p:' + join.join_id;
     nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, flag: join.flag});
     links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id});
-    links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id});
+    links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
+      ef: join.ef});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.name || subtype.address, flag: subtype.flag});
-      links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id});
+      links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id,
+        ef: subtype.ef});
     }
   }
   return {nodes, links};
 }
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
+  linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
+    target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor};
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
@@ -140,10 +144,12 @@ function colorOf(node) {
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
+/* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
+const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
-  if (colorVar(link.layer) !== '--intake') return layerColor(link.layer);
-  return link.k === 'encounter' ? css('--signal') : css('--intake');
+  if (EF[link.ef]) return css(EF[link.ef]);
+  return layerColor(link.layer);
 }
 let G = null;
 function start3D() {
@@ -234,7 +240,10 @@ addEventListener('resize', resize);
 
 function renderLegend() {
   const inView = new Set([...S.elements.values()].map(entry => entry.element.layer).concat(S.joins.map(join => join.layer)));
-  const rows = [['--intake', 'purpose · receiver to join', ''], ['--signal', 'encounter · join to provider', ''],
+  const words = new Set(S.joins.flatMap(join => [join.ef, ...(join.subtypes || []).map(subtype => subtype.ef)]));
+  const rows = [['--intake', 'purpose · receiver to join', ''],
+    ...(words.has('Function') ? [['--function', 'Function · the encounter of a functionality', '']] : []),
+    ...(words.has('Encounter') ? [['--encounter', 'Encounter · the functionality of the encounter', '']] : []),
     ['--tree', 'namespace', ''], ...[...inView].map(name => [colorVar(name), name, ''])];
   const legend = $('#legend');
   fill(legend, ...rows.map(([color, text, kind]) =>
@@ -300,6 +309,7 @@ async function build2D() {
   }
   M.edges = drawn.map((join, index) => ({join, path: M.svg.querySelector(`[data-id="e${index}"]`)
     || M.svg.querySelectorAll('.edgePaths path')[index]}));
+  for (const edge of M.edges) if (EF[edge.join.ef]) edge.path?.classList.add(`ef-${edge.join.ef.toLowerCase()}`);
   const scene = M.svg.querySelector('g').getBBox();
   M.fit = {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
   setCam(frame(M.fit));
@@ -416,6 +426,9 @@ function refsOf(refs) {
 function flagPill(thing) {
   return thing.flag ? h('span', {class: `pill flag-${thing.flag}`, title: thing.flag_note || null}, thing.flag) : null;
 }
+function efPill(thing) {
+  return EF[thing.ef] ? h('span', {class: 'pill ef', style: {'--c': `var(${EF[thing.ef]})`}}, thing.ef) : null;
+}
 function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name); }
 function elementLink(id, address) {
   const entry = S.elements.get(id);
@@ -429,14 +442,14 @@ function joinCard(join, side) {
     h('div', {class: 'row'}, h('span', {class: 'dir'}, `${side} · `, elementLink(other, otherAddress)),
       h('span', {class: 'lay', style: {'--c': `var(${colorVar(join.layer)})`}}, join.layer)),
     join.purpose ? h('p', {}, join.purpose) : null,
-    join.function ? h('p', {class: 'fn'}, join.function) : null,
+    join.function ? h('p', {class: 'fn'}, efPill(join), join.function) : null,
     join.relation ? h('p', {class: 'fn'}, join.relation) : null,
     join.observation ? h('p', {class: 'obs'}, join.observation) : null,
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
     join.flag ? h('div', {class: 'pills'}, flagPill(join), join.flag_note ? h('span', {class: 'empty'}, join.flag_note) : null) : null,
     refsOf(join.refs),
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('b', {}, subtype.name || subtype.address), ' ',
-      h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, subtype.function) : null,
+      h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
       subtype.observation ? h('div', {}, subtype.observation) : null, flagPill(subtype), refsOf(subtype.refs))));
 }
 function itemText(value) {

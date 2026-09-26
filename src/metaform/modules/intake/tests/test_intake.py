@@ -125,6 +125,7 @@ def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
     tick = store.subtypes(alarm_join.join_id).results[0]
     assert (tick.address, tick.function, tick.role, tick.name) == (
         'code.loop.tick', 'tick_all subtracts one second from each running countdown.', 'SE', 'one-second tick loop')
+    assert (cook_join.ef, alarm_join.ef, tick.ef) == ('Function', 'Encounter', 'Function')
     assert store.element('code.loop.tick') is None
     layer = next(item for item in store.layers().results if item.name == report['layer'])
     assert (layer.kind, layer.mutable, layer.hideable, layer.result_id) == ('intake', False, False,
@@ -135,6 +136,42 @@ def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
     assert provenance.prompt is None  # the Canonical Intake's purpose never changes, so no copy is kept, STORE-016
     document = export_document(['timer'], layers=[report['layer']])['projects'][0]['metaforms'][0]
     assert len(document['elements']) == 3 and len(document['joins']) == 2 and len(document['subtypes']) == 1
+    assert sorted(row['ef'] for row in document['joins']) == ['Encounter', 'Function']
+    assert [row['ef'] for row in document['subtypes']] == ['Function']
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-039')
+def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or_encounter():
+    """Each EF is named Function when it is the encounter of a functionality, Encounter when it is the functionality
+    of the encounter, Rich 2026-09-26; a closed choice of two, on top-level and subtype joins alike."""
+    import xml.etree.ElementTree as ET
+    from metaform.modules.intake.schema import JOIN, SUBTYPE
+    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
+    join = root.find('.//schema//join')
+    assert join is not None and join.get('ef') == '[Function|Encounter]'
+    inner = join.find('join')
+    assert inner is not None and inner.get('ef') == '[Function|Encounter]'
+    step = root.find(".//step[@n='4']").get('text')
+    assert 'Function if it is the encounter of a functionality' in step
+    assert 'Encounter if it is the functionality of the encounter' in step
+    for schema in (JOIN, SUBTYPE):
+        assert 'ef' in schema['required'] and schema['properties']['ef']['enum'] == ['Function', 'Encounter']
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-044')
+def test_a_join_or_subtype_join_without_ef_is_stored_and_named_in_a_notice(run, project, tmp_path):
+    given = copy.deepcopy(FIXTURE)
+    del given['elements'][0]['joins'][0]['ef']
+    del given['elements'][1]['joins'][0]['subtypes'][0]['ef']
+    report = submit(run, project, given, tmp_path)
+    found = notices(report)
+    assert re.match(r'ef is missing\b', found['elements[0].joins[0]'])
+    assert re.match(r'ef is missing\b', found['elements[1].joins[0].subtypes[0]'])
+    store = Store('timer')
+    cook_join = store.joins('stakeholder.cook.home').results[0]
+    assert cook_join.ef is None and store.subtypes(store.joins('code.timer.kitchen').results[0].join_id).results[0].ef is None
 
 
 @pytest.mark.req('BASE-039')
@@ -297,7 +334,7 @@ def test_two_elements_with_one_address_are_one_element_holding_both_joins(run, p
     doubled = copy.deepcopy(FIXTURE)
     doubled['elements'].append({'namespace_address': 'stakeholder.cook.home', 'role': 'VE', 'joins': [
         {'provider': 'code.alarm.audible', 'purpose': 'Hear it from the next room.', 'function': 'Rings loudly.',
-         'relation': 'The alarm reaches the cook.', 'observation': 'Loud.'}]})
+         'ef': 'Encounter', 'relation': 'The alarm reaches the cook.', 'observation': 'Loud.'}]})
     report = submit(run, project, doubled, tmp_path)
     assert report['notices'] == []
     joins = Store('timer').joins('stakeholder.cook.home').results
@@ -329,7 +366,7 @@ def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):
         {'namespace_address': 'media.photo.product', 'role': 'AUE', 'name': 'kitchen photos'},
         {'namespace_address': 'stakeholder.seller', 'role': 'VE', 'joins': [
             {'provider': 'media.photo.subject', 'purpose': 'Show the object at its best.', 'function': 'Frames it.',
-             'relation': 'The subject carries the sale.', 'observation': 'One mixer, centred.'}]},
+             'ef': 'Encounter', 'relation': 'The subject carries the sale.', 'observation': 'One mixer, centred.'}]},
         {'namespace_address': 'media.photo.subject', 'role': 'DE'}]}
     submit(run, photos, document, tmp_path)
     store = Store('photos')

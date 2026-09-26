@@ -104,7 +104,7 @@ def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False, 
     flag, note = finding(tx, 'join', str(row['join_id']), res, receiver_address)
     return Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
-                row['purpose'], row['function'], row['relation'], row['observation'], row['non_goal'],
+                row['purpose'], row['function'], row['ef'], row['relation'], row['observation'], row['non_goal'],
                 read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned, flag, note)
 
 
@@ -125,7 +125,7 @@ def subtype(tx: Tx, row: Row, join_id: str, layers: dict[str, LayerRow], res: Re
     flag, note = finding(tx, 'subtype', str(row['subtype_id']), res, str(row['address']))
     return Subtype(str(row['subtype_id']), join_id, layer_id, layers[layer_id].name, str(row['address']),
                    reading(str(row['address'])), row['name'], row['name_length'], row['role'], row['function'],
-                   row['relation'], row['observation'], read_refs(tx.db, 'subtype', row['row']),
+                   row['ef'], row['relation'], row['observation'], read_refs(tx.db, 'subtype', row['row']),
                    decode_extra(row['extra']), flag, note)
 
 

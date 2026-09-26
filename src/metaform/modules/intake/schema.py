@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from metaform.data import EF_WORDS
 from metaform.data import FLAGS as FLAG_NAMES
 from metaform.data import ROLES as ROLE_NAMES
 from metaform.data import SUBTYPE_ROLES as SUBTYPE_ROLE_NAMES
@@ -22,6 +23,9 @@ Schema = dict[str, Any]
 FLAG: Schema = {'type': 'string', 'enum': FLAGS,
                 'description': 'missing, broken or cruft; leave it out for a working object, MAP-046.'}
 FLAG_NOTE: Schema = {'type': 'string', 'description': 'A short note on the finding.'}
+EF: Schema = {'type': 'string', 'enum': list(EF_WORDS),
+              'description': 'Function if it is the encounter of a functionality, Encounter if it is the functionality '
+                             'of the encounter.'}
 REF: Schema = {'type': 'object', 'required': ['key', 'value'],
                'properties': {'key': {'type': 'string'}, 'value': {'type': 'string'}}}
 REFS: Schema = {'type': 'array', 'items': REF}
@@ -30,13 +34,13 @@ SUBTYPE_ELEMENT: Schema = {'type': 'object', 'required': ['namespace_address', '
                                           'name_length': {'type': 'integer', 'minimum': 1},
                                           'role': {'type': 'string', 'enum': SUBTYPE_ROLES}, 'name': {'type': 'string'},
                                           'refs': REFS}}
-SUBTYPE: Schema = {'type': 'object', 'required': ['provider', 'function', 'relation', 'observation', 'element'],
-                   'properties': {'provider': {'type': 'string'}, 'function': {'type': 'string'},
+SUBTYPE: Schema = {'type': 'object', 'required': ['provider', 'function', 'ef', 'relation', 'observation', 'element'],
+                   'properties': {'provider': {'type': 'string'}, 'function': {'type': 'string'}, 'ef': EF,
                                   'relation': {'type': 'string'}, 'observation': {'type': 'string'},
                                   'flag': FLAG, 'flag_note': FLAG_NOTE, 'element': SUBTYPE_ELEMENT}}
-JOIN: Schema = {'type': 'object', 'required': ['provider', 'purpose', 'function', 'relation', 'observation'],
+JOIN: Schema = {'type': 'object', 'required': ['provider', 'purpose', 'function', 'ef', 'relation', 'observation'],
                 'properties': {'type': {'type': 'string', 'enum': ['purpose']}, 'provider': {'type': 'string'},
-                               'purpose': {'type': 'string'}, 'function': {'type': 'string'},
+                               'purpose': {'type': 'string'}, 'function': {'type': 'string'}, 'ef': EF,
                                'relation': {'type': 'string'}, 'observation': {'type': 'string'},
                                'non_goal': {'type': 'string'}, 'flag': FLAG, 'flag_note': FLAG_NOTE, 'refs': REFS,
                                'subtypes': {'type': 'array', 'items': SUBTYPE}}}

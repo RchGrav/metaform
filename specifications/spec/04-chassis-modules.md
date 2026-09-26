@@ -484,10 +484,10 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
       - `joins`: array, optional, of join objects, each held by this element as receiver:
         - `type`: the string `purpose`, optional, default `purpose`.
         - `provider`: string, required, the namespace address of the Providing Element.
-        - `purpose`, `function`, `relation`, `observation`: strings, required. `non_goal`: string, optional.
+        - `purpose`, `function`, `relation`, `observation`: strings, required. `ef`: one of `Function`, `Encounter`, required, MAP-020. `non_goal`: string, optional.
         - `flag` and `flag_note`: as on elements, MAP-046.
         - `refs`: as above.
-        - `subtypes`: array, optional, of internal subtype joins. Each has `provider`, string, required, the namespace address of the absorbed subtype; `function`, `relation`, `observation`, strings, required; and `element`, required, an object with `namespace_address` required, `name_length`, `role` one of `DE`, `SE`, `NE` required, `name`, and `refs`. A subtype join has no `purpose` property: the parent join carries it.
+        - `subtypes`: array, optional, of internal subtype joins. Each has `provider`, string, required, the namespace address of the absorbed subtype; `function`, `relation`, `observation`, strings, required; `ef`, one of `Function`, `Encounter`, required; and `element`, required, an object with `namespace_address` required, `name_length`, `role` one of `DE`, `SE`, `NE` required, `name`, and `refs`. A subtype join has no `purpose` property: the parent join carries it.
   - On the CLI the same fields are named arguments: `id=<id>` and `elements=<path>`, where the path is a JSON file holding the `elements` array, or `-` for standard input, because nested arrays cannot be written as flat arguments.
   - Intake is never gated or judged; only the resulting map may be graded, Canonical Intake constraint. Nothing in a submission is refused for its content, BASE-044. Each condition below is stored as given and named in a notice with its path in the submission:
     - an address not in the form of MAP-010: stored as given;
@@ -495,6 +495,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
     - a join whose provider is its own receiver, or whose provider is a subtype's address: stored as given, D82; a correction layer or a reviewer deals with it;
     - a subtype join carrying a `purpose`: stored, with the purpose in the subtype's `extra`;
     - a subtype join whose `provider` differs from its `element`'s `namespace_address`: stored at the element's address, with the provider kept in `extra`;
+    - an `ef` that is not `Function` or `Encounter`: the object is stored without it, with the value kept in `extra`, MAP-020;
     - a missing required field: the object is stored with the field empty.
     Two elements in one submission with the same `namespace_address` are the same element, MAP-015: their joins are combined under it, with no notice.
   - A call that cannot be read at all, such as `elements` that is not an array or not JSON, stores nothing and returns one notice, not a retry: save the result as it stands with the report through the `feedback` tool's `shape` field, BASE-045, so it can be reviewed and fixed. Nothing is retried.

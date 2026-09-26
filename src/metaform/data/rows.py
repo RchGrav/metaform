@@ -24,8 +24,8 @@ from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('address', 'extra'),
-    'join': ('provider', 'type', 'purpose', 'function', 'relation', 'observation', 'non_goal', 'extra'),
-    'subtype': ('address', 'name', 'name_length', 'role', 'function', 'relation', 'observation', 'extra'),
+    'join': ('provider', 'type', 'purpose', 'function', 'ef', 'relation', 'observation', 'non_goal', 'extra'),
+    'subtype': ('address', 'name', 'name_length', 'role', 'function', 'ef', 'relation', 'observation', 'extra'),
     'item': ('value', 'link', 'extra'),
     'property': ('element', 'value', 'extra'),
 }

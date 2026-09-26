@@ -20,7 +20,7 @@ from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
 from .ids import as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
-from .records import (ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
+from .records import (EF_WORDS, ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
                       Version)
 from .selection import LayerRow, all_layers
 from .session import Tx
@@ -104,7 +104,7 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 
 
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
-             relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
+             ef: Any = None, relation: Any = None, observation: Any = None, non_goal: Any = None, type: Any = 'purpose',
              refs: Iterable[Any] = (), extra: Any = None, flag: Any = None, flag_note: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010."""
     pairs = refs_list(refs)
@@ -118,6 +118,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
         ('non_goal', non_goal))}
     kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
+    ef, kept_extra = _ef(ef, kept_extra, "the join's", notices)
     receiver_id = rows.element_at(tx, receiver, found, 'receiver', notices)
     provider_id = rows.element_at(tx, provider, found, 'provider', notices)
     if receiver_id == provider_id:
@@ -128,9 +129,9 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
     tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, relation, observation, '
-        'non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'],
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, observation, '
+        'non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'], ef,
          texts['relation'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
          rows.top(tx)))
     row = int(cursor.lastrowid or 0)
@@ -144,7 +145,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
     return _with(record, notices)
 
 
-def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, relation: Any = None,
+def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, ef: Any = None,
+                relation: Any = None,
                 observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
                 refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
                 flag_note: Any = None) -> Subtype | Outcome:
@@ -173,6 +175,7 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
         name_length = None
     if moved:
         kept_extra = {**(kept_extra or {}), **moved}
+    ef, kept_extra = _ef(ef, kept_extra, "the subtype's", notices)
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('function', function), ('relation', relation), ('observation', observation), ('name', name))}
     join_id = _join_of(tx, join, found)
@@ -188,9 +191,9 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     rows.identity(tx, subtype_id, 'subtype')
     rows.types(tx, address)
     cursor = tx.db.execute(
-        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, relation, observation, '
-        'extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'], texts['relation'],
+        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, ef, relation, '
+        'observation, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'], ef, texts['relation'],
          texts['observation'], encode_extra(kept_extra, address)))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':
@@ -202,6 +205,15 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     record = views.subtype(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(), join_id,
                            all_layers(tx.db))
     return _with(record, notices)
+
+
+def _ef(ef: Any, extra: dict[str, Any] | None, owner: str,
+        notices: list[Notice]) -> tuple[str | None, dict[str, Any] | None]:
+    """The EF's word, Function or Encounter; any other value is kept in the extra and named, MAP-020."""
+    if ef is None or ef in EF_WORDS:
+        return ef, extra
+    notices.append(Notice('ef', f"{ef!r} is not Function or Encounter; it was kept in {owner} extra."))
+    return None, {**(extra or {}), 'ef': ef}
 
 
 def _join_of(tx: Tx, join: Any, found: LayerRow) -> str:
@@ -411,6 +423,9 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
         elif key == 'role' and value is not None and value not in SUBTYPE_ROLES:
             moved['role'] = value
             notices.append(Notice('role', f"{value!r} is not DE, SE or NE; it was kept in the subtype's extra."))
+        elif key == 'ef' and value is not None and value not in EF_WORDS:
+            moved['ef'] = value
+            notices.append(Notice('ef', f'{value!r} is not Function or Encounter; it was kept in the extra.'))
         elif key == 'name_length' and value is not None and not rows.whole_number(value):
             moved['name_length'] = value
             notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the extra."))

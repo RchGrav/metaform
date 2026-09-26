@@ -22,6 +22,7 @@ LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # a subtype's role, MAP-030
+EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 FLAGS = ('missing', 'broken', 'cruft')  # an intake finding, MAP-046
 
 T = TypeVar('T')
@@ -154,6 +155,7 @@ class Join(Record):
     provider_address: str | None
     purpose: str | None
     function: str | None
+    ef: str | None
     relation: str | None
     observation: str | None
     non_goal: str | None
@@ -178,6 +180,7 @@ class Subtype(Record):
     name_length: int | None
     role: str | None
     function: str | None
+    ef: str | None
     relation: str | None
     observation: str | None
     refs: tuple[Ref, ...] = ()
