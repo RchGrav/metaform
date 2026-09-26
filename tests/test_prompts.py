@@ -54,15 +54,15 @@ def test_a_layer_stays_linked_to_the_version_it_was_made_from(home):
 @pytest.mark.req('STORE-044')
 def test_a_shipped_prompt_flows_in_until_someone_saves_an_edit(home):
     from metaform.data import prompts
-    first = prompts.shipped('canonical-intake', 'xml', '<process>A</process>')
+    first = prompts.shipped('practices', 'xml', '<process>A</process>')
     assert (first.number, first.origin) == (1, 'shipped')
-    assert prompts.shipped('canonical-intake', 'xml', '<process>A</process>').version_id == first.version_id
-    second = prompts.shipped('canonical-intake', 'xml', '<process>B</process>')
+    assert prompts.shipped('practices', 'xml', '<process>A</process>').version_id == first.version_id
+    second = prompts.shipped('practices', 'xml', '<process>B</process>')
     assert (second.number, second.origin, second.parent_id) == (2, 'shipped', first.version_id)
-    edited = prompts.add_prompt_version('canonical-intake', '<process>B, edited</process>', 2)
-    kept = prompts.shipped('canonical-intake', 'xml', '<process>C</process>')
+    edited = prompts.add_prompt_version('practices', '<process>B, edited</process>', 2)
+    kept = prompts.shipped('practices', 'xml', '<process>C</process>')
     assert kept.version_id == edited.version_id and kept.text == '<process>B, edited</process>'
-    assert [version.number for version in prompts.prompt_versions('canonical-intake')] == [3, 2, 1]
+    assert [version.number for version in prompts.prompt_versions('practices')] == [3, 2, 1]
 
 
 @pytest.mark.req('STORE-044')

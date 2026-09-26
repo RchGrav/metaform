@@ -350,23 +350,22 @@ def test_a_test_intake_file_is_served_only_when_the_setting_names_it(run, projec
 
 @pytest.mark.req('STORE-044')
 @pytest.mark.req('BASE-039')
-def test_the_intake_serves_the_newest_stored_version_and_links_its_layer_to_it(run, home, project, tmp_path):
+def test_the_intake_serves_the_shipped_file_and_keeps_nothing_in_the_prompt_store(run, home, project, tmp_path):
+    """The Canonical Intake is the one prompt that is not edited: it is served as shipped, never kept as a stored
+    prompt, and a stored prompt of the same name does not reach it, Rich 2026-09-26."""
     from metaform.data import prompts
     first = run('intake', 'prompt', cwd=project).stdout
-    stored = prompts.prompt_version('canonical-intake')
-    assert (stored.number, stored.origin, stored.format) == (1, 'shipped', 'xml')
-    assert stored.text == RESOURCE.read_text(encoding='utf-8')
-    assert without_target(first).startswith(without_target(stored.text))
-    edited = stored.text.replace('<process', '<!-- edited in the viewer -->\n<process', 1)
-    second = prompts.add_prompt_version('canonical-intake', edited, 1)
-    assert '<!-- edited in the viewer -->' in run('intake', 'prompt', cwd=project).stdout
+    assert without_target(first).startswith(without_target(RESOURCE.read_text(encoding='utf-8')))
+    assert prompts.prompts() == ()
+    prompts.add_prompt('canonical-intake', 'xml', '<!-- edited in the viewer -->\n<process/>\n')
+    assert run('intake', 'prompt', cwd=project).stdout == first
     result = submit(run, project, FIXTURE, tmp_path)
     store = Store('timer')
     layer = store.layer_ref(result['layer'])
-    assert [use.layer_id for use in prompts.layers_by_prompt_version(second.version_id)] == [layer.layer_id]
-    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id).number == 2
-    shown = store.provenance(result['layer']).prompt_version
-    assert (shown.name, shown.number, shown.version_id) == ('canonical-intake', 2, second.version_id)
+    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
+    provenance = store.provenance(result['layer'])
+    assert provenance.prompt_version is None and provenance.prompt == first
+    assert [(prompt.name, prompt.newest) for prompt in prompts.prompts()] == [('canonical-intake', 1)]
 
 
 @pytest.mark.req('STORE-044')

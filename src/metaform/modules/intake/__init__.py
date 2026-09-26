@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import settings
-from metaform.data import Store, prompts
+from metaform.data import Store
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
 from .schema import ELEMENTS
@@ -31,7 +31,6 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-PROMPT = 'canonical-intake'  # the stored prompt the shipped file becomes, STORE-044
 ALWAYS = ('Submit the result with intake_submit, or metaform intake submit on the command line. If you cannot '
           'continue, stop and submit a trouble report with the feedback tool, attaching what you have in its shape '
           'field; do not retry.')
@@ -70,24 +69,15 @@ def footer(ctx: Context) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def _source(ctx: Context) -> tuple[str, prompts.PromptVersion | None]:
-    """The intake text: the `--intake-file` as it is, or the newest stored version of the Canonical Intake, which
-    is the shipped file until someone saves an edit, STORE-044."""
-    chosen = ctx.setting('intake_file')
-    if chosen:
-        try:
-            return Path(chosen).read_text(encoding='utf-8'), None
-        except OSError:
-            raise Stop(f'No intake file at {chosen}.', 'metaform unset --intake-file') from None
-    version = prompts.shipped(PROMPT, 'xml', RESOURCE.read_text(encoding='utf-8'))
-    return version.text, version
-
-
-def served(ctx: Context, text: str | None = None) -> str:
+def served(ctx: Context) -> str:
     """The intake text exactly as stored, with its target filled, then the submit lines, BASE-039."""
     store = ctx.require_store()
-    if text is None:
-        text = _source(ctx)[0]
+    chosen = ctx.setting('intake_file')
+    source: Any = Path(chosen) if chosen else RESOURCE
+    try:
+        text = source.read_text(encoding='utf-8')
+    except OSError:
+        raise Stop(f'No intake file at {source}.', 'metaform unset --intake-file') from None
     record = store.project()
     match = TARGET.search(text)
     if match is not None:
@@ -160,8 +150,7 @@ def submit(ctx: Context) -> Any:
     target, previous, metaform, fresh = _target(store, project)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     name = f'intake-{stamp}-{secrets.token_hex(3)}'
-    text, version = _source(ctx)
-    provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': served(ctx, text),
+    provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': served(ctx),
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role'), 'blinded': ctx.nouns.get('blinded')}
     writer = Writer(target, name)
     try:
@@ -182,11 +171,9 @@ def submit(ctx: Context) -> Any:
                                                         f'This one was stored as the new active metaform {metaform}; '
                                                         f'the earlier one is kept whole. To switch back: metaform '
                                                         f'activate metaform {previous}'})
-    if version is not None:
-        prompts.record_use(version.version_id, project, layer.metaform_id, layer.layer_id)
-    for kind, said in (('report', report), ('feedback', feedback)):
-        if said is not None:
-            save_report(project, layer.layer_id, kind, said, store=target, layer=layer.layer_id)
+    for kind, text in (('report', report), ('feedback', feedback)):
+        if text is not None:
+            save_report(project, layer.layer_id, kind, text, store=target, layer=layer.layer_id)
     findings = len(target.findings(layer=name, raw=True, limit=0).results)
     counts = writer.counts
     return {'layer': name, 'project': project, 'metaform': metaform, 'elements': counts.elements,
