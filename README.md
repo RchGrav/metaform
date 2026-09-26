@@ -260,4 +260,4 @@ This documentation describes the supplied `chassis` source edition at commit `ce
 
 Inference Metaform is the independently developed work of **Rich**. The method grew through six years of hands-on work with AI models, including self-authored context management and semantic rules for inference predating GPT-3's completions API. Rich manually exercised and measured the method and spent six months refining and encoding the present design.
 
-The research connections in the preprint are subsequent comparisons, not the origin of the design.
+The research connections in the preprint are subsequent comparisons, not the origin of the design. The project is intended for release with its operative intake. Intake integrity concerns preserving how the method operates; it does not depend on a claim that the procedure is unpublished.
