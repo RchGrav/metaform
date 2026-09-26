@@ -98,7 +98,7 @@ def where(tx: Tx, res: Resolver | None, address: str) -> Where | None:
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
-    """The next types up the tree, toward the leaves; the empty address reads the top types, which have no parent."""
+    """The next types toward the leaves; the empty address reads the root types, which have no parent."""
     def fetch(cursor: str | None, count: int) -> list[Row]:
         return tx.db.execute('SELECT address AS key FROM types WHERE parent IS ? AND address > ? ORDER BY address '
                              'LIMIT ?', (address or None, cursor or '', count)).fetchall()
@@ -224,7 +224,8 @@ def node(tx: Tx, res: Resolver, target: Node, raw: bool) -> NodeView | None:
 
 
 def context(tx: Tx, res: Resolver, address: str, limit: int, after: str | None) -> ContextView:
-    """The properties that apply at an address, and those visible there from above, STORE-035."""
+    """The properties that apply at an address, and those attached toward the leaves from it that are visible
+    there, STORE-035."""
     applying: list[Property] = []
     for prefix in prefixes(address):
         found = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (prefix,)).fetchone()

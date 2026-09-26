@@ -155,7 +155,7 @@ def test_a_mask_stops_a_layer_flowing_into_its_branch(store):
 
 @pytest.mark.req('STORE-019')
 @pytest.mark.req('LAYER-007')
-def test_a_select_below_a_mask_turns_the_layer_on_again_there_and_above(store):
+def test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk(store):
     layer = knowledge(store, 'map-els')
     for address in ('code.engine.renderer', 'code.engine.physics', 'code.engine'):
         store.add_element(layer.name, address)

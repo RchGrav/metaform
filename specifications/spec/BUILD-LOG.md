@@ -332,3 +332,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - `intake_submit` requires `verb` on joins and subtype joins, as a string: the agent's word. The store has a `verb` column on `joins` and `subtypes`, stored as given; a missing one is named. Reads, corrections, relocation and export carry it. MAP-020, MAP-030, MAP-040, BASE-039 and the tables say so.
 - Tests added, each seen failing first: the verb through corrections and relocation; the intake text and tool asking for it with the subject rule; a missing verb named. The intake fixture's joins carry verbs. Adding the verb test first split the missing-ef test in two by mistake; its lines are back in place.
 
+## Step 30: the namespace's direction named by the tree's parts
+
+- Rich, 2026-09-26, after the reference's implementation map read the select help's "and above it" as toward the parent: "I dont care if its up or down I just want it not confused", "In my head I picture it as a tree", "the more natural way to present it is upside down". Computing draws trees root at the top, so a bare "above" reads as toward the trunk while Metaform meant toward the leaves. The spec names the direction each time; the help agents read did not.
+- The map module's `select`, `mask`, `context` and `children` helps, and the matching docstrings in the store, now say "toward the leaves" with no above or up; the empty address reads the root types, not the top types. Our own test title mixed both conventions, calling a select on a child "below" the mask and the layer on "there and above"; it is now `test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk`.
+- The spec's "above ... toward the leaves" and the Foundation's "higher in the tree" are unchanged.
+

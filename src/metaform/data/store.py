@@ -288,7 +288,7 @@ class Store:
             return reads.where(tx, None if raw else self._resolver(tx, selection), address)
 
     def children(self, address: str, *, limit: int = LIMIT, after: str | None = None) -> Page[str]:
-        """The next types up the tree, toward the leaves."""
+        """The next types toward the leaves."""
         with self._read() as tx:
             return reads.children(tx, address, limit, after)
 
@@ -310,7 +310,8 @@ class Store:
 
     def context(self, address: str, *, selection: Sequence[str] | None = None, limit: int = LIMIT,
                 after: str | None = None) -> ContextView:
-        """The properties that apply at an address, and those visible there from above, STORE-035."""
+        """The properties that apply at an address, and those attached toward the leaves from it that are visible
+        there, STORE-035."""
         with self._read() as tx:
             return reads.context(tx, self._resolver(tx, selection), address, limit, after)
 

@@ -302,7 +302,8 @@ class NodeView(Record):
 
 @dataclass(frozen=True)
 class ContextView(Record):
-    """The properties that apply at an address, and those visible there from above, STORE-035."""
+    """The properties that apply at an address, and those attached toward the leaves from it that are visible
+    there, STORE-035."""
     address: str
     applying: tuple[Property, ...]
     visible: tuple[Property, ...]
