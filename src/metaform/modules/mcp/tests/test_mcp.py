@@ -91,11 +91,15 @@ def test_the_server_lists_each_surfaced_verb_as_a_tool_and_composes_its_instruct
            'Details: metaform help mcp.' in instructions
     assert 'mcp_serve' not in tools and 'map_approve' not in tools
     schema = tools['map_joins'].input_schema
-    assert schema['properties']['element'] == {'type': 'string'} and schema['required'] == ['element']
+    element, raw = schema['properties']['element'], schema['properties']['raw']
+    assert element['type'] == 'string' and schema['required'] == ['element']
     assert schema['properties']['project']['type'] == 'string' and schema['additionalProperties'] is False
-    assert schema['properties']['raw'] == {'type': 'boolean'}
-    assert tools['memory_add-observations'].input_schema['properties']['text'] == {'type': 'array',
-                                                                               'items': {'type': 'string'}}
+    assert raw['type'] == 'boolean'
+    assert element['description']
+    assert raw['description'] and raw['description'] in run('help', 'map', 'joins', cwd=mapped).stdout
+    observations = tools['memory_add-observations'].input_schema['properties']['text']
+    assert (observations['type'], observations['items']) == ('array', {'type': 'string'}) and observations['description']
+    assert 'add-item' in tools['map_knowledge'].input_schema['properties']['op']['description']
 
 
 @pytest.mark.req('MCP-003')
@@ -172,7 +176,7 @@ def test_a_boolean_false_on_one_call_overrides_a_glued_true(run, home, mapped, u
         stored = text(await client.call_tool('tmuxed_show', {}))
         return tools['tmuxed_show'].input_schema['properties']['tmux'], off, stored
     schema, off, stored = session(home, mapped, call)
-    assert schema == {'type': 'boolean'}
+    assert schema == {'type': 'boolean', 'description': 'Use tmux.'}
     assert json.loads(off[-1]) == {'tmux': False} and json.loads(stored[-1]) == {'tmux': True}
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
     assert (shown['tmux']['value'], shown['tmux']['state']) == (True, 'glued')

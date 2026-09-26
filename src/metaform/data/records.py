@@ -42,6 +42,7 @@ class Record:
     """A frozen dataclass whose `to_dict()` gives every field as plain data."""
 
     def to_dict(self) -> dict[str, Any]:
+        # Every Record subclass is a dataclass; the base class itself is not, so the checker cannot know that.
         return {item.name: plain(getattr(self, item.name)) for item in dataclasses.fields(self)}  # type: ignore[arg-type]
 
 

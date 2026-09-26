@@ -205,3 +205,17 @@ Started by the stopped fix pass, reviewed and finished in the next session.
   - The installer's proof started its command by its bare name, and Windows cannot start a `.cmd` launcher that way. The proof now starts the full path `shutil.which` finds, as registration already did.
 - Test added, seen failing first on Linux with `PYTHONIOENCODING=cp1252`, which gives any system the Windows pipe: `test_output_is_utf8_whatever_the_encoding_the_system_gives_a_pipe`.
 
+## Step 19: the second review, test review and manual test
+
+- The critic review, `REVIEW-CODE-2.md`, found every first-round finding fixed but those open by decision, and two new ones:
+  - N1: two report writes at once for one run and kind could replace each other, since the file was checked for and then written. It is now created with exclusive create, or appended to when it exists, in one step, BASE-045.
+  - L8: the last two `# type: ignore` comments say why.
+- The test review, `TEST-REVIEW-2.md`, found nine tests protecting behavior no record stated, or stating it wrongly:
+  - Six behaviors built from the first review are now stated in their records, recommended: wheels without module tests, BASE-041; the dependency check before import, BASE-015 and BASE-037; a failing `stop`, BASE-018; the installer's refusal of a config that is not an object, its timeout, its atomic merge and its recording, MCP-015; the folder at the end of `set`'s first line, CLI-022; help rows of at most 40 characters on the left, CLI-029.
+  - An import meeting a metaform another project owns raised an error. STORE-027 has no conflict case and STORE-026 raises only for what cannot be read, so it now writes nothing of that metaform, counts it skipped and names the owner in a notice. A test covers STORE-027's own path, a document imported into a different registered project.
+  - One test named STORE-027 for STORE-031's rule; its marker is fixed. The help-row test checks the stated rule instead of an 80-column guess.
+- The manual test, `MANUAL-TEST-2.md`: 86 checks, 78 pass. The 8 failures are D1, Q42; D2's rest, Q44; D4, Q43; D14, Q1; D19, deferred by D41; D18's three commands, not built; and the web GUI, not built. Thirteen of round one's defects are fixed. A real Claude run over MCP found the map's entry at once.
+  - It also showed an agent guessing `map_knowledge`'s `op` five times, since the tool schema carried no help. Every noun and switch property now carries its help as its `description`, MCP-003.
+- Q7's paragraph, written before step 12, is marked answered: D82 stores a self join as given with a notice.
+- Tests added or changed, each seen failing first: `test_writes_to_one_file_at_the_same_time_all_survive`; `test_an_import_meeting_a_metaform_another_project_owns_writes_nothing_of_it_and_names_the_owner`; the MCP schema test, now requiring descriptions. Added: `test_a_document_imports_into_another_registered_project_which_keeps_its_own_path`, which passed at once, since the path already worked.
+

@@ -278,9 +278,15 @@ class Planned:
     activate: bool
 
 
-def _plan(document: dict[str, Any], project: str | None) -> list[Planned]:
-    """Where each metaform goes, checked before anything is written: the project, and who owns each metaform."""
+def _plan(document: dict[str, Any], project: str | None,
+          notices: list[dict[str, str]]) -> tuple[list[Planned], int]:
+    """Where each metaform goes, decided before anything is written, and how many are skipped.
+
+    A metaform another project owns here is not created again, STORE-027: nothing of it is written, and a notice
+    names the project that owns it, BASE-044.
+    """
     planned: list[Planned] = []
+    skipped = 0
     for entry in document.get('projects', []):
         record = home.Project(**entry['project'])
         if project is not None:
@@ -300,11 +306,14 @@ def _plan(document: dict[str, Any], project: str | None) -> list[Planned]:
             metaform_id = metaform['metaform']['metaform_id']
             owner = home.metaform_owner(metaform_id)
             if owner is not None and owner != project_id:
-                raise StoreError(f'Metaform {metaform_id} of the document belongs to project {owner} here.',
-                                 f'metaform import <file> {owner}')
+                skipped += 1
+                notices.append({'where': f'metaforms.{metaform_id}', 'message': (
+                    f'Metaform {metaform_id} belongs to project {owner} here; nothing of it was written. To add '
+                    f'what it holds to that project: metaform import <file> {owner}')})
+                continue
             planned.append(Planned(project_id, record, registered, metaform,
                                    not registered and entry.get('active_metaform') == metaform_id))
-    return planned
+    return planned, skipped
 
 
 def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, Any]:
@@ -317,9 +326,10 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
     that this home does not hold, BASE-044.
     """
     _validate(document)
-    planned = _plan(document, project)
-    report: dict[str, Any] = {'metaforms_added': 0, 'metaforms_skipped': 0, 'layers_added': 0, 'layers_skipped': 0,
-                              'things_added': 0, 'things_skipped': 0, 'notices': []}
+    notices: list[dict[str, str]] = []
+    planned, skipped = _plan(document, project, notices)
+    report: dict[str, Any] = {'metaforms_added': 0, 'metaforms_skipped': skipped, 'layers_added': 0,
+                              'layers_skipped': 0, 'things_added': 0, 'things_skipped': 0, 'notices': notices}
     opened: list[sqlite3.Connection] = []
     created: list[Path] = []
     try:

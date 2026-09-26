@@ -211,21 +211,39 @@ def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path):
 
 
 @pytest.mark.req('STORE-027')
-@pytest.mark.req('STORE-006')
-def test_an_import_is_one_unit_and_a_metaform_owned_by_another_project_is_refused_first(home, tmp_path):
+@pytest.mark.req('STORE-026')
+@pytest.mark.req('BASE-044')
+def test_an_import_meeting_a_metaform_another_project_owns_writes_nothing_of_it_and_names_the_owner(home, tmp_path):
     from metaform import home as metaform_home
-    from metaform.data import Store, StoreError, export_document, import_document
+    from metaform.data import Store, export_document, import_document
     for name in ('one', 'two'):
         (tmp_path / name).mkdir()
         metaform_home.add_project(name, tmp_path / name)
     Store('one').layer('notes', 'test', 'Notes.', mutable=True, hideable=True, provenance={'module': 'test'})
     document = export_document(['one'])
     listing = sorted(str(path.relative_to(home)) for path in home.rglob('*'))
-    with pytest.raises(StoreError) as refused:
-        import_document(document, 'two')
-    assert 'one' in str(refused.value) and refused.value.next_step
+    report = import_document(document, 'two')
+    assert (report['metaforms_added'], report['metaforms_skipped'], report['layers_added']) == (0, 1, 0)
+    assert any('one' in notice['message'] for notice in report['notices'])
     assert sorted(str(path.relative_to(home)) for path in home.rglob('*')) == listing
     assert [form.name for form in metaform_home.metaforms('two')] == []
+
+
+@pytest.mark.req('STORE-027')
+def test_a_document_imports_into_another_registered_project_which_keeps_its_own_path(home, tmp_path, monkeypatch):
+    from metaform import home as metaform_home
+    from metaform.data import Store, export_document, import_document
+    (tmp_path / 'one').mkdir()
+    metaform_home.add_project('one', tmp_path / 'one')
+    Store('one').layer('notes', 'test', 'Notes.', mutable=True, hideable=True, provenance={'module': 'test'})
+    document = export_document(['one'])
+    monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
+    (tmp_path / 'two').mkdir()
+    metaform_home.add_project('two', tmp_path / 'two')
+    report = import_document(document, 'two')
+    assert (report['metaforms_added'], report['layers_added']) == (1, 1)
+    assert Store('two').layer_ref('notes').variable == 'Notes.'
+    assert metaform_home.project('two').path == str(tmp_path / 'two') and metaform_home.project('one') is None
 
 
 @pytest.mark.req('STORE-027')
@@ -252,7 +270,7 @@ def test_a_layer_export_whose_requires_are_missing_imports_what_it_can_with_noti
     assert item.value == 'keep it small' and item.orphaned is True
 
 
-@pytest.mark.req('STORE-027')
+@pytest.mark.req('STORE-031')
 def test_registering_a_project_whose_folder_another_holds_is_refused_by_name(home, tmp_path):
     from metaform import home as metaform_home
     from metaform.data import StoreError

@@ -97,3 +97,33 @@ def test_feedback_and_reports_run_whatever_the_surface(run, project, user_module
     assert run('read', 'report', name, cwd=project).stdout == 'Narrowed and still reporting.'
     index = run('help', 'commands', cwd=project).stdout
     assert re.search(r'^  feedback ', index, re.M) and re.search(r'^  read ', index, re.M)
+
+
+@pytest.mark.req('BASE-045')
+@pytest.mark.req('STORE-006')
+def test_writes_to_one_file_at_the_same_time_all_survive(home, monkeypatch):
+    import threading
+    import time
+    from pathlib import Path
+    from metaform import reports
+    slow_exists = Path.exists
+
+    def exists(self, *args, **kwargs):
+        # A slow file system: the moment between looking for the file and writing it grows.
+        found = slow_exists(self, *args, **kwargs)
+        time.sleep(0.05)
+        return found
+    monkeypatch.setattr(Path, 'exists', exists)
+    texts = [f'Report {number}.' for number in range(8)]
+    start = threading.Barrier(len(texts))
+
+    def write(text):
+        start.wait()
+        reports.write(None, 'run-1', 'feedback', text)
+    threads = [threading.Thread(target=write, args=(text,)) for text in texts]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    content = (reports.folder(None) / 'run-1-feedback.md').read_text(encoding='utf-8')
+    assert [text for text in texts if text not in content] == []

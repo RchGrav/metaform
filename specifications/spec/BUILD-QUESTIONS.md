@@ -35,9 +35,8 @@ Meanwhile: the error's next step is `metaform map knowledge op=add-element layer
 Blocks: nothing.
 
 **Q7. A self join from an intake submission. (D11, D82, BASE-039)**
-D11, settled by recommendation, refuses a join whose receiver and provider are the same element, and `add_join` refuses it. D82 is still open on whether `intake_submit` stores such a join as given.
-Meanwhile: `intake_submit` lists a self join among the problems it refuses.
-Blocks: only the D82 case.
+Answered by D82: a self join is stored as given with a notice, by `intake_submit` since step 10 and by `add_join` since step 12. Nothing refuses it.
+Blocks: nothing.
 
 **Q8. Property ids have no identity row. (STORE-033, STORE-039)**
 `identities.kind` allows element, join, subtype and item, but `correct`, `edit`, `remove` and `history` also take property ids.

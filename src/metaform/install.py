@@ -276,6 +276,7 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     say('Changes:')
     for tool in chosen:
         config = tool.config()
+        # A tool that does not merge a config always has an add command; the catalogue guarantees it.
         how = f'merge mcpServers.metaform into {config}' if tool.merge else ' '.join(tool.add(command))  # type: ignore[misc]
         say(f'  {tool.name}: {how}; changes {config}, backed up under {backups}')
     skill_files = list(shared) + [folder / 'metaform' / 'SKILL.md' for tool in chosen if (folder := tool.skills())]

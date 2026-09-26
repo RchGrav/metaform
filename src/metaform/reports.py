@@ -43,11 +43,13 @@ def write(project_id: str | None, run: str, kind: str, text: str, *, store: Stor
     name = f'{run}-{FILES[kind]}'
     target = folder(project_id) / name
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
+    try:
+        # Created only when it does not exist yet, in one step, so two writes at once never replace each other.
+        with target.open('x', encoding='utf-8', newline='') as stream:
+            stream.write(text)
+    except FileExistsError:
         with target.open('a', encoding='utf-8', newline='') as stream:
             stream.write(f'\n\n## {home.now()}\n\n{text}')
-    else:
-        target.write_text(text, encoding='utf-8', newline='')
     if store is not None:
         store.save_report(name, run, kind, target.stat().st_size, layer)
     return name

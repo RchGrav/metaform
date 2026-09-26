@@ -36,8 +36,17 @@ def _here(verb: Verb) -> bool:
     return 'mcp' in verb.surfaces and on_this_system(verb)
 
 
+def _described(schema: dict[str, Any], help: str) -> dict[str, Any]:
+    """A property with its help as the description, so an agent reads over MCP what `metaform help` says, MCP-003."""
+    return {**schema, 'description': help} if help and 'description' not in schema else schema
+
+
 def setting_schema(setting: settings.Setting, folder: Path) -> dict[str, Any]:
-    """A setting's JSON type over MCP, CLI-027."""
+    """A setting's JSON type over MCP, CLI-027, with its help."""
+    return _described(_setting_type(setting, folder), setting.help)
+
+
+def _setting_type(setting: settings.Setting, folder: Path) -> dict[str, Any]:
     if setting.kind == 'bool':
         return {'type': 'boolean'}
     if setting.kind == 'int':
@@ -59,7 +68,7 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
     for noun in verb.nouns:
         kind = dict(noun.schema) if noun.schema is not None else ({} if noun.kind == 'json' else
                                                                   dict(NOUN_TYPES[noun.kind]))
-        properties[noun.name] = {'type': 'array', 'items': kind} if noun.many else kind
+        properties[noun.name] = _described({'type': 'array', 'items': kind} if noun.many else kind, noun.help)
         if noun.required:
             required.append(noun.name)
     for key in verb.switches:
