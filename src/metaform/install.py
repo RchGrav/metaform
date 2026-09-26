@@ -29,6 +29,7 @@ from .probe import probe
 UV_INSTALL = {'windows': 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'}
 UV_INSTALL_POSIX = 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 BOTH_FORMS = 'metaform install <tool>... or metaform install all'
+BOTH_UNINSTALL = 'metaform uninstall <tool>... or metaform uninstall all'
 
 
 class Failed(Exception):
@@ -61,6 +62,7 @@ class Tool:
     remove: list[str] = field(default_factory=list[str])
     merge: bool = False
     verified: bool = True
+    key: str = 'mcpServers'  # where the tool's JSON config holds its servers
 
 
 def _on_path(command: str) -> Callable[[], bool]:
@@ -107,7 +109,7 @@ def tools() -> dict[str, Tool]:
              remove=['gemini', 'mcp', 'remove', '--scope', 'user', 'metaform']),
         Tool('cursor', 'Cursor', _folder('.cursor'), 'the folder ~/.cursor', lambda: user_home() / '.cursor' /
              'mcp.json', lambda: user_home() / '.cursor' / 'skills', merge=True),
-        Tool('vscode', 'VS Code', _on_path('code'), 'code on PATH', _vscode_config, lambda: None,
+        Tool('vscode', 'VS Code', _on_path('code'), 'code on PATH', _vscode_config, lambda: None, key='servers',
              add=lambda entry: ['code', '--add-mcp', json.dumps({'name': 'metaform', 'command': entry[0],
                                                                   'args': entry[1:]})]),
         Tool('copilot', 'Copilot CLI', _on_path('copilot'), 'copilot on PATH', lambda: None,
@@ -197,8 +199,13 @@ def _said(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _recorded() -> set[str]:
+    return set(_installed())
+
+
+def _installed() -> dict[str, str | None]:
+    """Each tool Metaform set up, with the skill file it wrote there."""
     with home.base() as db:
-        return {row[0] for row in db.execute('SELECT tool FROM installs')}
+        return {str(row[0]): row[1] for row in db.execute('SELECT tool, skill_path FROM installs')}
 
 
 def _record(tool: str, wheel: Path, skill: Path | None) -> None:
@@ -230,7 +237,8 @@ def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: 
     return chosen
 
 
-def install(words: list[str], say: Callable[[str], None]) -> None:
+def _named(verb: str, words: list[str], both: str) -> tuple[list[str], bool]:
+    """The tools named, and whether `all` was."""
     names: list[str] = []
     everything = ended = False
     for word in words:
@@ -239,9 +247,14 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         elif not ended and word == 'all':
             everything = True
         elif not ended and word.startswith('-'):
-            raise Stop(f'install takes tool names, not {word}.', BOTH_FORMS)
+            raise Stop(f'{verb} takes tool names, not {word}.', both)
         else:
             names.append(word)
+    return names, everything
+
+
+def install(words: list[str], say: Callable[[str], None]) -> None:
+    names, everything = _named('install', words, BOTH_FORMS)
     asking = not names and not everything
     say(f'System: {system()}')
     say(f'Python: {platform.python_version()} (needs {_build_info.REQUIRES_PYTHON})')
@@ -321,3 +334,99 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     if failed:
         raise Failed(f'The server did not start for {", ".join(failed)}.', f'metaform install {failed[0]}')
     say('Next: open your AI tool in a project folder, or run metaform')
+
+
+def _unmerge(path: Path, key: str) -> bool:
+    """Take Metaform's entry out of a tool's JSON config and leave every other entry as it is, MCP-020."""
+    if not path.is_file():
+        return False
+    try:
+        data: Any = json.loads(path.read_text(encoding='utf-8'))
+    except ValueError:
+        data = None
+    servers = cast(dict[str, Any], data).get(key) if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        raise Stop(f'{path} is not a JSON object with a {key} object, so Metaform did not change it.',
+                   f'remove "metaform" from {key} in {path}')
+    if 'metaform' not in servers:
+        return False
+    data = cast(dict[str, Any], data)
+    data[key] = {name: value for name, value in cast(dict[str, Any], servers).items() if name != 'metaform'}
+    temporary = path.with_name(f'.{path.name}.metaform-{os.getpid()}')
+    temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    os.replace(temporary, path)
+    return True
+
+
+def _remove_file(path: Path, backups: Path) -> bool:
+    """Back up and remove one skill file, and its `metaform` folder when that is left empty."""
+    if not path.is_file():
+        return False
+    _backup(path, backups)
+    path.unlink()
+    if path.parent.name == 'metaform' and not any(path.parent.iterdir()):
+        path.parent.rmdir()
+    return True
+
+
+def uninstall(words: list[str], say: Callable[[str], None]) -> None:
+    """Remove what setup added: each tool's registration and skill, and the shared skill copies once no tool is
+    left. A config keeps every other entry, the user's later ones included. The data in the home stays, MCP-020."""
+    names, everything = _named('uninstall', words, BOTH_UNINSTALL)
+    installed = _installed()
+    if not installed:
+        raise Stop('Metaform is not set up in any tool.', 'metaform install')
+    catalogue = tools()
+    chosen: list[Tool]
+    if everything:
+        chosen = [catalogue[name] for name in installed if name in catalogue]
+    elif names:
+        chosen = []
+        for name in names:
+            if name not in installed or name not in catalogue:
+                raise Stop(f'{name} was not set up by Metaform.', BOTH_UNINSTALL)
+            chosen.append(catalogue[name])
+    else:
+        if not sys.stdin.isatty():
+            raise Stop('Name the tools to remove Metaform from; without a terminal nothing is asked.', BOTH_UNINSTALL)
+        chosen = [catalogue[name] for name in installed if name in catalogue and
+                  input(f'Remove Metaform from {catalogue[name].label} ({name})? [Y/n] ').strip().lower()
+                  in ('', 'y', 'yes')]
+    if not chosen:
+        raise Stop('No tool was chosen.', BOTH_UNINSTALL)
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    backups = home.home() / 'backups' / 'uninstall' / stamp
+    left = set(installed) - {tool.name for tool in chosen}
+    shared = [] if left else [home.home() / 'skills' / 'metaform' / 'SKILL.md',
+                              user_home() / '.agents' / 'skills' / 'metaform' / 'SKILL.md']
+    say('Changes:')
+    for tool in chosen:
+        config = tool.config()
+        how = ' '.join(tool.remove) if tool.remove else f'remove {tool.key}.metaform from {config}'
+        say(f'  {tool.name}: {how}; changes {config}, backed up under {backups}')
+    skill_files = [Path(path) for tool in chosen if (path := installed[tool.name])] + shared
+    for path in skill_files:
+        say(f'  skill: remove {path}')
+    if not names and not everything and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
+        raise Stop('Nothing was changed.', BOTH_UNINSTALL)
+    for tool in chosen:
+        config = tool.config()
+        if config is not None:
+            _backup(config, backups)
+        if tool.remove:
+            result = _run(tool.name, tool.remove)
+            if result.returncode != 0:
+                raise Failed(f'{tool.name}: removing the registration failed: {_said(result)}',
+                             f'metaform uninstall {tool.name}')
+        elif config is not None:
+            _unmerge(config, tool.key)
+        skill = installed[tool.name]
+        if skill:
+            _remove_file(Path(skill), backups)
+        with home.base(write=True) as db:
+            db.execute('DELETE FROM installs WHERE tool=?', (tool.name,))
+        say(f'Removed: {tool.name}')
+    for path in shared:
+        _remove_file(path, backups)
+    say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
+    say(f"Data: Metaform's projects and maps stay in {home.home()}.")

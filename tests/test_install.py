@@ -191,3 +191,57 @@ def test_a_tool_command_that_hangs_stops_at_its_timeout(machine, home, monkeypat
     with pytest.raises(install.Failed) as stopped:
         install.install(['claude'], said.append)
     assert 'claude' in str(stopped.value) and 'did not finish' in str(stopped.value)
+
+
+def skills(folder: Path) -> list[str]:
+    return sorted(str(path.relative_to(folder)) for path in folder.rglob('SKILL.md') if 'metaform' in path.parts)
+
+
+@pytest.mark.req('MCP-020')
+def test_uninstall_removes_what_install_added_and_leaves_every_other_entry(run, machine, home):
+    before = tree(machine['user'])
+    run('install', 'claude', 'codex', 'cursor', cwd=machine['folder'], env=machine['env'])
+    installed = (machine['user'] / '.cursor' / 'mcp.json').read_bytes()
+    out = run('uninstall', 'all', cwd=machine['folder'], env=machine['env']).stdout
+    assert calls(machine['bin'], 'claude')[-1] == ['mcp', 'remove', '--scope', 'user', 'metaform']
+    assert calls(machine['bin'], 'codex')[-1] == ['mcp', 'remove', 'metaform']
+    for tool in ('claude', 'codex'):
+        assert json.loads((machine['bin'] / f'{tool}.servers').read_text()) == []
+    assert json.loads((machine['user'] / '.cursor' / 'mcp.json').read_text()) == CURSOR_BEFORE
+    assert skills(machine['user']) == [] and skills(home / 'skills') == []
+    after = tree(machine['user'])
+    assert {name: data for name, data in after.items() if not name.endswith('mcp.json')} == \
+        {name: data for name, data in before.items() if not name.endswith('mcp.json')}
+    backups = list((home / 'backups' / 'uninstall').rglob('mcp.json'))
+    assert len(backups) == 1 and backups[0].read_bytes() == installed
+    assert (home / 'metaform.sqlite3').is_file() and str(home) in out
+    again = run('uninstall', 'all', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert again.returncode != 0 and 'Next: metaform install' in again.stderr
+
+
+@pytest.mark.req('MCP-020')
+def test_uninstalling_one_tool_keeps_the_others_and_a_users_own_later_entries(run, machine, home):
+    run('install', 'claude', 'cursor', cwd=machine['folder'], env=machine['env'])
+    config = machine['user'] / '.cursor' / 'mcp.json'
+    edited = json.loads(config.read_text())
+    edited['mcpServers']['mine'] = {'command': 'mine', 'args': ['--fast']}
+    config.write_text(json.dumps(edited), encoding='utf-8')
+    run('uninstall', 'cursor', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(config.read_text())['mcpServers'] == {**CURSOR_BEFORE['mcpServers'],
+                                                            'mine': {'command': 'mine', 'args': ['--fast']}}
+    assert json.loads((machine['bin'] / 'claude.servers').read_text()) == ['metaform']
+    assert skills(machine['user']) == [str(Path('.agents/skills/metaform/SKILL.md')),
+                                       str(Path('.claude/skills/metaform/SKILL.md'))]
+    refused = run('uninstall', 'cursor', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2 and 'cursor' in refused.stderr
+
+
+@pytest.mark.req('MCP-020')
+@pytest.mark.req('MCP-014')
+def test_uninstall_without_a_terminal_or_names_changes_nothing(run, machine, home):
+    run('install', 'claude', cwd=machine['folder'], env=machine['env'])
+    before = tree(machine['user'])
+    result = run('uninstall', cwd=machine['folder'], env=machine['env'], ok=False, input='')
+    assert result.returncode == 2
+    assert result.stderr.splitlines()[-1] == 'Next: metaform uninstall <tool>... or metaform uninstall all'
+    assert tree(machine['user']) == before and calls(machine['bin'], 'claude')[-1][:2] == ['mcp', 'add']

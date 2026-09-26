@@ -529,6 +529,11 @@ def install_(args: list[str], folder: Path) -> None:
     install.install(args, out)
 
 
+def uninstall_(args: list[str], folder: Path) -> None:
+    from . import install
+    install.uninstall(args, out)
+
+
 def build_(args: list[str], folder: Path) -> None:
     if args:
         raise Stop('build takes no words.', 'metaform build')
@@ -542,7 +547,7 @@ def build_(args: list[str], folder: Path) -> None:
 VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
-    'install': install_, 'build': build_, 'feedback': feedback, 'read': read}
+    'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -738,6 +743,13 @@ docs.command(Command('install', 'Set up your AI tools to use Metaform.',
                                  'server with each tool, writes the skill, and proves each tool can start the server.',
                      details='With no tool named it asks; naming tools, or all, sets up without asking.',
                      see_also=('build',)))
+docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
+                     ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
+                     description="Previews every change with its backup, then removes Metaform's registration and "
+                                 'skill from each tool. Every other entry in a tool\'s config stays as it is.',
+                     details='With no tool named it asks; naming tools, or all, removes without asking. The '
+                             'projects and maps in the home stay.',
+                     see_also=('install',)))
 docs.command(Command('feedback', 'Save feedback on the Metaform process, and a report or a shape with it.',
                      ('metaform feedback <text> [layer=<layer>] [report=<text|file|->] [shape=<text|file|->]',),
                      description='Feedback is about Metaform itself: problems with the process, bad semantics, a tool '

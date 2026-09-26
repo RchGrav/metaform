@@ -256,6 +256,11 @@ It also defines the first working test, which exercises all three end to end.
 - Why: A polished setup has a clean way out, and removing Metaform must not undo the user's own changes.
 - How it shows: A preview, a confirm, then a report of what was removed.
 - Build: Mirror of MCP-015 and MCP-016, using each tool's remove command where one exists.
+  - The tools are those recorded in the home's `installs` table. As for install, MCP-014, `metaform uninstall` asks per tool and then once more before any change, and naming tools or `all` removes without asking; with no names and no terminal nothing changes.
+  - Claude Code, Codex and Gemini CLI run their own remove command. Cursor and Claude Desktop lose `mcpServers.metaform`, and VS Code `servers.metaform`, from their JSON config, written whole beside the old file and moved into place.
+  - Only Metaform's entry is removed, never the file rolled back to its backup: removing the entry leaves every other entry as it is, and rolling back would undo whatever the user changed after install. Each file is backed up before it changes, under `~/.metaform/backups/uninstall/<UTC timestamp>/`.
+  - Each tool's skill copy is removed, and its `metaform` folder when that is left empty. The source copy under the home and the cross-agent copy are removed once no set-up tool is left.
+  - The data in the home stays; offering to remove it is question 9.
 - Acceptance: After install then uninstall, no tool lists `metaform`, no Metaform skill file remains, and every other entry in each config is unchanged.
 - Relates to: MCP-015, MCP-016, MCP-021.
 - Status: recommended. Whether it belongs in the first test is open.
