@@ -608,6 +608,7 @@ def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whateve
     assert (drawn['elements'], drawn['purposes'], drawn['encounters'], drawn['faces'], drawn['subtypes']) == (
         counts['el'], counts['purpose'], counts['purpose'], counts['purpose'], counts['sub'])
     assert 0 < drawn['calls'] <= DRAW_CALLS
+    calls = drawn['calls']
     folder = tmp_path / 'big'
     folder.mkdir()
     run('add', 'project', 'big', str(folder))
@@ -615,14 +616,21 @@ def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whateve
     with big.atomic():
         layer = big.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
                           provenance=PROVENANCE, ready=True)
+        # The same kinds as the small map, subtypes and namespace edges included, so the draw calls can match.
+        for group in range(30):
+            big.add_element(layer.name, f'code.g{group}', role='SE')
         for n in range(3000):
             big.add_element(layer.name, f'code.g{n % 30}.e{n}', role='SE')
         for n in range(3000):
-            big.add_join(layer.name, f'code.g{n % 30}.e{n}', f'code.g{(n + 1) % 30}.e{(n + 1) % 3000}', purpose='p',
-                         function='f', relation='r', observation='o')
+            join = big.add_join(layer.name, f'code.g{n % 30}.e{n}', f'code.g{(n + 1) % 30}.e{(n + 1) % 3000}',
+                                purpose='p', function='f', relation='r', observation='o')
+            if n < 30:
+                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', function='f', relation='r',
+                                observation='o', role='SE')
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
     drawn = drawn_when_loaded(page, 3000)
-    assert (drawn['elements'], drawn['purposes'], drawn['faces'], drawn['ties']) == (3000, 3000, 3000, 3000)
-    assert 0 < drawn['calls'] <= DRAW_CALLS and drawn['labels'] <= 80
+    assert (drawn['elements'], drawn['purposes'], drawn['faces'], drawn['ties'], drawn['subtypes']) == (
+        3030, 3000, 3000, 3000, 30)
+    assert drawn['calls'] == calls and drawn['labels'] <= 80
     assert problems == []

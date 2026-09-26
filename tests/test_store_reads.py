@@ -188,8 +188,9 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
     assert pages > 1 and addresses == sorted(set(addresses))
     assert addresses == ['code.alarm.audible', 'code.timer.kitchen', 'code.timer.kitchen.display',
                          'stakeholder.cook.home']
-    assert {entry.element.address: entry.parent for entry in entries}['code.timer.kitchen.display'] == \
-        'code.timer.kitchen'
+    assert {entry.element.address: entry.parent for entry in entries} == {
+        'code.alarm.audible': None, 'code.timer.kitchen': None, 'code.timer.kitchen.display': 'code.timer.kitchen',
+        'stakeholder.cook.home': None}
     assert all(entry.element == store.element(entry.element.address) for entry in entries)
     everything = store.graph(limit=0)
     assert [entry.element.address for entry in everything.elements] == addresses and everything.next is None
@@ -199,5 +200,14 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
         for join in held:
             assert join.subtypes == store.subtypes(join.join_id, limit=0).results
     assert 'code.timer.kitchen.display' not in [e.element.address for e in store.graph(selection=['intake-1']).elements]
+    secret = knowledge(store, 'secret')
+    store.add_element(secret.name, 'code.timer.kitchen.secret')
+    hidden = store.add_join(secret.name, 'code.timer.kitchen.secret', 'code.timer.kitchen', purpose='p', function='f',
+                            relation='r', observation='o')
+    store.finish(secret.name)
+    store.hide(secret.name)
+    assert 'code.timer.kitchen.secret' not in [entry.element.address for entry in store.graph(limit=0).elements]
+    assert hidden.join_id not in [join.join_id for join in store.graph(limit=0).joins]
     raw = store.graph(raw=True, limit=0)
-    assert set(addresses) <= {entry.element.address for entry in raw.elements}
+    assert set(addresses) | {'code.timer.kitchen.secret'} == {entry.element.address for entry in raw.elements}
+    assert hidden.join_id in [join.join_id for join in raw.joins]
