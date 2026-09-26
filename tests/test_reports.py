@@ -100,7 +100,6 @@ def test_feedback_and_reports_run_whatever_the_surface(run, project, user_module
 
 
 @pytest.mark.req('BASE-045')
-@pytest.mark.req('STORE-006')
 def test_writes_to_one_file_at_the_same_time_all_survive(home, monkeypatch):
     import threading
     import time

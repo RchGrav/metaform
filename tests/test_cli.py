@@ -588,6 +588,24 @@ def test_a_module_page_leaves_out_an_empty_section_and_keeps_its_rows_narrow(run
     assert rows[knowledge + 1].index('Create, build') == roots.index("The map's entry")
 
 
+@pytest.mark.req('CLI-029')
+def test_a_row_of_up_to_40_characters_stays_on_its_line_and_a_longer_one_wraps(run, user_module):
+    user_module('rows', f'''
+        from metaform.module import Module, Noun, Verb
+        {OS}
+        MODULE = Module(id='rows', summary='Rows.', purpose='Rows. Details: metaform help rows.', verbs=(
+            Verb('fit', lambda ctx: None, 'Forty wide.', nouns=(Noun('{'a' * 34}', 'A noun.'),)),
+            Verb('far', lambda ctx: None, 'Forty-one wide.', nouns=(Noun('{'b' * 35}', 'A noun.'),)),
+            Verb('few', lambda ctx: None, 'Short.')))
+    ''')
+    rows = run('help', 'rows').stdout.splitlines()
+    fit = next(line for line in rows if line.strip().startswith('fit '))
+    far = next(index for index, line in enumerate(rows) if line.strip().startswith('far '))
+    assert len(fit.strip().split('  ')[0]) == 40 and fit.index('Forty wide.') == 2 + 40 + 2
+    assert len(rows[far].strip()) == 41 and 'Forty-one' not in rows[far]
+    assert rows[far + 1].index('Forty-one wide.') == 2 + 40 + 2
+
+
 @pytest.mark.req('BASE-037')
 def test_an_off_module_lists_with_the_summary_it_shows_when_on(run):
     def text(module_id):
