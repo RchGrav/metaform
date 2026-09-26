@@ -195,4 +195,5 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. The viewer writes exactly three things: it applies layers, saves prompt versions, and removes the top correction layer. VIEW-011. This answers the two viewer questions.
 - 09-25. One unified web GUI, user global: "Why wouldnt we have a single unified web gui?", then "yes that what I was saying USER global", after first reading "one server per home" as per project. His open question was how it starts. VIEW-001, VIEW-002.
 - 09-25. Starting the web GUI: "metaform web to start it and metaform web stop to stop it, and a setting for autostart instruction to agent in the config settings and if its set true (The default) the agent would start it following intake if not already running if it wasnt running it agent would inform the user of the mac address once it starts". "mac address" read as the GUI's web address. VIEW-002, VIEW-015.
+- 09-25. "the other setting for the web is the bind address". VIEW-002: `--web-bind`, loopback by default.
 
