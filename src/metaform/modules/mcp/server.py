@@ -29,6 +29,10 @@ NOUN_TYPES: dict[str, dict[str, Any]] = {'str': {'type': 'string'}, 'int': {'typ
 PER_CALL = ('project', 'layers', 'confirm')
 TEXT = {'type': 'string'}
 
+
+def _text(description: str) -> dict[str, Any]:
+    return {**TEXT, 'description': description}
+
 Outcome = tuple[bool, list[str]]
 
 
@@ -97,15 +101,25 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
     'feedback': ('Save feedback on the Metaform process, with a report and the shape you could not submit when you '
                  'have them. Always available.',
                  {'type': 'object', 'required': ['text'], 'additionalProperties': False,
-                  'properties': {'text': TEXT, 'layer': TEXT, 'report': TEXT, 'shape': TEXT, 'project': PROJECT}}),
+                  'properties': {
+                      'text': _text('Feedback on the Metaform process: a problem with the process, bad semantics, a '
+                                    'tool that did not match its schema, or a trouble report when you cannot continue.'),
+                      'layer': _text('The layer the feedback is about, by name or id, when it is about one.'),
+                      'report': _text('Your report on the project you examined, when you have one.'),
+                      'shape': _text('The result you could not submit, as it stands, so a person can review and fix '
+                                     'it.'),
+                      'project': PROJECT}}),
     'list_reports': ('List the report, feedback and shape files of this project. Always available.',
                      {'type': 'object', 'additionalProperties': False,
-                      'properties': {'kind': {'type': 'string', 'enum': ['report', 'feedback', 'shape']},
-                                     'layer': TEXT, 'limit': {'type': 'integer'}, 'after': TEXT,
+                      'properties': {'kind': {'type': 'string', 'enum': ['report', 'feedback', 'shape'],
+                                              'description': 'Only files of this kind.'},
+                                     'layer': _text('Only files of this layer, by name or id.'),
+                                     'limit': {'type': 'integer', 'description': 'How many results, 0 for all.'},
+                                     'after': _text('The cursor the previous page returned.'),
                                      'project': PROJECT}}),
     'read_report': ('Read one report, feedback or shape file exactly. Always available.',
                     {'type': 'object', 'required': ['name'], 'additionalProperties': False,
-                     'properties': {'name': TEXT, 'project': PROJECT}}),
+                     'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
 }
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int}
 

@@ -100,6 +100,9 @@ def test_the_server_lists_each_surfaced_verb_as_a_tool_and_composes_its_instruct
     observations = tools['memory_add-observations'].input_schema['properties']['text']
     assert (observations['type'], observations['items']) == ('array', {'type': 'string'}) and observations['description']
     assert 'add-item' in tools['map_knowledge'].input_schema['properties']['op']['description']
+    for name in ('feedback', 'list_reports', 'read_report', 'set'):
+        undescribed = [key for key, value in tools[name].input_schema['properties'].items() if not value.get('description')]
+        assert undescribed == [], (name, undescribed)
 
 
 @pytest.mark.req('MCP-003')

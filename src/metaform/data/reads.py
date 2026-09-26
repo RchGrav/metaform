@@ -470,7 +470,7 @@ def save_report(tx: Tx, name: str, run_id: str, kind: str, size: int, layer: str
     """Record one report, feedback or shape file, or its new size after an append, STORE-043."""
     layer_id = rows.layer(tx, layer).layer_id if layer else None
     tx.db.execute('INSERT INTO reports(report_id, run_id, layer_id, kind, created, size) VALUES (?, ?, ?, ?, ?, ?) '
-                  'ON CONFLICT(report_id) DO UPDATE SET size=excluded.size',
+                  'ON CONFLICT(report_id) DO UPDATE SET size=MAX(size, excluded.size)',
                   (name, run_id, layer_id, kind, home.now(), size))
     return views.report(tx, tx.db.execute('SELECT * FROM reports WHERE report_id=?', (name,)).fetchone())
 

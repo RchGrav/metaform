@@ -126,3 +126,17 @@ def test_writes_to_one_file_at_the_same_time_all_survive(home, monkeypatch):
         thread.join()
     content = (reports.folder(None) / 'run-1-feedback.md').read_text(encoding='utf-8')
     assert [text for text in texts if text not in content] == []
+
+
+@pytest.mark.req('STORE-043')
+@pytest.mark.req('BASE-045')
+def test_a_reports_recorded_size_never_falls_below_one_already_recorded(home, tmp_path):
+    # Writers appending at once each record the size they saw; the last to record may have seen the file earlier.
+    from metaform import home as metaform_home
+    (tmp_path / 'proj').mkdir()
+    metaform_home.add_project('proj', tmp_path / 'proj')
+    store = Store('proj')
+    store.save_report('run-1-feedback.md', 'run-1', 'feedback', 717)
+    store.save_report('run-1-feedback.md', 'run-1', 'feedback', 207)
+    assert store.report('run-1-feedback.md').size == 717
+

@@ -219,3 +219,16 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Q7's paragraph, written before step 12, is marked answered: D82 stores a self join as given with a notice.
 - Tests added or changed, each seen failing first: `test_writes_to_one_file_at_the_same_time_all_survive`; `test_an_import_meeting_a_metaform_another_project_owns_writes_nothing_of_it_and_names_the_owner`; the MCP schema test, now requiring descriptions. Added: `test_a_document_imports_into_another_registered_project_which_keeps_its_own_path`, which passed at once, since the path already worked.
 
+## Step 20: the third round
+
+- The critic review, `REVIEW-CODE-3.md`, found nothing: N1 and L8 fixed, strict pyright 0 errors, 417 tests passing.
+- The test review, `TEST-REVIEW-3.md`, found round two's nine resolved, and two small things:
+  - The concurrent report test named STORE-006, though it writes no store; it names only BASE-045 now.
+  - The help-row test's bound did not bind, since `map`'s widest verb is 39 characters. A test module with verbs 40 and 41 wide now pins CLI-029's rule; with the limit raised to 45, it fails.
+- The manual test of step 19's changes, `MANUAL-TEST-3.md`, passed 11 of 12. A real Claude run built a knowledge layer with no wrong guess at `op`, where round two's needed five. Fixed from it:
+  - Under concurrent appends, `list reports` could show a size smaller than the file, since each writer recorded what it saw and an earlier one could record last. A row now keeps the largest size recorded, STORE-043.
+  - `feedback`, `list_reports` and `read_report` gave their properties no description; they do now, MCP-003.
+  - A noun the knowledge verb declares but an operation does not read, such as `key=` on `op=add-property`, was dropped without a word. It is now kept in the new record's `extra` with a notice, or named as ignored when the operation adds no record, BASE-043 and BASE-044.
+- CI: every test passes on Linux, macOS and Windows with Python 3.11 and 3.14. One Windows run met `database is locked` once in the thread-writers test, Q48; a diagnosis job runs on a throwaway branch.
+- Tests added, each seen failing first: `test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored`, `test_a_reports_recorded_size_never_falls_below_one_already_recorded`, `test_a_row_of_up_to_40_characters_stays_on_its_line_and_a_longer_one_wraps`, and descriptions required of the chassis tools in the MCP schema test.
+

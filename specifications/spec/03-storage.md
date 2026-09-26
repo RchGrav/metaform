@@ -1093,6 +1093,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
   CREATE INDEX reports_by_time  ON reports(created, report_id);
   ```
   - Feedback with no project is listed from the home's `reports/` folder by reading its file names, since there is no store.
+  - A file only grows, by appended sections, so its row's `size` never falls below a size already recorded: when several writers append at once, the row keeps the largest size any of them saw, which is the file's.
 - Acceptance: A provenance read of an intake layer submitted with a report and feedback returns exactly those two refs.
 - Relates to: BASE-045, STORE-016, STORE-001.
 - Status: recommended.

@@ -286,3 +286,16 @@ def test_layers_stack_and_metaforms_read_as_one_aligned_row_each(run, mapped):
     metaforms = rows('metaforms')
     assert metaforms['main'][-1] == 'active'
     assert {layer['name'] for layer in j(run, 'layers', cwd=mapped)['results']} == set(layers)
+
+
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('BASE-043')
+def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    made = json.loads(k(run, mapped, 'op=add-property', 'layer=notes', 'element=code.timer.kitchen', 'value="v"',
+                        'key=path').stdout)
+    assert made['extra'] == {'key': 'path'} and [notice['where'] for notice in made['notices']] == ['key']
+    finished = json.loads(k(run, mapped, 'op=finish', 'layer=notes', 'reason=done').stdout)
+    assert [notice['where'] for notice in finished['notices']] == ['reason']
+    assert 'ignored' in finished['notices'][0]['message'] and finished['ready']
+

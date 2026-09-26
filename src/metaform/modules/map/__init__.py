@@ -8,10 +8,12 @@ in context. `knowledge` is the one read-write verb for layers, LAYER-018.
 """
 from __future__ import annotations
 
-from typing import Any
+import dataclasses
+
+from typing import Any, cast
 
 from metaform import settings
-from metaform.data import PLACE_KINDS, Node, Store
+from metaform.data import PLACE_KINDS, Node, Notice, Store
 from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -228,10 +230,66 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
     return {name: ctx.nouns[name] for name in names if name in ctx.nouns}
 
 
+# The nouns each knowledge operation reads, besides op and layer.
+READS: dict[str, frozenset[str]] = {
+    'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
+                         'prompt', 'model', 'role', 'blinded'}),
+    'add-element': frozenset({'address', 'name', 'name_length', 'role', 'refs', 'extra', 'flag', 'flag_note'}),
+    'add-join': frozenset({'receiver', 'provider', 'purpose', 'function', 'relation', 'observation', 'non_goal', 'type',
+                           'refs', 'extra', 'flag', 'flag_note'}),
+    'add-subtype': frozenset({'join', 'address', 'function', 'relation', 'observation', 'name', 'name_length', 'role',
+                              'refs', 'extra', 'flag', 'flag_note'}),
+    'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
+    'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
+    'add-ref': frozenset({'owner', 'key', 'value'}),
+    'add-plan': frozenset({'element', 'join'}),
+    'edit': frozenset({'id', *FIELDS}),
+    'remove': frozenset({'id'}),
+    'correct': frozenset({'id', 'reason', 'evidence', 'remove', *FIELDS}),
+    'finish': frozenset(),
+    'peel': frozenset(),
+    'discard': frozenset(),
+}
+
+
+def _unread(ctx: Context, op: str) -> list[Notice]:
+    """What the call gave that its operation does not read, BASE-044: kept in the new record's extra when the
+    operation adds one, else named as ignored. Nothing given goes unmentioned."""
+    unread = sorted(name for name in ctx.nouns if name not in ('op', 'layer') and name not in READS.get(op, frozenset()))
+    if not unread:
+        return []
+    if 'extra' in READS.get(op, frozenset()) and op.startswith('add-'):
+        given = ctx.nouns.get('extra')
+        kept = {name: ctx.nouns.pop(name) for name in unread}
+        ctx.nouns['extra'] = ({**kept, **given} if isinstance(given, dict) else
+                              kept if given is None else {'value': given, **kept})
+        return [Notice(name, f'op={op} does not read {name}; it was kept in the record\'s extra.') for name in unread]
+    for name in unread:
+        ctx.nouns.pop(name)
+    return [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
+
+
+def _with_notices(result: Any, notices: list[Notice]) -> Any:
+    """The operation's result with the call's own notices first."""
+    if not notices:
+        return result
+    if isinstance(result, dict):
+        fields = cast(dict[str, Any], result)
+        return {**fields, 'notices': [*notices, *fields.get('notices', [])]}
+    return dataclasses.replace(result, notices=(*notices, *getattr(result, 'notices', ())))
+
+
 def knowledge(ctx: Context) -> Any:
     """Create, build, edit and finish a knowledge or correction layer, one object per call, LAYER-018."""
-    store = _store(ctx)
     (op,) = _need(ctx, 'op')
+    if op not in READS:
+        raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
+    notices = _unread(ctx, op)
+    return _with_notices(_knowledge(ctx, op), notices)
+
+
+def _knowledge(ctx: Context, op: str) -> Any:
+    store = _store(ctx)
     nouns = ctx.nouns
     # A write of an object sent without a layer goes to a new unnamed layer, LAYER-001; every other op names one.
     name = str(nouns.get('layer') or '') if op in UNNAMED else str(_need(ctx, 'layer')[0])
