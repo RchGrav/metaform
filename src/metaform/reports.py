@@ -11,11 +11,16 @@ submits here is refused for its content, BASE-044.
 """
 from __future__ import annotations
 
+import os
 import re
 import secrets
+import sys
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from . import context, home
 from .data import Notice, Page, Report, Store, StoreError
@@ -24,6 +29,32 @@ from .errors import Stop
 FILES = {'report': 'report.md', 'feedback': 'feedback.md', 'shape': 'shape.txt'}
 NAME = re.compile(r'^[A-Za-z0-9._-]+-(report\.md|feedback\.md|shape\.txt)$')
 KIND_OF = {suffix: kind for kind, suffix in FILES.items()}
+
+
+_THREADS = threading.Lock()  # writers in this process; the file lock below keeps processes apart
+
+
+@contextmanager
+def _locked(stream: BinaryIO) -> Generator[None, None, None]:
+    """An exclusive lock on the open file, held until the block ends."""
+    if sys.platform == 'win32':
+        import msvcrt
+        stream.seek(0)
+        msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            stream.flush()
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def folder(project_id: str | None) -> Path:
@@ -43,13 +74,11 @@ def write(project_id: str | None, run: str, kind: str, text: str, *, store: Stor
     name = f'{run}-{FILES[kind]}'
     target = folder(project_id) / name
     target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        # Created only when it does not exist yet, in one step, so two writes at once never replace each other.
-        with target.open('x', encoding='utf-8', newline='') as stream:
-            stream.write(text)
-    except FileExistsError:
-        with target.open('a', encoding='utf-8', newline='') as stream:
-            stream.write(f'\n\n## {home.now()}\n\n{text}')
+    with _THREADS, target.open('ab') as stream, _locked(stream):
+        # Writes to one file take turns, so none replaces another: the first writes the text, each later one a
+        # section. On Windows an append is not one step, so the lock is what keeps them apart, BASE-045.
+        stream.seek(0, os.SEEK_END)
+        stream.write((text if stream.tell() == 0 else f'\n\n## {home.now()}\n\n{text}').encode('utf-8'))
     if store is not None:
         store.save_report(name, run, kind, target.stat().st_size, layer)
     return name

@@ -149,7 +149,8 @@ def test_the_default_bind_takes_no_other_address_and_another_bind_needs_the_toke
     assert status == 200
     cookie = headers['Set-Cookie'].split(';', 1)[0]
     assert request(web, '/api/projects', address=lan, headers={'Cookie': cookie})[0] == 200
-    assert request(web, '/api/projects', address=lan, headers={'Cookie': cookie[:-1] + 'x'})[0] == 403
+    wrong = cookie[:-1] + ('y' if cookie.endswith('x') else 'x')  # one character off, never the token itself
+    assert request(web, '/api/projects', address=lan, headers={'Cookie': wrong})[0] == 403
     assert started(run)['token'] == token
 
 
