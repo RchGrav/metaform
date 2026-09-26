@@ -11,12 +11,12 @@ import json
 import sqlite3
 from typing import Any, cast
 
-from . import corrections
+from . import corrections, prompts
 from .corrections import METAFORM_KINDS
 from .ids import decode_extra, descriptor_of
 from .names import reading, short_name
 from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Op, Property, Provenance, Ref, Report,
-                      Subtype, Version)
+                      Subtype, Version, VersionRef)
 from .rows import (address_of, layer_name, node_address, read_refs, target_current, whole_number)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
@@ -161,8 +161,10 @@ def provenance(tx: Tx, layer_id: str) -> Provenance | None:
         return None
     refs = tuple(Ref(str(ref[0]), str(ref[1])) for ref in tx.db.execute(
         'SELECT kind, report_id FROM reports WHERE layer_id=? ORDER BY kind, report_id', (layer_id,)))
+    used = prompts.use_of(tx.project_id, tx.metaform_id, layer_id) if tx.metaform_id else None
     return Provenance(str(row['layer_id']), str(row['module']), row['workflow'], row['prompt'], row['model'],
-                      row['role'], None if row['blinded'] is None else bool(row['blinded']), refs)
+                      row['role'], None if row['blinded'] is None else bool(row['blinded']), refs,
+                      VersionRef(used.name, used.number, used.version_id) if used else None)
 
 
 def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hidden: set[str] | None = None,

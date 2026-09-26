@@ -133,7 +133,8 @@ function graphData() {
   return {nodes, links};
 }
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
-  drawn: () => G ? G.drawn() : null, labelled: () => G ? G.labelled() : [], loaded: () => !S.loading};
+  drawn: () => G ? G.drawn() : null, labelled: () => G ? G.labelled() : [], loaded: () => !S.loading,
+  editor: () => P.editor};
 
 /* ---------- 3D: a synaptic map, drawn by scene.js ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
@@ -328,7 +329,7 @@ function fitAll() { fit2D(); if (G) G.fit(!reduced()); }
 
 /* Arrow keys follow joins: to the joined element that lies furthest the pressed way in the 2D map. F fits. */
 document.addEventListener('keydown', event => {
-  if (event.target.closest('select, input, textarea')) return;
+  if (event.target.closest('select, input, textarea, .CodeMirror')) return;
   if (event.key === 'f' || event.key === 'F' || event.key === 'Home') { event.preventDefault(); fitAll(); return; }
   const way = {ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1]}[event.key];
   if (!way || !S.selected) return;
@@ -458,10 +459,83 @@ async function renderProv() {
       ...[['workflow', record.workflow], ['model', record.model], ['role', record.role],
         ['blinded', record.blinded === null ? '' : record.blinded ? 'yes' : 'no'], ['reports', reports.join(' · ') || 'none']]
         .flatMap(([key, value]) => [h('dt', {}, key), h('dd', {}, value || 'not recorded')])));
-    if (record.prompt) pane.append(h('details', {}, h('summary', {class: 'eyebrow'}, 'The prompt it was made from'),
+    if (record.prompt_version) pane.append(h('div', {class: 'toolbar'}, h('button', {class: 'btn primary open-prompt',
+      onclick: () => { showTab('prompt'); renderPrompt(record.prompt_version.name, record.prompt_version.number); }},
+      `Open prompt ${record.prompt_version.name}, version ${record.prompt_version.number}`)));
+    if (record.prompt) pane.append(h('details', {}, h('summary', {class: 'eyebrow'}, 'The prompt as it was delivered'),
       h('pre', {class: 'prompt'}, record.prompt)));
   } catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); }
 }
+
+/* ---------- prompts: edited in a real editor, saved as a new version, VIEW-013 ---------- */
+const P = {editor: null, name: null, number: null, versions: []};
+async function getJson(path) {
+  const response = await fetch(path, {headers: {Accept: 'application/json'}});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `${path} failed`);
+  return body;
+}
+async function renderPrompt(name = P.name, number = P.number) {
+  const listed = (await getJson('/api/prompts')).prompts;
+  if (!listed.length) {
+    $('#promptNote').textContent = 'No stored prompts yet. The intake stores its prompt the first time it is served.';
+    return;
+  }
+  P.name = listed.some(item => item.name === name) ? name : listed[0].name;
+  P.versions = (await getJson(`/api/prompt-versions?name=${encodeURIComponent(P.name)}`)).versions;
+  P.number = P.versions.some(item => item.number === number) ? number : P.versions[0].number;
+  fill($('#promptSel'), listed.map(item => h('option', {value: item.name, selected: item.name === P.name}, item.name)));
+  fill($('#verSel'), P.versions.map(item => h('option', {value: String(item.number), selected: item.number === P.number},
+    `version ${item.number} · ${item.origin} · ${item.created}`)));
+  const version = P.versions.find(item => item.number === P.number);
+  if (!P.editor) P.editor = CodeMirror.fromTextArea($('#editor'), {lineNumbers: true, lineWrapping: true});
+  P.editor.setOption('mode', version.format === 'markdown' ? 'markdown' : version.format === 'xml' ? 'xml' : null);
+  P.editor.setValue(version.text);
+  P.editor.clearHistory();
+  $('#diffOut').hidden = true;
+  const names = new Map(S.layers.map(layer => [layer.layer_id, layer.name]));
+  const made = version.layers.map(use => names.get(use.layer_id) || `a layer of ${use.project_id}`);
+  $('#promptNote').textContent = made.length ? `Version ${version.number} made: ${made.join(', ')}.`
+    : `No layer was made with version ${version.number}.`;
+  setTimeout(() => P.editor.refresh(), 0);
+}
+$('#promptSel').onchange = () => renderPrompt($('#promptSel').value, null);
+$('#verSel').onchange = () => renderPrompt(P.name, Number($('#verSel').value));
+function lineDiff(a, b) {
+  a = a.split('\n'); b = b.split('\n');
+  const n = a.length, m = b.length;
+  if (n * m > 4e6) return [{t: 'gap', s: 'Too large to compare here.'}];
+  const dp = Array.from({length: n + 1}, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (a[i] === b[j]) { out.push({t: 'same', s: a[i]}); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({t: 'del', s: a[i++]}); else out.push({t: 'add', s: b[j++]}); }
+  while (i < n) out.push({t: 'del', s: a[i++]});
+  while (j < m) out.push({t: 'add', s: b[j++]});
+  const keep = new Set();
+  out.forEach((row, k) => { if (row.t !== 'same') for (let d = -2; d <= 2; d++) keep.add(k + d); });
+  const shown = []; let skipped = false;
+  out.forEach((row, k) => { if (keep.has(k)) { shown.push(row); skipped = false; } else if (!skipped) { shown.push({t: 'gap', s: '···'}); skipped = true; } });
+  return shown;
+}
+function showDiff() {
+  const base = P.versions.find(item => item.number === P.number).text;
+  const rows = lineDiff(base, P.editor.getValue());
+  const changed = rows.some(row => row.t === 'add' || row.t === 'del');
+  fill($('#diffOut'), changed ? rows.map(row => h('div', {class: row.t}, (row.t === 'add' ? '+ ' : row.t === 'del' ? '- ' : '  ') + row.s))
+    : h('div', {class: 'gap'}, `No changes from version ${P.number}.`));
+  $('#diffOut').hidden = false;
+  return changed;
+}
+$('#diffBtn').onclick = showDiff;
+$('#saveBtn').onclick = async () => {
+  if (!showDiff()) return toast(`Nothing to save. The text matches version ${P.number}.`);
+  const response = await fetch('/api/save-prompt', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: P.name, text: P.editor.getValue(), parent: P.number})});
+  const saved = await response.json().catch(() => ({}));
+  if (!response.ok) return toast(saved.error || 'The prompt was not saved.');
+  await renderPrompt(P.name, saved.number);
+  toast(`Saved as version ${saved.number}. Layers made with earlier versions still show the version that made them.`);
+};
 
 /* ---------- corrections: removed one at a time from the top, after a warning, VIEW-014 ---------- */
 async function renderCorr(warning = null) {
@@ -506,11 +580,13 @@ async function removeTop(name) {
 }
 
 /* ---------- tabs, toast ---------- */
-const TABS = {object: '#p-object', prov: '#p-prov', corr: '#p-corr'};
+const TABS = {object: '#p-object', prov: '#p-prov', prompt: '#p-prompt', corr: '#p-corr'};
 function showTab(tab) {
   for (const [key, selector] of Object.entries(TABS)) { $(selector).hidden = key !== tab; $('#t-' + key).setAttribute('aria-selected', String(key === tab)); }
   if (tab === 'prov') renderProv();
   if (tab === 'corr') renderCorr();
+  if (tab === 'prompt' && !P.editor) renderPrompt();
+  if (tab === 'prompt' && P.editor) setTimeout(() => P.editor.refresh(), 0);
 }
 for (const key of Object.keys(TABS)) $('#t-' + key).onclick = () => showTab(key);
 let toastTimer;

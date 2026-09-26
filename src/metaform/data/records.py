@@ -226,6 +226,15 @@ class Provenance(Record):
     role: str | None
     blinded: bool | None
     refs: tuple[Ref, ...] = ()
+    prompt_version: VersionRef | None = None
+
+
+@dataclass(frozen=True)
+class VersionRef(Record):
+    """The stored prompt version a layer was made from, STORE-044."""
+    name: str
+    number: int
+    version_id: str
 
 
 @dataclass(frozen=True)

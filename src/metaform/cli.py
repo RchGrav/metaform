@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
-from .data import Store, export_document, history, import_document, pull_wheel
+from .data import Store, export_document, history, import_document, prompts, pull_wheel
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
@@ -580,6 +580,19 @@ def install_(args: list[str], folder: Path) -> None:
     install.install(args, out)
 
 
+def prompts_(args: list[str], folder: Path) -> None:
+    if args:
+        raise Stop('prompts takes no words.', 'metaform prompts')
+    for item in prompts.prompts():
+        out(f'{item.name}  {item.format}  version {item.newest}')
+
+
+def prompt_(args: list[str], folder: Path) -> None:
+    if len(args) not in (1, 2) or (len(args) == 2 and not args[1].isdigit()):
+        raise Stop('prompt takes a prompt name and an optional version number.', 'metaform prompts')
+    sys.stdout.write(prompts.prompt_version(args[0], int(args[1]) if len(args) == 2 else None).text)
+
+
 def extract(args: list[str], folder: Path) -> None:
     positional, named = _nouns(args, ('origin',), 'extract')
     if len(positional) < 2:
@@ -609,7 +622,7 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
-    'extract': extract}
+    'extract': extract, 'prompts': prompts_, 'prompt': prompt_}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -819,6 +832,11 @@ docs.command(Command('extract', 'Write variants of an origin out to folders, wit
                      details='One named variant goes into the folder itself; several, or all, each go into a '
                              'subfolder named by the variant id. A folder that is not empty is refused.',
                      see_also=('add', 'list')))
+docs.command(Command('prompts', 'List the stored prompts, each with its newest version.', ('metaform prompts',),
+                     details='A prompt is edited as a new version, in the web GUI; no version ever changes, so each '
+                             'layer shows the exact text it was made from.', see_also=('prompt',)))
+docs.command(Command('prompt', "Show a stored prompt's text, its newest version or a numbered one.",
+                     ('metaform prompt <name> [<version>]',), see_also=('prompts',)))
 docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
                      ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
                      description="Previews every change with its backup, then removes Metaform's registration and "

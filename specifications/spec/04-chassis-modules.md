@@ -117,7 +117,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - What this means: A module is a folder with an `__init__.py`, or a package named by an entry point. Its id is its folder or entry point name and must equal `MODULE.id`. Two modules with one id, or a module named like a chassis verb, are not loaded, and `metaform list modules` says why.
 - Why: Community extensibility means a module can be dropped into the user place or installed like any Python package. Nothing lives in project folders because all data is global.
 - How it shows: `metaform list modules` shows each module with its place and state, and the reason for any that is not loaded.
-- Build: Discovery and loading in full are BASE-037. `RESERVED` is every chassis verb plus `chassis`: `help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `import`, `export`, `query`, `build`, `install`, `uninstall`, `feedback`, `read`, `extract`, `chassis`. It loses `mcp`, which is a module.
+- Build: Discovery and loading in full are BASE-037. `RESERVED` is every chassis verb plus `chassis`: `help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `import`, `export`, `query`, `build`, `install`, `uninstall`, `feedback`, `read`, `extract`, `prompts`, `prompt`, `chassis`. It loses `mcp`, which is a module.
 - Acceptance: A user-place module and an entry-point module with the same id: the second is reported with the reason and not loaded. A module named `export` is refused with the reason.
 - Relates to: BASE-015, CLI.
 - Status: confirmed. A per-project module place is open.

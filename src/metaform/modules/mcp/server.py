@@ -19,7 +19,7 @@ import anyio
 
 from metaform import settings
 from metaform.context import project_for
-from metaform.data import Store, StoreError
+from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
 from metaform.module import (Context, Module, Stop, Verb, call, context, feedback, instructions, list_reports,
                              on_this_system, read_report, result_json, setting_value, surface, tool_arguments)
@@ -125,7 +125,7 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                      'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
-HISTORY: dict[str, tuple[str, dict[str, Any]]] = {
+SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
     'add_origin': ("Establish an origin from the project's current state, as metaform add origin does, PROJ-014.",
                    {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
     'list_origins': ("The project's origins, as metaform list origins lists them.",
@@ -147,6 +147,13 @@ HISTORY: dict[str, tuple[str, dict[str, Any]]] = {
     'list_variants': ("An origin's variants, as metaform list variants lists them.",
                       {'type': 'object', 'additionalProperties': False,
                        'properties': {'origin': ORIGIN, 'project': PROJECT}}),
+    'prompts': ('The stored prompts, each with its newest version number, as metaform prompts lists them.',
+                {'type': 'object', 'additionalProperties': False, 'properties': {}}),
+    'prompt': ("A stored prompt's text and version, the newest unless a number is given, STORE-044.",
+               {'type': 'object', 'required': ['name'], 'additionalProperties': False,
+                'properties': {'name': _text('The prompt, by name.'),
+                               'number': {'type': 'integer', 'description': 'The version number; without it, the '
+                                                                            'newest.'}}}),
     'extract': ('Write variants out to folders with Python alone, as metaform extract does, PROJ-018.',
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
                  'properties': {
@@ -226,9 +233,14 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
 
 
 def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
-    """The history commands as tools, on the surface while the chassis is, PROJ-024 and MCP-004."""
+    """The history and prompt commands as tools, on the surface while the chassis is, PROJ-024, STORE-044 and
+    MCP-004."""
     try:
-        given = _checked(name, arguments, HISTORY[name][1])
+        given = _checked(name, arguments, SURFACED[name][1])
+        if name == 'prompts':
+            return False, [result_json(list(prompts.prompts()))]
+        if name == 'prompt':
+            return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
         store = Store(project_for(folder, given.pop('project', None)) or _no_project())
         if name == 'add_origin':
             known = {item.mform_sha_id for item in store.origins()}
@@ -289,7 +301,7 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> Outcom
         return await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
     if name in CHASSIS:
         return await anyio.to_thread.run_sync(run_chassis, folder, name, dict(arguments))
-    if name in HISTORY and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
+    if name in SURFACED and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
         return await anyio.to_thread.run_sync(run_history, folder, name, dict(arguments))
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
@@ -330,7 +342,7 @@ def serve(folder: Path) -> None:
                   for name, (description, schema) in CHASSIS.items()]
         if on_surface('chassis', folder):
             found += [types.Tool(name=name, description=description, input_schema=schema)
-                      for name, (description, schema) in HISTORY.items()]
+                      for name, (description, schema) in SURFACED.items()]
         return found
 
     async def list_tools(ctx: Any, params: Any) -> Any:

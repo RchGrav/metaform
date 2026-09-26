@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Metaform</title>
+<link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="/vendor/codemirror/dialog.css">
 <link rel="stylesheet" href="/page/app.css">
 </head>
 <body>
@@ -30,10 +32,22 @@
     <div class="tabs" role="tablist">
       <button role="tab" id="t-object" aria-selected="true">Object</button>
       <button role="tab" id="t-prov" aria-selected="false">Provenance</button>
+      <button role="tab" id="t-prompt" aria-selected="false">Prompt</button>
       <button role="tab" id="t-corr" aria-selected="false">Corrections</button>
     </div>
     <section class="pane" id="p-object"></section>
     <section class="pane" id="p-prov" hidden></section>
+    <section class="pane" id="p-prompt" hidden>
+      <div class="toolbar">
+        <select id="promptSel" aria-label="Prompt"></select>
+        <select id="verSel" aria-label="Version"></select>
+        <button class="btn" id="diffBtn">Show changes</button>
+        <button class="btn primary" id="saveBtn">Save as new version</button>
+      </div>
+      <textarea id="editor"></textarea>
+      <div id="diffOut" class="diff" hidden></div>
+      <p class="empty" id="promptNote"></p>
+    </section>
     <section class="pane" id="p-corr" hidden></section>
   </aside>
 
@@ -48,6 +62,12 @@
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
 <script src="/vendor/mermaid.min.js"></script>
+<script src="/vendor/codemirror/codemirror.js"></script>
+<script src="/vendor/codemirror/xml.js"></script>
+<script src="/vendor/codemirror/markdown.js"></script>
+<script src="/vendor/codemirror/dialog.js"></script>
+<script src="/vendor/codemirror/searchcursor.js"></script>
+<script src="/vendor/codemirror/search.js"></script>
 <script type="module" src="/page/app.js"></script>
 </body>
 </html>

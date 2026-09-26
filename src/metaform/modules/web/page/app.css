@@ -129,3 +129,14 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
   .pane{padding:16px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.btn.primary{border-color:var(--signal);color:var(--signal)}
+.CodeMirror{height:340px;border:1px solid var(--line);border-radius:6px;font:12.5px/1.5 var(--mono);background:var(--ground);color:var(--text)}
+.CodeMirror-gutters{background:var(--panel);border-right:1px solid var(--line)}
+.CodeMirror-linenumber{color:var(--faint)}
+.CodeMirror-cursor{border-left-color:var(--signal)}
+.CodeMirror-selected,.CodeMirror-focused .CodeMirror-selected{background:#1c3a44}
+.CodeMirror-dialog{background:var(--panel-2);color:var(--text)}
+.cm-tag{color:var(--intake)}.cm-attribute{color:var(--k1)}.cm-string{color:#9fe0b8}.cm-comment{color:var(--faint)}.cm-header{color:var(--signal)}.cm-bracket{color:var(--muted)}
+.diff{font:12px/1.5 var(--mono);background:var(--ground);border:1px solid var(--line);border-radius:6px;max-height:300px;overflow:auto;padding:8px 0;white-space:pre-wrap;word-break:break-word}
+.diff div{padding:0 10px}
+.diff .add{background:#12301f;color:#9fe0b8}.diff .del{background:#3a1519;color:#ffa3ad}.diff .gap{color:var(--faint)}

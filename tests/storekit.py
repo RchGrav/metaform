@@ -94,9 +94,14 @@ PLANNED = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
 
 
 def plans(home, store, statements):
+    from metaform.data.prompts import PROMPT_SCHEMA
     base = home / 'metaform.sqlite3'
     issued = list(statements)
-    paths = (store_file(home, store), base)
+    # The home's prompt store may not exist yet; its reads are planned against its schema, STORE-044.
+    prompt_store = home / 'prompts.sqlite3'
+    if not prompt_store.exists():
+        prompt_store = ':memory:prompts'
+    paths = (store_file(home, store), base, prompt_store)
     found = []
     for statement in issued:
         if not statement.lstrip().upper().startswith(PLANNED):
@@ -104,7 +109,11 @@ def plans(home, store, statements):
         if "'main'.'item_text_" in statement:  # FTS5 reading its own shadow tables, not a query of the store
             continue
         for path in paths:
-            db = sqlite3.connect(path)
+            if path == ':memory:prompts':
+                db = sqlite3.connect(':memory:')
+                db.executescript(PROMPT_SCHEMA)
+            else:
+                db = sqlite3.connect(path)
             try:
                 found.append((statement, [row[3] for row in db.execute('EXPLAIN QUERY PLAN ' + statement)]))
                 break

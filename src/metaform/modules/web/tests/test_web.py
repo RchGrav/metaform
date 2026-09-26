@@ -384,7 +384,7 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
     shipped = [path.relative_to(folder).as_posix() for part in ('page', 'vendor')
                for path in (folder / part).rglob('*') if path.is_file()]
     assert shipped and {f'metaform/modules/web/{name}' for name in shipped} <= names
-    licenses = ['mermaid.LICENSE', 'three/LICENSE', 'fonts/IBM-Plex.LICENSE',
+    licenses = ['mermaid.LICENSE', 'three/LICENSE', 'fonts/IBM-Plex.LICENSE', 'codemirror/LICENSE',
                 *(f'd3/{name}.LICENSE' for name in ('d3-force-3d', 'd3-binarytree', 'd3-octree', 'd3-quadtree',
                                                     'd3-dispatch', 'd3-timer'))]
     assert all(f'metaform/modules/web/vendor/{license}' in names for license in licenses)
@@ -642,3 +642,75 @@ def test_every_element_and_join_is_drawn_in_a_fixed_number_of_draw_calls_whateve
     after = set(page.evaluate('window.metaform.labelled()'))
     assert after != before and len(after) <= 80 and page.evaluate('window.metaform.drawn().labels') <= 80
     assert problems == []
+
+
+@pytest.mark.req('VIEW-013')
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('STORE-044')
+def test_prompts_are_read_and_an_edit_is_saved_as_a_new_version_only_from_the_gui(run, web, mapped):
+    from metaform.data import Store, prompts
+    prompts.add_prompt('practices', 'markdown', 'one\n')
+    prompts.add_prompt_version('practices', 'two\n', 1)
+    third = prompts.add_prompt_version('practices', 'three\n', 2)
+    notes = Store('proj').layer_ref('notes')
+    prompts.record_use(third.version_id, 'proj', notes.metaform_id, notes.layer_id)
+    started(run)
+    assert [item['name'] for item in api(web, '/api/prompts')[1]['prompts']] == ['practices']
+    assert api(web, '/api/prompt?name=practices&number=3')[1]['text'] == 'three\n'
+    versions = api(web, '/api/prompt-versions?name=practices')[1]['versions']
+    assert [item['number'] for item in versions] == [3, 2, 1]
+    assert [use['layer_id'] for use in versions[0]['layers']] == [notes.layer_id] and versions[1]['layers'] == []
+    assert api(web, '/api/provenance?project=proj&layer=notes')[1]['prompt_version']['number'] == 3
+    body = json.dumps({'name': 'practices', 'text': 'four\n', 'parent': 3})
+    as_json = {'Content-Type': 'application/json'}
+    assert request(web, '/api/save-prompt', method='POST', body=body,
+                   headers={**as_json, 'Origin': 'http://rebound.example'})[0] == 403
+    assert prompts.prompt_version('practices').number == 3
+    own = {**as_json, 'Origin': f'http://127.0.0.1:{web}'}
+    status, saved = api(web, '/api/save-prompt', method='POST', body=body, headers=own)
+    assert status == 200 and (saved['number'], saved['parent_id']) == (4, third.version_id)
+    assert prompts.prompt_version('practices', 3).text == 'three\n'
+    assert api(web, '/api/provenance?project=proj&layer=notes')[1]['prompt_version']['number'] == 3
+    status, same = api(web, '/api/save-prompt', method='POST', body=body.replace('"parent": 3', '"parent": 4'),
+                       headers=own)
+    assert same['number'] == 4 and [notice['where'] for notice in same['notices']] == ['text']
+
+
+@pytest.mark.req('VIEW-013')
+@pytest.mark.req('VIEW-012')
+def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_next_version(run, web, mapped,
+                                                                                            browser):
+    from metaform.data import Store, prompts
+    prompts.add_prompt('practices', 'xml', '<practices>\n  <one/>\n</practices>\n')
+    prompts.add_prompt_version('practices', '<practices>\n  <two/>\n</practices>\n', 1)
+    third = prompts.add_prompt_version('practices', '<practices>\n  <three/>\n</practices>\n', 2)
+    notes = Store('proj').layer_ref('notes')
+    prompts.record_use(third.version_id, 'proj', notes.metaform_id, notes.layer_id)
+    started(run)
+    page, problems, remote = opened(browser, web)
+    page.click('#t-prov')
+    page.click('#p-prov .layerlist button:has-text("notes")')
+    page.click('#p-prov button.open-prompt')
+    page.wait_for_function('() => window.metaform.editor() && window.metaform.editor().getValue().includes("three")')
+    assert page.evaluate('window.metaform.editor().getValue()') == third.text
+    assert page.evaluate('window.metaform.editor().getOption("mode")') == 'xml'
+    assert page.locator('#p-prompt .CodeMirror-linenumber').count() >= 3
+    assert page.locator('#p-prompt .cm-tag').count() > 0
+    assert 'Version 3 made: notes.' in page.text_content('#promptNote')
+    page.evaluate('window.metaform.editor().setValue("<practices>\\n  <four/>\\n</practices>\\n")')
+    page.evaluate('window.metaform.editor().undo()')
+    assert page.evaluate('window.metaform.editor().getValue()') == third.text
+    page.evaluate('window.metaform.editor().setValue("<practices>\\n  <four/>\\n</practices>\\n")')
+    page.click('#diffBtn')
+    diff = page.inner_text('#diffOut')
+    assert '- ' + '  <three/>' in diff and '+ ' + '  <four/>' in diff
+    page.click('#p-prompt .CodeMirror')
+    page.keyboard.press('Control+f')
+    page.wait_for_selector('.CodeMirror-dialog')
+    page.keyboard.press('Escape')
+    page.click('#saveBtn')
+    page.wait_for_function('() => document.querySelector("#verSel").value === "4"')
+    saved = prompts.prompt_version('practices')
+    assert (saved.number, saved.text, saved.parent_id) == (4, '<practices>\n  <four/>\n</practices>\n', third.version_id)
+    assert prompts.use_of('proj', notes.metaform_id, notes.layer_id).number == 3
+    assert problems == [] and remote == []

@@ -278,6 +278,7 @@ Recommended: the active metaform's intake layer is always in context, like corre
 Blocks: nothing built, but an orchestrator that toggles layers for a job hands its agents a map with no joins.
 
 **Q50. Where prompts are stored. (STORE-044, STORE-016, VIEW-013)**
+Answered, Rich 2026-09-26: one prompt store per Metaform home, as recommended. STORE-044 now builds it as `~/.metaform/prompts.sqlite3`, with a layer's version kept in its `prompt_uses` rows.
 STORE-044 gives prompts their own versioned tables, and provenance's `prompt_version_id` references them, which puts them in each metaform's store. A second intake makes a new metaform, BASE-039, so an edit saved in one metaform's store would not reach the next intake, and each project would keep its own copy of the same prompt. Nothing yet says how a module's shipped prompt, such as the Canonical Intake, becomes a stored prompt.
 Meanwhile: unit 2 of step 3, prompt storage, waits; the web GUI's other units go on.
 Recommended: one prompt store per Metaform home, like the web GUI, holding every prompt and its versions. A module's shipped prompt becomes version 1 the first time it is served, and the newest version is what later runs serve. A layer's provenance keeps the text it was made from, as now, with the version id beside it, a reference across files that the home store keeps valid by never changing or deleting a version.

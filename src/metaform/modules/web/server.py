@@ -17,6 +17,7 @@ import os
 import socket
 import socketserver
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,7 +27,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from metaform import home, query, results, settings
 from metaform.context import toggled_for
-from metaform.data import Outcome, Store
+from metaform.data import Outcome, Store, prompts
 from metaform.data.records import plain
 from metaform.errors import Stop, StoreError
 
@@ -125,7 +126,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(404, {'error': f'Nothing at {url.path}.'})
 
     def read(self, name: str, given: dict[str, str]) -> None:
-        """One store read of STORE-025 by its query name, for one project, with the page's layers or the folder's."""
+        """One store read of STORE-025 by its query name, for one project, with the page's layers or the folder's;
+        or a read of the home's prompt store, which belongs to no project, STORE-044."""
+        if name in PROMPT_READS:
+            try:
+                return self.send(200, plain(PROMPT_READS[name](given)))
+            except StoreError as error:
+                return self.send(404, {'error': str(error), 'next': error.next_step})
         if name not in query.READS:
             return self.send(404, {'error': f'No read {name}.'})
         try:
@@ -145,7 +152,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
-        writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction}
+        writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
+                  '/api/save-prompt': self.save_prompt}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -167,6 +175,19 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, {'layer': layer, 'removed': True, 'notices': plain(done.notices)})
+
+    def save_prompt(self, given: dict[str, Any]) -> None:
+        """Save an edited prompt as its next version, edited from `parent`; no version ever changes, VIEW-013."""
+        name, text, parent = given.get('name'), given.get('text'), given.get('parent')
+        if not isinstance(name, str) or not isinstance(text, str) or not isinstance(parent, int) \
+                or isinstance(parent, bool):
+            return self.send(400, {'error': 'Saving a prompt takes its name, the text, and the version number it '
+                                            'was edited from.'})
+        try:
+            saved = prompts.add_prompt_version(name, text, parent)
+        except StoreError as error:
+            return self.send(400, {'error': str(error), 'next': error.next_step})
+        self.send(200, plain(saved))
 
     def apply_layers(self, given: dict[str, Any]) -> None:
         project = home.project(str(given.get('project', '')))
@@ -214,6 +235,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
+
+
+def _versions(given: dict[str, str]) -> dict[str, Any]:
+    """Every version of a prompt, newest first, each with the layers it made."""
+    return {'versions': [{**cast(dict[str, Any], plain(version)),
+                          'layers': plain(prompts.layers_by_prompt_version(version.version_id))}
+                         for version in prompts.prompt_versions(given.get('name', ''))]}
+
+
+PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
+    'prompts': lambda given: {'prompts': prompts.prompts()},
+    'prompt': lambda given: prompts.prompt_version(given.get('name', ''), int(given['number'])
+                                                   if given.get('number', '').isdigit() else None),
+    'prompt-versions': _versions,
+}
 
 
 def opened(given: dict[str, str]) -> Store:

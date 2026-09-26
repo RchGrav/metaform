@@ -445,3 +445,20 @@ def test_the_history_commands_are_tools_while_the_chassis_is_on_the_surface(run,
     async def narrowed(client, init):
         return set(await tool_names(client))
     assert not HISTORY_TOOLS & session(home, mapped, narrowed)
+
+
+@pytest.mark.req('STORE-044')
+@pytest.mark.req('MCP-003')
+def test_the_prompt_reads_are_tools(run, home, mapped):
+    from metaform.data import prompts
+    prompts.add_prompt('practices', 'markdown', 'one\n')
+    prompts.add_prompt_version('practices', 'two\n', 1)
+
+    async def check(client, init):
+        listed = json.loads(text(await client.call_tool('prompts', {}))[-1])
+        newest = json.loads(text(await client.call_tool('prompt', {'name': 'practices'}))[-1])
+        first = json.loads(text(await client.call_tool('prompt', {'name': 'practices', 'number': 1}))[-1])
+        return listed, newest, first
+    listed, newest, first = session(home, mapped, check)
+    assert [(item['name'], item['newest']) for item in listed] == [('practices', 2)]
+    assert (newest['number'], newest['text'], first['text']) == (2, 'two\n', 'one\n')

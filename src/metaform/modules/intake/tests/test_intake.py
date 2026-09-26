@@ -346,3 +346,36 @@ def test_a_test_intake_file_is_served_only_when_the_setting_names_it(run, projec
     run('set', '--intake-file', str(other), cwd=project)
     out = run('intake', 'prompt', cwd=project).stdout
     assert out.startswith('<process><target type="path" value=') and 'timer</process>' in out
+
+
+@pytest.mark.req('STORE-044')
+@pytest.mark.req('BASE-039')
+def test_the_intake_serves_the_newest_stored_version_and_links_its_layer_to_it(run, home, project, tmp_path):
+    from metaform.data import prompts
+    first = run('intake', 'prompt', cwd=project).stdout
+    stored = prompts.prompt_version('canonical-intake')
+    assert (stored.number, stored.origin, stored.format) == (1, 'shipped', 'xml')
+    assert stored.text == RESOURCE.read_text(encoding='utf-8')
+    assert without_target(first).startswith(without_target(stored.text))
+    edited = stored.text.replace('<process', '<!-- edited in the viewer -->\n<process', 1)
+    second = prompts.add_prompt_version('canonical-intake', edited, 1)
+    assert '<!-- edited in the viewer -->' in run('intake', 'prompt', cwd=project).stdout
+    result = submit(run, project, FIXTURE, tmp_path)
+    store = Store('timer')
+    layer = store.layer_ref(result['layer'])
+    assert [use.layer_id for use in prompts.layers_by_prompt_version(second.version_id)] == [layer.layer_id]
+    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id).number == 2
+    shown = store.provenance(result['layer']).prompt_version
+    assert (shown.name, shown.number, shown.version_id) == ('canonical-intake', 2, second.version_id)
+
+
+@pytest.mark.req('STORE-044')
+def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, project, tmp_path):
+    from metaform.data import prompts
+    own = tmp_path / 'own-intake.xml'
+    own.write_text('<process><target/></process>\n', encoding='utf-8')
+    run('set', f'--intake-file={own}', cwd=project)
+    assert run('intake', 'prompt', cwd=project).stdout.startswith('<process><target ')
+    result = submit(run, project, FIXTURE, tmp_path)
+    layer = Store('timer').layer_ref(result['layer'])
+    assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
