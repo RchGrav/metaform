@@ -27,7 +27,7 @@ This spec is frozen for the first release. New design ideas go to a later versio
 | File | Prefix | Covers |
 |---|---|---|
 | 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records |
-| 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, native and latent layers, the blind-spot challenge |
+| 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge |
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
 | 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the settings screen |

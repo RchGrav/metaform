@@ -338,3 +338,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The map module's `select`, `mask`, `context` and `children` helps, and the matching docstrings in the store, now say "toward the leaves" with no above or up; the empty address reads the root types, not the top types. Our own test title mixed both conventions, calling a select on a child "below" the mask and the layer on "there and above"; it is now `test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk`.
 - The spec's "above ... toward the leaves" and the Foundation's "higher in the tree" are unchanged.
 
+## Step 31: one Inference Metaform, two types of blind spot analysis
+
+- Rich, 2026-09-26: "There is one metaform, the inference metaform, there is two different types of blind spot analysis." The Native and Latent framing kept returning through the Foundation block in CLAUDE.md, which every agent reads first, and through LAYER-014.
+- The Foundation, at Rich's request, changes only its Native and Latent wording: intake records the artifact-level detail, "There is one metaform, the project's Inference Metaform", and the blind spot operation names its two types, the blind agent's paragraph kept whole with "the intake agent" and "the blind agent" in place of native and latent, and one sentence for the critic that reads the metaform with the code. The copy in `.claude/agents/repo-presentation.md` matches it.
+- LAYER-014 keeps its id and now states the two types: metaform-only, blinded, and metaform plus code, sighted, each its own layer with its own provenance, settled by LAYER-015's answers. The section 00, 01 and 02 mentions follow. REQUIREMENTS.md, its corrections and TRACE.md's quotation of REQ-025 are historical sources and keep their wording.
+

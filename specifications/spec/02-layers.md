@@ -1,6 +1,6 @@
 # 02 Layers
 
-This section defines layers: what a layer is, how it attaches to the map, its declared properties, how select and mask decide what reaches each point, how layers are read, provenance, memory, corrections, native and latent reasoning, and the blind-spot challenge workflow.
+This section defines layers: what a layer is, how it attaches to the map, its declared properties, how select and mask decide what reaches each point, how layers are read, provenance, memory, corrections, the two types of blind spot analysis, and the blind-spot challenge workflow.
 The receiver, purpose and encounter structure itself, element identity and subtypes are in section 01; storage tables and indexes are in the storage section; the operations a module calls are in the common base section.
 
 ### LAYER-001 Everything Metaform holds is a layer
@@ -173,16 +173,16 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Relates to: LAYER-012, LAYER-008, STORE-020, MCP-003.
 - Status: confirmed. What create entities does for a name that is not a node of the map is open.
 
-### LAYER-014 Native and latent reasoning are separate layers
+### LAYER-014 Blind spot analysis over the one Inference Metaform comes in two types, each its own layer
 
-- Requirement: Native reasoning and latent reasoning each produce their own layer, each with its own provenance record.
-- What this means: The native agent builds the map from the artifact. The latent agent receives everything the native agent built, the elements, descriptions, joins and operative purposes, and reasons from outside the native frame, blind to the implementation particulars. It can agree with what it sees, question it, or infer missing and different relationships. Its output is its own layer.
-- Why: The latent perspective is valuable because it differs from the native one. Separate layers keep the two from blending, and selecting both puts them side by side when a reader wants to compare.
-- How it shows: The native layer's provenance is sighted, and the latent layer's is blinded. A view selecting both shows where they differ.
-- Build: The latent run creates a new layer with blinded true, writing its items against the native layer's nodes and creating new elements and joins in its own layer where it infers them.
-- Acceptance: A latent run leaves the native layer unchanged and adds exactly one new layer with its own provenance.
+- Requirement: There is one metaform, the Inference Metaform. Blind spot analysis over it comes in two types, metaform-only and metaform plus code, and each run produces its own layer with its own provenance record.
+- What this means: The intake agent builds the Inference Metaform from the artifact. In metaform-only analysis, an agent blind to the implementation receives everything the intake agent built, the elements, descriptions, joins and operative purposes, and reasons from outside the intake agent's frame. It can agree with what it sees, question it, or infer missing and different relationships. Like a critic of a specification, it validates intent and finds omissions, because the metaform records the purpose that code does not; some of its concerns will be ones the implementation already handles. In metaform-plus-code analysis, a critic reads the metaform together with the code; its findings are precise and actionable, and the code anchors its view. Either output is its own layer.
+- Why: The two see different things. The blind analysis notices what should exist because of what the artifact is; the sighted analysis notices what the artifact already does that the map never named, LAYER-015. Separate layers keep them from blending with the intake and with each other, and selecting both puts them side by side when a reader wants to compare. The answers of LAYER-015 settle each finding: C for a concern already handled elsewhere, B for a real omission, A for one that adds nothing.
+- How it shows: A metaform-only layer's provenance is blinded, and a metaform-plus-code layer's is sighted. A view selecting both shows where they differ.
+- Build: Each run creates a new layer with blinded set by its type, writing its items against the metaform's nodes and creating new elements and joins in its own layer where it infers them.
+- Acceptance: A blind spot run of either type leaves the intake layer unchanged and adds exactly one new layer with its own provenance, blinded true for metaform-only and false for metaform plus code.
 - Relates to: LAYER-009, LAYER-010, LAYER-015.
-- Status: confirmed.
+- Status: confirmed. Rich, 2026-09-26: "There is one metaform, the inference metaform, there is two different types of blind spot analysis."
 
 ### LAYER-015 The blind-spot challenge workflow
 
