@@ -158,7 +158,7 @@ export class Scene {
     for (const kind of KINDS) {
       const mesh = this.meshes[kind];
       this.members[kind].forEach((node, i) => {
-        const size = kind === 'el' ? 2.2 + Math.min(6, Math.sqrt(node.joins || 0) * 1.4) + (node.role === 'DE' ? 2.5 : node.role === 'VE' ? 1.5 : 0) : SIZE[kind];
+        const size = kind === 'el' ? this.radius(node) : SIZE[kind];
         matrix.compose(position.set(node.x, node.y, node.z), quaternion.identity(), scale.setScalar(size));
         mesh.setMatrixAt(i, matrix);
       });
@@ -208,6 +208,8 @@ export class Scene {
     arrows.instanceMatrix.needsUpdate = true;
     this.dirty = true;
   }
+
+  radius(node) { return 2.2 + Math.min(6, Math.sqrt(node.joins || 0) * 1.4) + (node.role === 'DE' ? 2.5 : node.role === 'VE' ? 1.5 : 0); }
 
   /* ---------- selection, camera ---------- */
   select(id, fly) {
@@ -334,14 +336,16 @@ export class Scene {
       moved = true;
     }
     if (!moved) return;
-    const box = this.renderer.domElement.getBoundingClientRect(), point = new THREE.Vector3();
+    const box = this.renderer.domElement.getBoundingClientRect(), point = new THREE.Vector3(), rim = new THREE.Vector3();
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
     for (const node of this.chosen) {
       let tag = this.tags.get(node.id);
       if (!tag) { tag = document.createElement('span'); tag.textContent = node.name; this.labels.append(tag); this.tags.set(node.id, tag); }
       point.set(node.x, node.y, node.z).project(this.camera);
+      rim.set(node.x, node.y, node.z).addScaledVector(up, this.radius(node)).project(this.camera);
       tag.hidden = point.z > 1;
       tag.style.left = ((point.x + 1) / 2 * box.width) + 'px';
-      tag.style.top = ((1 - point.y) / 2 * box.height) + 'px';
+      tag.style.top = ((1 - rim.y) / 2 * box.height) + 'px';  // above the sphere's rim, so a label never sits on it
       tag.className = node.id === this.selected ? 'sel' : this.neighbors.has(node.id) ? 'near' : this.selected ? 'dim' : '';
     }
   }

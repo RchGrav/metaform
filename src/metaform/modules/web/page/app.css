@@ -108,7 +108,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .legend i.dot{width:8px;height:8px;border-radius:50%}
 .legend i.dash{background:repeating-linear-gradient(90deg,var(--c) 0 4px,transparent 4px 7px)}
 .labels3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-.labels3d span{position:absolute;transform:translate(-50%,-160%);font:500 11px var(--sans);color:var(--muted);white-space:nowrap;text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);transition:color .3s,opacity .3s}
+.labels3d span{position:absolute;transform:translate(-50%,-115%);font:500 11px var(--sans);color:var(--muted);white-space:nowrap;text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);transition:color .3s,opacity .3s}
 .labels3d span.near{color:var(--text)}
 .labels3d span.sel{color:var(--signal);font-size:13px;font-weight:600}
 .labels3d span.dim{opacity:.35}
