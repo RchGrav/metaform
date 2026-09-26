@@ -13,24 +13,25 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: BASE-017, BASE-019, BASE-035, CLI-026, MCP-002, PROJ-019, VIEW-002, D44.
 - Status: confirmed for one unified web GUI, user global, serving every project, with the viewer as its first view, Rich 2026-09-25. The module name `web` and shipping enabled are recommended.
 
-### VIEW-002 The web GUI is one server for the user, on one fixed port
-- Requirement: One server per Metaform home serves the web GUI for every registered project on one fixed loopback port. `metaform web` opens the GUI in the default browser, starting the server when it is not running; `metaform web stop` stops it; `metaform web status` reports it.
-- What this means: The home is the user's Metaform data folder, so in practice this is one server per user; a second home, such as a test's, has its own server and needs another port. Opening from any folder, or for any project, reuses the running server and opens a tab on it; there is never a second server for the same home. The folder it is opened from chooses only which project the page shows first. The port is fixed, so the address stays the same across restarts and a bookmark keeps working. When and how the server starts is open, question 4. Which folder's settings, such as `--layers`, the GUI shows and changes is open, question 5.
+### VIEW-002 The web GUI is one server for the user, on one fixed port, started with `metaform web`
+- Requirement: One server per Metaform home serves the web GUI for every registered project on one fixed loopback port. `metaform web` starts it when it is not running and prints its address; when it is already running, it prints the address it runs at. `metaform web stop` stops it.
+- What this means: The home is the user's Metaform data folder, so in practice this is one server per user; a second home, such as a test's, has its own server and needs another port. Starting from any folder, or for any project, finds the running server and starts no second one. The page lists every registered project and switches between them; the folder `metaform web` ran in chooses only which project the page shows first. The port is fixed, so the address stays the same across restarts and a bookmark keeps working. After an intake, agents start it and tell the user the address, VIEW-015. Which folder's settings, such as `--layers`, the GUI shows and changes is open, question 5.
 - Why: A local server keeps all data on the machine and needs no account. Loopback only means nothing on the network can read the metaform. A fixed address lets a person keep the GUI open while agents work.
-- How it shows: `metaform web` prints `Web: http://127.0.0.1:<port>/?t=<token>` and a browser tab opens. Running it again from another project's folder opens a second tab on the same server, showing that project.
+- How it shows: `metaform web` prints `Web: started at http://127.0.0.1:<port>/?t=<token>`. Run again, from any folder, it prints `Web: running at http://127.0.0.1:<port>/?t=<token>`. `metaform web stop` prints `Web: stopped`.
 - Build:
+  - The module's verbs are `start`, its default, BASE-035, so `metaform web` runs it and over MCP it is the tool `web_start`, and `stop`, the tool `web_stop`. `start` returns the address and whether it started the server or found it running.
+  - `start` launches the server as a process detached from the terminal, so it runs until `metaform web stop`, logout or restart: on POSIX in a new session, on Windows as a detached process, with no console. It returns once the server answers on its port.
   - The server uses the standard library, `http.server` with a threading server, so the GUI adds no compiled dependency.
   - The home has one token, made on the server's first start and stored in the home. The page URL carries it, and every request without it is refused with 403. This stops other local pages from reading the metaform through the browser, and the address stays the same across restarts.
-  - The browser is opened with `webbrowser.open`, which covers Linux, macOS and Windows. When no browser can be opened, the address is printed and the command still succeeds.
-  - The server records its address and process id under `~/.metaform/run/web.json`. Whatever would start it reads that file first and reuses a live server. `stop` ends that process. `status` reads the file and checks the process is alive.
-  - `--web-port` is a chassis-schema setting declared by the module, an integer, with a fixed default, question 6. When the port is held by another program, `metaform web` stops with the port named and `Next: metaform set --web-port <port>`.
+  - The server records its address and process id under `~/.metaform/run/web.json`. `start` reads that file first and reuses a live server. `stop` ends that process and removes the file.
+  - `--web-port` is a chassis-schema setting declared by the module, an integer, with a fixed default, question 6. When the port is held by another program, `start` stops with the port named and `Next: metaform set --web-port <port>`.
 - Acceptance:
-  - `web`, then `status`, reports the running address. `stop`, then `status`, reports it stopped.
-  - `web` run twice, from the folders of two projects, leaves one server running, and both tabs are served by it.
+  - `metaform web` starts the server and prints its address; run again, it reports the same address as running and no second process exists; `metaform web stop` ends it and removes the run file.
+  - `web` run from the folders of two projects leaves one server running, serving both projects.
   - A request without the home's token is refused.
   - The server accepts no connection on a non-loopback address.
-- Relates to: CLI-011, PROJ-003, PROJ-019, VIEW-001, VIEW-004.
-- Status: confirmed for one server for the user serving every project on one fixed port, Rich 2026-09-25, and for a locally served GUI. The verb names, the token kept in the home and the port setting are recommended.
+- Relates to: BASE-035, CLI-011, PROJ-003, PROJ-019, VIEW-001, VIEW-004, VIEW-015.
+- Status: confirmed for one server for the user serving every project on one fixed port, for `metaform web` to start it and `metaform web stop` to stop it, and for a locally served GUI, Rich 2026-09-25. The default verb, the output lines, the token kept in the home and the port setting are recommended.
 
 ### VIEW-003 The viewer works offline with every script bundled
 - Requirement: The viewer loads nothing from the network: every script, style and font it uses is bundled in the module with its license.
@@ -182,11 +183,26 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: LAYER-011, STORE-017, STORE-032, STORE-036, VIEW-011.
 - Status: confirmed for removal one at a time in reverse with a warning. Peel then discard as the mechanism, and the warning read, are recommended.
 
+### VIEW-015 After an intake, agents start the web GUI and tell the user its address
+- Requirement: A setting, on by default, puts an instruction in what agents read: after an intake, start the web GUI if it is not already running, and if it was not running, tell the user its address once it starts.
+- What this means: With the setting on, the person who asked for an intake is handed the GUI's address when the map is ready, without having to start anything. When the GUI was already running, the agent starts nothing and says nothing about it. With the setting off, the instruction is not given and the GUI starts only when someone runs `metaform web`.
+- Why: The map is most worth seeing right after an intake, and the agent that ran it is the one talking to the person.
+- How it shows: With the default, an agent finishes an intake, calls `web_start`, and tells the user `The map is in the web GUI at http://127.0.0.1:<port>/?t=<token>` when it started the server. With `metaform set --no-web-autostart`, the composed instructions hold no such line.
+- Build:
+  - The setting is `web_autostart`, switch `--web-autostart`, a boolean, default true, folder scope, declared by the web module, CLI-011.
+  - The instruction reaches agents through the web module's status hook, BASE-035: when the setting is true for the folder, the hook returns it as its notice, so it is in the composed instructions, MCP-007, and in `metaform help agents`; when false, the hook returns no notice. The notice reads: `After an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. If it was not running, tell the user its address once it starts.`
+  - `web_start` returns whether it started the server or found it running, with the address, so the agent knows whether to tell the user, VIEW-002.
+- Acceptance:
+  - With the setting at its default, the composed instructions hold the notice; after `set --no-web-autostart` they do not.
+  - `web_start` with no server running returns `started` and the address; called again, it returns `running` and the same address.
+- Relates to: BASE-035, CLI-011, MCP-007, VIEW-002.
+- Status: confirmed for a setting, true by default, that instructs agents to start the GUI after an intake when it is not running and to tell the user its address when they started it, Rich 2026-09-25. The setting name, the delivery through the status notice and the notice's wording are recommended.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
 2. Answered: the viewer writes exactly three things, applying layers, new prompt versions, and removing the top correction layer with a warning, VIEW-011.
 3. NEW How does a module add a view to the web GUI? Recommended: a module declares its views as a page folder and the read endpoints they need, and the web module serves them under the module's id; decided when a second module has a view. (VIEW-001)
-4. NEW When does the GUI's server start? Recommended: on demand, `metaform web` starting it detached so it outlives the terminal, until `metaform web stop` or logout; starting at login, through a systemd user service, a launchd agent or a Windows startup task written by `metaform install`, offered later. Starting it from every `metaform` command or from each MCP server is not recommended, since an agent's session would start a web server as a side effect. (VIEW-002)
+4. Answered: `metaform web` starts it and `metaform web stop` stops it; a setting, true by default, instructs agents to start it after an intake when it is not running and to tell the user its address, VIEW-002 and VIEW-015.
 5. NEW Which folder's settings does the GUI show and change, such as `--layers`, CLI-033, since a browser has no folder? Recommended: the folder it was opened from, shown with its path at the top of the page. (VIEW-002, VIEW-004, VIEW-007)
 6. NEW What is the default of `--web-port`? (VIEW-002)
