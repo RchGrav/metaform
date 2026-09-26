@@ -760,7 +760,7 @@ The containment shown in this table refers to the join in which the provider sup
 
 The five supplied findings concern the `ef` interface, side-by-side variant launching, origin-unit export, installed-skill verification, and CI lint results. A missing-flag subtype remains part of the represented function; consult [localized correspondence](#correspondence) and [supporting capabilities](#supporting) before treating its name as an implemented command.
 
-Source: [current project export](../../exports/metaform-main.json).
+Source: [current project export](../examples/project-metaform.json).
 
 ---
 
