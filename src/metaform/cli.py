@@ -626,11 +626,16 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
 
 def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     found = _module(identifier, folder, surface=False)
+    module = found.module
+    if module is None:
+        raise Stop(f'Module {identifier} did not load: {found.problem}', 'metaform list modules')
+    if not rest and module.default is not None:
+        rest = [module.default]  # the module named alone runs its default verb, BASE-035
     verb = _verb(found, rest[0]) if rest else None
     if not (verb is not None and verb.transport) and not shown(identifier, folder):
         raise off_surface(identifier)
     if not rest or rest[0] in ('-h', '--help'):
-        out(docs.module_syntax(found.module))
+        out(docs.module_syntax(module))
         return
     if verb is None:
         raise Stop(f'{identifier} has no verb {rest[0]}.', f'metaform help {identifier}')
@@ -638,7 +643,7 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         raise _elsewhere(identifier, verb)
     parsed = grammar.parse(identifier, verb, rest[1:])
     if parsed.help:
-        out(docs.verb_syntax(found.module, verb))
+        out(docs.verb_syntax(module, verb))
         return
     if verb.caution and not parsed.confirm:
         confirm = ' '.join(['metaform', identifier, verb.name, *rest[1:], '--confirm'])

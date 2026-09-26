@@ -123,6 +123,7 @@ class Module:
     start: Hook | None = None
     stop: Hook | None = None
     status: StatusHook | None = None
+    default: str | None = None  # the verb `metaform <id>` runs when no verb follows, BASE-035
 
 
 @dataclass

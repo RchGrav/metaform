@@ -676,3 +676,31 @@ def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, use
     out, err = process.communicate(timeout=30)
     assert process.returncode == 3
     assert 'Cancelling sleeper sleep...' in err and 'woke' not in out
+
+
+@pytest.mark.req('BASE-035')
+def test_a_module_named_alone_runs_its_default_verb_and_help_still_shows_its_syntax(run, user_module):
+    user_module('dflt', f'''
+        from metaform.module import Module, Verb
+        {OS}
+        MODULE = Module(id='dflt', summary='Default.', purpose='Default. Details: metaform help dflt.', default='go',
+                        verbs=(Verb('go', lambda ctx: 'went', 'Go.'), Verb('stop', lambda ctx: 'stopped', 'Stop.')))
+    ''')
+    user_module('plain', f'''
+        from metaform.module import Module, Verb
+        {OS}
+        MODULE = Module(id='plain', summary='Plain.', purpose='Plain. Details: metaform help plain.',
+                        verbs=(Verb('go', lambda ctx: 'went', 'Go.'),))
+    ''')
+    assert run('dflt').stdout == 'went'
+    assert run('dflt', 'go').stdout == 'went' and run('dflt', 'stop').stdout == 'stopped'
+    assert run('dflt', '--help').stdout.startswith('Usage: metaform dflt')
+    assert run('plain').stdout.startswith('Usage: metaform plain')
+    user_module('wrong', f'''
+        from metaform.module import Module, Verb
+        {OS}
+        MODULE = Module(id='wrong', summary='Wrong.', purpose='Wrong. Details: metaform help wrong.', default='nope',
+                        verbs=(Verb('go', lambda ctx: 'went', 'Go.'),))
+    ''')
+    row = next(line for line in lines(run('list', 'modules')) if line.split()[0] == 'wrong')
+    assert row.split()[1] == 'error' and 'nope' in row

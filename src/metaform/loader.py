@@ -96,6 +96,8 @@ def _import(item: Found) -> Module:
     names = [verb.name for verb in declared.verbs]
     if len(names) != len(set(names)):
         raise ValueError('Two verbs share one name.')
+    if declared.default is not None and declared.default not in names:
+        raise ValueError(f'default names {declared.default!r}, which is not one of its verbs.')
     for name in names:
         tool = f'{declared.id}_{name}'
         if not TOOL_NAME.fullmatch(tool) or '__' in tool:
