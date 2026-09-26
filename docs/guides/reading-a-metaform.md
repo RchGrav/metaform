@@ -4,7 +4,11 @@
 
 An Inference Metaform is a representation of **what a workpiece is doing**. Its addresses organize functional meaning; its joins explain receiving purposes and how providers serve them. It is not a source-file hierarchy or a call graph with more descriptive labels.
 
-This guide uses the unchanged [project export](../examples/project-metaform.json). The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+This guide uses the recorded [project export](../examples/project-metaform.json), imported as described in [Getting started](getting-started.md#inspect-the-supplied-project-map-without-a-new-intake). The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+
+The running web GUI renders this same kind of map. This screenshot is this repository's own current map, larger than the dated export used through the rest of this guide, but the same structure: elements as nodes, joins as the lines between them, colored by `ef`, and the selected element's held joins, Operative Purpose, and Function or Encounter text in the panel on the left.
+
+![The Metaform web GUI: the chassis element selected in the object panel on the left, showing its held joins with Operative Purpose, Function or Encounter, and relation text, and the 3D graph of every element and join on the right.](../images/gui-map.png)
 
 ## Begin with the artifact and its receivers
 
@@ -50,22 +54,22 @@ A **Providing Element**, or **PE**, is an endpoint role in a join, not another e
 
 For `code.system.plugin`, there are three useful readings:
 
-```text
-Address:           code.system.plugin
-Full type reading: plugin system code
-Short type name:   plugin system       (name_length = 2)
-Project name:      module contract and loader
-```
+| Field | Value |
+|---|---|
+| Address | `code.system.plugin` |
+| Full type reading | plugin system code |
+| Short type name | plugin system (`name_length = 2`) |
+| Project name | module contract and loader |
 
 Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading. The recorded project name is a separate field: it is how this project names the functionality, formally or informally.
 
 Every prefix supplies a type perspective:
 
-```text
-code                 -> code
-code.system          -> system code
-code.system.plugin   -> plugin system code
-```
+| Prefix | Type reading |
+|---|---|
+| `code` | code |
+| `code.system` | system code |
+| `code.system.plugin` | plugin system code |
 
 The address can orient inference before the project-specific joins are read. The joins then connect that general understanding to the particular workpiece. Both are necessary to the account: the type tells an agent what kind of thing it is considering, while the receiving relationships establish what that thing is doing here.
 
@@ -81,22 +85,20 @@ Original material: [address-only examples](../../specifications/metaprompting_el
 
 The module author receives a capability from `code.system.plugin`. Its join is:
 
-```text
-Receiver: stakeholder.author.module
-    owns the Operative Purpose:
-    add a capability once, as a module, with the needed surfaces
-
-Provider: code.system.plugin
-    supplies the Encounter Function:
-    a MODULE declaration and loader through which that capability
-    becomes commands, tools, settings, events, status, and lifecycle
-
-Join: d14bd3498b614dfbaf0754c99b28dba3
-    ef: Encounter
-    relation:
-    The plugin system lets a module author plug a capability
-    into Metaform with one declaration.
+```mermaid
+graph LR
+    receiver["stakeholder.author.module<br/>module author"]
+    provider["code.system.plugin<br/>module contract and loader"]
+    provider -- "ef: Encounter" --> receiver
 ```
+
+| Field | Value |
+|---|---|
+| Receiver | `stakeholder.author.module`, owns the Operative Purpose: add a capability once, as a module, with the needed surfaces |
+| Provider | `code.system.plugin`, supplies the Encounter Function: a MODULE declaration and loader through which that capability becomes commands, tools, settings, events, status, and lifecycle |
+| Join | `d14bd3498b614dfbaf0754c99b28dba3` |
+| `ef` | Encounter |
+| `relation` | The plugin system lets a module author plug a capability into Metaform with one declaration. |
 
 This display is an abbreviated reading of the actual record. The complete purpose, function, observation, and references remain in the export and are printed by:
 
@@ -118,17 +120,15 @@ This matters outside software as well. In the author's photograph example, a cou
 
 The dotted typology expresses valid Function or Encounter types, not every convenient metadata label. Encoding alone does not make a functional type. A JPEG encoder can have an encoder-function address; simply appending a file format to a document address does not establish such a function. The [namespace account](../inference-metaform/REFERENCE.md#namespaces) covers the distinctions in depth.
 
-## Internal subtypes preserve detail without inflating the top level
+## Internal subtypes preserve detail without adding more global elements
 
 The module-author join contains:
 
-```text
-code.system.plugin serves stakeholder.author.module
-  purpose join d14bd3498b614dfbaf0754c99b28dba3
-    |
-    +-- code.template.module  -> template
-    |
-    +-- code.module.example   -> helloworld
+```mermaid
+graph TB
+    join["code.system.plugin serves stakeholder.author.module<br/>purpose join d14bd3498b614dfbaf0754c99b28dba3"]
+    join -.holds.-> template["code.template.module<br/>template"]
+    join -.holds.-> example["code.module.example<br/>helloworld"]
 ```
 
 `template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent purpose join**. They do not receive independent copies of that purpose merely because they can be named.
@@ -146,11 +146,13 @@ The runtime can also create a memory holder named `code.module.helloworld` when 
 
 Consider the author's language example. A C Encounter, `code.c`, is attached at `code.utility.disk`. The functional address remains the disk utility; the language is not appended as `code.utility.disk.c`.
 
-```text
-Backward visibility:  code.utility.disk -> code.utility -> code
-Forward application:  from code.utility.disk into its descendants
-Unrelated siblings:   do not acquire C through the common ancestor
+```mermaid
+graph LR
+    disk["code.utility.disk<br/>(code.c attached here)"] --> utility["code.utility"] --> trunk["code"]
+    disk -.forward application.-> descendants["descendants of code.utility.disk"]
 ```
+
+Unrelated siblings do not acquire C through the common ancestor.
 
 The relevant consequences include memory semantics, data representation, interfaces, error behavior, and operating-system interaction. An agent can examine those consequences through the disk utility's receiving purposes, not merely paste a generic C checklist beside it. A mixed-language workpiece retains the attachment points where each language actually participates.
 

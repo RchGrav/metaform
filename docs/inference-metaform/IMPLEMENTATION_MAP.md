@@ -47,7 +47,7 @@ It is byte-identical to `specifications/Canonical_Intake.xml`, with SHA-256:
 7e2140a9dd71c875689604772c07e5f0c1dd6366b55ba03a530211867eb909f8
 ```
 
-The standalone project JSON and `exports/metaform-main.json` are identical copies of the same supplied export. The current graph names Metaform `main`, id `6a339171fe6f44c49a40f4a270d98913`, with intake layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`, named `intake-20260926T192840Z-f04016`, created September 26, 2026 at 19:28:40 UTC. Its recorded result id is `metaform-intake-20260926-a823b992`.
+The standalone project JSON is the supplied `exports/metaform-main.json` with one change: each join and subtype row records `verb` as null, because that intake was made before `verb` existed. The current graph names Metaform `main`, id `6a339171fe6f44c49a40f4a270d98913`, with intake layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`, named `intake-20260926T192840Z-f04016`, created September 26, 2026 at 19:28:40 UTC. Its recorded result id is `metaform-intake-20260926-a823b992`.
 
 ### What was checked
 
@@ -457,10 +457,10 @@ The earlier bus/runtime illustration versus current sequential awaited delivery 
 | Mechanism | Test source and representative cases |
 |---|---|
 | Intake integrity | [test_intake.py:62-89](../../src/metaform/modules/intake/tests/test_intake.py#L62-L89): byte copies, target-only substitution, footer settings. |
-| Intake field retention | [test_intake.py:108-253](../../src/metaform/modules/intake/tests/test_intake.py#L108-L253): whole write, `ef`, missing fields, extra content, unreadable top-level input. |
+| Intake field retention | [test_intake.py:108-253](../../src/metaform/modules/intake/tests/test_intake.py#L108-L253): whole write, `ef`, `verb`, missing fields, extra content, unreadable top-level input. |
 | Repeated intake and non-code artifacts | [test_intake.py:255-378](../../src/metaform/modules/intake/tests/test_intake.py#L255-L378): new active Metaform, duplicate addresses, report/flags, non-software fixture. |
 | No implicit prompt version | [test_intake.py:390-418](../../src/metaform/modules/intake/tests/test_intake.py#L390-L418). |
-| Local selection and inheritance | [test_store_layers.py:141-173](../../tests/test_store_layers.py#L141-L173), [289-327](../../tests/test_store_layers.py#L289-L327), [349-400](../../tests/test_store_layers.py#L349-L400). The select test's title says "and above," but its assertions leave parent and sibling unselected. |
+| Local selection and inheritance | [test_store_layers.py:141-173](../../tests/test_store_layers.py#L141-L173), [289-327](../../tests/test_store_layers.py#L289-L327), [349-400](../../tests/test_store_layers.py#L349-L400). The select test is named `test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk`, naming the direction by the tree's parts. |
 | Knowledge and memory lifecycle | [test_store_layers.py:124-138](../../tests/test_store_layers.py#L124-L138), [230-277](../../tests/test_store_layers.py#L230-L277). |
 | Relationship-addressed memory | [memory tests](../../src/metaform/modules/memory/tests/test_memory.py): join nodes, relations at both ends, deletion, selection, and newly noted elements. |
 | Challenges and direct plans | [test_store_challenges.py](../../tests/test_store_challenges.py). |
@@ -727,7 +727,7 @@ Have each requirement's acceptance protected by a test that fails on a wrong bui
 
 ### Internal subtypes and their containing purpose joins
 
-Containment below refers to the join in which the provider supplies the receiver, not to a claim that every internal subtype is a lexical descendant of the provider address. A subtype does not become a duplicate global element merely because it has its own address and retained description.
+The containment shown in this table refers to the join in which the provider supplies the receiver, not to a claim that every internal subtype is a lexical descendant of the provider address. A subtype does not become a duplicate global element merely because it has its own address and retained description.
 
 | Internal address | Project name | Containing receiver <- provider |
 |---|---|---|

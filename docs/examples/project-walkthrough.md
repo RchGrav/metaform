@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reader guide](../guides/reading-a-metaform.md) · [Module-author guide](../guides/extending-metaform.md)
 
-This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json). Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The inspection commands operate on the imported map.
+This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json), imported as described in [Getting started](../guides/getting-started.md#inspect-the-supplied-project-map-without-a-new-intake). Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The inspection commands operate on the imported map.
 
 ## 1. Begin from a receiving purpose
 

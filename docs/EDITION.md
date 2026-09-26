@@ -61,7 +61,7 @@ A before/after SHA-256 comparison found no changes in the **131 supplied source 
 
 ## Continuity of the technical reference
 
-[REFERENCE.md](inference-metaform/REFERENCE.md), [IMPLEMENTATION_MAP.md](inference-metaform/IMPLEMENTATION_MAP.md), and [EXAMPLES_TO_COLLECT.md](inference-metaform/EXAMPLES_TO_COLLECT.md) are retained byte-for-byte from the completed technical-reference edition. Their account of the checks performed for that earlier edition remains intact; the additional local exercises are recorded here.
+[REFERENCE.md](inference-metaform/REFERENCE.md), [IMPLEMENTATION_MAP.md](inference-metaform/IMPLEMENTATION_MAP.md), and [EXAMPLES_TO_COLLECT.md](inference-metaform/EXAMPLES_TO_COLLECT.md) carry the substance of the completed technical-reference edition. A later presentation pass converted their ASCII structure drawings into rendered Mermaid diagrams, corrected `above`/`below` wording that misdescribed the namespace's trunk-to-leaves direction, and corrected the note about the select test's title now that the test is named `test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk`; no technical claim changed. Their account of the checks performed for that earlier edition remains intact; the additional local exercises are recorded here.
 
 [IDEAS.md](inference-metaform/IDEAS.md) retains its eight tooling proposals. Its documentation-status section now links to the completed public materials instead of treating those delivered pages as future proposals. The separation between established mechanisms, completed documentation, and proposed additional tooling remains explicit.
 

@@ -173,7 +173,7 @@ metaform map knowledge op=add-property layer=review-notes element=type:code valu
 metaform map context code.system.plugin
 ```
 
-This is a demonstration of placement, not an added rule that every task must follow. The `type:` form targets a namespace prefix even when it has no independently represented global element. A property at `code` applies to its descendants. Properties attached below the current scope can be **visible** from an ancestor without thereby applying to every sibling branch. The context result separates `applying` and `visible`.
+This is a demonstration of placement, not an added rule that every task must follow. The `type:` form targets a namespace prefix even when it has no independently represented global element. A property at `code` applies to its descendants. Properties attached toward the leaves from the current scope can be **visible** from an ancestor without thereby applying to every sibling branch. The context result separates `applying` and `visible`.
 
 Properties implement scoped context support; they are not, by themselves, a producer that derives every semantic consequence of an Encounter. [Encounter propagation](../inference-metaform/REFERENCE.md#encounters) explains the full mechanism and [the implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#selection) locates its current support.
 

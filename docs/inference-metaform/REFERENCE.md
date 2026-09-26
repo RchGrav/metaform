@@ -47,34 +47,18 @@ The typology engages existing understanding of functional kinds. The joins conne
 
 Together they create a continuing circuit:
 
-```text
-Artifact, collection, specification, or idea
-                  |
-                  v
-       Inference of functional meaning
-       types + purposes + relationships
-                  |
-                  v
-            Inference Metaform
-                  |
-       +----------+--------------------+
-       |                               |
-       v                               v
-Further inference through          Addressed memory,
-perspectives and Encounters        knowledge, and provenance
-       |                               |
-       +---------------+---------------+
-                       |
-Task prompt ---------> project-grounded lexicalization
-                       |
-                       v
-             selected understanding
-                       |
-                       v
-       Work / criticism / synthesis / recomposition
-                       |
-                       v
-       Further understanding for subsequent work
+```mermaid
+flowchart TB
+    A["Artifact, collection,<br/>specification, or idea"] --> B["Inference of functional meaning:<br/>types + purposes + relationships"]
+    B --> C["Inference Metaform"]
+    C --> D["Further inference through<br/>perspectives and Encounters"]
+    C --> E["Addressed memory,<br/>knowledge, and provenance"]
+    D --> F["project-grounded lexicalization"]
+    E --> F
+    T["Task prompt"] --> F
+    F --> G["selected understanding"]
+    G --> H["Work / criticism /<br/>synthesis / recomposition"]
+    H --> I["Further understanding<br/>for subsequent work"]
 ```
 
 This diagram describes how the mechanisms contribute to one another. An individual operation can enter through the part it needs; it does not have to execute every operation in the diagram.
@@ -94,14 +78,9 @@ A model comes to a task with an understanding of kinds of things: code, engines,
 
 Consider the author's address-only example:
 
-```text
-code
-  |
-  +-- code.engine
-        |
-        +-- code.engine.game
-              |
-              +-- code.engine.game.fps
+```mermaid
+graph LR
+    A["code<br/>(trunk)"] --> B["code.engine"] --> C["code.engine.game"] --> D["code.engine.game.fps<br/>(leaf)"]
 ```
 
 The author supplied four generated lists, each produced by a prompt of the form `write 10 best practices for [address]`. No repository, code, or project description accompanied those prompts. Each prefix produced a distinct level of guidance:
@@ -144,20 +123,13 @@ An **Entity** is a whole at the scope being examined. An **Element** is a nameab
 
 A subsystem can therefore be a Providing Element in one relationship and a Receiving Entity in another. No duplicate identity is needed merely because the perspective changes.
 
-```text
-Outside receiving entity
-  owns a purpose
-       ^
-       | served by
-       |
-Artifact's defining functionality
-  provides outwardly
-  receives what it needs internally
-       ^
-       | served by
-       |
-Supporting provider
-  may itself receive further capabilities
+```mermaid
+graph TB
+    outside["Outside receiving entity<br/>owns a purpose"]
+    defining["Artifact's defining functionality<br/>provides outwardly,<br/>receives what it needs internally"]
+    supporting["Supporting provider<br/>may itself receive further capabilities"]
+    defining -- served by --> outside
+    supporting -- served by --> defining
 ```
 
 The method uses functionality in this cross-artifact sense. A function can be an interface, a mechanism, a representation, or an experienced effect. It need not be a callable in a programming language.
@@ -170,16 +142,10 @@ The Canonical Intake uses **Vested Entity**, or **VE**, for the purpose-bearing 
 
 The roles in one join are:
 
-```text
-Receiving Entity / VE
-    |
-    | owns the why
-    v
-Operative Purpose
-    ^
-    | served through the how
-    |
-Encounter Function of a Providing Element
+```mermaid
+graph TB
+    receiver["Receiving Entity / VE"] -- owns the why --> purpose["Operative Purpose"]
+    provider["Encounter Function of<br/>a Providing Element"] -- served through the how --> purpose
 ```
 
 The purpose belongs to the receiver. The EF belongs to the provider. Their particular relationship is recorded in the receiver-owned join.
@@ -196,6 +162,7 @@ A join carries the receiving relationship's meaning, not merely two connected na
 | `function` | The descriptive EF supplied for this encounter. |
 | `ef` | `Function` or `Encounter`, identifying which reading is in use. |
 | `relation` | The artifact-specific relationship stated in active voice. |
+| `verb` | The one word the agent infers for `relation`'s verb. |
 | `observation` | What is actually there: its condition, implementation, format, arrangement, or limitations. |
 | `non_goal` | An optional pertinent outcome the receiver is not seeking. |
 | `refs` | Additional references or logic, expressed as key/value records. |
@@ -240,21 +207,17 @@ The implementation provides identities for elements, joins, and internal subtype
 
 A namespace address names a functional type at its most specific reusable level. The joins refine it with the particulars of the AUE. Every prefix must itself express a valid type or a functionality within its parent, and the path narrows from trunk to leaf.
 
-The currently served intake supplies five roots:
-
-```text
-code       document       media       data       stakeholder
-```
+The currently served intake supplies five roots: `code`, `document`, `media`, `data`, and `stakeholder`.
 
 It does not insert filler levels such as `domain` or `class`, and it prescribes no arbitrary minimum or maximum depth. A longer path is justified by additional functional distinctions, not by a desire to make all addresses the same length.
 
 The address reverses into a readable functional name. Variant functionalities stay separate when each intermediate prefix is meaningful:
 
-```text
-code.engine.game          -> game engine code
-code.engine.physics       -> physics engine code
-code.queue.dead_letter    -> dead letter queue code
-```
+| Address | Readable functional name |
+|---|---|
+| `code.engine.game` | game engine code |
+| `code.engine.physics` | physics engine code |
+| `code.queue.dead_letter` | dead letter queue code |
 
 The underscore in `dead_letter` holds a multiword unit where splitting the words would not produce the intended valid intermediate types. Underscores are not a shortcut for collapsing a meaningful type ancestry into one leaf.
 
@@ -295,21 +258,12 @@ This **Unloaded Definition** is deliberate semantic breadth. The prompt's defini
 
 A downstream agent uses the collected understanding. It does not have to reenact the intake's wording to make use of a recorded join. Construction language, model inference, resulting data, and submission/storage are separate parts of the mechanism:
 
-```text
-Canonical Intake wording and examples
-                 |
-                 v
-      Model examines the artifact
-      and infers its functional form
-                 |
-                 v
-     Final elements and receiving joins
-                 |
-                 v
-     Submission through the data interface
-                 |
-                 v
-       Stored, reusable understanding
+```mermaid
+flowchart TB
+    A["Canonical Intake wording and examples"] --> B["Model examines the artifact<br/>and infers its functional form"]
+    B --> C["Final elements and receiving joins"]
+    C --> D["Submission through the data interface"]
+    D --> E["Stored, reusable understanding"]
 ```
 
 Replacing the operative language with a superficially tidier definition can change what is elicited. Its precision lies in the relationships it produces, not in narrowing every term to the medium of the artifact.
@@ -330,7 +284,7 @@ After the initial survey and grouping, the intake traces what the defining funct
 
 For each such requirement, the procedure identifies a provider and records a purpose join. When that provider has requirements of its own, the examination continues from its receiving perspective. Every OP traces back through receiving relationships to the purpose served outside the artifact.
 
-The join records the active OP in `purpose`, the provider's EF in `function`, the Function/Encounter word in `ef`, the provider's namespace, an active-voice `relation`, and an observation of the actual arrangement or limitation. A pertinent `non_goal` and additional refs are retained when they contribute meaning.
+The join records the active OP in `purpose`, the provider's EF in `function`, the Function/Encounter word in `ef`, the provider's namespace, an active-voice `relation`, the one-word `verb` the agent infers for it, and an observation of the actual arrangement or limitation. A pertinent `non_goal` and additional refs are retained when they contribute meaning.
 
 The trace continues until there are no further unsatisfied OPs or NEs needed to understand the artifact. Parametrics are not enumerated as independent functional elements merely because many tunable values exist.
 
@@ -348,16 +302,13 @@ Combining does not optimize functionality away. It changes the level at which th
 
 An internal subtype join has no separate purpose field: the containing parent join carries that purpose. This preserves the reason for convergence instead of hiding an independent requirement inside a parent that cannot express it.
 
-```text
-Final global element: intake module
-  supplies the orchestrator's purpose:
-  retain one whole functional intake as a reusable base
-       |
-       +-- internal contribution: Canonical Intake
-       |     instructs the intake agent's functional examination
-       |
-       +-- internal contribution: submission writer
-             stores the submitted elements and joins
+```mermaid
+graph TB
+    intake["Final global element: intake module<br/>supplies the orchestrator's purpose:<br/>retain one whole functional intake as a reusable base"]
+    canonical["internal contribution: Canonical Intake<br/>instructs the intake agent's functional examination"]
+    writer["internal contribution: submission writer<br/>stores the submitted elements and joins"]
+    intake -.holds.-> canonical
+    intake -.holds.-> writer
 ```
 
 The project's current map uses this arrangement. `document.procedure.intake` and `code.writer.submission` are internal subtypes under the orchestrator's receiving join with `code.intake`. Their representation preserves distinct contributions while the parent functionality carries the receiving purpose.
@@ -444,33 +395,23 @@ The author's example joins `code.c` as an Encounter at `code.utility.disk`. The 
 
 The Encounter becomes available through the functional ancestry:
 
-```text
-Visibility while examining broader scope:
-
-code.utility.disk ----> code.utility ----> code
-       ^
-       |
-    code.c
-  Encounter attached here
+```mermaid
+graph LR
+    disk["code.utility.disk<br/>(code.c attached here)"] --> utility["code.utility"] --> trunk["code"]
 ```
 
-From its attachment point, the Encounter conditions inference through the functional descendants of that branch:
+From its attachment point, the Encounter conditions inference through the functional elements toward the leaves from that branch:
 
-```text
-code
-  |
-  +-- code.utility
-  |     |
-  |     +-- code.utility.disk       [C Encounter attached]
-  |     |     |
-  |     |     +-- descendant functionality in this branch
-  |     |
-  |     +-- other utility branch  [not made C by sibling visibility]
-  |
-  +-- another functional branch   [not made C by ancestor visibility]
+```mermaid
+graph LR
+    trunk["code"] --> utility["code.utility"]
+    utility --> disk["code.utility.disk<br/>[C Encounter attached]"]
+    disk --> descendant["descendant functionality<br/>in this branch"]
+    utility --> other["other utility branch<br/>[not made C by sibling visibility]"]
+    trunk --> another["another functional branch<br/>[not made C by ancestor visibility]"]
 ```
 
-Backward visibility and forward application have different jobs. At `code`, the agent can understand that part of the system is realized in C. That observation does not become a global C assumption for every branch below `code`.
+Backward visibility and forward application have different jobs. At `code`, the agent can understand that part of the system is realized in C. That observation does not become a global C assumption for every branch toward the leaves from `code`.
 
 In a mixed-language project, language Encounters attach where those realizations occur. The agent can reason about the composition at a broad scope while retaining the distinction between the affected branches.
 
@@ -544,17 +485,16 @@ The graph's elements are distinct nodes at which agents can attach memory traces
 
 These are meaningful locations because the prior inference has already established what the nodes and relationships are for. The next agent can arrive through a task's referent, through an affected receiving purpose, or through an Encounter and find the associated knowledge there.
 
-```text
-Functional element
-  +-- its descriptor and project name
-  +-- locally addressed memory
-  +-- selected knowledge
-  +-- receiving joins
-  |     +-- purpose and EF
-  |     +-- relation-specific knowledge
-  |     +-- internal subtype contributions
-  +-- provider-side relationships
-```
+A functional element holds:
+
+- its descriptor and project name
+- locally addressed memory
+- selected knowledge
+- receiving joins, each holding:
+  - purpose and EF
+  - relation-specific knowledge
+  - internal subtype contributions
+- provider-side relationships
 
 Memory is therefore one use of the Inference Metaform's functional addressability, not the entire definition of the system.
 
@@ -639,25 +579,19 @@ Corrections are applied separately from the normal selection. An all-ones defaul
 
 Suppose the starting set contains `general-practice`, `cpp-practice`, and `migration-notes`:
 
-```text
-code
-  incoming: general-practice, cpp-practice, migration-notes
-  |
-  +-- code.engine
-  |     mask migration-notes
-  |     effective: general-practice, cpp-practice
-  |     |
-  |     +-- code.engine.game
-  |           select migration-notes
-  |           effective: general-practice, cpp-practice, migration-notes
-  |
-  +-- code.installer
-        effective: general-practice, cpp-practice, migration-notes
+```mermaid
+graph LR
+    code["code<br/>incoming: general-practice,<br/>cpp-practice, migration-notes"]
+    engine["code.engine<br/>mask migration-notes<br/>effective: general-practice, cpp-practice"]
+    game["code.engine.game<br/>select migration-notes<br/>effective: general-practice, cpp-practice, migration-notes"]
+    installer["code.installer<br/>effective: general-practice, cpp-practice, migration-notes"]
+    code --> engine --> game
+    code --> installer
 ```
 
 This illustration concerns layer participation only. Whether a selected layer has a property that applies at an address is a separate question. Selection does not manufacture an applicable property where none is attached, and a local item does not acquire inheritance by being in a selected layer.
 
-### Properties visible from above and applying below
+### Properties applying from ancestors, properties visible from descendants
 
 The context view keeps two results separate. `applying` contains selected properties attached on the queried address's prefix chain. `visible` contains selected properties on descendants, resolved at their attachment locations and shown when inspecting the broader scope.
 
@@ -697,24 +631,13 @@ The type proper noun engages the functional understanding. The recorded project 
 
 A preprocessing agent can therefore recognize that a request about the plugin system concerns what this project names `module contract and loader`, without treating a class name or file path as the entire referent.
 
-```text
-General or project-unrefined request
-                 |
-                 v
-Infer intended referents against this project
-                 |
-                 v
-Match recorded project names and functional addresses
-                 |
-                 v
-Replace corresponding terms; preserve the requested operation
-                 |
-                 v
-Attach canonical-term -> namespace mappings
-and directions to relevant knowledge and memory
-                 |
-                 v
-Prepared request handed to the working agent
+```mermaid
+flowchart TB
+    A["General or project-unrefined request"] --> B["Infer intended referents<br/>against this project"]
+    B --> C["Match recorded project names<br/>and functional addresses"]
+    C --> D["Replace corresponding terms;<br/>preserve the requested operation"]
+    D --> E["Attach canonical-term to namespace mappings<br/>and directions to relevant knowledge and memory"]
+    E --> F["Prepared request handed to the working agent"]
 ```
 
 ### Derived example using a recorded project name
@@ -851,16 +774,15 @@ for commands, tools, settings, events, status, and lifecycle.
 
 The same provider serves other receivers for different reasons:
 
-```text
-code.system.plugin
-module contract and loader
-  |
-  +--> module author        extend once
-  +--> chassis              discover and manage modules
-  +--> command line         expose and run commands
-  +--> MCP server           expose and run tools
-  +--> package builder      distribute modules
-  +--> agent instructions   supply module purpose and status
+```mermaid
+graph LR
+    plugin["code.system.plugin<br/>module contract and loader"]
+    plugin --> author["module author<br/>extend once"]
+    plugin --> chassis["chassis<br/>discover and manage modules"]
+    plugin --> cli["command line<br/>expose and run commands"]
+    plugin --> mcp["MCP server<br/>expose and run tools"]
+    plugin --> builder["package builder<br/>distribute modules"]
+    plugin --> instructions["agent instructions<br/>supply module purpose and status"]
 ```
 
 The diagram reads from provider toward recipients for exposition. Stored purpose joins are owned by their receivers. The complete receiving relationships are indexed in the [implementation map](IMPLEMENTATION_MAP.md#graph-index).

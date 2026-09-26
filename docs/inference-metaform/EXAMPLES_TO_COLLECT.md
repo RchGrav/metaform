@@ -74,7 +74,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="address-only"></a>
 ### Target 1. Address-only inference and placement of knowledge
 
-**Mechanism.** A meaningful address engages primordial type understanding. Its ancestry orients the domain while its leaf supplies specificity. Knowledge that remains applicable when the leaf is removed can belong higher in the type tree. See [type understanding](REFERENCE.md#type-understanding).
+**Mechanism.** A meaningful address engages primordial type understanding. Its ancestry orients the domain while its leaf supplies specificity. Knowledge that remains applicable when the leaf is removed can belong closer to the trunk of the type tree. See [type understanding](REFERENCE.md#type-understanding).
 
 **Material to retain.** Preserve the original prompts and full outputs for each address in a trunk-to-leaf progression, together with whatever input and model settings were actually recorded. Keep the subsequent judgment about where a practice belongs: parent, leaf, or another branch. A project's application of one such practice can be attached as a later trace rather than retroactively added to the address-only input.
 
@@ -110,7 +110,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="encounter-scope"></a>
 ### Target 5. Encounter visibility and branch-scoped conditioning
 
-**Mechanism.** Encounter knowledge can be discovered through ancestry and condition inference within the appropriate functional branch. Implemented properties distinguish knowledge applying from above from properties visible on descendants. Local memory items are not inherited properties. See [Encounters](REFERENCE.md#encounters) and [selection implementation](IMPLEMENTATION_MAP.md#selection).
+**Mechanism.** Encounter knowledge can be discovered through ancestry and condition inference within the appropriate functional branch. Implemented properties distinguish knowledge applying from ancestors from properties visible on descendants. Local memory items are not inherited properties. See [Encounters](REFERENCE.md#encounters) and [selection implementation](IMPLEMENTATION_MAP.md#selection).
 
 **Material to retain.** Keep the actual type addresses, property attachments, layer selections, context reads at relevant ancestors and descendants, and the later reasoning or artifact. Include a sibling whose work is outside the attachment's scope. A mixed-realization example can show the language Encounter and functional type separately, with the actual local consequences for data, interfaces, dependencies, and errors.
 
@@ -241,13 +241,10 @@ A prompt can be shorter yet still force the executing agent to reconstruct the p
 
 Where timing or usage records exist, keep preparation and each later operation separate. One useful accounting arrangement is:
 
-```text
-one-time or revised preparation
-  -> first use
-  -> second use
-  -> later uses
-  -> additional understanding retained
-  -> uses of the revised preparation
+```mermaid
+flowchart LR
+    P["one-time or revised preparation"] --> U1["first use"] --> U2["second use"] --> U3["later uses"]
+    U3 --> R["additional understanding retained"] --> V["uses of the revised preparation"]
 ```
 
 The record can show how many operations reused a particular contribution and where it was revised. Do not charge preparation repeatedly when it was performed once, or call reused material free when it required a recorded refresh. This is an accounting view of actual work, not a prescribed performance model.

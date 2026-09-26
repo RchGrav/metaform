@@ -31,7 +31,7 @@ The useful first form could be a plain-text report emitted by the eventual produ
 
 ### Proposal 2. An explanation of why knowledge participates here
 
-**Proposed functionality.** Add a readable explanation alongside a context result: the incoming selection, local masks and additions along the address path, the properties that apply from ancestors, properties visible below, local items, and any hidden source relationship excluding a layer. Show corrections as their own contribution rather than pretending they followed normal layer masks.
+**Proposed functionality.** Add a readable explanation alongside a context result: the incoming selection, local masks and additions along the address path, the properties that apply from ancestors, properties visible on descendants, local items, and any hidden source relationship excluding a layer. Show corrections as their own contribution rather than pretending they followed normal layer masks.
 
 **Benefit.** Users could understand why an agent received a particular instruction or failed to receive an expected observation. This is especially valuable when knowledge is correct but attached or selected at the wrong place. It would also make multidimensional prompting practical to inspect without requiring readers to reconstruct the resolver from database rows.
 

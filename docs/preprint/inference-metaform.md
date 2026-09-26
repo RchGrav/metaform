@@ -33,28 +33,16 @@ The distinction is important because a current implementation is only one arrang
 
 Metaform retains both functional understanding and the references and observations that connect it to the artifact. Subsequent work can move between them: a receiver's purpose directs examination of relevant source; an implementation observation exposes another relationship; a criticism identifies a missing or unnecessary contribution; the result becomes knowledge that another task can use.
 
-```text
-Artifact and context
-        |
-        v
-Inference of functional understanding
-  types, receiving purposes, Encounters, references
-        |
-        v
-Inference Metaform -----> further perspective-based inference
-        |                              |
-        |                         knowledge layers
-        |                              |
-Request + project-grounded interpretation
-        |
-        v
-Selected understanding for subsequent work
-        |
-        v
-Implementation, examination, synthesis, recomposition
-        |
-        v
-New findings, memory, corrections, and retained relationships
+```mermaid
+flowchart LR
+    A["Artifact and context"] --> B["Inference of functional understanding:<br/>types, receiving purposes,<br/>Encounters, references"]
+    B --> C["Inference Metaform"]
+    C --> D["further perspective-based<br/>inference"]
+    D --> E["knowledge layers"]
+    C --> F["Request + project-grounded<br/>interpretation"]
+    F --> G["Selected understanding<br/>for subsequent work"]
+    G --> H["Implementation, examination,<br/>synthesis, recomposition"]
+    H --> I["New findings, memory, corrections,<br/>and retained relationships"]
 ```
 
 This is a connected account of the mechanisms, not a mandatory pipeline that every operation must traverse in full. A task can enter through a node, a relationship, a knowledge layer, or a broader type perspective. Nor does preparation replace the executing model's inference with stored answers. It changes the material on which that inference operates.
@@ -69,11 +57,9 @@ A model enters a task with understanding of kinds of things: code, engines, inte
 
 The author's supplied address-only example uses four prompts of the form `write 10 best practices for [address]`, with no repository, code, or project description. The addresses are:
 
-```text
-code
-code.engine
-code.engine.game
-code.engine.game.fps
+```mermaid
+graph LR
+    A["code<br/>(trunk)"] --> B["code.engine"] --> C["code.engine.game"] --> D["code.engine.game.fps<br/>(leaf)"]
 ```
 
 The recorded responses distinguish general code practices, engine concerns such as memory and concurrency, game-engine responsibilities, and first-person game-engine concerns such as input latency and hit registration. The last segment supplies much of the specific orientation, while the preceding segments establish the domain in which that specificity should be understood. The example demonstrates the address as an input for inference, rather than only a key for retrieving a record. The generated practices remain example content, not requirements imposed on every artifact of the type. The original material is retained in the [address-only example file](../../specifications/metaprompting_element_segments_example.md).
@@ -138,15 +124,15 @@ The stored record separates descriptive text in `function` from the categorical 
 
 The author's example attaches `code.c` as an Encounter at `code.utility.disk`. The disk utility retains its functional address rather than being flattened into `code.utility.disk.c`. Its C realization becomes available while reasoning through the functional ancestry:
 
-```text
-code.utility.disk  ->  code.utility  ->  code
-       |
-       +-- C conditions descendants of this disk-utility branch
-
-An ancestor can see the Encounter without making sibling branches C.
+```mermaid
+graph LR
+    trunk["code"] --> utility["code.utility"] --> disk["code.utility.disk<br/>(C attached here)"]
+    disk -.C conditions.-> descendant["descendants of this<br/>disk-utility branch"]
 ```
 
-Backward visibility and forward application have different roles. At a broad scope, an agent can understand the composition of a mixed-language workpiece. At the attachment point and its descendants, the Encounter conditions the relevant reasoning. Visibility at the shared ancestor does not send the language back down every unrelated branch.
+An ancestor can see the Encounter without its sibling branches becoming C.
+
+Backward visibility and forward application have different roles. At a broad scope, an agent can understand the composition of a mixed-language workpiece. At the attachment point and its descendants, the Encounter conditions the relevant reasoning. Visibility at the shared ancestor does not carry the language into every unrelated branch toward the leaves.
 
 The consequences extend beyond a language-specific checklist. The realization affects memory semantics, data representation, interfaces, dependencies, error behavior, and interaction with the operating system. Those consequences can themselves be examined through Receiving Entities and Operative Purposes. A buffer-management concern matters through the functionality receiving the buffer and the reason it needs it; an error-reporting concern matters through the receiver's need to diagnose, recover, or communicate.
 
@@ -204,7 +190,7 @@ The design describes local selection with an all-ones mask and an all-zeroes sel
 outgoing = (incoming & mask) | select
 ```
 
-The starting selection is established separately. The implemented resolver uses an explicit starting selection when supplied, otherwise nonempty toggled names/tags, otherwise the selectable finished nonhidden layers. Local mask rows remove membership and select rows add it as the namespace is traversed. A descendant can restore a layer masked above it without restoring that layer in unrelated siblings.
+The starting selection is established separately. The implemented resolver uses an explicit starting selection when supplied, otherwise nonempty toggled names/tags, otherwise the selectable finished nonhidden layers. Local mask rows remove membership and select rows add it as the namespace is traversed. An element toward the leaves can restore a layer masked toward the trunk from it without restoring that layer in unrelated siblings.
 
 This is not an invented always-on core, a fixed-width bit layout, or a default-deny architecture. Local absence of a selection row preserves the incoming choice. An explicitly empty starting selection and an unspecified starting selection are distinct inputs at the API level.
 
@@ -371,7 +357,7 @@ An image may also be an asset in another artifact. Its receiving relationship ch
 
 This paper describes the supplied `chassis` source snapshot identified as commit `ce9062bdec9398ca1f23ac60684bd3cc7e37f23c`. The bundle provides the source bytes and commit attribution; it does not include a Git checkout from which a newer state was fetched. The accompanying project Metaform, named `main`, was recorded on September 26, 2026 at 19:28:40 UTC.
 
-The unchanged [project export](../examples/project-metaform.json) contains:
+The recorded [project export](../examples/project-metaform.json) contains:
 
 | Stored material | Count |
 |---|---:|
@@ -443,6 +429,6 @@ The central contribution is the connection among these mechanisms. Previously in
 
 ## Source and citation information
 
-The system account is grounded in the author's explanations and the operative source, not derived from the papers above. Public source correspondence is provided by the [technical reference](../inference-metaform/REFERENCE.md) and [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md). The current example is the unchanged [project export](../examples/project-metaform.json). The full record identifiers and verification scope appear in the [edition notes](../EDITION.md).
+The system account is grounded in the author's explanations and the operative source, not derived from the papers above. Public source correspondence is provided by the [technical reference](../inference-metaform/REFERENCE.md) and [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md). The current example is the recorded [project export](../examples/project-metaform.json). The full record identifiers and verification scope appear in the [edition notes](../EDITION.md).
 
 This document is a standalone preprint, not a claim of journal publication or peer review. [CITATION.md](CITATION.md) provides the citation for this edition; [references.bib](references.bib) contains its bibliographic records. Source-relative links resolve when the documentation is placed in the repository layout.

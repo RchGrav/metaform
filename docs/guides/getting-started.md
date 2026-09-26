@@ -168,7 +168,7 @@ Use the address printed by the command. The default is `http://127.0.0.1:7433`. 
 
 ## Inspect the supplied project map without a new intake
 
-The documentation includes an unchanged [project export](../examples/project-metaform.json). To examine it, start from the repository root:
+The documentation includes a recorded [project export](../examples/project-metaform.json). To examine it, start from the repository root:
 
 ```sh
 metaform add project reference-demo .
@@ -180,6 +180,8 @@ metaform map where code.template.module
 ```
 
 The explicit import target maps the original project into `reference-demo` instead of adopting its original `/home/rich/metaform` folder as your local registration. This imports a recorded result; it is not a new execution of Canonical Intake. The [reader guide](reading-a-metaform.md) and [walkthrough](../examples/project-walkthrough.md) use this data.
+
+The export was made before joins and subtypes carried `verb`, so each of its join and subtype rows records `verb` as null.
 
 Imported IDs are retained. Import adds missing identities; it is not an overwrite/update operation for an existing identity. A second import of the same export into the same home may therefore report records skipped rather than refreshed. Use a separate `METAFORM_HOME` for a completely independent demonstration copy.
 

@@ -67,11 +67,9 @@ against one origin. *Why is it like this?* is a query, not an excavation.
 
 Models already bring understanding of kinds of things to a task. Metaform engages this **primordial type understanding** through meaningful functional addresses. For example:
 
-```text
-code
-  code.engine
-    code.engine.game
-      code.engine.game.fps
+```mermaid
+graph LR
+    A["code<br/>(trunk)"] --> B["code.engine"] --> C["code.engine.game"] --> D["code.engine.game.fps<br/>(leaf)"]
 ```
 
 Each prefix is a usable type and a prompting surface. In the author's supplied address-only examples, requests for best practices at these four addresses produced distinct guidance about general code, engines, game engines, and first-person game engines. The final segment supplies specificity; the ancestry keeps the inference in the intended domain. General knowledge belongs at the parent where it applies, rather than being copied beneath every specialization.
@@ -82,24 +80,18 @@ A type address is not a substitute for knowing the project. The address `code.sy
 
 A Receiving Entity owns an **Operative Purpose**: the reason it needs something. A Providing Element supplies an **Encounter Function**: how the required effect is delivered, used, or experienced. The join retains that relationship, its active-voice description, observations, and relevant references. The relationship has an identity of its own, so an agent can reason about it and attach knowledge to it.
 
-**Function** concerns operative capability. **Encounter** concerns its expression or realization. The term Encounter Function deliberately accommodates both the encounter of a functionality and the functionality of an encounter. It is not restricted to a callable function in source code.
+**Function** concerns operative capability. **Encounter** concerns its expression or realization. The term Encounter Function deliberately accommodates both the encounter of a functionality and the functionality of an encounter. It is not restricted to a callable function in source code. Every join carries `ef`, one of exactly two words, Function or Encounter, naming which of the two the join's relation describes, and `verb`, the one word the agent infers for that relation. The relation's subject follows `ef`: the Providing Element when `ef` is Function, the Vested Entity when `ef` is Encounter.
 
 ### Understanding is selected, used, and extended
 
-```text
-Workpiece + its context
-          |
-          v
-Functional understanding developed in advance
-  types + receiving purposes + Encounters + references
-          |
-          +------> further examination and knowledge layers
-          |
-Request -> project-grounded interpretation -> subsequent work
-                                                |
-                                                v
-                                 findings, memory, corrections
-                                 retained at meaningful addresses
+```mermaid
+flowchart LR
+    W["Workpiece + its context"] --> U["Functional understanding<br/>developed in advance:<br/>types + receiving purposes<br/>+ Encounters + references"]
+    U --> K["further examination<br/>and knowledge layers"]
+    U --> I["project-grounded<br/>interpretation"]
+    R["Request"] --> I
+    I --> S["subsequent work"]
+    S --> F["findings, memory, corrections<br/>retained at meaningful addresses"]
 ```
 
 The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements, joins, and internal subtypes, rather than detached from the functionality it concerns.
@@ -108,25 +100,38 @@ This also supports criticism. A critic can inspect the code together with its Me
 
 ## What it looks like
 
-An agent assigned to work on your event bus receives the stored record:
+An agent assigned to work on your event bus receives the stored record. The receiver is `code.chassis`, the provider is `code.system.plugin`, and `code.bus.event` is an internal subtype held inside their join:
 
-    code.chassis  ←  code.system.plugin
-      purpose: "Carry every capability beyond its own commands as modules it
-                finds, checks and loads on its own, and withdraw everything a
-                module registered when it goes."
-      subtype code.bus.event
-        function: "Delivers a published topic to every loaded subscriber with
-                   its own Context and a copy of the payload, and returns each
-                   delivery's outcome, completed, failed or cancelled, to the
-                   publisher; one subscriber's failure never hides another's."
-        ef: Function
-        relation: "The event bus connects modules without either naming the other."
-        observation: "events.py; from inside a running loop async subscribers are
-                      awaited and sync ones run in a worker thread. The bus runs
-                      no workflow. Only helloworld subscribes today."
+```mermaid
+graph LR
+    provider["code.system.plugin<br/>module contract and loader"]
+    receiver["code.chassis<br/>chassis"]
+    subtype["code.bus.event<br/>event bus<br/>(subtype held inside the join)"]
+    provider -- "ef: Function" --> receiver
+    subtype -. held inside .-> provider
+```
 
-Every agent that touches this element — this session, next month, a different
-model from a different vendor — sees the same stored purpose.
+```text
+purpose:     Carry every capability beyond its own commands as modules it
+             finds, checks and loads on its own, and withdraw everything a
+             module registered when it goes.
+subtype code.bus.event:
+  function:  Delivers a published topic to every loaded subscriber with its
+             own Context and a copy of the payload, and returns each
+             delivery's outcome, completed, failed or cancelled, to the
+             publisher; one subscriber's failure never hides another's.
+  ef:        Function
+  relation:  The event bus connects modules without either naming the other.
+  observation: events.py; from inside a running loop async subscribers are
+             awaited and sync ones run in a worker thread. The bus runs no
+             workflow. Only helloworld subscribes today.
+```
+
+This record is the September 26, 2026 project export, made before `verb` existed; a current join also carries that field. Every agent that touches this element — this session, next month, a different model from a different vendor — sees the same stored purpose.
+
+The running web GUI renders the same kind of record for this repository's own current map:
+
+![The Metaform web GUI showing this repository's current map: the chassis element selected, its held joins listed with their Operative Purpose, Function or Encounter, and relation text, and the 3D graph of every element and join to the right.](docs/images/gui-map.png)
 
 ### Extending Metaform itself
 

@@ -11,7 +11,7 @@ This record describes the local command exercise used to check instructions in t
 
 The exercise ran the supplied source through `python -m metaform`, with `PYTHONPATH` pointing to its `src` directory, `PYTHONDONTWRITEBYTECODE=1`, an isolated `METAFORM_HOME`, and temporary workpiece directories. No persistent user configuration or supplied source was changed.
 
-The principal input was the unchanged [project export](project-metaform.json), imported into a local project named `reference-demo`. A second project used the supplied [kitchen-timer fixture](../../tests/fixtures/intake_timer.json). The fixture's outer object contains an `elements` array; the array, not that wrapper, is the input expected by `intake submit`.
+The principal input was the recorded [project export](project-metaform.json), imported into a local project named `reference-demo`. A second project used the supplied [kitchen-timer fixture](../../tests/fixtures/intake_timer.json). The fixture's outer object contains an `elements` array; the array, not that wrapper, is the input expected by `intake submit`.
 
 The [extension guide's `nodeview` example](../guides/extending-metaform.md) was copied verbatim from its Python code block into the isolated home's module directory. The bundled `helloworld` module supplied the other extension exercise.
 
