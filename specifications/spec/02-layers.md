@@ -182,7 +182,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Build: Each run creates a new layer with blinded set by its type, writing its items against the metaform's nodes and creating new elements and joins in its own layer where it infers them.
 - Acceptance: A blind spot run of either type leaves the intake layer unchanged and adds exactly one new layer with its own provenance, blinded true for metaform-only and false for metaform plus code.
 - Relates to: LAYER-009, LAYER-010, LAYER-015.
-- Status: confirmed. Rich, 2026-09-26: "There is one metaform, the inference metaform, there is two different types of blind spot analysis."
+- Status: confirmed. Rich, 2026-09-26: there is one metaform, the Inference Metaform, and there are two types of blind spot analysis.
 
 ### LAYER-015 The blind-spot challenge workflow
 

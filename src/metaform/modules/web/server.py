@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
-from metaform import home, query, results, settings
+from metaform import changes, home, query, results, settings
 from metaform.context import toggled_for
 from metaform.data import Outcome, Store, prompts
 from metaform.data.records import plain
@@ -216,7 +216,13 @@ class Handler(BaseHTTPRequestHandler):
             body: Any = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'null')
         except ValueError:
             return self.send(400, {'error': 'The body is not JSON.'})
-        writes[path](cast(dict[str, Any], body) if isinstance(body, dict) else {})
+        try:
+            writes[path](cast(dict[str, Any], body) if isinstance(body, dict) else {})
+        finally:  # the page's own write reaches every open page, VIEW-018
+            for project, metaforms in sorted(changes.take().items()):
+                for metaform in sorted(metaforms):
+                    self.gui.push({'topic': 'map.changed', 'payload': {'project': project,
+                                                                       'metaform_id': metaform or None}})
 
     def remove_correction(self, given: dict[str, Any]) -> None:
         """Peel the top correction layer and discard it, in one write, only while it is still the top, VIEW-014."""

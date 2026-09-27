@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from . import __version__, context, docs, grammar, home, instructions, loader, query, reports, results, settings
+from . import __version__, changes, context, docs, grammar, home, instructions, loader, query, reports, results, settings
 from .data import Store, export_document, history, import_document, prompts, pull_wheel
 from .docs import Command, Switch
 from .errors import Stop
@@ -884,6 +884,13 @@ def main(argv: list[str] | None = None) -> int:
     if args[:1] == ['--version']:
         out(f'metaform {__version__}')
         return 0
+    try:
+        return _command(args, folder)
+    finally:
+        changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
+
+
+def _command(args: list[str], folder: Path) -> int:
     try:
         loader.discover()
         if not args:

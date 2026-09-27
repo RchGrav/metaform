@@ -414,6 +414,13 @@ def opened(browser, port):
     return page, problems, remote
 
 
+def set_layer(page, name, on):
+    """Tick or untick a layer in the header's Layers list, opening the list first when it is closed."""
+    if not page.is_visible('#layerlist'):
+        page.click('#layersBtn')
+    page.set_checked(f'#layerlist input[data-layer="{name}"]', on)
+
+
 def config_layers(run, folder):
     return next(row for row in json.loads(run('config', '--show', '--json', cwd=folder).stdout)
                 if row['key'] == 'layers')['value']
@@ -478,14 +485,51 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
 
 
 @pytest.mark.req('VIEW-007')
+@pytest.mark.req('VIEW-008')
+def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of_the_2d_map(run, web, mapped, browser):
+    """Rich, 2026-09-26: the layers are chosen with checkboxes from a Layers button at the top right of the header;
+    Back and Forward sit in the 2D map's top left corner on a strip of their own, never under the map's nodes."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    width = page.viewport_size['width']
+    button = page.locator('#layersBtn').bounding_box()
+    header = page.locator('header').bounding_box()
+    assert button['x'] + button['width'] > width - 260 and button['y'] < header['y'] + header['height']
+    assert not page.is_visible('#layerlist')
+    page.click('#layersBtn')
+    listed = page.locator('#layerlist').bounding_box()
+    assert listed['y'] >= button['y'] + button['height'] - 1 and listed['x'] < button['x'] + button['width']
+    rows = page.evaluate("""[...document.querySelectorAll('#layerlist .layerrow')].map(row => ({
+        text: row.textContent, checked: row.querySelector('input').checked, disabled: row.querySelector('input').disabled}))""")
+    by_name = {row['text'].split()[0]: row for row in rows}
+    assert by_name['notes']['checked'] and not by_name['notes']['disabled'] and 'layer' in by_name['notes']['text']
+    assert by_name['secret']['disabled'] and 'hidden' in by_name['secret']['text']
+    assert by_name['corrections']['checked'] and by_name['corrections']['disabled']
+    assert page.is_visible('#layerlist #apply')
+    page.keyboard.press('Escape')
+    assert not page.is_visible('#layerlist')
+    page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.setAttribute("viewBox", "-400 -400 1600 1600"); }')
+    for name in ('#backBtn', '#forwardBtn', '#fitBtn'):
+        hit = page.evaluate(f"""(() => {{ const box = document.querySelector('{name}').getBoundingClientRect();
+            const found = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+            return found && found.closest('{name}') !== null; }})()""")
+        assert hit, name  # nothing of the map covers it
+    strip = page.locator('#map2d .bar2d').bounding_box()
+    assert page.locator('#map2d svg').bounding_box()['y'] >= strip['y'] + strip['height'] - 1
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-007')
 @pytest.mark.req('VIEW-012')
 def test_toggling_layers_in_the_page_changes_only_the_view_until_apply(run, web, mapped, browser):
     started(run)
     page, problems, _ = opened(browser, web)
     before = config_layers(run, mapped)
-    page.click('#layers .chip:has-text("notes")')
+    assert page.inner_text('#layersBtn') == 'Layers · 3 of 4'  # secret is hidden, so it cannot be on
+    set_layer(page, 'notes', False)
     page.wait_for_function('() => !document.querySelector("#apply").disabled')
-    assert page.get_attribute('#layers .chip:has-text("notes")', 'aria-pressed') == 'false'
+    assert not page.is_checked('#layerlist input[data-layer="notes"]')
+    assert page.inner_text('#layersBtn') == 'Layers · 2 of 4'
     page.wait_for_timeout(1000)
     assert config_layers(run, mapped) == before
     assert 'display' not in page.evaluate('window.metaform.graph().nodes.map(n => n.name)')
@@ -773,9 +817,9 @@ def inside(page):
 @pytest.mark.req('VIEW-008')
 def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_the_visible_layers_attach(
         run, web, mapped, browser):
-    """Rich, 2026-09-26: "Subtypes are not a condition to go inside of them", "when you go inside of a node it replaces
-    it with another graph", and the other layers show only what is attached to the node you are viewing, as busy as
-    the layers turned on; the base map stays the project's current shape."""
+    """Rich, 2026-09-26: any node can be entered, whether or not it holds subtypes; going inside a node replaces the map
+    with another graph, and the other layers show only what is attached to the node being viewed, as busy as the
+    layers turned on; the base map stays the project's current shape."""
     run('memory', 'add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.', cwd=mapped)
     run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
         cwd=mapped)
@@ -784,7 +828,9 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     _, at, subtypes = keys_of(web)
     kitchen, cook, alarm = at['code.timer.kitchen'], at['exterior.cook'], at['code.alarm.audible']
     assert 'The countdown drifts' not in page.inner_text('#p-object')  # the folder's layers leave memory off
-    page.click('#layers button.chip:has-text("memory")')  # turned on in this view only
+    set_layer(page, 'memory', True)  # turned on in this view only
+    page.keyboard.press('Escape')  # the first Escape closes the Layers list, and only that
+    assert not page.is_visible('#layerlist')
     page.wait_for_function('() => window.metaform.loaded() && '
                            'document.querySelector("#p-object").textContent.includes("The countdown drifts")')
     base = page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.dataset.base = "yes"; '
@@ -815,7 +861,8 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("under load.")')
     assert page.text_content('#p-object .eyebrow') == 'Memory'
 
-    page.click('#layers button.chip:has-text("notes")')  # turning a layer off takes its group away inside
+    set_layer(page, 'notes', False)  # turning a layer off takes its group away inside
+    page.keyboard.press('Escape')
     page.wait_for_function('() => !document.querySelector("#map2d svg").textContent.includes("keep the loop small")')
     assert 'The countdown drifts' in page.evaluate('document.querySelector("#map2d svg").textContent')
 
@@ -840,12 +887,47 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     assert problems == []
 
 
+@pytest.mark.req('VIEW-016')
+@pytest.mark.req('VIEW-008')
+def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(run, web, mapped, browser):
+    """Rich, 2026-09-26, after going inside a node: the map seemed to turn on its side, and Fit did not zoom there.
+    The inside graph runs the way the whole map does, and Fit's zoomed-in view works inside."""
+    from metaform.data import Store
+    store = Store('proj')
+    for name in ('dial', 'buzzer', 'battery'):  # enough elements that the map runs top to bottom, as a real one does
+        store.add_element('notes', f'code.timer.kitchen.{name}', name=name, name_length=1)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, subtypes = keys_of(web)
+    kitchen, tick = at['code.timer.kitchen'], subtypes['code.loop.tick']
+    across = page.evaluate('window.metaform.vertical()')
+    assert across is True
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
+    assert page.evaluate('window.metaform.vertical()') == across
+    center, held = (page.evaluate(f"""(() => {{ const title = [...document.querySelectorAll('#map2d svg title')]
+        .find(t => t.textContent === '{name}'); const box = title.parentNode.getBoundingClientRect();
+        return [box.left + box.width / 2, box.top + box.height / 2]; }})()""") for name in ('kitchen timer', 'tick loop'))
+    if across:  # top to bottom: what the node holds sits below it
+        assert held[1] > center[1]
+    else:
+        assert held[0] > center[0]
+    width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
+    whole = width()
+    page.keyboard.press('f')
+    page.keyboard.press('f')
+    page.wait_for_timeout(900)  # the camera eases for 700 ms
+    assert width() < whole * 0.8  # zoomed in on the selected node
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-017')
 @pytest.mark.req('VIEW-005')
 def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_node_and_what_it_links(
         run, web, mapped, browser):
     """Rich, 2026-09-26: the 3D map shows everything with no drilling, every memory and item its own node, relations
-    as links, "connected together like a brain", as busy as the layers turned on."""
+    as links, seen connected together like a brain, as busy as the layers turned on."""
     from metaform.data import Store
     started(run)
     expected, at, subtypes = keys_of(web)
@@ -867,7 +949,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     prop = next(node['id'] for node in items() if node['text'] == 'ticks at 1 Hz')
     assert prop.startswith('r:') and (kitchen, prop, 'item') in {(link['source'], link['target'], link['k'])
                                                                    for link in first['links']}
-    page.click('#layers button.chip:has-text("memory")')
+    set_layer(page, 'memory', True)
     page.wait_for_function('() => window.metaform.loaded() && '
                            'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 4')
     graph = page.evaluate('window.metaform.graph()')
@@ -883,7 +965,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     page.evaluate(f'window.metaform.click3d("{memory["The countdown drifts under load."]}")')
     assert page.text_content('#p-object .eyebrow') == 'Memory'
     assert 'The countdown drifts under load.' in page.inner_text('#p-object')
-    page.click('#layers button.chip:has-text("memory")')
+    set_layer(page, 'memory', False)
     page.wait_for_function('() => window.metaform.loaded() && '
                            '!window.metaform.graph().nodes.some(node => node.layer === "memory")')
     assert problems == []
@@ -1012,6 +1094,9 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
                            timeout=30000)
     assert page.evaluate('window.metaform.live()') is not None
     assert 'intake being recorded' in page.inner_text('#count')
+    page.evaluate('''() => { window.toasts = [];  // every message the page shows, however briefly
+        new MutationObserver(() => window.toasts.push(document.querySelector('#toast').textContent))
+            .observe(document.querySelector('#toast'), {childList: true, characterData: true, subtree: true}); }''')
     page.wait_for_timeout(500)  # the first reads settle
     asked.clear()
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
@@ -1020,6 +1105,8 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
                           'ef=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
     page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
+    page.wait_for_timeout(300)  # the panel's reads for the selected node settle
+    assert not [text for text in page.evaluate('window.toasts') if 'Nothing for' in text]  # an unfinished layer is no error
     run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'function=f', 'ef=Function', 'relation=r',
         'verb=advances', 'observation=o', 'role=SE', cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
@@ -1044,9 +1131,9 @@ def test_a_module_that_writes_to_the_map_is_seen_live_as_helloworld_greetings_ap
     texts = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item").map(node => node.text)')
     assert 'world' not in texts()
     run('helloworld', 'greet', 'world', cwd=mapped)
-    chip = '#layers button.chip:has-text("helloworld.greetings")'
-    page.wait_for_selector(chip, timeout=3000)  # the new layer is pushed to the page; the folder's layers leave it off
-    page.click(chip)
+    page.click('#layersBtn')
+    page.wait_for_selector('#layerlist input[data-layer="helloworld.greetings"]', timeout=3000)  # pushed to the page;
+    set_layer(page, 'helloworld.greetings', True)  # the folder's layers leave the new layer off
     page.wait_for_function('() => window.metaform.graph().nodes.some(node => node.t === "item" && node.text === "world")',
                            timeout=3000)
     run('helloworld', 'greet', 'moon', cwd=mapped)
@@ -1109,6 +1196,31 @@ def test_notify_is_taken_only_from_this_machines_loopback_address():
     assert [local(address) for address in ('127.0.0.1', '127.8.9.1', '::1', '::ffff:127.0.0.1')] == [True] * 4
     assert [local(address) for address in ('192.168.1.5', '10.0.0.1', '::ffff:10.0.0.1', 'fe80::1%eth0', '')] == [
         False] * 5
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('QUAL-015')
+def test_a_new_metaform_an_activation_and_a_memory_reach_the_open_page_without_a_reload(run, web, mapped, browser):
+    """Rich, 2026-09-27: clearing the project left the page on data that no longer existed until he refreshed. Any
+    command that changes the map is announced by the chassis, so the page follows it."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes > 0')
+    whole = page.evaluate('window.metaform.drawn().nodes')
+    options = 'document.querySelectorAll("#mf option")'
+    run('add', 'metaform', 'fresh', cwd=mapped)
+    page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "fresh · active")',
+                           timeout=3000)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 0', timeout=5000)
+    run('activate', 'metaform', 'main', cwd=mapped)
+    page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "main · active")',
+                           timeout=3000)
+    page.wait_for_function(f'() => window.metaform.loaded() && window.metaform.drawn().nodes === {whole}',
+                           timeout=5000)  # the whole map again, redrawn from the reads
+    run('memory', 'add-observations', 'element:code.timer.kitchen', 'Drifts under load.', cwd=mapped)
+    page.click('#layersBtn')
+    page.wait_for_selector('#layerlist input[data-layer="memory"]', timeout=3000)
+    assert problems == []
 
 
 @pytest.mark.req('VIEW-013')

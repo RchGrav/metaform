@@ -18,17 +18,24 @@
       <label for="mf">metaform</label>
       <select id="mf"></select>
     </div>
-    <div class="layers" id="layers" role="group" aria-label="Layers shown in this view"></div>
-    <button class="apply" id="apply" disabled>Apply to folder</button>
-    <p class="note" id="note"></p>
+    <div class="layerpick">
+      <button class="layersbtn" id="layersBtn" aria-expanded="false" aria-controls="layerlist">Layers</button>
+      <div class="layerlist" id="layerlist" hidden>
+        <div id="layers" role="group" aria-label="Layers shown in this view"></div>
+        <p class="note" id="note"></p>
+        <button class="apply" id="apply" disabled>Apply to folder</button>
+      </div>
+    </div>
   </header>
 
   <aside>
     <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view.">
+      <div class="bar2d">
+        <div class="navbtns"><button id="backBtn" title="Back to the node selected before" disabled>&lsaquo; Back</button><button id="forwardBtn" title="Forward again" disabled>Forward &rsaquo;</button></div>
+        <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
+        <div class="mapbtns"><button id="fitBtn" title="Zoomed out, zoomed in, regular (F)">Fit</button></div>
+      </div>
       <div class="viewport" id="viewport"></div>
-      <div class="navbtns"><button id="backBtn" title="Back to the node selected before" disabled>&lsaquo; Back</button><button id="forwardBtn" title="Forward again" disabled>Forward &rsaquo;</button></div>
-      <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-      <div class="mapbtns"><button id="fitBtn" title="Zoomed out, zoomed in, regular (F)">Fit</button></div>
       <span class="kbd">click again or Enter: in · Esc: out · arrows: walk · F: view</span>
     </div>
     <div class="tabs" role="tablist">

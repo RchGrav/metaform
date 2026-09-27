@@ -44,7 +44,7 @@ async function read(name, params = {}) {
 }
 const viewLayers = () => S.view === null ? {} : {layers: [...S.view].join(',')};
 
-/* ---------- layers: color by position, chips, apply ---------- */
+/* ---------- layers: color by position, the Layers checklist, apply ---------- */
 const KNOWLEDGE = ['--k1', '--k2', '--k3', '--k4', '--k5', '--k6'];
 function colorVar(layerName) {
   const layer = S.layers.find(item => item.name === layerName);
@@ -60,27 +60,37 @@ const folderOn = () => new Set(S.layers.filter(layer => layer.on).map(layer => l
 const shownOn = () => S.view ?? folderOn();
 const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
 
+/* The layers: a checklist opened from the header's Layers button, one row each, VIEW-007, Rich 2026-09-26. */
 function renderChips() {
   const on = shownOn();
   const box = $('#layers');
   fill(box);
-  for (const layer of S.layers.filter(item => item.kind !== 'correction')) {
-    const usable = layer.ready && !layer.hidden;
-    const chip = h('button', {class: 'chip', style: {'--c': `var(${colorVar(layer.name)})`},
-      'aria-pressed': String(usable && on.has(layer.name)), disabled: !usable,
-      title: layer.hidden ? 'Hidden: it stays out even when turned on.' : !layer.ready ? 'Still building.' : null,
-      onclick: () => {
-        const next = new Set(shownOn());
-        next.has(layer.name) ? next.delete(layer.name) : next.add(layer.name);
-        S.view = same(next, folderOn()) ? null : next;
-        renderChips();
-        loadGraph();
-      }}, h('i'), layer.name);
-    box.append(chip);
+  const listed = S.layers.filter(item => item.kind !== 'correction');
+  let count = 0;
+  for (const layer of listed) {
+    const usable = layer.ready && !layer.hidden, checked = usable && on.has(layer.name);
+    if (checked) count++;
+    const input = h('input', {type: 'checkbox', 'data-layer': layer.name, disabled: !usable, onchange: () => {
+      const next = new Set(shownOn());
+      input.checked ? next.add(layer.name) : next.delete(layer.name);
+      S.view = same(next, folderOn()) ? null : next;
+      renderChips();
+      loadGraph();
+    }});
+    input.checked = checked;
+    const state = layer.hidden ? 'hidden' : !layer.ready ? 'building' : 'ready';
+    box.append(h('label', {class: 'layerrow', style: {'--c': `var(${colorVar(layer.name)})`},
+      title: layer.hidden ? 'Hidden: it stays out even when turned on.' : !layer.ready ? 'Still building.' : null},
+      input, h('i'), h('span', {class: 'name'}, layer.name), ' ', h('span', {class: 'meta'}, [layer.kind, ...(layer.tags || []), state].join(' · '))));
   }
   const corrections = S.layers.filter(item => item.kind === 'correction').length;
-  if (corrections) box.append(h('span', {class: 'chip fixed', style: {'--c': 'var(--correction)'}, 'aria-pressed': 'true',
-    title: 'Correction layers are always applied, in order.'}, h('i'), `corrections · ${corrections}`));
+  if (corrections) {
+    const input = h('input', {type: 'checkbox', disabled: true});
+    input.checked = true;
+    box.append(h('label', {class: 'layerrow fixed', style: {'--c': 'var(--correction)'}, title: 'Correction layers are always applied, in order.'},
+      input, h('i'), h('span', {class: 'name'}, 'corrections'), ' ', h('span', {class: 'meta'}, `${corrections} · always applied`)));
+  }
+  $('#layersBtn').textContent = `Layers · ${count} of ${listed.length}`;
   $('#apply').disabled = S.view === null;
   const folder = S.projects.find(item => item.id === S.project)?.path || '';
   $('#note').textContent = S.view === null
@@ -89,6 +99,14 @@ function renderChips() {
     : `This view differs from ${folder}. Apply to folder runs: metaform set --layers ${[...S.view].join(',')}`;
 }
 
+function showLayers(open) {
+  $('#layerlist').hidden = !open;
+  $('#layersBtn').setAttribute('aria-expanded', String(open));
+}
+$('#layersBtn').onclick = event => { event.stopPropagation(); showLayers($('#layerlist').hidden); };
+document.addEventListener('click', event => {
+  if (!$('#layerlist').hidden && !event.target.closest('.layerpick')) showLayers(false);
+});
 $('#apply').onclick = async () => {
   if (S.view === null) return;
   const response = await fetch('/api/apply-layers', {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -156,7 +174,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
-  inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : []};
+  inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical};
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
@@ -438,7 +456,8 @@ async function drawInside() {
     incoming = (await read('links-to', {target, limit: 0, ...viewLayers()})).results || [];
   } catch (error) { if (error.status !== 404) toast(error.message); }
   if (generation !== insideGen) return;
-  const lines = ['flowchart LR'], edges = [], ids = new Map(), things = new Map(), groups = new Map();
+  const vertical = M.base ? M.base.vertical : true;  // the whole map's orientation, so going inside never turns it
+  const lines = [vertical ? 'flowchart TB' : 'flowchart LR'], edges = [], ids = new Map(), things = new Map(), groups = new Map();
   const add = (key, label, kind, thing = null) => {
     if (ids.has(key)) return ids.get(key);
     const id = `v${ids.size}`;
@@ -520,7 +539,7 @@ async function drawInside() {
   }
   level.things = things;
   cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
-  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical: false, drawn: level});
+  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: level});
   setCam(frame(M.fit));
   renderCrumbs();
   if (S.selected && nodes.has(S.selected)) focus2D(S.selected, false);
@@ -571,7 +590,7 @@ function renderThing(thing) {
   fill(pane, h('div', {class: 'eyebrow'}, thing.kind === 'more' ? 'More' : 'Node'), h('h2', {}, thing.label),
     h('p', {class: 'meta'}, thing.kind === 'more' ? 'Enter shows the next ones.' : 'Enter goes inside it.'));
 }
-function aspect() { const box = $('#map2d').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
+function aspect() { const box = $('#viewport').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
   let {x, y, w, h: height} = box; const a = aspect();
   if (w / height > a) { const nh = w / a; y -= (nh - height) / 2; height = nh; } else { const nw = height * a; x -= (nw - w) / 2; w = nw; }
@@ -599,15 +618,19 @@ function fit2D() {
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
   if (M.fit) moveCam(M.fit);
 }
-function focus2D(id, animate = true, framing = 'around') {
+function focus2D(id, animate = true, framing = 'around', zoom = false) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
   if (!node || !M.svg) return;
-  if (IN.length) { for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id); return; }
-  $('#map2d').classList.add('focused');
-  for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
-  for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
-    : edge.join.receiver === id || edge.join.provider === id);
+  if (IN.length) {  // inside a node its whole graph stays in view; the camera moves only when Fit asks
+    for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id);
+    if (!zoom) return;
+  } else {
+    $('#map2d').classList.add('focused');
+    for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
+    for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
+      : edge.join.receiver === id || edge.join.provider === id);
+  }
   // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
   // 'close' moves nearer to a node that holds nothing.
   M.view = framing === 'around' ? 'around' : 'in';
@@ -625,7 +648,7 @@ function clicked2d(id) { if (id === S.selected || id.startsWith('m:')) goInside(
   $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
   let drag = null;
   host.addEventListener('pointerdown', event => {
-    if (event.target.closest('button') || !M.cam) return;
+    if (event.target.closest('button, a') || !M.cam) return;
     drag = {x: event.clientX, y: event.clientY, cam: {...M.cam}, moving: false};
   });
   host.addEventListener('pointermove', event => {
@@ -634,14 +657,14 @@ function clicked2d(id) { if (id === S.selected || id.startsWith('m:')) goInside(
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
       drag.moving = true; host.setPointerCapture(event.pointerId);
     }
-    const box = host.getBoundingClientRect(), scale = M.cam.w / box.width;
+    const box = $('#viewport').getBoundingClientRect(), scale = M.cam.w / box.width;
     setCam({...drag.cam, x: drag.cam.x - (event.clientX - drag.x) * scale, y: drag.cam.y - (event.clientY - drag.y) * scale});
   });
   host.addEventListener('pointerup', () => { drag = null; });
   host.addEventListener('wheel', event => {
     if (!M.cam) return;
     event.preventDefault();
-    const f = event.deltaY > 0 ? 1.15 : 0.87, box = host.getBoundingClientRect();
+    const f = event.deltaY > 0 ? 1.15 : 0.87, box = $('#viewport').getBoundingClientRect();
     const px = (event.clientX - box.left) / box.width, py = (event.clientY - box.top) / box.height, c = M.cam;
     setCam({x: c.x + (c.w - c.w * f) * px, y: c.y + (c.h - c.h * f) * py, w: c.w * f, h: c.h * f});
   }, {passive: false});
@@ -653,8 +676,8 @@ function cycleView() {
   const here = S.selected;
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
   if (!here || next === 'out') return fitAll();
-  if (next === 'in') return focus2D(here, true, insideOf(here).length ? 'inside' : 'close');
-  focus2D(here, true, 'around');
+  if (next === 'in') return focus2D(here, true, !IN.length && insideOf(here).length ? 'inside' : 'close', true);
+  focus2D(here, true, 'around', true);
 }
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
 async function step(by) {
@@ -720,6 +743,7 @@ function backOut() {
   } else fitAll();
 }
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !$('#layerlist').hidden) { event.preventDefault(); showLayers(false); $('#layersBtn').focus(); return; }
   if (event.target.closest('select, input, textarea, .CodeMirror')) return;
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
   if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
@@ -882,7 +906,9 @@ async function renderObject(id) {
         itemText(property.value), h('div', {class: 'refs'}, `${property.layer}${property.address && property.address !== element.address ? ' · at ' + property.address : ''}`),
         refsOf(property.refs))));
     }
-  } catch (error) { /* the joins above still show; the node read names its own trouble in the toast */ toast(error.message); }
+  } catch (error) {  // nothing in the layers turned on, such as an intake still being built, is not an error
+    if (error.status !== 404) toast(error.message);
+  }
 }
 
 /* ---------- provenance ---------- */
@@ -1047,7 +1073,7 @@ function toast(message) { const box = $('#toast'); box.textContent = message; bo
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
-const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false, next: null};
+const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false};
 const following = () => LIVE.layer !== null && S.metaform === LIVE.metaform;
 async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -1086,18 +1112,24 @@ async function recordingNow() {
   const found = (await read('intake-recording')).results[0] || null;
   await follow(found ? {layer: found.layer.name, metaform_id: found.metaform_id} : null);
 }
+/* One push: the chassis fired map.changed for a metaform of this project, or for its metaforms themselves, VIEW-018.
+ * The page reads what is being recorded, then follows it, returns to the map when it has finished, shows the active
+ * metaform when the project's metaforms changed, or reads the layers and the map again, keeping the view and the
+ * selection. */
 async function changed(event) {
   if (event.topic !== 'map.changed' || event.payload?.project !== S.project) return;
-  LIVE.next = event.payload;
   if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
   try {
     do {
       LIVE.again = false;
-      const done = LIVE.next;
-      if (done.kind === 'intake' && done.building) await follow({layer: done.layer, metaform_id: done.metaform_id});
-      else if (done.kind === 'intake' && done.layer === LIVE.layer) await follow(null);
-      else if (done.metaform_id === S.metaform) {
+      const found = (await read('intake-recording')).results[0] || null;
+      if (found || LIVE.layer) { await follow(found ? {layer: found.layer.name, metaform_id: found.metaform_id} : null); continue; }
+      const metaforms = (await read('metaforms', {limit: 0})).results;
+      const same = metaforms.length === S.metaforms.length && metaforms.every(item =>
+        S.metaforms.some(known => known.metaform_id === item.metaform_id && known.active === item.active));
+      if (!same) await loadProject();  // the project's metaforms changed: show the active one, as on opening
+      else {
         S.layers = (await read('layers', {limit: 0})).results;
         renderChips();
         await loadGraph();

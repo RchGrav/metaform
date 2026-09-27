@@ -4,7 +4,7 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
-- The topic `map.changed`: a module that writes to a project's map publishes it with `project`, `metaform_id`, `layer`, `kind` and `building`, and the web GUI's open pages redraw from it; the web module passes it to its server, which pushes it to each page, VIEW-018. helloworld's greeting shows it.
+- The topic `map.changed`, `{project, metaform_id}`: the chassis fires it after any command that changes a project's map, so a module does nothing to announce its writes and any module can subscribe; the web module passes it to its server, which pushes it to each open page, VIEW-018. A module publishes it itself only for work done outside a command, in a spawned task. helloworld's greeting shows it.
 - Nothing polls for a change and nothing a person or an agent waits on blocks behind slow work, QUAL-015; what happened is published.
 
 ## 0.3.0

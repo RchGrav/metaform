@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import sqlite
+from . import changes, sqlite
 from .errors import StoreError
 
 BASE_SCHEMA = """
@@ -374,6 +374,7 @@ def _create_metaform(db: sqlite3.Connection, project_id: str, name: str, metafor
         db.execute('INSERT INTO active_metaforms(project_id, metaform_id) VALUES (?, ?) '
                    'ON CONFLICT(project_id) DO UPDATE SET metaform_id=excluded.metaform_id',
                    (project_id, record.metaform_id))
+    changes.note(project_id)  # the project's metaforms changed; announced when the command ends, VIEW-018
     return record
 
 
@@ -412,6 +413,7 @@ def withdraw_metaform(project_id: str, metaform_id: str) -> None:
         db.execute('DELETE FROM active_metaforms WHERE project_id=? AND metaform_id=?', (project_id, metaform_id))
         db.execute('DELETE FROM metaforms WHERE metaform_id=? AND project_id=?', (metaform_id, project_id))
     remove_store(store_path(project_id, metaform_id))
+    changes.note(project_id)
 
 
 def activate_metaform(project_id: str, name: str) -> Metaform:
@@ -422,6 +424,7 @@ def activate_metaform(project_id: str, name: str) -> Metaform:
             raise StoreError(f'No metaform {name} in {project_id}.', 'metaform list metaforms')
         db.execute('INSERT INTO active_metaforms(project_id, metaform_id) VALUES (?, ?) '
                    'ON CONFLICT(project_id) DO UPDATE SET metaform_id=excluded.metaform_id', (project_id, row[0]))
+    changes.note(project_id)
     return Metaform(row[0], project_id, name, row[1], True)
 
 

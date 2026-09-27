@@ -15,7 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import home, sqlite
+from .. import changes, home, sqlite
 from ..errors import StoreError
 from .schema import STORE_SCHEMA
 
@@ -95,6 +95,8 @@ class Session:
                     db.execute('ROLLBACK')
                     raise
                 db.execute('COMMIT')
+                if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
+                    changes.note(self.project_id, metaform.metaform_id)
             finally:
                 db.close()
 

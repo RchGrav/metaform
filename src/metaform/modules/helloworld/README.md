@@ -32,7 +32,7 @@ Started from template 0.2.0.
 
 ## Events
 
-Publishes `helloworld.greeted` with `{"name": ...}`. Subscribes to it to record the name, finishes its layer on the first greeting so it is seen in context, and publishes `map.changed` after each write, so an open web GUI shows the greeting at once, VIEW-018 and QUAL-016.
+Publishes `helloworld.greeted` with `{"name": ...}`. Subscribes to it to record the name, and finishes its layer on the first greeting so it is seen in context. It has no code to announce the write: the chassis fires `map.changed` when the greet command ends, so an open web GUI shows the greeting at once, VIEW-018 and QUAL-016.
 
 ## Sync and async
 

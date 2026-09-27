@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import anyio
 
-from metaform import settings
+from metaform import changes, settings
 from metaform.context import project_for
 from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
@@ -349,7 +349,10 @@ def serve(folder: Path) -> None:
         return types.ListToolsResult(tools=await anyio.to_thread.run_sync(build))
 
     async def call_tool(ctx: Any, params: Any) -> Any:
-        error, blocks = await run_tool(folder, params.name, params.arguments or {})
+        try:
+            error, blocks = await run_tool(folder, params.name, params.arguments or {})
+        finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018
+            await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
         return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
                                     is_error=error)
 

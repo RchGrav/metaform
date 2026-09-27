@@ -426,6 +426,40 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     assert [(ref.key, ref.value) for ref in kitchen.descriptors[0].refs] == [('path', 'src/main.c')]
 
 
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('MCP-002')
+def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, home, mapped, tmp_path, user_module):
+    log = tmp_path / 'heard.jsonl'
+    user_module('watcher', f'''
+        import json
+        from pathlib import Path
+        from metaform.module import Module, Subscription
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def saw(payload, ctx):
+            with Path({str(log)!r}).open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(payload) + '\\n')
+        MODULE = Module(id='watcher', summary='x', purpose='Watches the map. Details: metaform help watcher.',
+                        subscriptions=(Subscription('map.changed', saw),))
+    ''')
+
+    def lines():
+        return [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
+
+    async def call(client, init):
+        await client.call_tool('map_layers', {})
+        read = lines()
+        await client.call_tool('memory_add-observations', {'node': 'element:code.timer.kitchen',
+                                                           'text': ['The countdown drifts.']})
+        written = lines()
+        await client.call_tool('map_layers', {})  # in the same server process: a read after a write
+        return read, written, lines()
+    read, written, after = session(home, mapped, call)
+    active = Store('proj').active_metaform()
+    assert read == []
+    assert written == [{'project': 'proj', 'metaform_id': active.metaform_id}]  # once, for the one write
+    assert after == written  # the notes were taken once: the read announces nothing, not the write again
+
+
 HISTORY_TOOLS = {'add_origin', 'list_origins', 'add_variant', 'list_variants', 'extract'}
 
 

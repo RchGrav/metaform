@@ -216,18 +216,30 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('BASE-039')
 def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_the_verb_of_its_relation():
-    """The agent infers the relation's verb into its own field, and the relation's subject follows the word: the
-    Providing Element for Function, the Vested Entity for Encounter, Rich 2026-09-26; the verb is the agent's word."""
+    """The agent infers the relation's verb into its own field, a third-person singular present-tense active verb
+    ending in -s or -es, and the relation is a fragment that starts with it; the relation's subject follows the word,
+    the Providing Element for Function, and for Encounter the Vested Entity on a top-level join and the Receiving
+    Entity in a subtype join, since the Vested Entity is only ever at the top, Rich 2026-09-26 and 2026-09-27. The
+    verb is the agent's word. The tools' help carries the intake's own wording."""
     import xml.etree.ElementTree as ET
     root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
     join = root.find('.//schema//join')
     inner = join.find('join')
+    fragment = ('active-voice descriptive fragment starting directly with a third-person singular present-tense verb '
+                'ending in -s/-es')
     for found in (join, inner):
-        assert found.get('verb') == '[the verb of the relation]'
-        assert 'the Providing Element when ef is Function, the Vested Entity when ef is Encounter' in found.get('relation')
+        assert found.get('verb') == '[third-person singular present-tense active verb ending in -s or -es]'
+        assert found.get('relation').startswith('[' + fragment)
+    assert 'the Providing Element when ef is Function, the Vested Entity when ef is Encounter' in join.get('relation')
+    assert 'the Providing Element when ef is Function, the Receiving Entity when ef is Encounter' in inner.get('relation')
+    same = lambda noun, placeholder: noun.help.rstrip('.').lower() == placeholder.strip('[]').lower()
+    assert same(nouns_of('join')['verb'], join.get('verb')) and same(nouns_of('subtype')['verb'], inner.get('verb'))
+    assert same(nouns_of('join')['relation'], join.get('relation'))
+    assert same(nouns_of('subtype')['relation'], inner.get('relation'))
     step = root.find(".//step[@n='4']").get('text')
-    assert ('with the Providing Element as its subject when ef is Function and the Vested Entity as its subject when '
-            'ef is Encounter, the verb of that relation as verb') in step
+    assert ('the relation as an active-voice descriptive fragment starting directly with a third-person singular '
+            'present-tense verb ending in -s or -es, whose subject is the Providing Element when ef is Function and the '
+            'Vested Entity when ef is Encounter, that verb as verb') in step
     for name in ('join', 'subtype'):
         assert nouns_of(name)['verb'].kind == 'str'
 

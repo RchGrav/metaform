@@ -185,14 +185,16 @@ Each subscriber receives a copied payload and its own context built for the publ
 
 **Delivery is sequential in the supplied implementation.** Synchronous publication waits for each handler. Async publication awaits each handler in turn; synchronous handlers run through a worker thread, and asynchronous handlers are awaited on the loop. This preserves event-loop availability, but it does not make the publisher independent of subscriber completion or turn the bus into concurrent fan-out.
 
-**A write to the map is announced.** A module that writes to a project's map publishes `map.changed` after the write, and the web GUI's open pages redraw from it at once. The web module subscribes to the topic and hands each event to its running server, which pushes it to every open page over a server-sent events stream; with no server running, nothing happens. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
+**Every change to the map is announced for you.** After any command that changes a project's map, on the command line or over MCP, the chassis fires `map.changed` on the event bus with the project and the metaform's id, no id meaning the project's metaforms changed. A module does nothing to announce its writes. Any module can subscribe:
 
 ```python
-ctx.publish('map.changed', {'project': store.project_id, 'metaform_id': layer.metaform_id,
-                            'layer': layer.name, 'kind': layer.kind, 'building': layer.ready is None})
+def changed(payload, ctx):
+    ...  # payload: {'project': 'proj', 'metaform_id': '...'}
+
+MODULE = Module(..., subscriptions=(Subscription('map.changed', changed),))
 ```
 
-helloworld's greeting does this: with the page open, each greeting appears in the 3D view as it is recorded.
+The web module subscribes and hands each event to its running server, which pushes it to every open page over a server-sent events stream, so the page redraws at once; with no server running, nothing happens. Work a module does outside a command, in a task it spawned, is announced only when the module publishes `map.changed` itself. helloworld's greeting shows it: with the page open, each greeting appears in the 3D view as it is recorded, and helloworld has no code for it. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
 
 Separate owned asynchronous work uses `ctx.spawn(coroutine)` inside an active event loop. The loader tracks the task as belonging to the module and cancels it during unload/reset/shutdown. That facility is distinct from publication. A one-shot asynchronous CLI verb owns a transient loop; its spawned work is cleaned up when the invocation ends, not converted into an independent daemon.
 
