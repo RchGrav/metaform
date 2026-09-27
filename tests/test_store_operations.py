@@ -22,6 +22,7 @@ class World:
     memo: Any
     challenge: Any
     k_join: Any
+    work: Any
     fixed: Any = None
 
 
@@ -44,7 +45,8 @@ def build(store) -> World:
                    function='restarts the loop', relation='The watchdog restarts the timer.', observation='none yet')
     challenge = store.add_item(critic.name, Node('element', 'code.watchdog'), 'Nothing recovers a hung loop.')
     store.finish(critic.name)
-    return World(outer, inner, item, prop, finished_item, memo, challenge, k_join)
+    work = store.add_work(Node('element', 'code.k.a'), 'tbd', task='build a')
+    return World(outer, inner, item, prop, finished_item, memo, challenge, k_join, work)
 
 
 def fix_with_change(store, world):
@@ -120,6 +122,16 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
                 {'challenge_states': (1, 1), 'plans': (1, 0)}),
     'add_plan': (lambda s, w: None, lambda s, w, c: s.add_plan('k', 'code.k.b', w.k_join.join_id),
                  {'plans': (1, 0)}),
+    # A work record is one row of `work` and nothing else: no identity row, no layer row, no change to the map,
+    # STORE-042; its work_id is an identity id in form and stability, STORE-007, and the `work` row is its identity.
+    'add_work': (lambda s, w: None, lambda s, w, c: s.add_work(Node('element', 'code.k.b'), 'tbd', task='build b'),
+                 {'work': (1, 0)}),
+    'add_work on a join': (lambda s, w: None,
+                           lambda s, w, c: s.add_work(Node('join', w.k_join.join_id), 'broken', held=True),
+                           {'work': (1, 0)}),
+    'edit_work': (lambda s, w: None, lambda s, w, c: s.edit_work(w.work.work_id, {'reviewed': True, 'task': 'b'}),
+                  {'work': (1, 1)}),
+    'finish_work': (lambda s, w: None, lambda s, w, c: s.finish_work(w.work.work_id, 'built'), {'work': (1, 1)}),
     'update_item': (lambda s, w: None, lambda s, w, c: s.update_item(w.memo.item_id, 'changed'), {'items': (1, 1)}),
     'delete_item': (lambda s, w: None, lambda s, w, c: s.delete_item(w.memo.item_id),
                     {'items': (0, 1), 'current_items': (0, 1)}),
@@ -190,6 +202,8 @@ ERRORS: dict[str, tuple[Callable, Callable]] = {
     'edit parent that is the join itself': (lambda s, w: None,
                                             lambda s, w: s.edit(w.k_join.join_id, {'parent': w.k_join.join_id})),
     'add_ref unknown owner': (lambda s, w: None, lambda s, w: s.add_ref('0' * 32, 'path', 'x')),
+    'edit_work unknown': (lambda s, w: None, lambda s, w: s.edit_work('0' * 32, {'task': 'x'})),
+    'finish_work unknown': (lambda s, w: None, lambda s, w: s.finish_work('0' * 32, 'x')),
     'approve open': (lambda s, w: None, lambda s, w: s.approve(w.challenge.item_id)),
     'approve A': (lambda s, w: s.answer(w.challenge.item_id, 'A'), lambda s, w: s.approve(w.challenge.item_id)),
     'reexamined unknown': (lambda s, w: None, lambda s, w: s.reexamined('ghost')),
@@ -324,6 +338,19 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                               lambda s, w, got, before: got.state == 'A'),
     'add_plan unknown element': (lambda s, w: None, lambda s, w: s.add_plan('k', 'code.nothing', None), True,
                                  _raw_element('code.nothing')),
+    'add_work condition outside the three': (lambda s, w: None,
+                                             lambda s, w: s.add_work(Node('element', 'code.k.b'), 'sideways'), True,
+                                             lambda s, w, got, before: got.condition == 'sideways'),
+    'add_work node that names nothing': (lambda s, w: None,
+                                         lambda s, w: s.add_work(Node('element', 'code.nothing'), 'tbd'), True,
+                                         lambda s, w, got, before: (got.kind, got.id, got.address) ==
+                                         ('element', 'code.nothing', None)),
+    'edit_work key not allowed': (lambda s, w: None,
+                                  lambda s, w: s.edit_work(w.work.work_id, {'colour': 'red', 'task': 'c'}), True,
+                                  lambda s, w, got, before: got.task == 'c'),
+    'finish_work twice': (lambda s, w: s.finish_work(w.work.work_id, 'first'),
+                          lambda s, w: s.finish_work(w.work.work_id, 'second'), False,
+                          lambda s, w, got, before: got.resolution == 'first'),
     'update_item not memory': (lambda s, w: None, lambda s, w: s.update_item(w.item.item_id, 'x'), False,
                                _unchanged),
     'delete_item not memory': (lambda s, w: None, lambda s, w: s.delete_item(w.item.item_id), False, _unchanged),

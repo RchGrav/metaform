@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from metaform.data import Node, StoreError
-from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import correction, diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -95,10 +95,43 @@ def test_an_element_recorded_again_at_its_address_is_the_same_element_with_its_j
     join = store.add_join(layer.name, 'code.loop.main', 'code.engine', purpose='p', function='f',
                           relation='runs the engine.', observation='o')
     store.remove(first.element_id)
+    assert store.joins('code.engine', as_='provider', raw=True).results == ()
     again = store.add_element(layer.name, 'code.engine')
     assert again.element_id == first.element_id
-    served = store.joins('code.engine', as_='provider', raw=True).results
-    assert [held.join_id for held in served] == [join.join_id]
+    store.finish(layer.name)
+    # The join reads back with the element as provider again: in context, not orphaned, and by the address too.
+    served = store.joins(first.element_id, as_='provider').results
+    assert [(held.join_id, held.provider_address, held.orphaned) for held in served] == [
+        (join.join_id, 'code.engine', False)]
+    assert [held.join_id for held in store.joins('code.engine', as_='provider').results] == [join.join_id]
+    assert [held.join_id for held in store.joins('code.loop.main').results] == [join.join_id]
+    assert store.joins('code.engine', as_='provider', raw=True).results[0].orphaned is False
+
+
+@pytest.mark.req('STORE-009')
+@pytest.mark.req('STORE-027')
+def test_an_imported_elements_identity_comes_back_when_it_is_removed_and_recorded_again(store, monkeypatch,
+                                                                                         tmp_path):
+    from metaform.data import Store, export_document, import_document
+    small_map(store)
+    alarm = store.element('code.alarm.audible').element_id
+    notes = memory(store)
+    store.add_item(notes.name, Node('element', 'code.alarm.audible'), 'alarm memory')
+    document = export_document(['proj'])
+    monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
+    import_document(document)
+    moved = Store('proj')
+    drop = correction(moved, 'drop')
+    moved.correct(drop.name, alarm, remove=True, reason='gone')
+    moved.finish(drop.name)
+    assert moved.element('code.alarm.audible') is None
+    back = correction(moved, 'back')
+    put = moved.add_element(back.name, 'code.alarm.audible', role='SE')
+    moved.finish(back.name)
+    assert put.element_id == alarm and moved.element('code.alarm.audible').element_id == alarm
+    assert values(moved.node(Node('element', 'code.alarm.audible')), 'memory') == ['alarm memory']
+    assert [held.join_id for held in moved.joins('code.timer.kitchen').results] == [
+        held.join_id for held in store.joins('code.timer.kitchen').results]
 
 
 @pytest.mark.req('STORE-009')
