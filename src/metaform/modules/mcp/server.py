@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import anyio
 
-from metaform import changes, settings
+from metaform import changes, home, settings
 from metaform.context import project_for
 from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
@@ -154,6 +154,13 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                 'properties': {'name': _text('The prompt, by name.'),
                                'number': {'type': 'integer', 'description': 'The version number; without it, the '
                                                                             'newest.'}}}),
+    'clear_project': (("Remove a project's metaforms and reports, as metaform clear project does, PROJ-025. Its "
+                       'registration, folder, settings, origins and variants stay. Caution: without confirm it only '
+                       'says what it would remove.'),
+                      {'type': 'object', 'additionalProperties': False,
+                       'properties': {'confirm': {'type': 'boolean',
+                                                  'description': 'Run it. Without it the tool only explains.'},
+                                      'project': PROJECT}}),
     'extract': ('Write variants out to folders with Python alone, as metaform extract does, PROJ-018.',
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
                  'properties': {
@@ -233,14 +240,21 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
 
 
 def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
-    """The history and prompt commands as tools, on the surface while the chassis is, PROJ-024, STORE-044 and
-    MCP-004."""
+    """The history, prompt and clear commands as tools, on the surface while the chassis is, PROJ-024, STORE-044,
+    PROJ-025 and MCP-004."""
     try:
         given = _checked(name, arguments, SURFACED[name][1])
         if name == 'prompts':
             return False, [result_json(list(prompts.prompts()))]
         if name == 'prompt':
             return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
+        if name == 'clear_project':
+            project = project_for(folder, given.pop('project', None)) or _no_project()
+            if home.project(project) is None:
+                raise Stop(f'No project {project} is registered.', 'metaform list projects')
+            if not given.get('confirm', False):
+                raise Stop(home.to_clear(project).caution, 'If you are sure: call clear_project with confirm true')
+            return False, [result_json(home.clear_project(project))]
         store = Store(project_for(folder, given.pop('project', None)) or _no_project())
         if name == 'add_origin':
             known = {item.mform_sha_id for item in store.origins()}

@@ -61,3 +61,16 @@ def test_any_module_hears_map_changed_for_each_command_that_changed_the_map_and_
     assert heard(log) == [{'project': 'proj', 'metaform_id': None}]
     run('map', 'roots', cwd=folder)
     assert heard(log) == []
+
+
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('VIEW-018')
+def test_clearing_a_project_is_announced_once_as_a_change_to_its_metaforms(run, watched):
+    folder, log = watched
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=folder)
+    heard(log)
+    refused = run('clear', 'project', cwd=folder, ok=False)
+    assert refused.returncode == 2 and heard(log) == []  # the caution alone changes nothing
+    run('clear', 'project', '--confirm', cwd=folder)
+    assert heard(log) == [{'project': 'proj', 'metaform_id': None}]
+    assert metaform_home.metaforms('proj') == ()

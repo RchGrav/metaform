@@ -33,7 +33,7 @@ This spec is frozen for the first release. New design ideas go to a later versio
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the settings screen |
 | 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
-| 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history |
+| 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history, clearing a project |
 | 09-viewer.md | VIEW | The one web GUI, user global, and its first view, the viewer: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object in the left window |
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |

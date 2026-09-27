@@ -513,3 +513,32 @@ def test_the_prompt_reads_are_tools(run, home, mapped):
     listed, newest, first = session(home, mapped, check)
     assert [(item['name'], item['newest']) for item in listed] == [('practices', 2)]
     assert (newest['number'], newest['text'], first['text']) == (2, 'two\n', 'one\n')
+
+
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('MCP-006')
+def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run, home, mapped):
+    run('feedback', 'A note.', cwd=mapped)
+
+    async def check(client, init):
+        tools = await tool_names(client)
+        refused = await client.call_tool('clear_project', {})
+        still = await client.call_tool('map_where', {'address': 'code.timer.kitchen'})
+        cleared = await client.call_tool('clear_project', {'confirm': True})
+        return tools, refused, still, cleared
+    tools, refused, still, cleared = session(home, mapped, check)
+    assert tools['clear_project'].input_schema['properties'].keys() == {'confirm', 'project'}
+    assert refused.is_error is True
+    assert text(refused) == [('Error: Clearing proj removes its 1 metaform(s), main, with their stores, and its 1 '
+                              'report file(s). Its registration, folder, settings, origins and variants stay.\n'
+                              'Next: If you are sure: call clear_project with confirm true')]
+    assert still.is_error is False  # the caution alone changed nothing
+    assert cleared.is_error is False
+    assert json.loads(text(cleared)[-1]) == {'project': 'proj', 'metaforms': ['main'], 'reports': 1}
+    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    run('set', '--modules', 'map', cwd=mapped)
+
+    async def narrowed(client, init):
+        return set(await tool_names(client))
+    assert 'clear_project' not in session(home, mapped, narrowed)

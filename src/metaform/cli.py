@@ -290,6 +290,25 @@ def activate(args: list[str], folder: Path) -> None:
     out(f'Active metaform for {project_id}: {args[1]}')
 
 
+
+def clear(args: list[str], folder: Path) -> None:
+    """`clear project [<project>] --confirm`: the metaforms and reports go, everything else stays, PROJ-025."""
+    confirm = '--confirm' in args
+    words = [arg for arg in args if arg != '--confirm']
+    if words[:1] != ['project'] or len(words) not in (1, 2):
+        raise Stop('clear needs: project [<project>].', 'metaform clear project')
+    project_id = _project_arg(folder, words[1] if len(words) == 2 else None)
+    if home.project(project_id) is None:
+        raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
+    found = home.to_clear(project_id)
+    if not confirm:
+        raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
+    cleared = home.clear_project(project_id)
+    names = ', '.join(cleared.metaforms) or 'no metaforms'
+    out(f'Cleared {project_id}: {len(cleared.metaforms)} metaform(s), {names}, and {cleared.reports} report '
+        f'file(s). Its registration, folder, settings, origins and variants stay.')
+
+
 def _toggle(args: list[str], on: bool) -> None:
     verb = 'enable' if on else 'disable'
     if len(args) != 1:
@@ -622,7 +641,7 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
-    'extract': extract, 'prompts': prompts_, 'prompt': prompt_}
+    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -766,7 +785,7 @@ docs.command(Command('add', 'Register a project, or start a new metaform for one
                      description='Metaform keeps its data in the home, never in the project folder.',
                      details='The target type is path, url, artifact, inline or inferred; with none given it is the '
                              'folder itself.',
-                     examples=(('metaform add project mgm ~/mgm-main', 'Register the MGM repository as mgm.'),),
+                     examples=(('metaform add project notes ~/notes', 'Register the folder ~/notes as the project notes.'),),
                      see_also=('list', 'activate')))
 docs.command(Command('list', "List registered projects, modules, a project's metaforms, or its reports.",
                      ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]',
@@ -787,8 +806,8 @@ docs.command(Command('set', 'Save settings. Each setting is a switch.',
                                  'every folder below it.',
                      details='Out of the box every setting is at its default, and the defaults work. A glued setting '
                              'keeps its value when you run unset all.',
-                     examples=(('metaform set --project mgm', 'Work on mgm from this folder.'),
-                               ('metaform set --project mgm --glue', 'Same, and keep it through unset all.')),
+                     examples=(('metaform set --project notes', 'Work on notes from this folder.'),
+                               ('metaform set --project notes --glue', 'Same, and keep it through unset all.')),
                      see_also=('unset', 'config')))
 docs.command(Command('unset', 'Return settings to their defaults.',
                      ('metaform unset --<setting> [--unglue] [-q] [folder=<path>]', 'metaform unset all [--unglue]'),
@@ -857,6 +876,18 @@ docs.command(Command('feedback', 'Save feedback on the Metaform process, and a r
                      see_also=('list', 'read')))
 docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
                      ('metaform read report <file name> [<project>]',), see_also=('list', 'feedback')))
+docs.command(Command('clear', "Remove a project's metaforms and reports; its registration, settings and history stay.",
+                     ('metaform clear project [<project>] --confirm',),
+                     description='Clears what Metaform inferred about the project so an intake can be taken again '
+                                 'from nothing. Every metaform goes with its store, and every report, feedback and '
+                                 'shape file. The registration, the folder and every file in it, the folder settings, '
+                                 'and the origins and variants stay.',
+                     details='Without --confirm it says exactly what it would remove and removes nothing. After a '
+                             'clear the project has no metaform until the next intake, or any other write, creates '
+                             'main again.',
+                     examples=(('metaform clear project', 'Say what clearing this folder\'s project would remove.'),
+                               ('metaform clear project notes --confirm', 'Clear the project notes.')),
+                     see_also=('list', 'add')))
 docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
                      details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
                      see_also=('install',)))
@@ -866,7 +897,7 @@ docs.switch(Switch('--unglue', 'Reset glued settings too, and unglue them.', use
 docs.switch(Switch('--quiet', 'Apply the change without printing.', used_by=('set', 'unset')))
 docs.switch(Switch('--show', 'Print the settings instead of opening the settings screen.', used_by=('config',)))
 docs.switch(Switch('--json', 'Print machine-readable JSON.', used_by=('config', 'query', 'every module verb')))
-docs.switch(Switch('--confirm', 'Run a caution verb. It is never a setting.', used_by=('caution verbs',)))
+docs.switch(Switch('--confirm', 'Run a caution verb. It is never a setting.', used_by=('caution verbs', 'clear')))
 
 
 def _utf8_streams() -> None:
