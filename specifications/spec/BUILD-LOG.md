@@ -573,3 +573,10 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Tests changed to the new spec: the five `set` and status expectations in the CLI tests, and the four import-summary expectations in the CLI and exchange tests. Added: the MCP text-switch test, the intake odd-ref test, and the web loop test in place of the source check.
 - Suite 611 passed; pyright clean; `ruff check src tests conftest.py` reports 120 findings, the same count as steps 51 to 55, none new.
 - Found and left alone: the chassis tools' own argument check in the MCP server, `_checked`, still stops `feedback`, `list_reports` and `read_report` when a text argument is sent another JSON type, the refusal step 53 removed for module verbs; `metaform import`'s summary prints its keys as `things added`, a count line, with no record owning its text; the intake tools read a `refs` value that is not a JSON array as one ref, and no record says so.
+
+## Step 59: every tool on the MCP surface reads a call one way, and two unrecorded rules written down
+
+- Found by step 56: the MCP server's own chassis tools, `feedback`, `list_reports`, `read_report` and the history, prompt and clear tools, still stopped a text argument sent another JSON type, the refusal step 53 removed for module verbs and step 56 for switches. `_checked` now reads a text argument sent another type as its JSON text and says so in a `Notice: <key>: <message>` line in the block before the result, where a module verb's notices appear; a whole number, true or false, or a list sent another type still stops the call. MCP-005.
+- Written down, as the code already does: `metaform import`'s summary lines, one per count in words, STORE-027; and a `refs` value that is not a JSON array read as a list holding that one ref, BASE-039.
+- Begun by a Fable builder, which wrote the three records and was stopped when Rich moved the work to Opus only; the orchestrator wrote the test, saw it fail, and made the change.
+- Test written first and seen failing: `feedback` sent a number as its text and `list_reports` sent a list as its kind are read, noted and answered, not refused.

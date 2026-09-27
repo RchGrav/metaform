@@ -12,6 +12,7 @@ any, and one block holding the result, BASE-036.
 from __future__ import annotations
 
 import inspect
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -177,8 +178,11 @@ def _error(stop: Stop) -> Outcome:
     return True, [f'Error: {stop}\nNext: {stop.next_step}']
 
 
-def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
-    """A chassis tool's arguments: each one of its declared JSON type, the required ones given."""
+def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
+             notices: list[str]) -> dict[str, Any]:
+    """A chassis tool's arguments, the required ones given, each read by its declared JSON type as a module's
+    nouns are, MCP-005: a text argument sent another type is kept as its JSON text and said in `notices`; a
+    whole number, true or false, or a list sent another type cannot be read as its kind and stops the call."""
     properties: dict[str, Any] = schema['properties']
     for key in schema.get('required', []):
         if key not in arguments:
@@ -189,7 +193,10 @@ def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any]) -> di
         if expected is None:
             raise Stop(f'{name} has no argument {key}.', 'metaform help commands')
         wanted = JSON_TYPES[expected['type']]
-        if not isinstance(value, wanted) or (isinstance(value, bool) and wanted is not bool):
+        if wanted is str and not isinstance(value, str):
+            value = json.dumps(value, ensure_ascii=False)
+            notices.append(f'Notice: {key}: {key} is text; what was sent was kept as its JSON text.')
+        elif not isinstance(value, wanted) or (isinstance(value, bool) and wanted is not bool):
             kind = {str: 'text', int: 'a whole number', bool: 'true or false', list: 'a list'}[wanted]
             raise Stop(f'{key} is {kind}, not {value!r}.', 'metaform help commands')
         checked[key] = value
@@ -229,61 +236,70 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
 
 def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
     """`feedback`, `list_reports` and `read_report`: always on the surface, so an agent can always report."""
+    notices: list[str] = []
     try:
-        given = _checked(name, arguments, CHASSIS[name][1])
+        given = _checked(name, arguments, CHASSIS[name][1], notices)
         project = given.pop('project', None)
         if name == 'feedback':
-            return False, [result_json(feedback(folder, given.pop('text'), project=project, **given))]
-        if name == 'list_reports':
-            return False, [result_json(list_reports(folder, project=project, **given))]
-        return False, [read_report(folder, given['name'], project=project)]
+            result = result_json(feedback(folder, given.pop('text'), project=project, **given))
+        elif name == 'list_reports':
+            result = result_json(list_reports(folder, project=project, **given))
+        else:
+            result = read_report(folder, given['name'], project=project)
     except Stop as stop:
         return _error(stop)
+    return False, (['\n'.join(notices)] if notices else []) + [result]
 
 
 def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
     """The history, prompt and clear commands as tools, on the surface while the chassis is, PROJ-024, STORE-044,
     PROJ-025 and MCP-004."""
+    notices: list[str] = []
     try:
-        given = _checked(name, arguments, SURFACED[name][1])
-        if name == 'prompts':
-            return False, [result_json(list(prompts.prompts()))]
-        if name == 'prompt':
-            return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
-        if name == 'clear_project':
-            project = project_for(folder, given.pop('project', None)) or _no_project()
-            if home.project(project) is None:
-                raise Stop(f'No project {project} is registered.', 'metaform list projects')
-            if not given.get('confirm', False):
-                raise Stop(home.to_clear(project).caution, 'If you are sure: call clear_project with confirm true')
-            cleared = home.clear_project(project)
-            result = cleared.to_dict()
-            if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
-                result['notices'] = [{'where': 'not_removed', 'message': f'{cleared.left} '
-                                      f'{cleared.remedy("call clear_project with confirm true again")}'}]
-            return False, [result_json(result)]
-        store = Store(project_for(folder, given.pop('project', None)) or _no_project())
-        if name == 'add_origin':
-            known = {item.mform_sha_id for item in store.origins()}
-            made = store.add_origin()
-            first = store.variants(made.mform_id)
-            return False, [result_json({'origin': made, 'added': made.mform_sha_id not in known,
-                                        'first_variant': first[0].variant_id if first else None})]
-        if name == 'list_origins':
-            return False, [result_json(list(store.origins()))]
-        if name == 'add_variant':
-            folder_given = _within(folder, given.pop('folder'))
-            origin_given = given.pop('origin', None)
-            remove = bool(given.pop('remove', False))
-            return False, [result_json(store.add_variant(folder_given, origin_given, remove=remove,
-                                                         provenance=given))]
-        if name == 'list_variants':
-            return False, [result_json(list(store.variants(given.get('origin'))))]
-        written = store.extract([str(item) for item in given['variants']], _within(folder, given['folder']),
-                                given.get('origin'))
-        return False, [result_json([str(path) for path in written])]
+        error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices))
     except (Stop, StoreError) as stop:
         return _error(stop)
+    return error, (['\n'.join(notices)] if notices else []) + blocks
+
+
+def _history(folder: Path, name: str, given: dict[str, Any]) -> Outcome:
+    """The history, prompt and clear tools once their arguments are read."""
+    if name == 'prompts':
+        return False, [result_json(list(prompts.prompts()))]
+    if name == 'prompt':
+        return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
+    if name == 'clear_project':
+        project = project_for(folder, given.pop('project', None)) or _no_project()
+        if home.project(project) is None:
+            raise Stop(f'No project {project} is registered.', 'metaform list projects')
+        if not given.get('confirm', False):
+            raise Stop(home.to_clear(project).caution, 'If you are sure: call clear_project with confirm true')
+        cleared = home.clear_project(project)
+        result = cleared.to_dict()
+        if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
+            result['notices'] = [{'where': 'not_removed', 'message': f'{cleared.left} '
+                                  f'{cleared.remedy("call clear_project with confirm true again")}'}]
+        return False, [result_json(result)]
+    store = Store(project_for(folder, given.pop('project', None)) or _no_project())
+    if name == 'add_origin':
+        known = {item.mform_sha_id for item in store.origins()}
+        made = store.add_origin()
+        first = store.variants(made.mform_id)
+        return False, [result_json({'origin': made, 'added': made.mform_sha_id not in known,
+                                    'first_variant': first[0].variant_id if first else None})]
+    if name == 'list_origins':
+        return False, [result_json(list(store.origins()))]
+    if name == 'add_variant':
+        folder_given = _within(folder, given.pop('folder'))
+        origin_given = given.pop('origin', None)
+        remove = bool(given.pop('remove', False))
+        return False, [result_json(store.add_variant(folder_given, origin_given, remove=remove,
+                                                     provenance=given))]
+    if name == 'list_variants':
+        return False, [result_json(list(store.variants(given.get('origin'))))]
+    written = store.extract([str(item) for item in given['variants']], _within(folder, given['folder']),
+                            given.get('origin'))
+    return False, [result_json([str(path) for path in written])]
 
 
 def _within(folder: Path, given: Any) -> Path:

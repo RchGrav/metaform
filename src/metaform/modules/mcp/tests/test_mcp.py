@@ -436,6 +436,25 @@ def test_a_text_switch_sent_another_json_value_is_kept_as_its_json_text_with_a_n
     assert 'modules is a list' in str(stopped.value)
 
 
+@pytest.mark.req('MCP-005')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('BASE-045')
+def test_a_chassis_tool_reads_a_text_argument_sent_another_json_value_as_its_json_text(run, home, mapped):
+    """Every tool on the MCP surface reads a call one way, MCP-005: the chassis's own tools, like a module's verbs,
+    keep a text argument sent another JSON type as its JSON text and say so; a list stays a list."""
+    async def call(client, init):
+        said = await client.call_tool('feedback', {'text': 12})
+        listed = await client.call_tool('list_reports', {'kind': ['feedback']})
+        return (said.is_error, text(said)), (listed.is_error, text(listed))
+    (said_error, said), (listed_error, listed) = session(home, mapped, call)
+    assert not said_error and not listed_error
+    assert said[0] == 'Notice: text: text is text; what was sent was kept as its JSON text.'
+    name = json.loads(said[-1])['files'][0]
+    assert run('read', 'report', name, cwd=mapped).stdout == '12'
+    assert listed[0] == 'Notice: kind: kind is text; what was sent was kept as its JSON text.'
+    assert json.loads(listed[-1])['results'] == []
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MCP-002')
 def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_building(run, home, tmp_path):
