@@ -4,7 +4,7 @@ Metaform's one web GUI for the user: one server per Metaform home, serving every
 
 ## Purpose
 
-People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. After an intake, agents start it and tell the user the address, while `--web-autostart` is on. It ships enabled.
+People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. Before an intake, agents start it and tell the user the address, while `--web-autostart` is on, so the map can be watched as it is recorded. It ships enabled.
 
 ## Template version
 
@@ -27,7 +27,7 @@ Started from template 0.3.0.
 
 - `--web-port`, a number, default 7433, for the whole home.
 - `--web-bind`, text, default `127.0.0.1`, for the whole home. At a wildcard address, `0.0.0.0` or `::`, the printed address uses the machine's host name.
-- `--web-autostart`, on or off, default on, per folder. While on, the status hook's notice tells agents to start the GUI after an intake and give the user its address.
+- `--web-autostart`, on or off, default on, per folder. While on, the status hook's notice tells agents to start the GUI before an intake and give the user its address.
 
 ## The server
 

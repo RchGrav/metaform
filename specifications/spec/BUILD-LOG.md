@@ -363,3 +363,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The web page asks `/api/intake-recording` every 1.5 s. When an intake starts it switches to its metaform, says so, and draws the building layer from `/api/layer-graph`, both views, positions kept, whenever it changes; at the finish it shows the finished map.
 - BASE-039, MAP-040, STORE-024, STORE-025, STORE-032, STORE-042, VIEW-004, VIEW-005, MCP-009, MCP-024 and the index say so; the module README, the README, getting-started, the reference and the implementation map follow. Historical records keep their wording.
 - Tests, written first and seen failing against the committed code, 21 of the 24 intake tests and the browser test: every earlier intake behavior recorded one object per call with notices named by field; a building intake unseen by context reads and seen by `show`; edit and remove while building and none after the finish; auto-start and resume; the recording and proofing lines of the Canonical Intake; the tools over MCP; the page drawing a building intake as each object arrives. Removed with the behavior: the unreadable-array test and the MCP test that a string for `elements` is never read as a path, since no call takes a path or an array any more.
+
+## Step 34: the web GUI starts before the intake
+
+- Rich, 2026-09-26, asked whether agents should start the web GUI before the intake now that the page follows it live: "Yes, that's correct, start it before."
+- The web module's notice and the `--web-autostart` help say before an intake instead of after; VIEW-015 and the module README follow. Nothing else in the notice changed.
+- Test changed first and seen failing: the expected notice in the web tests and the first working test.

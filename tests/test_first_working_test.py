@@ -27,7 +27,7 @@ SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
           'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
-WEB_NOTICE = ('After an intake, start the web GUI with metaform web, or the web_start tool, if it is not already '
+WEB_NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already '
               'running. If it was not running, tell the user its address once it starts, and its token when it gives '
               'one.')
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")

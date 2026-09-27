@@ -30,7 +30,7 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-NOTICE = ('After an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
+NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
           'If it was not running, tell the user its address once it starts, and its token when it gives one.')
 WAIT = 15.0  # seconds `start` waits for a new server to answer, and `stop` for one to end
 WILDCARDS = ('0.0.0.0', '::', '')
@@ -44,7 +44,7 @@ settings.text('web_bind', '127.0.0.1', scope='global',
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
                       'network, and then every request needs the token that metaform web prints.')
 settings.boolean('web_autostart', True,
-                 help='Have agents start the web GUI after an intake and tell you its address.')
+                 help='Have agents start the web GUI before an intake and tell you its address.')
 
 
 def run_dir() -> Path:

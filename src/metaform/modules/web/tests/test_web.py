@@ -10,7 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.kind('fixture')
 
-NOTICE = ('After an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
+NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
           'If it was not running, tell the user its address once it starts, and its token when it gives one.')
 
 
