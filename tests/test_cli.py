@@ -235,7 +235,7 @@ def test_a_selection_above_a_project_does_not_reach_inside_it(run, tmp_path, pro
 @pytest.mark.req('CLI-008')
 def test_narrowing_the_surface_hides_and_blocks_and_names_the_way_back(run, toggles):
     out = lines(run('set', '--modules', 'toggles'))
-    assert out == ['Success: updated 1 key', '  modules: all → toggles', 'Commands shown here: toggles.',
+    assert out == ['Success: updated one key', '  modules: all → toggles', 'Commands shown here: toggles.',
                    'All other commands and help, including yours, are now hidden and will not run.',
                    'To restore them: metaform unset --modules']
     refused = run('list', 'projects', ok=False)
@@ -289,7 +289,7 @@ def test_status_in_a_registered_project_has_the_fixed_lines(run, home, project):
     assert out[:5] == [f'Metaform {__version__}', f'Home: {home}', f'Folder: {project / "src"}',
                        f'Project: proj ({project}), inherited from {project}', f'Target: path {project}']
     assert out[5].startswith('Metaform: ')
-    assert out[6] == 'Projects: 1 registered'
+    assert out[6] == 'Projects: one registered'
     assert out[7].startswith('Modules: ') and out[-1] == 'Instructions: metaform help agents'
     assert f'Project: proj ({project}), selected here' in lines(run(cwd=project))
 
@@ -463,7 +463,7 @@ def test_metaforms_are_added_listed_and_activated(run, project):
     listed = lines(run('list', 'metaforms', cwd=project))
     assert [line.split()[0] for line in listed] == ['main', 'fresh'] and listed[1].endswith('(active)')
     assert lines(run('activate', 'metaform', 'main', cwd=project)) == ['Active metaform for proj: main']
-    assert run(cwd=project).stdout.count('Metaform: main, 2 in project') == 1
+    assert run(cwd=project).stdout.count('Metaform: main, two in project') == 1
 
 
 @pytest.mark.req('PROJ-025')
@@ -557,11 +557,11 @@ def test_export_then_import_into_an_empty_home_reproduces_the_project(run, proje
     other = tmp_path / 'other-home'
     env = {'METAFORM_HOME': str(other)}
     report = run('import', str(document), cwd=tmp_path, env=env).stdout
-    assert 'layers added: 1' in report
+    assert 'layers added: one' in report
     again = run('export', 'proj', cwd=tmp_path, env=env).stdout
     assert json.loads(again) == first
     skipped = run('import', str(document), cwd=tmp_path, env=env).stdout
-    assert 'layers skipped: 1' in skipped
+    assert 'layers skipped: one' in skipped
 
 
 @pytest.mark.req('STORE-028')
@@ -702,7 +702,7 @@ def test_an_off_module_lists_with_the_summary_it_shows_when_on(run):
 @pytest.mark.req('CLI-015')
 @pytest.mark.req('CLI-017')
 def test_set_and_unset_report_what_is_stored_whatever_the_value(run, toggles):
-    assert lines(run('set', '--no-tmux'))[0] == 'Success: updated 1 key'
+    assert lines(run('set', '--no-tmux'))[0] == 'Success: updated one key'
     assert shown(run)['tmux']['state'] == 'set'
     assert lines(run('unset', 'all'))[0] == 'Reset one setting: tmux'
     assert shown(run)['tmux']['state'] == 'default'
@@ -732,7 +732,7 @@ def test_set_with_one_value_that_does_not_fit_stores_none_of_them(run, toggles):
 def test_set_for_another_folder_names_that_folder(run, tmp_path):
     job = tmp_path / 'job1'
     job.mkdir()
-    assert lines(run('set', '--modules', 'chassis', f'folder={job}'))[0] == f'Success: updated 1 key for {job}'
+    assert lines(run('set', '--modules', 'chassis', f'folder={job}'))[0] == f'Success: updated one key for {job}'
 
 
 @pytest.mark.req('BASE-031')

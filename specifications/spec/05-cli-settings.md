@@ -293,16 +293,16 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: removing commands from the surface holds even for agents with full permissions, where host permissions do not. The orchestrator that narrowed the surface holds the exact way back and acts with confidence; a subagent meets only the caution. The wording steers, and nothing gates inference.
 - How it shows:
   ```
-  Success: updated 1 key
+  Success: updated one key
     modules: all → workflow,memory
   Commands shown here: workflow, memory.
   All other commands and help, including yours, are now hidden and will not run.
   To restore them: metaform unset --modules
   ```
-  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50. `metaform set --modules workflow,memory folder=~/wt/job1` stores the same value for that folder and prints the same lines, naming the folder at the end of the first: `Success: updated 1 key for <folder>`, or `Success: no changes for <folder>`.
+  When a workflow narrowed the surface, the last line names that workflow module's abort verb instead, D50. `metaform set --modules workflow,memory folder=~/wt/job1` stores the same value for that folder and prints the same lines, naming the folder at the end of the first: `Success: updated one key for <folder>`, or `Success: no changes for <folder>`.
   `metaform help --modules` says: `Narrows which modules' commands this folder shows and runs. It does not enable or disable modules; use metaform enable and disable for that.`
 - Build:
-  - The exact text of `set` output is owned here. Line 1: `Success: updated <n> key` when one setting changed, `Success: updated <n> keys` otherwise. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `modules` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `modules` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
+  - The exact text of `set` output is owned here. Line 1: `Success: updated one key` when one setting changed, `Success: updated <n> keys` otherwise, the count written as PROJ-025 writes counts: `two keys`, `12 keys`. Then one line per change, `  <key>: <old> → <new>`, values shown per CLI-031's value rule, except that an empty `modules` value is shown as `all`, because empty means every group. Then `  glued: <keys>` when `--glue` was given. With no change: `Success: no changes`. When the new `modules` value is narrower than the old, three lines follow: `Commands shown here: <groups, comma and space separated>.`, `All other commands and help, including yours, are now hidden and will not run.`, and the way-back line below. `-q` suppresses all of it except errors.
   - A command group is shown when `modules` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored; `feedback`, `list reports` and `read report` always run too, so an agent can always report, BASE-045. `mcp serve` is the transport, not a command an agent runs, so it always runs, whatever the surface; `--modules` narrows which tools the server lists and runs, MCP-004. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --modules`, which is the current text.
 - Acceptance: after narrowing to one module, a chassis verb outside the surface exits 2 and is absent from `help commands` and from the MCP tool list.
 - Relates to: CLI-008, CLI-021, MCP-004, BASE-016, PROJ-007.
@@ -382,6 +382,8 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `select` | one of the current choices | string with an `enum` of the current choices | JSON string |
 
   A value switch takes `--name value` or `--name=value`, CLI-004. Numbers are checked against `min` and `max` when declared. Nouns of kind `json` are parsed as JSON on the CLI and passed as JSON values over MCP, BASE-043.
+
+  A switch sent another JSON type over MCP is read by its kind as a noun is, BASE-035, on a verb's call and through the `set` tool alike. A `str` or `select` switch sent a value that is not a string is not refused: the value is read as its JSON text, `json.dumps(value, ensure_ascii=False)`, the result carries the notice `<key> is text; what was sent was kept as its JSON text.`, and that text is then checked as `set` checks the typed word, so a `select` still has to name a choice. A `list` member that is not a string is read the same way, with the same notice once. An `int` or `bool` switch sent another type, and a `list` switch sent no array, cannot be read as that kind: the call stops with the command line's next step, `metaform help <switch>`, as `loud: "no"` does. The reason is BASE-044's line: an agent's submission is never refused for its content, and a number or an object sent where text goes is content with a text reading; `"no"` sent where a boolean goes has no reading as a boolean, on the CLI either, where `--loud` takes no value, so it is a call that cannot be read, which BASE-044 allows to be an error.
 - Acceptance: For each kind, a value set on the CLI and the same value set through a tool read back equal in `config --show --json`.
 - Relates to: CLI-010, CLI-015, MCP-005, BASE-043.
 - Status: recommended.
@@ -413,6 +415,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   5a. `Metaform: <name>`, the project's active metaform, STORE-041, followed by `, <n> in project` when the project has more than one. Omitted when there is no project.
   6. `Projects: <n> registered`
   7. `Modules: <n> on`, followed by `, <m> not loaded (metaform list modules)` when any enabled module failed.
+  Every `<n>` and `<m>` is written as PROJ-025 writes counts: `Projects: one registered`, `Modules: two on`, `Metaform: main, two in project`.
   8. When `modules` is not empty: `Modules: <groups> (narrowed; restore: metaform unset --modules)`.
   9. For each enabled module on the folder's surface that declares a status hook, BASE-035, in module id order: each of its lines, then its notice, when it returns one, indented two spaces. The chassis prints what the hooks return and names no module. With the intake module on, its hook gives the `Intake:` lines and the no-intake notice shown above, BASE-039.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
@@ -473,7 +476,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   | `query` | STORE-028 | As specified there. |
   | `prompts`, `prompt` | `prompts`; `prompt <name> [<version>]`, STORE-044 | prompts: one line per prompt, `<name>  <format>  version <newest>`. prompt: the version's text exactly, the newest unless a number is given. Unknown prompt: `No prompt <name>.` Next `metaform prompts`. |
   | `extract` | `<variant id>... <folder>` or `all <folder>`, `[origin=<id>]`, PROJ-018 | `Extracted into <folder>` for each folder written. A folder that is not empty: `<folder> is not empty.` Next `metaform extract <variant id> <empty folder>`. No origin: PROJ-024's error. |
-  | `clear` | `project [<project>]`; `--confirm` | PROJ-025: without `--confirm`, the caution and Next `If you are sure: metaform clear project <project> --confirm`; with it, `Cleared <project>: <n> metaform(s), <names>, and <m> report file(s). Its registration, folder, settings, origins and variants stay.` |
+  | `clear` | `project [<project>]`; `--confirm` | PROJ-025: without `--confirm`, the caution and Next `If you are sure: metaform clear project <project> --confirm`; with it, `Cleared <project>: <metaforms> and <report files>. Its registration, folder, settings, origins and variants stay.`, where `<metaforms>` is `no metaforms`, `one metaform, main,` or `two metaforms, main and fresh,` and `<report files>` is `no report files`, `one report file` or `two report files`, counted as PROJ-025 counts. |
 
   A value is shown as written for text, digits for numbers, `true` or `false` for booleans, comma-separated for lists, and `(none)` for an empty value, except the `modules` setting, whose empty value is shown as `all`, CLI-022.
 - Acceptance:

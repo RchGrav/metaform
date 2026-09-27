@@ -244,14 +244,15 @@ def tool_arguments(module: str, verb: Verb, arguments: dict[str, Any], *, ignore
     return parsed.nouns, parsed.switches, parsed.notices + notices
 
 
-def setting_value(key: str, value: Any, folder: Path) -> Any:
-    """A setting's value from its JSON form, checked as `metaform set` checks it, CLI-027."""
+def setting_value(key: str, value: Any, folder: Path, notices: list[tuple[str, str]] | None = None) -> Any:
+    """A setting's value from its JSON form, checked as `metaform set` checks it, CLI-027; a text setting sent another
+    kind is read as its JSON text and named in `notices`, BASE-044."""
     from . import grammar, settings
     setting = settings.SCHEMA.get(key)
     if setting is None:
         raise Stop(f'{key} is not a setting.', 'metaform help switches')
     try:
-        return grammar.switch_value(setting, value, folder)
+        return grammar.switch_value(setting, value, folder, notices)
     except settings.SettingError as error:
         raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
 

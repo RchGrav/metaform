@@ -220,7 +220,7 @@ def test_a_wheels_data_is_pulled_in_as_its_own_metaforms_never_active_and_only_o
     run('add', 'project', 'other', str(other), env=wheel)
     record_intake(run, other, ELEMENTS_WHEEL, env=wheel)
     pulled = run('import', 'wheel=metaform-9.9.9').stdout
-    assert 'metaforms added: 2' in pulled
+    assert 'metaforms added: two' in pulled
     rows = [line.split() for line in run('list', 'metaforms', 'proj').stdout.splitlines()]
     names = {row[0]: row for row in rows}
     assert set(names) == {'main', 'main-from-metaform-9.9.9'}
@@ -235,7 +235,7 @@ def test_a_wheels_data_is_pulled_in_as_its_own_metaforms_never_active_and_only_o
     stores = sorted((home / 'projects').rglob('store.sqlite3'))
     kept = [path.read_bytes() for path in stores]
     again = run('import', 'wheel=metaform-9.9.9').stdout
-    assert 'metaforms added: 0' in again and 'things added: 0' in again
+    assert 'metaforms added: no' in again and 'things added: no' in again
     assert sorted((home / 'projects').rglob('store.sqlite3')) == stores
     assert run('list', 'metaforms', 'proj').stdout.count('from-metaform') == 1
     assert wheel_home(home, 'metaform-9.9.9').is_dir() and [path.read_bytes() for path in stores] == kept

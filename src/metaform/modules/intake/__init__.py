@@ -25,7 +25,6 @@ from typing import Any, cast
 from metaform import settings
 from metaform.data import Element, GraphPage, Join, Layer, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
-from metaform.wording import odd_refs_notice
 
 from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
 
@@ -149,19 +148,9 @@ def _json(ctx: Context, name: str) -> tuple[Any, bool]:
     return value, True
 
 
-def _pair(ref: Any) -> tuple[str, str] | None:
-    if isinstance(ref, dict):
-        given = cast(dict[str, Any], ref)
-        key, value = given.get('key'), given.get('value')
-    elif isinstance(ref, (list, tuple)) and len(cast(list[Any], ref)) == 2:
-        key, value = cast(list[Any], ref)
-    else:
-        return None
-    return (key, value) if isinstance(key, str) and isinstance(value, str) else None
-
-
-def _refs_and_extra(ctx: Context, notices: Notices) -> tuple[list[tuple[str, str]] | None, dict[str, Any] | None]:
-    """The refs as key and value pairs, and the extra; what does not fit either is kept in the extra, BASE-044."""
+def _refs_and_extra(ctx: Context, notices: Notices) -> tuple[list[Any] | None, dict[str, Any] | None]:
+    """The refs as given, for the store to read, and the extra; an extra that is not an object is kept under extra,
+    BASE-044. What a ref that is not a key and a value becomes is the store's one rule for every writer, STORE-012."""
     extra, parsed = _json(ctx, 'extra')
     if extra is not None and not (parsed and isinstance(extra, dict)):
         notices.append({'where': 'extra', 'message': 'extra is not a JSON object; it was kept in the extra under '
@@ -170,18 +159,7 @@ def _refs_and_extra(ctx: Context, notices: Notices) -> tuple[list[tuple[str, str
     refs, parsed = _json(ctx, 'refs')
     if refs is None:
         return None, cast(dict[str, Any] | None, extra)
-    pairs: list[tuple[str, str]] = []
-    odd: list[Any] = []
-    for ref in (cast(list[Any], refs) if parsed and isinstance(refs, list) else [refs]):
-        pair = _pair(ref)
-        if pair is None:
-            odd.append(ref)
-        else:
-            pairs.append(pair)
-    if odd:
-        notices.append({'where': 'refs', 'message': odd_refs_notice(odd)})
-        extra = {**cast(dict[str, Any], extra or {}), 'refs': odd}
-    return pairs, cast(dict[str, Any] | None, extra)
+    return (cast(list[Any], refs) if parsed and isinstance(refs, list) else [refs]), cast(dict[str, Any] | None, extra)
 
 
 def _whole(value: Any) -> Any:
@@ -253,7 +231,7 @@ def _described(element: Element) -> bool:
     return element.role is not None or element.name_length is not None or bool(element.refs)
 
 
-def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[tuple[str, str]] | None,
+def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[Any] | None,
               extra: dict[str, Any] | None, notices: Notices) -> str | None:
     """Record an element, or describe it again: the fields given replace the ones it had, the rest are kept.
 
@@ -443,7 +421,7 @@ JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'function', 'ef
 
 
 def _edit_element(ctx: Context, found: Recording | None, target: Store, current: Element,
-                  refs: list[tuple[str, str]] | None, extra: dict[str, Any] | None, notices: Notices) -> None:
+                  refs: list[Any] | None, extra: dict[str, Any] | None, notices: Notices) -> None:
     """Describe a recorded element again; its namespace_address is its identity and never changes, MAP-015."""
     if ctx.nouns.get(ADDRESS) is not None and ctx.nouns[ADDRESS] != current.address:
         notices.append({'where': ADDRESS, 'message': UNMOVED})
@@ -462,7 +440,7 @@ def _edit_element(ctx: Context, found: Recording | None, target: Store, current:
         _note(notices, target.edit(current.element_id, others))
 
 
-def _edit_join(ctx: Context, found: Recording | None, target: Store, thing: str, refs: list[tuple[str, str]] | None,
+def _edit_join(ctx: Context, found: Recording | None, target: Store, thing: str, refs: list[Any] | None,
                extra: dict[str, Any] | None, notices: Notices) -> None:
     """Change a recorded join; its receiver and provider move it, MAP-003. On a subtype join namespace_address gives it
     another element to hold, and role and name_length describe the element it holds."""

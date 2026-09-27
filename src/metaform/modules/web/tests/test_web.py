@@ -1341,14 +1341,46 @@ def test_start_is_told_the_server_is_ready_and_stop_is_told_it_has_gone_without_
 
 @pytest.mark.req('QUAL-015')
 @pytest.mark.req('VIEW-002')
-def test_the_server_loop_wakes_only_for_a_connection_and_the_module_never_sleeps():
-    """The server's loop waits in select with no timeout; the stop signal ends the process, so nothing checks for
-    shutdown, and nothing in the module sleeps to ask again."""
+def test_the_server_loop_wakes_only_for_a_connection_and_the_module_never_sleeps(home, monkeypatch):
+    """The real server, run by the module's own `main`: the standard library's loop runs `service_actions` on every
+    wake, whether a connection or a timeout woke it, so a run with no connection that counts no wake shows the loop
+    waits with no timeout, however that is written. The stop signal ends the process, so nothing checks for shutdown.
+    A sleep elsewhere in the module has many spellings and its other paths, the launcher's wait for the ready line
+    and stop, do not run inside one server run, so the source is read for `time.sleep` beside this."""
+    import threading
+
     from metaform.modules import web as gui
-    from metaform.modules.web import server
-    code = Path(server.__file__).read_text(encoding='utf-8')
-    assert 'serve_forever(poll_interval=None)' in code
+    from metaform.modules.web import server as served
+    wakes: list[float] = []
+    woke, started = threading.Event(), threading.Event()
+    instances: list[served.Server] = []
+
+    class Counted(served.Server):
+        def __init__(self, *args):
+            super().__init__(*args)
+            instances.append(self)
+
+        def service_actions(self):
+            wakes.append(time.monotonic())
+            woke.set()
+
+    monkeypatch.setattr(served, 'Server', Counted)
+    monkeypatch.setattr(served, 'ready', lambda server: started.set())
+    serving = threading.Thread(target=served.main, args=(['--bind', '127.0.0.1', '--port', '0', '--nonce', 'n'],),
+                               daemon=True)
+    serving.start()
+    assert started.wait(10)
+    [server] = instances
+    assert not woke.wait(1.5) and wakes == []
+    socket.create_connection(('127.0.0.1', server.port), timeout=5).close()
+    assert woke.wait(5) and len(wakes) == 1
+    stopping = threading.Thread(target=server.shutdown, daemon=True)
+    stopping.start()
+    socket.create_connection(('127.0.0.1', server.port), timeout=5).close()
+    serving.join(10)
+    assert not serving.is_alive()
     assert 'time.sleep' not in Path(gui.__file__).read_text(encoding='utf-8')
+    assert 'time.sleep' not in Path(served.__file__).read_text(encoding='utf-8')
 
 
 @pytest.mark.req('VIEW-018')

@@ -26,6 +26,7 @@ from .records import (CONDITIONS, EF_WORDS, ROLES, Element, Item, Join, Node, No
 from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
+from ..wording import count
 
 RecordT = TypeVar('RecordT', Element, Join, Subtype, Item, Property, Version)
 
@@ -34,7 +35,7 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
     """One answer per item: a list given as one value becomes one item per member, STORE-004."""
     if isinstance(value, (list, tuple)):
         members: list[Any] = list(cast(Iterable[Any], value))
-        notices.append(Notice('value', f'The value was a list of {len(members)} answers; each was stored as its '
+        notices.append(Notice('value', f'The value was a list of {count(len(members))} answers; each was stored as its '
                                        'own item.'))
         return members
     return [value]

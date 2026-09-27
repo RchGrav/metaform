@@ -62,7 +62,7 @@ def join_orphaned(tx: Tx, row: Row) -> bool:
     return any(end is not None and address_of(tx, str(end)) is None for end in (row['receiver'], row['provider']))
 
 
-def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False, res: Resolver | None = None) -> Join:
+def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
     plan = None
     for end in (row['provider'], row['receiver']):
         found = tx.db.execute('SELECT join_id FROM plans WHERE element_id=?', (end,)).fetchone()
@@ -83,7 +83,7 @@ def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
         return join(tx, row, all_layers(tx.db), orphaned)
     if orphaned or not res.reaches(str(row['layer_id']), address_of(tx, str(row['receiver']))):
         return None
-    return join(tx, row, res.layers, res=res)
+    return join(tx, row, res.layers)
 
 
 def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:

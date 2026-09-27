@@ -23,7 +23,7 @@ from .data import Store, export_document, history, import_document, prompts, pul
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
-from .wording import counted
+from .wording import count, counted
 
 EMPTY_IS_ALL = ('modules', 'layers')
 
@@ -82,12 +82,12 @@ def status(args: list[str], folder: Path) -> None:
     if active is None:
         out('Metaform: none yet')
     else:
-        out(f'Metaform: {active.name}' + (f', {len(forms)} in project' if len(forms) > 1 else ''))
-    out(f'Projects: {len(home.projects())} registered')
+        out(f'Metaform: {active.name}' + (f', {count(len(forms))} in project' if len(forms) > 1 else ''))
+    out(f'Projects: {count(len(home.projects()))} registered')
     found = loader.discover()
     loaded = [item for item in found if item.module is not None]
     broken = [item for item in found if item.enabled and item.problem]
-    out(f'Modules: {len(loaded)} on' + (f', {len(broken)} not loaded (metaform list modules)' if broken else ''))
+    out(f'Modules: {count(len(loaded))} on' + (f', {count(len(broken))} not loaded (metaform list modules)' if broken else ''))
     groups = settings.value('modules', folder)
     if groups:
         out(f'Modules: {", ".join(groups)} (narrowed; restore: metaform unset --modules)')
@@ -174,7 +174,8 @@ def add(args: list[str], folder: Path) -> None:
         store = Store(_project_arg(folder, None))
         made = store.add_variant(_named_folder(folder, positional[0]), given.get('origin'),
                                  remove=_truth(given.get('remove', 'false'), 'remove'), provenance=provenance)
-        out(f'Collected variant {made.variant_id} of origin {made.mform_id}: {len(made.files)} files changed.')
+        out(f'Collected variant {made.variant_id} of origin {made.mform_id}: '
+            f'{counted(len(made.files), "file", "files")} changed.')
         return
     raise Stop('add needs: project <id> <path>, metaform <name>, origin, or variant <folder>.',
                'metaform add project <id> <path>')
@@ -422,7 +423,7 @@ def set_(args: list[str], folder: Path) -> None:
     if not changes:
         out(f'Success: no changes{where}')
     else:
-        out(f'Success: updated {len(changes)} key' + ('s' if len(changes) != 1 else '') + where)
+        out(f'Success: updated {counted(len(changes), "key", "keys")}{where}')
         for key, old, new in changes:
             out(f'  {key}: {show(key, old)} → {show(key, new)}')
     if glued:
@@ -575,9 +576,9 @@ def import_(args: list[str], folder: Path) -> None:
         except ValueError:
             raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
         report = import_document(document, args[1] if len(args) == 2 else None)
-    for key, count in report.items():
+    for key, number in report.items():
         if key != 'notices':
-            out(f'{key.replace("_", " ")}: {count}')
+            out(f'{key.replace("_", " ")}: {count(number)}')
     for notice in report['notices']:
         out(f"Notice: {notice['where']}: {notice['message']}")
 

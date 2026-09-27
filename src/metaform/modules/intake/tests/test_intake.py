@@ -377,6 +377,28 @@ def test_what_does_not_fit_is_stored_as_given_and_named_in_a_notice(run, project
     assert odd is not None and odd.element.extra == {'colour': 'red', 'name': 'audible alarm'}
 
 
+@pytest.mark.req('STORE-012')
+@pytest.mark.req('STORE-004')
+@pytest.mark.req('BASE-044')
+def test_an_odd_ref_sent_to_an_intake_tool_is_placed_by_the_stores_one_rule(run, project):
+    """The store owns what happens to a ref that is not a key and a value, STORE-012, for every writer; an intake tool
+    hands its refs on as given. A ref that is a record is split into an item of its own, as the store does with any
+    list of records in an extra, STORE-004, which a second copy of the rule in the intake module never did."""
+    recorded(run, project, 'start')
+    made = recorded(run, project, 'element', 'code.probe.echo', 'role=SE', 'name_length=1',
+                    'refs=[["path", "src/echo.c"], {"path": "src/pins.h"}]')
+    messages = [(notice['where'], notice['message']) for notice in made['notices']]
+    assert messages == [
+        ('refs', 'A ref is a key and a value, both text; one was not, and kept in the extra under refs.'),
+        ('extra', 'extra.refs on code.probe.echo held a list of records; each was stored as its own item.')]
+    store = Store('timer')
+    echo = store.element('code.probe.echo', raw=True)
+    assert echo is not None and [(ref.key, ref.value) for ref in echo.refs] == [('path', 'src/echo.c')]
+    assert echo.extra is None
+    items = [item for item in store.layer_items(made['layer']).results if getattr(item, 'value', None) is not None]
+    assert [item.value for item in items] == [{'refs': {'path': 'src/pins.h'}}]
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
 def test_refs_that_are_not_text_are_kept_in_the_extra_and_counted_in_words(run, project, tmp_path):

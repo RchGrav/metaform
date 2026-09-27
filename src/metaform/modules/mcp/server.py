@@ -204,7 +204,9 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
     try:
         if not isinstance(glue, bool):
             raise Stop('glue is true or false.', 'metaform help --glue')
-        typed = {key: setting_value(key, value, folder) for key, value in arguments.items()}
+        read: list[tuple[str, str]] = []
+        typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
+        notices += [{'where': key, 'message': message} for key, message in read]
         for key, value in typed.items():
             try:
                 settings.checked(key, value, folder, typed=True)

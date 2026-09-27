@@ -406,6 +406,36 @@ def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, m
     assert shown['loud']['state'] == 'default'
 
 
+@pytest.mark.req('CLI-027')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('MCP-005')
+def test_a_text_switch_sent_another_json_value_is_kept_as_its_json_text_with_a_notice(run, home, mapped):
+    """A switch is read by its kind as a noun is, BASE-035: text takes what was sent as its JSON text and says so;
+    a whole number and true or false cannot be read from another kind and stop the call as the command line does."""
+    from metaform import grammar
+    from metaform.module import Noun, Verb
+    run('enable', 'helloworld')
+
+    async def call(client, init):
+        stored = await client.call_tool('set', {'greeting': 5})
+        return stored.is_error, text(stored)
+    error, blocks = session(home, mapped, call)
+    assert not error
+    result = json.loads(blocks[-1])
+    assert [(change['key'], change['new']) for change in result['updated']] == [('greeting', '5')]
+    assert result['notices'] == [{'where': 'greeting', 'message': 'greeting is text; what was sent was kept as its '
+                                                                   'JSON text.'}]
+    shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
+    assert (shown['greeting']['value'], shown['greeting']['state']) == ('5', 'set')
+    verb = Verb('greet', lambda ctx: None, 'x', nouns=(Noun('name', 'x'),), switches=('modules', 'loud'))
+    parsed = grammar.from_json('helloworld', verb, {'name': 'x', 'modules': ['map', 7]}, folder=mapped)
+    assert parsed.switches['modules'] == ['map', '7']
+    assert parsed.notices == [('modules', 'modules is text; what was sent was kept as its JSON text.')]
+    with pytest.raises(Exception) as stopped:
+        grammar.from_json('helloworld', verb, {'name': 'x', 'modules': 'map'}, folder=mapped)
+    assert 'modules is a list' in str(stopped.value)
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MCP-002')
 def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_building(run, home, tmp_path):

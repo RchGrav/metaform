@@ -201,23 +201,35 @@ def _noun_value(noun: Noun, value: Any, where: str, notices: list[tuple[str, str
     return value
 
 
-def switch_value(setting: settings.Setting, value: Any, folder: Path | None = None) -> Any:
-    """A setting's value from its JSON form over MCP, CLI-027, checked as `set` checks it."""
+def switch_value(setting: settings.Setting, value: Any, folder: Path | None = None,
+                 notices: list[tuple[str, str]] | None = None) -> Any:
+    """A setting's value from its JSON form over MCP, CLI-027, read by its kind as a noun is, BASE-035.
+
+    A text setting, `str` or `select`, is never refused for its kind, BASE-044: a value that is not a string is read
+    as its JSON text, named once in `notices`, and then checked as `set` checks that text. A `list` member that is not
+    a string is read the same way. An `int` or `bool` setting sent another kind, and a `list` setting sent no list,
+    cannot be read as that kind and stop the call as the command line does.
+    """
+    noted = notices if notices is not None else []
     if setting.kind == 'bool':
         if not isinstance(value, bool):
             raise settings.SettingError(f'{setting.key} is true or false, not {json.dumps(value)}.')
         return value
     if setting.kind == 'list':
         members = cast(list[Any], value) if isinstance(value, list) else None
-        if members is None or not all(isinstance(member, str) for member in members):
-            raise settings.SettingError(f'{setting.key} is a list of text values.')
-        return [str(member).strip() for member in members if str(member).strip()]
+        if members is None:
+            raise settings.SettingError(f'{setting.key} is a list of text values, not {json.dumps(value)}.')
+        if not all(isinstance(member, str) for member in members):
+            noted.append((setting.key, f'{setting.key} is text; what was sent was kept as its JSON text.'))
+        return [text.strip() for text in (member if isinstance(member, str) else json.dumps(member, ensure_ascii=False)
+                                          for member in members) if text.strip()]
     if setting.kind == 'int':
         if not isinstance(value, int) or isinstance(value, bool):
             raise settings.SettingError(f'{setting.key} is a whole number, not {json.dumps(value)}.')
         return settings.parse(setting, str(value), folder)
     if not isinstance(value, str):
-        raise settings.SettingError(f'{setting.key} is text, not {json.dumps(value)}.')
+        noted.append((setting.key, f'{setting.key} is text; what was sent was kept as its JSON text.'))
+        value = json.dumps(value, ensure_ascii=False)
     return settings.parse(setting, value, folder)
 
 
@@ -227,8 +239,8 @@ def from_json(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tup
 
     A required noun that is missing, or an `int` or `bool` noun sent a value that is not its kind, stops the call
     with the same next step the command line gives. A `str` noun sent another JSON value reaches the verb as that
-    value's JSON text, with a notice in `notices`, BASE-044. A name that is neither a noun nor a switch of the verb
-    is listed in `unknown`.
+    value's JSON text, with a notice in `notices`, BASE-044; a switch is read by its kind the same way, `switch_value`.
+    A name that is neither a noun nor a switch of the verb is listed in `unknown`.
     """
     where = f'metaform {module} {verb.name}'
     parsed = Parsed()
@@ -243,7 +255,7 @@ def from_json(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tup
         if setting is None or key not in arguments:
             continue
         try:
-            parsed.switches[key] = switch_value(setting, arguments[key], folder)
+            parsed.switches[key] = switch_value(setting, arguments[key], folder, parsed.notices)
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or f'metaform help {setting.switch}') from None
     known = {noun.name for noun in verb.nouns} | set(verb.switches) | set(ignore)
