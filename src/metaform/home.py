@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import sqlite3
+import sys
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -450,23 +451,68 @@ def metaform_owner(metaform_id: str) -> str | None:
     return None if row is None else str(row[0])
 
 
+NUMBERS = ('no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine')
+
+
+def counted(number: int, noun: str, plural: str) -> str:
+    """A count as a person reads it: no metaforms, one metaform, two metaforms, 12 metaforms, PROJ-025."""
+    word = NUMBERS[number] if 0 <= number < len(NUMBERS) else str(number)
+    return f'{word} {noun if number == 1 else plural}'
+
+
+def listed(names: tuple[str, ...]) -> str:
+    """Names as a person reads them: main, main and fresh, main, fresh and draft."""
+    return names[0] if len(names) == 1 else f'{", ".join(names[:-1])} and {names[-1]}'
+
+
 @dataclass(frozen=True)
 class Cleared:
-    """What clearing a project removed, PROJ-025."""
+    """What clearing a project removed, PROJ-025, and each path it could not remove with the system's reason."""
     project_id: str
     metaforms: tuple[str, ...]
     reports: int
+    not_removed: tuple[tuple[str, str], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return {'project': self.project_id, 'metaforms': list(self.metaforms), 'reports': self.reports}
+        found: dict[str, Any] = {'project': self.project_id, 'metaforms': list(self.metaforms),
+                                 'reports': self.reports}
+        if self.not_removed:
+            found['not_removed'] = [{'path': path, 'reason': reason} for path, reason in self.not_removed]
+        return found
+
+    def _metaforms(self, stores: bool) -> str:
+        """The metaforms by name, and with their stores when `stores`; a clause set off by commas when named."""
+        count = len(self.metaforms)
+        if not count:
+            return counted(0, 'metaform', 'metaforms')
+        held = (' with its store,' if count == 1 else ' with their stores,') if stores else ''
+        return f'{counted(count, "metaform", "metaforms")}, {listed(self.metaforms)},{held}'
 
     @property
     def caution(self) -> str:
         """What `clear project` removes, said before it does."""
-        names = ', '.join(self.metaforms) or 'no metaforms'
-        return (f'Clearing {self.project_id} removes its {len(self.metaforms)} metaform(s), {names}, with their '
-                f'stores, and its {self.reports} report file(s). Its registration, folder, settings, origins and '
-                'variants stay.')
+        return (f'Clearing {self.project_id} removes {self._metaforms(True)} and '
+                f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
+                'and variants stay.')
+
+    @property
+    def said(self) -> str:
+        """What `clear project` removed, said after it did."""
+        return (f'Cleared {self.project_id}: {self._metaforms(False)} and '
+                f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
+                'and variants stay.')
+
+    def remedy(self, again: str) -> str:
+        """What to do about what could not be removed; `again` is how the surface clears the project once more."""
+        one = len(self.not_removed) == 1
+        return (f'Close any program that has {"it" if one else "them"} open, such as a running web GUI, or fix '
+                f'{"its" if one else "their"} permissions, then {again}.')
+
+    @property
+    def left(self) -> str:
+        """That what could not be removed is still on disk, said once over MCP."""
+        return 'It could not be removed and is still on disk.' if len(self.not_removed) == 1 else \
+            'They could not be removed and are still on disk.'
 
 
 def to_clear(project_id: str) -> Cleared:
@@ -480,16 +526,41 @@ def to_clear(project_id: str) -> Cleared:
 def clear_project(project_id: str) -> Cleared:
     """Remove every metaform of the project with its store, and its report files, PROJ-025.
 
-    The registration, the folder rows and settings, and the history under `history.sqlite3` and `origins/` stay.
+    The registration, the folder rows and settings, and the history under `history.sqlite3` and `origins/` stay. The
+    rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
     """
     found = to_clear(project_id)
     with base(write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
+    failed: list[tuple[str, str]] = []
     for name in ('metaforms', 'reports'):
-        shutil.rmtree(home() / 'projects' / project_id / name, ignore_errors=True)
+        _remove_tree(home() / 'projects' / project_id / name, failed)
     changes.note(project_id)
-    return found
+    return Cleared(found.project_id, found.metaforms, found.reports, _innermost(failed))
+
+
+def _remove_tree(path: Path, failed: list[tuple[str, str]]) -> None:
+    """Remove a folder whole, noting each file and folder that could not be removed with the system's reason."""
+    def noted(error: BaseException, name: str) -> None:
+        if not isinstance(error, FileNotFoundError):
+            reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
+            failed.append((str(Path(name)), reason))
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=lambda _function, name, error: noted(error, os.fsdecode(name)))
+    else:
+        shutil.rmtree(path, onerror=lambda _function, name, info: noted(info[1], os.fsdecode(name)))
+
+
+def _innermost(failed: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    """Each path left on disk once: a folder is dropped when something inside it is named, since that is why it
+    stayed."""
+    paths = [Path(path) for path, _ in failed]
+    kept: dict[str, str] = {}
+    for path, reason in failed:
+        if not any(Path(path) in other.parents for other in paths):
+            kept.setdefault(path, reason)
+    return tuple(kept.items())
 
 
 def remove_store(path: Path) -> None:

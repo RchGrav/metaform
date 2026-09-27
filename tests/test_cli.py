@@ -490,14 +490,14 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     refused = run('clear', 'project', cwd=elsewhere, ok=False)
     assert refused.returncode == 2
     assert refused.stderr.splitlines() == [
-        ('Error: Clearing proj removes its 2 metaform(s), main, fresh, with their stores, and its 1 report file(s). '
+        ('Error: Clearing proj removes two metaforms, main and fresh, with their stores, and one report file. '
          'Its registration, folder, settings, origins and variants stay.'),
         'Next: If you are sure: metaform clear project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main', 'fresh']
     assert sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()) == before['reports']
 
     assert lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere)) == [
-        ('Cleared proj: 2 metaform(s), main, fresh, and 1 report file(s). Its registration, folder, settings, '
+        ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, settings, '
          'origins and variants stay.')]
     assert run('list', 'metaforms', cwd=project).stdout == ''
     assert not (home / 'projects' / 'proj' / 'metaforms').exists()
@@ -514,6 +514,35 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     listed = lines(run('list', 'metaforms', cwd=project))
     assert [line.split()[0] for line in listed] == ['main'] and listed[0].endswith('(active)')
     assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
+
+
+@pytest.mark.req('PROJ-025')
+def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what_to_do(run, project, home,
+                                                                                       unremovable):
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    run('feedback', 'The subtype fields did not match.', cwd=project)
+    reports = home / 'projects' / 'proj' / 'reports'
+    (stuck,) = reports.iterdir()
+    with unremovable(stuck):
+        cleared = run('clear', 'project', '--confirm', cwd=project)
+        assert stuck.is_file()
+    said = lines(cleared)
+    assert said[0] == ('Cleared proj: one metaform, main, and one report file. Its registration, folder, settings, '
+                       'origins and variants stay.')
+    assert said[1] == 'Not removed, still on disk:'
+    assert said[2].startswith(f'  {stuck}: ') and len(said[2]) > len(f'  {stuck}: ')
+    assert said[3:] == [('Next: Close any program that has it open, such as a running web GUI, or fix its '
+                         'permissions, then run metaform clear project proj --confirm again.')]
+    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+
+    assert lines(run('clear', 'project', '--confirm', cwd=project)) == [
+        ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins and variants '
+         'stay.')]
+    assert not reports.exists()
+    assert run('clear', 'project', cwd=project, ok=False).stderr.splitlines()[0] == (
+        'Error: Clearing proj removes no metaforms and no report files. Its registration, folder, settings, origins '
+        'and variants stay.')
 
 
 @pytest.mark.req('STORE-027')

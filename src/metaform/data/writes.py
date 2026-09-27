@@ -520,8 +520,12 @@ def _work_text(value: Any, field: str, notices: list[Notice]) -> str | None:
 
 
 def _condition(value: Any, notices: list[Notice]) -> str:
+    """The condition as given; a missing one is stored as empty text, since the column is never null, BASE-044."""
     if value in CONDITIONS:
         return str(value)
+    if value is None:
+        notices.append(Notice('condition', 'condition is missing; stored empty.'))
+        return ''
     notices.append(Notice('condition', f'{value!r} is not tbd, broken or cruft; it was stored as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 

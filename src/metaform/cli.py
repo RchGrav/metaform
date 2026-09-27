@@ -304,9 +304,12 @@ def clear(args: list[str], folder: Path) -> None:
     if not confirm:
         raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
     cleared = home.clear_project(project_id)
-    names = ', '.join(cleared.metaforms) or 'no metaforms'
-    out(f'Cleared {project_id}: {len(cleared.metaforms)} metaform(s), {names}, and {cleared.reports} report '
-        f'file(s). Its registration, folder, settings, origins and variants stay.')
+    out(cleared.said)
+    if cleared.not_removed:
+        out('Not removed, still on disk:')
+        for path, reason in cleared.not_removed:
+            out(f'  {path}: {reason}')
+        out(f'Next: {cleared.remedy(f"run metaform clear project {project_id} --confirm again")}')
 
 
 def _toggle(args: list[str], on: bool) -> None:
@@ -884,7 +887,8 @@ docs.command(Command('clear', "Remove a project's metaforms and reports; its reg
                                  'and the origins and variants stay.',
                      details='Without --confirm it says exactly what it would remove and removes nothing. After a '
                              'clear the project has no metaform until the next intake, or any other write, creates '
-                             'main again.',
+                             'main again. A file it cannot remove, such as a store a running web GUI holds open on '
+                             'Windows, stays on disk and is named with the reason and what to do.',
                      examples=(('metaform clear project', 'Say what clearing this folder\'s project would remove.'),
                                ('metaform clear project notes --confirm', 'Clear the project notes.')),
                      see_also=('list', 'add')))

@@ -445,7 +445,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | `activate` | name, optional project | `activate_metaform`, STORE-041 |
   | `search` | text | `search` |
   | `work` | `op=` one of `list`, the default, `add`, `edit`, `done`; for `list`, optional `node`, `condition`, `open` as a `bool` noun; for `add`, `node` and `condition`, optional `note`, `task`, `held` and `reviewed` as `bool` nouns; for `edit`, `id` and any of `condition`, `note`, `task`, `held`, `reviewed`; for `done`, `id`, optional `resolution` | `work`, `add_work`, `edit_work`, `finish_work`, STORE-042. Served as the one tool `map_work`, so any agent writes or reads the condition of an object at any time, MAP-046 |
-  | `knowledge` | `op=` one of `create`, `add-element`, `add-join`, `add-subtype`, `add-property`, `add-item`, `add-ref`, `add-plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard`; `layer=` naming the layer on every call; then the nouns of that operation: for `create`, name, variable, mutable, hideable, optional kind, fields (`layer` or `correction`), sources, tags and the provenance fields module, workflow, prompt, model, role, blinded; for `add-element`, address, optional name_length, role, refs, extra; for `add-join`, receiver, provider, purpose, function, relation, observation, optional name, non_goal, type, refs, extra; for `add-subtype`, join, address, optional function, relation, observation, name, name_length, role, refs, extra, where `name` is the subtype join's, MAP-020; for `add-property`, element, value, optional refs, extra; for `add-item`, node, value, optional link, refs, extra; for `add-ref`, owner, key, value; for `add-plan`, element, join; for `edit`, id and each changed field of STORE-034; for `remove`, id; for `correct`, id, reason, optional evidence, `remove=true` and each changed field of STORE-034 | the matching STORE-024 operation: `layer`, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `add_plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard` |
+  | `knowledge` | `op=` one of `create`, `add-element`, `add-join`, `add-subtype`, `add-property`, `add-item`, `add-ref`, `add-plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard`; `layer=` naming the layer on every call; then the nouns of that operation: for `create`, name, variable, mutable, hideable, optional kind, fields (`layer` or `correction`), sources, tags and the provenance fields module, workflow, prompt, model, role, blinded; for `add-element`, address, optional name_length, role, refs, extra; for `add-join`, receiver, provider, purpose, function, relation, observation, optional name, ef, verb, non_goal, type, refs, extra; for `add-subtype`, join, address, optional function, ef, relation, verb, observation, name, name_length, role, refs, extra, where `name` is the subtype join's, MAP-020; for `add-property`, element, value, optional refs, extra; for `add-item`, node, value, optional link, refs, extra; for `add-ref`, owner, key, value; for `add-plan`, element, join; for `edit`, id and each changed field of STORE-034; for `remove`, id; for `correct`, id, reason, optional evidence, `remove=true` and each changed field of STORE-034 | the matching STORE-024 operation: `layer`, `add_element`, `add_join`, `add_subtype`, `add_property`, `add_item`, `add_ref`, `add_plan`, `edit`, `remove`, `correct`, `finish`, `peel`, `discard` |
   | `select`, `mask` | address, layer | `select`, `mask` |
   | `clear` | address, layer, kind | `clear` |
   | `hide`, `unhide` | layer | `hide`, `unhide` |
@@ -455,9 +455,31 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
   `knowledge` is the one read-write verb for layers, served as the single MCP tool `map_knowledge`, LAYER-018. It is the only verb that makes a new layer. Every call names its layer with `layer=`. There is no token and no ownership check: an agent that has the tool can write to any knowledge layer, before or after it is finished, and an agent without it cannot write to any. Granting or withholding the tool, through the command surface, CLI-022, and harness permissions, is the whole of the access rule. An agent builds a layer with `op=create`, then adds, edits and removes objects one at a time, then `op=finish` when its task is done. The intake layer is created only by `intake_start`, BASE-039, and the memory layer only by the memory module, LAYER-012.
 
+  Neither `knowledge` nor `work` refuses what it is sent for its content, BASE-044. A field an operation writes that is missing is stored empty and named in a notice, `<field> is missing; stored empty.`, the way the intake's tools do: a join's purpose, function, relation and observation, an item's or a property's value, a ref's key and value, a correction's reason and a work record's condition. A new layer's variable is stored empty with the notice of LAYER-002, and its mutable and hideable, when missing, are stored false, each named in a notice. A ref value that is not text is stored as its JSON text with a notice. `add-join` and `add-subtype` store `ef` and `verb` in the join's and the subtype's own fields, as `intake_join` and `intake_subtype` do. Besides the store's own errors, for a reference that names nothing or an argument it cannot read, STORE-026, a call stops, exit 2 with one Next line, only when it names no operation, or when a field is missing that its record cannot be stored without because nothing else in the call can stand for it:
+
+  | Verb and operation | Field | Why nothing can stand for it |
+  |---|---|---|
+  | `knowledge`, every call | `op`, missing or not one of the operations | The call names nothing to do. |
+  | `knowledge` `create`, `finish`, `peel`, `discard` | `layer` | It is the layer the call makes or acts on. An add operation sent without a layer goes to a new unnamed layer instead, LAYER-001; `edit`, `remove` and `add-ref` name their thing by id, so they go ahead and a notice says no layer was named. |
+  | `knowledge` `add-plan`, `correct` | `layer` | A plan's row names the layer it comes from and is never stored without one, STORE-040, and a correction is written into the building correction layer that applies it, STORE-017; nothing else in the call names either. |
+  | `knowledge` `create` | `kind` other than `layer` or `correction` | The intake layer and memory are made only by their own modules, and the store holds no other kind. |
+  | `knowledge` `add-element`, `add-subtype` | `address` | An address is the element's or the subtype's identity, STORE-009 and STORE-011. |
+  | `knowledge` `add-join` | `receiver`, `provider` | A join is owned by its receiver and served by its provider, STORE-010. |
+  | `knowledge` `add-subtype` | `join` | A subtype lives inside one join, STORE-011. |
+  | `knowledge` `add-property`, `add-plan` | `element` | The element the property or the plan belongs to. |
+  | `knowledge` `add-item` | `node` | The node the item attaches at, LAYER-003. |
+  | `knowledge` `add-ref` | `owner` | The thing the ref belongs to, STORE-012. |
+  | `knowledge` `edit`, `remove`, `correct` | `id` | The thing to change. |
+  | `work`, every call | `op` not one of `list`, `add`, `edit`, `done` | The call names nothing to do. |
+  | `work` `add` | `node` | A work record is attached to one element, join or subtype, STORE-042. |
+  | `work` `edit`, `done` | `id` | The work record to change. |
+
   A node noun is written `element:<address or id>`, `join:<id>`, `subtype:<address or id>` or `type:<address>`. `refs` is a `json` noun holding an array of `[key, value]` pairs of strings, with the schema `{"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}`. `extra` is a `json` noun holding an object, with the schema `{"type": "object"}`. Neither is ever a switch. `retire` and `hide` are caution verbs.
-- Acceptance: Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.
-- Relates to: STORE-024, STORE-025, STORE-028, STORE-032, STORE-040, BASE-035, BASE-036, LAYER-015, LAYER-018, MCP-003.
+- Acceptance:
+  - Each verb's result equals the result of its operation called directly, and each appears as a tool with a schema built from its declaration.
+  - Each field the table above does not list, missing from its operation, is stored empty or false and named in a notice, exit 0; each field it lists, missing, stops the call with exit 2 and one Next line and writes nothing.
+  - `op=add-join` and `op=add-subtype` with `ef` and `verb` read back with them in the join's and the subtype's own fields and nothing in `extra`.
+- Relates to: STORE-010, STORE-011, STORE-024, STORE-025, STORE-028, STORE-032, STORE-040, STORE-042, BASE-035, BASE-036, BASE-044, LAYER-015, LAYER-018, MCP-003.
 - Status: recommended. `approve` being a person's act on the CLI only is confirmed, LAYER-015.
 
 ### BASE-039 The intake module
@@ -583,13 +605,15 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Build:
   - A result that has notices carries them under `notices`: a list of objects with `where`, the path or id of the part, and `message`, one sentence. The CLI prints each as `Notice: <where>: <message>` after the result; MCP returns them in the JSON block with `is_error` false. BASE-036.
   - The data access object's rules for what is stored and what is noted are STORE-026. Module verbs follow the same rule: a verb raises `Stop` only when its call cannot be read or the store would be damaged.
+  - A field that is missing is stored empty, and the result names it in a notice, `<field> is missing; stored empty.`. A call stops only when a field is missing that its record cannot be stored without at all, because nothing else in the call can stand for it: the field that says what the record is, where it attaches, or which layer holds it. For the map's write tools, `map_knowledge` and `map_work`, BASE-038 lists those fields and why.
   - The exit code of a CLI call that stored with notices is 0.
   - The stop rule is delivered in the words agents read: the intake prompt's footer, BASE-039, and the base instructions, MCP-007, each say to stop and submit a trouble report instead of retrying. It applies whatever the settings are. Whether the trouble report is written when `--debug` is off is open, question 12 of this section; until it is answered, it is written.
   - `approve`, which only a person runs on the CLI, LAYER-015, and module loading, BASE-037, are not agent submissions and keep their stated checks.
 - Acceptance:
   - For every refusal condition that STORE-026 and BASE-039 turn into a notice, the call returns `is_error` false over MCP and exit 0 on the CLI, the notice names the part, and the part is readable raw afterwards.
   - An MCP client that sends a malformed `elements` receives exactly one notice and no request to retry; no row is written and the server keeps serving.
-- Relates to: STORE-026, BASE-039, BASE-045, LAYER-015, LAYER-018, MCP-006.
+  - `map knowledge op=add-join` with a receiver and a provider and none of purpose, function, relation and observation stores the join with those four empty, exit 0, and one notice for each; `map work op=add` without a condition stores the record with an empty condition, exit 0, and one notice naming `condition`. `op=add-join` without a receiver, and `op=add` of `work` without a node, stop with exit 2 and one Next line, and write nothing.
+- Relates to: STORE-026, BASE-038, BASE-039, BASE-045, LAYER-015, LAYER-018, MCP-006.
 - Status: confirmed. The notice format is recommended. Whether a trouble report is written with `--debug` off is open, question 12.
 
 ### BASE-045 Process feedback and intake reports are saved, reviewable and part of provenance

@@ -64,6 +64,29 @@ def traced(monkeypatch):
 
 
 @pytest.fixture
+def unremovable():
+    """Keep a file from being removed for the length of a block: held open on Windows, and elsewhere with write
+    permission taken off its folder and given back afterwards. Root removes any file whatever its folder allows."""
+    from contextlib import contextmanager
+    if os.name != 'nt' and os.geteuid() == 0:
+        pytest.skip('root can remove a file whatever its folder allows')
+
+    @contextmanager
+    def held(path):
+        if os.name == 'nt':
+            with open(path, 'rb'):
+                yield
+            return
+        mode = path.parent.stat().st_mode
+        path.parent.chmod(mode & ~0o222)
+        try:
+            yield
+        finally:
+            path.parent.chmod(mode)
+    return held
+
+
+@pytest.fixture
 def user_module(home):
     """Write a module into the user place, `<home>/modules/<name>/__init__.py`."""
     import textwrap

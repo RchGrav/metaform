@@ -9,11 +9,12 @@ in context. `knowledge` is the one read-write verb for layers, LAYER-018.
 from __future__ import annotations
 
 import dataclasses
+import json
 
 from typing import Any, cast
 
 from metaform import settings
-from metaform.data import PLACE_KINDS, Node, Notice, Store
+from metaform.data import EF_WORDS, PLACE_KINDS, Node, Notice, Store
 from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -23,9 +24,9 @@ SHIPS_DISABLED = False
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
+EF = {'type': 'string', 'enum': list(EF_WORDS)}
 FIELDS = ('address', 'extra', 'receiver', 'provider', 'type', 'purpose', 'function', 'relation', 'observation',
           'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
-UNNAMED = ('add-element', 'add-join', 'add-subtype', 'add-property', 'add-item')
 
 
 def _node(text: str) -> Node:
@@ -205,12 +206,21 @@ def approve(ctx: Context) -> Any:
     return _store(ctx).approve(ctx.nouns['challenge'])
 
 
-def _need(ctx: Context, *names: str, verb: str = 'knowledge') -> list[Any]:
+def _need(ctx: Context, *names: str, verb: str = 'knowledge') -> None:
+    """Stop a call missing a field its record cannot be stored without at all, before anything is written, BASE-038."""
     missing = [name for name in names if name not in ctx.nouns]
     if missing:
         op = ctx.nouns.get('op')
         raise Stop(f'{verb} op={op} needs {", ".join(missing)}.', f'metaform help map {verb}')
-    return [ctx.nouns[name] for name in names]
+
+
+def _empty(ctx: Context, notices: list[Notice], *names: str, empty: Any = None) -> list[Any]:
+    """Fields a record is stored with even when they are missing: each missing one is stored empty and named in a
+    notice, BASE-044."""
+    for name in names:
+        if name not in ctx.nouns:
+            notices.append(Notice(name, f'{name} is missing; stored empty.'))
+    return [ctx.nouns.get(name, empty) for name in names]
 
 
 def _changes(ctx: Context) -> dict[str, Any]:
@@ -231,10 +241,10 @@ READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
     'add-element': frozenset({'address', 'name_length', 'role', 'refs', 'extra'}),
-    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'function', 'relation', 'observation', 'non_goal',
-                           'type', 'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'function', 'relation', 'observation', 'name', 'name_length', 'role',
-                              'refs', 'extra'}),
+    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
+                           'observation', 'non_goal', 'type', 'refs', 'extra'}),
+    'add-subtype': frozenset({'join', 'address', 'function', 'ef', 'relation', 'verb', 'observation', 'name',
+                              'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
@@ -246,6 +256,17 @@ READS: dict[str, frozenset[str]] = {
     'peel': frozenset(),
     'discard': frozenset(),
 }
+
+# The fields each knowledge operation cannot store its record without, besides op, BASE-038: the field that says what
+# the record is, where it attaches, or which layer holds it. A call missing one stops and writes nothing.
+NEEDS: dict[str, tuple[str, ...]] = {
+    'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'provider'),
+    'add-subtype': ('join', 'address'), 'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
+    'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',), 'correct': ('layer', 'id'),
+    'finish': ('layer',), 'peel': ('layer',), 'discard': ('layer',),
+}
+# The operations that name their thing by id, so a missing layer is named in a notice and the call goes ahead.
+BY_ID = ('edit', 'remove', 'add-ref')
 
 
 def _unread(ctx: Context, op: str) -> list[Notice]:
@@ -266,76 +287,93 @@ def _unread(ctx: Context, op: str) -> list[Notice]:
 
 
 def _with_notices(result: Any, notices: list[Notice]) -> Any:
-    """The operation's result with the call's own notices first."""
+    """The operation's result with the call's own notices first; a record that carries none, such as a ref, is
+    returned as its fields with them."""
     if not notices:
         return result
     if isinstance(result, dict):
         fields = cast(dict[str, Any], result)
         return {**fields, 'notices': [*notices, *fields.get('notices', [])]}
+    if 'notices' not in {field.name for field in dataclasses.fields(result)}:
+        return {**result.to_dict(), 'notices': notices}
     return dataclasses.replace(result, notices=(*notices, *getattr(result, 'notices', ())))
 
 
 def knowledge(ctx: Context) -> Any:
-    """Create, build, edit and finish a knowledge or correction layer, one object per call, LAYER-018."""
-    (op,) = _need(ctx, 'op')
+    """Create, build, edit and finish a knowledge or correction layer, one object per call, LAYER-018. Nothing is
+    refused for its content; only a field in NEEDS stops a call, before anything is written, BASE-038 and BASE-044."""
+    op = ctx.nouns.get('op')
+    if op is None:
+        raise Stop('knowledge needs op=, the operation to run.', 'metaform help map knowledge')
     if op not in READS:
         raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
+    _need(ctx, *NEEDS.get(op, ()))
+    if op == 'create' and ctx.nouns.get('kind', 'layer') not in ('layer', 'correction'):
+        raise Stop('knowledge creates a knowledge layer or a correction layer: kind=layer or kind=correction.',
+                   'metaform help map knowledge')
     notices = _unread(ctx, op)
-    return _with_notices(_knowledge(ctx, op), notices)
+    return _with_notices(_knowledge(ctx, op, notices), notices)
 
 
-def _knowledge(ctx: Context, op: str) -> Any:
+def _flag(ctx: Context, name: str, notices: list[Notice]) -> bool:
+    """A new layer's mutable or hideable: false when missing, and named in a notice, BASE-044."""
+    if name not in ctx.nouns:
+        notices.append(Notice(name, f'{name} is missing; stored as false.'))
+    return bool(ctx.nouns.get(name, False))
+
+
+def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     store = _store(ctx)
     nouns = ctx.nouns
-    # A write of an object sent without a layer goes to a new unnamed layer, LAYER-001; every other op names one.
-    name = str(nouns.get('layer') or '') if op in UNNAMED else str(_need(ctx, 'layer')[0])
+    # A write of an object sent without a layer goes to a new unnamed layer, LAYER-001; the operations that name their
+    # thing by id go ahead without one; every other operation stopped in knowledge() when it named none.
+    name = str(nouns.get('layer') or '')
+    if not name and op in BY_ID:
+        notices.append(Notice('layer', f'No layer was named; op={op} names its thing by id, so it went ahead.'))
     if op == 'create':
-        variable, mutable, hideable = _need(ctx, 'variable', 'mutable', 'hideable')
-        kind = nouns.get('kind', 'layer')
-        if kind not in ('layer', 'correction'):
-            raise Stop('knowledge creates a knowledge layer or a correction layer: kind=layer or kind=correction.',
-                       'metaform help map knowledge')
+        mutable, hideable = _flag(ctx, 'mutable', notices), _flag(ctx, 'hideable', notices)
         provenance = {'module': nouns.get('module', 'map'),
                       **{key: nouns[key] for key in ('workflow', 'prompt', 'model', 'role', 'blinded') if key in nouns}}
-        return store.layer(name, provenance['module'], variable, kind=kind, mutable=mutable, hideable=hideable,
-                           fields=tuple(nouns.get('fields', ())), tags=tuple(nouns.get('tags', ())),
-                           provenance=provenance, sources=tuple(nouns.get('sources', ())))
+        # A missing variable is stored empty, and the store names it in its own notice, LAYER-002.
+        return store.layer(name, provenance['module'], nouns.get('variable'), kind=nouns.get('kind', 'layer'),
+                           mutable=mutable, hideable=hideable, fields=tuple(nouns.get('fields', ())),
+                           tags=tuple(nouns.get('tags', ())), provenance=provenance,
+                           sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
-        (address,) = _need(ctx, 'address')
-        return store.add_element(name, address, **_optional(ctx, 'name_length', 'role', 'refs', 'extra'))
+        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role', 'refs', 'extra'))
     if op == 'add-join':
-        receiver, provider, purpose, function, relation, observation = _need(
-            ctx, 'receiver', 'provider', 'purpose', 'function', 'relation', 'observation')
-        return store.add_join(name, receiver, provider, purpose=purpose, function=function, relation=relation,
-                              observation=observation, **_optional(ctx, 'name', 'non_goal', 'type', 'refs', 'extra'))
+        purpose, function, relation, observation = _empty(ctx, notices, 'purpose', 'function', 'relation',
+                                                          'observation')
+        return store.add_join(name, nouns['receiver'], nouns['provider'], purpose=purpose, function=function,
+                              relation=relation, observation=observation,
+                              **_optional(ctx, 'name', 'ef', 'verb', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
-        join, address = _need(ctx, 'join', 'address')
-        return store.add_subtype(name, join, address, **_optional(ctx, 'function', 'relation', 'observation', 'name',
-                                                                  'name_length', 'role', 'refs', 'extra'))
+        return store.add_subtype(name, nouns['join'], nouns['address'],
+                                 **_optional(ctx, 'function', 'ef', 'relation', 'verb', 'observation', 'name',
+                                             'name_length', 'role', 'refs', 'extra'))
     if op == 'add-property':
-        element_ref, value = _need(ctx, 'element', 'value')
-        return store.add_property(name, _element(element_ref), value, **_optional(ctx, 'refs', 'extra'))
+        (value,) = _empty(ctx, notices, 'value')
+        return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
     if op == 'add-item':
-        target, value = _need(ctx, 'node', 'value')
+        (value,) = _empty(ctx, notices, 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
-        return store.add_item(name, _node(target), value, link=link, **_optional(ctx, 'refs', 'extra'))
+        return store.add_item(name, _node(nouns['node']), value, link=link, **_optional(ctx, 'refs', 'extra'))
     if op == 'add-ref':
-        owner, key, value = _need(ctx, 'owner', 'key', 'value')
+        key, value = _empty(ctx, notices, 'key', 'value', empty='')
         if not isinstance(value, str):
-            raise Stop('A ref value is text.', 'metaform help map knowledge')
-        return store.add_ref(owner, key, value)
+            notices.append(Notice('value', 'value is not text; it was stored as its JSON text.'))
+            value = json.dumps(value, ensure_ascii=False)
+        return store.add_ref(nouns['owner'], str(key), value)
     if op == 'add-plan':
-        (element_ref,) = _need(ctx, 'element')
-        return store.add_plan(name, _element(element_ref), nouns.get('join'))
+        return store.add_plan(name, _element(nouns['element']), nouns.get('join'))
     if op == 'edit':
-        (thing,) = _need(ctx, 'id')
-        return store.edit(thing, _changes(ctx))
+        return store.edit(nouns['id'], _changes(ctx))
     if op == 'remove':
-        (thing,) = _need(ctx, 'id')
+        thing = nouns['id']
         return store.remove(int(thing) if str(thing).isdigit() else thing)
     if op == 'correct':
-        thing, reason = _need(ctx, 'id', 'reason')
-        return store.correct(name, thing, _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
+        (reason,) = _empty(ctx, notices, 'reason')
+        return store.correct(name, nouns['id'], _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
                              evidence=nouns.get('evidence'))
     if op == 'finish':
         return store.finish(name)
@@ -379,7 +417,11 @@ KNOWLEDGE_NOUNS = (
     _noun('provider', 'add-join: the element whose function serves it.'),
     _noun('purpose', 'add-join: the Operative Purpose.'),
     _noun('function', "add-join and add-subtype: the Encounter Function."),
+    _noun('ef', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '
+                'functionality of the encounter.', schema=EF),
     _noun('relation', 'add-join and add-subtype: the relation in active voice.'),
+    _noun('verb', 'add-join and add-subtype: the third-person singular present-tense active verb of the relation, '
+                  'ending in -s or -es.'),
     _noun('observation', 'add-join and add-subtype: what is actually there.'),
     _noun('non_goal', 'add-join: what the receiver does not seek.'),
     _noun('type', 'add-join: the join type, purpose by default.'),
@@ -404,6 +446,8 @@ WORK_READS: dict[str, frozenset[str]] = {
     'done': frozenset({'id', 'resolution'}),
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
+# The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',)}
 
 
 def _work_node(value: Any) -> Node:
@@ -419,6 +463,7 @@ def work(ctx: Context) -> Any:
     op = str(ctx.nouns.get('op', 'list'))
     if op not in WORK_READS:
         raise Stop(f'{op!r} is not a work operation: op=list, add, edit or done.', 'metaform help map work')
+    _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
     for name in unread:
@@ -428,10 +473,10 @@ def work(ctx: Context) -> Any:
         node = _work_node(nouns['node']) if 'node' in nouns else None
         return _with_notices(store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx)), notices)
     if op == 'add':
-        node, condition = _need(ctx, 'node', 'condition', verb='work')
-        return _with_notices(store.add_work(_work_node(node), condition,
+        # A missing condition is stored empty, and the store names it in its notice, STORE-042.
+        return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
-    (work_id,) = _need(ctx, 'id', verb='work')
+    work_id = nouns['id']
     if op == 'edit':
         return _with_notices(store.edit_work(work_id, {name: nouns[name] for name in WORK_FIELDS if name in nouns}),
                              notices)

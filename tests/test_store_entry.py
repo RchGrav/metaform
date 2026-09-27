@@ -125,3 +125,17 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
                           'note=old probe', '--json', cwd=folder).stdout)['condition'] == 'cruft'
     assert [row['condition'] for row in json.loads(run('map', 'work', 'node=element:code.alarm.audible', '--json',
                                                        cwd=folder).stdout)['results']] == ['sideways', 'cruft']
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('BASE-044')
+def test_a_work_record_without_a_condition_is_stored_as_empty_text_with_a_notice(store):
+    from metaform.data import Node
+    small_map(store)
+    unsaid = store.add_work(Node('element', 'code.alarm.audible'), None, task='say what it is')
+    assert (unsaid.condition, unsaid.task) == ('', 'say what it is')
+    assert [(notice.where, notice.message) for notice in unsaid.notices] == [
+        ('condition', 'condition is missing; stored empty.')]
+    assert [row.condition for row in store.work().results] == ['']
+    cleared = store.edit_work(unsaid.work_id, {'condition': None})
+    assert cleared.condition == '' and [notice.where for notice in cleared.notices] == ['condition']

@@ -254,7 +254,12 @@ def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
                 raise Stop(f'No project {project} is registered.', 'metaform list projects')
             if not given.get('confirm', False):
                 raise Stop(home.to_clear(project).caution, 'If you are sure: call clear_project with confirm true')
-            return False, [result_json(home.clear_project(project))]
+            cleared = home.clear_project(project)
+            result = cleared.to_dict()
+            if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
+                result['notices'] = [{'where': 'not_removed', 'message': f'{cleared.left} '
+                                      f'{cleared.remedy("call clear_project with confirm true again")}'}]
+            return False, [result_json(result)]
         store = Store(project_for(folder, given.pop('project', None)) or _no_project())
         if name == 'add_origin':
             known = {item.mform_sha_id for item in store.origins()}

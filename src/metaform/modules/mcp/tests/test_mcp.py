@@ -534,8 +534,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     tools, refused, still, cleared = session(home, mapped, check)
     assert tools['clear_project'].input_schema['properties'].keys() == {'confirm', 'project'}
     assert refused.is_error is True
-    assert text(refused) == [('Error: Clearing proj removes its 1 metaform(s), main, with their stores, and its 1 '
-                              'report file(s). Its registration, folder, settings, origins and variants stay.\n'
+    assert text(refused) == [('Error: Clearing proj removes one metaform, main, with its store, and one report '
+                              'file. Its registration, folder, settings, origins and variants stay.\n'
                               'Next: If you are sure: call clear_project with confirm true')]
     assert still.is_error is False  # the caution alone changed nothing
     assert cleared.is_error is False
@@ -547,3 +547,25 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     async def narrowed(client, init):
         return set(await tool_names(client))
     assert 'clear_project' not in session(home, mapped, narrowed)
+
+
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('MCP-006')
+def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_error(run, home, mapped, unremovable):
+    run('feedback', 'A note.', cwd=mapped)
+    (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
+
+    async def check(client, init):
+        return await client.call_tool('clear_project', {'confirm': True})
+    with unremovable(stuck):
+        cleared = session(home, mapped, check)
+        assert stuck.is_file()
+    assert cleared.is_error is False
+    result = json.loads(text(cleared)[-1])
+    assert (result['project'], result['metaforms'], result['reports']) == ('proj', ['main'], 1)
+    assert [entry['path'] for entry in result['not_removed']] == [str(stuck)] and result['not_removed'][0]['reason']
+    assert [notice['where'] for notice in result['notices']] == ['not_removed']
+    assert result['notices'][0]['message'] == (
+        'It could not be removed and is still on disk. Close any program that has it open, such as a running web '
+        'GUI, or fix its permissions, then call clear_project with confirm true again.')
+    assert run('list', 'metaforms', cwd=mapped).stdout == ''

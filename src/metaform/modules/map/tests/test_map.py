@@ -335,6 +335,131 @@ def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored
     assert 'ignored' in corrected['notices'][0]['message'] and corrected['fields']['extra'] is None
 
 
+def said(result):
+    return [(notice['where'], notice['message']) for notice in result['notices']]
+
+
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('LAYER-018')
+@pytest.mark.req('LAYER-002')
+def test_a_knowledge_write_missing_a_field_its_record_can_hold_empty_is_stored_with_a_notice_for_it(run, mapped):
+    made = json.loads(k(run, mapped, 'op=create', 'layer=bare', *PROVENANCE).stdout)
+    assert (made['name'], made['variable'], made['mutable'], made['hideable']) == ('bare', '', False, False)
+    assert sorted(notice['where'] for notice in made['notices']) == ['hideable', 'mutable', 'variable']
+    assert {where: message for where, message in said(made) if where != 'variable'} == {
+        'mutable': 'mutable is missing; stored as false.', 'hideable': 'hideable is missing; stored as false.'}
+
+    joined = json.loads(k(run, mapped, 'op=add-join', 'layer=bare', 'receiver=code.timer.kitchen',
+                          'provider=code.alarm.audible').stdout)
+    empty = ('purpose', 'function', 'relation', 'observation')
+    assert said(joined) == [(field, f'{field} is missing; stored empty.') for field in empty]
+    stored = {join.join_id: join for join in Store('proj').joins('code.timer.kitchen', raw=True).results}
+    assert stored[joined['join_id']].layer == 'bare'
+    assert [getattr(stored[joined['join_id']], field) for field in empty] == [None, None, None, None]
+
+    item = json.loads(k(run, mapped, 'op=add-item', 'layer=bare', 'node=element:code.timer.kitchen').stdout)
+    held = json.loads(k(run, mapped, 'op=add-property', 'layer=bare', 'element=code.timer.kitchen').stdout)
+    for written in (item, held):
+        assert written['value'] is None and said(written) == [('value', 'value is missing; stored empty.')]
+
+    ref = json.loads(k(run, mapped, 'op=add-ref', 'layer=bare', f'owner={joined["join_id"]}').stdout)
+    assert (ref['key'], ref['value']) == ('', '')
+    assert said(ref) == [('key', 'key is missing; stored empty.'), ('value', 'value is missing; stored empty.')]
+    numbered = json.loads(k(run, mapped, 'op=add-ref', 'layer=bare', f'owner={joined["join_id"]}', 'key=line',
+                            'value=12').stdout)
+    assert (numbered['key'], numbered['value']) == ('line', '12') and [where for where, _ in said(numbered)] == ['value']
+    stored = {join.join_id: join for join in Store('proj').joins('code.timer.kitchen', raw=True).results}
+    assert [(found.key, found.value) for found in stored[joined['join_id']].refs] == [('', ''), ('line', '12')]
+
+    edited = json.loads(k(run, mapped, 'op=edit', f'id={item["item_id"]}', 'value="Set later."').stdout)
+    removed = json.loads(k(run, mapped, 'op=remove', f'id={held["property_id"]}').stdout)
+    assert [where for where, _ in said(edited)] == ['layer'] and [where for where, _ in said(removed)] == ['layer']
+    assert [found.value for found in Store('proj').layer_items('bare').results] == ['Set later.']
+
+    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
+      'hideable=false', *PROVENANCE)
+    intake_join = Store('proj').joins('code.timer.kitchen').results[0]
+    corrected = json.loads(k(run, mapped, 'op=correct', 'layer=fix-1', f'id={intake_join.join_id}',
+                             'purpose=Get the cook back.').stdout)
+    assert said(corrected) == [('reason', 'reason is missing; stored empty.')]
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('STORE-042')
+def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once_and_writes_nothing(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    join = Store('proj').joins('code.timer.kitchen').results[0].join_id
+    before = run('export', cwd=mapped).stdout
+    stops = [
+        ('op', ['knowledge', 'layer=notes']),
+        ('op', ['knowledge', 'op=paint', 'layer=notes']),
+        ('layer', ['knowledge', 'op=create', 'variable=x', 'mutable=true', 'hideable=true']),
+        ('layer', ['knowledge', 'op=finish']),
+        ('layer', ['knowledge', 'op=peel']),
+        ('layer', ['knowledge', 'op=discard']),
+        ('layer', ['knowledge', 'op=add-plan', 'element=code.alarm.audible']),
+        ('layer', ['knowledge', 'op=correct', f'id={join}', 'reason=r']),
+        ('kind', ['knowledge', 'op=create', 'layer=odd', 'kind=memory', 'variable=x', 'mutable=true',
+                  'hideable=true']),
+        ('address', ['knowledge', 'op=add-element', 'layer=notes']),
+        ('address', ['knowledge', 'op=add-subtype', 'layer=notes', f'join={join}']),
+        ('receiver', ['knowledge', 'op=add-join', 'provider=code.alarm.audible', 'purpose=p']),
+        ('provider', ['knowledge', 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen']),
+        ('join', ['knowledge', 'op=add-subtype', 'layer=notes', 'address=code.alarm.audible.piezo']),
+        ('element', ['knowledge', 'op=add-property', 'layer=notes', 'value="v"']),
+        ('element', ['knowledge', 'op=add-plan', 'layer=notes']),
+        ('node', ['knowledge', 'op=add-item', 'layer=notes', 'value="v"']),
+        ('owner', ['knowledge', 'op=add-ref', 'layer=notes', 'key=path', 'value="alarm.c"']),
+        ('id', ['knowledge', 'op=edit', 'layer=notes', 'value="v"']),
+        ('id', ['knowledge', 'op=remove', 'layer=notes']),
+        ('id', ['knowledge', 'op=correct', 'layer=notes', 'reason=r']),
+        ('op', ['work', 'op=paint']),
+        ('node', ['work', 'op=add', 'condition=tbd']),
+        ('id', ['work', 'op=edit', 'condition=tbd']),
+        ('id', ['work', 'op=done']),
+    ]
+    for field, words in stops:
+        stopped = run('map', *words, cwd=mapped, ok=False)
+        lines = stopped.stderr.splitlines()
+        assert stopped.returncode == 2 and len(lines) == 2, (words, stopped.stderr)
+        assert lines[0].startswith('Error: ') and field in lines[0] and lines[1].startswith('Next: '), (words, lines)
+    assert run('export', cwd=mapped).stdout == before, 'a stopped call wrote something'
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('MAP-020')
+def test_add_join_and_add_subtype_keep_ef_and_verb_in_their_own_fields(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
+                          'provider=code.alarm.audible', 'name=done alarm', 'purpose=Get attention.',
+                          'function=Plays a tone.', 'ef=Function', 'relation=rings for the timer', 'verb=rings',
+                          'observation=A piezo.').stdout)
+    assert (joined['name'], joined['ef'], joined['verb'], joined['extra'], joined['notices']) == (
+        'done alarm', 'Function', 'rings', None, [])
+    inside = json.loads(k(run, mapped, 'op=add-subtype', 'layer=notes', f'join={joined["join_id"]}',
+                          'address=code.alarm.audible.piezo', 'name=buzzer', 'function=Buzzes.', 'ef=Encounter',
+                          'relation=buzzes when driven', 'verb=buzzes', 'observation=A disc.').stdout)
+    assert (inside['name'], inside['ef'], inside['verb'], inside['extra'], inside['notices']) == (
+        'buzzer', 'Encounter', 'buzzes', None, [])
+    store = Store('proj')
+    stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
+    assert (stored.name, stored.ef, stored.verb, stored.extra) == ('done alarm', 'Function', 'rings', None)
+    (subtype,) = store.subtypes(joined['join_id'], raw=True).results
+    assert (subtype.name, subtype.ef, subtype.verb, subtype.extra) == ('buzzer', 'Encounter', 'buzzes', None)
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('STORE-042')
+def test_a_work_record_sent_without_a_condition_is_stored_empty_with_a_notice(run, mapped):
+    added = j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=decide what it is', cwd=mapped)
+    assert (added['condition'], added['task'], added['done']) == ('', 'decide what it is', None)
+    assert said(added) == [('condition', 'condition is missing; stored empty.')]
+    listed = j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']
+    assert [(row['work_id'], row['condition']) for row in listed] == [(added['work_id'], '')]
+
 
 @pytest.mark.req('BASE-038')
 @pytest.mark.req('MAP-046')
