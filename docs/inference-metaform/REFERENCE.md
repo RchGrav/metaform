@@ -231,11 +231,11 @@ The system retains both functional naming and the terminology used by the projec
 |---|---|---|
 | Namespace address | `code.system.plugin` | Type identity and addressable orientation. |
 | Readable proper noun | `plugin system code`; short name `plugin system` | A functional reading of the address. |
-| Project `name` | `module contract and loader` | The project's official or informal name for this functionality. |
+| Project `name`, on the join | `module contract and loader` | The project's official or informal name for this functionality, carried by the join that names it. |
 
 `name_length` is a **lookback segment count**, not a character count and not the number of words in the project name. With `code.system.plugin` and `name_length=2`, the last two segments reverse to `plugin system`. With `code.interface.command_line` and `name_length=2`, they yield `command line interface`, which has three words because an underscore expands to a space.
 
-Names are readings and descriptors; they are not a replacement for namespace references. An intake join naming another element uses that element's exact address, not its readable label. The store also assigns stable identifiers so that records, joins, and corrections can be addressed independently of a displayed name.
+An element's name is its reading, and the project's names are on joins; neither replaces a namespace reference. An intake join naming another element uses that element's exact address, not its readable label. The store also assigns stable identifiers so that records, joins, and corrections can be addressed independently of a displayed name.
 
 ### Three structures that must remain distinguishable
 
@@ -487,7 +487,7 @@ These are meaningful locations because the prior inference has already establish
 
 A functional element holds:
 
-- its descriptor and project name
+- its address, `name_length` and role, read as its short name
 - locally addressed memory
 - selected knowledge
 - receiving joins, each holding:

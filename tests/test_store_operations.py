@@ -85,11 +85,10 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     'add_element': (lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c'),
                     {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0),
                      'address_elements': (1, 0), 'types': (1, 0)}),
-    'add_element with descriptor': (
-        lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c', name='c', refs=[('path', 'c.c')]),
-        {'element_ids': (1, 0), 'identities': (2, 0), 'elements': (1, 0), 'current_elements': (1, 0),
-         'address_elements': (1, 0), 'types': (1, 0), 'item_ids': (1, 0), 'items': (1, 0), 'current_items': (1, 0),
-         'refs': (1, 0)}),
+    'add_element with its name_length and refs': (
+        lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c', name_length=1, refs=[('path', 'c.c')]),
+        {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0),
+         'address_elements': (1, 0), 'types': (1, 0), 'refs': (1, 0)}),
     'add_join': (lambda s, w: None,
                  lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', function='f', relation='r',
                                             observation='o', refs=[('path', 'x')]),

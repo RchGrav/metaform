@@ -59,9 +59,9 @@ For `code.system.plugin`, there are three useful readings:
 | Address | `code.system.plugin` |
 | Full type reading | plugin system code |
 | Short type name | plugin system (`name_length = 2`) |
-| Project name | module contract and loader |
+| Project name, on the join | module contract and loader |
 
-Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading. The recorded project name is a separate field: it is how this project names the functionality, formally or informally.
+Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading, and that short reading is the element's name. The project name is recorded on the join that names the functionality, not on the element: it is how this project names the functionality, formally or informally.
 
 Every prefix supplies a type perspective:
 

@@ -4,14 +4,14 @@ from . import history, prompts
 from .exchange import export_document, import_document, pull_wheel
 from .names import reading, roots, short_name
 from .records import (CONDITIONS, EF_WORDS, PLACE_KINDS, ROLES, SUBTYPE_ROLES, Answer, ChallengeState, Citation, ContextView,
-                      Descriptor, Element, GraphElement, GraphJoin, GraphPage, Item, Join, Layer, LayerGroup,
+                      Element, GraphElement, GraphJoin, GraphPage, Item, Join, Layer, LayerGroup,
                       LayerKind, Node, NodeKind, NodeView, Notice, Op, Outcome, Page, PeelChange, PeelPreview, Plan,
                       Property, Provenance, Recording, Ref, Report, RootElement, RootEntry, Roots, Selection, Subtype, Version,
                       Where, WorkRecord)
 from .store import Store
 
 __all__ = ['CONDITIONS', 'EF_WORDS', 'PLACE_KINDS', 'ROLES', 'SUBTYPE_ROLES', 'Answer', 'ChallengeState', 'Citation', 'ContextView',
-           'Descriptor', 'Element', 'GraphElement', 'GraphJoin', 'GraphPage', 'Item', 'Join', 'Layer',
+           'Element', 'GraphElement', 'GraphJoin', 'GraphPage', 'Item', 'Join', 'Layer',
            'LayerGroup', 'LayerKind', 'Node', 'NodeKind', 'NodeView', 'Notice', 'Op', 'Outcome', 'Page', 'PeelChange',
            'PeelPreview', 'Plan', 'Property', 'Provenance', 'Recording', 'Ref', 'Report', 'RootElement', 'RootEntry', 'Roots',
            'Selection', 'Store', 'StoreError', 'Subtype', 'Version', 'Where', 'WorkRecord', 'export_document', 'history', 'import_document', 'prompts',

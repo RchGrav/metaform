@@ -251,9 +251,9 @@ def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home,
     assert values(store.node(KITCHEN), 'notes') == ['final']
     db = sqlite3.connect(store_file(home, store))
     assert db.execute('SELECT COUNT(*) FROM items WHERE item_id=?', (item.item_id,)).fetchone() == (1,)
-    descriptor = store.element('code.timer.kitchen').descriptors[0]
+    kitchen = store.element('code.timer.kitchen')
     before = dump(store_file(home, store))
-    untouched = store.edit(descriptor.item_id, {'value': {'descriptor': {'name': 'changed'}}})
+    untouched = store.edit(kitchen.element_id, {'role': 'SE'})
     assert 'op=correct' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
@@ -280,7 +280,8 @@ def test_a_successful_intake_is_visible_whole(store):
     assert store.has_intake() is False
     small_map(store)
     assert store.has_intake() is True
-    assert 'intake-1' in [group.layer for group in store.node(KITCHEN).layers]
+    assert store.element('code.timer.kitchen').layer == 'intake-1'
+    assert [join.layer for join in store.joins('code.timer.kitchen').results] == ['intake-1']
 
 
 @pytest.mark.req('STORE-035')

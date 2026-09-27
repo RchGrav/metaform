@@ -110,28 +110,17 @@ class Page(NamedTuple, Generic[T]):
 
 
 @dataclass(frozen=True)
-class Descriptor(Record):
-    item_id: str
-    layer_id: str
-    layer: str
-    name: str | None
-    name_length: int | None
-    role: str | None
-    refs: tuple[Ref, ...]
-
-
-@dataclass(frozen=True)
 class Element(Record):
+    """An element is its address, name_length and role, STORE-009. Its only name is its address read backward
+    through name_length, `short_name`, MAP-012; the project's name for a functionality is on the join, MAP-020."""
     element_id: str
     address: str
     layer_id: str
     layer: str
     reading: str = ''
     short_name: str = ''
-    name: str | None = None
     name_length: int | None = None
     role: str | None = None
-    descriptors: tuple[Descriptor, ...] = ()
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
     existing: bool = False
@@ -152,6 +141,7 @@ class Join(Record):
     receiver_address: str | None
     provider: str
     provider_address: str | None
+    name: str | None  # the project's own name for the functionality, MAP-020
     purpose: str | None
     function: str | None
     ef: str | None
@@ -175,7 +165,8 @@ class Subtype(Record):
     layer: str
     address: str
     reading: str
-    name: str | None
+    short_name: str
+    name: str | None  # the subtype join's name for the functionality, MAP-020
     name_length: int | None
     role: str | None
     function: str | None
@@ -414,7 +405,7 @@ class RootElement(Record):
     element_id: str
     address: str
     role: str
-    name: str | None
+    short_name: str
 
 
 @dataclass(frozen=True)

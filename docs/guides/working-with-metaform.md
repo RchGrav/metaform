@@ -49,7 +49,7 @@ metaform map search "module"
 metaform map element code.system.plugin
 ```
 
-`search` is a text search over stored content, not a separate semantic retrieval model. `element` returns the descriptor, including the project name and references. For this example, the functional address names a plugin system and the project calls it the **module contract and loader**.
+`search` is a text search over stored content, not a separate semantic retrieval model. `element` returns the element: its address, `name_length`, role, short name and references. The project's own name for the functionality is on its joins, which `metaform map joins code.system.plugin as=provider` returns. For this example, the functional address names a plugin system and the project calls it the **module contract and loader**.
 
 Now look in both directions:
 

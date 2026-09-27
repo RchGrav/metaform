@@ -16,15 +16,15 @@ from typing import Any
 
 from ..errors import StoreError
 from . import corrections
-from .corrections import METAFORM_KINDS
-from .ids import ADDRESS, as_list, as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, prefixes
+from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id, prefixes
 from .records import Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('address', 'extra'),
-    'join': ('provider', 'type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'extra'),
+    'element': ('address', 'name_length', 'role', 'extra'),
+    'join': ('provider', 'type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
+             'extra'),
     'subtype': ('address', 'name', 'name_length', 'role', 'function', 'ef', 'relation', 'verb', 'observation',
                 'extra'),
     'item': ('value', 'link', 'extra'),
@@ -87,10 +87,6 @@ def extra_fields(extra: Any, where: str,
         else:
             kept[str(key)] = value
     return (kept or None), split
-
-
-def is_descriptor(value: str) -> bool:
-    return descriptor_of(json.loads(value)) is not None
 
 
 # Finding layers and things -------------------------------------------------------------------------------------
@@ -229,19 +225,26 @@ def reused_element(tx: Tx, address: str) -> str | None:
     return str(held[0])
 
 
-def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | None = None) -> str:
-    """Write a new element row in a layer, under the id the address held before when nothing holds it now."""
+def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | None = None, *,
+                name_length: int | None = None, role: str | None = None, refs: Iterable[tuple[str, str]] = ()) -> str:
+    """Write a new element row in a layer, under the id the address held before when nothing holds it now.
+
+    The row is the element: its address, name_length and role, STORE-009; its refs are rows owned by it.
+    """
     element_id = reused_element(tx, address) or new_id()
     if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
         tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
         identity(tx, element_id, 'element')
     types(tx, address)
-    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, extra) VALUES (?, ?, ?, ?)',
-                           (element_id, found.layer_id, address, encode_extra(extra, address)))
+    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, role, extra) '
+                           'VALUES (?, ?, ?, ?, ?, ?)',
+                           (element_id, found.layer_id, address, name_length, role, encode_extra(extra, address)))
+    row = int(cursor.lastrowid or 0)
     corrections.hold_address(tx.db, address, element_id)
     if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, 0)',
-                      (element_id, cursor.lastrowid, address))
+        tx.db.execute('INSERT INTO current_elements(element_id, row, address, role, moved) VALUES (?, ?, ?, ?, 0)',
+                      (element_id, row, address, role))
+    write_refs(tx, 'element', row, refs)
     return element_id
 
 
@@ -316,42 +319,7 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
     return 'subtype', node.id
 
 
-# Descriptors, flags and items -------------------------------------------------------------------------------
-
-def has_descriptor(tx: Tx, element_id: str, layer_id: str) -> bool:
-    for row in tx.db.execute('SELECT i.value FROM current_items c JOIN items i ON i.row = c.row '
-                             "WHERE c.target_kind='element' AND c.target_id=? AND c.layer_id=?",
-                             (element_id, layer_id)):
-        if is_descriptor(str(row[0])):
-            return True
-    return False
-
-
-def descriptor_differs(tx: Tx, element_id: str, descriptor: dict[str, Any]) -> bool:
-    if not descriptor:
-        return False
-    for row in tx.db.execute('SELECT i.value FROM current_items c JOIN items i ON i.row = c.row '
-                             "WHERE c.target_kind='element' AND c.target_id=?", (element_id,)):
-        known = descriptor_of(json.loads(str(row[0])))
-        if known is not None:
-            return any(known.get(key) != given for key, given in descriptor.items())
-    return True
-
-
-def set_role(tx: Tx, element_id: str, found: LayerRow, role: Any) -> None:
-    """The element's role in `element_roles`, for the intake and correction layers only, STORE-009 and D48."""
-    tx.db.execute('DELETE FROM element_roles WHERE element_id=? AND layer_id=?', (element_id, found.layer_id))
-    if found.kind in METAFORM_KINDS and isinstance(role, str) and role:
-        tx.db.execute('INSERT INTO element_roles(element_id, layer_id, role) VALUES (?, ?, ?)',
-                      (element_id, found.layer_id, role))
-
-
-def write_descriptor(tx: Tx, found: LayerRow, element_id: str, descriptor: dict[str, Any],
-                     pairs: list[tuple[str, str]]) -> None:
-    """The element's descriptor item, and its role indexed so the entry is one read, STORE-009."""
-    insert_item(tx, found, 'element', element_id, {'descriptor': descriptor}, None, None, pairs, None)
-    set_role(tx, element_id, found, descriptor.get('role'))
-
+# Work records and items -------------------------------------------------------------------------------------
 
 def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
     """The conditions of an object's open work records, in row order, STORE-042; one lookup on `work_by_target`."""

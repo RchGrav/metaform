@@ -230,9 +230,9 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
-    'add-element': frozenset({'address', 'name', 'name_length', 'role', 'refs', 'extra'}),
-    'add-join': frozenset({'receiver', 'provider', 'purpose', 'function', 'relation', 'observation', 'non_goal', 'type',
-                           'refs', 'extra'}),
+    'add-element': frozenset({'address', 'name_length', 'role', 'refs', 'extra'}),
+    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'function', 'relation', 'observation', 'non_goal',
+                           'type', 'refs', 'extra'}),
     'add-subtype': frozenset({'join', 'address', 'function', 'relation', 'observation', 'name', 'name_length', 'role',
                               'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
@@ -302,12 +302,12 @@ def _knowledge(ctx: Context, op: str) -> Any:
                            provenance=provenance, sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
         (address,) = _need(ctx, 'address')
-        return store.add_element(name, address, **_optional(ctx, 'name', 'name_length', 'role', 'refs', 'extra'))
+        return store.add_element(name, address, **_optional(ctx, 'name_length', 'role', 'refs', 'extra'))
     if op == 'add-join':
         receiver, provider, purpose, function, relation, observation = _need(
             ctx, 'receiver', 'provider', 'purpose', 'function', 'relation', 'observation')
         return store.add_join(name, receiver, provider, purpose=purpose, function=function, relation=relation,
-                              observation=observation, **_optional(ctx, 'non_goal', 'type', 'refs', 'extra'))
+                              observation=observation, **_optional(ctx, 'name', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         join, address = _need(ctx, 'join', 'address')
         return store.add_subtype(name, join, address, **_optional(ctx, 'function', 'relation', 'observation', 'name',
@@ -369,7 +369,9 @@ KNOWLEDGE_NOUNS = (
     _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, VE or AUE.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element, add-subtype and edit: a dotted namespace address.'),
-    _noun('name', 'add-element and add-subtype: the informal name.'),
+    _noun('name', "add-join and add-subtype: the project's own name for the functionality the join names, its "
+                  'canonical or informal name. An element holds no name: its name is its address read through '
+                  'name_length.'),
     _noun('name_length', 'add-element and add-subtype: how many trailing segments form the short name.', 'int'),
     _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
     _noun('extra', 'A JSON object of further fields.', 'json', {'type': 'object'}),
@@ -470,7 +472,7 @@ MODULE = Module(
         Verb('where', where, 'The element at an address, or the subtype there with its join; with an empty '
                              "address, the map's entry.",
              nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),), switches=RAW),
-        Verb('element', element, 'One element with its descriptors and refs.',
+        Verb('element', element, 'One element: its address, name_length, role and short name, with its refs.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
         Verb('joins', joins, 'The joins an element owns, or with as=provider those it serves.',
              nouns=(Noun('element', 'An address or element id.'), _noun('as', 'receiver or provider.'), *PAGING),

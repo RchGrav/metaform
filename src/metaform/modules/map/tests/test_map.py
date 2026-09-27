@@ -23,10 +23,11 @@ def mapped(run, tmp_path):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                             hideable=False, provenance={'module': 'intake'}, ready=True)
-        store.add_element(layer.name, 'stakeholder.cook.home', name='Home cook', name_length=2, role='VE')
-        store.add_element(layer.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
-        store.add_element(layer.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
-        store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', purpose='Know when a dish is done.',
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
+        store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
+                       purpose='Know when a dish is done.',
                        function='Counts down and rings.', relation='The timer tells the cook.',
                        observation='One countdown per dish.')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
@@ -198,11 +199,38 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
     assert [form['name'] for form in j(run, 'metaforms', cwd=mapped)['results']] == ['main']
     join = store.joins('code.timer.kitchen').results[0]
     assert j(run, 'history', join.join_id, cwd=mapped)['results'][0]['op'] == 'add'
-    assert j(run, 'search', 'kitchen', cwd=mapped)['results'][0]['value']['descriptor']['name'] == 'kitchen timer'
+    notes = store.layer('memory', 'memory', 'What agents have noted at this node.', kind='memory', mutable=True,
+                        hideable=True, ready=True)
+    store.add_item(notes.name, Node('element', 'code.timer.kitchen'), 'The kitchen timer drifts under load.')
+    found = j(run, 'search', 'kitchen', cwd=mapped)
+    assert found == json.loads(json.dumps(store.search('kitchen').to_dict()))
+    assert [item['value'] for item in found['results']] == ['The kitchen timer drifts under load.']
     listed = j(run, 'joins', 'code.timer.kitchen', 'as=provider', cwd=mapped)['results']
     assert [join['receiver_address'] for join in listed] == ['stakeholder.cook.home']
     node = Node('element', 'code.timer.kitchen')
     assert j(run, 'links', str(node), cwd=mapped) == {'results': [], 'next': None}
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-009')
+@pytest.mark.req('BASE-043')
+def test_a_knowledge_layer_names_a_functionality_on_its_join_and_a_name_sent_for_an_element_is_kept_in_its_extra(
+        run, mapped):
+    """Rich, 2026-09-27: the project's name for a functionality goes on the join; an element is its address,
+    name_length and role, so a name sent with add-element is kept in the element's extra and named, BASE-043."""
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    element = json.loads(k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.display.lcd',
+                           'name=time display', 'name_length=2').stdout)
+    assert (element['short_name'], element['name_length'], element['extra']) == ('lcd display', 2,
+                                                                                   {'name': 'time display'})
+    assert 'name' not in element and [notice['where'] for notice in element['notices']] == ['name']
+    join = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.display.lcd',
+                        'provider=code.timer.kitchen', 'name=time left', 'purpose=Show the time left.',
+                        'function=Reports the time left.', 'relation=The timer feeds the display.',
+                        'observation=An LCD.').stdout)
+    assert (join['name'], join['extra']) == ('time left', None) and join['notices'] == []
+    assert [held.name for held in Store('proj').joins('code.display.lcd', raw=True).results] == ['time left']
 
 
 @pytest.mark.req('BASE-043')

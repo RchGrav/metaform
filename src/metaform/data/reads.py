@@ -31,7 +31,7 @@ def resolver(tx: Tx, selection: Sequence[str] | None, toggled: Sequence[str]) ->
 
 
 def element(tx: Tx, res: Resolver | None, ref: Any) -> Element | None:
-    """One element by address or id, with its descriptors and refs."""
+    """One element by address or id: its address, name_length, role and short name, with its refs."""
     current = rows.current_element(tx, ref) if isinstance(ref, str) else None
     return None if current is None else views.element(tx, str(current['element_id']), res)
 
@@ -395,16 +395,17 @@ def search(tx: Tx, res: Resolver, text: str, layer: str | None, raw: bool, limit
 
 
 def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
-    """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025."""
-    intake = tx.db.execute("SELECT layer_id FROM layers WHERE kind='intake' AND ready IS NOT NULL LIMIT 1").fetchone()
-    if intake is None:
+    """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025.
+
+    The role is on the element, STORE-009, and its current row's role is indexed, so the entry is one read on
+    `current_elements_by_role`; a root element is one with a role. Empty until the intake has finished.
+    """
+    if not has_intake(tx):
         return Roots((), (), None)
-    layer_id = str(intake[0])
     entry: list[RootEntry] = []
     if after is None:
-        for element_id, _role in tx.db.execute("SELECT element_id, role FROM element_roles WHERE layer_id=? AND role "
-                                               "IN ('VE', 'DE') ORDER BY role DESC, element_id",
-                                               (layer_id,)).fetchall():
+        for element_id, _role in tx.db.execute("SELECT element_id, role FROM current_elements WHERE role IN ('VE', 'DE') "
+                                               'ORDER BY role DESC, element_id').fetchall():
             found = views.element(tx, str(element_id), res)
             if found is None:
                 continue
@@ -414,14 +415,14 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
             entry.append(RootEntry(found, tuple(held)))
 
     def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT element_id AS key, role FROM element_roles WHERE layer_id=? AND element_id > ? '
-                             'ORDER BY element_id LIMIT ?', (layer_id, cursor or '', count)).fetchall()
+        return tx.db.execute('SELECT element_id AS key, role FROM current_elements WHERE element_id > ? '
+                             'AND role IS NOT NULL ORDER BY element_id LIMIT ?', (cursor or '', count)).fetchall()
 
     def build(row: Row) -> RootElement | None:
         found = views.element(tx, str(row['key']), res)
         if found is None:
             return None
-        return RootElement(found.element_id, found.address, str(row['role']), found.name)
+        return RootElement(found.element_id, found.address, str(row['role']), found.short_name)
     page = paged(fetch, build, limit, after)
     return Roots(tuple(entry), page.results, page.next)
 

@@ -160,7 +160,7 @@ def discard(tx: Tx, layer: str) -> Outcome:
             if owner == 'item':
                 # item_ids names the item's layer, so it goes with the layer; identities keeps the id.
                 db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
-    for table in ('plans', 'selections', 'element_roles', 'unapplied', 'hidden_layers', 'layer_tags',
+    for table in ('plans', 'selections', 'unapplied', 'hidden_layers', 'layer_tags',
                   'layer_fields', 'provenance', 'layer_sources', 'reexamine'):
         db.execute(f'DELETE FROM {table} WHERE layer_id=?', (layer_id,))
     db.execute('UPDATE reports SET layer_id=NULL WHERE layer_id=?', (layer_id,))

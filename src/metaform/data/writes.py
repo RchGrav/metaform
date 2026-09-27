@@ -19,7 +19,7 @@ from .. import home
 from ..errors import StoreError
 from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
-from .ids import as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, refs_list
+from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
 from .records import (CONDITIONS, EF_WORDS, ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property,
                       Ref, Subtype, Version, WorkRecord)
@@ -41,9 +41,42 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
 
 # Elements, joins and subtypes -------------------------------------------------------------------------------
 
-def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_length: Any = None, role: Any = None,
+def _element_fields(name_length: Any, role: Any, found: LayerRow,
+                    notices: list[Notice]) -> tuple[int | None, str | None, dict[str, Any]]:
+    """An element's name_length and role as its row holds them, and what does not fit, kept for its extra, STORE-009.
+
+    A name_length that is not a whole number is kept in the extra; a whole number below 1 is stored as given. A role
+    is the intake's classification of the artifact, D48: given in a layer other than the intake or a correction
+    layer, it is kept in the extra; a role outside the five is stored as given. Each is named in a notice, BASE-044.
+    """
+    kept: dict[str, Any] = {}
+    length: int | None = None
+    if name_length is not None and not rows.whole_number(name_length):
+        kept['name_length'] = name_length
+        notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the element's "
+                                             'extra.'))
+    elif name_length is not None:
+        length = int(name_length)
+        if length < 1:
+            notices.append(Notice('name_length', 'name_length is less than 1; it was stored as given.'))
+    stored_role: str | None = None
+    if role is not None and found.kind not in METAFORM_KINDS:
+        kept['role'] = role
+        notices.append(Notice('role', f"A role is the intake's classification of the artifact, and an element of "
+                                      f"{found.name} carries none; the role was kept in the element's extra."))
+    elif role is not None:
+        stored_role = rows.text(role, 'role', notices)
+        if stored_role not in ROLES:
+            notices.append(Notice('role', f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as given.'))
+    return length, stored_role, kept
+
+
+def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, role: Any = None,
                 refs: Iterable[Any] = (), extra: Any = None) -> Element | Outcome:
-    """Write an element, or return the one already at the address, STORE-009."""
+    """Write an element, its address, name_length and role, or return the one already at the address, STORE-009.
+
+    An element holds no name: the project's name for a functionality is on the join, MAP-020.
+    """
     pairs = refs_list(refs)
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
@@ -56,41 +89,33 @@ def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_leng
     if not rows.address_form(address):
         notices.append(Notice('address', f'{address!r} is not in the address form, dotted lowercase segments of '
                                          'letters, digits and underscores; it was stored as given.'))
-    if name is not None and not isinstance(name, str):
-        notices.append(Notice('name', 'name is not text; it was stored as given.'))
-    if name_length is not None and not (rows.whole_number(name_length) and name_length >= 1):
-        notices.append(Notice('name_length', 'name_length is not a whole number of at least 1; it was stored as '
-                                             'given.'))
-    if role is not None and found.kind not in METAFORM_KINDS:
-        notices.append(Notice('role', f'A role is the intake\'s classification of the artifact; an element of '
-                                      f'{found.name} carries none. The role was kept in its descriptor.'))
-    elif role is not None and role not in ROLES:
-        notices.append(Notice('role', f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as given.'))
-    descriptor = {key: value for key, value in (('name', name), ('name_length', name_length), ('role', role))
-                  if value is not None}
     current = rows.current_element(tx, address)
     if current is not None:
         element_id = str(current['element_id'])
-        differs = rows.descriptor_differs(tx, element_id, descriptor)
-        if (descriptor or pairs) and not rows.has_descriptor(tx, element_id, found.layer_id):
-            rows.write_descriptor(tx, found, element_id, descriptor, pairs)
-        rows.split_items(tx, found, 'element', element_id, split)
         record = views.element(tx, element_id, None)
         assert record is not None
+        differs = (name_length is not None and name_length != record.name_length) or \
+            (role is not None and role != record.role)
+        given = (('name_length', name_length is not None and name_length != record.name_length),
+                 ('role', role is not None and role != record.role), ('refs', bool(pairs)))
+        notices += [Notice(field, f'{address} is already element {element_id} of layer {record.layer}, which keeps '
+                                  f'its own {field}; the {field} given here was not applied.')
+                    for field, unapplied in given if unapplied]
+        rows.split_items(tx, found, 'element', element_id, split)
         return _with(record, notices, existing=True, differs=differs)
+    length, stored_role, moved = _element_fields(name_length, role, found, notices)
+    if moved:
+        kept_extra = {**(kept_extra or {}), **moved}
     holder = rows.subtype_holding(tx, address)
     if holder is not None:
         notices.append(Notice('address', f'{address} is also held by subtype {holder}; the element was stored as '
                                          'given.'))
-    element_id = rows.new_element(tx, found, address, kept_extra)
-    if descriptor or pairs:
-        rows.write_descriptor(tx, found, element_id, descriptor, pairs)
+    element_id = rows.new_element(tx, found, address, kept_extra, name_length=length, role=stored_role, refs=pairs)
     rows.split_items(tx, found, 'element', element_id, split)
     if found.kind == 'correction':
-        length = name_length if rows.whole_number(name_length) else None
         return Element(element_id, address, found.layer_id, found.name, reading(address), short_name(address, length),
-                       name if isinstance(name, str) else None, length, role if isinstance(role, str) else None,
-                       extra=kept_extra, notices=tuple(notices))
+                       length, stored_role, tuple(Ref(key, value) for key, value in pairs), kept_extra,
+                       notices=tuple(notices))
     record = views.element(tx, element_id, None)
     assert record is not None
     return _with(record, notices)
@@ -101,11 +126,12 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
     return dataclasses.replace(record, notices=tuple(notices), **changes)
 
 
-def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
-             ef: Any = None, relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
-             type: Any = 'purpose',
+def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
+             function: Any = None, ef: Any = None, relation: Any = None, verb: Any = None, observation: Any = None,
+             non_goal: Any = None, type: Any = 'purpose',
              refs: Iterable[Any] = (), extra: Any = None) -> Join | Outcome:
-    """Write one join, owned by its receiver and served by its provider, STORE-010."""
+    """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
+    for the functionality it names, MAP-020."""
     pairs = refs_list(refs)
     found = rows.layer(tx, layer)
     stop = rows.frozen(tx, found)
@@ -113,7 +139,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
         return Outcome((stop,))
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('purpose', purpose), ('function', function), ('relation', relation), ('verb', verb),
+        ('name', name), ('purpose', purpose), ('function', function), ('relation', relation), ('verb', verb),
         ('observation', observation), ('non_goal', non_goal))}
     kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
@@ -128,9 +154,10 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
     tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, verb, '
-        'observation, non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (join_id, found.layer_id, kind, receiver_id, provider_id, texts['purpose'], texts['function'], ef,
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, function, ef, relation, verb, '
+        'observation, non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (join_id, found.layer_id, kind, receiver_id, provider_id, texts['name'], texts['purpose'], texts['function'],
+         ef,
          texts['relation'], texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
          rows.top(tx)))
     row = int(cursor.lastrowid or 0)
@@ -418,6 +445,12 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             else:
                 link = value if isinstance(value, Node) else Node.parse(str(value))
                 columns['link_kind'], columns['link_id'] = rows.node_at(tx, link, found, 'link', notices)
+        elif kind == 'element' and key in ('name_length', 'role'):
+            length, role, kept = _element_fields(value if key == 'name_length' else None,
+                                                 value if key == 'role' else None, found, notices)
+            moved.update(kept)
+            if key not in kept:
+                columns[key] = length if key == 'name_length' else role
         elif key == 'role' and value is not None and value not in SUBTYPE_ROLES:
             moved['role'] = value
             notices.append(Notice('role', f"{value!r} is not DE, SE or NE; it was kept in the subtype's extra."))
@@ -460,12 +493,6 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     if allowed.get('refs') is not None:
         tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
         rows.write_refs(tx, kind, int(row['row']), refs_list(allowed['refs']))
-    if kind == 'item' and row['target_kind'] == 'element' and 'value' in allowed:
-        given = descriptor_of(allowed['value'])
-        if given is not None:
-            rows.set_role(tx, str(row['target_id']), found, given.get('role'))
-        elif rows.is_descriptor(str(row['value'])):
-            rows.set_role(tx, str(row['target_id']), found, None)
     if split:
         target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
                                   else _node_of(kind, thing, row))
@@ -578,8 +605,6 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
     tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
     if kind == 'item':
         tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
-        if row['target_kind'] == 'element' and rows.is_descriptor(str(row['value'])):
-            rows.set_role(tx, str(row['target_id']), found, None)
     tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
     if not users:
         return Outcome()

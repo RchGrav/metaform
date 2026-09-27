@@ -43,6 +43,28 @@ def test_later_corrections_win_and_history_keeps_every_version(store):
     assert [layer.name for layer in store.stack().results] == ['fix-1', 'fix-2']
 
 
+@pytest.mark.req('STORE-034')
+@pytest.mark.req('STORE-009')
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('MAP-020')
+def test_a_correction_changes_an_elements_name_length_and_role_and_a_joins_name(store):
+    _, outer, _ = small_map(store)
+    kitchen = store.element('code.timer.kitchen').element_id
+    fix = correction(store, 'fix-1')
+    store.correct(fix.name, kitchen, {'name_length': 1, 'role': 'SE'}, reason='one word says it')
+    store.correct(fix.name, outer.join_id, {'name': 'dish timer'}, reason='what the cook calls it')
+    store.finish(fix.name)
+    element = store.element('code.timer.kitchen')
+    assert (element.element_id, element.name_length, element.role, element.short_name) == (kitchen, 1, 'SE', 'kitchen')
+    assert store.joins('stakeholder.cook.home').results[0].name == 'dish timer'
+    assert [(version.layer, version.fields['role'], version.fields['name_length'])
+            for version in store.history(kitchen).results] == [('intake-1', 'DE', 2), ('fix-1', 'SE', 1)]
+    assert [entry.element.address for entry in store.roots().entry] == ['stakeholder.cook.home']
+    store.peel(fix.name)
+    assert store.element('code.timer.kitchen', raw=True).role == 'DE'
+    assert store.joins('stakeholder.cook.home', raw=True).results[0].name == 'kitchen timer'
+
+
 @pytest.mark.req('STORE-009')
 def test_address_lookup_returns_the_highest_correction(store):
     small_map(store)
@@ -285,6 +307,7 @@ def test_a_relocation_removes_metaform_joins_and_orphans_knowledge_joins_until_p
     store.finish(fix.name)
     rows = store.history(inner.join_id).results
     assert [(version.layer, version.op) for version in rows][-1] == ('fix-1', 'remove')
+    assert rows[-1].fields['name'] == 'audible alarm'  # the removal keeps the join as it was, its name included
     assert store.joins(kitchen).results == ()
     raw = {join.join_id: join for join in store.joins(kitchen, raw=True).results}
     assert inner.join_id not in raw and raw[known.join_id].orphaned is True
@@ -292,6 +315,7 @@ def test_a_relocation_removes_metaform_joins_and_orphans_knowledge_joins_until_p
         {row for row in knowledge_rows if row[2] == extra.layer_id}
     store.peel(fix.name)
     assert {join.join_id for join in store.joins(kitchen).results} == {inner.join_id, known.join_id}
+    assert {join.join_id: join.name for join in store.joins(kitchen).results}[inner.join_id] == 'audible alarm'
     assert store.element(kitchen).address == 'code.timer.kitchen'
 
 

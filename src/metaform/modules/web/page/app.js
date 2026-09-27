@@ -141,7 +141,7 @@ function graphData() {
       ef: join.ef});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
-        name: subtype.name || subtype.address, work: subtype.open_work || []});
+        name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
       links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id,
         ef: subtype.ef});
     }
@@ -283,7 +283,8 @@ function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), h('span', {}, node.address)];
   if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
   const join = S.joins.find(item => item.join_id === node.join);
-  return [node.t === 'purpose' ? (join?.purpose || 'purpose') : node.name || ''];
+  if (node.t === 'purpose') return [join?.name ? h('b', {}, join.name) : null, h('span', {}, join?.purpose || 'purpose')];
+  return [h('b', {}, node.name || ''), node.joinName ? h('span', {}, node.joinName) : null];
 }
 /* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
  * below the node only where it would leave the top of the view. */
@@ -390,7 +391,7 @@ async function build2D() {
     for (const subtype of held.get(id)) {
       const key = `s${inner.size}`;
       inner.set('s:' + subtype.subtype_id, key);
-      lines.push(`${key}["${plain2d(subtype.name || subtype.address)}"]:::sub`);
+      lines.push(`${key}["${plain2d(subtype.short_name || subtype.address)}"]:::sub`);
     }
     lines.push('end');
   }
@@ -473,14 +474,16 @@ const kindOf = key => key.startsWith('s:') ? 'subtype' : key.startsWith('p:') ? 
 const bareId = key => key.replace(/^[sp]:/, '');
 const keyOf = node => !node ? null : node.kind === 'subtype' ? 's:' + node.id : node.kind === 'join' ? 'p:' + node.id
   : node.kind === 'element' ? node.id : null;
-const isDescriptor = value => value && typeof value === 'object' && 'descriptor' in value;
 const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
+/* An element's and a subtype's name is its short name, its address read through name_length, MAP-012; a join's is the
+ * project's own name for the functionality, MAP-020, or its purpose when it has none. */
+const joinLabel = join => join.name || join.purpose || join.relation || 'join';
 function nameOf(key, fallback = key) {
-  if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.name || found.address : fallback; }
-  if (key.startsWith('p:')) { const found = joinOf(key); return found ? found.purpose || found.relation || 'join' : fallback; }
+  if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.short_name || found.address : fallback; }
+  if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
   const found = S.elements.get(key)?.element;
-  return found ? found.name || found.short_name || found.address : fallback;
+  return found ? found.short_name || found.address : fallback;
 }
 async function drawInside() {
   const level = IN.at(-1);
@@ -509,20 +512,20 @@ async function drawInside() {
     if (join) {
       edges.push(`${add(join.receiver, nameOf(join.receiver), 'stub')} --> ${center}`,
         `${center} --> ${add(join.provider, nameOf(join.provider), 'stub')}`);
-      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.name || subtype.address, 'sub')}`);
+      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.short_name || subtype.address, 'sub')}`);
     }
   } else if (key.startsWith('s:')) {
     const found = subtypeOf.get(key);
-    if (found) edges.push(`${add('p:' + found.join.join_id, found.join.purpose || 'join', 'purpose')} --- ${center}`);
+    if (found) edges.push(`${add('p:' + found.join.join_id, joinLabel(found.join), 'purpose')} --- ${center}`);
   } else {
     for (const join of S.joins.filter(item => item.provider === key)) for (const subtype of join.subtypes || [])
-      edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.name || subtype.address, 'sub')}`);
+      edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.short_name || subtype.address, 'sub')}`);
     for (const join of S.joins.filter(item => item.receiver === key))
-      edges.push(`${center} --> ${add('p:' + join.join_id, join.purpose || join.relation || 'join', 'purpose')}`);
+      edges.push(`${center} --> ${add('p:' + join.join_id, joinLabel(join), 'purpose')}`);
   }
   const linked = [];
   for (const found of view?.layers || []) {
-    const all = [...(found.items || []).filter(item => !isDescriptor(item.value)).map(item => ({kind: 'item', key: 'i:' + item.item_id, item})),
+    const all = [...(found.items || []).map(item => ({kind: 'item', key: 'i:' + item.item_id, item})),
       ...(found.properties || []).map(item => ({kind: 'property', key: 'r:' + item.property_id, item}))]
       .map(thing => ({...thing, value: thing.item.value, layer: found.layer, layerKind: found.kind}));
     if (!all.length) continue;
@@ -869,7 +872,7 @@ function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c':
 function elementLink(id, address) {
   const entry = S.elements.get(id);
   return h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(id, true); }},
-    entry ? (entry.element.name || entry.element.short_name) : address);
+    entry ? (entry.element.short_name || address) : address);
 }
 function joinCard(join, side) {
   const other = side === 'provider' ? join.provider : join.receiver;
@@ -877,6 +880,7 @@ function joinCard(join, side) {
   return h('div', {class: 'join'},
     h('div', {class: 'row'}, h('span', {class: 'dir'}, `${side} · `, elementLink(other, otherAddress)),
       h('span', {class: 'lay', style: {'--c': `var(${colorVar(join.layer)})`}}, join.layer)),
+    join.name ? h('p', {class: 'name'}, h('b', {}, join.name)) : null,
     join.purpose ? h('p', {}, join.purpose) : null,
     join.function ? h('p', {class: 'fn'}, efPill(join), join.function) : null,
     join.relation ? h('p', {class: 'fn'}, join.relation) : null,
@@ -884,7 +888,8 @@ function joinCard(join, side) {
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
     refsOf(join.refs),
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
-      event.preventDefault(); select('s:' + subtype.subtype_id, true); }}, h('b', {}, subtype.name || subtype.address)), ' ',
+      event.preventDefault(); select('s:' + subtype.subtype_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
+      subtype.name ? h('span', {}, subtype.name, ' ') : null,
       h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
       subtype.observation ? h('div', {}, subtype.observation) : null, refsOf(subtype.refs))));
 }
@@ -896,8 +901,9 @@ function itemText(value) {
 function renderSubtype({subtype, join}) {
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Subtype'),
-    h('h2', {}, subtype.name || subtype.address),
+    h('h2', {}, subtype.short_name || subtype.address),
     h('div', {class: 'addr'}, subtype.address),
+    subtype.name ? h('p', {class: 'name'}, h('b', {}, subtype.name)) : null,
     h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null, efPill(subtype),
       (subtype.open_work || []).map(workPill), layerPill(subtype.layer)),
     h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
@@ -914,7 +920,7 @@ function renderSubtype({subtype, join}) {
 function renderJoin(join) {
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Join'),
-    h('h2', {}, join.relation || `${join.receiver_address} receives from ${join.provider_address}`),
+    h('h2', {}, join.name || join.relation || `${join.receiver_address} receives from ${join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
       elementLink(join.provider, join.provider_address), '.'),
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
@@ -928,7 +934,7 @@ async function renderObject(id) {
   const held = S.joins.filter(join => join.receiver === id), serves = S.joins.filter(join => join.provider === id);
   fill(pane, 
     h('div', {class: 'eyebrow'}, 'Element'),
-    h('h2', {}, element.name || element.short_name || element.address),
+    h('h2', {}, element.short_name || element.address),
     h('div', {class: 'addr'}, element.address),
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
       (element.open_work || []).map(workPill), layerPill(element.layer),
@@ -946,7 +952,7 @@ async function renderObject(id) {
     if (S.selected !== id) return;
     const box = $('#items');
     for (const group of node.layers || []) {
-      const items = (group.items || []).filter(item => !(item.value && typeof item.value === 'object' && 'descriptor' in item.value));
+      const items = group.items || [];
       if (!items.length) continue;
       box.append(h('div', {class: 'eyebrow'}, group.kind === 'memory' ? 'Memory' : group.layer),
         ...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''), style: {'--c': `var(${colorVar(group.layer)})`}},
@@ -1199,7 +1205,7 @@ function listen() {
 }
 
 /* Every item and property of the layers, read as the context sees them, so selection, masks and hidden layers apply
- * as in every read; descriptor items, the intake's names and roles, are not items to draw, VIEW-017. */
+ * as in every read, VIEW-017. */
 async function itemsOf(generation) {
   const found = new Map();
   for (const layer of S.layers.filter(item => item.ready && !['intake', 'correction'].includes(item.kind))) {
@@ -1209,7 +1215,6 @@ async function itemsOf(generation) {
       if (generation !== S.loading) return found;
       for (const item of page.results) {
         const property = 'property_id' in item;
-        if (!property && isDescriptor(item.value)) continue;
         const key = property ? 'r:' + item.property_id : 'i:' + item.item_id;
         found.set(key, {kind: property ? 'property' : 'item', key, item, value: item.value, layer: layer.name, layerKind: layer.kind});
       }

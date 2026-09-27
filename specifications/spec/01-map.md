@@ -108,14 +108,14 @@ These terms are used exactly as defined in the Canonical Intake.
 ### MAP-012 An address reads as its name when reversed
 
 - Requirement: An address is read as a name by reversing its segments and replacing periods and underscores with spaces, and an element's name_length gives how many trailing segments form its short name.
-- What this means: `code.bus.data.event` reads as event data bus code. `data.bill_of_materials` reads as bill of materials data. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity.
+- What this means: `code.bus.data.event` reads as event data bus code. `data.bill_of_materials` reads as bill of materials data. name_length is the lookback segment count: with name_length 2, `code.engine.game` has the short name game engine. The readable name is presentation. It never replaces the stored address as identity. The namespace address is the name index: an element's proper noun is its address read backward through its name_length, its short name, and an element has no other name, MAP-015. The project's own name for a functionality, its canonical or informal name, is on the join, MAP-020.
 - Why: Reading addresses as proper nouns engages the model's existing understanding of types directly, without reasoning. Short names keep references readable.
-- How it shows: Every element and Type listing shows the address and its reading.
-- Build: reading(address) reverses the segments, replaces underscores with spaces, and joins with spaces. Every root reads as its own name. short_name(address, n) reverses the last n segments, replaces underscores with spaces and joins them. When n is null, zero, or larger than the number of segments, short_name returns reading(address). Readings are computed, never stored as identity.
+- How it shows: Every element and Type listing shows the address and its reading, and every element and subtype its short name. Wherever an element's name is shown, it is its short name.
+- Build: reading(address) reverses the segments, replaces underscores with spaces, and joins with spaces. Every root reads as its own name. short_name(address, n) reverses the last n segments, replaces underscores with spaces and joins them. When n is null, zero, or larger than the number of segments, short_name returns reading(address). Readings are computed, never stored as identity. Every read that returns an element or a subtype returns its `reading` and its `short_name`, computed from its address and name_length.
 - Acceptance:
   1. reading of `code.bus.data.event` is event data bus code; short_name of `code.engine.game` with name_length 2 is game engine; short_name with name_length 9 is game engine code.
 - Relates to: MAP-010, MAP-015.
-- Status: confirmed for the reading rule. The Canonical Intake has two reading examples that disagree on the root: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. The build reads every root as its own name until open question 16 is answered. The edge cases of short_name are recommended.
+- Status: confirmed for the reading rule. The Canonical Intake has two reading examples that disagree on the root: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. The build reads every root as its own name until open question 16 is answered. The edge cases of short_name are recommended. Rich, 2026-09-27: the namespace address is the name index, and an element's proper noun is its address read backward through name_length.
 
 ### MAP-013 The namespace rules govern the functional map, and the store does not judge them
 
@@ -146,11 +146,11 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The address says what kind of thing an element is. The element is this artifact's realization of it. A later intake or a correction can type the same element better, and everything attached to that element, its joins, subtypes, layer items and memory, follows it through the change instead of being orphaned. Names are lexical handles only; identity is never established by string equality of names.
 - Why: Retyping is how the map improves. If identity were the address, every improvement would orphan the knowledge built on the element. Relocating an element through a correction layer takes everything attached to it along; its joins do not survive the move, because a join is the face between a specific receiver and provider, LAYER-011 and STORE-017.
 - How it shows: After an element's address changes, its joins, subtypes and layer items are all still found at the element under its new address.
-- Build: An element record has element id, project id and address, and nothing else. Its name, name_length, role and refs, where given, are a descriptor item linked to it, STORE-009. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. An element is only a namespace address: when a correction layer removes an element, what was attached to it is orphaned, kept and not shown, and when an element is put back at the same address, that same element identity is restored and what was attached shows again, STORE-017.
+- Build: An element record is its element id, its address, its name_length and its role, STORE-009: the namespace address is the name index, and the element holds no name of its own. Its proper noun is its address read through name_length, MAP-012, and the project's own name for a functionality is on the join, MAP-020. Its refs are rows linked to it, STORE-012, and any other field given for it is kept in its extra, STORE-021. Joins, subtypes and layer items reference element ids, never addresses. Writes that name an element by address resolve it to its id within the project at write time. Changing an element's address is a correction, made by a correction layer, LAYER-011; it keeps the element id and everything attached to the element follows it. An element's identity is its namespace address: when a correction layer removes an element, what was attached to it is orphaned, kept and not shown, and when an element is put back at the same address, that same element identity is restored and what was attached shows again, STORE-017.
 - Acceptance:
   1. Relocating an element from `code.probe` to `code.probe.echo` keeps its id, and its layer items and memories are returned when reading it at the new address; its joins as receiver and as provider are no longer current, and joins at the new place are new joins.
-- Relates to: MAP-016, MAP-020, LAYER-011, STORE-007, STORE-009.
-- Status: confirmed.
+- Relates to: MAP-012, MAP-016, MAP-020, LAYER-011, STORE-007, STORE-009.
+- Status: confirmed. What an element record holds, Rich 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element; the project's name for a functionality goes on the join. This replaces the descriptor item of D78.
 
 ### MAP-016 One element per address per project in a map
 
@@ -170,20 +170,21 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: AUE marks the artifact under examination. VE marks a party outside the artifact whose purpose drives changes or improvements to it; it is never the person who asked for the intake, the end user, or whoever performs the operation, and it is named at its most specific reusable type level. DE is the element whose loss would stop the artifact being the same type; its function is stated independently of medium, encoding, genre and style. SE is an element whose Encounter Function helps the DE serve the VE's purpose. NE is a component, interface or specification that states an essential demand on its environment. Inside the AUE, an element is DE, SE or NE. A VE is an element with role VE and never receives an AUE role. PE is not a role; it is a join's other endpoint. A subtype carries DE, SE or NE.
 - Why: Roles tell an agent at once how an element bears on the artifact's identity, which is the first thing it needs to orient.
 - How it shows: Every element listing shows its role.
-- Build: The intake writes exactly one role, from the set above, on every element and subtype it creates: an element's role is in its descriptor item, STORE-009, and a subtype's in its own record, STORE-011. There may be several VEs. The store records the role as given and does not refuse a missing one, STORE-009 and STORE-026, because the store never judges content; a missing role on an intake element is a defect of that intake, visible to any later layer that grades the map.
+- Build: The intake writes exactly one role, from the set above, on every element and subtype it creates: an element's role is on the element record, STORE-009, and a subtype's in its own record, STORE-011. There may be several VEs. The store records the role as given and does not refuse a missing one, STORE-009 and STORE-026, because the store never judges content; a missing role on an intake element is a defect of that intake, visible to any later layer that grades the map.
 - Acceptance: None beyond the intake mapping test in MAP-031.
 - Relates to: MAP-020, MAP-030, MAP-031.
-- Status: confirmed. Whether one VE is recorded as primary is open, see open question 6. STORE-009 allows an element with no role; whether an element created by a layer other than the intake must carry one is open, see open question 13.
+- Status: confirmed. Rich, 2026-09-27: roles stay on the element. Whether one VE is recorded as primary is open, see open question 6. STORE-009 allows an element with no role; whether an element created by a layer other than the intake must carry one is open, see open question 13.
 
 ---
 
 ### MAP-020 A join records one encounter in full
 
-- Requirement: A join records its type, receiver, provider, purpose, function, ef, relation, verb, observation, optional non_goal and optional refs.
+- Requirement: A join records its type, receiver, provider, optional name, purpose, function, ef, relation, verb, observation, optional non_goal and optional refs.
 - What this means:
   - type: the kind of join. Intake writes type purpose. Modules may define other join types, and unknown valid content survives reads, edits, copies and export.
   - receiver: the element that owns the join and holds the purpose.
   - provider: the element whose function serves the purpose.
+  - name: the project's own name for the functionality the join names, its canonical name in the project's official terminology or an informal name, where the project has one. The join is where the map speaks about the artifact itself, so the name is on the join and never on an element, whose only name is its address read through name_length, MAP-012. A subtype join carries its own, MAP-030.
   - purpose: the active Operative Purpose statement, the why.
   - function: the provider's Encounter Function for this specific encounter, the how.
   - ef: the Encounter Function's word, one of two: Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter. A subtype join carries its own, MAP-030.
@@ -196,13 +197,13 @@ These terms are used exactly as defined in the Canonical Intake.
   An encounter function states a function. A language, medium or encoding never goes into an encounter. A join speaks about this artifact. Its purpose and function state what this artifact actually does in its own particulars. Where the artifact represents something, the join describes the function of that representation within the artifact, not the real-world function of the thing represented.
 - Why: Functions live in joins, and joins speak to the artifact. Keeping each field separate lets an agent ask one question at a time, who, why, how, what is actually there, and get a direct answer.
 - How it shows: Reading a join returns every field it was written with, each on its own.
-- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. `ef` holds only `Function` or `Encounter`; any other value is kept in the join's `extra` and named in a notice, and a missing one is named, BASE-044. `verb` is stored as given, and a missing one is named. non_goal is nullable. refs follow MAP-021.
+- Build: Each field is its own column. Nothing is packed into a shared text or JSON field except extension content of module-defined join types, which is stored and returned intact. `type` is `purpose` for every join the intake writes; a module-defined type is any other name in the address form of MAP-010, declared by the module that writes it. purpose, function, relation and observation must be present, not null, on purpose joins; an empty string is stored as given, STORE-026. `ef` holds only `Function` or `Encounter`; any other value is kept in the join's `extra` and named in a notice, and a missing one is named, BASE-044. `verb` is stored as given, and a missing one is named. non_goal is nullable. `name` is stored as given and is nullable. refs follow MAP-021.
 - Acceptance:
-  1. A join written with every field, including a non_goal and two refs, reads back with each field equal to what was written.
+  1. A join written with every field, including a name, a non_goal and two refs, reads back with each field equal to what was written.
   2. A join of a module-defined type with extension content survives export and import unchanged.
   3. A join or subtype written with an `ef` of `Both` reads back with no `ef`, the word kept in its `extra` and a notice naming `ef`; a correction that changes another field keeps the `ef`.
 - Relates to: MAP-003, MAP-021, MAP-022, STORE-010, STORE-021.
-- Status: confirmed. `verb` and the relation's subject: Rich, 2026-09-26: the intake agent infers the relation's verb into its own field; this changes the relation's grammar rules but not the intake's semantics, adding one prompt and one field. `ef`: Rich, 2026-09-26, on the Encounter Function: the model writes "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter", and the word is a binary choice between the two, not freeform inference.
+- Status: confirmed. `verb` and the relation's subject: Rich, 2026-09-26: the intake agent infers the relation's verb into its own field; this changes the relation's grammar rules but not the intake's semantics, adding one prompt and one field. `ef`: Rich, 2026-09-26, on the Encounter Function: the model writes "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter", and the word is a binary choice between the two, not freeform inference. `name`: Rich, 2026-09-27: the project's own name for a functionality goes on the join, to name the functionality by the join, the purpose join and the subtype join alike, because joins are what speak to the artifact itself.
 
 ### MAP-021 Refs are an ordered key and value list
 
@@ -240,7 +241,7 @@ These terms are used exactly as defined in the Canonical Intake.
   Absorbing is legal only when the parts share that join and the combined encounter covers each part's encounter function. Combining never optimizes a functionality away.
 - Why: Annealing keeps the root map minimal, coarse and shallow without discarding any functionality. A subtype exists only because it shares that join, so the join is where it lives. A purpose is what gives a part its own join, so a part with a purpose cannot live inside another's join.
 - How it shows: Reading a join returns its purpose and combined function, and beneath them each subtype with its own function.
-- Build: A subtype record has subtype id, join id, address, name, name_length, role, its own function, its own ef, relation, its own verb, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
+- Build: A subtype record has subtype id, join id, address, name_length and role, which are the absorbed element's, name, the subtype join's name for the functionality, MAP-020, its own function, its own ef, relation, its own verb, observation and refs. It has no purpose field and no end field. The join record holds the purpose and the combined function. Coverage is the intake agent's judgment and is never checked by the store.
 - Acceptance:
   1. A join with two subtypes reads back with the purpose and combined function on the join and each subtype's own function, relation and observation under it.
   2. A submission that gives a subtype a purpose is stored as given: the purpose is kept in the subtype's `extra`, and the result carries a notice naming the subtype, BASE-044.
@@ -285,29 +286,32 @@ These terms are used exactly as defined in the Canonical Intake.
   |---|---|---|
   | `result@id` | `intake_start` `id` | `layers.result_id` of the intake layer |
   | `element@namespace_address` | `intake_element` `address` | `elements.address` with a new identity id, STORE-009; the address row in `types`, STORE-008 |
-  | `element/name` text | `intake_element` `name` | descriptor item of the intake layer on the element, STORE-009 |
-  | `element@name_length` | `intake_element` `name_length` | descriptor item |
-  | `element@role` AUE, VE, DE, SE, NE | `intake_element` `role` | descriptor item |
-  | none in the current schema for a root element | `intake_element` `refs` | `refs` rows owned by the descriptor item |
+  | `element/name` text | `intake_element` `name` | not held by an element: kept in the element's `extra` under `name`, with a notice that the project's name for a functionality goes on the join, BASE-039 |
+  | `element@name_length` | `intake_element` `name_length` | `elements.name_length`, STORE-009 |
+  | `element@role` AUE, VE, DE, SE, NE | `intake_element` `role` | `elements.role`, STORE-009 |
+  | none in the current schema for a root element | `intake_element` `refs` | `refs` rows owned by the element's row, STORE-012 |
   | `join`, held inside its receiving element's `joins` | `intake_join`, `receiver` the enclosing element's address | `joins` row, STORE-010 |
   | `join@type`, always `purpose` | `intake_join` `type`, `purpose` when left out | `joins.type` |
   | `join@provider` | `intake_join` `provider` | `joins.provider`, the provider's identity id resolved by address |
   | `join@purpose`, `@function`, `@ef`, `@relation`, `@verb`, `@observation`, `@non_goal` | `intake_join`, same names | same-named `joins` columns, MAP-020 |
+  | none in the current schema | `intake_join` `name` | `joins.name`, MAP-020 |
   | `join/refs/ref@key`, `@value` | `intake_join` `refs` | `refs` rows owned by the join, in order, STORE-012 |
   | nested `join` inside a `join` | `intake_subtype`, `join` the parent join's id | `subtypes` row in that join, STORE-011 |
   | nested `join@function`, `@ef`, `@relation`, `@verb`, `@observation` | `intake_subtype`, same names | same-named `subtypes` columns |
   | nested `join@provider`, the nested `element@namespace_address` | `intake_subtype` `address` | `subtypes.address` |
-  | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `intake_subtype` `name`, `name_length`, `role` | same-named `subtypes` columns |
+  | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `intake_subtype` `name`, `name_length`, `role` | same-named `subtypes` columns; `name` is the subtype join's name, MAP-020 |
   | nested `element/refs/ref` | `intake_subtype` `refs` | `refs` rows owned by the subtype |
 
   Built this way the structure follows the pattern that makes it acyclic: each join is held by its receiver and runs one way to its provider, a subtype sits inside its one join with no purpose, and a relationship in the other direction is its own join with its own purpose, MAP-020 and MAP-030. Only the element-to-element view, which ignores purposes, can show a cycle. A join whose provider is its own receiver is stored as given with a notice, D82.
 
   When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
+
+  An element is its address, name_length and role, STORE-009, and the project's own name for a functionality is on the join, MAP-020, the purpose join and the subtype join alike, Rich 2026-09-27. The Canonical Intake's schema still shows a `<name/>` inside each element; that text is Rich's and changes only with his wording. Until it does, an agent following it sends the element's name with `intake_element`, which keeps it in the element's `extra` and says in a notice where the name goes, BASE-044; the nested element's name it sends with `intake_subtype` is the subtype join's name, where the decision puts it.
 - Acceptance:
-  1. Recording a real intake result, such as a real project's map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
+  1. Recording a real intake result, such as a real project's map, then reading the project back yields the same set of root elements with their name lengths and roles, joins with every field, subtypes with their names and functions, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-009, STORE-013, STORE-024, BASE-039, MCP-009.
-- Status: confirmed 2026-09-26: recorded one object per call as it is reasoned, read back and proofed in step 12, then finished; the tools' own fields; the mapping of root elements, joins, nested subtype joins and refs. The handling of a missing AUE is recommended.
+- Status: confirmed 2026-09-26: recorded one object per call as it is reasoned, read back and proofed in step 12, then finished; the tools' own fields; the mapping of root elements, joins, nested subtype joins and refs. Rich, 2026-09-27: the element is its address, name_length and role, and names go on joins. Keeping an element's name in its `extra` until the Canonical Intake's text changes, and the handling of a missing AUE, are recommended.
 
 ---
 
@@ -406,4 +410,4 @@ These terms are used exactly as defined in the Canonical Intake.
 15. Answered 2026-09-26: the intake text's response protocol says to record each object with the intake tools as it is reasoned; its schema defines the fields and is not returned as a document, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
 16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
 17. Hard dependency is no longer a join role, MAP-022. Does it survive in any form, for example as a flag on a join marking that losing the provider breaks the receiver, or is it gone?
-18. Answered: an element record holds only identity and address; name, name_length, role and refs are a descriptor item linked to it, STORE-009, D78. Earlier text: element records carry fields such as name, name_length, role, refs and extra (MAP-015, STORE-009), while element records are described as being just a namespace address, holding no data of their own, with things linked to them. Which fields, if any, does an element record keep, and where do the rest belong? (MAP-015, STORE-009, STORE-017)
+18. Answered, Rich 2026-09-27: an element record is its identity, address, name_length and role; the project's name for a functionality is on the join; its refs are rows linked to it, STORE-009. Before that, D78: identity and address only, with name, name_length, role and refs in a descriptor item. Earlier text: element records carry fields such as name, name_length, role, refs and extra (MAP-015, STORE-009), while element records are described as being just a namespace address, holding no data of their own, with things linked to them. Which fields, if any, does an element record keep, and where do the rest belong? (MAP-015, STORE-009, STORE-017)

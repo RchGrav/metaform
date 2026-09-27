@@ -65,8 +65,8 @@ def record_intake(run, folder, elements, env=None, finish=()):
     for element in elements:
         for join in element.get('joins', []):
             made = call('join', element['namespace_address'], join['provider'],
-                        *_named(join, ('type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation',
-                                       'non_goal', 'refs')))
+                        *_named(join, ('type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
+                                       'observation', 'non_goal', 'refs')))
             for subtype in join.get('subtypes', []):
                 inner = subtype.get('element', {})
                 call('subtype', made['join_id'], inner['namespace_address'],
@@ -91,17 +91,19 @@ def memory(store):
 
 
 def small_map(store):
-    """An intake with a VE receiving from a DE, and the DE receiving from an SE through a join with one subtype."""
+    """An intake with a VE receiving from a DE, and the DE receiving from an SE through a join with one subtype.
+
+    Each element is its address, name_length and role; the project's name for each functionality is on its join."""
     with store.atomic():
         layer = intake(store)
-        store.add_element(layer.name, 'stakeholder.cook.home', name='Home cook', name_length=2, role='VE')
-        store.add_element(layer.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
-        store.add_element(layer.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
-        outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen',
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
+        outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
                                purpose='Know when each dish is done.', function='Counts down and rings.',
                                relation='The timer tells the cook.', observation='One countdown per dish.',
                                refs=[('path', 'src')])
-        inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible',
+        inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
                                purpose='Get attention when a countdown ends.', function='Plays a tone.',
                                relation='The alarm rings for the timer.', observation='A piezo speaker.')
         store.add_subtype(layer.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',

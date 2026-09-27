@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import settings
-from metaform.data import ROLES, Element, GraphPage, Layer, Notice, Store, Subtype
+from metaform.data import Element, GraphPage, Layer, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
 from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
@@ -100,7 +100,9 @@ def prompt(ctx: Context) -> str:
 Notices = list[dict[str, str]]
 JOIN_TEXT = ('purpose', 'function', 'ef', 'relation', 'verb', 'observation')
 SUBTYPE_TEXT = ('function', 'ef', 'relation', 'verb', 'observation')
-DESCRIPTOR = ('name', 'name_length', 'role')
+ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
+NAMED = ("An element is its address, name_length and role and holds no name: the project's name for a functionality "
+         "goes on the join, with intake_join name. The name was kept in the element's extra.")
 
 
 class Recording:
@@ -235,40 +237,48 @@ def start(ctx: Context) -> Any:
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, 'notices': notices}
 
 
-def _own_descriptor(element: Element | None, layer: Layer) -> Any:
-    if element is None:
-        return None
-    return next((found for found in element.descriptors if found.layer_id == layer.layer_id), None)
+def _own(element: Element | None, layer: Layer) -> bool:
+    """Whether the element's row is this intake's own, so describing it again changes it in place."""
+    return element is not None and element.layer_id == layer.layer_id
+
+
+def _described(element: Element) -> bool:
+    """Whether an element was described with intake element, not only recorded as the end of a join."""
+    return element.role is not None or element.name_length is not None or bool(element.refs)
 
 
 def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[tuple[str, str]] | None,
               extra: dict[str, Any] | None, notices: Notices) -> str | None:
-    """Record an element, or describe it again: the fields given replace the ones it had, the rest are kept."""
+    """Record an element, or describe it again: the fields given replace the ones it had, the rest are kept.
+
+    An element is its address, name_length and role, STORE-009. A name given for it is kept in its extra with a
+    notice: the project's name for a functionality goes on the join, MAP-020 and BASE-044.
+    """
     current = rec.store.element(address, raw=True)
-    own = _own_descriptor(current, rec.layer)
+    own = _own(current, rec.layer)
     role = given.get('role')
-    if role is None and (own is None or own.role is None):
+    if role is None and (not own or current is None or current.role is None):
         notices.append({'where': 'role', 'message': 'role is missing; the element was stored without a role.'})
-    if own is None:
-        made = rec.store.add_element(rec.layer.name, address, name=given.get('name'),
-                                     name_length=given.get('name_length'), role=role, refs=refs or (), extra=extra)
+    name = given.get('name')
+    if name is not None:
+        kept = extra if extra is not None else (current.extra if own and current is not None else None)
+        extra = {**(kept or {}), 'name': name}
+        notices.append({'where': 'name', 'message': NAMED})
+    if not own:
+        made = rec.store.add_element(rec.layer.name, address, name_length=given.get('name_length'), role=role,
+                                     refs=refs or (), extra=extra)
         _note(notices, made)
         if current is not None and extra is not None:
             _note(notices, rec.store.edit(current.element_id, {'extra': extra}))
         return getattr(made, 'element_id', None)
     assert current is not None
-    if role is not None and role not in ROLES:
-        notices.append({'where': 'role', 'message': f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as '
-                                                    'given.'})
-    known = {'name': own.name, 'name_length': own.name_length, 'role': own.role}
-    merged = {key: value for key, value in {**known, **{key: given[key] for key in DESCRIPTOR
-                                                        if given.get(key) is not None}}.items() if value is not None}
-    changes: dict[str, Any] = {'value': {'descriptor': merged}}
+    changes: dict[str, Any] = {key: given[key] for key in ('name_length', 'role') if given.get(key) is not None}
     if refs is not None:
         changes['refs'] = refs
-    _note(notices, rec.store.edit(own.item_id, changes))
     if extra is not None:
-        _note(notices, rec.store.edit(current.element_id, {'extra': extra}))
+        changes['extra'] = extra
+    if changes:
+        _note(notices, rec.store.edit(current.element_id, changes))
     return current.element_id
 
 
@@ -298,7 +308,7 @@ def join(ctx: Context) -> Any:
     _missing(ctx, JOIN_TEXT, notices)
     receiver, provider = ctx.nouns['receiver'], ctx.nouns['provider']
     made = rec.store.add_join(rec.layer.name, receiver, provider,
-                              **{name: ctx.nouns.get(name) for name in (*JOIN_TEXT, 'non_goal')},
+                              **{name: ctx.nouns.get(name) for name in ('name', *JOIN_TEXT, 'non_goal')},
                               type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra)
     _note(notices, made)
     return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
@@ -330,19 +340,18 @@ def _map(graph: GraphPage, layer: Layer) -> dict[str, Any]:
     undescribed: list[str] = []
     for placed in graph.elements:
         found = placed.element
-        own = _own_descriptor(found, layer)
-        if own is None:
+        if not _described(found):
             undescribed.append(found.address)
-        elements.append({'id': found.element_id, 'address': found.address, 'role': found.role, 'name': found.name,
-                         'name_length': found.name_length, 'refs': _refs(own.refs if own else ()),
+        elements.append({'id': found.element_id, 'address': found.address, 'short_name': found.short_name,
+                         'role': found.role, 'name_length': found.name_length, 'refs': _refs(found.refs),
                          'extra': found.extra})
     joins = [{'id': held.join_id, 'receiver': held.receiver_address, 'provider': held.provider_address,
-              'type': held.type, **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')},
+              'type': held.type, 'name': held.name, **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')},
               'refs': _refs(held.refs), 'extra': held.extra}
              for held in graph.joins]
     inside: list[Subtype] = [item for held in graph.joins for item in held.subtypes]
-    subtypes = [{'id': item.subtype_id, 'join': item.join_id, 'address': item.address, 'role': item.role,
-                 'name': item.name, 'name_length': item.name_length,
+    subtypes = [{'id': item.subtype_id, 'join': item.join_id, 'address': item.address, 'short_name': item.short_name,
+                 'role': item.role, 'name': item.name, 'name_length': item.name_length,
                  **{name: getattr(item, name) for name in SUBTYPE_TEXT}, 'refs': _refs(item.refs),
                  'extra': item.extra} for item in inside]
     return {'elements': elements, 'joins': joins, 'subtypes': subtypes, 'undescribed': undescribed}
@@ -379,7 +388,7 @@ def edit(ctx: Context) -> Any:
         changes['name_length'] = _whole(ctx.nouns['name_length'])
     current = target.element(thing, raw=True)
     if current is not None and found is not None:
-        given = {key: changes.pop(key) for key in DESCRIPTOR if key in changes}
+        given = {key: changes.pop(key) for key in ELEMENT_FIELDS if key in changes}
         if given or refs is not None or extra is not None:
             _describe(found, current.address, {**given, 'role': given.get('role')}, refs, extra, notices)
             notices[:] = [notice for notice in notices if not notice['message'].startswith('role is missing')]
@@ -403,10 +412,6 @@ def remove(ctx: Context) -> Any:
     target = found.store if found is not None else store
     thing = ctx.nouns['id']
     current = target.element(thing, raw=True)
-    if current is not None and found is not None:
-        own = _own_descriptor(current, found.layer)
-        if own is not None:
-            target.remove(own.item_id)
     _note(notices, target.remove(current.element_id if current is not None else thing))
     return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
 
@@ -428,7 +433,8 @@ def finish(ctx: Context) -> Any:
         names = recorded['undescribed']
         notices.append({'where': 'undescribed', 'message': f'{", ".join(names)} {"was" if len(names) == 1 else "were"} '
                                                            'recorded as the end of a join but never described with '
-                                                           'intake element; stored without a role or a name.'})
+                                                           'intake element; stored without a role or a '
+                                                           'name_length.'})
     _note(notices, found.store.finish(found.layer.name))
     if not found.active:
         previous = store.active_metaform()
@@ -543,12 +549,15 @@ MODULE = Module(
                     Noun('id', "The result's generated id.", required=False))),
         Verb('element', element, 'Record one element, or describe again one already recorded.',
              nouns=(Noun('address', "The element's namespace address, its identity."),
-                    *_nouns('role', 'name', 'name_length', 'refs', 'extra'))),
+                    *_nouns('role', 'name_length', 'refs', 'extra'),
+                    Noun('name', "An element holds no name: it is its address, name_length and role. The project's "
+                                 'name for a functionality goes on the join, with intake_join name. Given here, it is '
+                                 "kept in the element's extra.", required=False))),
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
              nouns=(Noun('receiver', 'The namespace address of the Vested Entity whose Operative Purpose this join '
                                      'states.'),
                     Noun('provider', 'The namespace address of the Providing Element.'),
-                    *_nouns('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type',
+                    *_nouns('name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type',
                             'refs', 'extra'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join.', nouns=SUBTYPE_NOUNS),
         Verb('show', show, 'The intake being recorded, whole, with the ids to edit or remove.'),

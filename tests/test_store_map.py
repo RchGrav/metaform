@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from metaform.data import Node, StoreError
-from storekit import diff, dump, knowledge, memory, small_map, store_file, values
+from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -115,13 +115,71 @@ def test_an_item_attached_to_an_element_reads_back_after_it_is_removed_and_recor
 
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('MAP-015')
-def test_an_intake_element_keeps_name_length_and_role_in_its_descriptor(home, store):
-    small_map(store)
+@pytest.mark.req('MAP-012')
+def test_an_element_is_its_address_name_length_and_role(home, store):
+    """Rich, 2026-09-27: the namespace address is the name index, the element was meant to be only its address and
+    name_length, and roles stay on the element; its proper noun is its address read backward through name_length."""
+    knowledge(store, 'first')
+    before = dump(store_file(home, store))
+    with store.atomic():
+        layer = intake(store)
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE', refs=[('path', 'src/main.c')])
+    changed = diff(before, dump(store_file(home, store)))
+    assert changed['elements'] == (1, 0) and changed['refs'] == (1, 0) and 'items' not in changed
     element = store.element('code.timer.kitchen')
-    assert (element.name, element.name_length, element.role) == ('kitchen timer', 2, 'DE')
-    assert element.descriptors[0].layer == 'intake-1'
+    assert (element.address, element.name_length, element.role, element.short_name, element.reading) == (
+        'code.timer.kitchen', 2, 'DE', 'kitchen timer', 'kitchen timer code')
+    assert [(ref.key, ref.value) for ref in element.refs] == [('path', 'src/main.c')]
+    assert not {'name', 'descriptors'} & set(element.to_dict())
     columns = {row[1] for row in sqlite3.connect(store_file(home, store)).execute('PRAGMA table_info(elements)')}
-    assert not {'name', 'name_length', 'role'} & columns
+    assert {'name_length', 'role'} <= columns and 'name' not in columns
+
+
+@pytest.mark.req('STORE-009')
+@pytest.mark.req('MAP-017')
+@pytest.mark.req('BASE-044')
+def test_an_element_a_knowledge_layer_adds_carries_no_role_and_keeps_a_given_one_in_its_extra(store):
+    layer = knowledge(store, 'notes')
+    made = store.add_element(layer.name, 'code.cache.page', name_length=2, role='SE')
+    assert (made.name_length, made.role, made.extra) == (2, None, {'role': 'SE'})
+    assert [notice.where for notice in made.notices] == ['role']
+    assert store.element('code.cache.page', raw=True).short_name == 'page cache'
+
+
+@pytest.mark.req('STORE-009')
+@pytest.mark.req('BASE-044')
+def test_an_element_another_layer_holds_keeps_its_own_name_length_and_role(home, store):
+    small_map(store)
+    notes = knowledge(store, 'notes')
+    before = dump(store_file(home, store))
+    again = store.add_element(notes.name, 'code.timer.kitchen', name_length=1, role='SE', refs=[('path', 'x.c')])
+    assert again.existing is True and again.differs is True
+    assert (again.name_length, again.role, again.short_name) == (2, 'DE', 'kitchen timer')
+    assert [notice.where for notice in again.notices] == ['name_length', 'role', 'refs']
+    assert all('intake-1' in notice.message for notice in again.notices)
+    assert diff(before, dump(store_file(home, store))) == {}
+    same = store.add_element(notes.name, 'code.timer.kitchen', name_length=2, role='DE')
+    assert same.existing is True and same.differs is False and same.notices == ()
+
+
+@pytest.mark.req('STORE-010')
+@pytest.mark.req('MAP-020')
+def test_a_join_carries_the_projects_name_for_its_functionality(home, store):
+    """Rich, 2026-09-27: the project's own name for a functionality goes on the join, which speaks to the artifact."""
+    layer = knowledge(store, 'named')
+    store.add_element(layer.name, 'code.a')
+    store.add_element(layer.name, 'code.b')
+    named = store.add_join(layer.name, 'code.a', 'code.b', name='the b service', purpose='p', function='f',
+                           relation='B serves A.', observation='o')
+    plain = store.add_join(layer.name, 'code.b', 'code.a', purpose='q', function='g', relation='A serves B.',
+                           observation='o')
+    assert (named.name, plain.name) == ('the b service', None)
+    assert [join.name for join in store.joins('code.a', raw=True).results] == ['the b service']
+    assert [join.name for join in store.joins('code.a', as_='provider', raw=True).results] == [None]
+    store.edit(plain.join_id, {'name': 'the a service'})
+    assert [join.name for join in store.joins('code.a', as_='provider', raw=True).results] == ['the a service']
+    columns = {row[1] for row in sqlite3.connect(store_file(home, store)).execute('PRAGMA table_info(joins)')}
+    assert 'name' in columns
 
 
 @pytest.mark.req('STORE-010')
@@ -237,11 +295,12 @@ def test_a_join_reads_back_every_field_as_written(store):
     layer = knowledge(store, 'full')
     store.add_element(layer.name, 'code.a')
     store.add_element(layer.name, 'code.b')
-    store.add_join(layer.name, 'code.a', 'code.b', purpose='the why', function='the how', relation='B serves A.',
-                   observation='what is there', non_goal='not this', refs=[('path', 'a.c'), ('doc', 'README')])
+    store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='the why', function='the how',
+                   relation='B serves A.', observation='what is there', non_goal='not this',
+                   refs=[('path', 'a.c'), ('doc', 'README')])
     join = store.joins('code.a', raw=True).results[0]
-    assert (join.type, join.purpose, join.function, join.relation, join.observation, join.non_goal) == (
-        'purpose', 'the why', 'the how', 'B serves A.', 'what is there', 'not this')
+    assert (join.type, join.name, join.purpose, join.function, join.relation, join.observation, join.non_goal) == (
+        'purpose', 'b', 'the why', 'the how', 'B serves A.', 'what is there', 'not this')
     assert [(ref.key, ref.value) for ref in join.refs] == [('path', 'a.c'), ('doc', 'README')]
 
 

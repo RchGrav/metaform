@@ -56,9 +56,10 @@ def mapped(run, tmp_path):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
                             provenance={'module': 'intake'}, ready=True)
-        store.add_element(layer.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
-        store.add_element(layer.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
-        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
+        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
+                       purpose='Get attention.',
                        function='Plays a tone.', relation='The alarm rings.', observation='A piezo.')
     return folder
 
@@ -400,10 +401,11 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     async def call(client, init):
         names = set(await tool_names(client))
         started = await client.call_tool('intake_start', {'model': 'claude', 'role': 'intake agent'})
-        await client.call_tool('intake_element', {'address': 'code.timer.kitchen', 'role': 'DE',
-                                                  'name': 'kitchen timer', 'name_length': 2,
-                                                  'refs': [{'key': 'path', 'value': 'src/main.c'}]})
-        made = await client.call_tool('intake_join', {'receiver': 'code.timer.kitchen',
+        described = await client.call_tool('intake_element', {'address': 'code.timer.kitchen', 'role': 'DE',
+                                                              'name': 'kitchen timer', 'name_length': 2,
+                                                              'refs': [{'key': 'path', 'value': 'src/main.c'}]})
+        named = json.loads(text(described)[-1])['notices']
+        made = await client.call_tool('intake_join', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
                                                       'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
                                                       'function': 'Rings.', 'ef': 'Encounter', 'relation': 'r',
                                                       'verb': 'rings', 'observation': 'o'})
@@ -413,17 +415,20 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                   'observation': 'o', 'role': 'SE'})
         shown = json.loads(text(await client.call_tool('intake_show', {}))[-1])
         finished = json.loads(text(await client.call_tool('intake_finish', {'report': 'Fine.'}))[-1])
-        return names, started.is_error, shown, finished
-    names, error, shown, finished = session(home, folder, call)
+        return names, started.is_error, shown, finished, named, described.is_error
+    names, error, shown, finished, named, described_error = session(home, folder, call)
     assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_show', 'intake_edit',
             'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
-    assert error is False
+    assert error is False and described_error is False
+    assert [notice['where'] for notice in named] == ['name'] and 'join' in named[0]['message']
+    assert [row['name'] for row in shown['joins']] == ['countdown alarm']
     assert [(row['address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.timer.kitchen', 'DE')]
     assert shown['undescribed'] == ['code.alarm.audible'] and len(shown['subtypes']) == 1
     assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (2, 1, 1, 1)
     kitchen = Store('fresh').element('code.timer.kitchen')
-    assert [(ref.key, ref.value) for ref in kitchen.descriptors[0].refs] == [('path', 'src/main.c')]
+    assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
+    assert (kitchen.short_name, kitchen.extra) == ('kitchen timer', {'name': 'kitchen timer'})
 
 
 @pytest.mark.req('VIEW-018')

@@ -179,7 +179,7 @@ def test_reading_a_metaform_that_was_never_written_leaves_no_store(home, store):
 def test_a_new_metaform_starts_empty_and_the_old_one_is_kept_whole(home, store):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False, provenance={'module': 'intake'}, ready=True)
-        element = store.add_element(layer.name, 'code.engine', name='engine', role='DE')
+        element = store.add_element(layer.name, 'code.engine', name_length=1, role='DE')
     main = store.active_metaform()
     assert main.name == 'main'
     main_file = home / 'projects' / 'proj' / 'metaforms' / main.metaform_id / 'store.sqlite3'

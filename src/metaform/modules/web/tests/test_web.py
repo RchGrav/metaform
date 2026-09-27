@@ -177,11 +177,12 @@ def build(store):
     with store.atomic():
         intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                              hideable=False, provenance=PROVENANCE, ready=True)
-        store.add_element(intake.name, 'exterior.cook', name='cook', name_length=1, role='VE')
-        store.add_element(intake.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
-        store.add_element(intake.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
-        store.add_element(intake.name, 'code.gone', name='gone', name_length=1, role='SE')
-        outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', purpose='Know when food is done.',
+        store.add_element(intake.name, 'exterior.cook', name_length=1, role='VE')
+        store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(intake.name, 'code.alarm.audible', name_length=2, role='SE')
+        store.add_element(intake.name, 'code.gone', name_length=1, role='SE')
+        outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', name='dish timer',
+                               purpose='Know when food is done.',
                                function='Counts down and rings.', ef='Function', relation='The timer tells the cook.',
                                observation='One countdown per dish.')
         store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
@@ -189,18 +190,18 @@ def build(store):
                        observation='A piezo.')
         store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
                           ef='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
-                          name='tick loop', name_length=2, role='SE')
+                          name='one-second tick', name_length=2, role='SE')
     store.add_work(Node('element', 'code.timer.kitchen'), 'broken', note='drifts', task='hold the tick to one second')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
-    store.add_element('notes', 'code.timer.kitchen.display', name='display', name_length=1)
+    store.add_element('notes', 'code.timer.kitchen.display', name_length=1)
     store.add_join('notes', 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='Show the time left.',
                    function='Reports the time left.', relation='The timer feeds the display.', observation='LCD')
     store.add_item('notes', Node('element', 'code.timer.kitchen'), 'keep the loop small')
     store.add_item('notes', Node('element', 'code.gone'), 'the loop drifts here')
-    store.add_element('extra', 'code.alarm.audible.loud', name='loud', name_length=1)
+    store.add_element('extra', 'code.alarm.audible.loud', name_length=1)
     store.add_item('extra', Node('element', 'code.alarm.audible'), 'louder is better')
-    store.add_element('secret', 'code.secret', name='secret', name_length=1)
+    store.add_element('secret', 'code.secret', name_length=1)
     for name in KNOWLEDGE:
         store.finish(name)
     store.mask('code.alarm', 'extra')
@@ -272,7 +273,7 @@ def test_each_read_endpoint_returns_what_its_store_read_returns_in_context_and_r
                                                             'target=element:code.alarm.audible')[1]['layers']]
     status, body = api(web, '/api/node?project=proj&target=element:code.timer.kitchen&layers=notes')
     assert body == plain(Store('proj', toggled=['notes']).node(kitchen))
-    assert body != api(web, '/api/node?project=proj&target=element:code.timer.kitchen&layers=')[1]
+    assert body != api(web, '/api/node?project=proj&target=element:code.timer.kitchen&layers=intake-1')[1]
     assert api(web, '/api/roots?project=nobody')[0] == 404
 
 
@@ -805,6 +806,35 @@ def test_clicking_a_subtype_or_a_join_in_3d_shows_that_object_and_the_2d_map_hol
     assert problems == []
 
 
+@pytest.mark.req('VIEW-009')
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-016')
+@pytest.mark.req('MAP-012')
+@pytest.mark.req('MAP-020')
+def test_an_element_and_a_subtype_are_named_by_their_short_name_and_a_join_by_its_own_name(run, web, mapped, browser):
+    """Rich, 2026-09-27: the namespace address is the name index, so an element's name is its address read through
+    name_length; the project's own name for a functionality is on the join, and shows wherever the join does."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    expected, at, inside = keys_of(web)
+    outer = next(join for join in expected['joins'] if join['subtypes'])
+    assert outer['name'] == 'dish timer'
+    page.evaluate(f'window.metaform.click3d("p:{outer["join_id"]}")')
+    assert page.text_content('#p-object h2') == 'dish timer'
+    page.evaluate(f'window.metaform.click3d("{inside["code.loop.tick"]}")')
+    assert page.text_content('#p-object h2') == 'tick loop'
+    assert 'one-second tick' in page.inner_text('#p-object')
+    page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
+    assert page.text_content('#p-object h2') == 'kitchen timer'
+    assert 'dish timer' in page.inner_text('#p-object')
+    cook = at['exterior.cook']
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    page.wait_for_function('() => document.querySelector("#map2d").textContent.includes("dish timer")')
+    assert problems == []
+
+
 def box_of(page, address):
     return page.evaluate(f"""() => {{
         const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === '{address}');
@@ -945,7 +975,7 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     from metaform.data import Store
     store = Store('proj')
     for name in ('dial', 'buzzer', 'battery'):  # enough elements that the map runs top to bottom, as a real one does
-        store.add_element('notes', f'code.timer.kitchen.{name}', name=name, name_length=1)
+        store.add_element('notes', f'code.timer.kitchen.{name}', name_length=1)
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, subtypes = keys_of(web)

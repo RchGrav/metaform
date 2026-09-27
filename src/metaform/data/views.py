@@ -14,10 +14,10 @@ from typing import Any, cast
 
 from . import corrections, prompts
 from .corrections import METAFORM_KINDS
-from .ids import decode_extra, descriptor_of
+from .ids import decode_extra
 from .names import reading, short_name
-from .records import (Descriptor, Element, Item, Join, Layer, Node, Notice, Op, Property, Provenance, Ref, Report,
-                      Subtype, Version, VersionRef, WorkRecord)
+from .records import (Element, Item, Join, Layer, Node, Notice, Op, Property, Provenance, Ref, Report, Subtype, Version,
+                      VersionRef, WorkRecord)
 from .rows import (address_of, layer_name, node_address, open_work, read_refs, target_current, whole_number)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
@@ -34,11 +34,8 @@ def element_shows(res: Resolver, layer_id: str, address: str) -> bool:
 
 
 def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, LayerRow] | None = None) -> Element | None:
-    """An element with its descriptors; in context, only when its layer reaches its address.
-
-    Its name, name length and role come from its first descriptor, the intake's first; a role is shown only from a
-    descriptor of the metaform, since roles are the intake's classification, D48.
-    """
+    """An element as its current row holds it: its address, name_length and role, STORE-009, with its reading and its
+    short name, the address read through name_length, MAP-012; in context, only when its layer reaches its address."""
     current = tx.db.execute('SELECT c.address, e.* FROM current_elements c JOIN elements e ON e.row = c.row '
                             'WHERE c.element_id=?', (element_id,)).fetchone()
     if current is None:
@@ -47,28 +44,10 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     address = str(current['address'])
     if res is not None and not element_shows(res, str(current['layer_id']), address):
         return None
-    descriptors: list[Descriptor] = []
-    for row in tx.db.execute('SELECT c.item_id, i.* FROM current_items c JOIN items i ON i.row = c.row '
-                             "WHERE c.target_kind='element' AND c.target_id=?", (element_id,)):
-        given = descriptor_of(json.loads(str(row['value'])))
-        if given is None:
-            continue
-        if res is not None and not res.reaches(str(row['layer_id']), address):
-            continue
-        length = given.get('name_length')
-        name = given.get('name')
-        role = given.get('role')
-        descriptors.append(Descriptor(str(row['item_id']), str(row['layer_id']), known[row['layer_id']].name,
-                                      name if isinstance(name, str) else None,
-                                      length if whole_number(length) else None,
-                                      role if isinstance(role, str) else None, read_refs(tx.db, 'item', row['row'])))
-    descriptors.sort(key=lambda item: known[item.layer_id].kind != 'intake')
-    first = descriptors[0] if descriptors else None
-    role = next((item.role for item in descriptors if known[item.layer_id].kind in METAFORM_KINDS), None)
+    length = current['name_length'] if whole_number(current['name_length']) else None
     plan = tx.db.execute('SELECT 1 FROM plans WHERE element_id=?', (element_id,)).fetchone()
     return Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
-                   reading(address), short_name(address, first.name_length if first else None),
-                   first.name if first else None, first.name_length if first else None, role, tuple(descriptors),
+                   reading(address), short_name(address, length), length, current['role'],
                    read_refs(tx.db, 'element', current['row']), decode_extra(current['extra']),
                    state='plan' if plan else None, open_work=open_work(tx, 'element', element_id))
 
@@ -93,7 +72,7 @@ def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False, 
     receiver_address = address_of(tx, str(row['receiver']))
     return Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
-                row['purpose'], row['function'], row['ef'], row['relation'], row['verb'], row['observation'], row['non_goal'],
+                row['name'], row['purpose'], row['function'], row['ef'], row['relation'], row['verb'], row['observation'], row['non_goal'],
                 read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned,
                 open_work(tx, 'join', str(row['join_id'])))
 
@@ -112,8 +91,10 @@ def subtype(tx: Tx, row: Row, join_id: str, layers: dict[str, LayerRow], res: Re
     join_row = tx.db.execute('SELECT j.layer_id FROM current_joins c JOIN joins j ON j.row = c.row '
                              'WHERE c.join_id=?', (join_id,)).fetchone()
     layer_id = str(join_row[0]) if join_row is not None else str(row['layer_id'])
-    return Subtype(str(row['subtype_id']), join_id, layer_id, layers[layer_id].name, str(row['address']),
-                   reading(str(row['address'])), row['name'], row['name_length'], row['role'], row['function'],
+    address = str(row['address'])
+    length = row['name_length'] if whole_number(row['name_length']) else None
+    return Subtype(str(row['subtype_id']), join_id, layer_id, layers[layer_id].name, address, reading(address),
+                   short_name(address, length), row['name'], row['name_length'], row['role'], row['function'],
                    row['ef'], row['relation'], row['verb'], row['observation'], read_refs(tx.db, 'subtype', row['row']),
                    decode_extra(row['extra']), open_work(tx, 'subtype', str(row['subtype_id'])))
 

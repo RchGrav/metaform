@@ -114,8 +114,8 @@ def hold_address(db: sqlite3.Connection, address: str, element_id: str) -> None:
 
 def insert_current(db: sqlite3.Connection, kind: str, thing_id: str, row: sqlite3.Row, moved: int) -> None:
     if kind == 'element':
-        db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, ?)',
-                   (thing_id, row['row'], row['address'], moved))
+        db.execute('INSERT INTO current_elements(element_id, row, address, role, moved) VALUES (?, ?, ?, ?, ?)',
+                   (thing_id, row['row'], row['address'], row['role'], moved))
         hold_address(db, str(row['address']), thing_id)
     elif kind == 'join':
         db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
@@ -158,10 +158,10 @@ def _write_relocation_removals(db: sqlite3.Connection, layer_id: str, position: 
                 continue
             if db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (join_id, layer_id)).fetchone():
                 continue
-            db.execute('INSERT INTO joins(join_id, layer_id, type, receiver, provider, purpose, function, ef, relation, '
-                       'verb, observation, non_goal, extra, stack_at, op, reason, evidence) '
-                       'SELECT join_id, ?, type, receiver, provider, purpose, function, ef, relation, verb, observation, '
-                       "non_goal, extra, ?, 'remove', ?, ? FROM joins WHERE row=?",
+            db.execute('INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, function, ef, '
+                       'relation, verb, observation, non_goal, extra, stack_at, op, reason, evidence) '
+                       'SELECT join_id, ?, type, receiver, provider, name, purpose, function, ef, relation, verb, '
+                       "observation, non_goal, extra, ?, 'remove', ?, ? FROM joins WHERE row=?",
                        (layer_id, position, reason, RELOCATION, join_row))
             for subtype_id, subtype_row in db.execute('SELECT subtype_id, row FROM current_subtypes WHERE join_id=?',
                                                       (join_id,)).fetchall():
@@ -373,6 +373,6 @@ def preview(db: sqlite3.Connection, layer_id: str) -> list[PeelChange]:
                 continue
             for item in db.execute('SELECT i.item_id, i.value, i.layer_id FROM current_items c JOIN items i '
                                    'ON i.row = c.row WHERE c.target_kind=? AND c.target_id=?', (kind, thing)).fetchall():
-                if kinds.get(str(item[2])) not in METAFORM_KINDS:  # an element's own name and role go with it
+                if kinds.get(str(item[2])) not in METAFORM_KINDS:  # the metaform's own items go with the thing
                     changes.append(PeelChange('item', str(item[0]), _text(str(item[1])), effect))
     return changes

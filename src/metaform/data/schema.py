@@ -1,6 +1,9 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 3.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 4.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
+An element is its address, name_length and role, STORE-009; the project's name
+for a functionality is on the join, STORE-010. `current_elements` carries the
+current row's role, so the map's entry is one read on `current_elements_by_role`.
 `address_elements` remembers the element id of every address the store has held,
 so an element recorded again at its address is the same element, STORE-009.
 `work` holds the work records, the condition of an object kept apart from the
@@ -89,19 +92,23 @@ CREATE TABLE IF NOT EXISTS elements(
   row        INTEGER PRIMARY KEY,
   element_id TEXT NOT NULL REFERENCES element_ids(element_id),
   layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
-  address    TEXT NOT NULL REFERENCES types(address),
-  extra      TEXT,
-  op         TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
-  reason     TEXT,
-  evidence   TEXT,
+  address     TEXT NOT NULL REFERENCES types(address),
+  name_length INTEGER,
+  role        TEXT,
+  extra       TEXT,
+  op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
+  reason      TEXT,
+  evidence    TEXT,
   UNIQUE(element_id, layer_id)
 );
 CREATE TABLE IF NOT EXISTS current_elements(
   element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
   row        INTEGER NOT NULL UNIQUE REFERENCES elements(row),
   address    TEXT NOT NULL UNIQUE,
+  role       TEXT,
   moved      INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS current_elements_by_role ON current_elements(role, element_id);
 CREATE TABLE IF NOT EXISTS address_elements(
   address    TEXT PRIMARY KEY REFERENCES types(address),
   element_id TEXT NOT NULL REFERENCES element_ids(element_id)
@@ -116,6 +123,7 @@ CREATE TABLE IF NOT EXISTS joins(
   type        TEXT NOT NULL DEFAULT 'purpose',
   receiver    TEXT NOT NULL REFERENCES element_ids(element_id),
   provider    TEXT NOT NULL REFERENCES element_ids(element_id),
+  name        TEXT,
   purpose     TEXT,
   function    TEXT,
   ef          TEXT CHECK(ef IN ('Function','Encounter')),
@@ -280,15 +288,6 @@ CREATE TABLE IF NOT EXISTS unapplied(
   reason   TEXT NOT NULL,
   PRIMARY KEY(layer_id, kind, thing_id)
 );
-
-CREATE TABLE IF NOT EXISTS element_roles(
-  element_id TEXT NOT NULL,
-  layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
-  role       TEXT NOT NULL,
-  PRIMARY KEY(element_id, layer_id)
-);
-CREATE INDEX IF NOT EXISTS element_roles_by_role ON element_roles(layer_id, role);
-CREATE INDEX IF NOT EXISTS element_roles_by_layer ON element_roles(layer_id, element_id);
 
 CREATE TABLE IF NOT EXISTS work(
   row         INTEGER PRIMARY KEY,

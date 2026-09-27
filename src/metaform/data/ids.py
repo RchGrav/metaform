@@ -33,12 +33,6 @@ def as_list(value: Any) -> list[Any] | None:
     return cast(list[Any], value) if isinstance(value, list) else None
 
 
-def descriptor_of(value: Any) -> dict[str, Any] | None:
-    """The descriptor an item value holds, `{"descriptor": {...}}`, STORE-009, or None."""
-    held = as_object(value)
-    return None if held is None else as_object(held.get('descriptor'))
-
-
 def check_address(address: object, layer: str = '<layer>') -> str:
     if not isinstance(address, str) or not ADDRESS.fullmatch(address) or is_id(address):
         raise StoreError(f'{address!r} is not an address: write dotted lowercase segments of letters, digits and '

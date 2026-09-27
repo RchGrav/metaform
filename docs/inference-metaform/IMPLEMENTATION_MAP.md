@@ -84,7 +84,7 @@ Relative source links assume these documents are placed at `docs/inference-metaf
 | Mechanism | Project correspondence | Existing support / implementation boundary |
 |---|---|---|
 | Functional construction | `code.intake`; internal `document.procedure.intake` and `code.writer.submission` | Served Canonical Intake, recorded one object per call into a building intake layer, read back and proofed, then finished. |
-| Type and project naming | Element addresses, descriptors, namespace prefixes | Computed full/short readings and separately retained project names. |
+| Type and project naming | Element addresses and `name_length`, join names, namespace prefixes | Computed full/short readings as the element's name; the project's names retained on joins. |
 | Reified relationships | Joins and internal subtypes in `code.store.graph` | Independent identities and node-targeted items. |
 | Exact semantic identity | Provider-side `Store.identity` read | Retrieves receiving joins; no semantic equivalence prover or supplied formal resolution mapping. |
 | Knowledge selection | Internal `code.resolver.layer` | Starting set, prefix select/mask, hidden-source closure, separate corrections. |
@@ -104,18 +104,18 @@ Relative source links assume these documents are placed at `docs/inference-metaf
 
 The public `Store` delegates into the data package. The core record definitions and SQLite schema distinguish elements, joins, subtypes, items, properties, refs, layers, provenance, selections, findings, challenges, plans, and current/correction views.
 
-An element has an identity and a namespace address. Its descriptor is an item carrying the project `name`, `name_length`, role, and associated refs. Address identity and a descriptor's wording are therefore separate. A join identifies its receiver and provider and carries `purpose`, `function`, `ef`, `relation`, `observation`, and optional additional fields. An internal subtype belongs to a containing join and has its own identity and functional description, without a separate parent-level purpose.
+An element is its identity, its namespace address, its `name_length` and its role, with refs linked to it; its name is its address read through `name_length`. A join identifies its receiver and provider and carries the project's `name` for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, and optional additional fields. An internal subtype belongs to a containing join and has its own identity and functional description, without a separate parent-level purpose.
 
 | Source | Symbols and relevant behavior |
 |---|---|
 | [records.py](../../src/metaform/data/records.py) | Record types, `Node`, elements, joins, subtypes, items, properties, layer and context results. |
 | [schema.py](../../src/metaform/data/schema.py) | Tables and indices for stored records and their relationships. |
-| [writes.py:43-207](../../src/metaform/data/writes.py#L43-L207) | `add_element`, `add_join`, `add_subtype`; descriptor handling and dedicated `ef` fields. |
+| [writes.py:43-207](../../src/metaform/data/writes.py#L43-L207) | `add_element`, `add_join`, `add_subtype`; the element's `name_length` and role, the join's name, and dedicated `ef` fields. |
 | [writes.py:252-309](../../src/metaform/data/writes.py#L252-L309) | `add_item` targets a node; `add_property` attaches to an element. |
 | [names.py](../../src/metaform/data/names.py) | `reading`, `short_name`; reverse segments and expand underscores. |
 | [roots.json](../../src/metaform/data/roots.json) | Current five root types as data. |
 
-`short_name` uses the last `name_length` segments. For `code.system.plugin`, length 2 produces `plugin system`; the descriptor's project name is `module contract and loader`. A missing/false or overlong lookback returns the full reading in the helper. That fallback is implementation behavior, not a semantic judgment that a malformed name is a good type.
+`short_name` uses the last `name_length` segments. For `code.system.plugin`, length 2 produces `plugin system`, the element's name; the project's name for it, `module contract and loader`, belongs on its join. A missing/false or overlong lookback returns the full reading in the helper. That fallback is implementation behavior, not a semantic judgment that a malformed name is a good type.
 
 ### Relationship addressability
 

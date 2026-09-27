@@ -19,16 +19,18 @@ FIXTURE = json.loads((Path(__file__).parent / 'fixtures' / 'intake_timer.json').
 @pytest.mark.req('STORE-025')
 def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home, store, traced):
     small_map(store)
-    rows = dump(store_file(home, store))['element_roles']
-    assert len(rows) == 3
+    tables = dump(store_file(home, store))
+    assert 'element_roles' not in tables
+    assert sorted(row[3] for row in tables['current_elements']) == ['DE', 'SE', 'VE']
     traced.clear()
     roots = store.roots()
     lines = [line for _, plan in plans(home, store, traced) for line in plan]
-    assert any('element_roles_by_role' in line for line in lines)
+    assert any('current_elements_by_role' in line for line in lines)
     entry = {item.element.address: [join.provider_address for join in item.joins] for item in roots.entry}
     assert entry == {'stakeholder.cook.home': ['code.timer.kitchen'], 'code.timer.kitchen': ['code.alarm.audible']}
-    assert sorted((element.address, element.role) for element in roots.elements) == [
-        ('code.alarm.audible', 'SE'), ('code.timer.kitchen', 'DE'), ('stakeholder.cook.home', 'VE')]
+    assert sorted((element.address, element.role, element.short_name) for element in roots.elements) == [
+        ('code.alarm.audible', 'SE', 'audible alarm'), ('code.timer.kitchen', 'DE', 'kitchen timer'),
+        ('stakeholder.cook.home', 'VE', 'home cook')]
 
 
 @pytest.mark.req('STORE-025')
