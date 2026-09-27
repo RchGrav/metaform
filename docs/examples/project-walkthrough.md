@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reader guide](../guides/reading-a-metaform.md) · [Module-author guide](../guides/extending-metaform.md)
 
-This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json), imported as described in [Getting started](../guides/getting-started.md#inspect-the-supplied-project-map-without-a-new-intake). Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The inspection commands operate on the imported map.
+This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json), this repository's own map as it was recorded that day. Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The export is of an earlier version, schema version 1, which the current chassis does not import; the inspection commands are the reads that return these records from a map that holds them. In that export the project's names are descriptor items at the elements, where the current store holds them on the joins as `name`, and each subtype is its own row, where the current store holds a join of type `subtype` inside its parent join.
 
 ## 1. Begin from a receiving purpose
 

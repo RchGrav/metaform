@@ -42,7 +42,7 @@ Publishes `helloworld.greeted` with `{"name": ...}`. Subscribes to it to record 
 
 ## Work records
 
-A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'tbd', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Helloworld: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a tbd record is open and solid once it is done. Every element, join and subtype read carries `open_work`, the conditions of its open records.
+A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'tbd', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Helloworld: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a tbd record is open and solid once it is done. Every element and join read, a subtype join's included, carries `open_work`, the conditions of its open records.
 
 ## Layers
 

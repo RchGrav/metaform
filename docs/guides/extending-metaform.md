@@ -23,7 +23,7 @@ The first greeting prints `hello, world`; the second prints `HELLO, WORLD!`. Eac
 
 The implementation is [helloworld/__init__.py](../../src/metaform/modules/helloworld/__init__.py). It demonstrates a synchronous verb, an asynchronous verb, declared settings, a data-backed select setting, an event subscriber, module-owned data, a status hook, a Windows-specific verb, and a destructive operation with the contract's existing confirmation behavior. `helloworld forget --confirm` deletes the example's greeting history; it is not needed to follow this guide.
 
-The demonstration layer is `helloworld.greetings`, with holder element `code.module.helloworld`. In contrast, the original intake represents helloworld's contribution to the module-author purpose as the subtype `code.module.example`. Those are different records for different purposes.
+The demonstration layer is `helloworld.greetings`, with holder element `code.module.helloworld`. In contrast, the earlier map of this repository, the September 26 export in [docs/examples](../examples/project-metaform.json), holds helloworld's contribution to the module author's purpose at `code.module.example`, in a subtype join. Those are different records for different purposes.
 
 ## Start a module from the template
 
@@ -69,13 +69,13 @@ MODULE = Module(
 
 This example deliberately reuses the existing node read. It demonstrates how a new capability obtains the common context and store, not a replacement for the map module.
 
-Enable and call it against the supplied project map:
+Enable and call it against the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand), with a join id that `metaform map joins code.timer.kitchen as=provider` prints:
 
 ```sh
 metaform enable nodeview
 metaform help nodeview
-metaform nodeview show element:code.system.plugin
-metaform nodeview show join:d14bd3498b614dfbaf0754c99b28dba3
+metaform nodeview show element:code.timer.kitchen
+metaform nodeview show join:<join_id>
 ```
 
 Its MCP tool is `nodeview_show`, taking `node` and the usual context arguments such as `project`. A wheel-backed host uses the module contents in its wheel: rebuild and register the updated build to carry this module into that environment. A separately running server needs to discover the new module in its own environment; editing your source checkout does not rewrite an already built wheel.
@@ -143,7 +143,7 @@ The setting named `confirm` is not a persistent setting. It is the contract's on
 
 ## Use the graph and knowledge facilities directly
 
-The `Store` façade exposes the existing data operations to a module: functional records, node reads, scoped context, layer construction, items, properties, references, corrections, challenges, plans, and history. A module does not need to call another module's CLI to access those facilities.
+The `Store` façade exposes the existing data operations to a module: functional records, node reads, scoped context, layer construction, items, properties, references, work records, corrections, challenges, plans, and history. A module does not need to call another module's CLI to access those facilities.
 
 Helloworld's subscriber demonstrates a persistent contribution:
 
@@ -163,9 +163,11 @@ with store.atomic():
 
 The example's history read directly addresses its layer. General knowledge intended for ordinary selected context also follows the layer's building/finished lifecycle; `store.finish(name)` makes that contribution ready. Use node-local items for local values and `add_property` for branch-scoped knowledge. The layer variable describes what its values answer; provenance and `sources` connect a producer's output to its actual origin and inputs.
 
-Python `Store.add_join` and `Store.add_subtype` support the dedicated `ef` field. The current `map knowledge` CLI/MCP interface omits it. A module using the Python API receives the existing capability rather than inheriting that interface omission. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
+A module that records functional structure writes the same records the intake does. An element is its address, `name_length` and role: `store.add_element(layer, address, name_length=2, role='SE')`. The project's name for a functionality goes on the join: `store.add_join(layer, receiver, provider, name=..., purpose=..., function=..., ef='Function', relation=..., verb=...)`. A subtype join sits inside a parent join and holds an ordinary element: `store.add_subtype(layer, join_id, address, ...)`. `store.where(address)` reads one address with what relies on it and what it relies on. An element never moves; `store.edit` and `store.correct` move a join with `receiver`, `provider` or `parent`. Nothing is refused for its content: what does not fit is stored as given and the result carries `notices`.
 
-The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module that finds something in the specs and not built, broken, or cruft writes `store.add_work(Node('element', address), 'tbd', note='what and where', task='what it needs')`, changes it with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element, join and subtype read carries `open_work`. The web GUI draws a node ghostly while a `tbd` record is open and flashes it red while a `broken` one is. Helloworld's `todo` and `done` verbs show it.
+`Store.edit` and `Store.correct` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `op=correct` do not read them. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
+
+The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module that finds something in the specs and not built, broken, or cruft writes `store.add_work(Node('element', address), 'tbd', note='what and where', task='what it needs')`, changes it with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element and join read, a subtype join's included, carries `open_work`. The web GUI draws a node ghostly while a `tbd` record is open and flashes it red while a `broken` one is. Helloworld's `todo` and `done` verbs show it.
 
 The memory module is one consumer of node-addressed storage. Other modules can contribute their own layers without converting every finding into mutable memory. Conversely, memory's lack of revision history does not imply that corrections or prompt versions lack their own histories.
 

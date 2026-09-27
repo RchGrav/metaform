@@ -28,12 +28,12 @@ Started from template 0.2.0.
 - `absorb <join> <into>`: anneals: makes the join where an element provides a subtype join inside the parent's purpose join `into`, with the same `join_id` and every field; its purpose goes to its `extra`, and any other join that still names the element is listed in a notice and left as it is. An element whose only joins are subtype joins is no root and no node of the outer map. Tool `intake_absorb`.
 - `show`: the intake being recorded: whole, every element under `element_id` and `namespace_address`, every join under `join_id` with the subtype joins it holds under `subtypes`, and the addresses recorded only as the end of a join and never described; with `receiver=<namespace_address>`, only that receiver's joins, what they hold and the elements they name. Tool `intake_show`.
 - `edit <id>` and `remove <id>`: change or remove one recorded element, by `namespace_address` or `element_id`, or join, by `join_id`, a subtype join's included, while the intake is building. `receiver` and `provider` move a join, which keeps its `join_id`. An element cannot be moved: `namespace_address` given for an element is not applied, and the notice says to record the element at the new address and move its joins; on a subtype join it gives the join another element to hold, and `role` and `name_length` describe the element it holds. After the finish they write nothing and name the correction layer. Tools `intake_edit` and `intake_remove`.
-- `finish`: marks the layer ready, saves `report=` and `feedback=` as the intake layer's report and feedback files, and returns the layer, the project, the metaform, the counts of elements, joins held by receivers, subtype joins and refs, the count of open work records on them as `work`, and the notices. Tool `intake_finish`.
-
-The tools carry no condition field. What is in the specs and not built, broken, or cruft is a work record, apart from the map, written with `map_work` at any time, the intake agent's as it maps, MAP-046.
+- `finish`: marks the layer ready, saves `report=` and `feedback=` as the intake layer's report and feedback files, and returns the layer, the project, the metaform, the counts of elements, joins held by receivers, subtype joins and refs, the count of open work records on them as `work`, and the notices, which name any address recorded only as the end of a join and never described. Tool `intake_finish`.
 - `status`: whether the project has an intake, with the latest intake layer, and the intake being recorded. Tool `intake_status`. The status hook adds `Intake: complete` and `Start with: metaform map roots`, `Intake: being recorded` while one is, or `Intake: none yet` and the notice to delegate the intake.
 
-Nothing is refused for its content. What does not fit is stored as given and named in a notice by its field: a missing field is stored empty, a subtype join's purpose goes to its `extra`, a join end that names no element gets one in the intake layer, an `ef` other than `Function` or `Encounter` goes to `extra`, and an address out of form is stored as given. On the CLI `refs` and `extra` are JSON text.
+The tools carry no condition field. What is in the specs and not built, broken, or cruft is a work record, apart from the map, written with `map_work` at any time, the intake agent's as it maps, MAP-046.
+
+Nothing is refused for its content. What does not fit is stored as given and named in a notice by its field: a missing field is stored empty, a subtype join's purpose goes to its `extra`, a join end that names no element gets one in the intake layer, an `ef` other than `Function` or `Encounter` goes to `extra`, a ref whose key or value is not text is kept in the record's `extra` under `refs`, and an address out of form is stored as given. On the CLI `refs` and `extra` are JSON text; a `refs` value that is not a JSON array is read as a list holding that one ref.
 
 ## Settings
 
@@ -77,7 +77,9 @@ The same in both; the intake text travels inside the module.
 metaform intake prompt
 metaform intake start model=opus role="intake agent" id=my-result
 metaform intake element stakeholder.cook.home role=VE name_length=2
-metaform intake join stakeholder.cook.home code.timer.kitchen name="kitchen timer" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="The kitchen timer tells the cook." verb=tells observation="One countdown per dish."
+metaform intake element code.timer.kitchen role=DE name_length=2
+metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish."
+metaform intake subtype <the join_id intake join returned> code.loop.tick role=SE name_length=2 name="ticker" function="Subtracts one second from each running countdown." ef=Function relation="advances every running countdown" verb=advances
 metaform intake absorb <the join_id of a part's join> <the join_id of its parent's join>
 metaform intake show receiver=stakeholder.cook.home
 metaform intake finish report="The alarm pin is unconnected."

@@ -6,7 +6,7 @@ The **Inference Metaform** makes inferred functional understanding available for
 
 Its organizing question is: **what reasoning can be performed in advance to offset the reasoning an agent would otherwise have to perform while doing the work?** The typology, receiving-purpose relationships, Encounter propagation, knowledge layers, and project-grounded prompt lexicalization are connected answers to that question.
 
-This reference describes the whole system, including functionality described for construction as well as facilities already implemented. The [implementation map](IMPLEMENTATION_MAP.md) identifies the exact correspondence to the supplied repository snapshot. [Examples to collect](EXAMPLES_TO_COLLECT.md) identifies original traces that would make the mechanisms inspectable. [Ideas](IDEAS.md) contains separate proposals, not additions to the established design.
+This reference describes the whole system, including functionality described for construction as well as facilities already implemented. The [implementation map](IMPLEMENTATION_MAP.md) identifies the exact correspondence to the source on the `chassis` branch. [Examples to collect](EXAMPLES_TO_COLLECT.md) identifies original traces that would make the mechanisms inspectable. [Ideas](IDEAS.md) contains separate proposals, not additions to the established design.
 
 ## Contents
 
@@ -158,11 +158,13 @@ A join carries the receiving relationship's meaning, not merely two connected na
 |---|---|
 | Receiver | The entity whose purpose is served; implicit in the containing element in intake XML and explicit in stored joins. |
 | Provider | The element supplying the relevant EF. |
+| `name` | The project's own name for the functionality the join names, its canonical or informal name. |
+| `type` | `purpose` for a join a receiver holds; `subtype` for a subtype join inside a parent join. |
 | `purpose` | The receiver's active Operative Purpose. |
 | `function` | The descriptive EF supplied for this encounter. |
 | `ef` | `Function` or `Encounter`, identifying which reading is in use. |
-| `relation` | The artifact-specific relationship stated in active voice. |
-| `verb` | The one word the agent infers for `relation`'s verb. |
+| `relation` | The artifact-specific relationship, an active-voice fragment that starts with its third-person verb; its subject is the Providing Element when `ef` is Function and the Vested Entity when `ef` is Encounter. |
+| `verb` | The third-person verb `relation` starts with. |
 | `observation` | What is actually there: its condition, implementation, format, arrangement, or limitations. |
 | `non_goal` | An optional pertinent outcome the receiver is not seeking. |
 | `refs` | Additional references or logic, expressed as key/value records. |
@@ -178,7 +180,7 @@ The current intake distinguishes:
 | Role | Functional significance |
 |---|---|
 | Defining Element, DE | Its loss would prevent the AUE from remaining the same type. It supplies the defining function that serves the relevant outside VE. |
-| Supportive Element, SE | Its EF helps the DE serve that purpose. Weakness, replaceability, or room for improvement does not remove its supportive role. |
+| Substantial Element, SE | Its EF helps the DE serve the VE's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. |
 | Notable Element, NE | It expresses an essential demand, interface, specification, or requirement needed to understand what the system expects or depends on. |
 | Parametric | A tunable quality or quantity without its own functional name at this scope. It is not given a namespace node by this intake. |
 
@@ -243,9 +245,9 @@ The **type tree**, the **purpose graph**, and **internal subtype containment** e
 
 The type tree says how a functional type is situated among broader and narrower types. The purpose graph says who receives what and why. Internal subtype containment says which specific functional contributions have been absorbed into a parent join during convergence.
 
-For example, the project's `code.bus.event` is retained as an internal subtype in the join through which the plugin system serves the chassis. Its functional address is not rewritten into a fabricated lexical child of `code.system.plugin`. Private containment in a join and dotted namespace ancestry are different kinds of structure.
+For example, the September 26 map of this project retains `code.bus.event` as an internal subtype in the join through which the plugin system serves the chassis. Its functional address is not rewritten into a fabricated lexical child of `code.system.plugin`. Private containment in a join and dotted namespace ancestry are different kinds of structure.
 
-Sources: [name readings](../../src/metaform/data/names.py), [namespace rules](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L51-L94), and the [project graph index](IMPLEMENTATION_MAP.md#graph-index).
+Sources: [name readings](../../src/metaform/data/names.py), [namespace rules](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L50-L97), and the [project graph index](IMPLEMENTATION_MAP.md#graph-index).
 
 <a id="intake"></a>
 ## 5. Canonical Intake and construction of the form
@@ -256,13 +258,13 @@ The intake's wording is selected to elicit the right relationship without loadin
 
 This **Unloaded Definition** is deliberate semantic breadth. The prompt's definitions, examples, constraints, and recursive questions lead the model to identify a particular relationship in the artifact. The breadth is in the elicitation language; the resulting join supplies a concrete purpose, EF, relation, and observation.
 
-A downstream agent uses the collected understanding. It does not have to reenact the intake's wording to make use of a recorded join. Construction language, model inference, resulting data, and submission/storage are separate parts of the mechanism:
+A downstream agent uses the collected understanding. It does not have to reenact the intake's wording to make use of a recorded join. Construction language, model inference, resulting data, and recording/storage are separate parts of the mechanism:
 
 ```mermaid
 flowchart TB
     A["Canonical Intake wording and examples"] --> B["Model examines the artifact<br/>and infers its functional form"]
-    B --> C["Final elements and receiving joins"]
-    C --> D["Submission through the data interface"]
+    B --> C["Elements and receiving joins,<br/>each recorded as it is reasoned"]
+    C --> D["Intake tools, one object per call,<br/>read back and proofed, then finished"]
     D --> E["Stored, reusable understanding"]
 ```
 
@@ -311,13 +313,13 @@ graph TB
     intake -.holds.-> writer
 ```
 
-The project's current map uses this arrangement. `document.procedure.intake` and `code.writer.submission` are internal subtypes under the orchestrator's receiving join with `code.intake`. Their representation preserves distinct contributions while the parent functionality carries the receiving purpose.
+The September 26 map of this project uses this arrangement, recorded when the intake was still submitted whole. `document.procedure.intake` and `code.writer.submission` are internal subtypes under the orchestrator's receiving join with `code.intake`. Their representation preserves distinct contributions while the parent functionality carries the receiving purpose.
 
 ### Result shape
 
 The operative resource asks for a `result` root with its own generated id, a list of final elements, and receiver-owned joins. The result id supports later linkage to expansion material. The file does not require an internal self-reference to that id.
 
-The following is a **derived XML illustration using the current project's names and relationship shape**. Its shortened field content explains the nesting; it is not a claim of a newly executed intake or a replacement for the complete served prompt.
+The following is a **derived XML illustration using the September 26 map's names and relationship shape**, written in the resource's schema. Its shortened field content explains the nesting; it is not a claim of a newly executed intake or a replacement for the complete served prompt.
 
 ```xml
 <result id="illustration-intake-relationship">
@@ -328,14 +330,16 @@ The following is a **derived XML illustration using the current project's names 
       <joins>
         <join type="purpose" provider="code.intake"
               purpose="Retain the project's functional map as a whole base."
-              function="Serve the intake and store its submitted final form."
+              function="Serve the intake and record the map as it is reasoned."
               ef="Function"
-              relation="The intake module gives the orchestrator a stored map."
+              relation="gives the orchestrator a stored functional map"
+              verb="gives"
               observation="The module serves a resource and writes an intake layer.">
           <join provider="document.procedure.intake"
                 function="Direct the agent's functional examination."
-                ef="Encounter"
-                relation="The Canonical Intake instructs the intake agent."
+                ef="Function"
+                relation="instructs the intake agent in the functional examination"
+                verb="instructs"
                 observation="The procedure is a packaged XML resource.">
             <element namespace_address="document.procedure.intake"
                      name_length="2" role="NE">
@@ -359,13 +363,15 @@ The following is a **derived XML illustration using the current project's names 
 
 The global list does not repeat `document.procedure.intake`. The join's provider reference and its contained subtype element use the same namespace value. The recorded project name remains distinct from that address.
 
+The agent records this shape with the intake tools, one object per call: `intake_element` for each element, `intake_join` for the purpose join, and `intake_subtype` with `into`, the join's id, for the subtype join and the element it holds. The schema's `<name>` on an element is the author's wording; the store holds an element as its address, `name_length` and role, keeps a name sent with `intake_element` in the element's extra with a notice, and takes the project's name for a functionality on the join as `name`, [C12](IMPLEMENTATION_MAP.md#c12).
+
 ### Elicitation, recording, and preservation
 
 The current module serves the stored intake text with controlled target and project substitutions, followed by its recording instructions and the report/debug requests selected for the call. Tests compare the resource and its specifications copy. An explicit `intake_file` setting can select another operative file.
 
 The intake is recorded as it is reasoned. The agent starts it, then records each element, join and subtype join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context; it anneals with one call per join, which places a join inside its parent's join as a subtype join. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back, whole or one receiver at a time, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
 
-Each call stores its object in a building intake layer, retaining content with notices where fields do not fit. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
+Each call stores its object in a building intake layer, retaining content with notices where fields do not fit; nothing is refused for its content. The tools carry no condition field: what the agent finds in the specifications and not built, broken, or cruft it writes as a work record, apart from the map. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
 
 A finished intake layer is immutable and nonhideable. A subsequent intake is recorded in a new Metaform rather than overwriting the previous base. The author's intention to lock in the operative method on release concerns preservation of its behavior. The current preservation mechanism is exact resource text and controlled substitution; the [implementation map](IMPLEMENTATION_MAP.md#correspondence) records the boundary of the separately discussed encoding idea.
 
@@ -510,7 +516,7 @@ A new memory entity can establish an element that the map did not already contai
 
 **Derived illustration using a current relationship:** the MCP server receives module declarations in order to expose tools. A note that a declaration field is missing from the generated input schema is specific to that receiving relationship. Attaching it only to a general module node loses the distinction between a correct Python operation and an incomplete tool surface.
 
-The current graph's MCP/plugin join is `894f333275494a01be94259971de55c1`. An item can target that join and retain the explanation and source references. Later reasoning about MCP can encounter the note through the relationship. Reasoning about package construction need not treat it as a defect in a different receiving contract.
+In the September 26 map, the MCP/plugin join is `894f333275494a01be94259971de55c1`. An item can target that join and retain the explanation and source references. Later reasoning about MCP can encounter the note through the relationship. Reasoning about package construction need not treat it as a defect in a different receiving contract.
 
 This is how reification helps work remain precise: the thing remembered is not just a sentence about a subsystem but a sentence placed at the functional relationship it explains.
 
@@ -599,7 +605,7 @@ That distinction supports broad understanding of a mixed realization while prese
 
 ### Actual lifecycles
 
-| Content | Lifecycle in the supplied implementation |
+| Content | Lifecycle in the implementation |
 |---|---|
 | Intake | Immutable, nonhideable base layer; repeat intake creates another Metaform rather than overwriting it. |
 | General knowledge layer | Created, populated, and finished; ordinary knowledge records remain editable through their supported operations. Its declared characteristics and layer rules govern its use. |
@@ -607,12 +613,13 @@ That distinction supports broad understanding of a mixed realization while prese
 | Correction layer | Built and then applied on a stack; finished corrections are immutable and not selected or masked like normal knowledge layers; the top can be peeled. |
 | Prompt version | A saved text version with a parent; earlier text is retained unchanged. |
 | Origin/variant material | File-state history tied to an origin, separate from graph corrections and memory. |
+| Work record | The condition of an element or a join, apart from the map and from every layer: open until its task is done, then done with its resolution kept; it follows its object through every version and survives a layer's discard. |
 
 Correction application changes the current graph view while retaining the underlying correction history. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, provider or parent join, keeping its identity and its attached items. Knowledge that depends on affected content can be marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
 
 This separation lets an agent reason about what is stored, what currently applies, what has changed, and what a previous operation used without treating those as the same question.
 
-Sources: [selection resolver](../../src/metaform/data/selection.py), [context reads](../../src/metaform/data/reads.py#L226-L259), [layer operations](../../src/metaform/data/layering.py), and [source lifecycle tests](../../tests/test_store_layers.py).
+Sources: [selection resolver](../../src/metaform/data/selection.py), [context reads](../../src/metaform/data/reads.py#L257-L291), [layer operations](../../src/metaform/data/layering.py), and [source lifecycle tests](../../tests/test_store_layers.py).
 
 <a id="lexicalization"></a>
 ## 10. Project-grounded prompt lexicalization
@@ -739,13 +746,13 @@ A C response should identify the actual functional location and explain how it s
 
 **A: an already considered concern.** A critic proposes retaining every shared-memory edit as immutable history. The project could explain that this memory layer is intentionally mutable working memory, while prompt versions, correction layers, and other knowledge records have separate retention roles. That answer would need the project's actual rationale for choosing this division. The example illustrates a possible A exchange; it does not claim that this rationale has already been recorded as an answer.
 
-**B: an unexplored interface concern.** A critic examining the current code finds that joins have an `ef` field in intake and storage, but the map knowledge interface omits it. A B response could identify the effect on creating or editing Function/Encounter distinctions through that surface and explore the interface change. The interface omission is source-observed; the challenge response here is a derived illustration, not a stored project response.
+**B: an unexplored interface concern.** A critic examining the current code finds that joins have `ef` and `verb` fields in intake and storage, but the map knowledge interface's edit and correct do not read them. A B response could identify the effect on changing Function/Encounter distinctions through that surface and explore the interface change. The interface omission is source-observed; the challenge response here is a derived illustration, not a stored project response.
 
 **C: functionality handled elsewhere.** A critic asks how asynchronous tasks are owned and cleaned up when a module is unloaded. A project response can point to `Context.spawn` and the loader's task ownership and unload behavior, explaining that the capability is shared rather than reimplemented in each module. A complete C response connects those source locations to the concern instead of relying on the absence or presence of a separately named runtime node.
 
 ### Findings, answers, plans, and retained knowledge
 
-The critic's finding is one object. The project's answer is another contribution. A plan is a subsequent work object. The current implementation stores A/B/C state beside the critic's layer, an optional C link, and answer time. It provides a B-approval route to planning and also a direct plan-creation operation.
+The critic's finding is one object; a critic can record each gap it finds as a work record on the element or join it concerns, apart from the map. The project's answer is another contribution. A plan is a subsequent work object. The current implementation stores A/B/C state beside the critic's layer, an optional C link, and answer time. It provides a B-approval route to planning and also a direct plan-creation operation.
 
 The answer-state operation does not itself accept a prose rationale. The conceptual exchange includes that rationale, while items and layers provide places to retain it. Their current integration is documented in [implementation correspondence](IMPLEMENTATION_MAP.md#challenges). This distinction keeps the full reasoning process visible instead of reducing it to the state table.
 
@@ -758,7 +765,7 @@ Blindspot reasoning is not a subtraction of visited edges from possible edges. I
 
 Metaform implements a community-extensible architecture. A module adds an operation through a declaration, while the chassis supplies the common context and interfaces through which it participates. Extension is an existing capability, not a future capability inferred from the current number of modules.
 
-The module author receives a contract that allows a capability to be declared once in its own folder and exposed as commands and MCP tools, with settings, events, status, and lifecycle. This is represented in the project's own map by:
+The module author receives a contract that allows a capability to be declared once in its own folder and exposed as commands and MCP tools, with settings, events, status, and lifecycle. The September 26 map of this project represents it by:
 
 ```text
 Receiver: stakeholder.author.module
@@ -795,7 +802,7 @@ The command-line and MCP surfaces are built from this shared declaration. A modu
 
 The module's purpose and status also supply live instructions. The chassis composes its base instructions with surfaced modules' purposes and available status notices. It does not have to hardcode each community module's purpose into a central narrative.
 
-The `template` module is an empty starting declaration. `helloworld` demonstrates settings, ordinary and asynchronous verbs, event publication/subscription, and retained data. Both ship disabled in the supplied snapshot while remaining available implementations and examples.
+The `template` module is an empty starting declaration. `helloworld` demonstrates settings, ordinary and asynchronous verbs, event publication/subscription, and retained data. Both ship disabled while remaining available implementations and examples. `helloworld` also writes and resolves a work record, and its greeting appears on an open web GUI through the chassis's `map.changed`.
 
 ### Per-call context and shared facilities
 
@@ -809,13 +816,15 @@ The separation matters for future producers. A lexicalization module or critic m
 
 The event bus delivers matching topics to loaded subscribers with a subscriber-specific Context and a copied payload. It records each delivery's result, failure, or cancellation separately. The synchronous publishing path processes subscriptions in sequence. The asynchronous path awaits a coroutine subscriber or offloads and awaits a synchronous subscriber before advancing.
 
+The chassis publishes one topic itself: after any command that changes a project's map, on the command line or over MCP, it fires `map.changed` with the project and the metaform's id, so a module does nothing to announce its writes; the web server does the same after the page's own writes. The web module subscribes and its server pushes each event to every open page; nothing polls.
+
 This gives attribution and failure separation while keeping synchronous handler work off the async event-loop thread. The publisher receives its outcomes after the awaited deliveries; module-owned spawned work is a separate capability supplied by `Context.spawn` and the loader.
 
 The earlier author-provided bus/runtime illustration expressed a receiving purpose of attributable, nonblocking handler execution. That functional illustration and the current delivery scheduling are distinguished in the [implementation map](IMPLEMENTATION_MAP.md#events). The source, not the absence of a separate graph node, establishes current behavior.
 
 ### Packaging and integration
 
-The package builder carries loaded modules and their declared dependencies into a wheel, vendors pure-Python dependencies where supported, and identifies compiled dependencies that remain external requirements. The installer uses the running or built wheel to register the MCP server and skill for supported hosts and checks the registered server command. The web module supplies another encounter with the same stored map: graph inspection, layers, provenance, prompt versions, and the implemented editing operations.
+The package builder carries loaded modules and their declared dependencies into a wheel, vendors pure-Python dependencies where supported, and identifies compiled dependencies that remain external requirements. The installer uses the running or built wheel to register the MCP server and skill for supported hosts and checks the registered server command. The web module supplies another encounter with the same stored map: graph inspection, layers, provenance, prompt versions, each object's work records, clearing a project, and the implemented editing operations, redrawn as each change is pushed.
 
 These capabilities let the functional form and its knowledge be reached through different working environments while preserving the same project meaning. They are part of the implementation's means of making prepared understanding reusable across agents and sessions.
 
@@ -892,7 +901,7 @@ The same prepared form improves the starting material for prompting, whole-syste
 
 ### Walkthrough 1: extend Metaform without reconstructing the whole chassis
 
-**Basis: current project graph and inspected source, with a derived future work request.**
+**Basis: the September 26 map of this project and inspected source, with a derived future work request.**
 
 A module author wants to add a new operation. The functional entry is the receiving join from `stakeholder.author.module` to `code.system.plugin`. It establishes the purpose: declare a capability once and receive commands, tools, settings, events, status, and lifecycle without editing the chassis.
 
@@ -912,7 +921,7 @@ This walkthrough reuses one prepared interpretation of the plugin system across 
 
 The functional map describes the map API as the agent-facing encounter with stored elements, joins, and layers. The critic examines the actual implementation with that receiving purpose in view.
 
-The intake tools, store APIs, and record schema support `ef`. The knowledge interface's field lists and dispatch omit it. A submitted `ef` through that path can therefore be retained as extra content with a notice rather than reaching its dedicated field.
+The intake tools, store APIs, and record schema support `ef` and `verb`, and the knowledge interface writes them when it adds a join or a subtype join. Its edit and correct omit them from the fields they read, so an `ef` given there is named in a notice and ignored rather than reaching its dedicated field.
 
 The issue is not that the entire graph lacks Function/Encounter semantics. It is that one interface does not carry an existing semantic field through to its implemented destination. The functional description allows the critic to locate the mismatch precisely: agents using this encounter should be able to supply the distinction supported by the underlying records.
 
@@ -952,7 +961,7 @@ The author illustrated a stored receiving purpose using `code.bus.data.event` an
 
 The illustration demonstrates why a stored purpose matters across sessions and agents. A future agent touching the bus should receive the reason for that execution relationship, not just the fact that two components are connected.
 
-The current project's map instead represents an event-bus contribution as `code.bus.event` within a plugin-system join. That different decomposition does not by itself prove a different architecture. Inspecting `events.py` establishes its actual delivery loop; inspecting `Context.spawn` and the loader establishes the separate owned-task facility. The [implementation map](IMPLEMENTATION_MAP.md#events) preserves both the author's illustrative purpose and the observed source behavior without using one to erase the other.
+The September 26 map of this project instead represents an event-bus contribution as `code.bus.event` within a plugin-system join. That different decomposition does not by itself prove a different architecture. Inspecting `events.py` establishes its actual delivery loop; inspecting `Context.spawn` and the loader establishes the separate owned-task facility. The [implementation map](IMPLEMENTATION_MAP.md#events) preserves both the author's illustrative purpose and the observed source behavior without using one to erase the other.
 
 <a id="commitments"></a>
 ## 16. Functional commitments
@@ -1021,9 +1030,10 @@ These commitments express what the described mechanisms mean and what must remai
 | Providing Element / PE | [3](#semantic-structure) |
 | Receiving Entity / RE | [3](#semantic-structure) |
 | Select / mask / incoming selection | [9](#layers) |
-| Supportive Element / SE | [3](#semantic-structure) |
+| Substantial Element / SE | [3](#semantic-structure) |
 | Unloaded Definition | [5](#intake) |
 | Vested Entity / VE | [3](#semantic-structure), [5](#intake) |
+| Work record | [5](#intake), [9](#layers), [11](#criticism) |
 
 ---
 

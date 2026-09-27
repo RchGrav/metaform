@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Getting started](getting-started.md) · [Reading the representation](reading-a-metaform.md)
 
-Use Metaform to bring prepared understanding into a task, examine the relevant relationships, and retain what the work establishes. The examples below use the supplied project map imported as `reference-demo` in [Getting started](getting-started.md#inspect-the-supplied-project-map-without-a-new-intake). For another workpiece, use the addresses returned by its own map.
+Use Metaform to bring prepared understanding into a task, examine the relevant relationships, and retain what the work establishes. The examples below use the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand), registered as the project `kitchen`. For another workpiece, use the addresses returned by its own map. Join ids are generated when a join is recorded, so the examples write `<join_id>` where yours goes; `map joins` and `map where ... full=true` print them.
 
 ## Establish the current work context
 
@@ -16,7 +16,7 @@ metaform config --show
 The current folder supplies context. A registered project establishes its default, and folder settings can select a different project or layer set. A project may contain multiple Metaforms; one is active.
 
 ```sh
-metaform set --project reference-demo
+metaform set --project kitchen
 metaform activate metaform main
 ```
 
@@ -26,7 +26,7 @@ metaform activate metaform main
 metaform unset --project
 ```
 
-A module call can instead use `--project reference-demo` for that invocation. MCP tools accept the corresponding `project` argument. Use these explicit choices when an agent starts outside the workpiece folder; do not assume that a host's folder and your terminal's folder are the same.
+A module call can instead use `--project kitchen` for that invocation. MCP tools accept the corresponding `project` argument. Use these explicit choices when an agent starts outside the workpiece folder; do not assume that a host's folder and your terminal's folder are the same.
 
 `metaform config` opens the settings screen; `metaform config --show --json` gives a machine-readable view. Settings are declared by the chassis and modules. A verb's switches override their values for that call. Persistent settings survive disabling a module, even though its active commands and settings rows are withdrawn.
 
@@ -45,40 +45,44 @@ Start with the represented elements rather than guessing a source directory:
 
 ```sh
 metaform map roots
-metaform map search "module"
-metaform map element code.system.plugin
+metaform map where code.timer.kitchen
+metaform map element code.timer.kitchen
 ```
 
-`search` is a text search over stored content, not a separate semantic retrieval model. `element` returns the element: its address, `name_length`, role, short name and references. The project's own name for the functionality is on its joins, which `metaform map joins code.system.plugin as=provider` returns. For this example, the functional address names a plugin system and the project calls it the **module contract and loader**.
+`roots` is the map's entry: the VE and the DE with the joins they receive, and every root element. `where` is one read of an address: the element with its address read through `name_length` and its role; `provides`, what relies on it, each join it provides with the receiver and the receiver's purpose; `receives`, what it relies on, each join it receives with the provider; the subtype joins inside those joins; the subtype join holding it, when it has one; its open work records; and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. `element` returns the element alone: its address, `name_length`, role, short name and references.
+
+The project's own name for a functionality is on its joins, as `name`. Here the address `code.timer.kitchen` reads as kitchen timer, and the join through which it serves the cook calls it the **dish clock**.
+
+`metaform map search <words>` finds items, memories and knowledge values, whose text holds every word. It does not search element addresses or join names, and it is not a separate semantic retrieval model.
 
 Now look in both directions:
 
 ```sh
-metaform map joins code.system.plugin as=receiver
-metaform map joins code.system.plugin as=provider
+metaform map joins code.timer.kitchen as=receiver
+metaform map joins code.timer.kitchen as=provider
 ```
 
-As a receiver, an entity exposes what it needs. As a provider, it exposes whose purposes its effects serve. The provider view for the module contract includes the module author, chassis, command line, MCP server, builder, and agent instructions. These are different reasons to examine the same functionality.
+As a receiver, an entity exposes what it needs. As a provider, it exposes whose purposes its effects serve. The kitchen timer receives the buzzer's Encounter from `code.alarm.audible` and provides the dish clock's Function to `stakeholder.cook.home`. These are different reasons to examine the same functionality.
 
 ```sh
-metaform map identity code.system.plugin
+metaform map identity code.timer.kitchen
 ```
 
 `identity` is another provider-side relationship read. It is not an implementation of the exact relational type-equivalence definition in the [technical reference](../inference-metaform/REFERENCE.md#identity).
 
 ### Read a relationship as an object
 
-For the recorded module-author relationship:
+For the dish clock join, the one where the timer serves the cook:
 
 ```sh
-metaform map node join:d14bd3498b614dfbaf0754c99b28dba3
-metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3
-metaform map where code.template.module
+metaform map node join:<join_id>
+metaform map subtypes <join_id>
+metaform map where code.loop.tick
 ```
 
-The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the purpose join, naming the element it holds, and that element stays one ordinary element record. `where` at the address of an element held only by subtype joins returns the element with its subtype join and the containing join; it does not promote that element to a global one. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
+The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the purpose join, naming the element it holds, and that element stays one ordinary element record. The tick loop, `code.loop.tick`, is held only by the ticker subtype join, so it is no root and no node of the outer map; `where` at its address returns the element with its subtype join and the join holding it. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
 
-Use `map links <node>` for items that link to a node, and `map citing <key> <value>` for references such as an exact source path. Node forms are:
+Use `map links <node>` for items that link to a node, and `map citing <key> <value>` for references such as an exact source path, for example `metaform map citing path src/tick.c`. Node forms are:
 
 ```text
 element:<namespace-address-or-id>
@@ -91,14 +95,12 @@ Commands with paged results return a cursor when more data remains. Pass that re
 
 ## Retain a finding where it matters
 
-An observation about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A note about an absorbed implementation contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
-
-The following are example notes written by the commands, not quotations from the original intake:
+An observation about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A note about an absorbed contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
 
 ```sh
-metaform memory add-observations element:code.system.plugin "The template and helloworld share the module-author purpose join."
-metaform memory add-observations join:d14bd3498b614dfbaf0754c99b28dba3 "Extension entry points and CLI/MCP surfaces come from the module contract."
-metaform memory open-nodes join:d14bd3498b614dfbaf0754c99b28dba3
+metaform memory add-observations element:code.timer.kitchen "The countdown drifts one second an hour on the first board."
+metaform memory add-observations join:<join_id> "The cook reads the dish name from the display, not the beep."
+metaform memory open-nodes join:<join_id>
 ```
 
 The first write creates the memory layer. A subsequent agent can recover the finding by the relationship's address rather than rediscovering which free-floating note concerned this receiver's purpose.
@@ -107,9 +109,9 @@ The MCP equivalent of the second write is the tool **`memory_add-observations`**
 
 ```json
 {
-  "project": "reference-demo",
-  "node": "join:d14bd3498b614dfbaf0754c99b28dba3",
-  "text": ["Extension entry points and CLI/MCP surfaces come from the module contract."]
+  "project": "kitchen",
+  "node": "join:<join_id>",
+  "text": ["The cook reads the dish name from the display, not the beep."]
 }
 ```
 
@@ -118,8 +120,8 @@ Tool names use an underscore between module and verb and retain hyphens **within
 ### Connect, locate, and remove memories
 
 ```sh
-metaform memory create-relations element:code.system.plugin exemplified-by element:code.module.example
-metaform memory search-nodes "module"
+metaform memory create-relations element:code.timer.kitchen "rings through" element:code.alarm.audible
+metaform memory search-nodes countdown
 metaform memory read-graph
 ```
 
@@ -129,27 +131,27 @@ The module exposes nine operations:
 
 | Operation | What it changes or reads |
 |---|---|
-| `create-entities <address> <type>` | Creates or locates a graph element for memory use. Existing functional nodes need no duplicate entity first. |
+| `create-entities <name> <type>` | Makes a node for an address the map does not hold yet. Existing functional nodes need no entity first. |
 | `create-relations <from> <relation> <to>` | Adds a linked memory item. |
 | `add-observations <node> <text>...` | Adds observations at the node. |
 | `delete-entities <node>...` | Deletes memory items at those nodes, **not** the underlying graph identities. |
 | `delete-observations <node> <text>...` | Removes the matching observation text. |
 | `delete-relations <from> <relation> <to>` | Removes matching linked memory items. |
-| `read-graph` | Reads the participating memory graph. |
-| `search-nodes <query>` | Searches memory content. |
-| `open-nodes <node>...` | Reads memory at the named nodes. |
+| `read-graph` | Every memory, grouped by node. |
+| `search-nodes <query>` | Nodes whose memories hold every word of the query. |
+| `open-nodes <node>...` | Each node with its observations and relations. |
 
 Memory changes in place. This build does not give memory its own revision history or provenance ledger. Its direct write path can address retained memory even when the current context masks it. The current read view still follows layer participation.
 
 ## Keep a body of knowledge as a layer
 
-A layer identifies a question or variable and retains the values contributed in answer to it. A review might answer what was established about module behavior; a practice layer might carry general engineering knowledge; an imperative layer might carry selected instructions for an operation. These purposes are not interchangeable.
+A layer identifies a question or variable and retains the values contributed in answer to it. A review might answer what was established about the timer's behavior; a practice layer might carry general engineering knowledge; an imperative layer might carry selected instructions for an operation. These purposes are not interchangeable.
 
 Create a review layer and add a local finding:
 
 ```sh
 metaform map knowledge op=create layer=review-notes variable="What this review established." mutable=true hideable=true
-metaform map knowledge op=add-item layer=review-notes node=element:code.system.plugin value='{"finding":"The CLI and MCP read the shared verb declarations."}'
+metaform map knowledge op=add-item layer=review-notes node=element:code.timer.kitchen value='{"finding":"Each dish keeps its own countdown."}'
 metaform map knowledge op=finish layer=review-notes
 ```
 
@@ -157,10 +159,12 @@ These shell examples use POSIX-style single quoting around JSON. The tool equiva
 
 The layer starts **building**. Finishing makes it available to normal selection. The returned layer name is authoritative: a name already used by a different declaration can result in a numbered name and notice. Read operation results rather than assuming every requested name was installed unchanged.
 
+`map knowledge` writes one object per call: `op=add-element` takes an element's `address`, `name_length`, `role`, `refs` and `extra`; `op=add-join` takes the receiver, the provider, `name`, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `type`, `refs` and `extra`; `op=add-subtype` takes the parent `join`, the `address` of the element it holds and the subtype join's fields. Nothing is refused for its content: a field that is missing is stored empty and named in a notice, and a call stops only when it lacks a field its record cannot be stored without, such as a join's receiver, BASE-038.
+
 ```sh
 metaform map layers
 metaform map layer review-notes
-metaform map node element:code.system.plugin
+metaform map node element:code.timer.kitchen
 ```
 
 `layer` reads the named layer directly. `node` groups participating items by layer at that node. A node-local item does not become inherited knowledge merely because its address has ancestors.
@@ -170,11 +174,11 @@ metaform map node element:code.system.plugin
 A **property** is the store's branch-scoped knowledge mechanism. Unlike a local item, it travels the namespace. For an illustrative informational property:
 
 ```sh
-metaform map knowledge op=add-property layer=review-notes element=type:code value='{"information":"General code guidance applies to descendants of code."}'
-metaform map context code.system.plugin
+metaform map knowledge op=add-property layer=review-notes element=type:code value='{"information":"The firmware is C for one microcontroller."}'
+metaform map context code.timer.kitchen
 ```
 
-This is a demonstration of placement, not an added rule that every task must follow. The `type:` form targets a namespace prefix even when it has no independently represented global element. A property at `code` applies to its descendants. Properties attached toward the leaves from the current scope can be **visible** from an ancestor without thereby applying to every sibling branch. The context result separates `applying` and `visible`.
+This is a demonstration of placement, not an added rule that every task must follow. The `type:` form targets a namespace prefix: when no element holds that address, the layer records one there to hold the property and says so in a notice. A property at `code` applies to its descendants. Properties attached toward the leaves from the current scope can be **visible** from an ancestor without thereby applying to every sibling branch. The context result separates `applying` and `visible`.
 
 Properties implement scoped context support; they are not, by themselves, a producer that derives every semantic consequence of an Encounter. [Encounter propagation](../inference-metaform/REFERENCE.md#encounters) explains the full mechanism and [the implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#selection) locates its current support.
 
@@ -184,18 +188,18 @@ When creating a layer derived from other layers, the `sources` JSON array record
 
 Without a nonempty explicit layer selection, the ordinary starting set includes all finished, nonhidden, non-correction layers. Local settings then remove or add participation along namespace prefixes. A local mask defaults to preserving incoming membership; a local select defaults to adding nothing. This is not a default-deny scheme.
 
-For example, temporarily exclude review notes from the `code.system` branch, then restore them specifically for the plugin-system branch:
+For example, exclude review notes from the `code.timer` branch, then restore them for the kitchen timer:
 
 ```sh
-metaform map mask code.system review-notes
-metaform map select code.system.plugin review-notes
+metaform map mask code.timer review-notes
+metaform map select code.timer.kitchen review-notes
 ```
 
-The descendant selection does not turn those notes on for siblings. Remove these local choices with:
+The selection toward the leaves does not turn those notes on for siblings. Remove these local choices with:
 
 ```sh
-metaform map clear code.system.plugin review-notes select
-metaform map clear code.system review-notes mask
+metaform map clear code.timer.kitchen review-notes select
+metaform map clear code.timer review-notes mask
 ```
 
 At each prefix, the effect is **incoming membership, minus local masks, plus local selections**. The full resolver, including an explicitly empty API starting set, is documented in [the reference](../inference-metaform/REFERENCE.md#layers).
@@ -213,6 +217,18 @@ Only hideable layers can be hidden. The store also excludes derived layers whose
 
 Intake, knowledge, memory, and corrections have different lifecycles. In particular, corrections are not selectable/hideable knowledge overlays; they apply through the correction stack.
 
+## Record the condition of an object as work
+
+The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `tbd`, to be done or determined, `broken`, or `cruft`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a correction.
+
+```sh
+metaform map work op=add node=element:code.alarm.audible condition=broken note="The alarm pin is unconnected on the second board revision." task="Wire the alarm pin on revision two."
+metaform map work node=element:code.alarm.audible
+metaform map work op=done id=<work_id> resolution="Wired on revision two."
+```
+
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
+
 ## Correct represented understanding
 
 Use a correction layer when changing the established representation while retaining the change and its reason. Ordinary mutable notes are not a substitute for that history.
@@ -229,13 +245,15 @@ metaform map stack
 
 Replace the angle-bracket fields with the actual target and reasoning. A correction begins in the building state and is applied on finish. `op=peel layer=<top-correction>` takes the top correction off the stack and returns it to building. Use the stack order shown by the store; this is not arbitrary undo of an interior layer.
 
+An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=edit` or `op=correct` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, its purpose kept in its `extra`. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
+
 Corrections can mark dependent knowledge as requiring re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither finishing a correction nor marking a layer re-examined automatically performs the reasoning.
 
-The current `map knowledge` interface does not expose the typed `ef` field, although intake and the Python store support it. Do not use the descriptive `function` text as a substitute for the Function/Encounter flag. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the exact omission.
+`op=edit` and `op=correct` do not read `ef` or `verb`: a value given for either is named in a notice and ignored, so a join's Function or Encounter word cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `correct` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the exact omission.
 
 ## Use prompting and criticism without changing the assignment
 
-Project-grounded lexicalization first resolves a request's generalized referents to recorded project names and functional addresses. It replaces the corresponding terms while retaining the requested operation, then provides mappings and knowledge directions. It stops before execution. The [walkthrough](../examples/project-walkthrough.md#4-lexicalization-before-execution) shows the transformation and the actual reads supporting it.
+Project-grounded lexicalization first resolves a request's generalized referents to recorded project names and functional addresses. It replaces the corresponding terms while retaining the requested operation, then provides mappings and knowledge directions. It stops before execution. The [walkthrough](../examples/project-walkthrough.md#4-lexicalization-before-execution) shows the transformation and the recorded names supporting it.
 
 There is no shipped lexicalization verb in this edition. The present name, graph, context, memory, and prompt-version facilities are available to an agent or module implementing that operation. Existing prompts can be listed and inspected with `metaform prompts` and `metaform prompt <name> [version-number]`; the GUI can save new versions of existing prompts. Prompt storage is not itself the lexicalizer.
 
@@ -268,9 +286,13 @@ metaform web stop
 
 The first command starts or locates the shared web process for the current Metaform home and prints its address. The second stops it. The default bind is loopback at port 7433. The source has separate host/origin and token handling for a non-loopback bind; do not treat changing `web_bind` as equivalent to the default local-only exposure.
 
-The interface supplies project and Metaform selectors, layer controls, two-dimensional and three-dimensional graph views, and four inspection tabs: **Object**, **Provenance**, **Prompt**, and **Corrections**. Select a graph object to inspect its recorded content. In the 2D view, use the fit control or `F`; the 3D view supports orbit, zoom, selection, and layout controls.
+The header holds the project and Metaform selectors, **Clear project**, and a **Layers** button that counts the layers shown, such as `Layers · 3 of 5`, and opens a checklist with one row per layer and **Apply to folder** at its foot. The left pane holds the two-dimensional map, with **Back**, **Forward**, the breadcrumb and **Fit** on a strip above it, and four inspection tabs: **Object**, **Provenance**, **Prompt**, and **Corrections**. The three-dimensional graph fills the right, and every item of the layers turned on is its own node there. Select a graph object to inspect its recorded content. In the 2D view, use Fit or `F`; the 3D view supports orbit, zoom, selection, and layout controls.
 
-Layer chips select what the view presents. **Apply to folder** persists the chosen layer context for that folder. A temporary visual selection and the folder's working context are different operations.
+The checklist selects what the view presents. **Apply to folder** persists the chosen layer context for that folder. A temporary visual selection and the folder's working context are different operations.
+
+The page shows each node's condition from its work records: a node with an open `tbd` record is drawn at 70% opacity and turns solid once its task is done, one with an open `broken` record flashes red, and `cruft` keeps its look. The Object panel lists the selected object's records with their note, task, held and reviewed flags, and the resolution once done.
+
+The page follows the map without polling. After any command that changes a project's map, on the command line or over MCP, and after the page's own writes, `map.changed` is announced and the server pushes it to every open page, which redraws without a reload. An intake being recorded is drawn as each object arrives.
 
 The Prompt tab exposes existing prompt versions, comparisons, and **Save as new version**. It does not generate a lexicalized prompt merely because it displays prompt records. The Corrections tab presents the relevant retained changes rather than editing the runtime source.
 
@@ -278,26 +300,26 @@ The Prompt tab exposes existing prompt versions, comparisons, and **Save as new 
 
 ## Retain and exchange the work
 
-Export the current project to an existing destination directory:
+Export the current project to a file:
 
 ```sh
-metaform export file=metaform-export.json
+metaform export file=kitchen-export.json
 ```
 
 Narrow the export by Metaform or layer when useful:
 
 ```text
-metaform export reference-demo file=main-export.json metaform=main
-metaform export reference-demo file=layer-export.json layer=<layer-name>
+metaform export kitchen file=main-export.json metaform=main
+metaform export kitchen file=layer-export.json layer=<layer-name>
 ```
 
-Import into a registered project with:
+With no `file=` the document goes to standard output. Import into a registered project with:
 
 ```sh
-metaform import metaform-export.json reference-demo
+metaform import kitchen-export.json kitchen
 ```
 
-Exchange preserves IDs and adds missing records. It does not overwrite an existing identity with a later copy of the same ID. A Metaform already owned by another project in the same home is not duplicated into a second owner; the import reports that condition. This is exchange of retained representation, not Canonical Intake submission.
+Exchange preserves IDs and adds missing records. It does not overwrite an existing identity with a later copy of the same ID. A Metaform already owned by another project in the same home is not duplicated into a second owner; the import reports that condition. A document written at another schema version is refused with the version it has and the one this Metaform supports. This is exchange of retained representation, not Canonical Intake recording.
 
 Direct-wheel work can be pulled into the normal home with `metaform import wheel=metaform-0.1.0`. Pulled Metaforms receive distinguishable names and are not made active automatically.
 

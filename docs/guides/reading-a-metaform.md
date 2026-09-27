@@ -4,11 +4,13 @@
 
 An Inference Metaform is a representation of **what a workpiece is doing**. Its addresses organize functional meaning; its joins explain receiving purposes and how providers serve them. It is not a source-file hierarchy or a call graph with more descriptive labels.
 
-This guide uses the recorded [project export](../examples/project-metaform.json), imported as described in [Getting started](getting-started.md#inspect-the-supplied-project-map-without-a-new-intake). The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 5 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
 
-The running web GUI renders this same kind of map. This screenshot is this repository's own current map, larger than the dated export used through the rest of this guide, but the same structure: elements as nodes, joins as the lines between them, colored by `ef`, and the selected element's held joins, Operative Purpose, and Function or Encounter text in the panel on the left.
+The export was written by the store of that day, and three of its record shapes have changed since. The project's name for a functionality was a descriptor item at the element; it is now the join's `name`. A subtype was its own row; it is now a join of type `subtype` inside its parent join, holding an ordinary element. The condition of an object was a finding with a `flag`; it is now a work record, apart from the map. The export also predates `verb`, so its joins and subtypes record `verb` as null, and its relations are whole sentences.
 
-![The Metaform web GUI: the chassis element selected in the object panel on the left, showing its held joins with Operative Purpose, Function or Encounter, and relation text, and the 3D graph of every element and join on the right.](../images/gui-map.png)
+The running web GUI draws a map as nodes and joins. This screenshot is the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand): elements as nodes, joins as the lines between them, colored by `ef`, the tick loop drawn inside the kitchen timer's join in the 2D map, the audible alarm red for its open `broken` work record, and the selected element's memory, knowledge and joins in the panel on the left.
+
+![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its memory, a review-notes item and the buzzer join it holds, the 2D map above it with the tick loop inside the kitchen timer, and the 3D graph of every element, join and item on the right, the audible alarm red for its broken work record.](../images/gui-map.png)
 
 ## Begin with the artifact and its receivers
 
@@ -43,7 +45,7 @@ The intake's roles distinguish contributions:
 | AUE | The artifact or collection under examination. |
 | VE | A vested party outside the AUE whose purpose is being served. |
 | DE | The defining element whose loss would prevent the AUE from remaining the same type. |
-| SE | A supportive element whose Encounter Function helps the defining element serve the vested purpose. |
+| SE | A substantial element whose Encounter Function helps the defining element serve the vested purpose. It counts as substantial because of what it is meant to contribute to the AUE, even when that contribution is weak or replaceable. |
 | NE | A notable element expressing an essential demand or requirement on the external environment. |
 
 A **Providing Element**, or **PE**, is an endpoint role in a join, not another element-role attribute. **Parametric** qualities and quantities are tunable details, not automatically separately named elements. Something being recognizable or nameable does not make it a load-bearing independent part of this map.
@@ -59,9 +61,9 @@ For `code.system.plugin`, there are three useful readings:
 | Address | `code.system.plugin` |
 | Full type reading | plugin system code |
 | Short type name | plugin system (`name_length = 2`) |
-| Project name, on the join | module contract and loader |
+| Project name | module contract and loader |
 
-Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading, and that short reading is the element's name. The project name is recorded on the join that names the functionality, not on the element: it is how this project names the functionality, formally or informally.
+Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading, and that short reading is the element's name. The current store records the project name on the join that names the functionality, as `name`, not on the element: it is how this project names the functionality, formally or informally. The export, written before that change, holds it in a descriptor item at the element.
 
 Every prefix supplies a type perspective:
 
@@ -100,13 +102,14 @@ graph LR
 | `ef` | Encounter |
 | `relation` | The plugin system lets a module author plug a capability into Metaform with one declaration. |
 
-This display is an abbreviated reading of the actual record. The complete purpose, function, observation, and references remain in the export and are printed by:
+This display is an abbreviated reading of the actual record. The complete purpose, function, observation, and references remain in the export. On a map that holds them, the provider's address read prints them under `provides`, and `map node` prints what the layers hold at the join:
 
 ```sh
+metaform map where code.system.plugin
 metaform map node join:d14bd3498b614dfbaf0754c99b28dba3
 ```
 
-The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the provider for that relationship. `relation` expresses the connection in active voice. `observation` records the actual condition, form, arrangement, or limitations. References connect the record to relevant evidence or artifact-specific logic. An optional `non_goal` records a pertinent outcome the receiver does not seek; its absence is not a request to invent exclusions.
+The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the provider for that relationship. `relation` states the connection as an active-voice fragment that starts with its third-person verb, and `verb` holds that verb; its subject is the Providing Element when `ef` is Function and the Vested Entity, the join's receiver, when `ef` is Encounter. The export's relations predate that form and are whole sentences. `observation` records the actual condition, form, arrangement, or limitations. References connect the record to relevant evidence or artifact-specific logic. An optional `non_goal` records a pertinent outcome the receiver does not seek; its absence is not a request to invent exclusions.
 
 A provider can serve different purposes through different Encounter Functions. The module contract serves the command line by supplying verb declarations, the builder by identifying loaded modules and dependencies, and the module author through the declaration-and-loading encounter. Those distinctions belong in the joins, not in a single flattened element-level function description.
 
@@ -156,7 +159,7 @@ Unrelated siblings do not acquire C through the common ancestor.
 
 The relevant consequences include memory semantics, data representation, interfaces, error behavior, and operating-system interaction. An agent can examine those consequences through the disk utility's receiving purposes, not merely paste a generic C checklist beside it. A mixed-language workpiece retains the attachment points where each language actually participates.
 
-The store's `map context <address>` separates applying properties from visible properties. This supplies scope-aware knowledge access. The general Encounter-inference producer and the full language-Encounter account extend beyond that one read operation. The live intake also includes a language-address exclusion that differs from the author's broader Encounter account. [The implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#correspondence) preserves that specific boundary instead of silently changing either account.
+The store's `map context <address>` separates applying properties from visible properties. This supplies scope-aware knowledge access. The general Encounter-inference producer and the full language-Encounter account extend beyond that one read operation. The served intake also includes a language-address exclusion that differs from the author's broader Encounter account. [The implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#correspondence) preserves that specific boundary instead of silently changing either account.
 
 ## Identity is relational, not just a stable label
 

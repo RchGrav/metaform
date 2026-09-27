@@ -17,18 +17,18 @@ The author has manually exercised and measured the method during its independent
 <a id="available"></a>
 ## 1. Available material and its source role
 
-The following material was supplied with the source snapshot identified in the [implementation map](IMPLEMENTATION_MAP.md#snapshot). The distinction between an original output, a fixture, a source assertion, and a derived illustration belongs beside the example, not hidden in a general disclaimer.
+The following material was supplied with the September 26 source bundle identified in the [implementation map](IMPLEMENTATION_MAP.md#snapshot). The distinction between an original output, a fixture, a source assertion, and a derived illustration belongs beside the example, not hidden in a general disclaimer.
 
 | Available material | What it makes visible | Source role and limits of its lineage |
 |---|---|---|
-| [Current project export](../examples/project-metaform.json) | The project's 19 global elements, 33 purpose joins, 26 internal subtypes, descriptor names, source refs, five findings, and intake provenance. | Actual stored result of the September 26, 2026 intake. The complete functional index is in the [implementation map](IMPLEMENTATION_MAP.md#graph-index). |
-| Current SQLite store, at the external bundle path below | Stored rows corresponding to the current Metaform, with layers, records, and associated report data. | Actual stored state. It is not a later memory, criticism, or lexicalization run. |
-| Current intake report and process feedback, at the external paths below | The original agent's project examination, recorded tool/test observations, submission feedback, and process difficulties. | Operational accounts associated with current layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`. Reported test results remain attributed to that run. |
+| [September 26 project export](../examples/project-metaform.json) | The project's 19 global elements, 33 purpose joins, 26 internal subtypes, descriptor names, source refs, five findings, and intake provenance. | Actual stored result of the September 26, 2026 intake, an export at schema version 1 that the current store does not import; its record shapes are those of that day. The complete functional index is in the [implementation map](IMPLEMENTATION_MAP.md#graph-index). |
+| The September 26 SQLite store, at the external bundle path below | Stored rows corresponding to that Metaform, with layers, records, and associated report data. | Actual stored state. It is not a later memory, criticism, or lexicalization run. |
+| The September 26 intake report and process feedback, at the external paths below | The original agent's project examination, recorded tool/test observations, submission feedback, and process difficulties. | Operational accounts associated with intake layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`. Reported test results remain attributed to that run. |
 | Earlier report and feedback, id `70618d7651c24ba9b04219544af156d8` | An earlier examination and its process observations. | September 25 run; its Metaform was withdrawn September 26 and no export was supplied. Do not manufacture a before/after graph from the report alone. |
 | [Address-only generated lists](../../specifications/metaprompting_element_segments_example.md) | Distinct guidance generated for `code`, `code.engine`, `code.engine.game`, and `code.engine.game.fps`; progression from trunk to leaf. | Original supplied example whose account states that only the addresses were prompted, without a repository or project description. Its generated practices are not universal engineering requirements. |
 | September 15 knowledge-layer output, kept outside the repository | Practices attached to namespace addresses and relationship-oriented knowledge. | Historical output `kl-codex-developer-best-practices-20260915`; its named base result, `dt-codex-20260915-8d3f2c1a`, was not supplied. It does not establish a current shipped producer. |
 | [Sonnet intake output](../../specifications/Sonnet_Intake.xml); a code-only intake output and an earlier sample, both kept outside the repository | Earlier functional decompositions and output shapes. | Historical results; their exact producing prompts are not recorded with them. They are not substitutes for the served Canonical Intake or current architecture. |
-| [Kitchen-timer fixture](../../tests/fixtures/intake_timer.json) and [intake tests](../../src/metaform/modules/intake/tests/test_intake.py) | A small, inspectable submission and source assertions about retained elements, joins, subtypes, notices, and layers. | Fixture and test source, not a newly executed model intake. |
+| [Kitchen-timer fixture](../../tests/fixtures/intake_timer.json) and [intake tests](../../src/metaform/modules/intake/tests/test_intake.py) | A small, inspectable set of recorded objects and source assertions about retained elements, joins, subtype joins, notices, and layers. | Fixture and test source, not a newly executed model intake. |
 | [Layer tests](../../tests/test_store_layers.py), [memory tests](../../src/metaform/modules/memory/tests/test_memory.py), [challenge tests](../../tests/test_store_challenges.py), and [lifecycle tests](../../tests/test_lifecycle.py) | Concrete expected behavior for selection, property scope, relationship-addressed memory, challenge state, and module-owned tasks. | Inspected assertions. The documentation work did not run these tests. |
 | [Worked reference illustrations](REFERENCE.md#walkthroughs) | Connected explanations of the mechanisms using the author's examples and current project names. | Derived illustrations except where explicitly grounded in a stored record or inspected source. They are not run transcripts. |
 
@@ -85,18 +85,18 @@ Each target describes material worth retaining and the relationship it would exp
 
 **Mechanism.** Intake surveys the artifact, traces providers through receiving purposes, closes unexplained functionality, and converges compatible contributions into parent functionalities while retaining their refs and internal subtype relationships. See [Canonical Intake](REFERENCE.md#intake).
 
-**Material to retain.** Keep the exact served prompt, original workpiece or pinned source, submitted output, resulting graph, refs, notices, and the agent's explicit explanation of grouping where one was recorded. A compact example can accompany the current project's larger result. Preserve a contributor that becomes internal and a contributor that remains global because the parent does not carry its separate purpose.
+**Material to retain.** Keep the exact served prompt, original workpiece or pinned source, submitted output, resulting graph, refs, notices, and the agent's explicit explanation of grouping where one was recorded. A compact example can accompany the project's larger recorded result. Preserve a contributor that becomes internal and a contributor that remains global because the parent does not carry its separate purpose.
 
-**What this exposes.** A reader can follow material from source location through functional contribution to its parent and containing purpose join. This distinguishes semantic convergence from file grouping, omission, or duplication at both global and internal levels. The current export supplies actual convergence results; the timer fixture supplies a small record example, not the model's construction trace.
+**What this exposes.** A reader can follow material from source location through functional contribution to its parent and containing purpose join. This distinguishes semantic convergence from file grouping, omission, or duplication at both global and internal levels. The September 26 export supplies actual convergence results; the timer fixture supplies a small record example, not the model's construction trace.
 
 <a id="lexicalization"></a>
 ### Target 3. Project-grounded lexicalization without task substitution
 
 **Mechanism.** The preprocessing agent interprets request referents against the project, substitutes the recorded project names, attaches canonical-term-to-namespace mappings and knowledge directions, and stops before performing the task. See [lexicalization](REFERENCE.md#lexicalization).
 
-**Material to retain.** Preserve the verbatim original request, the project view available to the preprocessor, the relevant descriptor names and joins, and the complete prepared prompt. Retain the mapping from original phrase to project name and address, including an explicit account of an ambiguous resolution where the agent supplied one. Keep the later execution separate from preprocessing.
+**Material to retain.** Preserve the verbatim original request, the project view available to the preprocessor, the relevant joins with the project names on them, and the complete prepared prompt. Retain the mapping from original phrase to project name and address, including an explicit account of an ambiguous resolution where the agent supplied one. Keep the later execution separate from preprocessing.
 
-**What this exposes.** The preparation has resolved what the request concerns without changing what it asks to do. For example, a generalized reference to module discovery can be connected to the recorded `module contract and loader` at `code.system.plugin`. The trace should reveal the actual resolution used, not insert that resolution into a reconstructed original prompt. There is supporting naming/context infrastructure, but no shipped lexicalization producer in this snapshot; see [prompt correspondence](IMPLEMENTATION_MAP.md#prompts).
+**What this exposes.** The preparation has resolved what the request concerns without changing what it asks to do. For example, a generalized reference to module discovery can be connected to the recorded `module contract and loader` at `code.system.plugin` in the September 26 map. The trace should reveal the actual resolution used, not insert that resolution into a reconstructed original prompt. There is supporting naming/context infrastructure, but no shipped lexicalization producer; see [prompt correspondence](IMPLEMENTATION_MAP.md#prompts).
 
 <a id="information-imperatives"></a>
 ### Target 4. Selected information versus selected imperatives
@@ -150,7 +150,7 @@ Each target describes material worth retaining and the relationship it would exp
 
 **Material to retain.** Keep the examination request, graph view, source revision or original artifact, inspected locations, finding, explicit rationale, and any resulting clarification or change. Retain whether the critic actually inspected implementation. A Metaform-only observation should keep that source scope rather than inherit evidence from a later code examination.
 
-**What this exposes.** The current `ef` interface omission provides a concrete source-backed case: the intake and store support the field, while the map knowledge interface omits it. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
+**What this exposes.** The current `ef` interface omission provides a concrete source-backed case: the intake and store support the field, and the map knowledge interface adds it, while its edit and correct do not read it. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
 
 <a id="mutation"></a>
 ### Target 10. A relationship-preserving implementation change
@@ -266,9 +266,9 @@ No numerical performance table is introduced here because this file identifies o
 
 ### The strongest current project thread
 
-Start from the existing project export and its module-author receiving purpose. Associate the exact intake and current report, then retain a real task that resolves a generalized request to the module contract, uses selected knowledge, and produces a module or source examination. A later critique or refactor can reuse the same relationship and a newly retained observation.
+Start from the September 26 project export and its module-author receiving purpose. Associate that intake and its report, then retain a real task that resolves a generalized request to the module contract, uses selected knowledge, and produces a module or source examination. A later critique or refactor can reuse the same relationship and a newly retained observation.
 
-That sequence joins [convergence](#convergence), [lexicalization](#lexicalization), [memory](#relationship-memory), [extension](#extension), and [reuse](#reuse) around one functional understanding. It does not require inventing a completed sequence from the source snapshot; each original task can be added as it occurs.
+That sequence joins [convergence](#convergence), [lexicalization](#lexicalization), [memory](#relationship-memory), [extension](#extension), and [reuse](#reuse) around one functional understanding. It does not require inventing a completed sequence from the recorded material; each original task can be added as it occurs.
 
 ### A compact propagation thread
 

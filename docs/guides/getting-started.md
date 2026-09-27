@@ -35,7 +35,7 @@ python /path/to/metaform-0.1.0-py3-none-any.whl list modules
 
 In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. With no `METAFORM_HOME` already set, direct execution uses the wheel-specific home `~/.metaform/wheels/metaform-0.1.0`. That is distinct from an installed command or a host's `uvx --from ... metaform` launch, which uses the normal home. To use one explicit home across both paths, set `METAFORM_HOME` consistently before launching them.
 
-The documentation ZIP contains documentation and an example export, not a built application wheel. Use the repository source or a wheel produced from it.
+The repository holds no built application wheel. Use the repository source or a wheel produced from it with `metaform build`.
 
 ## 2. Connect the agent interface
 
@@ -112,15 +112,19 @@ The served procedure's XML schema defines the fields of each object. The agent r
 
 ```sh
 metaform intake start model=opus role="intake agent" id=example-intake-1
-metaform intake element stakeholder.cook.home role=VE name="Home cook"
-metaform intake join stakeholder.cook.home code.timer.kitchen purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="The kitchen timer tells the cook." verb=tells observation="One countdown per dish."
+metaform intake element stakeholder.cook.home role=VE name_length=2
+metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish."
 metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
+An element is its address, `name_length` and role; its name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. The project's own name for a functionality goes on the join, as `name`: this project calls its kitchen timer the dish clock. `relation` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb; its subject is the Providing Element when `ef` is Function and the Vested Entity, the join's receiver, when `ef` is Encounter. A `name` sent to `intake element` is kept in the element's `extra`, with a notice saying the name goes on the join.
+
 Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. `intake_join` returns the `join_id` that `intake_subtype` takes as `into` for a subtype join inside it, and `intake_absorb` makes a recorded join a subtype join inside its parent's join, keeping its `join_id`; the element it holds stays one element. An element's address is `namespace_address` in every intake tool, as in the Canonical Intake. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
 
-Each call returns what it stored and its notices. Read the notices: a call retains readable material and names unsupported or ill-fitting content rather than silently discarding its meaning. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` correct it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` reports the layer, the Metaform, the record counts, and any addresses recorded only as the end of a join and never described.
+Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` correct it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, joins, subtype joins, refs and open work records, and a notice naming any address recorded only as the end of a join and never described.
+
+The intake tools carry no condition field. What the agent finds in the specifications and not built, broken, or cruft it writes as a work record with `map_work`, apart from the map; the web GUI draws a node with an open `tbd` record at 70% opacity and flashes one with an open `broken` record red.
 
 ### What stays available
 
@@ -132,6 +136,15 @@ metaform activate metaform main
 ```
 
 Use the name reported by your own listing when selecting a form. The original operative text is served from the resource; this intake implementation does not also create a prompt-version record containing a copy of it.
+
+To take the intake again from nothing, clear the project:
+
+```sh
+metaform clear project example
+metaform clear project example --confirm
+```
+
+Without `--confirm` the command changes nothing and prints what it would remove. With it, it removes every Metaform of the project with its store, and the project's report, feedback and shape files. The registration, the folder and every file in it, the folder settings, and the origins and variants stay. A file it cannot remove, such as a store a running program holds open, is named with the reason and what to do. Over MCP the same operation is the `clear_project` tool, and the web GUI has **Clear project** in its header.
 
 ## 5. Inspect the first useful result
 
@@ -148,7 +161,13 @@ metaform map joins <address> as=receiver
 metaform map joins <address> as=provider
 ```
 
-The receiver view asks **what this entity needs and who provides it**. The provider view asks **who receives this capability and why**. Open the joins' references to connect the represented understanding to the actual artifact.
+The receiver view asks **what this entity needs and who provides it**. The provider view asks **who receives this capability and why**. One read gives both:
+
+```text
+metaform map where <address>
+```
+
+`where` returns the element, `provides`, what relies on it, `receives`, what it relies on, the subtype joins inside those joins, the subtype join holding it when it has one, its open work records, and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. Open the joins' references to connect the represented understanding to the actual artifact.
 
 The first benefit is concrete: you now have a recorded reason for a relationship, not merely an observation that two parts connect. An agent considering a change can reason against that purpose before reconstructing the whole project.
 
@@ -160,24 +179,30 @@ metaform web
 
 Use the address printed by the command. The default is `http://127.0.0.1:7433`. Select the project and Metaform, click an element or join, and inspect the Object and Provenance tabs. The [operating guide](working-with-metaform.md#using-the-web-interface) explains view selection and the separate folder settings.
 
-## Inspect the supplied project map without a new intake
+## Record a small map by hand
 
-The documentation includes a recorded [project export](../examples/project-metaform.json). To examine it, start from the repository root:
+The examples in [Working with Metaform](working-with-metaform.md) and [Extending Metaform](extending-metaform.md) use a kitchen timer's map. You can record it yourself with the intake commands, as an agent would, without a model. In an empty folder:
 
 ```sh
-metaform add project reference-demo .
-metaform import docs/examples/project-metaform.json reference-demo
-metaform set --project reference-demo
-metaform map element code.system.plugin
-metaform map joins code.system.plugin as=provider
-metaform map where code.template.module
+metaform add project kitchen .
+metaform intake start model=none role="by hand" id=kitchen-1
+metaform intake element stakeholder.cook.home role=VE name_length=2
+metaform intake element code.timer.kitchen role=DE name_length=2 refs='[{"key": "path", "value": "src/main.c"}]'
+metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done without watching the clock." function="Counts down each named dish and rings when one reaches zero." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish, set from the front panel."
+metaform intake element code.alarm.audible role=SE name_length=2 refs='[{"key": "path", "value": "src/alarm.c"}]'
+metaform intake join code.timer.kitchen code.alarm.audible name="buzzer" purpose="Get the cook's attention the moment a countdown ends." function="Plays a tone on the speaker until the cook presses stop." ef=Encounter relation="sounds the end of a countdown through the speaker" verb=sounds observation="A piezo speaker driven by one GPIO pin."
+metaform intake subtype <join_id of the dish clock join> code.loop.tick role=SE name_length=2 name="ticker" function="Subtracts one second from each running countdown." ef=Function relation="advances every running countdown by one second" verb=advances observation="One timer interrupt per second." refs='[{"key": "path", "value": "src/tick.c"}]'
+metaform intake finish
+metaform map where code.timer.kitchen
 ```
 
-The explicit import target maps the original project into `reference-demo` instead of adopting its original `/home/rich/metaform` folder as your local registration. This imports a recorded result; it is not a new execution of Canonical Intake. The [reader guide](reading-a-metaform.md) and [walkthrough](../examples/project-walkthrough.md) use this data.
+Each `intake join` prints the `join_id` it recorded; `intake subtype` takes the dish clock join's as its first word. `finish` reports four elements, two joins, one subtype join and three refs. The tick loop is an element held only by its subtype join, so `map roots` does not list it and `map where code.loop.tick` returns it with the subtype join and the join that holds it.
 
-The export was made before joins and subtypes carried `verb`, so each of its join and subtype rows records `verb` as null.
+The shell examples use POSIX single quotes around JSON; on Windows PowerShell, quote the JSON for PowerShell instead.
 
-Imported IDs are retained. Import adds missing identities; it is not an overwrite/update operation for an existing identity. A second import of the same export into the same home may therefore report records skipped rather than refreshed. Use a separate `METAFORM_HOME` for a completely independent demonstration copy.
+### The earlier export in docs/examples
+
+[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 5 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 5.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
 
 ## When the first command does not do what you expect
 

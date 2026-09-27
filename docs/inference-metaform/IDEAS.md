@@ -47,7 +47,7 @@ A useful implementation would derive the explanation from the same resolution de
 
 **Benefit.** This would make the difference between remembering a fact and remembering its functional location visible. It would help an agent find a past conclusion at the relationship where it matters and help a user detect a note that was attached too broadly.
 
-**Connection to existing mechanisms.** [Node-addressed items and relationship reads](IMPLEMENTATION_MAP.md#records) already support elements, joins, and subtypes. The proposal is a presentation and navigation capability over that data. It does not imply that mutable memory already has a historical ledger.
+**Connection to existing mechanisms.** [Node-addressed items and relationship reads](IMPLEMENTATION_MAP.md#records) already support elements and joins, subtype joins included. The proposal is a presentation and navigation capability over that data. It does not imply that mutable memory already has a historical ledger.
 
 **Concrete illustration.** A note about how a declared verb appears as an MCP tool is shown at the MCP-to-module-contract relationship. A note about packaging the same module is shown at the builder's relationship. The module's name connects them for navigation, while their receiving purposes preserve why the observations differ.
 
@@ -113,7 +113,7 @@ A non-code counterpart is a collection-level presentation practice that transfer
 
 **Benefit.** A module author, a packaging task, and a source critic do not need unrelated versions of the truth; they need different relationships within the same functional understanding. A receiver-oriented view would let a user enter at the purpose of the present task while retaining navigation to broader consequences.
 
-**Connection to existing mechanisms.** The current [project graph](IMPLEMENTATION_MAP.md#graph-index) already represents the module contract serving the module author, chassis, command line, MCP, builder, and agent instructions. Existing reads and the web viewer provide a basis for focused presentation; the particular receiver-oriented interface would be additional work.
+**Connection to existing mechanisms.** The September 26 [project graph](IMPLEMENTATION_MAP.md#graph-index) already represents the module contract serving the module author, chassis, command line, MCP, builder, and agent instructions. `map where` returns, in one read of an address, every join it provides with the receiver's purpose, every join it receives, and the subtype joins inside them; `intake show receiver=` gives one receiver's joins while an intake is recorded. Those reads and the web viewer provide a basis for focused presentation; the particular receiver-oriented interface would be additional work.
 
 **Concrete illustration.** Entering through `stakeholder.author.module` presents the template and helloworld contributions and the capability to declare a module once. Entering through `code.server.mcp` presents the same contract as the provider of tool declarations and callable operations. Entering through `code.builder.package` presents its role in producing the distributed package.
 

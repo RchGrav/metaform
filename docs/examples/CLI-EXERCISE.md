@@ -7,6 +7,8 @@
 
 This record describes the local command exercise used to check instructions in the guides. It is separate from the author's original model work and from the supplied September 26 project intake.
 
+It records the source of that day. Since then the intake is recorded one object per call and `intake submit` is gone, and the store is at schema version 5, which does not import the version 1 export this exercise imported. The guides now use the kitchen timer's map recorded by hand in [Getting started](../guides/getting-started.md#record-a-small-map-by-hand).
+
 ## Environment and inputs
 
 The exercise ran the supplied source through `python -m metaform`, with `PYTHONPATH` pointing to its `src` directory, `PYTHONDONTWRITEBYTECODE=1`, an isolated `METAFORM_HOME`, and temporary workpiece directories. No persistent user configuration or supplied source was changed.

@@ -16,16 +16,16 @@ Started from template 0.3.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `start`, its default verb, and `stop`, and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `start`, its default verb, and `stop`, one subscription, to `map.changed`, and a status hook.
 
 ## Common base used
 
-`metaform.module` for the declaration, `Context`, `Status` and `Stop`; `metaform.settings` for its three settings; `metaform.home` for the home's folder and the registered projects.
+`metaform.module` for the declaration, `Context`, `Status`, `Stop` and `Subscription`; `metaform.settings` for its three settings; `metaform.home` for the home's folder and the registered projects.
 
 ## Verbs
 
-- `start`, the default, so `metaform web` runs it: when this home's server answers at the address in `run/web.json`, returns `state: running` with its address; otherwise checks the port and bind address are free, starts `server.py` as a process detached from the terminal, waits until it answers, and returns `state: started` with its address. On a bind address other than loopback the address ends with `?t=<token>`, and `token` is returned too. A port held by another program stops with `Next: metaform set --web-port <port>`; an address it cannot bind stops with `Next: metaform set --web-bind <address>`. Tool `web_start`.
-- `stop`: ends the recorded server and removes `run/web.json`. Returns `state: stopped`, or `state: not running`. Tool `web_stop`.
+- `start`, the default, so `metaform web` runs it: when this home's server answers at the address in `run/web.json`, returns `state: running` with its address; otherwise checks the port and bind address are free, starts `server.py` as a process detached from the terminal with a pipe as its standard output, waits on the pipe for the server's one line saying it listens, then asks it once, and returns `state: started` with its address. The wait is one wait for a message, limited to 15 seconds so the command never hangs on a server that neither answers nor ends, QUAL-015. On a bind address other than loopback the address ends with `?t=<token>`, and `token` is returned too. A port held by another program stops with `Next: metaform set --web-port <port>`; an address it cannot bind stops with `Next: metaform set --web-bind <address>`. Tool `web_start`.
+- `stop`: opens the recorded server's events stream, ends the server, reads the stream until the system closes it with the process, removes `run/web.json`, and returns `state: stopped`, or `state: not running`. Tool `web_stop`.
 
 ## Settings
 
@@ -35,11 +35,11 @@ Started from template 0.3.0.
 
 ## The server
 
-`server.py` runs the standard library's threading HTTP server. Every request must carry a `Host` header naming the server's own address and port; on a wildcard bind only the port is checked, since the token guards every request there. On a bind address other than loopback, every request needs the home's token, kept in `run/web-token`: as `?t=` on the page URL, which also sets an `HttpOnly`, `SameSite=Strict` cookie, as that cookie, or as the `X-Metaform-Token` header. It serves `page/` at `/`, `vendor/` under `/vendor/`, `/api/server` with its process id and home, `/api/projects` with every registered project, and `/api/clear-preview` with what clearing a project removes and keeps. Its four writes, VIEW-011, are POSTs from its own page, with the page's `Origin` and a JSON body: `/api/apply-layers`, `/api/save-prompt`, `/api/remove-correction` and `/api/clear-project`, which clears only with `confirm` true. After a write that changed the map the server fires `map.changed` on the module event bus, as the chassis does after a command, VIEW-018; its own subscriber then hands the event back to it and it pushes it to every open page. It writes what went wrong to `run/web.log`.
+`server.py` runs the standard library's threading HTTP server. Every request must carry a `Host` header naming the server's own address and port; on a wildcard bind only the port is checked, since the token guards every request there. On a bind address other than loopback, every request needs the home's token, kept in `run/web-token`: as `?t=` on the page URL, which also sets an `HttpOnly`, `SameSite=Strict` cookie, as that cookie, or as the `X-Metaform-Token` header. It serves `page/` at `/`, `vendor/` under `/vendor/`, `/api/server` with its process id and home, `/api/projects` with every registered project, `/api/clear-preview` with what clearing a project removes and keeps, each read of the data access object by its query name under `/api/<read>`, such as `/api/where`, `/api/work` and `/api/intake-recording`, and the stored prompts' reads. `/api/events` is one server-sent events stream per open page, held open; `POST /api/notify` takes an event from this machine with the nonce in `run/web.json` and writes it to every open stream. The server's loop waits for a connection with no timeout and nothing in it polls. Its four writes, VIEW-011, are POSTs from its own page, with the page's `Origin` and a JSON body: `/api/apply-layers`, `/api/save-prompt`, `/api/remove-correction` and `/api/clear-project`, which clears only with `confirm` true. After a write that changed the map the server fires `map.changed` on the module event bus, as the chassis does after a command, VIEW-018; its own subscriber then hands the event back to it and it pushes it to every open page. It writes what went wrong to `run/web.log`.
 
 ## Events
 
-None.
+Subscribes to `map.changed`, which the chassis fires after any command that changes a project's map, VIEW-018. The subscriber runs in the process of the command that published it, as every subscriber does: it posts the event to the running server's `/api/notify` with the server's nonce, and the server pushes it to every open page, which redraws without a reload. With no server running it does nothing. After the page's own writes that changed the map, the server fires `map.changed` on the bus itself, and this subscriber hands it back to the server.
 
 ## Sync and async
 
@@ -51,7 +51,7 @@ None. The web GUI reads through the data access object and writes only what VIEW
 
 ## Lifecycle and cleanup
 
-No `start` or `stop` hooks, and no tasks. The server is its own process, detached from the terminal that started it; `metaform web stop` ends it, and so do logout and restart. Nothing of it runs inside other Metaform commands.
+No `start` or `stop` hooks, and no tasks. The server is its own process, detached from the terminal that started it; `metaform web stop` ends it, and so do logout and restart. Inside other Metaform commands only the `map.changed` subscriber runs, once per command that changed the map.
 
 ## Modules relied on
 
@@ -63,7 +63,7 @@ Linux, macOS and Windows. On POSIX the server runs in a new session; on Windows 
 
 ## Resources owned
 
-`page/`, the GUI's HTML, CSS and scripts, and `vendor/`, the bundled libraries with their licenses, VIEW-003. Under the home: `run/web.json`, the running server's record; `run/web-token`, the token for bind addresses other than loopback; `run/web.log`, what went wrong in the server.
+`page/`, the GUI's HTML, CSS and scripts, and `vendor/`, the bundled libraries with their licenses, VIEW-003. Under the home: `run/web.json`, the running server's record, with its address, process id and nonce; `run/web-token`, the token for bind addresses other than loopback; `run/web.log`, what went wrong in the server.
 
 ## Installed and direct wheel
 

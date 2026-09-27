@@ -44,7 +44,7 @@ a member of its category : cleverly self-referential
 
 ## What it does
 
-**Orients.** Every element has an address, a purpose, and a record of what
+**Orients.** Every element has an address, the purposes it serves, and a record of what
 depends on it. Agents receive their position, their purpose, and exactly the
 knowledge in scope — the stored functional record, not a paraphrase of last
 session's chat.
@@ -76,11 +76,11 @@ Each prefix is a usable type and a prompting surface. In the author's supplied a
 
 ### Relationships connect the type to this particular workpiece
 
-A type address is not a substitute for knowing the project. The address `code.system.plugin` engages understanding of plugin systems. Its recorded relationships establish what **this** plugin system provides, to whom, and for what purpose.
+A type address is not a substitute for knowing the project. The address `code.timer.kitchen` engages understanding of kitchen timers. Its recorded relationships establish what **this** kitchen timer provides, to whom, and for what purpose.
 
-A Receiving Entity owns an **Operative Purpose**: the reason it needs something. A Providing Element supplies an **Encounter Function**: how the required effect is delivered, used, or experienced. The join retains that relationship, its active-voice description, observations, and relevant references. The relationship has an identity of its own, so an agent can reason about it and attach knowledge to it.
+A Receiving Entity owns an **Operative Purpose**: the reason it needs something. A Providing Element supplies an **Encounter Function**: how the required effect is delivered, used, or experienced. The join retains that relationship, the project's own `name` for the functionality it names, its active-voice description, observations, and relevant references. The relationship has an identity of its own, so an agent can reason about it and attach knowledge to it. An element is only its address, `name_length` and role; its name is its address read backward through `name_length`.
 
-**Function** concerns operative capability. **Encounter** concerns its expression or realization. The term Encounter Function deliberately accommodates both the encounter of a functionality and the functionality of an encounter. It is not restricted to a callable function in source code. Every join carries `ef`, one of exactly two words, Function or Encounter, naming which of the two the join's relation describes, and `verb`, the one word the agent infers for that relation. The relation's subject follows `ef`: the Providing Element when `ef` is Function, the Vested Entity when `ef` is Encounter.
+**Function** concerns operative capability. **Encounter** concerns its expression or realization. The term Encounter Function deliberately accommodates both the encounter of a functionality and the functionality of an encounter. It is not restricted to a callable function in source code. Every join carries `ef`, one of exactly two words, Function or Encounter, naming which of the two the join's relation describes, and `verb`, the third-person verb its `relation` starts with. The relation is an active-voice fragment, and its subject follows `ef`: the Providing Element when `ef` is Function, the Vested Entity when `ef` is Encounter.
 
 ### Understanding is selected, used, and extended
 
@@ -100,58 +100,107 @@ It also lets a critic find gaps in the design: functions and Encounters the syst
 
 ## What it looks like
 
-An agent assigned to work on your event bus receives the stored record. The receiver is `code.chassis`, the provider is `code.system.plugin`, and `code.bus.event` is an internal subtype held inside their join:
+A kitchen timer's firmware, mapped. The home cook receives the kitchen timer, which the project calls the dish clock. The timer receives the audible alarm's Encounter, the buzzer. The tick loop is absorbed into the dish clock's join as a subtype join, the ticker. Each join is its own object, drawn here as a circle:
 
 ```mermaid
 graph LR
-    provider["code.system.plugin<br/>module contract and loader"]
-    receiver["code.chassis<br/>chassis"]
-    subtype["code.bus.event<br/>event bus<br/>(subtype held inside the join)"]
-    provider -- "ef: Function" --> receiver
-    subtype -. held inside .-> provider
+    timer["code.timer.kitchen<br/>kitchen timer"] -- provides --> clock(("dish clock<br/>ef: Function"))
+    clock -- "purpose held by" --> cook["stakeholder.cook.home<br/>home cook"]
+    tick["code.loop.tick<br/>tick loop"] -.->|"ticker, a subtype join inside it"| clock
+    alarm["code.alarm.audible<br/>audible alarm"] -- provides --> buzzer(("buzzer<br/>ef: Encounter"))
+    buzzer -- "purpose held by" --> timer
 ```
 
-```text
-purpose:     Carry every capability beyond its own commands as modules it
-             finds, checks and loads on its own, and withdraw everything a
-             module registered when it goes.
-subtype code.bus.event:
-  function:  Delivers a published topic to every loaded subscriber with its
-             own Context and a copy of the payload, and returns each
-             delivery's outcome, completed, failed or cancelled, to the
-             publisher; one subscriber's failure never hides another's.
-  ef:        Function
-  relation:  The event bus connects modules without either naming the other.
-  observation: events.py; from inside a running loop async subscribers are
-             awaited and sync ones run in a worker thread. The bus runs no
-             workflow. Only helloworld subscribes today.
+An agent handed the address `code.timer.kitchen` reads it once, with `metaform map where code.timer.kitchen --json` or the `map_where` tool, and receives the stored record: `provides`, what relies on the timer, `receives`, what it relies on, the subtype join inside, and what the memory and a review layer hold at it.
+
+```json
+{
+  "kind": "element",
+  "element": {
+    "address": "code.timer.kitchen",
+    "layer": "intake-20260927T205948Z-001fa5",
+    "reading": "kitchen timer code",
+    "short_name": "kitchen timer",
+    "name_length": 2,
+    "role": "DE",
+    "refs": [{"key": "path", "value": "src/main.c"}]
+  },
+  "provides": [
+    {
+      "receiver": "stakeholder.cook.home",
+      "layer": "intake-20260927T205948Z-001fa5",
+      "type": "purpose",
+      "name": "dish clock",
+      "purpose": "Know when each dish is done without watching the clock.",
+      "function": "Counts down each named dish and rings when one reaches zero.",
+      "ef": "Function",
+      "relation": "tells the cook when a dish is done",
+      "verb": "tells",
+      "observation": "One countdown per dish, set from the front panel.",
+      "subtypes": [
+        {
+          "element": "code.loop.tick",
+          "layer": "intake-20260927T205948Z-001fa5",
+          "type": "subtype",
+          "reading": "tick loop code",
+          "short_name": "tick loop",
+          "name": "ticker",
+          "name_length": 2,
+          "role": "SE",
+          "function": "Subtracts one second from each running countdown.",
+          "ef": "Function",
+          "relation": "advances every running countdown by one second",
+          "verb": "advances",
+          "observation": "One timer interrupt per second.",
+          "refs": [{"key": "path", "value": "src/tick.c"}]
+        }
+      ]
+    }
+  ],
+  "receives": [
+    {
+      "provider": "code.alarm.audible",
+      "layer": "intake-20260927T205948Z-001fa5",
+      "type": "purpose",
+      "name": "buzzer",
+      "purpose": "Get the cook's attention the moment a countdown ends.",
+      "function": "Plays a tone on the speaker until the cook presses stop.",
+      "ef": "Encounter",
+      "relation": "sounds the end of a countdown through the speaker",
+      "verb": "sounds",
+      "observation": "A piezo speaker driven by one GPIO pin."
+    }
+  ],
+  "layers": [
+    {
+      "layer": "memory",
+      "kind": "memory",
+      "items": [{"layer": "memory", "value": "The countdown drifts one second an hour on the first board."}]
+    },
+    {
+      "layer": "review-notes",
+      "kind": "layer",
+      "items": [{"layer": "review-notes", "value": {"finding": "Each dish keeps its own countdown."}}]
+    }
+  ]
+}
 ```
 
-This record is the September 26, 2026 project export, made before `verb` existed; a current join also carries that field. Every agent that touches this element — this session, next month, a different model from a different vendor — sees the same stored purpose.
+Ids and empty fields are left out; `full=true` keeps them. Every agent that touches this element — this session, next month, a different model from a different vendor — sees the same stored purpose. [Getting started](docs/guides/getting-started.md#record-a-small-map-by-hand) records this map by hand, without a model, and [Working with Metaform](docs/guides/working-with-metaform.md) adds the memory and the review layer.
 
-The running web GUI renders the same kind of record for this repository's own current map:
+The web GUI draws the same map:
 
-![The Metaform web GUI showing this repository's current map: the chassis element selected, its held joins listed with their Operative Purpose, Function or Encounter, and relation text, and the 3D graph of every element and join to the right.](docs/images/gui-map.png)
+![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its memory, a review-notes item and the buzzer join it holds; the 2D map above it with the tick loop inside the kitchen timer; and the 3D graph of every element, join and item on the right, the audible alarm red for its open broken work record.](docs/images/gui-map.png)
 
 ### Extending Metaform itself
 
-The supplied project Metaform calls `code.system.plugin` **the module contract and loader**. One of its receivers is `stakeholder.author.module`, the **module author**. That receiver's recorded purpose is:
+The earlier map of this repository, recorded on September 26, 2026 and kept as an [export](docs/examples/project-metaform.json), records **the module contract and loader** as a provider. One of its receivers is **the module author**, whose recorded purpose is:
 
 > Add a capability to Metaform as a module, declared once in its own folder, that runs as a metaform command and an MCP tool with its own settings, events, status line and lifecycle, without changing the chassis.
 
-The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. Inside that relationship, `code.template.module` identifies **template**, and `code.module.example` identifies **helloworld**. They are internal subtypes of the relationship, not extra top-level subsystems inferred from their filenames.
+The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. Inside that relationship, two subtype joins hold **template** and **helloworld**. They are internal subtypes of the relationship, not extra top-level subsystems inferred from their filenames.
 
-An agent asked to add a module can receive the provider's project name, this receiving purpose, the template and example, and the source references for the declaration and loader. It can then implement against the existing shared facilities rather than invent separate command registration, settings storage, or an event mechanism. The same provider also has relationships to the command line, MCP server, package builder, chassis, and agent instructions. Those relationships make the consequences of a change available from the receivers' perspectives.
-
-For an imported copy of the supplied project map, the reads are executable:
-
-```sh
-metaform map element code.system.plugin
-metaform map joins code.system.plugin as=provider
-metaform map where code.template.module
-metaform map where code.bus.event
-metaform memory open-nodes element:code.system.plugin
-```
+An agent asked to add a module can receive the provider's project name, this receiving purpose, the template and example, and the source references for the declaration and loader. It can then implement against the existing shared facilities rather than invent separate command registration, settings storage, or an event mechanism. The same provider also has relationships to the command line, MCP server, package builder, chassis, and agent instructions. Those relationships make the consequences of a change available from the receivers' perspectives, and `metaform map where` on the provider's address returns all of them in one read.
 
 A **derived illustration of project-grounded lexicalization** uses the request:
 
@@ -165,9 +214,9 @@ The project-grounded request becomes:
 Review error handling in the module contract and loader.
 ```
 
-A separate mapping connects `module contract and loader` to `code.system.plugin`, with directions to the relevant joins and selected knowledge. The operation remains a review of error handling. The preprocessing does not perform the review or add a new assignment.
+A separate mapping connects `module contract and loader` to the provider's namespace address, with directions to the relevant joins and selected knowledge. The operation remains a review of error handling. The preprocessing does not perform the review or add a new assignment.
 
-The graph reads and addressed memory are implemented. The lexicalization producer described here is intended functionality, not a shipped command. [Follow the complete example](docs/examples/project-walkthrough.md) for the actual records, executable inspection, and the distinction between recorded material and derived use.
+The graph reads and addressed memory are implemented. The lexicalization producer described here is intended functionality, not a shipped command. [Follow the complete example](docs/examples/project-walkthrough.md) for the records, the reads that return them, and the distinction between recorded material and derived use.
 
 ### Refactoring legacy code
 
@@ -208,7 +257,7 @@ A workpiece can be software, a document, a narrative, an image, a collection, or
 
 The implementation is a Python chassis with discoverable modules. A module declares its verbs, input nouns, settings, event subscriptions, lifecycle hooks, and purpose. The chassis uses those declarations to expose commands, MCP tools, help, settings, and agent instructions.
 
-Modules receive a per-call context with the selected project, store, folder, settings, and output facilities. Shared facilities include graph and knowledge storage, addressed memory operations, event delivery, owned asynchronous work, reports, and packaging. Modules are discovered from the bundled module directory, the user's Metaform home, and installed entry points.
+Modules receive a per-call context with the selected project, store, folder, settings, and output facilities. Shared facilities include graph and knowledge storage, addressed memory operations, work records for the condition of an element or a join, event delivery, owned asynchronous work, reports, and packaging. Modules are discovered from the bundled module directory, the user's Metaform home, and installed entry points.
 
 The current modules provide intake, map operations, memory, MCP service, and a web interface. The disabled-by-default **helloworld** module exercises the contract; **template** supplies its empty starting shape. The existence of a shared facility is distinct from how many modules currently use it. A new inference producer can use the existing chassis without rebuilding those facilities.
 
@@ -233,9 +282,9 @@ metaform add project example .
 metaform intake prompt
 ```
 
-The last command serves the Canonical Intake instructions; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, or open `metaform web`.
+The last command serves the Canonical Intake instructions; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
 
-For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also includes a way to inspect the supplied map without running a new model intake.
+For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also records a small map by hand, without a model.
 
 ## Documentation
 
@@ -259,7 +308,7 @@ The technical-reference set supplies the deeper engineering account:
 | [EXAMPLES_TO_COLLECT.md](docs/inference-metaform/EXAMPLES_TO_COLLECT.md) | Original traces and measurements that would make preparation and reuse inspectable. |
 | [IDEAS.md](docs/inference-metaform/IDEAS.md) | Separate proposals for additional tools and views. |
 
-This documentation describes the supplied `chassis` source edition at commit `ce9062bdec9398ca1f23ac60684bd3cc7e37f23c`. [Edition and validation notes](docs/EDITION.md) distinguish checked source behavior, local documentation exercises, recorded project material, and intended producers.
+This documentation describes the `chassis` branch after step 58 of the [build log](specifications/spec/BUILD-LOG.md). [Edition and validation notes](docs/EDITION.md) record the documentation edition of September 26, 2026, the source it was written against and the checks made on it, and what has changed since.
 
 ## Authorship and independent development
 
