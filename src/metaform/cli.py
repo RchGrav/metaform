@@ -23,6 +23,7 @@ from .data import Store, export_document, history, import_document, prompts, pul
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
+from .wording import counted
 
 EMPTY_IS_ALL = ('modules', 'layers')
 
@@ -461,7 +462,8 @@ def unset(args: list[str], folder: Path) -> None:
     reset = [key for key, (result, _) in results_by_key.items() if result == 'reset']
     skipped = [key for key, (result, _) in results_by_key.items() if result == 'skipped']
     unglued = [key for key, (_, was) in results_by_key.items() if was]
-    out(f'Reset {len(reset)} setting(s): ' + ', '.join(reset) if reset else 'No settings required reset')
+    out(f'Reset {counted(len(reset), "setting", "settings")}: ' + ', '.join(reset) if reset
+        else 'No settings required reset')
     if skipped:
         out('Skipped (glued): ' + ', '.join(skipped))
     if unglued:

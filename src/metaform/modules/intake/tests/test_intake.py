@@ -378,6 +378,24 @@ def test_what_does_not_fit_is_stored_as_given_and_named_in_a_notice(run, project
 
 
 @pytest.mark.req('BASE-039')
+@pytest.mark.req('BASE-044')
+def test_refs_that_are_not_text_are_kept_in_the_extra_and_counted_in_words(run, project, tmp_path):
+    given = copy.deepcopy(FIXTURE)
+    given['elements'][1]['refs'] = [['path', 'src/timer.c'], ['line', 12], ['col', 3]]
+    given['elements'][0]['joins'][0]['refs'] = [['line', 12]]
+    report = submit(run, project, given, tmp_path)
+    found = notices(report)
+    assert found['elements[1].refs'] == ('A ref is a key and a value, both text; two were not, and kept in the extra '
+                                         'under refs.')
+    assert found['elements[0].joins[0].refs'] == ('A ref is a key and a value, both text; one was not, and kept in '
+                                                  'the extra under refs.')
+    store = Store('timer')
+    timer = store.element(given['elements'][1]['namespace_address'], raw=True)
+    assert timer is not None and [(ref.key, ref.value) for ref in timer.refs] == [('path', 'src/timer.c')]
+    assert timer.extra is not None and timer.extra['refs'] == [['line', 12], ['col', 3]]
+
+
+@pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-045')
 @pytest.mark.req('STORE-041')
 def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kept(run, project, tmp_path, home):

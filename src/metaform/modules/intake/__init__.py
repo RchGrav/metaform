@@ -25,6 +25,7 @@ from typing import Any, cast
 from metaform import settings
 from metaform.data import Element, GraphPage, Join, Layer, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
+from metaform.wording import odd_refs_notice
 
 from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
 
@@ -178,9 +179,7 @@ def _refs_and_extra(ctx: Context, notices: Notices) -> tuple[list[tuple[str, str
         else:
             pairs.append(pair)
     if odd:
-        notices.append({'where': 'refs', 'message': f'A ref is a key and a value, both text; {len(odd)} '
-                                                    f'{"was" if len(odd) == 1 else "were"} not, and kept in the '
-                                                    'extra under refs.'})
+        notices.append({'where': 'refs', 'message': odd_refs_notice(odd)})
         extra = {**cast(dict[str, Any], extra or {}), 'refs': odd}
     return pairs, cast(dict[str, Any] | None, extra)
 

@@ -175,15 +175,27 @@ def _typed(kind: str, value: Any) -> bool:
     return True
 
 
-def _noun_value(noun: Noun, value: Any, where: str) -> Any:
-    """One noun from its JSON value, BASE-035. A noun with a schema, or of kind json, takes any JSON value."""
+def _noun_value(noun: Noun, value: Any, where: str, notices: list[tuple[str, str]]) -> Any:
+    """One noun from its JSON value, BASE-035. A noun with a schema, or of kind json, takes any JSON value.
+
+    A `str` noun is never refused for its content, BASE-044: a value that is not a string reaches the verb as its
+    JSON text, named once in `notices`. An `int` or `bool` noun sent another kind cannot be read as that kind and
+    stops the call as the command line does.
+    """
     if noun.schema is not None or noun.kind == 'json':
         return value
     if noun.many:
         members = cast(list[Any], value) if isinstance(value, list) else None
-        if members is None or not all(_typed(noun.kind, member) for member in members):
+        if members is None or (noun.kind != 'str' and not all(_typed(noun.kind, member) for member in members)):
             raise Stop(f'{noun.name} is a list of {KIND_WORDS[noun.kind]} values.', f'{where} --help')
+        if noun.kind == 'str' and not all(isinstance(member, str) for member in members):
+            notices.append((noun.name, f'{noun.name} is text; what was sent was kept as its JSON text.'))
+            return [member if isinstance(member, str) else json.dumps(member, ensure_ascii=False)
+                    for member in members]
         return list(members)
+    if noun.kind == 'str' and not isinstance(value, str):
+        notices.append((noun.name, f'{noun.name} is text; what was sent was kept as its JSON text.'))
+        return json.dumps(value, ensure_ascii=False)
     if not _typed(noun.kind, value):
         raise Stop(f'{noun.name} is {KIND_WORDS[noun.kind]}, not {json.dumps(value)}.', f'{where} --help')
     return value
@@ -213,8 +225,10 @@ def from_json(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tup
               folder: Path | None = None) -> Parsed:
     """The nouns and switches of one tool call, checked the way the command line checks them, MCP-005 and MCP-006.
 
-    A required noun that is missing, or a value of the wrong kind, stops the call with the same next step the
-    command line gives. A name that is neither a noun nor a switch of the verb is listed in `unknown`.
+    A required noun that is missing, or an `int` or `bool` noun sent a value that is not its kind, stops the call
+    with the same next step the command line gives. A `str` noun sent another JSON value reaches the verb as that
+    value's JSON text, with a notice in `notices`, BASE-044. A name that is neither a noun nor a switch of the verb
+    is listed in `unknown`.
     """
     where = f'metaform {module} {verb.name}'
     parsed = Parsed()
@@ -223,7 +237,7 @@ def from_json(module: str, verb: Verb, arguments: dict[str, Any], *, ignore: tup
             if noun.required:
                 raise Stop(f'{verb.name} needs {noun.usage()}.', f'{where} --help')
             continue
-        parsed.nouns[noun.name] = _noun_value(noun, arguments[noun.name], where)
+        parsed.nouns[noun.name] = _noun_value(noun, arguments[noun.name], where, parsed.notices)
     for key in verb.switches:
         setting = settings.SCHEMA.get(key)
         if setting is None or key not in arguments:

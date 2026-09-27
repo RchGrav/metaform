@@ -25,6 +25,7 @@ from typing import Any
 
 from . import changes, sqlite
 from .errors import StoreError
+from .wording import counted, listed
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -449,20 +450,6 @@ def metaform_owner(metaform_id: str) -> str | None:
     with base() as db:
         row = db.execute('SELECT project_id FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone()
     return None if row is None else str(row[0])
-
-
-NUMBERS = ('no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine')
-
-
-def counted(number: int, noun: str, plural: str) -> str:
-    """A count as a person reads it: no metaforms, one metaform, two metaforms, 12 metaforms, PROJ-025."""
-    word = NUMBERS[number] if 0 <= number < len(NUMBERS) else str(number)
-    return f'{word} {noun if number == 1 else plural}'
-
-
-def listed(names: tuple[str, ...]) -> str:
-    """Names as a person reads them: main, main and fresh, main, fresh and draft."""
-    return names[0] if len(names) == 1 else f'{", ".join(names[:-1])} and {names[-1]}'
 
 
 @dataclass(frozen=True)

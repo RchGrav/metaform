@@ -369,7 +369,49 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'add_subtype element another subtype join holds': (
         lambda s, w: None, lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', function='f'),
         True, lambda s, w, got, before: got.element_id == s.element('code.loop.tick').element_id),
+    # A ref that is not a key and a value, both text, is kept in the record's extra under refs, STORE-012.
+    'add_element ref not text': (lambda s, w: None,
+                                 lambda s, w: s.add_element('k', 'code.k.c', refs=[('path', 'c.c'), ('line', 12)]),
+                                 True, lambda s, w, got, before: _odd_refs(got, [['line', 12]], ('path', 'c.c'))),
+    'add_join ref not text': (lambda s, w: None,
+                              lambda s, w: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', function='f',
+                                                      relation='r', observation='o',
+                                                      refs=[('line', 12), 'loose'], extra={'a': 1}),
+                              True, lambda s, w, got, before: _odd_refs(got, [['line', 12], 'loose'], a=1)
+                              and 'two were not' in got.notices[0].message),
+    # A ref given as an object with a key and a value that are not both text is a record, so, as any list of records
+    # in an extra, it is split into an item of its own, STORE-004.
+    'add_element ref not text as a record': (
+        lambda s, w: None,
+        lambda s, w: s.add_element('k', 'code.k.c', refs=[{'key': 'line', 'value': 12}]), True,
+        lambda s, w, got, before: got.extra is None and got.refs == () and [
+            item.value for item in s.layer_items('k', Node('element', got.element_id)).results] == [
+            {'refs': {'key': 'line', 'value': 12}}]),
+    'add_subtype ref not text': (lambda s, w: None,
+                                 lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.b.part', function='f',
+                                                            refs=[('line', 12)]),
+                                 True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
+    'add_item ref not text': (lambda s, w: None,
+                              lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', refs=[('line', 12)]),
+                              True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
+    'add_property ref not text': (lambda s, w: None,
+                                  lambda s, w: s.add_property('k', 'code.k.b', 'v', refs=[('line', 12)]),
+                                  True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
+    'edit ref not text': (lambda s, w: None,
+                          lambda s, w: s.edit(w.k_join.join_id, {'refs': [('path', 'a.c'), ('line', 12)]}), True,
+                          lambda s, w, got, before: _odd_refs(
+                              s.joins('code.k.a', raw=True).results[0], [['line', 12]], ('path', 'a.c'))),
+    'correct ref not text': (lambda s, w: correction(s, 'fix'),
+                             lambda s, w: s.correct('fix', w.inner.join_id, {'refs': [('path', 'a.c'), ('line', 12)]},
+                                                    reason='r'), True,
+                             lambda s, w, got, before: [(ref.key, ref.value) for ref in got.refs] == [('path', 'a.c')]
+                             and got.fields['extra'] == {'refs': [['line', 12]]}),
 }
+
+
+def _odd_refs(record, odd, *pairs, **rest):
+    """The record's refs are exactly `pairs`, and its extra holds the rest with the odd refs under refs."""
+    return [(ref.key, ref.value) for ref in record.refs] == list(pairs) and record.extra == {**rest, 'refs': odd}
 
 
 @pytest.mark.req('STORE-026')

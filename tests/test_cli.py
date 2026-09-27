@@ -122,7 +122,8 @@ def test_unset_all_unglue_returns_every_setting_to_default(run, toggles, project
     run('set', '--panes', '7', cwd=project)
     run('set', '--project', 'proj', '--glue', cwd=project)
     out = lines(run('unset', 'all', '--unglue', cwd=project))
-    assert out[0].startswith('Reset ') and any(line.startswith('Unglued: ') for line in out)
+    assert out[0] == 'Reset three settings: project, tmux, panes'
+    assert any(line.startswith('Unglued: ') for line in out)
     assert {row['state'] for row in shown(run, cwd=project).values()} == {'default'}
 
 
@@ -703,11 +704,11 @@ def test_an_off_module_lists_with_the_summary_it_shows_when_on(run):
 def test_set_and_unset_report_what_is_stored_whatever_the_value(run, toggles):
     assert lines(run('set', '--no-tmux'))[0] == 'Success: updated 1 key'
     assert shown(run)['tmux']['state'] == 'set'
-    assert lines(run('unset', 'all'))[0] == 'Reset 1 setting(s): tmux'
+    assert lines(run('unset', 'all'))[0] == 'Reset one setting: tmux'
     assert shown(run)['tmux']['state'] == 'default'
     run('set', '--no-tmux', '--glue')
     unglued = lines(run('unset', '--tmux', '--unglue'))
-    assert 'Reset 1 setting(s): tmux' in unglued and 'Unglued: tmux' in unglued
+    assert 'Reset one setting: tmux' in unglued and 'Unglued: tmux' in unglued
 
 
 @pytest.mark.req('QUAL-002')

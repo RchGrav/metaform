@@ -98,9 +98,11 @@ def encode_value(value: Any, where: str) -> str:
         raise StoreError(f'The value on {where} is not JSON: {error}.', 'metaform help map knowledge') from None
 
 
-def refs_list(refs: Iterable[Any] | None) -> list[tuple[str, str]]:
-    """Refs as key and value pairs in order, from pairs or from objects with key and value."""
+def refs_fit(refs: Iterable[Any] | None) -> tuple[list[tuple[str, str]], list[Any]]:
+    """Refs as key and value pairs in order, from pairs or from objects with key and value; and, second, every ref
+    that is not a key and a value, both text, as given, for the record's extra, STORE-012 and BASE-044."""
     found: list[tuple[str, str]] = []
+    odd: list[Any] = []
     for ref in refs or ():
         mapping = as_object(ref)
         key: Any = None
@@ -112,6 +114,8 @@ def refs_list(refs: Iterable[Any] | None) -> list[tuple[str, str]]:
             if len(pair) == 2:
                 key, value = pair[0], pair[1]
         if not isinstance(key, str) or not isinstance(value, str):
-            raise StoreError(f'{ref!r} is not a ref: give a key and a value, both text.', 'metaform help map knowledge')
-        found.append((key, value))
-    return found
+            odd.append(ref)
+        else:
+            found.append((key, value))
+    return found, odd
+

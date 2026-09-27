@@ -368,7 +368,7 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE INDEX refs_by_key_value ON refs(key, value);
   ```
   A `change` row in a correction layer copies forward the refs it keeps, as new rows pointing at the new version row.
-  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. `add_ref` adds one more ref to a thing's current version in a knowledge layer or a mutable layer at any time, STORE-032. A ref on a thing of the intake layer or of a finished correction layer changes only through a correction layer, STORE-017.
+  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. A ref in that list that is not a key and a value, both text, is never refused, STORE-026: every writer that takes `refs` keeps it in the record's `extra` under `refs`, with the notice `A ref is a key and a value, both text; one was not, and kept in the extra under refs.`, `two were not` and so on, counted as PROJ-025 counts; `edit` and `correct` given a new `refs` list do the same. `add_ref` adds one more ref to a thing's current version in a knowledge layer or a mutable layer at any time, STORE-032. A ref on a thing of the intake layer or of a finished correction layer changes only through a correction layer, STORE-017.
 - Acceptance:
   - A join with refs `path=a` and `path=b`, changed by a correction layer to keep only `path=b`, reads back with one ref at the current version and two in its intake version.
   - `add_ref` on a thing in the intake layer writes nothing and returns a notice naming a correction layer, BASE-044.

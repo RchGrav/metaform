@@ -378,9 +378,8 @@ def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, m
         missing = await client.call_tool('helloworld_greet', {})
         as_text = await client.call_tool('helloworld_greet', {'name': 'x', 'loud': 'no'})
         not_number = await client.call_tool('helloworld_wait', {'seconds': 'abc'})
-        not_text = await client.call_tool('helloworld_greet', {'name': {'a': 1}})
         bad_set = await client.call_tool('set', {'loud': 'no'})
-        return [(result.is_error, text(result)) for result in (missing, as_text, not_number, not_text, bad_set)]
+        return [(result.is_error, text(result)) for result in (missing, as_text, not_number, bad_set)]
     results = session(home, mapped, call)
     assert all(error for error, _ in results)
     assert all(len([line for line in blocks[0].splitlines() if line.startswith('Next: ')]) == 1
@@ -582,3 +581,31 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
         'It could not be removed and is still on disk. Close any program that has it open, such as a running web '
         'GUI, or fix its permissions, then call clear_project with confirm true again.')
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('MCP-005')
+def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_with_a_notice(run, home, mapped):
+    run('enable', 'helloworld')
+
+    async def call(client, init):
+        greeted = await client.call_tool('helloworld_greet', {'name': {'a': 1}})
+        joined = await client.call_tool('map_knowledge', {
+            'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
+            'purpose': 12, 'function': 'f', 'relation': ['r'], 'observation': 'o'})
+        observed = await client.call_tool('memory_add-observations', {'node': 'element:code.timer.kitchen',
+                                                                     'text': ['fine', 7]})
+        return [(result.is_error, text(result)) for result in (greeted, joined, observed)]
+    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
+        'module=test', cwd=mapped)
+    (greet_error, greeted), (join_error, joined), (observe_error, observed) = session(home, mapped, call)
+    assert not greet_error and not join_error and not observe_error
+    assert greeted == ['Notice: name: name is text; what was sent was kept as its JSON text.', 'hello, {"a": 1}\n']
+    assert joined[0].splitlines() == ['Notice: purpose: purpose is text; what was sent was kept as its JSON text.',
+                                      'Notice: relation: relation is text; what was sent was kept as its JSON text.']
+    join = json.loads(joined[1])
+    assert (join['purpose'], join['relation'], join['notices']) == ('12', '["r"]', [])
+    assert observed[0].splitlines() == ['Notice: text: text is text; what was sent was kept as its JSON text.']
+    store = Store('proj')
+    assert {item.value for item in store.layer_items('memory').results} >= {'fine', '7'}

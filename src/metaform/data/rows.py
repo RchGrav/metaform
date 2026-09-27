@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from ..errors import StoreError
+from ..wording import odd_refs_notice
 from . import corrections
 from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id, prefixes
 from .records import Node, Notice, Ref
@@ -80,11 +81,28 @@ def extra_fields(extra: Any, where: str,
         members = as_list(value)
         if members is not None and holds_records(members):
             split += [(str(key), member) for member in members]
-            notices.append(Notice('extra', f'extra.{key} on {where} held a list of records; each was stored as its '
-                                           'own item.'))
+            notices.append(_records_notice(str(key), where))
         else:
             kept[str(key)] = value
     return (kept or None), split
+
+
+def _records_notice(key: str, where: str) -> Notice:
+    return Notice('extra', f'extra.{key} on {where} held a list of records; each was stored as its own item.')
+
+
+def odd_refs(odd: list[Any], kept: dict[str, Any] | None, where: str,
+             notices: list[Notice]) -> tuple[dict[str, Any] | None, list[tuple[str, Any]]]:
+    """Refs that are not a key and a value, both text, named once and kept in the extra under refs, STORE-012; when
+    they are records, they are split into items of their own, as any list of records in an extra is, STORE-004.
+    """
+    if not odd:
+        return kept, []
+    notices.append(Notice('refs', odd_refs_notice(odd)))
+    if holds_records(odd):
+        notices.append(_records_notice('refs', where))
+        return kept, [('refs', member) for member in odd]
+    return {**(kept or {}), 'refs': odd}, []
 
 
 # Finding layers and things -------------------------------------------------------------------------------------

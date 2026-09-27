@@ -18,7 +18,7 @@ from .. import home
 from ..errors import StoreError
 from . import corrections, rows, views, writes
 from .corrections import METAFORM_KINDS
-from .ids import LAYER_NAME, TAG, is_id, new_id, refs_list
+from .ids import LAYER_NAME, TAG, is_id, new_id, refs_fit
 from .records import Layer, Notice, Outcome, Version
 from .selection import LAYER_COLUMNS, LayerRow, all_layers, layer_row
 from .session import Tx
@@ -290,7 +290,7 @@ def correct(tx: Tx, layer: str, thing: str, changes: dict[str, Any] | None = Non
     cursor = tx.db.execute(f'INSERT INTO {spec.table}({names}) VALUES ({marks})', tuple(columns.values()))
     row = int(cursor.lastrowid or 0)
     if 'refs' in allowed and not remove:
-        rows.write_refs(tx, kind, row, refs_list(allowed['refs']))
+        rows.write_refs(tx, kind, row, refs_fit(allowed['refs'])[0])
     else:
         rows.write_refs(tx, kind, row, [(ref.key, ref.value) for ref in rows.read_refs(tx.db, kind, current)])
     if kind == 'join' and not remove and 'parent' in columns and columns['parent'] != base['parent']:

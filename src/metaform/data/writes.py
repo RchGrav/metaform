@@ -19,7 +19,7 @@ from .. import home
 from ..errors import StoreError
 from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
-from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_list
+from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .names import reading, short_name
 from .records import (CONDITIONS, EF_WORDS, ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
                       Version, WorkRecord)
@@ -78,7 +78,7 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
 
     An element holds no name: the project's name for a functionality is on the join, MAP-020.
     """
-    pairs = refs_list(refs)
+    pairs, odd = refs_fit(refs)
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
@@ -87,6 +87,8 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
         return Outcome((stop,))
     notices: list[Notice] = []
     kept_extra, split = rows.extra_fields(extra, address, notices)
+    kept_extra, more = rows.odd_refs(odd, kept_extra, address, notices)
+    split += more
     if not rows.address_form(address):
         notices.append(Notice('address', f'{address!r} is not in the address form, dotted lowercase segments of '
                                          'letters, digits and underscores; it was stored as given.'))
@@ -129,7 +131,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
              refs: Iterable[Any] = (), extra: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
     for the functionality it names, MAP-020."""
-    pairs = refs_list(refs)
+    pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
     stop = rows.frozen(tx, found)
     if stop is not None:
@@ -140,6 +142,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
         ('observation', observation), ('non_goal', non_goal))}
     kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
+    kept_extra, more = rows.odd_refs(odd, kept_extra, 'the join', notices)
+    split += more
     ef, kept_extra = _ef(ef, kept_extra, "the join's", notices)
     receiver_id = rows.element_at(tx, receiver, found, 'receiver', notices)
     provider_id = rows.element_at(tx, provider, found, 'provider', notices)
@@ -176,7 +180,7 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     given when the address holds none; an element already there keeps its own, and each field given that differs is
     named in a notice, as `add_element` does. The subtype join's refs are its own.
     """
-    pairs = refs_list(refs)
+    pairs, odd = refs_fit(refs)
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
@@ -186,6 +190,8 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     parent = _parent_of(tx, join, found)
     notices: list[Notice] = []
     kept_extra, split = rows.extra_fields(extra, 'the subtype join', notices)
+    kept_extra, more = rows.odd_refs(odd, kept_extra, 'the subtype join', notices)
+    split += more
     if purpose is not None:
         kept_extra = {**(kept_extra or {}), 'purpose': purpose}
         notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. The '
@@ -268,9 +274,10 @@ def _parent_of(tx: Tx, join: Any, found: LayerRow) -> str:
                      'metaform map joins <element>')
 
 
-def add_ref(tx: Tx, owner: str, key: str, value: str) -> Ref | Outcome:
+def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
     """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
-    (key, value), = refs_list([(key, value)])
+    key = key if isinstance(key, str) else json.dumps(key, ensure_ascii=False, sort_keys=True)
+    value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     kind = rows.kind_of(tx, owner)
     spec = corrections.KINDS[kind]
     current = corrections.current_row(tx.db, kind, owner)
@@ -294,7 +301,7 @@ def add_ref(tx: Tx, owner: str, key: str, value: str) -> Ref | Outcome:
 def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None = None, refs: Iterable[Any] = (),
              extra: Any = None) -> Item | Outcome:
     """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015."""
-    pairs = refs_list(refs)
+    pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
     stop = rows.frozen(tx, found)
     if stop is not None:
@@ -304,6 +311,8 @@ def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None 
     if not answers:
         return Outcome((Notice('value', 'The value was an empty list; there was nothing to store.'),))
     kept_extra, split = rows.extra_fields(extra, 'the item', notices)
+    kept_extra, more = rows.odd_refs(odd, kept_extra, 'the item', notices)
+    split += more
     target_kind, target_id = rows.node_at(tx, target, found, 'target', notices)
     link_kind, link_id = rows.node_at(tx, link, found, 'link', notices) if link is not None else (None, None)
     made = [rows.insert_item(tx, found, target_kind, target_id, answer, link_kind, link_id, pairs, kept_extra)
@@ -320,7 +329,7 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
     subtype join, it is stored as given, orphaned, with the target in its `extra`: properties attach only to
     elements.
     """
-    pairs = refs_list(refs)
+    pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
     stop = rows.frozen(tx, found)
     if stop is not None:
@@ -330,6 +339,8 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
     if not answers:
         return Outcome((Notice('value', 'The value was an empty list; there was nothing to store.'),))
     kept_extra, split = rows.extra_fields(extra, 'the property', notices)
+    kept_extra, more = rows.odd_refs(odd, kept_extra, 'the property', notices)
+    split += more
     element_id = _property_element(tx, element, found, notices)
     if isinstance(element, Node) and element.kind == 'join':
         kept_extra = {**(kept_extra or {}), 'target': str(element)}
@@ -493,6 +504,9 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
     held = kind == 'join' and (base['parent'] is not None or 'parent' in changes)
     for key, value in changes.items():
         if key == 'refs':
+            placed, more = rows.odd_refs(refs_fit(value)[1], None, kind, notices)
+            aside.update(placed or {})
+            split += more
             continue
         if key == 'extra':
             kept, split = rows.extra_fields(value, kind, notices)
@@ -584,7 +598,7 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
         tx.db.execute(f'UPDATE {spec.table} SET {assignments} WHERE row=?', (*columns.values(), row['row']))
     if allowed.get('refs') is not None:
         tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
-        rows.write_refs(tx, kind, int(row['row']), refs_list(allowed['refs']))
+        rows.write_refs(tx, kind, int(row['row']), refs_fit(allowed['refs'])[0])
     if split:
         target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
                                   else _node_of(kind, thing, row))

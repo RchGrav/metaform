@@ -241,7 +241,7 @@ def tool_arguments(module: str, verb: Verb, arguments: dict[str, Any], *, ignore
     from . import grammar
     parsed = grammar.from_json(module, verb, arguments, ignore=ignore, folder=folder)
     notices = grammar.keep_fields(module, verb, parsed.nouns, {key: arguments[key] for key in parsed.unknown})
-    return parsed.nouns, parsed.switches, notices
+    return parsed.nouns, parsed.switches, parsed.notices + notices
 
 
 def setting_value(key: str, value: Any, folder: Path) -> Any:

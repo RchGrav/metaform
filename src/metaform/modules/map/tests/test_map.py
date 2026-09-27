@@ -526,3 +526,27 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
     assert [(sub.join_id, sub.address, sub.extra) for sub in held] == [
         (first['join_id'], 'code.alarm.visual', {'purpose': 'See the end.'})]
     assert first['join_id'] not in [join.join_id for join in store.joins('stakeholder.cook.home', raw=True).results]
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('STORE-012')
+def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_never_refused(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
+                          'provider=code.alarm.audible', 'purpose=p', 'function=f', 'relation=r', 'observation=o',
+                          'refs=[["path", "a.c"], ["line", 12]]').stdout)
+    assert joined['refs'] == [{'key': 'path', 'value': 'a.c'}]
+    assert joined['extra'] == {'refs': [['line', 12]]}
+    assert joined['notices'] == [{'where': 'refs', 'message': 'A ref is a key and a value, both text; one was not, '
+                                                              'and kept in the extra under refs.'}]
+    element = json.loads(k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.display.lcd',
+                           'refs=[["line", 12], ["col", 3]]', 'extra={"a": 1}').stdout)
+    assert element['refs'] == [] and element['extra'] == {'a': 1, 'refs': [['line', 12], ['col', 3]]}
+    assert [notice['message'] for notice in element['notices']] == [
+        'A ref is a key and a value, both text; two were not, and kept in the extra under refs.']
+    edited = json.loads(k(run, mapped, 'op=edit', f'id={joined["join_id"]}', 'refs=[["line", 12]]').stdout)
+    assert 'refs' in [notice['where'] for notice in edited['notices']]
+    store = Store('proj')
+    stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
+    assert stored.refs == () and stored.extra == {'refs': [['line', 12]]}
