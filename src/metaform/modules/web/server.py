@@ -6,7 +6,9 @@ page that rebinds a domain to this machine reads nothing. On a bind address
 other than loopback, every request also needs the home's token: in the page
 URL as `?t=`, then in a cookie the page load sets, or in the
 `X-Metaform-Token` header. The server writes its record to `run/web.json`
-once it listens.
+once it listens, then says so on the pipe `metaform web` gave it as standard
+output, and its loop waits in `select` with no timeout, waking only for a
+connection; the stop signal ends the process, QUAL-015.
 """
 from __future__ import annotations
 
@@ -348,9 +350,20 @@ def main(argv: list[str] | None = None) -> int:
               f'{host_port(given.bind, given.port)}: {error}', file=sys.stderr, flush=True)
         return 1
     server.record()
+    ready(server)
     with server:
-        server.serve_forever()
+        # Wakes only for a connection, QUAL-015; the stop signal ends the process, so nothing checks for shutdown.
+        # The stubs type poll_interval as float; the standard library hands it to select, where None is no timeout.
+        server.serve_forever(poll_interval=None)  # type: ignore[arg-type]
     return 0
+
+
+def ready(server: Server) -> None:
+    """Tell `metaform web` the server listens: one line on the pipe it inherited as standard output, which is then
+    pointed at the log so nothing else is ever written to the pipe, VIEW-002."""
+    sys.stdout.write(json.dumps({'pid': os.getpid(), 'port': server.port}) + '\n')
+    sys.stdout.flush()
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
 
 
 if __name__ == '__main__':

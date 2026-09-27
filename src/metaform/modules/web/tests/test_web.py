@@ -5,6 +5,7 @@ import http.client
 import json
 import socket
 import time
+from pathlib import Path
 
 import pytest
 
@@ -1297,6 +1298,51 @@ def test_the_page_keeps_no_repeating_timer():
     from metaform.modules.web import server
     page = (server.STATIC['page'] / 'app.js').read_text(encoding='utf-8')
     assert 'setInterval' not in page
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('VIEW-002')
+def test_start_is_told_the_server_is_ready_and_stop_is_told_it_has_gone_without_asking_again(run, home, web,
+                                                                                            monkeypatch):
+    """No polling, QUAL-015: `start` reads the server's one ready line and `stop` reads the server's stream to its
+    end; neither sleeps and asks again. A server that ends before it listens is reported at once, not at a limit."""
+    from metaform import module, settings
+    from metaform.modules import web as gui
+
+    def never(seconds):
+        raise AssertionError(f'the web module slept {seconds} s and asked again')
+    monkeypatch.setattr(time, 'sleep', never)
+    ctx = module.Context(module='web', folder=Path(str(home)))
+    assert settings.value('web_port', ctx.folder) == web
+    assert gui.start(ctx) == {'state': 'started', 'address': f'http://127.0.0.1:{web}/'}
+    assert gui.start(ctx) == {'state': 'running', 'address': f'http://127.0.0.1:{web}/'}
+    assert gui.stop(ctx) == {'state': 'stopped'}
+    assert refused('127.0.0.1', web)
+    assert gui.stop(ctx) == {'state': 'not running'}
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(('127.0.0.1', web))
+    held.listen()
+    try:
+        monkeypatch.setattr(gui, 'check_free', lambda bind, port: None)
+        began = time.monotonic()
+        with pytest.raises(gui.Stop) as failed:
+            gui.start(ctx)
+    finally:
+        held.close()
+    assert 'did not start' in str(failed.value) and time.monotonic() - began < gui.WAIT / 2
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('VIEW-002')
+def test_the_server_loop_wakes_only_for_a_connection_and_the_module_never_sleeps():
+    """The server's loop waits in select with no timeout; the stop signal ends the process, so nothing checks for
+    shutdown, and nothing in the module sleeps to ask again."""
+    from metaform.modules import web as gui
+    from metaform.modules.web import server
+    code = Path(server.__file__).read_text(encoding='utf-8')
+    assert 'serve_forever(poll_interval=None)' in code
+    assert 'time.sleep' not in Path(gui.__file__).read_text(encoding='utf-8')
 
 
 @pytest.mark.req('VIEW-018')

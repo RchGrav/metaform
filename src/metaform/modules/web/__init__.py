@@ -19,7 +19,7 @@ import signal
 import socket
 import subprocess
 import sys
-import time
+import threading
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,7 +32,7 @@ SHIPS_DISABLED = False
 
 NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
           'If it was not running, tell the user its address once it starts, and its token when it gives one.')
-WAIT = 15.0  # seconds `start` waits for a new server to answer, and `stop` for one to end
+WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied
 
@@ -148,7 +148,8 @@ def check_free(bind: str, port: int) -> None:
 
 
 def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
-    """The server as a process detached from the terminal, so it runs until stopped, VIEW-002."""
+    """The server as a process detached from the terminal, so it runs until stopped, VIEW-002. Its standard output
+    is a pipe back to `start`, on which it writes one line once it listens; its standard error is the log."""
     folder = run_dir()
     folder.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, '-m', 'metaform.modules.web.server', '--bind', bind, '--port', str(port),
@@ -156,10 +157,25 @@ def spawn(bind: str, port: int, nonce: str) -> subprocess.Popen[bytes]:
     with open(folder / 'web.log', 'ab') as log:
         if os.name == 'nt':
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd=home.home(),
-                                    creationflags=flags)
-        return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd=home.home(),
-                                start_new_session=True)
+            return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
+                                    cwd=home.home(), creationflags=flags)
+        return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
+                                cwd=home.home(), start_new_session=True)
+
+
+def ready_line(process: subprocess.Popen[bytes]) -> bytes | None:
+    """The server's one line saying it listens, empty when it ended first, None when it said nothing within `WAIT`.
+
+    One wait for a message, QUAL-015: a thread blocks on the pipe and is woken by the line or by the pipe closing
+    with the process; the join's limit only keeps `metaform web` from hanging forever on a server that does neither.
+    """
+    pipe = process.stdout
+    assert pipe is not None
+    heard: list[bytes] = []
+    reader = threading.Thread(target=lambda: heard.append(pipe.readline()), daemon=True)
+    reader.start()
+    reader.join(WAIT)
+    return heard[0] if heard else None
 
 
 def log_tail() -> str:
@@ -182,15 +198,21 @@ def start(ctx: Context) -> dict[str, Any]:
         token(create=True)
     nonce = secrets.token_hex(8)
     process = spawn(bind, port, nonce)
-    deadline = time.monotonic() + WAIT
-    while time.monotonic() < deadline:
+    line = ready_line(process)
+    if process.stdout is not None:
+        process.stdout.close()
+    if line:
         record = recorded()
         if record is not None and answering(record):
             return shown(record, 'started' if record.get('nonce') == nonce else 'running')
-        if process.poll() is not None:
-            raise Stop(f'The web GUI did not start: {log_tail()}', 'metaform web')
-        time.sleep(0.1)
-    raise Stop(f'The web GUI did not answer within {WAIT:.0f} seconds: {log_tail()}', 'metaform web stop')
+        raise Stop(f'The web GUI said it was ready but does not answer: {log_tail()}', 'metaform web stop')
+    if line is None:
+        raise Stop(f'The web GUI did not answer within {WAIT:.0f} seconds: {log_tail()}', 'metaform web stop')
+    process.wait()
+    record = recorded()
+    if record is not None and answering(record):
+        return shown(record, 'running')  # another `metaform web` started one first
+    raise Stop(f'The web GUI did not start: {log_tail()}', 'metaform web')
 
 
 def stop(ctx: Context) -> dict[str, Any]:
@@ -200,12 +222,32 @@ def stop(ctx: Context) -> dict[str, Any]:
     if not answering(record):
         run_file().unlink(missing_ok=True)
         return {'state': 'not running'}
+    stream = held_open(record)
     os.kill(int(record['pid']), signal.SIGTERM)
-    deadline = time.monotonic() + WAIT
-    while answering(record) and time.monotonic() < deadline:
-        time.sleep(0.1)
+    if stream is not None:
+        try:
+            stream.read()  # returns when the system closes the ended process's sockets, QUAL-015; WAIT is its limit
+        except OSError:
+            pass
     run_file().unlink(missing_ok=True)
     return {'state': 'stopped'}
+
+
+def held_open(record: dict[str, Any]) -> http.client.HTTPResponse | None:
+    """The server's events stream, VIEW-018, which it holds open until it ends; None when it cannot be opened."""
+    address, port = reach(str(record.get('bind', ''))), int(record.get('port') or 0)
+    connection = http.client.HTTPConnection(address, port, timeout=WAIT)
+    try:
+        connection.request('GET', '/api/events', headers={'Host': host_port(address, port),
+                                                          'X-Metaform-Token': token() or ''})
+        response = connection.getresponse()
+    except OSError:
+        connection.close()
+        return None
+    if response.status != 200:
+        connection.close()
+        return None
+    return response
 
 
 def pushed(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
