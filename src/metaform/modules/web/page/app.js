@@ -142,7 +142,8 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
-  loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer};
+  loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
+  inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : []};
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
@@ -310,8 +311,8 @@ async function build2D() {
   for (const join of drawn) for (const subtype of join.subtypes || [])
     held.set(join.provider, [...(held.get(join.provider) || []), subtype]);
   const inner = new Map();
-  M.vertical = S.elements.size > 5;
-  const lines = [M.vertical ? 'flowchart TB' : 'flowchart LR'];
+  const vertical = S.elements.size > 5;
+  const lines = [vertical ? 'flowchart TB' : 'flowchart LR'];
   for (const [id, {element}] of S.elements) {
     const label = plain2d(element.short_name || element.address);
     if (!held.has(id)) { lines.push(`${keys.get(id)}["${label}"]`); continue; }
@@ -325,9 +326,10 @@ async function build2D() {
   }
   if (inner.size) lines.push('classDef sub font-size:11px');
   drawn.forEach((join, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(join.provider)}`));
+  if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'This metaform has no elements in these layers.')); return; }
   if (S.elements.size > MAP2D) {
-    M.svg = null; M.nodes.clear(); M.edges = [];
+    M.svg = null; M.nodes = new Map(); M.edges = [];
     fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. The 3D view shows them all.`));
     return;
   }
@@ -335,40 +337,224 @@ async function build2D() {
   try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   if (generation !== M.generation) return;
-  const parsed = new DOMParser().parseFromString(result.svg, 'image/svg+xml');  // only Mermaid's strict SVG is parsed
-  M.svg = document.importNode(parsed.documentElement, true);
-  M.svg.removeAttribute('height'); M.svg.removeAttribute('width'); M.svg.removeAttribute('style');
-  M.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  fill(host, M.svg);
-  M.nodes.clear();
-  const place = (id, group, address, flag) => {
-    const box = group.getBBox();
-    const matrix = group.transform.baseVal.consolidate()?.matrix;
-    const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
-    M.nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
-    if (flag) group.classList.add(`flag-${flag}`);
-    const title = document.createElementNS(SVG, 'title');
-    title.textContent = address;
-    group.append(title);
-    group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
-  };
+  const inside = IN.length > 0;
+  const svg = mountSvg(result, host, inside);
+  const nodes = new Map();
   for (const [id, key] of keys) {
-    const group = held.has(id) ? M.svg.querySelector(`g.cluster[id="${key}"], g.cluster[id$="-${key}"]`)
-      : M.svg.querySelector(`[id*="-flowchart-${key}-"]`);
-    if (group) place(id, group, S.elements.get(id).element.address, S.elements.get(id).element.flag);
+    const group = held.has(id) ? svg.querySelector(`g.cluster[id="${key}"], g.cluster[id$="-${key}"]`)
+      : svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    if (group) placeIn(nodes, id, group, S.elements.get(id).element.address, S.elements.get(id).element.flag);
   }
   for (const [id, key] of inner) {
-    const group = M.svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
     const {subtype} = subtypeOf.get(id) || {};
-    if (group && subtype) place(id, group, subtype.address, subtype.flag);
+    if (group && subtype) placeIn(nodes, id, group, subtype.address, subtype.flag);
   }
-  M.edges = drawn.map((join, index) => ({join, path: M.svg.querySelector(`[data-id="e${index}"]`)
-    || M.svg.querySelectorAll('.edgePaths path')[index]}));
-  for (const edge of M.edges) if (EF[edge.join.ef]) edge.path?.classList.add(`ef-${edge.join.ef.toLowerCase()}`);
-  const scene = M.svg.querySelector('g').getBBox();
-  M.fit = {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
-  setCam(frame(M.fit));
+  const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
+    || svg.querySelectorAll('.edgePaths path')[index]}));
+  for (const edge of edges) if (EF[edge.join.ef]) edge.path?.classList.add(`ef-${edge.join.ef.toLowerCase()}`);
+  // The base map is kept while a node is entered and shown again as it was, VIEW-016.
+  M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
+  if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
+  showBase();
   if (S.selected) focus2D(S.selected, false);
+}
+/* Mermaid's strict SVG, the only markup parsed; hidden when it is measured without being shown. */
+function mountSvg(result, host, hidden) {
+  const parsed = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
+  const svg = document.importNode(parsed.documentElement, true);
+  svg.removeAttribute('height'); svg.removeAttribute('width'); svg.removeAttribute('style');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  if (hidden) { svg.style.visibility = 'hidden'; host.append(svg); } else fill(host, svg);
+  return svg;
+}
+function placeIn(nodes, id, group, title, flag) {
+  const box = group.getBBox();
+  const matrix = group.transform.baseVal.consolidate()?.matrix;
+  const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
+  nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
+  if (flag) group.classList.add(`flag-${flag}`);
+  const text = document.createElementNS(SVG, 'title');
+  text.textContent = title;
+  group.append(text);
+  group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
+}
+function fitOf(svg) {
+  const scene = svg.querySelector('g').getBBox();
+  return {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
+}
+function showBase() {
+  const base = M.base;
+  renderCrumbs();
+  if (!base) return;
+  cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
+  Object.assign(M, {svg: base.svg, nodes: base.nodes, edges: base.edges, fit: base.fit, vertical: base.vertical, drawn: null});
+  fill($('#viewport'), base.svg);
+  setCam(base.cam || frame(base.fit));
+}
+
+/* ---------- inside a node: the 2D map is replaced by the node's own graph, VIEW-016 ----------
+ * Every node can be entered. Inside are the node, what it holds, one group for each layer turned on with what that
+ * layer attaches to the node, and the nodes those items link to, which can be entered in turn. */
+const IN = [];  // the levels entered from the base map: {key, label, more, things}
+const GROUP = 20;
+let insideGen = 0;
+const kindOf = key => key.startsWith('s:') ? 'subtype' : key.startsWith('p:') ? 'join' : 'element';
+const bareId = key => key.replace(/^[sp]:/, '');
+const keyOf = node => !node ? null : node.kind === 'subtype' ? 's:' + node.id : node.kind === 'join' ? 'p:' + node.id
+  : node.kind === 'element' ? node.id : null;
+const isDescriptor = value => value && typeof value === 'object' && 'descriptor' in value;
+const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
+const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
+function nameOf(key, fallback = key) {
+  if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.name || found.address : fallback; }
+  if (key.startsWith('p:')) { const found = joinOf(key); return found ? found.purpose || found.relation || 'join' : fallback; }
+  const found = S.elements.get(key)?.element;
+  return found ? found.name || found.short_name || found.address : fallback;
+}
+async function drawInside() {
+  const level = IN.at(-1);
+  if (!level) return showBase();
+  const generation = ++insideGen;
+  const target = `${kindOf(level.key)}:${bareId(level.key)}`;
+  let view = null, incoming = [];
+  try {
+    view = await read('node', {target, ...viewLayers()});
+    incoming = (await read('links-to', {target, limit: 0, ...viewLayers()})).results || [];
+  } catch (error) { if (error.status !== 404) toast(error.message); }
+  if (generation !== insideGen) return;
+  const lines = ['flowchart LR'], edges = [], ids = new Map(), things = new Map(), groups = new Map();
+  const add = (key, label, kind, thing = null) => {
+    if (ids.has(key)) return ids.get(key);
+    const id = `v${ids.size}`;
+    ids.set(key, id);
+    things.set(key, thing || {kind, key, label});
+    lines.push(`${id}["${label2d(label)}"]:::${kind}`);
+    return id;
+  };
+  const key = level.key, center = add(key, level.label, 'center');
+  if (key.startsWith('p:')) {
+    const join = joinOf(key);
+    if (join) {
+      edges.push(`${add(join.receiver, nameOf(join.receiver), 'stub')} --> ${center}`,
+        `${center} --> ${add(join.provider, nameOf(join.provider), 'stub')}`);
+      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.name || subtype.address, 'sub')}`);
+    }
+  } else if (key.startsWith('s:')) {
+    const found = subtypeOf.get(key);
+    if (found) edges.push(`${add('p:' + found.join.join_id, found.join.purpose || 'join', 'purpose')} --- ${center}`);
+  } else {
+    for (const join of S.joins.filter(item => item.provider === key)) for (const subtype of join.subtypes || [])
+      edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.name || subtype.address, 'sub')}`);
+    for (const join of S.joins.filter(item => item.receiver === key))
+      edges.push(`${center} --> ${add('p:' + join.join_id, join.purpose || join.relation || 'join', 'purpose')}`);
+  }
+  const linked = [];
+  for (const found of view?.layers || []) {
+    const all = [...(found.items || []).filter(item => !isDescriptor(item.value)).map(item => ({kind: 'item', key: 'i:' + item.item_id, item})),
+      ...(found.properties || []).map(item => ({kind: 'property', key: 'r:' + item.property_id, item}))]
+      .map(thing => ({...thing, value: thing.item.value, layer: found.layer, layerKind: found.kind}));
+    if (!all.length) continue;
+    const shown = level.more[found.layer] || GROUP, gid = `g${groups.size}`;
+    groups.set(gid, found.layer);
+    lines.push(`subgraph ${gid} ["${label2d(found.kind === 'memory' ? 'memory' : found.layer)}"]`, 'direction TB');
+    for (const thing of all.slice(0, shown)) {
+      add(thing.key, itemText(thing.value) + (thing.item.state ? ` · ${thing.item.state}` : ''), 'item', thing);
+      if (thing.item.link) linked.push(thing);
+    }
+    if (all.length > shown) add(`m:${found.layer}`, `${all.length - shown} more`, 'more');
+    lines.push('end');
+    edges.push(`${center} --- ${gid}`);
+  }
+  for (const thing of linked) {
+    const to = keyOf(thing.item.link);
+    if (to) edges.push(`${ids.get(thing.key)} --> ${add(to, nameOf(to, thing.item.link.id), 'stub')}`);
+  }
+  const coming = incoming.filter(item => !ids.has('i:' + item.item_id));
+  if (coming.length) {
+    const gid = `g${groups.size}`;
+    groups.set(gid, null);
+    lines.push(`subgraph ${gid} ["linked here"]`, 'direction TB');
+    for (const item of coming) add('i:' + item.item_id, itemText(item.value), 'item', {kind: 'item', key: 'i:' + item.item_id,
+      item, value: item.value, layer: item.layer, layerKind: S.layers.find(layer => layer.name === item.layer)?.kind});
+    lines.push('end');
+    for (const item of coming) {
+      const from = keyOf(item.target);
+      if (from) edges.push(`${add(from, nameOf(from, item.target.id), 'stub')} --> ${ids.get('i:' + item.item_id)}`);
+    }
+    edges.push(`${gid} --> ${center}`);
+  }
+  lines.push(...edges, ...['center', 'item', 'stub', 'more', 'purpose', 'sub'].map(kind => `classDef ${kind} font-size:11px`));
+  let result;
+  try { result = await window.mermaid.render(`inside${generation}`, lines.join('\n')); }
+  catch (error) { fill($('#viewport'), h('p', {class: 'empty', style: {padding: '16px'}}, 'This node could not be drawn.')); return; }
+  if (generation !== insideGen || IN.at(-1) !== level) return;
+  const svg = mountSvg(result, $('#viewport'), false);
+  const nodes = new Map();
+  for (const [thingKey, id] of ids) {
+    const group = svg.querySelector(`[id*="-flowchart-${id}-"]`), thing = things.get(thingKey);
+    if (!group) continue;
+    placeIn(nodes, thingKey, group, thing.value !== undefined ? itemText(thing.value) : thing.label, null);
+    group.classList.add(`in-${thing.kind}`);
+  }
+  for (const [gid, layer] of groups) {
+    const cluster = svg.querySelector(`g.cluster[id="${gid}"], g.cluster[id$="-${gid}"]`);
+    if (!cluster) continue;
+    cluster.classList.add('layergroup');
+    if (layer) cluster.style.setProperty('--c', `var(${colorVar(layer)})`);
+  }
+  level.things = things;
+  cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
+  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical: false, drawn: level});
+  setCam(frame(M.fit));
+  renderCrumbs();
+  if (S.selected && nodes.has(S.selected)) focus2D(S.selected, false);
+}
+function renderCrumbs() {
+  const bar = $('#crumbs');
+  bar.hidden = !IN.length;
+  const to = (depth, text) => h('a', {href: '#', onclick: event => { event.preventDefault(); goTo(depth); }}, text);
+  fill(bar, ...(IN.length ? [to(0, 'map'), ...IN.flatMap((level, index) => [h('span', {class: 'sep'}, ' › '),
+    index === IN.length - 1 ? h('b', {}, level.label) : to(index + 1, level.label)])] : []));
+}
+/* Enter a node, or the node an item links to; a group's "more" node shows the next ones. */
+async function enter(key) {
+  const level = IN.at(-1), thing = level?.things?.get(key);
+  if (key.startsWith('m:')) { level.more[key.slice(2)] = (level.more[key.slice(2)] || GROUP) + GROUP; return drawInside(); }
+  if (thing && (thing.kind === 'item' || thing.kind === 'property')) {
+    const to = keyOf(thing.item.link);
+    if (!to) return;
+    return enter(to);
+  }
+  if (level?.key === key) return;
+  if (!IN.length && M.base) M.base.cam = {...M.cam};
+  IN.push({key, label: nameOf(key, thing?.label || key), more: {}, things: new Map()});
+  await drawInside();
+  select(key, false, true);
+}
+/* Up to a level: 0 is the base map. The node left is selected where it shows. */
+async function goTo(depth) {
+  if (depth >= IN.length) return;
+  const left = IN[depth].key;
+  IN.length = depth;
+  if (depth) await drawInside(); else showBase();
+  select(left, true, true);
+}
+function renderThing(thing) {
+  const pane = $('#p-object');
+  if (thing.kind === 'item' || thing.kind === 'property') {
+    const link = keyOf(thing.item.link);
+    fill(pane,
+      h('div', {class: 'eyebrow'}, thing.layerKind === 'memory' ? 'Memory' : thing.kind === 'property' ? 'Property' : 'Item'),
+      h('div', {class: 'pills'}, thing.layer ? layerPill(thing.layer) : null, thing.item.state ? h('span', {class: 'pill'}, thing.item.state) : null),
+      h('p', {class: 'itemtext'}, itemText(thing.value)),
+      link ? h('p', {class: 'meta'}, 'Links to ', h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(link); }},
+        nameOf(link, thing.item.link.id)), '; Enter goes there.') : null,
+      refsOf(thing.item.refs));
+    return;
+  }
+  fill(pane, h('div', {class: 'eyebrow'}, thing.kind === 'more' ? 'More' : 'Node'), h('h2', {}, thing.label),
+    h('p', {class: 'meta'}, thing.kind === 'more' ? 'Enter shows the next ones.' : 'Enter goes inside it.'));
 }
 function aspect() { const box = $('#map2d').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
@@ -400,8 +586,9 @@ function fit2D() {
 }
 function focus2D(id, animate = true, framing = 'around') {
   const join = id.startsWith('p:') ? joinOf(id) : null;
-  const node = M.nodes.get(join ? join.provider : id);
+  const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
   if (!node || !M.svg) return;
+  if (IN.length) { for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id); return; }
   $('#map2d').classList.add('focused');
   for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
   for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
@@ -414,8 +601,8 @@ function focus2D(id, animate = true, framing = 'around') {
     : [Math.max(node.w * 3.4, 380), Math.max(node.h * 5, 260)];
   moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height}, animate);
 }
-/* One click selects; a click on the selected node goes inside it. */
-function clicked2d(id) { if (id === S.selected) goInside(id); else select(id, true); }
+/* One click selects; a click on the selected node goes inside it; a group's "more" node shows the next ones. */
+function clicked2d(id) { if (id === S.selected || id.startsWith('m:')) goInside(id); else select(id, true); }
 (function wire2D() {
   const host = $('#map2d');
   $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
@@ -455,11 +642,18 @@ function cycleView() {
   focus2D(here, true, 'around');
 }
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
-function step(by) {
+async function step(by) {
   const to = S.at + by;
   if (to < 0 || to >= S.history.length) return;
   S.at = to;
-  select(S.history[to], true, false, true);
+  const entry = S.history[to];
+  if (!samePath(entry.path, IN)) {
+    if (!IN.length && M.base) M.base.cam = {...M.cam};
+    IN.length = 0;
+    IN.push(...entry.path.map(level => ({...level, more: {}, things: new Map()})));
+    if (IN.length) await drawInside(); else showBase();
+  }
+  select(entry.id, true, false, true);
 }
 function showSteps() {
   $('#backBtn').disabled = S.at <= 0;
@@ -500,15 +694,9 @@ function roots() {  // the nodes nothing receives from, vested entities first; t
   }
   return ordered;
 }
-function goInside(key) {
-  const first = insideOf(key)[0];
-  if (!first) return focus2D(key, true, 'close');
-  S.trail.push(key);
-  select(first, true, true);
-  focus2D(key, true, 'inside');
-  for (const [id, value] of M.nodes) value.g.classList.toggle('sel', id === first);
-}
+function goInside(key) { enter(key); }
 function backOut() {
+  if (IN.length) return goTo(IN.length - 1);
   const here = S.selected;
   if (!here) return;
   if (here.startsWith('s:') || here.startsWith('p:')) {
@@ -524,6 +712,13 @@ document.addEventListener('keydown', event => {
   const here = S.selected;
   if (event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey)) { event.preventDefault(); backOut(); return; }
   if (event.key === 'Enter') { event.preventDefault(); goInside(here); return; }
+  if (IN.length && event.key.startsWith('Arrow')) {  // inside a node the arrows go through its graph in order
+    event.preventDefault();
+    const order = across(M.nodes.keys()), at = order.indexOf(here);
+    const by = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+    if (order.length) select(order[at < 0 ? 0 : (at + by + order.length) % order.length], true, true);
+    return;
+  }
   if (event.key === 'ArrowDown') {
     event.preventDefault();
     const next = childrenOf(here)[0];
@@ -546,11 +741,16 @@ document.addEventListener('keydown', event => {
 function select(id, fly, keepTrail = false, stepping = false) {
   if (!id) return;
   const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
-  if (!subtype && !join && !S.elements.has(id)) return;
+  const known = subtype || join || S.elements.has(id), thing = IN.at(-1)?.things?.get(id);
+  if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
-  if (!stepping && S.history[S.at] !== id) { S.history = [...S.history.slice(0, S.at + 1), id]; S.at = S.history.length - 1; }
+  const path = IN.map(({key, label}) => ({key, label})), last = S.history[S.at];
+  if (!stepping && !(last && last.id === id && samePath(last.path, path))) {
+    S.history = [...S.history.slice(0, S.at + 1), {id, path}]; S.at = S.history.length - 1;
+  }
   showSteps();
   S.selected = id;
+  if (!known) { S.neighbors = new Set(); focus2D(id, fly); showTab('object'); renderThing(thing); return; }
   S.neighbors = subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
     : join ? new Set([join.receiver, join.provider])
     : new Set([id, ...S.joins.filter(item => item.receiver === id).map(item => item.provider),
@@ -893,12 +1093,14 @@ async function loadGraph() {
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
-  if (start) select(start, false);
-  if (start && !keep) setTimeout(() => { if (G) G.zoomToFit(reduced() ? 0 : 800, 60); }, 2200);
-  else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
+  if (!start) fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
+  else {
+    select(start, false);
+    if (!keep) setTimeout(() => { if (G) G.zoomToFit(reduced() ? 0 : 800, 60); }, 2200);
+  }
 }
 async function loadMetaform() {
-  S.view = null; S.selected = null;
+  S.view = null; S.selected = null; IN.length = 0; M.base = null; renderCrumbs();
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();
   if ($('#p-prov').hidden === false) renderProv();

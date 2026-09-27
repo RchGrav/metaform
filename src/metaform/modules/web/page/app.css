@@ -82,6 +82,14 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .kbd{position:absolute;left:10px;bottom:8px;font:11px var(--mono);color:var(--faint);pointer-events:none}
 .map2d .mapbtns{position:absolute;right:8px;top:8px;display:flex;gap:4px}
 .map2d .navbtns{position:absolute;left:8px;top:8px;display:flex;gap:4px}
+.map2d .crumbs{position:absolute;left:10px;right:60px;top:38px;font:11px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map2d .crumbs a{color:var(--signal);text-decoration:none;cursor:pointer}
+.map2d .crumbs b{color:var(--text);font-weight:500}
+.map2d .cluster.layergroup rect{stroke:var(--c,var(--line-2))!important}
+.map2d .node.in-center rect{stroke:var(--signal)!important;stroke-width:1.6px!important}
+.map2d .node.in-stub rect{stroke-dasharray:4 3!important}
+.map2d .node.in-item .nodeLabel,.map2d .node.in-item text,.map2d .node.in-more text,.map2d .node.in-more .nodeLabel{font:500 11px var(--sans)!important}
+.map2d .node.in-more rect{stroke-dasharray:2 3!important}
 .map2d .navbtns button{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;cursor:pointer;font:12px var(--mono);color:var(--muted)}
 .map2d .navbtns button:disabled{opacity:.35;cursor:default}
 .map2d .mapbtns button{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;cursor:pointer;font:12px var(--mono);color:var(--muted)}
@@ -154,3 +162,4 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .diff{font:12px/1.5 var(--mono);background:var(--ground);border:1px solid var(--line);border-radius:6px;max-height:300px;overflow:auto;padding:8px 0;white-space:pre-wrap;word-break:break-word}
 .diff div{padding:0 10px}
 .diff .add{background:#12301f;color:#9fe0b8}.diff .del{background:#3a1519;color:#ffa3ad}.diff .gap{color:var(--faint)}
+.itemtext{white-space:pre-wrap;overflow-wrap:anywhere}

@@ -729,10 +729,13 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     _, at, inside = keys_of(web)
     kitchen, cook, tick = at['code.timer.kitchen'], at['exterior.cook'], inside['code.loop.tick']
     selected = lambda: page.evaluate('window.metaform.selected()')
+    now_inside = lambda: page.evaluate('window.metaform.inside()')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.keyboard.press('Enter')
-    assert selected() == tick
+    page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
+    assert selected() == kitchen
     page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
     assert selected() == kitchen and 'focused' in page.get_attribute('#map2d', 'class')
     page.keyboard.press('Escape')
     assert selected() == kitchen and 'focused' not in page.get_attribute('#map2d', 'class')
@@ -743,16 +746,97 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     page.wait_for_timeout(900)  # the camera settles on it
     box = box_of(page, 'code.timer.kitchen')
     page.mouse.click(box['x'] + 6, box['y'] + 6)  # a click on the selected node goes inside
-    assert selected() == tick
+    page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
     page.keyboard.press('Shift+Enter')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
     assert selected() == kitchen
     page.evaluate(f'window.metaform.select("{cook}")')
-    page.wait_for_timeout(900)  # the camera eases for 700 ms
-    before = page.get_attribute('#map2d svg', 'viewBox')
-    page.keyboard.press('Enter')  # nothing is inside the cook: the camera only moves closer
-    page.wait_for_timeout(900)
-    after = page.get_attribute('#map2d svg', 'viewBox')
-    assert selected() == cook and float(after.split()[2]) < float(before.split()[2])
+    page.keyboard.press('Enter')  # the cook holds no subtypes and still has an inside, VIEW-016
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    assert selected() == cook and now_inside()
+    assert problems == []
+
+
+def click_node(page, title):
+    """A real click on the 2D node whose full text is this title."""
+    box = box_of(page, title)
+    assert box, title
+    page.mouse.click(box['x'] + box['w'] / 2, box['y'] + box['h'] / 2)
+
+
+def inside(page):
+    """The current level's node keys and the breadcrumb's words."""
+    return page.evaluate('window.metaform.inside()'), page.inner_text('#crumbs') if page.is_visible('#crumbs') else ''
+
+
+@pytest.mark.req('VIEW-016')
+@pytest.mark.req('VIEW-008')
+def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_the_visible_layers_attach(
+        run, web, mapped, browser):
+    """Rich, 2026-09-26: "Subtypes are not a condition to go inside of them", "when you go inside of a node it replaces
+    it with another graph", and the other layers show only what is attached to the node you are viewing, as busy as
+    the layers turned on; the base map stays the project's current shape."""
+    run('memory', 'add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.', cwd=mapped)
+    run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
+        cwd=mapped)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, subtypes = keys_of(web)
+    kitchen, cook, alarm = at['code.timer.kitchen'], at['exterior.cook'], at['code.alarm.audible']
+    assert 'The countdown drifts' not in page.inner_text('#p-object')  # the folder's layers leave memory off
+    page.click('#layers button.chip:has-text("memory")')  # turned on in this view only
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           'document.querySelector("#p-object").textContent.includes("The countdown drifts")')
+    base = page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.dataset.base = "yes"; '
+                         'return document.querySelectorAll("#map2d svg g.node").length; }')
+
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.keyboard.press('Enter')  # the cook holds no subtypes and can still be entered
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    keys, crumbs = inside(page)
+    assert crumbs.split('›')[-1].strip() == 'cook' and not page.query_selector('#map2d svg[data-base]')
+    assert any(key.startswith('p:') for key in keys)  # the join it holds, as its purpose
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    assert page.query_selector('#map2d svg[data-base="yes"]') is not None  # the same map, never laid out again
+    assert page.evaluate('document.querySelectorAll("#map2d svg g.node").length') == base
+    assert page.evaluate('window.metaform.selected()') == cook and not page.is_visible('#crumbs')
+
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{kitchen}") && '
+                           'window.metaform.inside().some(key => key.startsWith("i:"))')
+    keys, crumbs = inside(page)
+    assert [part.strip() for part in crumbs.split('›')] == ['map', 'kitchen timer']
+    assert subtypes['code.loop.tick'] in keys and alarm in keys  # its subtype, and the node its memory relates to
+    words = page.evaluate('document.querySelector("#map2d svg").textContent')
+    assert 'keep the loop small' in words and 'The countdown drifts' in words and 'louder is better' not in words
+    click_node(page, 'The countdown drifts under load.')  # selecting a memory shows it whole in the panel
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("under load.")')
+    assert page.text_content('#p-object .eyebrow') == 'Memory'
+
+    page.click('#layers button.chip:has-text("notes")')  # turning a layer off takes its group away inside
+    page.wait_for_function('() => !document.querySelector("#map2d svg").textContent.includes("keep the loop small")')
+    assert 'The countdown drifts' in page.evaluate('document.querySelector("#map2d svg").textContent')
+
+    click_node(page, 'drives')  # the memory relation; its panel links across to the alarm
+    page.click('#p-object a.link:has-text("audible alarm")')
+    page.wait_for_function('() => window.metaform.inside().length && '
+                           'document.querySelector("#crumbs").textContent.includes("audible alarm")')
+    assert [part.strip() for part in inside(page)[1].split('›')] == ['map', 'kitchen timer', 'audible alarm']
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length && '
+                           '!document.querySelector("#crumbs").textContent.includes("audible alarm")')
+    assert page.evaluate('window.metaform.selected()') == alarm  # the node left, selected where it shows
+    click_node(page, 'audible alarm')  # the alarm is selected: a click on it goes inside
+    page.wait_for_function('() => window.metaform.inside().length && '
+                           'document.querySelector("#crumbs").textContent.includes("audible alarm")')
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length && '
+                           '!document.querySelector("#crumbs").textContent.includes("audible alarm")')
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    assert page.evaluate('window.metaform.selected()') == kitchen and not page.is_visible('#crumbs')
     assert problems == []
 
 
