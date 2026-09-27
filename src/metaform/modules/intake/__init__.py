@@ -30,11 +30,12 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-ALWAYS = ('Record the intake as you reason it, one object per call: intake_start first, then intake_element, '
-          'intake_join and intake_subtype, or metaform intake start, element, join and subtype on the command line. '
-          'Read it back with intake_show, correct it with intake_edit and intake_remove, and end with intake_finish. '
-          'If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have '
-          'in its shape field; do not retry.')
+ALWAYS = ('Do not read past memories or any other details other than the material targeted for intake. Record each '
+          'element as you work through the process. Use intake_start first, then intake_element, intake_join and '
+          'intake_subtype, or metaform intake start, element, join and subtype on the command line. Read it back with '
+          'intake_show, correct it with intake_edit and intake_remove, and end with intake_finish. If you cannot '
+          'continue, stop and submit a trouble report with the feedback tool, attaching what you have in its shape '
+          'field; do not retry.')
 REPORT_LINE = ('Include your report on the project you examined in the report field of intake_finish: broken code, '
                'things that need fixing, anything not working or partially working.')
 DEBUG_LINE = ('Include feedback on this process in the feedback field of intake_finish: bad semantics, a tool that '

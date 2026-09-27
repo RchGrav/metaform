@@ -404,3 +404,8 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The page reads, on each event, what is being recorded, and follows it, returns to the map when it has finished, shows the active metaform when the metaforms changed, or reads the layers and the map again.
 - Built in a separate copy of the source tree while an Opus intake ran on the live one, and moved in once it finished. VIEW-018, BASE-010, the template README and changelog, the extending guide and helloworld's README say so.
 - Tests written first and seen failing against the earlier code: a module of the user's own hears the event once for each command that changed the map and never for a read, on the command line and over MCP; a metaform added, one made active and a memory written reach the open page without a reload.
+
+## Step 40: the intake footer in Rich's words
+
+- Rich, 2026-09-27, relayed by the mgm-main session after the intake agent of that morning read the whole repository before recording anything: the served footer's wording did not work, and its opening is now his two sentences, spelling fixed: "Do not read past memories or any other details other than the material targeted for intake. Record each element as you work through the process." The tool names follow as their own sentence; the report, feedback and stop lines and the Canonical Intake are unchanged. BASE-039 quotes it.
+- Tests changed first and seen failing: the footer the intake tests expect and the first working test's check of it.

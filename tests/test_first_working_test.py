@@ -129,8 +129,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         served = texts(host.call('intake_prompt', {}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
-        assert footer.startswith('\nRecord the intake as you reason it, one object per call: intake_start first, '
-                                 'then intake_element, intake_join and intake_subtype')
+        assert footer.startswith('\nDo not read past memories or any other details other than the material targeted '
+                                 'for intake. Record each element as you work through the process. Use intake_start '
+                                 'first, then intake_element, intake_join and intake_subtype')
         stored = SPEC.read_text(encoding='utf-8')
         assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
             re.sub(r'<target [^>]*>', '<target>', stored, count=1)
