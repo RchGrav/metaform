@@ -215,27 +215,30 @@ def moved(tx: Tx, kind: str, thing: str) -> int:
 
 # Elements, made where a write needs one ---------------------------------------------------------------------
 
-def reused_element(tx: Tx, found: LayerRow, address: str) -> str | None:
-    """A correction layer's add at an address whose element was removed reuses that element, STORE-017."""
-    if found.kind != 'correction':
+def reused_element(tx: Tx, address: str) -> str | None:
+    """The element id the address last held, when no current element holds that id, STORE-009.
+
+    An element's identity belongs to its address: an add at an address whose element was removed, by a layer's
+    own remove or by a correction, is that element again, and everything still linked to it comes back with it.
+    """
+    held = tx.db.execute('SELECT element_id FROM address_elements WHERE address=?', (address,)).fetchone()
+    if held is None:
         return None
-    rows = tx.db.execute("SELECT element_id, row FROM elements WHERE address=? AND op='remove' ORDER BY row DESC",
-                         (address,)).fetchall()
-    for row in rows:
-        if tx.db.execute('SELECT 1 FROM current_elements WHERE element_id=?', (row[0],)).fetchone() is None:
-            return str(row[0])
-    return None
+    if tx.db.execute('SELECT 1 FROM current_elements WHERE element_id=?', (held[0],)).fetchone() is not None:
+        return None
+    return str(held[0])
 
 
 def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | None = None) -> str:
-    """Write a new element row in a layer, reusing a removed element's id when a correction puts it back."""
-    element_id = reused_element(tx, found, address) or new_id()
+    """Write a new element row in a layer, under the id the address held before when nothing holds it now."""
+    element_id = reused_element(tx, address) or new_id()
     if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
         tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
         identity(tx, element_id, 'element')
     types(tx, address)
     cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, extra) VALUES (?, ?, ?, ?)',
                            (element_id, found.layer_id, address, encode_extra(extra, address)))
+    corrections.hold_address(tx.db, address, element_id)
     if found.kind != 'correction':
         tx.db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, 0)',
                       (element_id, cursor.lastrowid, address))

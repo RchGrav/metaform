@@ -1,11 +1,12 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-040, at schema version 1.
+"""The SQL of one metaform's store, STORE-003 to STORE-040, at schema version 2.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
-Two indexes are added beyond the section's own: `elements_by_address`, which
-lets a correction layer put an element back at an address by reusing the most
-recently removed element there without a scan, STORE-017 and STORE-005, and
-`findings_by_layer`, which lets discarding a layer remove its findings rows
-without a scan, STORE-042 and STORE-032.
+`address_elements` remembers the element id of every address the store has held,
+so an element recorded again at its address is the same element, STORE-009.
+Two indexes are added beyond the section's own: `elements_by_address`, for the
+history of one address, STORE-005, and `findings_by_layer`, which lets
+discarding a layer remove its findings rows without a scan, STORE-042 and
+STORE-032.
 """
 from __future__ import annotations
 
@@ -101,6 +102,10 @@ CREATE TABLE IF NOT EXISTS current_elements(
   row        INTEGER NOT NULL UNIQUE REFERENCES elements(row),
   address    TEXT NOT NULL UNIQUE,
   moved      INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS address_elements(
+  address    TEXT PRIMARY KEY REFERENCES types(address),
+  element_id TEXT NOT NULL REFERENCES element_ids(element_id)
 );
 CREATE INDEX IF NOT EXISTS elements_by_layer ON elements(layer_id);
 CREATE INDEX IF NOT EXISTS elements_by_address ON elements(address);

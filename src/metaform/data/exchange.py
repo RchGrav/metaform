@@ -449,6 +449,8 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             else:
                 report['things_skipped'] += 1
             cursor = _insert(db, table, row)
+            if kind == 'element' and row['op'] != 'remove':
+                corrections.hold_address(db, row['address'], row[column])
             rows_of[(kind, row[column], row['layer_id'])] = int(cursor.lastrowid or 0)
             if row[column] not in touched[kind]:
                 touched[kind].append(row[column])

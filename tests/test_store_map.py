@@ -88,6 +88,32 @@ def test_a_second_element_at_a_held_address_returns_the_first(home, store):
 
 
 @pytest.mark.req('STORE-009')
+def test_an_element_recorded_again_at_its_address_is_the_same_element_with_its_joins(store):
+    layer = knowledge(store, 'again')
+    first = store.add_element(layer.name, 'code.engine')
+    store.add_element(layer.name, 'code.loop.main')
+    join = store.add_join(layer.name, 'code.loop.main', 'code.engine', purpose='p', function='f',
+                          relation='runs the engine.', observation='o')
+    store.remove(first.element_id)
+    again = store.add_element(layer.name, 'code.engine')
+    assert again.element_id == first.element_id
+    served = store.joins('code.engine', as_='provider', raw=True).results
+    assert [held.join_id for held in served] == [join.join_id]
+
+
+@pytest.mark.req('STORE-009')
+def test_an_item_attached_to_an_element_reads_back_after_it_is_removed_and_recorded_again(store):
+    layer = knowledge(store, 'again')
+    first = store.add_element(layer.name, 'code.engine')
+    notes = memory(store)
+    store.add_item(notes.name, Node('element', 'code.engine'), 'The engine idles at 3am.')
+    store.remove(first.element_id)
+    assert store.node(Node('element', 'code.engine'), raw=True) is None
+    store.add_element(layer.name, 'code.engine')
+    assert values(store.node(Node('element', 'code.engine'), raw=True), 'memory') == ['The engine idles at 3am.']
+
+
+@pytest.mark.req('STORE-009')
 @pytest.mark.req('MAP-015')
 def test_an_intake_element_keeps_name_length_and_role_in_its_descriptor(home, store):
     small_map(store)

@@ -223,7 +223,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 ### STORE-009 Elements
 - Requirement: Each element is stored as its identity id and its current address, and every version of it is kept. Everything else about an element is linked to it.
-- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The element record is only that address with its identity: it holds no data of its own, and things are linked to it. The informal name, the `name_length` (the number of trailing address segments read backward to form its proper noun) and the role (AUE, VE, DE, SE or NE) that the intake gives for an element are stored as one descriptor item of the intake layer attached to the element, with any refs owned by that item. A knowledge layer that creates an element may attach its own descriptor item the same way.
+- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The element record is only that address with its identity: it holds no data of its own, and things are linked to it. The informal name, the `name_length` (the number of trailing address segments read backward to form its proper noun) and the role (AUE, VE, DE, SE or NE) that the intake gives for an element are stored as one descriptor item of the intake layer attached to the element, with any refs owned by that item. A knowledge layer that creates an element may attach its own descriptor item the same way. An element's identity belongs to its address. When an element is removed and an element is recorded again at the same address, it is the same element: its identity comes back, and with it every record still linked to it, the joins that name it, the items attached to it and its versions. Nothing is copied or relinked, because those records never left.
 - Why: Elements are real records that everything else points at. The intake names them by address, so the current address must be one direct lookup, while the identity id keeps attachments stable across retyping.
 - How it shows: `element code.bus.event` returns that element's current row in one read.
 - Build:
@@ -245,9 +245,14 @@ It covers the base database, the per-project store, the correction stack, layers
     address    TEXT NOT NULL UNIQUE,
     moved      INTEGER NOT NULL DEFAULT 0           -- STORE-017: stack position of the last address change
   );
+  CREATE TABLE address_elements(
+    address    TEXT PRIMARY KEY REFERENCES types(address),
+    element_id TEXT NOT NULL REFERENCES element_ids(element_id)   -- the element this address last held
+  );
   CREATE INDEX elements_by_layer ON elements(layer_id);
   ```
   The current row carries the address so that address lookup of current elements is one unique-index read, and so that two current elements cannot hold the same address.
+  - Identity by address: `address_elements` remembers the element id of every address the store has held, written whenever an element row takes an address, in any layer, and whenever an element becomes current at an address through the correction stack or an import. `add_element` at an address with no current element reads that row first: when the id it names is not current, the new element row is written under that id, so the joins, items, properties and versions still pointing at it are its own again, and nothing is copied or relinked. Only an address never held gets a new id. This is the one mechanism behind a correction layer putting an element back, STORE-017, and a building layer's `remove` followed by another record at the same address, STORE-032.
   - Descriptor: `add_element(layer, address, name=, name_length=, role=, refs=)` writes the element row and, when any of name, name_length, role or refs is given, one item of the same layer attached to the element with `value` `{"descriptor": {"name": ..., "name_length": ..., "role": ...}}` and the refs owned by that item, STORE-015. Reads of an element return its address and identity together with the current descriptor items attached to it, each with its layer name. A descriptor is changed by a correction layer as an item, STORE-017.
   - Roles are also indexed, so the map's entry is one direct read, `roots`, STORE-025:
     ```sql
@@ -267,8 +272,10 @@ It covers the base database, the per-project store, the correction stack, layers
   - Looking up an element by address after two correction layers changed it returns the version from the higher one, through `current_elements`.
   - Adding a second element at an address that a current element already holds returns the existing element's id, marked existing, and writes no element row.
   - An intake element read back by address returns its name, name_length and role from its intake-layer descriptor item, and the `elements` row has no name, name_length or role column.
+  - An element removed from a building layer and recorded again at the same address has its first identity id, and a join that named it as provider reads back with it as provider again.
+  - A memory item attached to an element is absent from `node` after a building layer removes the element, and reads back at the element after it is recorded again at the same address.
 - Relates to: STORE-007, STORE-010, STORE-017, MAP-015, MAP-016, MAP-017.
-- Status: confirmed: the element record holds only identity and address, and name, name_length, role and refs are linked to it as a descriptor item, D78. One current element per address in a project follows from an element being its address. An element created by a layer other than the intake carries no role, D48: roles are the intake's classification of the artifact.
+- Status: confirmed: the element record holds only identity and address, and name, name_length, role and refs are linked to it as a descriptor item, D78. One current element per address in a project follows from an element being its address. An element created by a layer other than the intake carries no role, D48: roles are the intake's classification of the artifact. Rich, 2026-09-27: an element removed and recorded again at its address is the same element, with every record related to it.
 
 ### STORE-010 Joins are owned by their receiver and run one way
 - Requirement: Each join is stored with its receiver, provider, purpose, function, relation, observation and non-goal as separate columns, owned by the receiver, and pointing from receiver to provider only.

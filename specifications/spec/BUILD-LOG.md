@@ -409,3 +409,11 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 
 - Rich, 2026-09-27, relayed by the mgm-main session after the intake agent of that morning read the whole repository before recording anything: the served footer's wording did not work, and its opening is now his two sentences, spelling fixed: "Do not read past memories or any other details other than the material targeted for intake. Record each element as you work through the process." The tool names follow as their own sentence; the report, feedback and stop lines and the Canonical Intake are unchanged. BASE-039 quotes it.
 - Tests changed first and seen failing: the footer the intake tests expect and the first working test's check of it.
+
+## Step 41: an element's identity follows its address
+
+- Rich, 2026-09-27: an element removed and recorded again at the same address is the same element, with every record related to it, the joins that name it, the items attached to it and its versions; nothing is copied or relinked, because those records never left. An element cannot be moved: its address is its identity, so another address is a different element. STORE-009 says so.
+- Before, only a correction layer's add reused a removed element's id, by scanning that address's `remove` rows; a building intake or knowledge layer's `remove` deleted the element row, so the address was forgotten and the next record there got a new id, leaving the joins and items orphaned for good.
+- The store now has `address_elements`, one row per address naming the element that last held it, written whenever an element row takes an address and whenever an element becomes current at one through the stack or an import. `add_element` at an address with no current element takes the id that row names when it is not current, and a new id only for an address never held. The correction layer's own reuse goes through the same row. Schema version 2, no migration: schema changes start fresh, Rich's decision.
+- Tests written first and seen failing against the committed code: an element removed from a knowledge layer and recorded again has its first id and its join reads back with it as provider; a memory item attached to it is absent after the remove and reads back at it after the record.
+

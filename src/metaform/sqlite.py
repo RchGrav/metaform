@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '1'
+SCHEMA_VERSION = '2'
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 

@@ -107,10 +107,16 @@ def recompute(db: sqlite3.Connection, kind: str, ids: list[str], kinds: dict[str
             insert_current(db, kind, thing_id, row, moved)
 
 
+def hold_address(db: sqlite3.Connection, address: str, element_id: str) -> None:
+    """Remember that this element is the one at this address, STORE-009: a later add there is the same element."""
+    db.execute('INSERT OR REPLACE INTO address_elements(address, element_id) VALUES (?, ?)', (address, element_id))
+
+
 def insert_current(db: sqlite3.Connection, kind: str, thing_id: str, row: sqlite3.Row, moved: int) -> None:
     if kind == 'element':
         db.execute('INSERT INTO current_elements(element_id, row, address, moved) VALUES (?, ?, ?, ?)',
                    (thing_id, row['row'], row['address'], moved))
+        hold_address(db, str(row['address']), thing_id)
     elif kind == 'join':
         db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
                    (thing_id, row['row'], row['receiver'], row['provider']))
