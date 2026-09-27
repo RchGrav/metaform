@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -181,7 +181,7 @@ def build() -> tuple[Path, list[str]]:
     record = ''.join(f'{name},{_digest(data)},{len(data)}\n' for name, data in sorted(files.items()))
     record += f'{info}/RECORD,,\n'
     files[f'{info}/RECORD'] = record.encode()
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     folder = home.home() / 'builds' / stamp
     folder.mkdir(parents=True, exist_ok=True)
     wheel = folder / f'{NAME}-{__version__}-py3-none-any.whl'

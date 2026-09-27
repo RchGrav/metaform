@@ -17,10 +17,33 @@ from . import corrections, prompts
 from .corrections import METAFORM_KINDS
 from .ids import decode_extra
 from .names import reading, short_name
-from .records import (Element, Item, Join, Layer, Node, Notice, Op, Property, Provenance, Ref, Report, Subtype, Version,
-                      VersionRef, WorkRecord)
-from .rows import (address_of, layer_name, node_address, open_work, owner_address, read_refs, target_current,
-                   whole_number)
+from .records import (
+    Element,
+    Item,
+    Join,
+    Layer,
+    Node,
+    Notice,
+    Op,
+    Property,
+    Provenance,
+    Ref,
+    Report,
+    Subtype,
+    Version,
+    VersionRef,
+    WorkRecord,
+)
+from .rows import (
+    address_of,
+    layer_name,
+    node_address,
+    open_work,
+    owner_address,
+    read_refs,
+    target_current,
+    whole_number,
+)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
 

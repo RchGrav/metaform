@@ -376,6 +376,7 @@ def test_the_example_modules_ship_disabled(module_row):
 @pytest.mark.req('BASE-016')
 def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module, monkeypatch, capsys):
     import platform
+
     from metaform import cli, loader
     user_module('narrow', '''
         from metaform.module import Module, Verb
@@ -460,6 +461,7 @@ def test_a_failed_start_unloads_the_module(module_row, user_module, run):
 @pytest.mark.req('QUAL-010')
 def test_unloading_cancels_the_modules_tasks_and_calls_stop(home, user_module):
     import asyncio
+
     from metaform import loader
     from metaform.module import Context
     user_module('spawner', '''
@@ -518,6 +520,7 @@ def test_both_example_modules_have_the_same_files():
 @pytest.mark.req('BASE-010')
 def test_an_async_publish_never_blocks_its_loop_and_a_sync_one_there_is_refused(home, user_module):
     import asyncio
+
     from metaform import loader
     from metaform.module import Context, call
     user_module('slowear', '''

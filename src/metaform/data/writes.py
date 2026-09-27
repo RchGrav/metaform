@@ -17,16 +17,30 @@ from typing import Any, TypeVar, cast
 
 from .. import home
 from ..errors import StoreError
+from ..wording import count
 from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
 from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .names import reading, short_name
-from .records import (CONDITIONS, EF_WORDS, ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
-                      Version, WorkRecord)
+from .records import (
+    CONDITIONS,
+    EF_WORDS,
+    ROLES,
+    Element,
+    Item,
+    Join,
+    Node,
+    Notice,
+    Outcome,
+    Property,
+    Ref,
+    Subtype,
+    Version,
+    WorkRecord,
+)
 from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
-from ..wording import count
 
 RecordT = TypeVar('RecordT', Element, Join, Subtype, Item, Property, Version)
 

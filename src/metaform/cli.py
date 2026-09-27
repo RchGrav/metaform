@@ -18,7 +18,20 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from . import __version__, changes, context, docs, grammar, home, instructions, loader, query, reports, results, settings
+from . import (
+    __version__,
+    changes,
+    context,
+    docs,
+    grammar,
+    home,
+    instructions,
+    loader,
+    query,
+    reports,
+    results,
+    settings,
+)
 from .data import Store, export_document, history, import_document, prompts, pull_wheel
 from .docs import Command, Switch
 from .errors import Stop

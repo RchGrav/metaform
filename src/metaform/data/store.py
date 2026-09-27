@@ -20,7 +20,7 @@ import dataclasses
 import sqlite3
 from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -28,9 +28,35 @@ from .. import home
 from ..errors import StoreError
 from . import challenges, history, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
-from .records import (ChallengeState, Citation, ContextView, Element, GraphPage, Item, Join, Layer, Node, NodeView,
-                      Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Recording, Ref, Report,
-                      Roots, Selection, Subtype, Version, Where, WorkRecord)
+from .records import (
+    ChallengeState,
+    Citation,
+    ContextView,
+    Element,
+    GraphPage,
+    Item,
+    Join,
+    Layer,
+    Node,
+    NodeView,
+    Notice,
+    Outcome,
+    Page,
+    PeelPreview,
+    Plan,
+    Property,
+    Provenance,
+    Record,
+    Recording,
+    Ref,
+    Report,
+    Roots,
+    Selection,
+    Subtype,
+    Version,
+    Where,
+    WorkRecord,
+)
 from .selection import Resolver
 from .session import Session, Tx
 
@@ -88,7 +114,7 @@ class Store:
         """The layer a write goes to: the one named, or a new building layer `unnamed-<UTC timestamp>`, LAYER-001."""
         if layer:
             return layer, None
-        stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
         made = layering.create(tx, f'unnamed-{stamp}', self.module or '', '', mutable=True, hideable=True)
         return made.name, Notice('layer', f'No layer was named; this was stored in a new building layer {made.name}, '
                                           'which has no variable and no provenance.')

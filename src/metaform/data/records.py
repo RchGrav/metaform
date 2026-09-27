@@ -6,8 +6,8 @@ an MCP tool's JSON result carry the same thing, BASE-036.
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, NamedTuple, TypeVar, cast
 
 from ..errors import StoreError

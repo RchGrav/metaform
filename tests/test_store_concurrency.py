@@ -7,9 +7,9 @@ import sys
 import threading
 
 import pytest
+from storekit import memory, small_map
 
 from metaform.data import Node, Store
-from storekit import memory, small_map
 
 pytestmark = pytest.mark.kind('fixture')
 

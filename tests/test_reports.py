@@ -55,7 +55,7 @@ def test_a_second_write_for_one_run_appends_a_section_and_read_returns_the_text_
     name = first['files'][0]
     text = run('read', 'report', name, cwd=project).stdout
     assert text.startswith('First.') and text.rstrip().endswith('Second.')
-    assert re.search(r'^## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$', text, re.M)
+    assert re.search(r'^## \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$', text, re.MULTILINE)
     assert [ref.value for ref in store.provenance('notes').refs] == [name]
 
 
@@ -96,13 +96,14 @@ def test_feedback_and_reports_run_whatever_the_surface(run, project, user_module
     assert [row['name'] for row in listed(run, project)] == [name]
     assert run('read', 'report', name, cwd=project).stdout == 'Narrowed and still reporting.'
     index = run('help', 'commands', cwd=project).stdout
-    assert re.search(r'^  feedback ', index, re.M) and re.search(r'^  read ', index, re.M)
+    assert re.search(r'^  feedback ', index, re.MULTILINE) and re.search(r'^  read ', index, re.MULTILINE)
 
 
 @pytest.mark.req('BASE-045')
 def test_writes_to_one_file_at_the_same_time_all_survive(home):
     # Eight writers released at once; on Windows, where an append is not one step, sections were lost without a lock.
     import threading
+
     from metaform import reports
     texts = [f'Report {number}.' for number in range(8)]
     start = threading.Barrier(len(texts))
@@ -138,6 +139,7 @@ def test_writes_from_separate_processes_to_one_file_all_survive(home, tmp_path):
     import os
     import subprocess
     import sys
+
     from metaform import reports
     go = tmp_path / 'go'
     code = ('import pathlib, sys, time\n'

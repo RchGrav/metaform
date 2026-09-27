@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-
 from typing import Any, cast
 
 from metaform import settings

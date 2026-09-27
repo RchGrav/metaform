@@ -9,8 +9,8 @@ a default, CLI-023.
 """
 from __future__ import annotations
 
-import re
 import inspect
+import re
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace

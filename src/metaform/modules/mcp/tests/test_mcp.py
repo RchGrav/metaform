@@ -32,10 +32,9 @@ def session(home, folder, fn):
                                    env={**os.environ, 'METAFORM_HOME': str(home)})
 
     async def go():
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as client:
-                init = await client.initialize()
-                return await fn(client, init)
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as client:
+            init = await client.initialize()
+            return await fn(client, init)
     return asyncio.run(go())
 
 

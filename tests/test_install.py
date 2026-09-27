@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from fakes import calls, recorder, server
 
 pytestmark = pytest.mark.kind('simulation')
@@ -182,6 +181,7 @@ def test_a_config_that_is_not_a_json_object_is_refused_naming_it_and_its_backup(
 @pytest.mark.req('MCP-015')
 def test_a_tool_command_that_hangs_stops_at_its_timeout(machine, home, monkeypatch):
     from fakes import executable
+
     from metaform import install
     executable(machine['bin'], 'claude', 'import time\ntime.sleep(30)\n')
     for key, value in machine['env'].items():

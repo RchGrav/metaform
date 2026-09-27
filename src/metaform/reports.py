@@ -18,7 +18,7 @@ import sys
 import threading
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -65,7 +65,7 @@ def folder(project_id: str | None) -> Path:
 
 def run_id() -> str:
     """A run id for files that belong to no layer: the UTC time and six random hex characters."""
-    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + secrets.token_hex(3)
+    return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + '-' + secrets.token_hex(3)
 
 
 def write(project_id: str | None, run: str, kind: str, text: str, *, store: Store | None = None,
@@ -119,7 +119,7 @@ def _loose(project_id: str | None) -> list[Report]:
         match = NAME.fullmatch(path.name)
         if match is None or not path.is_file():
             continue
-        stamp = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        stamp = datetime.fromtimestamp(path.stat().st_mtime, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
         found.append(Report(path.name, path.name[:-len(match.group(1)) - 1], None, None, KIND_OF[match.group(1)],
                             stamp, path.stat().st_size))
     return found

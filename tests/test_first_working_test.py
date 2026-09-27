@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from fakes import calls, recorder
 
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
@@ -84,7 +83,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
     # 1 and 2: build the wheel, then install for Claude Code, Codex and Cursor.
     built = metaform('build').stdout
-    wheel = Path(re.search(r'^Wheel: (.+)$', built, re.M).group(1))
+    wheel = Path(re.search(r'^Wheel: (.+)$', built, re.MULTILINE).group(1))
     installed = metaform('install', 'claude', 'codex', 'cursor').stdout
     command = ['uvx', '--from', str(wheel), 'metaform', 'mcp', 'serve']
     assert calls(fakes, 'claude')[-1] == ['mcp', 'add', '--transport', 'stdio', '--scope', 'user', 'metaform', '--',
@@ -103,7 +102,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                           user / '.cursor' / 'skills' / 'metaform' / 'SKILL.md'):
         assert copy_of_skill.read_bytes() == skill
     for tool in ('claude', 'codex', 'cursor'):
-        assert re.search(rf'^  {tool}: server starts, \d+ tools$', installed, re.M), installed
+        assert re.search(rf'^  {tool}: server starts, \d+ tools$', installed, re.MULTILINE), installed
     assert installed.splitlines()[-1].startswith('Next: ')
 
     # 3: register a project; it has no intake.

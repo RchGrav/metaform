@@ -14,9 +14,9 @@ from __future__ import annotations
 import asyncio
 import atexit
 import importlib
-import inspect
 import importlib.resources
 import importlib.util
+import inspect
 import re
 import sys
 from collections.abc import Coroutine

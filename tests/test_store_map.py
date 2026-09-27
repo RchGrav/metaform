@@ -5,9 +5,9 @@ import re
 import sqlite3
 
 import pytest
+from storekit import correction, diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 from metaform.data import Node, StoreError
-from storekit import correction, diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 

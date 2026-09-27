@@ -1,13 +1,14 @@
 """STORE-024: each write operation writes exactly its rows, and each listed error writes nothing."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import pytest
+from storekit import PROVENANCE, correction, diff, dump, knowledge, memory, small_map, store_file
 
 from metaform.data import Node, StoreError
-from storekit import PROVENANCE, correction, diff, dump, knowledge, memory, small_map, store_file
 
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('STORE-024')]
 
@@ -175,12 +176,11 @@ def test_atomic_commits_every_write_together(home, store):
         assert len(store.layer_items('k', Node('element', 'code.k.a')).results) == 3
     assert diff(before, dump(store_file(home, store)))['items'] == (2, 0)
     before = dump(store_file(home, store))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError), store.atomic():
+        store.add_item('k', Node('element', 'code.k.a'), 'three')
         with store.atomic():
-            store.add_item('k', Node('element', 'code.k.a'), 'three')
-            with store.atomic():
-                store.add_item('k', Node('element', 'code.k.a'), 'four')
-            raise ValueError('abandon the block')
+            store.add_item('k', Node('element', 'code.k.a'), 'four')
+        raise ValueError('abandon the block')
     assert dump(store_file(home, store)) == before
 
 

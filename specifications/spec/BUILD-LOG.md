@@ -593,3 +593,8 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - The page no longer says an intake finished when the intake being recorded disappears for another reason, such as a clear; it says what happened.
 - While the page follows a live intake, it no longer reads a still-building node in a way that answers 404, so the browser's console stays clean through a whole live intake.
 - Built by a Fable builder, stopped when Rich moved the work to Opus only, just as it reached its suite run; the orchestrator ran the whole suite in its worktree, 611 passed, pyright clean, and committed it.
+
+## Step 61: ruff's safe fixes
+
+- CI's lint step, `ruff check src tests conftest.py`, failed on 120 inherited findings. Ruff's own safe fixes are applied: import order, `datetime.UTC`, regex flag names, `encode()` defaults, joined `with` statements, `from` imports, the order of `__all__`, and one unused import; 79 changes across 42 files, none of them a change of behavior. The whole suite, 615 tests, and pyright pass on them.
+- Left for a pass that decides each site: 56 findings, among them `subprocess.run` without an explicit `check`, implicit string joins inside lists, unused unpacked names, and broad `except` clauses, most of them deliberate.

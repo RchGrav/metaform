@@ -17,7 +17,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -281,7 +281,7 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     if not chosen:
         raise Stop('No tool was chosen.', BOTH_FORMS)
     command = entry(wheel)
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     backups = home.home() / 'backups' / 'install' / stamp
     skill = skill_text()
     shared = [home.home() / 'skills' / 'metaform' / 'SKILL.md', user_home() / '.agents' / 'skills' / 'metaform' /
@@ -394,7 +394,7 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
                   in ('', 'y', 'yes')]
     if not chosen:
         raise Stop('No tool was chosen.', BOTH_UNINSTALL)
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     backups = home.home() / 'backups' / 'uninstall' / stamp
     left = set(installed) - {tool.name for tool in chosen}
     shared = [] if left else [home.home() / 'skills' / 'metaform' / 'SKILL.md',

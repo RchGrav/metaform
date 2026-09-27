@@ -398,7 +398,7 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
             if change == 'modified' and _text(data) and text_size >= WHOLE_LIMIT and _text(base[path][0]):
                 stored = (staging / 'diffs' / f'{path}.diff')
                 stored.parent.mkdir(parents=True, exist_ok=True)
-                stored.write_bytes(f'base_sha256 {_sha(base[path][0])}\n'.encode('utf-8') + _diff(base[path][0], data))
+                stored.write_bytes(f'base_sha256 {_sha(base[path][0])}\n'.encode() + _diff(base[path][0], data))
                 rows.append((path, change, 'diff', _sha(data), mode))
             else:
                 _write(staging / 'files' / path, data, mode)

@@ -616,7 +616,7 @@ def test_the_layers_setting_is_the_starting_selection(run, project):
     run('unset', 'all', '--unglue', cwd=project)
     assert shown(run, cwd=project)['layers']['value'] == []
     kept = run('set', '--layers', 'nothing-here', cwd=project)
-    assert re.search(r'^Notice: layers: .*nothing-here.*metaform map layers', kept.stdout, re.M)
+    assert re.search(r'^Notice: layers: .*nothing-here.*metaform map layers', kept.stdout, re.MULTILINE)
     assert shown(run, cwd=project)['layers']['value'] == ['nothing-here']
     assert read() == set()
 

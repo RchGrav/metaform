@@ -1264,6 +1264,7 @@ def test_a_module_that_writes_to_the_map_is_seen_live_as_helloworld_greetings_ap
 def test_only_a_local_process_holding_the_servers_nonce_can_push_to_the_open_pages(run, web, mapped):
     import http.client
     import threading
+
     from metaform.modules.web import recorded
     started(run)
     heard, ready = [], threading.Event()

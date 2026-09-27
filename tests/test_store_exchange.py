@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from storekit import correction, dump, knowledge, memory, record_intake, small_map, store_file
 
 from metaform import home as metaform_home
 from metaform.data import Node, Store, StoreError, export_document, import_document
-from storekit import correction, dump, knowledge, memory, record_intake, small_map, store_file
 
 pytestmark = pytest.mark.kind('fixture')
 

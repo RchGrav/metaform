@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -120,7 +120,7 @@ class Recording:
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
 
 
 def _note(notices: Notices, result: Any) -> None:

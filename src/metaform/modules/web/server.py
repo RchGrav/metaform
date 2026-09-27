@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import argparse
 import hmac
-import json
 import ipaddress
+import json
 import os
 import queue
 import socket
@@ -23,7 +23,7 @@ import socketserver
 import sys
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -94,7 +94,7 @@ class Server(ThreadingHTTPServer):
         written = path.with_suffix('.tmp')
         written.write_text(json.dumps({'pid': os.getpid(), 'bind': self.bind, 'port': self.port,
                                        'home': str(home.home()), 'nonce': self.nonce,
-                                       'started': datetime.now(timezone.utc).isoformat(timespec='seconds')}),
+                                       'started': datetime.now(UTC).isoformat(timespec='seconds')}),
                            encoding='utf-8')
         os.replace(written, path)
 
@@ -371,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server = Server(given.bind, given.port, given.nonce)
     except OSError as error:
-        print(f'{datetime.now(timezone.utc).isoformat(timespec="seconds")} cannot listen at '
+        print(f'{datetime.now(UTC).isoformat(timespec="seconds")} cannot listen at '
               f'{host_port(given.bind, given.port)}: {error}', file=sys.stderr, flush=True)
         return 1
     server.record()

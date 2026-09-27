@@ -1,12 +1,12 @@
 """The settings screen edits the same settings as set and unset, and turns modules on and off."""
 import asyncio
 
+import pytest
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-import pytest
-
-from metaform import home as metaform_home, loader, settings, tui
+from metaform import home as metaform_home
+from metaform import loader, settings, tui
 
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('CLI-026')]
 

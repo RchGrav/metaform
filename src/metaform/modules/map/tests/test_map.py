@@ -186,7 +186,7 @@ def test_a_blind_spot_is_answered_and_only_a_person_approves_it(run, mapped):
                              'value="Nothing recovers a hung loop."').stdout)
     k(run, mapped, 'op=finish', 'layer=challenge.blind')
     unlinked = run('map', 'answer', challenge['item_id'], 'C', cwd=mapped)
-    assert re.search(r'^Notice: link: ', unlinked.stdout, re.M)
+    assert re.search(r'^Notice: link: ', unlinked.stdout, re.MULTILINE)
     refused = run('map', 'approve', challenge['item_id'], cwd=mapped, ok=False)
     assert refused.returncode == 2
     run('map', 'answer', challenge['item_id'], 'B', cwd=mapped)
@@ -283,7 +283,7 @@ def test_an_unknown_named_field_is_kept_in_the_records_extra_with_a_notice(run, 
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     added = run('map', 'knowledge', 'op=add-item', 'layer=notes', 'node=element:code.timer.kitchen', 'value="n"',
                 'colour=red', cwd=mapped)
-    assert re.search(r'^Notice: colour: .*extra', added.stdout, re.M)
+    assert re.search(r'^Notice: colour: .*extra', added.stdout, re.MULTILINE)
     item = Store('proj').layer_items('notes').results[0]
     assert item.extra == {'colour': 'red'}
 
@@ -310,7 +310,7 @@ def test_a_correction_moves_a_join_by_its_receiver_and_never_moves_an_element(ru
     assert 'Notice:' not in moved.stdout
     kept = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={kitchen}', 'address=code.timer.egg',
                'reason=r', cwd=mapped)
-    assert re.search(r'^Notice: address: ', kept.stdout, re.M)
+    assert re.search(r'^Notice: address: ', kept.stdout, re.MULTILINE)
     k(run, mapped, 'op=finish', 'layer=fix-a')
     after = {found.join_id: found for found in Store('proj').joins('stakeholder.cook.home').results}[join.join_id]
     assert (after.purpose, after.receiver_address) == ('First fix.', 'stakeholder.cook.home')

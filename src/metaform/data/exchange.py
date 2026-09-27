@@ -19,9 +19,9 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
+from ..sqlite import SCHEMA_VERSION
 from . import corrections
 from .ids import as_list, as_object, prefixes
-from ..sqlite import SCHEMA_VERSION
 from .schema import STORE_SCHEMA
 from .session import open_store
 
@@ -270,7 +270,7 @@ def _pulled(metaform: dict[str, Any], project_id: str, label: str, taken: set[st
     """A wheel's metaform as it arrives in the main home: an id made from the wheel and its own, so pulling the same
     folder again finds it, and its name followed by `-from-<wheel>`, numbered when taken, BASE-025."""
     head = metaform['metaform']
-    derived = hashlib.sha256(f'{label}/{head["metaform_id"]}'.encode('utf-8')).hexdigest()[:32]
+    derived = hashlib.sha256(f'{label}/{head["metaform_id"]}'.encode()).hexdigest()[:32]
     with home.base() as db:
         name = home.free_name(db, project_id, f'{head["name"]}-from-{label}', taken)
     taken.add(name)

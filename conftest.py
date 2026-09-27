@@ -116,7 +116,7 @@ def _spec_ids():
     folder = Path(__file__).parent / 'specifications' / 'spec'
     ids = set()
     for path in folder.glob('0*.md'):
-        ids.update(re.findall(r'^### ([A-Z]+-\d{3})\b', path.read_text(encoding='utf-8'), re.M))
+        ids.update(re.findall(r'^### ([A-Z]+-\d{3})\b', path.read_text(encoding='utf-8'), re.MULTILINE))
     return ids
 
 

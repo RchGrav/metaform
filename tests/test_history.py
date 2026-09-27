@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import stat
 import subprocess
 from pathlib import Path
 
@@ -228,7 +227,7 @@ def test_small_changed_text_is_kept_whole_and_large_as_a_diff_and_both_reconstru
     assert [(change.path, change.storage) for change in second.files] == [('data.txt', 'diff')]
     payload = home / 'origins' / origin.mform_sha_id / 'variants' / second.variant_id
     stored = (payload / 'diffs' / 'data.txt.diff').read_bytes()
-    assert stored.startswith(f'base_sha256 {hashlib.sha256(big).hexdigest()}\n'.encode('utf-8'))
+    assert stored.startswith(f'base_sha256 {hashlib.sha256(big).hexdigest()}\n'.encode())
     assert len(stored) < 10000 and not (payload / 'files').exists()
     store.extract(['all'], tmp_path / 'out')
     assert (tmp_path / 'out' / first.variant_id / 'src' / 'main.py').read_bytes() == b'print("small change")\n'
@@ -295,7 +294,7 @@ def test_a_collection_that_fails_partway_leaves_no_rows_and_no_folder(repo, work
     store = Store('app')
     origin = store.add_origin()
     (worktree / 'logo.png').write_bytes(b'changed')
-    import metaform.data.history as history
+    from metaform.data import history
 
     def broken(*args, **kwargs):
         raise OSError('disk gone')
@@ -356,7 +355,7 @@ def test_a_variant_whose_rows_committed_before_its_folder_moved_is_completed_whe
     store = Store('app')
     origin = store.add_origin()
     (worktree / 'logo.png').write_bytes(b'changed')
-    import metaform.data.history as history
+    from metaform.data import history
     real = history.os.replace
 
     def last_step_fails(source, target):

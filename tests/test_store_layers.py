@@ -4,9 +4,9 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+from storekit import PROVENANCE, diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 from metaform.data import Node, Store, StoreError
-from storekit import PROVENANCE, diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -215,11 +215,10 @@ def test_a_relation_shows_at_both_ends_and_search_finds_words(store):
 
 @pytest.mark.req('STORE-032')
 def test_an_intake_that_raises_inside_atomic_leaves_nothing(home, store):
-    with pytest.raises(RuntimeError):
-        with store.atomic():
-            layer = intake(store)
-            store.add_element(layer.name, 'code.timer.kitchen', role='DE')
-            raise RuntimeError('interrupted')
+    with pytest.raises(RuntimeError), store.atomic():
+        layer = intake(store)
+        store.add_element(layer.name, 'code.timer.kitchen', role='DE')
+        raise RuntimeError('interrupted')
     assert store.has_intake() is False
     assert store.layers().results == ()
     assert store.element('code.timer.kitchen') is None

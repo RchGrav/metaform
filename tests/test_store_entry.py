@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 import pytest
+from storekit import dump, knowledge, plans, record_intake, small_map, store_file
 
 from metaform.data import Node, Store
-from storekit import dump, knowledge, plans, record_intake, small_map, store_file
 
 pytestmark = pytest.mark.kind('fixture')
 

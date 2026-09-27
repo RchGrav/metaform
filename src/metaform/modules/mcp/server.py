@@ -22,8 +22,23 @@ from metaform import changes, home, settings
 from metaform.context import project_for
 from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
-from metaform.module import (Context, Module, Stop, Verb, call, context, feedback, instructions, list_reports,
-                             on_this_system, read_report, result_json, setting_value, surface, tool_arguments)
+from metaform.module import (
+    Context,
+    Module,
+    Stop,
+    Verb,
+    call,
+    context,
+    feedback,
+    instructions,
+    list_reports,
+    on_this_system,
+    read_report,
+    result_json,
+    setting_value,
+    surface,
+    tool_arguments,
+)
 
 PROJECT = {'type': 'string', 'description': "A registered project id; overrides the folder's project for this call."}
 LAYERS = {'type': 'array', 'items': {'type': 'string'},
