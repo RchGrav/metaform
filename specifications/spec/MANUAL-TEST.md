@@ -4,13 +4,13 @@ Date: 2026-09-25. Branch `chassis` at 3e610e7. Tester: a Claude agent, by hand, 
 
 ## Setup
 
-- `MT` is the scratch folder `/tmp/claude-1000/-home-rich-mgm-main/3beff1cb-4a4c-4d8c-a313-66e536b5ad27/scratchpad/manual-test`. Every command ran with `METAFORM_HOME=$MT/home`. The real `~/.metaform` and the real tool configs were never touched.
+- `MT` is the scratch folder `/tmp/claude-1000/-home-rich-notes/3beff1cb-4a4c-4d8c-a313-66e536b5ad27/scratchpad/manual-test`. Every command ran with `METAFORM_HOME=$MT/home`. The real `~/.metaform` and the real tool configs were never touched.
 - The CLI ran as `/home/rich/metaform/.venv/bin/python -m metaform`, written below as `metaform`. The folder a command ran in is shown when it is not `$MT/proj`.
-- Projects: `demo` on `$MT/proj`, holding the real MGM intake; `photos` on `$MT/photos`, target `artifact kitchen_photos`, holding a subtype intake; `rtproj` and `rtnew` for the real-tool run.
+- Projects: `demo` on `$MT/proj`, holding a real intake; `photos` on `$MT/photos`, target `artifact kitchen_photos`, holding a subtype intake; `rtproj` and `rtnew` for the real-tool run.
 - The installer ran with `HOME=$MT/insthome`, fake `claude`, `codex`, `gemini`, `code`, `copilot` and `droid` executables that record their arguments, the folders `~/.cursor`, `~/.gemini/config` and `~/Library/Application Support/Claude` made in the fake home, and a Cursor `mcp.json` holding one other server.
 - MCP was driven with the real `mcp` 2.2.0 SDK client in the venv, scripts `$MT/mcpc.py`, `$MT/s3.py` and `$MT/s6.py`. The full transcript of every command is `$MT/log.txt`.
 - The spec was read at 12:46 on 2026-09-25. Another session edited 01 to 06 at 13:05 and 13:06, during this run. The Spec column quotes the text as read at 12:46.
-- The real intake submission was built from `/home/rich/mgm-main/mgm_intake_1.1.xml` by `$MT/xml2submit.py`: each receiving element with its joins, and each provider element nested in a join added as its own element. It has 13 elements, 12 joins and 59 refs, and no subtypes, so subtypes were tested with a second submission on `photos`.
+- The real intake submission was built from `/home/rich/notes/intake_1.1.xml` by `$MT/xml2submit.py`: each receiving element with its joins, and each provider element nested in a join added as its own element. It has 13 elements, 12 joins and 59 refs, and no subtypes, so subtypes were tested with a second submission on `photos`.
 
 ## Result
 
@@ -96,8 +96,8 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | 52 | Narrowing the surface | `set --modules chassis,map` in proj/src; `memory read-graph`; `metaform` | The five CLI-022 lines; `memory is not on this folder's command surface.` `Next: metaform unset --modules`; status line `Modules: chassis, map (narrowed; restore: metaform unset --modules)` | CLI-022, CLI-028 | PASS |
 | 53 | Narrowing another folder | `set --modules helloworld folder=$MT/other`; `help commands` in other | Stored for other; `help commands` there shows help, set, unset, config and helloworld only. The output does not name the folder | PROJ-007; CLI-022: the lines name the folder | FAIL, D8 |
 | 54 | Bad group | `set --modules mapp` | `--modules has no group 'mapp'. Groups: chassis, helloworld, intake, map, mcp, memory, template.` `Next: metaform list modules` | CLI-030 | PASS |
-| 55 | `--layers` stored | `set --layers practices`; read in proj/src; `set --layers nosuch`; `set --layers fix-3`; `set --layers practices --glue`, `unset all`, `unset all --unglue` | Only `practices-mgm` in the node read, in the subfolder too; `--layers has no layer or tag 'nosuch'.`; `fix-3 is a correction layer; correction layers are always applied.`; glued kept, then back to `all` | CLI-033, LAYER-019 | PASS |
-| 56 | `--layers` on one call | `metaform map node element:code.interface.control --layers foresight-mgm` | `Error: map node has no switch --layers.` | CLI-033 acceptance 2, CLI-011 | FAIL, D9 |
+| 55 | `--layers` stored | `set --layers practices`; read in proj/src; `set --layers nosuch`; `set --layers fix-3`; `set --layers practices --glue`, `unset all`, `unset all --unglue` | Only `practices-notes` in the node read, in the subfolder too; `--layers has no layer or tag 'nosuch'.`; `fix-3 is a correction layer; correction layers are always applied.`; glued kept, then back to `all` | CLI-033, LAYER-019 | PASS |
+| 56 | `--layers` on one call | `metaform map node element:code.interface.control --layers foresight-notes` | `Error: map node has no switch --layers.` | CLI-033 acceptance 2, CLI-011 | FAIL, D9 |
 | 57 | `--project` on one call | in `outside`: `metaform map where code --project demo` | `Error: map where has no switch --project.` | CLI-021, BASE-028, MCP-025: `--project <id>` on the CLI | FAIL, D9 |
 | 58 | `config --show` and JSON | `config --show`; `config --show --json` | `<mark> <key>: <value>` rows, `(set)` and `(glued)`, footer; JSON rows with key, switch, owner, kind, value, state, default, help | CLI-031, BASE-029 | PASS |
 | 59 | Settings screen | `metaform config` in a pseudo terminal via `script`, keys `j` and `q` | Opens with Modules and Registered settings panels, details and key bar; `q` quits. Rows read `project = demo default` and lists show `[]` | CLI-026: rows `key: value` with `*` for glued and `(set)` for set | FAIL, D10 |
@@ -120,7 +120,7 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | 66 | Refused submission | `intake submit elements=$MT/bad1.json`: one join without purpose, a bad address, an unknown provider | Lists all four problems with their paths, `Next: fix the listed fields and call intake_submit again`; `intake status` still `No intake yet.`; the notice stays | BASE-039, MAP-040 | PASS |
 | 67 | Subtype with a purpose | `bad2.json` | `elements[0].joins[0].subtypes[0].purpose: is not a field here` | MAP-030 | PASS |
 | 68 | Self join | `bad3.json` | `a join runs to a different element than its receiver` | Q7, D11 | PASS |
-| 69 | Real MGM intake over MCP | `intake_submit` with the 13 converted elements, `id`, model, role, blinded | `{"layer": "intake-20260925T165008Z-40fee4", "project": "demo", "elements": 13, "joins": 12, "subtypes": 0, "refs": 59}` | MAP-040, BASE-039 | PASS |
+| 69 | Real intake over MCP | `intake_submit` with the 13 converted elements, `id`, model, role, blinded | `{"layer": "intake-20260925T165008Z-40fee4", "project": "demo", "elements": 13, "joins": 12, "subtypes": 0, "refs": 59}` | MAP-040, BASE-039 | PASS |
 | 70 | Read back whole | A script compared every element's name, name_length, role and refs in order, and every join's type, purpose, function, relation, observation and non_goal, against the submission | `mismatches: 0` | MAP-040 acceptance 1 | PASS |
 | 71 | Intake layer record | `query layers --json`; `query provenance <intake layer> --json` | kind intake, immutable, not hideable, ready, `result_id` the submitted id; provenance module intake, workflow canonical-intake, model, role, blinded as given, prompt equal to the served text | BASE-039, LAYER-010 | PASS |
 | 72 | Notice gone | new MCP connection; `metaform`; `intake status` | No notice; `Intake: complete`; `This project has an intake. Latest intake layer: …` | MCP-009, CLI-028 | PASS |
@@ -133,22 +133,22 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | # | Feature | Command | Observed, trimmed | Spec | Result |
 |---|---|---|---|---|---|
 | 76 | Element read with readings | `map element code.daemon.manager.gateway` | `reading: gateway manager daemon code`, `short_name: gateway manager daemon`, name, role, the descriptor with its 11 refs in order, the intake layer name | MAP-012, STORE-025 | PASS |
-| 77 | Children and one element per address | `map children code`; `knowledge op=add-element layer=practices-mgm address=code.manager.route` | The next level under code; `existing: True`, the same element id | MAP-010, MAP-016 | PASS |
-| 78 | Create a knowledge layer | `knowledge op=create layer=practices-mgm variable=… mutable=true hideable=true module=manualtest workflow=practices prompt=… model=none role=person blinded=false 'tags=["practices"]'` | The layer, building, with its tag; provenance reads back with every field | LAYER-018, LAYER-010 | PASS |
+| 77 | Children and one element per address | `map children code`; `knowledge op=add-element layer=practices-notes address=code.manager.route` | The next level under code; `existing: True`, the same element id | MAP-010, MAP-016 | PASS |
+| 78 | Create a knowledge layer | `knowledge op=create layer=practices-notes variable=… mutable=true hideable=true module=manualtest workflow=practices prompt=… model=none role=person blinded=false 'tags=["practices"]'` | The layer, building, with its tag; provenance reads back with every field | LAYER-018, LAYER-010 | PASS |
 | 79 | Create without a variable | `knowledge op=create layer=bad2 …` | `knowledge op=create needs variable.` | LAYER-002 | PASS |
-| 80 | Building layer out of context | `map context code.interface.control`; `map node element:code.interface.control` and `--raw` | Context empty; practices-mgm absent in context, present raw | STORE-032, LAYER-008 | PASS |
-| 81 | Build object by object | `add-element code`, three `add-property`, `add-join`, `add-item` on the join, `edit`, `add-ref`, `remove` of an element, `remove` of the used join, `finish` twice | Each returns its record; removing the join still used is refused naming the item; second finish `Layer practices-mgm is already finished.` | LAYER-018, STORE-024 | PASS |
+| 80 | Building layer out of context | `map context code.interface.control`; `map node element:code.interface.control` and `--raw` | Context empty; practices-notes absent in context, present raw | STORE-032, LAYER-008 | PASS |
+| 81 | Build object by object | `add-element code`, three `add-property`, `add-join`, `add-item` on the join, `edit`, `add-ref`, `remove` of an element, `remove` of the used join, `finish` twice | Each returns its record; removing the join still used is refused naming the item; second finish `Layer practices-notes is already finished.` | LAYER-018, STORE-024 | PASS |
 | 82 | Edit after finish | `knowledge op=edit … value=…`; `map node join:<id>`; `map history <item>` | New value in context; one version | LAYER-018, STORE-032 | PASS |
 | 83 | Property transitivity | `map context` at `code.interface.control`, `code.interface.control.cli`, `code`, `code.daemon`, `code.interface` | At the control element and above it: `C` and `Bash` apply. At `code`: `C` applies, `C++…` and `Bash` visible. At `code.daemon`: only `C++…` visible, no Bash | MAP-022, LAYER-005, STORE-035 | PASS |
-| 84 | Joins from layers with their names | `map joins code.interface.control`; `map joins code.protocol.multicast as=provider`; with `--layers practices`; with a mask of practices-mgm at `code.interface`; `--raw` | Each join shows `[layer practices-mgm]` or the intake layer name; the knowledge join is absent when masked and present with `--raw` | LAYER-016, STORE-025 | PASS |
-| 85 | Tags | `map tag practices-mgm mgm`; `map tag practices-mgm BAD`; `map layers tag=practices`; `map untag` twice | Tagged; `'BAD' is not a tag …`; the tagged layer listed; untag is a no-op the second time | LAYER-019, STORE-038 | PASS |
+| 84 | Joins from layers with their names | `map joins code.interface.control`; `map joins code.protocol.multicast as=provider`; with `--layers practices`; with a mask of practices-notes at `code.interface`; `--raw` | Each join shows `[layer practices-notes]` or the intake layer name; the knowledge join is absent when masked and present with `--raw` | LAYER-016, STORE-025 | PASS |
+| 85 | Tags | `map tag practices-notes review`; `map tag practices-notes BAD`; `map layers tag=practices`; `map untag` twice | Tagged; `'BAD' is not a tag …`; the tagged layer listed; untag is a no-op the second time | LAYER-019, STORE-038 | PASS |
 | 86 | Layer listing format | `metaform map layers` | One compact JSON line of all layer records | CLI-033 shows one aligned row per layer: name, kind, module, tags, ready, on | FAIL, D11 |
-| 87 | Select and mask | `map mask code practices-mgm`; `map select code.interface.control practices-mgm`; `query effective-selection` at five addresses | practices-mgm off at `code`, `code.interface`, `code.daemon.manager.gateway`; on at `code.interface.control` and above it | LAYER-007 | PASS |
-| 88 | Hide and unhide | `map hide practices-mgm`; with `--confirm`; node read; raw; read by name; `map unhide`; hide the intake layer | Caution first; hidden from context and joins, present raw and by name; back after unhide; `Layer intake-… is not hideable.` | LAYER-006, BASE-038 | PASS |
+| 87 | Select and mask | `map mask code practices-notes`; `map select code.interface.control practices-notes`; `query effective-selection` at five addresses | practices-notes off at `code`, `code.interface`, `code.daemon.manager.gateway`; on at `code.interface.control` and above it | LAYER-007 | PASS |
+| 88 | Hide and unhide | `map hide practices-notes`; with `--confirm`; node read; raw; read by name; `map unhide`; hide the intake layer | Caution first; hidden from context and joins, present raw and by name; back after unhide; `Layer intake-… is not hideable.` | LAYER-006, BASE-038 | PASS |
 | 89 | Intake layer changes only by correction | `knowledge op=edit layer=<intake> id=<join> purpose=changed`; `op=add-element`; `op=discard` | Each refused, naming `metaform map knowledge op=correct layer=<correction layer> …` | LAYER-004, STORE-032 | PASS |
 | 90 | Cycle shapes | `add-join` uplink to route and route to uplink; `add-join` route to route | Both mutual joins stored; self join refused | MAP-002, D11 | PASS |
-| 91 | Unknown provider | `add-join … provider=code.nope` | `code.nope is not an element in this project.` `Next: metaform map knowledge op=add-element layer=practices-mgm address=code.nope` | STORE-026 | PASS |
-| 92 | Property on a join | `add-property … element=join:<id>` | Refused, but the Next line is `… op=add-element layer=practices-mgm address=join:3f4e…`, which is not an address | MAP-022; CLI-009: the Next line names a command that works | FAIL, D12 |
+| 91 | Unknown provider | `add-join … provider=code.nope` | `code.nope is not an element in this project.` `Next: metaform map knowledge op=add-element layer=practices-notes address=code.nope` | STORE-026 | PASS |
+| 92 | Property on a join | `add-property … element=join:<id>` | Refused, but the Next line is `… op=add-element layer=practices-notes address=join:3f4e…`, which is not an address | MAP-022; CLI-009: the Next line names a command that works | FAIL, D12 |
 | 93 | Query reads | `query`; `query joins … as=receiver`; `query node … raw=true`; `query search POSIX`; with a mask | The read list; results; masked layer absent from `query node` | STORE-028 | PASS |
 | 94 | An agent finds where to start | real Claude run 1, see below | The agent found no element: no read lists the map's roots or elements, `map where 1` returns nothing at all, and the instructions name no entry point | MCP-024 steps 4 and 8, MAP-005 | FAIL, D13 |
 
@@ -158,7 +158,7 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 |---|---|---|---|---|---|
 | 95 | Answers and approval | layer `challenge.blind` with a new element `code.probe.echo`, its join from the gateway, three challenges; `map answer C3 C`; with `link=element:code.monitor.uplink`; `answer C2 A`; `answer C1 B`; `approve` on A, on C, on an open one, on B | C without a link refused; A, B, C stored; approve refused for A, C and open with `Next: metaform map answer <id> B`; B becomes `plan`; the proposed element and join read as `plan`; a later answer refused as already approved | LAYER-015, STORE-040 | PASS |
 | 96 | Open state shown | `map node element:code.manager.roaming` before any answer | `state: None` | LAYER-015: every read shows the state, open included | FAIL, D14 |
-| 97 | Direct plan | `knowledge op=add-plan layer=practices-mgm element=code.cache.route join=<id>` | `source: direct`; element reads `plan` | STORE-040 | PASS |
+| 97 | Direct plan | `knowledge op=add-plan layer=practices-notes element=code.cache.route join=<id>` | `source: direct`; element reads `plan` | STORE-040 | PASS |
 | 98 | Approve is a person's act | MCP tool list | `map_answer` listed, `map_approve` absent | LAYER-015, BASE-035 | PASS |
 
 ## Memory
@@ -186,7 +186,7 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | 112 | Never toggled | `map mask code fix-3`; `map select`; `map hide --confirm`; `set --layers fix-3` | All refused | LAYER-011 | PASS |
 | 113 | Peel | `op=peel layer=fix-1`; `op=peel layer=fix-3`; `discard fix-3`; peel fix-2 and fix-1; `map stack` | `fix-1 is not on top of the stack; the top correction layer is fix-3.` with Next peel fix-3; fix-3 back to building; after peeling all, the stack is empty and both removed joins are current again | LAYER-011, STORE-017 | PASS |
 | 114 | Two corrections on one thing | `fix-a` and `fix-b` each change the route join's purpose | Reads show `Second fix.`; history intake, fix-a, fix-b | LAYER-011 acceptance 1 | PASS |
-| 115 | Re-examination | `deps-mgm` with `sources=["<intake>"]`; after fix-a and fix-b, `map layers`; `map reexamined deps-mgm` | `deps-mgm` marked; cleared | STORE-036 | PASS |
+| 115 | Re-examination | `deps-notes` with `sources=["<intake>"]`; after fix-a and fix-b, `map layers`; `map reexamined deps-notes` | `deps-notes` marked; cleared | STORE-036 | PASS |
 
 ## Multiple metaforms
 
@@ -202,8 +202,8 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | 118 | Round trip | `export file=exp1.json`; import into the empty `home2`; export again | `metaforms added: 3`, `layers added: 12`; the two documents are byte-identical; node, raw node and context reads equal across homes | STORE-027 | PASS |
 | 119 | Import of existing ids | `import exp1.json` into the same home, twice | `metaforms skipped: 3`, `layers skipped: 12`, nothing added | STORE-027 | PASS |
 | 120 | Export all | `export all` | Both projects | STORE-027 | PASS |
-| 121 | Layer export and its requires | `export demo metaform=main layer=practices-mgm file=…`; import into a home without the map | Only that layer, `requires` of 5; import refused naming the first missing element | STORE-027 | PASS |
-| 122 | Layer export without `metaform=` | `export demo layer=practices-mgm`; `export layer=practices-mgm` | `Error: No layer practices-mgm.` although the active metaform holds it | STORE-027 | FAIL, D17 |
+| 121 | Layer export and its requires | `export demo metaform=main layer=practices-notes file=…`; import into a home without the map | Only that layer, `requires` of 5; import refused naming the first missing element | STORE-027 | PASS |
+| 122 | Layer export without `metaform=` | `export demo layer=practices-notes`; `export layer=practices-notes` | `Error: No layer practices-notes.` although the active metaform holds it | STORE-027 | FAIL, D17 |
 | 123 | Unknown schema version | set `schema_version` to 999 in a copy; `list projects` | `… has schema version 999; this Metaform supports version 1.` | STORE-029 | PASS |
 
 ## Build and the directly run wheel
@@ -244,7 +244,7 @@ Every error seen in this run, on the CLI and over MCP, ended with exactly one `N
 | 145 | Server outside any project | server in `outside2`: `map_where`; `set {"project": "demo"}`; `map_where`; `map_where` with `project: photos` | Instructions list `Registered projects: demo, photos.` and the register line; `No project for this folder.` `Next: metaform set --project <id>`; after `set`, demo's element; photos' subtype for the one call | PROJ-005, MCP-025, Q15, Q16 | PASS |
 | 146 | Concurrent calls, two projects | 10 `map_knowledge op=add-element` calls gathered, alternating `project` demo and photos | No errors; five elements in each project and none in the other | BASE-028, MCP-025 | PASS |
 | 147 | First working test steps 8 to 10 | connection 1: `memory_add-observations` at `element:code.daemon.manager.gateway` and at the route join; connection 2: `memory_open-nodes` both; `map_mask` memory at the gateway; `map_node` both; `map_clear`; mask at `code.daemon` with select at the gateway | Both observations read back on the second connection; the mask hides the element's and the join's memory; clear restores both; the select below the mask restores both | MCP-024, LAYER-007 | PASS |
-| 148 | `layers` for one call | `map_node` with `layers: ["practices-mgm"]` | Only practices-mgm; the stored `--layers` stays `all` | CLI-033, Q17 | PASS |
+| 148 | `layers` for one call | `map_node` with `layers: ["practices-notes"]` | Only practices-notes; the stored `--layers` stays `all` | CLI-033, Q17 | PASS |
 
 ## Real-tool run
 
@@ -297,7 +297,7 @@ D7. `set` and `unset` report by comparing values, not stored state. `set --no-lo
 
 D8. `set … folder=<path>` prints the narrowing lines without naming the folder. CLI-022: "stores the same value for that folder and prints the same lines, naming the folder." Fix: add the folder to the first line, for example `Success: updated 1 key for <path>`.
 
-D9. Settings cannot be given on one CLI call to a module verb unless the verb declares them. `metaform map node … --layers foresight-mgm` fails with `map node has no switch --layers.`; `metaform map where code --project demo` fails the same way; `helloworld greet z --layers practices` too. CLI-011 says every setting can be passed on one call, CLI-033 acceptance 2 tests `--layers` on one call, and CLI-021, BASE-028 and MCP-025 describe `--project <id>` per call on the CLI. Over MCP both work. Fix: accept the chassis context settings `--project` and `--layers` on every module verb as per-call values, the same way the MCP server adds `project` and `layers` to every tool. The build log lists `--layers` on one CLI call as untested.
+D9. Settings cannot be given on one CLI call to a module verb unless the verb declares them. `metaform map node … --layers foresight-notes` fails with `map node has no switch --layers.`; `metaform map where code --project demo` fails the same way; `helloworld greet z --layers practices` too. CLI-011 says every setting can be passed on one call, CLI-033 acceptance 2 tests `--layers` on one call, and CLI-021, BASE-028 and MCP-025 describe `--project <id>` per call on the CLI. Over MCP both work. Fix: accept the chassis context settings `--project` and `--layers` on every module verb as per-call values, the same way the MCP server adds `project` and `layers` to every tool. The build log lists `--layers` on one CLI call as untested.
 
 D10. The settings screen shows rows as `project = demo default` and list values as `[]`. CLI-026: each row `key: value` with `*` for glued and `(set)` for set; CLI-031's value rule shows an empty list as `(none)`, or `all` for `modules`. Fix: use the `config --show` row format in the screen. Staging, preview and save were not driven here; the build log already notes the screen tests call methods instead of keys.
 
@@ -313,7 +313,7 @@ D15. The memory module's error for an unknown element steers agents to write ele
 
 D16. A correction that asks to change a join's receiver is accepted. `op=correct … id=<join> purpose="First fix." receiver=code.monitor.uplink reason=r` writes the purpose change and drops `receiver=` without a word; with `receiver=` alone the error is `Name at least one field to change.` STORE-034 acceptance 1: a correction with the key `receiver` is refused. The receiver did not change, so the map stays sound, but the agent is told nothing. Fix: in `correct`, refuse every noun that is not an allowed field for the thing's kind, naming the key, before writing.
 
-D17. `metaform export demo layer=practices-mgm` fails with `No layer practices-mgm.` when the project has more than one metaform, though the active metaform holds the layer. With `metaform=main` it works. STORE-027 lets `layer` limit any export. Fix: with `layer=` and no `metaform=`, look the layer up in each exported metaform and export the ones that hold it; report a layer only when no metaform holds it.
+D17. `metaform export demo layer=practices-notes` fails with `No layer practices-notes.` when the project has more than one metaform, though the active metaform holds the layer. With `metaform=main` it works. STORE-027 lets `layer` limit any export. Fix: with `layer=` and no `metaform=`, look the layer up in each exported metaform and export the ones that hold it; report a layer only when no metaform holds it.
 
 D18. Not built, as the build log says: `metaform import wheel=<name>-<version>` BASE-025, `metaform uninstall` MCP-020, and the history commands `add origin`, `list origins`, `add variant`, `list variants`, `extract` and `export origin=` PROJ-010 to PROJ-024. `import wheel=…` is read as a file path. Fix: build them, or mark them deferred in the records.
 

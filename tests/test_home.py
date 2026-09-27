@@ -119,26 +119,26 @@ def test_project_ids_are_lowercase_and_registration_is_idempotent(home, tmp_path
     folder = tmp_path / 'p'
     folder.mkdir()
     with pytest.raises(StoreError):
-        metaform_home.add_project('Mgm', folder)
-    first = metaform_home.add_project('mgm', folder)
-    second = metaform_home.add_project('mgm', folder)
+        metaform_home.add_project('Notes', folder)
+    first = metaform_home.add_project('notes', folder)
+    second = metaform_home.add_project('notes', folder)
     assert 'already registered' not in first
-    assert second == 'Project mgm is already registered.'
-    assert [record.project_id for record in metaform_home.projects()] == ['mgm']
+    assert second == 'Project notes is already registered.'
+    assert [record.project_id for record in metaform_home.projects()] == ['notes']
 
 
 @pytest.mark.req('STORE-031')
 def test_a_second_id_on_a_registered_path_is_refused_and_names_the_first(home, tmp_path):
     folder = tmp_path / 'p'
     folder.mkdir()
-    metaform_home.add_project('mgm', folder)
+    metaform_home.add_project('notes', folder)
     with pytest.raises(StoreError) as refused:
         metaform_home.add_project('other', folder)
-    assert 'mgm' in str(refused.value) and refused.value.next_step == 'metaform list projects'
+    assert 'notes' in str(refused.value) and refused.value.next_step == 'metaform list projects'
     elsewhere = tmp_path / 'q'
     elsewhere.mkdir()
     with pytest.raises(StoreError) as moved:
-        metaform_home.add_project('mgm', elsewhere)
+        metaform_home.add_project('notes', elsewhere)
     assert moved.value.next_step == 'metaform list projects'
     with pytest.raises(StoreError):
         metaform_home.add_project('ghost', tmp_path / 'missing')

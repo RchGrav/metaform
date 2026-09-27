@@ -104,7 +104,7 @@ Meanwhile: `elements` is declared optional, so the CLI takes `elements=<path>`; 
 Blocks: nothing.
 
 **Q19. MAP-040's real intake result. (MAP-040, BASE-039)**
-The acceptance submits a real intake result such as the MGM map; no such result in the tool's schema is in this repository, and the build does not read other repositories.
+The acceptance submits a real intake result such as a real project's map; no such result in the tool's schema is in this repository, and the build does not read other repositories.
 Meanwhile: the tests submit a three-element fixture with a subtype, refs and a non-goal, `tests/fixtures/intake_timer.json`.
 Blocks: nothing; a real result can be added as a fixture when one is supplied.
 
