@@ -193,6 +193,28 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 - Relates to: QUAL-006, QUAL-009, MCP-017, MCP-024.
 - Status: confirmed. The marker name is recommended.
 
+### QUAL-015 No polling and no blocking
+
+- Requirement: Nothing in Metaform polls unless it is demonstrated that there is no other way, and nothing an agent or a person waits on blocks behind slow work.
+- What this means: Rich, 2026-09-26, after the web GUI followed an intake by asking every 1.5 s: "we have a module event system, why are we polling!?", then "no polling unless it can be demonstrated there is no other way, thats system wide, no blocking no polling". What happened is announced: a module publishes it, BASE-010, and whatever needs to know is told, the web GUI's open pages through the push of VIEW-018. A timer, a sleep in a loop or a repeated read that waits for a change is a defect unless a written demonstration shows no event exists or can exist. A thread that sleeps until an event wakes it is not polling, and holds nobody up.
+- Why: A poll does work while nothing changes, lags when something does, and multiplies with every feature that wants live state; the event bus already says when things happen.
+- How it shows: A page left open during an intake sends no request until something is recorded, then draws it at once.
+- Build: The critic review under QUAL-008 checks new code for timers, sleeps and repeated reads; a test that a feature pushes rather than polls sits with the feature, as VIEW-018's does.
+- Acceptance: checked in the critic review, QUAL-008, and by each feature's own test.
+- Relates to: BASE-010, BASE-009, VIEW-018, QUAL-008.
+- Status: confirmed 2026-09-26.
+
+### QUAL-016 A capability added for a feature reaches every module author
+
+- Requirement: Any capability added to support a feature, or anything not thought of before, updates the template module and the module services authors read, and gets a demonstration in helloworld.
+- What this means: Rich, 2026-09-26: "Any features that are added to support a feature or anything we didnt think of must update the template module and module services, and add a demo in helloworld". The template's README and changelog, BASE-019 and QUAL-013, and the "Extending Metaform" guide say what the capability is and how a module uses it; helloworld uses it once, with a test, so it is shown working from a module that is not built in.
+- Why: Modules are the extension point. A capability only the built-in modules know is invisible to anyone writing one, and can break for them unnoticed.
+- How it shows: The `map.changed` topic of VIEW-018 is in the template README's Events section and the extending guide, and helloworld's greeting appears live in the web GUI.
+- Build: The critic review under QUAL-008 checks each new capability for the three.
+- Acceptance: checked in the critic review, QUAL-008, and by helloworld's test of each demonstration.
+- Relates to: BASE-019, QUAL-008, QUAL-013.
+- Status: confirmed 2026-09-26.
+
 ## Open questions
 
 1. QUAL-005: Which Ruff rule set applies, and what form must a reasoned suppression take?

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, settings
-from metaform.module import Context, Module, Status, Stop, Verb
+from metaform.module import Context, Module, Status, Stop, Subscription, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -208,6 +208,31 @@ def stop(ctx: Context) -> dict[str, Any]:
     return {'state': 'stopped'}
 
 
+def pushed(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
+    """map.changed: hand the event to the running server, which pushes it to every open page, VIEW-018.
+
+    This subscriber runs in the publishing command's process, as every subscriber does, BASE-010. The server takes
+    the event only from this machine and with the nonce from its run file. With no server running it does nothing.
+    """
+    record = recorded()
+    if record is None:
+        return {'pushed': False}
+    address, port = reach(str(record.get('bind', ''))), int(record.get('port') or 0)
+    body = json.dumps({'topic': 'map.changed', 'payload': payload}).encode('utf-8')
+    connection = http.client.HTTPConnection(address, port, timeout=1)
+    try:
+        connection.request('POST', '/api/notify', body=body, headers={
+            'Host': host_port(address, port), 'Content-Type': 'application/json',
+            'X-Metaform-Nonce': str(record.get('nonce', '')), 'X-Metaform-Token': token() or ''})
+        answer = connection.getresponse()
+        answer.read()
+        return {'pushed': answer.status == 200}
+    except OSError:
+        return {'pushed': False}
+    finally:
+        connection.close()
+
+
 def status(ctx: Context) -> Status:
     return Status(notice=NOTICE) if ctx.setting('web_autostart') else Status()
 
@@ -224,5 +249,6 @@ MODULE = Module(
         Verb('start', start, 'Start the web GUI, or show the address it already runs at.'),
         Verb('stop', stop, 'Stop the web GUI.'),
     ),
+    subscriptions=(Subscription('map.changed', pushed),),
     status=status,
 )

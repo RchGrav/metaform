@@ -28,7 +28,7 @@ Each setting the module declares, its default, and which verbs read it as a swit
 
 ## Events
 
-The topics the module publishes and those it subscribes to.
+The topics the module publishes and those it subscribes to. A module that writes to a project's map publishes `map.changed` after the write, with `project`, `metaform_id`, `layer`, the layer's `kind` and `building`, whether the layer is still building; the web GUI's open pages redraw from it at once, VIEW-018. Nothing polls for a change, and nothing a person or an agent waits on blocks behind slow work, QUAL-015.
 
 ## Sync and async
 

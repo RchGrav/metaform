@@ -32,7 +32,7 @@ const fill = (node, ...children) => put(node, children);
 /* ---------- reads ---------- */
 const S = {
   projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
-  elements: new Map(), joins: [], selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0,
+  elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0,
 };
 
 async function read(name, params = {}) {
@@ -128,6 +128,19 @@ function graphData() {
         ef: subtype.ef});
     }
   }
+  // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
+  const drawnIds = new Set(nodes.map(node => node.id));
+  const at = thing => thing.kind === 'property' ? thing.item.element_id : keyOf(thing.item.target);
+  const hung = [...S.items.values()].filter(thing => drawnIds.has(at(thing)));
+  for (const thing of hung) {
+    nodes.push({id: thing.key, t: 'item', layer: thing.layer, text: itemText(thing.value)});
+    drawnIds.add(thing.key);
+  }
+  for (const thing of hung) {
+    links.push({source: at(thing), target: thing.key, k: 'item', layer: thing.layer});
+    const to = keyOf(thing.item.link);
+    if (to && drawnIds.has(to)) links.push({source: thing.key, target: to, k: 'relation', layer: thing.layer});
+  }
   return {nodes, links};
 }
 /* A selection is an element's id, a subtype as 's:<id>' or a join as 'p:<id>', the same keys the 3D view uses. */
@@ -161,7 +174,8 @@ function linkColor(link) {
   return layerColor(link.layer);
 }
 let G = null;
-const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9 : 0.35;
+const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9
+  : node.t === 'item' ? 0.3 : 0.35;
 function start3D() {
   if (typeof ForceGraph3D !== 'function') {
     fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
@@ -183,15 +197,15 @@ function start3D() {
     })
     .linkColor(linkColor)
     .linkOpacity(0.55)
-    .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' ? 0.25 : 0.9)
-    .linkCurvature(link => link.k === 'layer' ? 0 : 0.18)
+    .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
+    .linkCurvature(link => link.k === 'layer' || link.k === 'item' ? 0 : 0.18)
     .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
     .onNodeClick(clicked3d);
-  G.d3Force('charge').strength(node => node.t === 'el' ? -140 : -18);
-  G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'tree' ? 60 : 34);
+  G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
+  G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
   resize();
   requestAnimationFrame(labels);
   $('#pauseBtn').onclick = () => {  // pausing pins every vertex where it is; resuming frees them and warms the layout
@@ -214,6 +228,7 @@ function start3D() {
 function clicked3d(node) { if (node) select(node.id, true); }
 function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), h('span', {}, node.address)];
+  if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
   const join = S.joins.find(item => item.join_id === node.join);
   return [node.t === 'purpose' ? (join?.purpose || 'purpose') : node.name || ''];
 }
@@ -741,7 +756,7 @@ document.addEventListener('keydown', event => {
 function select(id, fly, keepTrail = false, stepping = false) {
   if (!id) return;
   const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
-  const known = subtype || join || S.elements.has(id), thing = IN.at(-1)?.things?.get(id);
+  const known = subtype || join || S.elements.has(id), thing = IN.at(-1)?.things?.get(id) || S.items.get(id);
   if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
   const path = IN.map(({key, label}) => ({key, label})), last = S.history[S.at];
@@ -1029,8 +1044,10 @@ for (const key of Object.keys(TABS)) $('#t-' + key).onclick = () => showTab(key)
 let toastTimer;
 function toast(message) { const box = $('#toast'); box.textContent = message; box.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true; }, 4200); }
 
-/* ---------- live: an intake being recorded is drawn as each object arrives, BASE-039 ---------- */
-const LIVE = {layer: null, metaform: null, seen: '', busy: false};
+/* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
+ * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
+ * again. Events that come while the page reads are drawn once, when it is done. */
+const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false, next: null};
 const following = () => LIVE.layer !== null && S.metaform === LIVE.metaform;
 async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -1039,6 +1056,7 @@ async function loadLive() {
   LIVE.seen = text;
   S.elements = new Map(page.elements.map(entry => [entry.element.element_id, entry]));
   S.joins = [...page.joins];
+  S.items = new Map();
   indexSubtypes(); draw3D(); renderLegend();
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
@@ -1046,26 +1064,72 @@ async function loadLive() {
     || S.elements.keys().next().value;
   if (start) select(start, false);
 }
-async function liveTick() {
-  if (LIVE.busy || !S.project) return;
+/* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it has finished. */
+async function follow(found) {
+  if (found && found.layer !== LIVE.layer) {
+    Object.assign(LIVE, {layer: found.layer, metaform: found.metaform_id, seen: ''});
+    if (S.metaform !== found.metaform_id) await loadProject(found.metaform_id);
+    else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
+    toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
+  } else if (!found && LIVE.layer) {
+    const finished = LIVE.layer;
+    Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+    renderLegend();
+    toast(`The intake ${finished} finished.`);
+    await loadProject();
+    return;
+  }
+  if (following()) await loadLive();
+}
+/* On connecting, and on the browser's own reconnect, what is being recorded now is read once. */
+async function recordingNow() {
+  const found = (await read('intake-recording')).results[0] || null;
+  await follow(found ? {layer: found.layer.name, metaform_id: found.metaform_id} : null);
+}
+async function changed(event) {
+  if (event.topic !== 'map.changed' || event.payload?.project !== S.project) return;
+  LIVE.next = event.payload;
+  if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
   try {
-    const found = (await read('intake-recording')).results[0] || null;
-    if (found && found.layer.name !== LIVE.layer) {
-      Object.assign(LIVE, {layer: found.layer.name, metaform: found.metaform_id, seen: ''});
-      if (S.metaform !== found.metaform_id) await loadProject(found.metaform_id);
-      else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
-      toast(`An intake is being recorded in ${found.layer.name}; the map follows it as each object is recorded.`);
-    } else if (!found && LIVE.layer) {
-      const finished = LIVE.layer;
-      Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
-      renderLegend();
-      toast(`The intake ${finished} finished.`);
-      await loadProject();
-      return;
-    }
-    if (following()) await loadLive();
-  } catch (error) { /* the next tick reads again */ } finally { LIVE.busy = false; }
+    do {
+      LIVE.again = false;
+      const done = LIVE.next;
+      if (done.kind === 'intake' && done.building) await follow({layer: done.layer, metaform_id: done.metaform_id});
+      else if (done.kind === 'intake' && done.layer === LIVE.layer) await follow(null);
+      else if (done.metaform_id === S.metaform) {
+        S.layers = (await read('layers', {limit: 0})).results;
+        renderChips();
+        await loadGraph();
+      }
+    } while (LIVE.again);
+  } catch (error) { toast(error.message); } finally { LIVE.busy = false; }
+}
+function listen() {
+  const source = new EventSource('/api/events');
+  source.onmessage = message => changed(JSON.parse(message.data));
+  source.onopen = () => recordingNow().catch(error => toast(error.message));
+}
+
+/* Every item and property of the layers, read as the context sees them, so selection, masks and hidden layers apply
+ * as in every read; descriptor items, the intake's names and roles, are not items to draw, VIEW-017. */
+async function itemsOf(generation) {
+  const found = new Map();
+  for (const layer of S.layers.filter(item => item.ready && !['intake', 'correction'].includes(item.kind))) {
+    let after = null;
+    do {
+      const page = await read('layer-items', {layer: layer.name, in_context: 'true', limit: 500, ...(after ? {after} : {}), ...viewLayers()});
+      if (generation !== S.loading) return found;
+      for (const item of page.results) {
+        const property = 'property_id' in item;
+        if (!property && isDescriptor(item.value)) continue;
+        const key = property ? 'r:' + item.property_id : 'i:' + item.item_id;
+        found.set(key, {kind: property ? 'property' : 'item', key, item, value: item.value, layer: layer.name, layerKind: layer.kind});
+      }
+      after = page.next;
+    } while (after);
+  }
+  return found;
 }
 
 /* ---------- loading: projects, metaforms, layers, then the graph page by page ---------- */
@@ -1084,6 +1148,9 @@ async function loadGraph() {
       draw3D(); renderLegend();
       after = page.next;
     } while (after);
+    const items = await itemsOf(generation);
+    if (generation !== S.loading) return;
+    S.items = items;
   } catch (error) { toast(error.message); }
   if (generation !== S.loading) return;
   S.loading = 0;
@@ -1129,7 +1196,6 @@ async function main() {
   fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
   start3D();
   await loadProject();
-  await liveTick();
-  setInterval(liveTick, 1500);
+  listen();
 }
 main();

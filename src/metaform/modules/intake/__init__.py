@@ -109,6 +109,12 @@ class Recording:
         self.store, self.layer, self.metaform, self.active = store, layer, metaform, active
 
 
+def _changed(ctx: Context, rec: Recording, building: bool = True) -> None:
+    """Announce a write to the intake layer, so whatever shows the map is told and nothing has to ask, VIEW-018."""
+    ctx.publish('map.changed', {'project': rec.store.project_id, 'metaform_id': rec.layer.metaform_id,
+                                'layer': rec.layer.name, 'kind': 'intake', 'building': building})
+
+
 def _stamp() -> str:
     return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 
@@ -231,6 +237,7 @@ def start(ctx: Context) -> Any:
                                                       'resumes it. intake show reads back what it holds.'})
     else:
         found = _open(ctx, store, notices)
+        _changed(ctx, found)
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, 'notices': notices}
 
 
@@ -283,6 +290,7 @@ def element(ctx: Context) -> Any:
     given['name_length'] = _whole(ctx.nouns.get('name_length'))
     address = ctx.nouns['address']
     made = _describe(rec, address, given, refs, extra, notices)
+    _changed(ctx, rec)
     return {'element_id': made, 'address': address, 'layer': rec.layer.name, 'notices': notices}
 
 
@@ -304,6 +312,7 @@ def join(ctx: Context) -> Any:
                               type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra,
                               flag=ctx.nouns.get('flag'), flag_note=ctx.nouns.get('flag_note'))
     _note(notices, made)
+    _changed(ctx, rec)
     return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
             'layer': rec.layer.name, 'notices': notices}
 
@@ -320,6 +329,7 @@ def subtype(ctx: Context) -> Any:
                                                                            'flag', 'flag_note')},
                                  name_length=_whole(ctx.nouns.get('name_length')), refs=refs or (), extra=extra)
     _note(notices, made)
+    _changed(ctx, rec)
     return {'subtype_id': getattr(made, 'subtype_id', None), 'join_id': ctx.nouns['join'], 'address': address,
             'layer': rec.layer.name, 'notices': notices}
 
@@ -401,6 +411,8 @@ def edit(ctx: Context) -> Any:
             _note(notices, target.edit(owner, changes))
         if flag is not None:
             _note(notices, target.reflag(owner, flag, flag_note))
+    if found is not None:
+        _changed(ctx, found)
     return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
 
 
@@ -417,6 +429,8 @@ def remove(ctx: Context) -> Any:
         if own is not None:
             target.remove(own.item_id)
     _note(notices, target.remove(current.element_id if current is not None else thing))
+    if found is not None:
+        _changed(ctx, found)
     return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
 
 
@@ -451,6 +465,7 @@ def finish(ctx: Context) -> Any:
         if text is not None:
             save_report(store.project_id, found.layer.layer_id, kind, text, store=found.store,
                         layer=found.layer.layer_id)
+    _changed(ctx, found, building=False)
     findings = len(found.store.findings(layer=found.layer.name, raw=True, limit=0).results)
     refs = sum(len(row['refs']) for kind in ('elements', 'joins', 'subtypes') for row in recorded[kind])
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform,

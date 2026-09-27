@@ -5,6 +5,7 @@
   greet     a sync verb with a noun and a switch; it publishes helloworld.greeted
   wait      an async verb
   history   reads what the event subscriber recorded, a layer in the project store
+  map.changed  the subscriber announces its write, so an open web GUI shows the greeting at once, VIEW-018
   forget    a caution verb that acts only with --confirm
   beep      a verb that runs on one system only, BASE-016
   status    a status hook that adds one line to `metaform` status
@@ -84,10 +85,15 @@ def record(payload: dict[str, Any], ctx: Context) -> None:
     """helloworld.greeted: remember the name as one item of this module's layer."""
     store = ctx.require_store()
     with store.atomic():
-        store.layer(LAYER, 'helloworld', 'Who helloworld has greeted.', mutable=True, hideable=True,
-                    provenance=PROVENANCE)
+        layer = store.layer(LAYER, 'helloworld', 'Who helloworld has greeted.', mutable=True, hideable=True,
+                            provenance=PROVENANCE)
         store.add_element(LAYER, HOLDER)
         store.add_item(LAYER, Node('element', HOLDER), payload['name'])
+    if layer.ready is None:  # finished, it is seen in context and stays editable, STORE-032
+        store.finish(LAYER)
+    # Any module that writes to the map says so; the web GUI's open pages redraw, VIEW-018.
+    ctx.publish('map.changed', {'project': store.project_id, 'metaform_id': layer.metaform_id, 'layer': LAYER,
+                                'kind': layer.kind, 'building': False})
 
 
 def status(ctx: Context) -> Status:

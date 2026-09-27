@@ -185,11 +185,20 @@ Each subscriber receives a copied payload and its own context built for the publ
 
 **Delivery is sequential in the supplied implementation.** Synchronous publication waits for each handler. Async publication awaits each handler in turn; synchronous handlers run through a worker thread, and asynchronous handlers are awaited on the loop. This preserves event-loop availability, but it does not make the publisher independent of subscriber completion or turn the bus into concurrent fan-out.
 
+**A write to the map is announced.** A module that writes to a project's map publishes `map.changed` after the write, and the web GUI's open pages redraw from it at once. The web module subscribes to the topic and hands each event to its running server, which pushes it to every open page over a server-sent events stream; with no server running, nothing happens. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
+
+```python
+ctx.publish('map.changed', {'project': store.project_id, 'metaform_id': layer.metaform_id,
+                            'layer': layer.name, 'kind': layer.kind, 'building': layer.ready is None})
+```
+
+helloworld's greeting does this: with the page open, each greeting appears in the 3D view as it is recorded.
+
 Separate owned asynchronous work uses `ctx.spawn(coroutine)` inside an active event loop. The loader tracks the task as belonging to the module and cancels it during unload/reset/shutdown. That facility is distinct from publication. A one-shot asynchronous CLI verb owns a transient loop; its spawned work is cleaned up when the invocation ends, not converted into an independent daemon.
 
 An async verb exposed through MCP runs on the server loop; a synchronous verb runs in a worker thread. Cancellation reaches the supported async execution path. The source contains lifecycle tests for cleanup and cancellation; this guide does not substitute a different scheduler.
 
-Source: [events.py](../../src/metaform/events.py), [loader.py](../../src/metaform/loader.py), [MCP server](../../src/metaform/modules/mcp/server.py), and [lifecycle tests](../../tests/test_lifecycle.py).
+Source: [events.py](../../src/metaform/events.py), [loader.py](../../src/metaform/loader.py), [MCP server](../../src/metaform/modules/mcp/server.py), [the web module's subscriber](../../src/metaform/modules/web/__init__.py), [helloworld](../../src/metaform/modules/helloworld/__init__.py), and [lifecycle tests](../../tests/test_lifecycle.py).
 
 ## Discovery, enablement, and lifecycle
 

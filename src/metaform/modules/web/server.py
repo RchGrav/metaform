@@ -13,10 +13,13 @@ from __future__ import annotations
 import argparse
 import hmac
 import json
+import ipaddress
 import os
+import queue
 import socket
 import socketserver
 import sys
+import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
@@ -51,6 +54,8 @@ class Server(ThreadingHTTPServer):
         self.address_family = socket.AF_INET6 if ':' in bind else socket.AF_INET
         self.bind, self.nonce = bind, nonce
         self.token = None if loopback(bind) else token()
+        self.listeners: set[queue.SimpleQueue[dict[str, Any]]] = set()
+        self.listening = threading.Lock()
         super().__init__((bind, port), Handler)
         self.port = int(self.server_address[1])
         names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
@@ -73,6 +78,13 @@ class Server(ThreadingHTTPServer):
         if self.bind in WILDCARDS:
             return host.rsplit(':', 1)[-1] == str(self.port) and ':' in host
         return host in self.hosts
+
+    def push(self, event: dict[str, Any]) -> int:
+        """Hand one event to every open page's stream, VIEW-018."""
+        with self.listening:
+            for waiting in self.listeners:
+                waiting.put(event)
+            return len(self.listeners)
 
     def record(self) -> None:
         path = run_file()
@@ -109,8 +121,12 @@ class Handler(BaseHTTPRequestHandler):
         given = self.given_token(query)
         if self.gui.token is not None and not (given and hmac.compare_digest(given, self.gui.token)):
             return self.send(403, {'error': 'This request needs the token that metaform web prints.'})
+        if method == 'POST' and url.path == '/api/notify':
+            return self.notify()
         if method == 'POST':
             return self.write(url.path)
+        if url.path == '/api/events':
+            return self.events()
         if url.path == '/api/server':
             return self.send(200, {'pid': os.getpid(), 'home': str(home.home())})
         if url.path == '/api/projects':
@@ -144,6 +160,46 @@ class Handler(BaseHTTPRequestHandler):
         if found is None:
             return self.send(404, {'error': f'Nothing for {name} here, in these layers.'})
         self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def notify(self) -> None:
+        """A module's event, handed over by the web module's subscriber in the publishing process, VIEW-018. Only
+        a process on this machine holding the server's nonce, which is in its run file, can hand one over."""
+        data = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        if not local(self.client_address[0]) or not hmac.compare_digest(self.headers.get('X-Metaform-Nonce') or '',
+                                                                        self.gui.nonce):
+            return self.send(403, {'error': "Events are taken only from this machine, with the server's nonce."})
+        try:
+            event: Any = json.loads(data or b'null')
+        except ValueError:
+            return self.send(400, {'error': 'The event is not JSON.'})
+        if not isinstance(event, dict):
+            return self.send(400, {'error': 'An event is a JSON object with its topic and payload.'})
+        self.send(200, {'pages': self.gui.push(cast(dict[str, Any], event))})
+
+    def events(self) -> None:
+        """One open page's stream of what modules publish, held open. Its thread sleeps until an event comes and
+        writes it; nothing polls, QUAL-015. A page that has gone is dropped at the next event."""
+        waiting: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+        with self.gui.listening:
+            self.gui.listeners.add(waiting)
+        self.close_connection = True
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Connection', 'close')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(b': open\n\n')
+            self.wfile.flush()
+            while True:
+                self.wfile.write(b'data: ' + json.dumps(waiting.get()).encode('utf-8') + b'\n\n')
+                self.wfile.flush()
+        except OSError:
+            pass
+        finally:
+            with self.gui.listening:
+                self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
         """One of the three writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
@@ -235,6 +291,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
+
+
+def local(address: str) -> bool:
+    """Whether a client address is this machine's loopback, an IPv4 one seen through an IPv6 socket included."""
+    try:
+        found = ipaddress.ip_address(address.split('%', 1)[0])
+    except ValueError:
+        return False
+    mapped = getattr(found, 'ipv4_mapped', None)
+    return (mapped or found).is_loopback
 
 
 def _versions(given: dict[str, str]) -> dict[str, Any]:

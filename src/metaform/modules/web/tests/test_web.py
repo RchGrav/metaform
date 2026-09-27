@@ -840,6 +840,55 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     assert problems == []
 
 
+@pytest.mark.req('VIEW-017')
+@pytest.mark.req('VIEW-005')
+def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_node_and_what_it_links(
+        run, web, mapped, browser):
+    """Rich, 2026-09-26: the 3D map shows everything with no drilling, every memory and item its own node, relations
+    as links, "connected together like a brain", as busy as the layers turned on."""
+    from metaform.data import Store
+    started(run)
+    expected, at, subtypes = keys_of(web)
+    kitchen, alarm = at['code.timer.kitchen'], at['code.alarm.audible']
+    to_alarm = next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
+    tick = subtypes['code.loop.tick']
+    run('memory', 'add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.', cwd=mapped)
+    run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
+        cwd=mapped)
+    run('memory', 'add-observations', f'join:{to_alarm}', 'The tone is too quiet.', cwd=mapped)
+    run('memory', 'add-observations', f'subtype:{tick[2:]}', 'One tick can be lost.', cwd=mapped)
+    Store('proj').add_property('notes', 'code.timer.kitchen', 'ticks at 1 Hz')
+    page, problems, _ = opened(browser, web)
+    items = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item")')
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.graph().nodes.some(node => node.t === "item")')
+    first = page.evaluate('window.metaform.graph()')
+    assert sorted(node['text'] for node in items()) == ['keep the loop small', 'ticks at 1 Hz']  # nothing masked,
+    # orphaned or hidden; the property hangs from its element like an item
+    prop = next(node['id'] for node in items() if node['text'] == 'ticks at 1 Hz')
+    assert prop.startswith('r:') and (kitchen, prop, 'item') in {(link['source'], link['target'], link['k'])
+                                                                   for link in first['links']}
+    page.click('#layers button.chip:has-text("memory")')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 4')
+    graph = page.evaluate('window.metaform.graph()')
+    memory = {node['text']: node['id'] for node in graph['nodes'] if node['t'] == 'item' and node['layer'] == 'memory'}
+    assert sorted(memory) == ['One tick can be lost.', 'The countdown drifts under load.', 'The tone is too quiet.',
+                              'drives']
+    edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
+    assert {(kitchen, memory['The countdown drifts under load.'], 'item'), (kitchen, memory['drives'], 'item'),
+            ('p:' + to_alarm, memory['The tone is too quiet.'], 'item'),
+            (tick, memory['One tick can be lost.'], 'item')} <= edges  # from the element, the join and the subtype
+    assert (memory['drives'], alarm, 'relation') in edges
+    page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
+    page.evaluate(f'window.metaform.click3d("{memory["The countdown drifts under load."]}")')
+    assert page.text_content('#p-object .eyebrow') == 'Memory'
+    assert 'The countdown drifts under load.' in page.inner_text('#p-object')
+    page.click('#layers button.chip:has-text("memory")')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           '!window.metaform.graph().nodes.some(node => node.layer === "memory")')
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_views(run, web, mapped, browser):
@@ -955,16 +1004,21 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     run('intake', 'start', cwd=folder)
     run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
-    problems = []
+    problems, asked = [], []
     page.on('pageerror', lambda error: problems.append(str(error)))
+    page.on('request', lambda sent: asked.append(sent.url) if '/api/' in sent.url else None)
     page.goto(f'http://127.0.0.1:{web}/#p=live')
     page.wait_for_function('() => window.metaform && window.metaform.drawn() && window.metaform.drawn().nodes === 1',
                            timeout=30000)
     assert page.evaluate('window.metaform.live()') is not None
     assert 'intake being recorded' in page.inner_text('#count')
+    page.wait_for_timeout(500)  # the first reads settle
+    asked.clear()
+    page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
+    assert asked == []
     made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'function=f',
                           'ef=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
-    page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=15000)
+    page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
     run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'function=f', 'ef=Function', 'relation=r',
         'verb=advances', 'observation=o', 'role=SE', cwd=folder)
@@ -975,6 +1029,86 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     assert 'intake being recorded' not in page.inner_text('#count')
     drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=live&limit=0')[1])
     assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('QUAL-016')
+@pytest.mark.req('BASE-019')
+def test_a_module_that_writes_to_the_map_is_seen_live_as_helloworld_greetings_appear_in_3d(run, web, mapped, browser):
+    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in helloworld; here a greeting,
+    written by a module that is not built into the map, reaches the open page through map.changed."""
+    run('enable', 'helloworld')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    texts = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item").map(node => node.text)')
+    assert 'world' not in texts()
+    run('helloworld', 'greet', 'world', cwd=mapped)
+    chip = '#layers button.chip:has-text("helloworld.greetings")'
+    page.wait_for_selector(chip, timeout=3000)  # the new layer is pushed to the page; the folder's layers leave it off
+    page.click(chip)
+    page.wait_for_function('() => window.metaform.graph().nodes.some(node => node.t === "item" && node.text === "world")',
+                           timeout=3000)
+    run('helloworld', 'greet', 'moon', cwd=mapped)
+    page.wait_for_function('() => window.metaform.graph().nodes.some(node => node.t === "item" && node.text === "moon")',
+                           timeout=3000)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-011')
+def test_only_a_local_process_holding_the_servers_nonce_can_push_to_the_open_pages(run, web, mapped):
+    import http.client
+    import threading
+    from metaform.modules.web import recorded
+    started(run)
+    heard, ready = [], threading.Event()
+
+    def listen():
+        stream = http.client.HTTPConnection('127.0.0.1', web, timeout=10)
+        stream.request('GET', '/api/events', headers={'Host': f'127.0.0.1:{web}'})
+        answer = stream.getresponse()
+        assert answer.getheader('Content-Type', '').startswith('text/event-stream')
+        ready.set()
+        for line in answer:
+            if line.startswith(b'data:'):
+                heard.append(json.loads(line[5:]))
+                return
+    listener = threading.Thread(target=listen, daemon=True)
+    listener.start()
+    assert ready.wait(10)
+    body = json.dumps({'topic': 'map.changed', 'payload': {'project': 'proj', 'layer': 'x'}})
+    refused = [request(web, '/api/notify', method='POST', body=body, headers={'Content-Type': 'application/json'}),
+               request(web, '/api/notify', method='POST', body=body, headers={
+                   'Content-Type': 'application/json', 'X-Metaform-Nonce': 'guessed'}),
+               request(web, '/api/notify', method='POST', body=body, headers={
+                   'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'})]
+    assert [answer[0] for answer in refused] == [403, 403, 403]
+    listener.join(1)
+    assert heard == []
+    taken = request(web, '/api/notify', method='POST', body=body, headers={
+        'Content-Type': 'application/json', 'X-Metaform-Nonce': recorded()['nonce']})
+    assert taken[0] == 200
+    listener.join(5)
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'layer': 'x'}}]
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('VIEW-018')
+def test_the_page_keeps_no_repeating_timer():
+    """No polling, QUAL-015: the page is told what changed, so it holds no timer that repeats; an idle window only
+    shows that nothing polled within it."""
+    from metaform.modules.web import server
+    page = (server.STATIC['page'] / 'app.js').read_text(encoding='utf-8')
+    assert 'setInterval' not in page
+
+
+@pytest.mark.req('VIEW-018')
+def test_notify_is_taken_only_from_this_machines_loopback_address():
+    from metaform.modules.web.server import local
+    assert [local(address) for address in ('127.0.0.1', '127.8.9.1', '::1', '::ffff:127.0.0.1')] == [True] * 4
+    assert [local(address) for address in ('192.168.1.5', '10.0.0.1', '::ffff:10.0.0.1', 'fe80::1%eth0', '')] == [
+        False] * 5
 
 
 @pytest.mark.req('VIEW-013')
