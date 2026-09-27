@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
 import uuid
 from collections.abc import Generator
@@ -461,6 +462,48 @@ def metaform_owner(metaform_id: str) -> str | None:
     with base() as db:
         row = db.execute('SELECT project_id FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone()
     return None if row is None else str(row[0])
+
+
+@dataclass(frozen=True)
+class Cleared:
+    """What clearing a project removed, PROJ-025."""
+    project_id: str
+    metaforms: tuple[str, ...]
+    reports: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'project': self.project_id, 'metaforms': list(self.metaforms), 'reports': self.reports}
+
+    @property
+    def caution(self) -> str:
+        """What `clear project` removes, said before it does."""
+        names = ', '.join(self.metaforms) or 'no metaforms'
+        return (f'Clearing {self.project_id} removes its {len(self.metaforms)} metaform(s), {names}, with their '
+                f'stores, and its {self.reports} report file(s). Its registration, folder, settings, origins and '
+                'variants stay.')
+
+
+def to_clear(project_id: str) -> Cleared:
+    """What `clear project` would remove: the project's metaforms by name, in creation order, and its report files."""
+    names = tuple(form.name for form in metaforms(project_id))
+    reports = home() / 'projects' / project_id / 'reports'
+    count = sum(1 for path in reports.iterdir() if path.is_file()) if reports.is_dir() else 0
+    return Cleared(project_id, names, count)
+
+
+def clear_project(project_id: str) -> Cleared:
+    """Remove every metaform of the project with its store, and its report files, PROJ-025.
+
+    The registration, the folder rows and settings, and the history under `history.sqlite3` and `origins/` stay.
+    """
+    found = to_clear(project_id)
+    with base(write=True) as db:
+        db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
+    for name in ('metaforms', 'reports'):
+        shutil.rmtree(home() / 'projects' / project_id / name, ignore_errors=True)
+    changes.note(project_id)
+    return found
 
 
 def remove_store(path: Path) -> None:

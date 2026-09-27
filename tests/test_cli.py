@@ -465,6 +465,57 @@ def test_metaforms_are_added_listed_and_activated(run, project):
     assert run(cwd=project).stdout.count('Metaform: main, 2 in project') == 1
 
 
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('CLI-018')
+def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_settings_and_history(
+        run, project, home, tmp_path):
+    (project / 'notes.txt').write_text('first\n', encoding='utf-8')
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    run('add', 'metaform', 'fresh', cwd=project)
+    run('feedback', 'The subtype fields did not match.', cwd=project)
+    run('add', 'origin', cwd=project)
+    work = tmp_path / 'work'
+    work.mkdir()
+    (work / 'notes.txt').write_text('second\n', encoding='utf-8')
+    run('add', 'variant', str(work), cwd=project)
+    elsewhere = tmp_path / 'elsewhere'
+    run('set', '--project', 'proj', cwd=elsewhere)
+    before = {'metaforms': sorted(path.name for path in (home / 'projects' / 'proj' / 'metaforms').iterdir()),
+              'reports': sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()),
+              'origins': run('list', 'origins', cwd=project).stdout,
+              'variants': run('list', 'variants', cwd=project).stdout,
+              'files': sorted(path.name for path in project.iterdir())}
+    assert len(before['metaforms']) == 2 and len(before['reports']) == 1
+
+    refused = run('clear', 'project', cwd=elsewhere, ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines() == [
+        ('Error: Clearing proj removes its 2 metaform(s), main, fresh, with their stores, and its 1 report file(s). '
+         'Its registration, folder, settings, origins and variants stay.'),
+        'Next: If you are sure: metaform clear project proj --confirm']
+    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main', 'fresh']
+    assert sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()) == before['reports']
+
+    assert lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere)) == [
+        ('Cleared proj: 2 metaform(s), main, fresh, and 1 report file(s). Its registration, folder, settings, '
+         'origins and variants stay.')]
+    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    assert run(cwd=project).stdout.count('Metaform: none yet') == 1
+    assert run('list', 'origins', cwd=project).stdout == before['origins']
+    assert run('list', 'variants', cwd=project).stdout == before['variants']
+    assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
+    assert shown(run, cwd=elsewhere)['project']['value'] == 'proj'
+    assert sorted(path.name for path in project.iterdir()) == before['files']
+    assert (project / 'notes.txt').read_text(encoding='utf-8') == 'first\n'
+
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down again.', cwd=project)
+    listed = lines(run('list', 'metaforms', cwd=project))
+    assert [line.split()[0] for line in listed] == ['main'] and listed[0].endswith('(active)')
+    assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
+
+
 @pytest.mark.req('STORE-027')
 @pytest.mark.req('BASE-002')
 def test_export_then_import_into_an_empty_home_reproduces_the_project(run, project, tmp_path, home):

@@ -1,6 +1,6 @@
 # 08 Projects, working folders, origins and variants
 
-This section defines how Metaform knows which project a folder or a server is working on. It also defines how Metaform keeps the history of an artifact: origins, sibling variants, reconstruction, export and import.
+This section defines how Metaform knows which project a folder or a server is working on. It also defines how Metaform keeps the history of an artifact: origins, sibling variants, reconstruction, export and import. It ends with clearing a project: removing what Metaform inferred about it and keeping everything else.
 All of it lives in the Metaform home. The folder tables are in the base database, STORE-002. The rows are stored as STORE defines. This section adds what those records mean, how every surface resolves them, and the history records the other sections do not cover.
 
 ## Terms used in this section
@@ -337,6 +337,27 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Acceptance: Covered by the records each command names.
 - Relates to: CLI-001, CLI-031, STORE-023, PROJ-012 to PROJ-021.
 - Status: recommended.
+
+## Clearing a project
+
+### PROJ-025 Clearing a project removes its metaforms and its reports, and keeps everything else
+- Requirement: `metaform clear project [<project>] --confirm` removes every metaform of the project with its store, and the project's report, feedback and shape files, and keeps the project's registration, its folder and every file in it, its folder settings, and its history of origins and variants.
+- What this means: After a clear the project is registered and empty, as it was the moment it was registered. It has no metaform until the next intake, or anything else that writes to the project, creates `main` again, STORE-041. The report, feedback and shape files are about the metaforms they were written against, so they go with them. History is the record of the artifact itself, not of Metaform's reading of it, so it stays. Nothing in the project's folder is touched, PROJ-001.
+- Why: Rich asks, in every session, for a way to clear a project and take the intake again from nothing. Deleting the home, or the project's folder in it by hand, takes the registration, the settings and the history with it, and is a different act from clearing what Metaform inferred.
+- How it shows: `metaform clear project` in a project's folder prints what it will remove and stops. The same command with `--confirm` removes it and prints what it removed. `metaform` then shows `Metaform: none yet`, and `metaform list origins` lists the same origins as before.
+- Build:
+  - `clear` is a chassis verb, CLI-001, with the noun `project` and an optional project id, resolved as every chassis command resolves it, PROJ-003. It joins `RESERVED`, BASE-014, and the table of CLI-031.
+  - It is a caution command, BASE-013 and CLI-018. Without `--confirm` it raises `Stop` with the caution `Clearing <project> removes its <n> metaform(s), <names>, with their stores, and its <m> report file(s). Its registration, folder, settings, origins and variants stay.` and Next `If you are sure: metaform clear project <project> --confirm`. `<names>` lists the metaforms by name in the order they were created; with no metaform it reads `no metaforms`.
+  - With `--confirm`: in one base transaction the project's `active_metaforms` and `metaforms` rows go, then `projects/<project id>/metaforms/` and `projects/<project id>/reports/` under the home are removed whole; the rows in the metaforms' stores go with the stores. The `projects` row, the `folders`, `settings` and `glue` rows, `projects/<project id>/history.sqlite3` and `origins/` are untouched. Output: `Cleared <project>: <n> metaform(s), <names>, and <m> report file(s). Its registration, folder, settings, origins and variants stay.`
+  - The home notes that the project's metaforms changed, so the chassis fires `map.changed` with no metaform id when the command ends, VIEW-018, and an open page follows without a reload.
+  - Over MCP the command is the tool `clear_project`, on the surface while the chassis is, like the history tools of PROJ-024, taking `confirm` and `project`. Without `confirm` true it returns the caution and `Next: If you are sure: call clear_project with confirm true`, MCP-006. With it, the result is `{"project": <id>, "metaforms": [<names>], "reports": <m>}`.
+- Acceptance:
+  - Without `--confirm`: exit 2, nothing changed, and the caution names each metaform and the report count.
+  - With `--confirm`, on a project with two metaforms, a memory item, a report file, an origin and a variant: `list metaforms` lists none, the metaform folders and the report files are gone, `list origins` and `list variants` answer as before, the registration and the folder's `project` setting stand, and the project folder's files are unchanged. A write to the project then creates `main` again.
+  - A module subscribed to `map.changed` hears `{"project": <id>, "metaform_id": null}` once for the command.
+  - Over MCP, `clear_project` without `confirm` returns `is_error` true with the caution and one Next line and changes nothing; with `confirm` true it clears; the tool is absent when the surface excludes the chassis.
+- Relates to: PROJ-001, PROJ-003, PROJ-024, STORE-041, BASE-013, BASE-014, CLI-001, CLI-018, CLI-031, MCP-006, VIEW-018.
+- Status: recommended, from Rich's standing request. That history stays and that reports go with the metaforms are the orchestrator's reading of his words, pending his.
 
 ## Open questions
 
