@@ -4,6 +4,52 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 ## Open
 
+**D84. Work records and layers.** A work record is built as a record of its own, attached to one element or join and to no layer. Does it stay a record of its own, or does it live in a layer? (MAP-046, STORE-042)
+Recommendation: a record of its own, as built: it follows its object through every version, survives the discard of any layer, and any agent writes it at any time.
+
+**D85. `tbd`.** Is `tbd` one condition whose task says whether the object needs building or deciding, or two conditions? (MAP-046, STORE-042)
+Recommendation: one condition, as built; the task says which.
+
+**D86. Correction layers.** On 2026-09-27 the design was stated as: changing the metaform is updating it, each change a new version of the object with provenance, with no need for correction layers now that the map is changed object by object. Do correction layers go entirely, or do they stay as the one ordered way to change the metaform, LAYER-011? The stack and peel of STORE-017, the checks of STORE-034, the re-examination marks of STORE-036, the removal from the top of VIEW-014, and the way an approved blind-spot entry enters the metaform, D89, all follow the answer. (LAYER-011, STORE-017, STORE-034, STORE-036, VIEW-014)
+
+**D87. Roles with several AUEs.** An element carries one role, on its own record, MAP-017. When one project holds several AUEs and an element plays a different role for each, such as DE of one and SE of another, how is its role recorded? D51's recommendation, each element recording the AUE it belongs to, settles membership and not a second role. (MAP-017, MAP-042, D51)
+
+**D88. How a property is recorded.** MAP-022 and STORE-039 record a property as a value attached to an element, with no join. The Foundation speaks of property joins that are transitive. The design of 2026-09-26 and 2026-09-27 has an element of any kind linked to the node where it belongs, the link marking it as a property, a link that can be moved and that a function reads as transitive. Is a property a value on an element, a link between two elements, or a join of its own kind? (MAP-022, STORE-039, LAYER-020, VIEW-022)
+
+**D89. An approved blind-spot entry.** An approved entry becomes a permanent record of the metaform, with provenance, and the user holds the final veto over every green and every yellow answer, LAYER-015. How does the entry enter the metaform, and does it arrive with an open `tbd` work record carrying its task, drawn at partial opacity until it is built, as an approved blind spot becoming a spec waiting to be built says? How is the veto recorded? (LAYER-011, LAYER-015, STORE-040, VIEW-020, D19, D86)
+Recommendation: it arrives with an open `tbd` record carrying the critic's task, since that is what a spec waiting to be built is, MAP-046; the way it enters the metaform follows D86.
+
+**D90. The voice of the fields.** The fields are written with third-person singular present-tense active verbs ending in -s or -es, so each reads as a sentence after the element's name, and the intake agent writes, for each element, a concise statement that continues from its name, MAP-020. The Canonical Intake applies the voice to the relation and the verb. Which other fields follow it? Which element's name does each field continue from, the receiver's or the provider's? And where is an element's statement kept, now that an element holds only its address, name_length and role, MAP-015? (MAP-015, MAP-020, MAP-040, BASE-039)
+
+**D91. Listed rules and the item flags.** What an agent is handed with a task lists the rules rather than carrying their full text. Does listing replace the `read_first` and `always_show` flags, or do they stay beside it? (LAYER-021, MAP-048)
+
+**D92. Tasks, questions and past work.** A task is written on every node the work concerns, MAP-048; a work record carries a task, MAP-046; and a knowledge item can be flagged `task`, LAYER-021. Are these one kind of task or several? What holds the orchestrator's task list and its queue, MAP-049, the agent's progress sentence at each node, a question at a node and its answer, MAP-050, and past work with its work log, MAP-051? Can a person submit work directly in the web GUI, as the explanation offered with an intake says, MCP-027, which would be a write beyond VIEW-011's? (MAP-046, MAP-048 to MAP-051, LAYER-021, MCP-027, VIEW-011, VIEW-020, VIEW-021)
+
+**D93. The project module place.** Modules load from ranked places, system, user and project, where the project place holds modules that load only for the active selected project, BASE-014. Metaform writes nothing into a project folder and keeps all data in the home, STORE-001. Does the project place live in the project's own folder, as `.metaform/modules/`, which the person creates, or under the project's data in the home? D25 had recommended no project place, before the place was part of the design. (BASE-014, BASE-037, STORE-001, D25)
+
+**D94. The CalVer format.** Versions during development are CalVer, never SemVer, BASE-020. Which format? The package declares `0.2.0` today, and the spec's examples show that form. (BASE-020, BASE-041, BASE-042, CLI-028)
+
+**D95. Which folder's settings the web GUI shows.** A browser has no folder, and one server serves every project. Which folder's settings, such as `--layers`, CLI-033, does the GUI show and change? (VIEW-002, VIEW-004, VIEW-007, section 09 question 5)
+Recommendation: each project's registered folder, shown with its path at the top of the page; built so until answered.
+
+**D96. First-run provisioning.** MCP-028 carries the design of 2026-09-11, which offered provisioning through the menus that nonces keyed, since dropped, MCP-012. The installer of MCP-013 to MCP-021, designed later, sets up the tools it knows. Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? (MCP-028, MCP-013, MCP-016, MCP-021)
+
+**D97. mvm's parts the spec does not carry.** The command line follows mvm, CLI-035. mvm has `config <group>`, which opens one group of the settings screen, and `config --wizard`, a guided setup, and its help page has a section on when to use the command and one listing its subcommands, which CLI-029's page does not. Are they wanted? (CLI-035, CLI-026, CLI-029)
+Recommendation: yes, all four, since the design is mvm's and no later decision removed them.
+
+**D98. The writing standard's text.** Everything a person reads is written to one writing standard, CLI-036, given as a set of plain-writing rules that are not in this repository. Where is the text kept, so the critic review, QUAL-008, can apply it? (CLI-036, QUAL-008)
+Recommendation: a file in `specifications/`, beside `code_quality_standards.md`.
+
+**D99. The Canonical Intake's wording.** Its text changes only in Rich's words. It differs from the decided shape in these places: each element carries a `<name/>`, while the project's name for a functionality goes on the join, MAP-020; its response protocol says to remove absorbed subparts recorded as root elements, while the element stays one record, MAP-031; its nested subtype join has no type and no non_goal and carries a provider beside its inline element, MAP-030; its method's steps do not show the call the agent makes for each entry, with the JSON arguments it sends; it does not say that the intake agent writes the condition of an object as a work record, MAP-046, and the recording lines served after it, BASE-039, do not name `map_work`; and the voice of the fields and the element's statement, D90, are not in it. Which wording do you want for each? (MAP-020, MAP-030, MAP-031, MAP-040, MAP-046, BASE-039, D90)
+
+**D100. The install front door.** Installing a wheel goes through an install stage that never downgrades without force, with a backstage check on the first run of an install that went around it, BASE-047. The design writes the front door `python metaform.whl install`, while `install` is the chassis verb that sets up AI tools, MCP-013, and a directly run wheel runs the same command line, BASE-042. What is the front door's command, and what exactly do the stage and the backstage check? (BASE-047, BASE-025, BASE-042, MCP-013)
+
+**D101. TRAO-DAG.** Rich's description of 2026-09-26, TRAO-DAG, is the reference the build is measured against. The spec carries its binary Func and Enc state on joins as `ef`, MAP-020, its annealing as subtype joins that keep their own encounter functions under the combined one, MAP-030, and its prompt expansion as preprocessing and the `context` read, LAYER-017 and STORE-035. Two of its parts are not carried: the Func and Enc state on nodes, and bias blind spots computed as Func capabilities minus Enc manifestations, beside the two critic analyses of LAYER-014. Does either belong in the design? (MAP-020, MAP-030, LAYER-014, LAYER-017)
+
+**D102. Metaform's own metaform.** The release carries a metaform of Metaform itself, for developing Metaform, BASE-048. Where does it live, and how does it reach a user's home, given that a project's data lives only in the home, STORE-001: as an export document in the repository, STORE-027, imported on first run, or another way? (BASE-048, STORE-001, STORE-027)
+
+**D103. Why the ideation agent adds one feature.** An ideation agent examines the whole project, adds the single most valuable missing feature, and may build its own module to do it, LAYER-023. What is it for, beside the blind spot analyses of LAYER-014, and why one feature? (LAYER-023)
+
 ## Answered
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.
@@ -12,7 +58,7 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 **D82. Submissions that break the shape.** Stored as given; a correction layer or a reviewer deals with them. No agent submission is refused for its content: what does not fit is stored and noted in a notice, and an agent that cannot continue stops and submits a trouble report. BASE-044, STORE-026.
 
-**D81. intake_submit.** It has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake. The agent submits against it once. The intake text is served unchanged with one module line after it, and can change freely as long as its structure keeps that pattern.
+**D81. intake_submit.** It has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake. The agent submits against it once. The intake text is served unchanged with one module line after it, and can change freely as long as its structure keeps that pattern. Replaced 2026-09-26: the intake is recorded one object per call through the intake tools, whose fields keep that pattern, and the text is served with the module's recording lines, MAP-040, BASE-039.
 
 **D10. One element per address.** An element is its namespace address, so a project has one element per address. This replaces the earlier recommendation.
 
@@ -44,7 +90,7 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 **D70. Toggling layers.** Layers are tagged, listed and toggled. The toggled set for a folder is the `--layers` setting, which names layers or tags. LAYER-019, CLI-033, STORE-038.
 
-**D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word.
+**D8 and D54. How the intake result reaches the store.** The intake agent completes the whole method, including annealing, then submits once through the `intake_submit` tool. Its inputs mirror the intake schema's fields. The tool validates the submission and stores it as the intake layer in one write, so an intake is never half written. The intake text's response protocol will say to submit the final shape through `intake_submit`; the method stays word for word. Replaced 2026-09-26: the intake agent records each object through the intake tools as it is reasoned, proofs the recorded map, and finishes it; nothing is submitted whole, MAP-040, BASE-039, STORE-032.
 
 
 ## Settled by recommendation
@@ -88,7 +134,7 @@ Recommendation: its receiver's, since the receiver owns the join.
 Recommendation: allowed. It creates a new element in the memory layer, which a layer may do.
 
 **D19. Promoting a proposed element into the map.** How does a B verdict from a challenge become part of the map?
-Recommendation: through a correction, as a new revision of the map layer.
+Recommendation: through a correction, as a new revision of the map layer. Since 2026-09-27 an approved entry becomes a permanent record of the metaform; how is D89.
 
 **D20. Hiding one item inside a layer.**
 Recommendation: no, whole layers only. Hideable is a property of the layer.
@@ -107,7 +153,7 @@ Recommendation: dropped. Before 1.0 the contract changes freely and nothing real
 ### Chassis, modules and wheels
 
 **D25. A module place per project (REQ-035).**
-Recommendation: none, since all data is global.
+Recommendation: none, since all data is global. Reopened as D93: the project place is part of the design, BASE-014, and where it lives is open.
 
 **D28. Whether install and uninstall are chassis verbs.**
 Recommendation: chassis verbs. Setup is the first thing a user runs and has to work with no modules enabled. The MCP module supplies the registration entry the installer writes.
@@ -170,7 +216,7 @@ Recommendation: no role. DE, SE, NE and VE are the intake's classification of th
 Recommendation: abort is the workflow module's verb, and the narrowing message names it as that module's command.
 
 **D51. Several AUEs in one project.** How is the set of elements belonging to each AUE recorded? (MAP-042)
-Recommendation: each element records the AUE it belongs to, so a project can hold several artifacts and each map stays separable.
+Recommendation: each element records the AUE it belongs to, so a project can hold several artifacts and each map stays separable. The role an element plays for each AUE is D87.
 
 **D52. Receipts for long-running work.** Does any chassis verb run long enough to return a receipt? (BASE-030)
 Recommendation: no. Receipts belong to the workflow module, since the chassis does not run workflows.

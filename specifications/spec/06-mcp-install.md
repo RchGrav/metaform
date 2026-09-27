@@ -105,17 +105,17 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-009 A project with no intake gets a notice to delegate the intake to a subagent
 
 - Requirement: When the folder's project has no intake, the instructions say so and tell the agent to have a subagent perform the intake. The subagent reads its instructions from Metaform by name, through the CLI or MCP. The orchestrator passes only where to read them.
-- What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word, performs the method, recording the map one object per call through the intake tools as it reasons it, and finishes it with `intake_finish` after a proofing pass, BASE-039. The served text ends with the intake module's lines saying how to record the result; the intake text itself is never edited. The same notice appears in `metaform` status output, so an agent without MCP sees it too.
-- Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it.
+- What this means: Metaform never starts a model. The notice is addressed to the agent reading it. The intake goes to a fresh subagent with no stake in the project, carrying only the intake text and the target; the main agent performs it itself only when that is the only choice. The orchestrator tells a subagent the command or tool that returns the intake instructions, and never the instruction text itself. The subagent reads the text word for word, performs the method, recording the map one object per call through the intake tools as it reasons it, and finishes it with `intake_finish` after a proofing pass, BASE-039. The served text ends with the intake module's lines saying how to record the result; the intake text itself is never edited. The same notice appears in `metaform` status output, so an agent without MCP sees it too. Offering the intake, the agent also suggests the layers of MCP-027.
+- Why: Intake is agent work, and hosts start subagents in different ways, so a command that ran the intake could not work in every host. One source means every worker reads the same text unaltered, and the results depend on the procedure, not on how an orchestrator reworded it. An agent embroiled in coding work carries the bias of that work into the map, LAYER-014; a fresh agent with no stake maps the project for the purpose of the analysis alone.
 - How it shows: In a registered project with no intake, the instructions end with:
   ```
   This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.
   ```
   After an intake is completed, the notice is gone.
-- Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a layer of kind intake exists, STORE-032. An intake layer is written whole in one atomic submission, so a half-written intake never exists and never clears the notice. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder, followed by a blank line and the module's submit line.
-- Acceptance: Instructions for a project with no intake layer contain the notice, including after a submission that failed its form check, and the command it names exists on the surface. Instructions for a project with a ready intake layer do not contain it. The text returned by `intake prompt`, with the appended submit line removed, equals the stored intake file with only the `<target>` element's attributes filled.
-- Relates to: MCP-007, MCP-024, CLI-028, LAYER-001, STORE-032, BASE-039.
-- Status: confirmed, including, since 2026-09-26, recording the intake one object per call through the intake tools. The intake module, its command names and the notice wording follow D38, recommended.
+- Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a finished layer of kind intake exists, STORE-032. The intake layer is building while it is recorded and counts only once it is finished, so a half-recorded intake never clears the notice; while one is being recorded, the hook says so in place of the notice, BASE-039. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder, followed by a blank line and the module's recording lines.
+- Acceptance: Instructions for a project with no intake layer and none being recorded contain the notice, and the command it names exists on the surface. Instructions for a project with a finished intake layer do not contain it. The text returned by `intake prompt`, with the appended recording lines removed, equals the stored intake file with only the `<target>` element's attributes filled.
+- Relates to: MCP-007, MCP-024, MCP-027, CLI-028, LAYER-001, LAYER-014, STORE-032, BASE-039.
+- Status: confirmed, including recording the intake one object per call through the intake tools, 2026-09-26, and the intake going to a fresh agent with no stake, the main agent performing it only when that is the only choice, 2026-09-19. The intake module, its command names and the notice wording follow D38, recommended.
 
 ### MCP-010 AI tools start the server with uvx
 
@@ -346,14 +346,14 @@ It also defines the first working test, which exercises all three end to end.
   - Builds the wheel with `metaform build`, runs `metaform install claude codex cursor`, and checks the recorded registration arguments, the skill copies, the Cursor file holding both its old entry and `metaform`, the backup of the Cursor file byte-identical to the fixture, and a passing proof step against the built wheel.
   - Registers a temporary project folder, then starts the registered command, `uvx --from <wheel> metaform mcp serve`, with that folder as its working folder, using the probe client of MCP-017 as the scripted host. It checks that the instructions hold the base text, the four modules' sections and the notice.
   - Calls `intake_prompt` and checks the text against the stored file with only the target filled.
-  - Records a three-element fixture intake one object per call through the intake tools: a VE, a DE and one SE, with two joins. A join recorded without its purpose is stored with a notice naming `purpose`, and nothing is refused. The fixture flags one element `broken` and one join `missing`, and carries a `report` and a `feedback` text.
+  - Records a three-element fixture intake one object per call through the intake tools: a VE, a DE and one SE, with two joins. A join recorded without its purpose is stored with a notice naming `purpose`, and nothing is refused. The intake tools carry no condition, MAP-046; the finish carries a `report` and a `feedback` text.
   - Starts a new connection and checks the no-intake notice is gone.
   - Calls `list_reports` and sees the intake layer's report and feedback; calls `read_report` on each and gets the submitted text back byte for byte; calls `map_work` with `op=add`, `node=element:code.alarm.audible` and `condition=broken`, then `map_work` with `condition=broken`, and gets that element back with its record; calls `feedback` with a freeform text and sees a new feedback file listed.
   - Checks the tool list holds every tool named in Build.
   - On one connection, calls `memory_add-observations` at the DE element and at one join. On a second connection, calls `memory_open-nodes` on both and gets both observations back.
   - Calls `map_node` in context at the DE element and sees the memory; calls `map_mask` for the memory layer at the DE's address and no longer sees it; calls `map_clear` for that mask and sees it again; the join's memory is checked the same way through its receiver's address.
-- Relates to: MCP-001 to MCP-023, BASE-017, BASE-039, BASE-040, LAYER-001, LAYER-007, LAYER-012, LAYER-013, STORE-013, STORE-019.
-- Status: confirmed.
+- Relates to: MCP-001 to MCP-023, BASE-017, BASE-039, BASE-040, LAYER-001, LAYER-007, LAYER-012, LAYER-013, MAP-046, STORE-013, STORE-019.
+- Status: confirmed. The condition of an object written as a work record with `map_work`, never by the intake tools, follows MAP-046, 2026-09-27.
 
 
 ### MCP-025 Every tool takes an optional project
@@ -368,6 +368,26 @@ It also defines the first working test, which exercises all three end to end.
 - Relates to: BASE-028, CLI-021, CLI-030, MCP-003, MCP-005, MCP-011.
 - Status: recommended. The fallback when no project is named and the folder is outside every project is open, D37.
 
+### MCP-027 Offering an intake, the agent suggests a blind spot challenge and a best-practices layer
+- Requirement: When the main agent offers to start an intake, it suggests also creating a blind spot challenge and a knowledge layer that records best practices, and asks the person whether that is all right.
+- What this means: Asked what those are, the agent explains: an agent examines the code, the project spec and the code quality enforcement, and puts enforcement in place where there is none; work can be submitted directly in the Metaform web GUI, and the graph shows what work is done and what is not; best practices and code quality are enforced from the start; and any instructions can become knowledge layers that agents see when they are assigned work on that part of the code. The challenge is LAYER-014 and LAYER-015's; the best-practices layer is a knowledge layer built at each node, LAYER-016 and LAYER-020.
+- Why: The offer of an intake is when the person decides how Metaform will serve the project. The challenge and the best-practices layer are what put enforcement and practice in place from the start, and asking leaves the choice with the person.
+- How it shows: An agent in a project with no intake says it will have a subagent perform the intake, and asks whether to also create a blind spot challenge and a knowledge layer of best practices.
+- Build: The suggestion reaches the agent in the intake module's no-intake notice, MCP-009 and BASE-039, after its sentence on delegating the intake; its wording is recommended with the notice's, D38. Submitting work directly in the web GUI waits on D92.
+- Acceptance: The composed instructions for a project with no intake hold the suggestion of both layers and the question to the person.
+- Relates to: MCP-009, BASE-039, LAYER-014, LAYER-015, LAYER-016, LAYER-020, MAP-048, VIEW-011.
+- Status: confirmed as design, 2026-09-26 and 2026-09-27. The notice's wording is recommended; submitting work in the web GUI is open, D92.
+
+### MCP-028 An unfamiliar harness is asked on its first run to provision what it supports
+- Requirement: When Metaform runs for the first time under a harness it does not know, it says so and offers help for provisioning each feature the harness supports, and once the agent says it is done, it never asks again.
+- What this means: The agent administers its own harness: it sets up what its harness supports, such as the MCP registration, the skill, hooks and whatever is added later, and when it cannot or does not want to, it moves ahead. A harness is known by the parent folder of its binary, since a harness's path may carry its version and some harnesses run from an install folder of their own; paths under the system's temporary folder are ignored. A known harness seeing the offer takes no harm. The help for each feature says what needs to be done to use it, CLI-036. This is the onboarding path for harnesses the installer, MCP-016, does not know.
+- Why: The installer sets up only the tools it knows, MCP-016. An agent in any other harness can still give it Metaform's features, because only that agent knows what its harness supports.
+- How it shows: The first `metaform` run under an unfamiliar harness says that this is Metaform's first run there, points to the help for provisioning each feature, and says how to finish; after the agent finishes, runs under that harness say nothing of it.
+- Build: Open, D96. The record of known harnesses lives in the home, STORE-001.
+- Acceptance: Open with D96.
+- Relates to: MCP-013, MCP-016, MCP-021, CLI-028, CLI-036, STORE-001.
+- Status: confirmed as design, 2026-09-11. Whether it stands beside the installer of MCP-013 to MCP-021, and the commands it offers, are open, D96.
+
 ## Open questions
 
 1. When a host starts the server outside the project folder, how does the server know the project (MCP-011)?
@@ -380,3 +400,5 @@ It also defines the first working test, which exercises all three end to end.
 8. Do backups go under `~/.metaform/backups/install/` or next to each config file (MCP-015)?
 9. Does `metaform uninstall` offer to remove `~/.metaform` data, and how (MCP-020)?
 10. What is the PyPI distribution name (MCP-010)?
+11. NEW Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? D96. (MCP-028)
+12. NEW Can a person submit work directly in the web GUI, as the explanation offered with an intake says? D92. (MCP-027)

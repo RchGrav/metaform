@@ -2,9 +2,9 @@
 
 This folder is the Metaform contract. A builder builds from these files alone. Every requirement is a full record with its reason, its build detail and the tests that protect it.
 
-## Scope freeze
+## Design decisions go in when they are decided
 
-This spec is frozen for the first release. New design ideas go to a later version and are not added here. Changes to this spec are limited to answering the open questions and fixing defects the build finds.
+Every design decision goes into this spec when it is decided, in the record that governs it or in a new record, with a status that says how far it is settled: confirmed, recommended, open or deferred. A decision never lives only in notes, a conversation or an assistant's memory. A decided point whose mechanism is not settled is recorded as confirmed design with its mechanism open, and its question goes to OPEN-QUESTIONS.md. Besides new decisions, changes to this spec answer the open questions and fix defects the build finds.
 
 ## Authority
 
@@ -26,8 +26,8 @@ This spec is frozen for the first release. New design ideas go to a later versio
 
 | File | Prefix | Covers |
 |---|---|---|
-| 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records |
-| 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge |
+| 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records and how it is judged, work records, tasks, the work queue, questions and past work |
+| 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge, knowledge layers built node by node, item flags, reading from the roots |
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
 | 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the settings screen |

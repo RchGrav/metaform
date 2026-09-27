@@ -113,15 +113,15 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ## Module contract and discovery
 
-### BASE-014 Modules load from the system place, the user place and entry points
-- Requirement: Metaform finds modules in the system place shipped with Metaform, the user place `~/.metaform/modules`, and installed packages that declare a `metaform.modules` entry point.
-- What this means: A module is a folder with an `__init__.py`, or a package named by an entry point. Its id is its folder or entry point name and must equal `MODULE.id`. Two modules with one id, or a module named like a chassis verb, are not loaded, and `metaform list modules` says why.
-- Why: Community extensibility means a module can be dropped into the user place or installed like any Python package. Nothing lives in project folders because all data is global.
+### BASE-014 Modules load from the system place, the user place, entry points and the project place
+- Requirement: Metaform finds modules in the system place shipped with Metaform, the user place `~/.metaform/modules`, installed packages that declare a `metaform.modules` entry point, and the project place, whose modules load only for the active selected project.
+- What this means: A module is a folder with an `__init__.py`, or a package named by an entry point. Its id is its folder or entry point name and must equal `MODULE.id`. The system place holds the modules bundled in and installed from a wheel. The user place holds modules any project can use. The project place holds modules that load only for the active selected project, PROJ-003. The places are ranked, system, then user, then project: a module whose id a module of an earlier place already holds does not enable, so an installed module always wins, and the chassis can disable any module, BASE-017. A directly run wheel is not a higher place but a separate authority of its own, BASE-023. Two modules with one id, or a module named like a chassis verb, are not loaded, and `metaform list modules` says why.
+- Why: Community extensibility means a module can be dropped into the user place or installed like any Python package. A module made for one project's own work loads only where that project is selected, so it never adds its commands and tools to every other project. Ranking the places means a module installed with Metaform, or by the user for every project, is never displaced by a same-name copy of a later place. Metaform writes nothing into a project folder, because all data is global; where the project place's modules live is open, D93.
 - How it shows: `metaform list modules` shows each module with its place and state, and the reason for any that is not loaded.
-- Build: Discovery and loading in full are BASE-037. `RESERVED` is every chassis verb plus `chassis`: `help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `import`, `export`, `query`, `build`, `install`, `uninstall`, `feedback`, `read`, `extract`, `prompts`, `prompt`, `clear`, `chassis`. It loses `mcp`, which is a module.
+- Build: Discovery and loading in full are BASE-037. `RESERVED` is every chassis verb plus `chassis`: `help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `import`, `export`, `query`, `build`, `install`, `uninstall`, `feedback`, `read`, `extract`, `prompts`, `prompt`, `clear`, `chassis`. It loses `mcp`, which is a module. The project place is found after the entry points and is not built until D93 settles where it lives.
 - Acceptance: A user-place module and an entry-point module with the same id: the second is reported with the reason and not loaded. A module named `export` is refused with the reason.
-- Relates to: BASE-015, CLI.
-- Status: confirmed. A per-project module place is open.
+- Relates to: BASE-015, BASE-017, BASE-023, BASE-037, PROJ-003, STORE-001, CLI.
+- Status: confirmed for the system and user places, 2026-09-19, and for entry points. The project place, the ranking of the places, a same-name module of a later place never enabling, and the wheel as a separate authority are confirmed as design, 2026-09-19. Where the project place lives is open, D93, and it is not built until then.
 
 ### BASE-015 Compatibility is read before any module code runs
 - Requirement: The chassis reads a module's compatibility and dependencies without importing it, and skips an incompatible module without affecting the chassis or other modules.
@@ -182,13 +182,13 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ### BASE-020 Versioning and compatibility
 - Requirement: Before 1.0 the module contract changes freely; from 1.0 a module declares the lowest chassis version it needs and checks capabilities, breaks come only in a major release, and a frozen suite enforces this.
-- What this means: The chassis publishes its version and a set of named capabilities. A module declares its minimum chassis version as a literal read before import. At runtime it asks whether a capability exists instead of comparing versions. The frozen suite is a set of modules written against earlier releases that must keep working.
-- Why: Community modules must keep working across chassis updates, or nobody builds on the chassis. Capability checks let a module use new features where they exist without breaking on an older chassis. Until the first release the design is still settling, so compatibility machinery would only slow it.
+- What this means: The chassis publishes its version and a set of named capabilities. A module declares its minimum chassis version as a literal read before import. At runtime it asks whether a capability exists instead of comparing versions. The frozen suite is a set of modules written against earlier releases that must keep working. Compatibility runs one way: at the official release, a chassis runs the modules written for an earlier chassis of the same major version; an older chassis running a module written for a newer one is not promised. During development the version is CalVer, never SemVer; its format is open, D94. 1.0 in this spec names the first official release.
+- Why: Community modules must keep working across chassis updates, or nobody builds on the chassis. Capability checks let a module use new features where they exist without breaking on an older chassis. Until the first release the design is still settling, so compatibility machinery would only slow it, and a SemVer number would promise a compatibility the contract does not yet keep; a CalVer version says only when a build was made. A module states the lowest chassis it needs, so the promise can only run toward newer chassis: an older chassis cannot know features that did not exist when it shipped.
 - How it shows: A module needing a newer chassis is listed as not loaded with the version it needs.
 - Build: From 1.0: `metaform.CHASSIS_VERSION`, `metaform.capabilities` with `has(name)`, a literal `REQUIRES_CHASSIS` in the module source. Before 1.0 none of this is required.
 - Acceptance: From 1.0 only: the frozen suite loads and runs on each release.
-- Relates to: BASE-015.
-- Status: confirmed.
+- Relates to: BASE-015, BASE-047.
+- Status: confirmed. CalVer during development, 2026-09-19, its format open, D94. Compatibility within a major version at the official release, running one way toward newer chassis, 2026-09-19.
 
 ---
 
@@ -263,13 +263,13 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ### BASE-027 Metaform offers to maintain a user's fork, CI and wheel
 - Requirement: At release, Metaform offers to maintain a user's personal fork of the template, its CI and the build of their own wheel.
-- What this means: A community author starts from the template and Metaform keeps their fork current with the template changelog, runs its CI on three systems and builds their wheel.
-- Why: The community builds on the template, and that upkeep is what keeps their forks working as the chassis changes.
+- What this means: A community author starts from the template and Metaform keeps their fork current with the template changelog, runs its CI on three systems and builds their wheel. Metaform can administer its own fork the same way. CI builds a wheel with the full set of modules that has passed muster: an agent ensures that each module meets or exceeds the standard of QUAL-001 before it goes in. A fork's CI-built wheels run directly in hosted code environments, BASE-024, or update the installed copy, BASE-047.
+- Why: The community builds on the template, and that upkeep is what keeps their forks working as the chassis changes. A wheel carries every module it holds to every user of it, so a module that falls short of the standard reaches them all.
 - How it shows: Open.
 - Build: Open.
 - Acceptance: Open.
-- Relates to: BASE-019, BASE-022.
-- Status: confirmed as intent; behavior open.
+- Relates to: BASE-019, BASE-022, BASE-024, BASE-047, QUAL-001, QUAL-003.
+- Status: confirmed as intent; the full module set that has passed muster, checked by an agent against the standard, and CI-built wheels for forks, 2026-09-19. Behavior open.
 
 ---
 
@@ -649,9 +649,41 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-039, BASE-044, STORE-001, STORE-016, STORE-043, LAYER-010, CLI-022, CLI-031, MCP-004.
 - Status: confirmed. File names, verb names and the table are recommended.
 
+## Records added from the design points
+
+### BASE-046 The chassis is fixed, and everything that plugs into it is a module
+- Requirement: The chassis is the fixed part of Metaform, and everything that plugs into it is a module: authored by Metaform or by anyone, as small as one command, and never a workflow.
+- What this means: A module can be anything that plugs into the chassis. The modules Metaform ships, `map`, `intake`, `memory`, `mcp`, `web`, `helloworld` and `template`, are modules exactly as a community author's are. A module is not a workflow; running workflows is the job of a workflow module, BASE-003. A module declares itself in its own code, BASE-035.
+- Why: With one fixed part, every module relies on the same base, and any feature, shipped or not, is added, removed or replaced the same way, BASE-001. A shipped module given a special place would make the chassis depend on it and every other module second to it.
+- How it shows: `metaform list modules` lists the shipped modules beside a user's own, each with its place and state, and disabling any of them leaves the chassis working.
+- Build: Nothing beyond BASE-035 and BASE-037: the loader treats every module alike, shipped or not, and the chassis names no module, BASE-001.
+- Acceptance: None of its own; BASE-001's and BASE-037's protect it.
+- Relates to: BASE-001, BASE-003, BASE-014, BASE-019, BASE-035, BASE-037.
+- Status: confirmed, 2026-09-14.
+
+### BASE-047 Installing a wheel goes through an install stage that never downgrades
+- Requirement: A wheel becomes the installed Metaform through an install stage, the front door, which never downgrades an installed Metaform without force and keeps the wheel's data apart from the installed copy's; a first-run check, the backstage, applies the same checks to a Metaform installed around the front door, such as by a raw `pip install`.
+- What this means: Running a wheel directly never changes an installed Metaform, BASE-023. Installing one does, so it goes through its own stage: it refuses to put an older Metaform over a newer one unless forced, and the wheel's own data folder stays apart, pulled into the main folder only as BASE-025 says. A person or an agent can install the wheel with pip directly and skip the stage; the first run of such an install finds that the stage never ran and makes its checks then. The front door is written `python metaform.whl install` in the design; `install` is also the chassis verb that sets up AI tools, MCP-013, and a directly run wheel runs the same command line, BASE-042, so the front door's command is open, D100.
+- Why: An installed Metaform's data is written at its own schema versions, and an older chassis refuses a store written by a newer one, STORE-029, so a downgrade would leave the user's data unreadable; forcing it is a deliberate act. A check made only at the front door misses every install that goes around it, so the backstage makes the same checks on the first run.
+- How it shows: Open with D100.
+- Build: Open, D100.
+- Acceptance: Open with D100.
+- Relates to: BASE-020, BASE-023, BASE-025, BASE-027, BASE-041, BASE-042, MCP-013, STORE-029.
+- Status: confirmed as design, 2026-09-19. The front door's command and what the stage and the backstage check are open, D100.
+
+### BASE-048 Metaform ships a metaform of itself, to develop itself
+- Requirement: The Metaform release carries a metaform of Metaform itself, which agents developing Metaform read.
+- What this means: The system ships its own metaform to develop itself. Where that metaform lives, given that a project's data lives only in the home, STORE-001, and how it reaches a user's home are open, D102.
+- Why: An agent developing Metaform, or administering a fork of it, BASE-027, starts from Metaform's own recorded functional understanding instead of reconstructing it, as every project's agents do, MAP-005.
+- How it shows: Open with D102.
+- Build: Open, D102.
+- Acceptance: Open with D102.
+- Relates to: BASE-027, MAP-005, STORE-001, STORE-027.
+- Status: confirmed as design, 2026-09-19. Where it lives and how it arrives are open, D102.
+
 ## Open questions
 
-1. A per-project module place: is it wanted, and if so where, given all data is global?
+1. Answered in part: the project place is part of the design, BASE-014. Where it lives, given all data is global, is open, D93.
 2. Answered: one data folder per wheel name and version, BASE-023.
 3. Answered: an installed Metaform can pull a wheel's data into the main folder as its own metaforms, never merged, BASE-025.
 4. The PyPI distribution name.
@@ -664,3 +696,6 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 11. Answered, D82: stored as given, BASE-039, BASE-044.
 12. NEW An agent that cannot continue always stops and submits a trouble report. Is the trouble report written when `--debug` is off, or does the agent only stop? Recommended: written, since it costs nothing to keep and it records why the run ended. (BASE-044, CLI-034)
+13. NEW Which CalVer format do versions take during development? D94. (BASE-020)
+14. NEW What is the command of the install stage's front door, and what do the stage and the backstage check? D100. (BASE-047)
+15. NEW Where does Metaform's own metaform live, and how does it reach a user's home? D102. (BASE-048)

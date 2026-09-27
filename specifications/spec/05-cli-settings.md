@@ -533,6 +533,26 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Relates to: CLI-011, CLI-015, BASE-039, BASE-044, BASE-045, MCP-007.
 - Status: confirmed, including the defaults: `--debug` off and `--report` on. During development the orchestrator turns `--debug` on for its own runs. The names `--debug` and `--report` are recommended.
 
+### CLI-035 The command line follows mvm's design
+- Requirement: The Metaform command line works as mvm does, the command line whose settings pattern this section follows: its command index, its help pages, and `set`, `unset` and `config`, except where a record of this section decides otherwise.
+- What this means: mvm's design is the pattern. Help lists the commands in grouped sections, one full-length line each, then a footer naming the help command, then tips. `help <command>` and `<command> --help` give one page each: a summary, a description, when to use the command, usage, subcommands, the switches one line each, details, examples each followed by an indented explanation, and see also. `help <switch>` explains a switch across commands. `set --<key> <value>` takes `--glue` and `--quiet` and answers in plain text, such as `Success: no changes`; `unset --<key>` and `unset all` return keys to their defaults, and glued keys stay unless `--unglue` is given. `config` opens the settings screen, and `config --show` prints `key: value` lines. Where a record of this section decides otherwise, the record governs: `metaform` alone shows status, CLI-005; `metaform help` is a brief overview ending with tips, and the full index is `help commands`, CLI-006 and CLI-008; every error ends with one Next line and exit 2, CLI-009. mvm leaks its argument parser's usage on an unknown switch to `set`; that is not copied. mvm's `config <group>`, which opens one group of the screen, and `config --wizard`, a guided setup, and the page sections for when to use a command and for its subcommands, which CLI-029's page does not have, are open, D97.
+- Why: A command line copied from a working design is settled in full, so a builder has nothing left to reinterpret, and a person who already uses mvm knows Metaform's command line without learning it.
+- How it shows: `metaform help set` and `mvm help set` give pages of the same shape; `metaform unset all` keeps glued settings as `mvm unset all` does.
+- Build: The records of this section, CLI-001 to CLI-034, are that design; each difference from mvm is one of the decisions named above.
+- Acceptance: None of its own; each record's acceptance protects its part.
+- Relates to: CLI-005, CLI-006, CLI-007, CLI-008, CLI-009, CLI-016, CLI-017, CLI-026, CLI-029, CLI-036.
+- Status: confirmed, 2026-09-21. The later decisions named above, 2026-09-24, govern where they differ. `config <group>`, `config --wizard` and the two page sections are open, D97.
+
+### CLI-036 Everything a person reads is short, whole and plain
+- Requirement: Every text a person reads or needs to understand, on the command line and in help, status, errors, notices, the web GUI and the documentation, is meaningful, short, never cut off, and written to one writing standard.
+- What this means: Help for a feature says what needs to be done to use it, not only what it is. Text is never cut off mid-thought: an entry too long for its column goes on its own line, CLI-029. Commands are organized, CLI-032. The writing standard is a set of plain-writing rules; its text is not yet in this repository, D98.
+- Why: A person must understand what the tool says on the first read. Text that is padded, cut off or vague makes them reread, guess or go to the source, and an agent reading the same text does the same.
+- How it shows: No help line ends mid-word or in an ellipsis, and each help page says what to do to use its feature.
+- Build: The critic review, QUAL-008, checks every string a person reads against the standard.
+- Acceptance: Checked in the critic review, QUAL-008.
+- Relates to: CLI-006, CLI-007, CLI-029, CLI-032, CLI-035, QUAL-008.
+- Status: confirmed, 2026-09-21; help saying what needs to be done to use a feature, 2026-09-11. Where the standard's text is kept is open, D98.
+
 ## Open questions
 
 1. Scope of settings: every context setting is per folder. Do some settings stay global (applying in every folder), as the chassis `Setting.scope` allows today, and which?
@@ -545,3 +565,5 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 8. `metaform abort <workflow> --confirm` is written as a chassis verb, but the chassis does not run workflows (BASE-003) and module verbs take the module id first (CLI-001). Is `abort` a chassis verb, or the workflow module's verb, written `metaform workflow abort <workflow> --confirm`?
 9. When a module is absent, does `unset all` leave its stored settings untouched? Recommended: yes. (CLI-024)
 10. Dropped: stacking commands is not part of the design. CLI-032 keeps only the hierarchy.
+11. NEW mvm's `config <group>` and `config --wizard`, and its help page's sections for when to use a command and for its subcommands: are they wanted? D97. (CLI-035)
+12. NEW Where is the writing standard's text kept? D98. (CLI-036)
