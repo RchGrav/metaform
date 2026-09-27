@@ -1,12 +1,11 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-040, at schema version 2.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 3.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 `address_elements` remembers the element id of every address the store has held,
 so an element recorded again at its address is the same element, STORE-009.
-Two indexes are added beyond the section's own: `elements_by_address`, for the
-history of one address, STORE-005, and `findings_by_layer`, which lets
-discarding a layer remove its findings rows without a scan, STORE-042 and
-STORE-032.
+`work` holds the work records, the condition of an object kept apart from the
+map and attached to no layer, STORE-042. One index is added beyond the
+section's own: `elements_by_address`, for the history of one address, STORE-005.
 """
 from __future__ import annotations
 
@@ -291,18 +290,23 @@ CREATE TABLE IF NOT EXISTS element_roles(
 CREATE INDEX IF NOT EXISTS element_roles_by_role ON element_roles(layer_id, role);
 CREATE INDEX IF NOT EXISTS element_roles_by_layer ON element_roles(layer_id, element_id);
 
-CREATE TABLE IF NOT EXISTS findings(
+CREATE TABLE IF NOT EXISTS work(
   row         INTEGER PRIMARY KEY,
-  target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join','subtype')),
+  work_id     TEXT NOT NULL UNIQUE,
+  target_kind TEXT NOT NULL,
   target_id   TEXT NOT NULL,
-  layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-  flag        TEXT NOT NULL CHECK(flag IN ('missing','broken','cruft')),
+  condition   TEXT NOT NULL,
   note        TEXT,
-  UNIQUE(target_kind, target_id, layer_id)
+  task        TEXT,
+  held        INTEGER NOT NULL DEFAULT 0,
+  reviewed    INTEGER NOT NULL DEFAULT 0,
+  created     TEXT NOT NULL,
+  done        TEXT,
+  resolution  TEXT
 );
-CREATE INDEX IF NOT EXISTS findings_by_flag ON findings(flag, row);
-CREATE INDEX IF NOT EXISTS findings_by_target ON findings(target_kind, target_id);
-CREATE INDEX IF NOT EXISTS findings_by_layer ON findings(layer_id);
+CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
+CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
+CREATE INDEX IF NOT EXISTS work_by_done ON work(done, row);
 
 CREATE TABLE IF NOT EXISTS reports(
   report_id TEXT PRIMARY KEY,

@@ -79,10 +79,6 @@ def where(ctx: Context) -> Any:
     return _store(ctx).where(ctx.nouns['address'], **_reading(ctx))
 
 
-def findings(ctx: Context) -> Any:
-    return _store(ctx).findings(ctx.nouns.get('flag'), ctx.nouns.get('layer'), **_reading(ctx), **_paging(ctx))
-
-
 def element(ctx: Context) -> Any:
     found = _store(ctx).element(ctx.nouns['element'], **_reading(ctx))
     if found is None:
@@ -209,11 +205,11 @@ def approve(ctx: Context) -> Any:
     return _store(ctx).approve(ctx.nouns['challenge'])
 
 
-def _need(ctx: Context, *names: str) -> list[Any]:
+def _need(ctx: Context, *names: str, verb: str = 'knowledge') -> list[Any]:
     missing = [name for name in names if name not in ctx.nouns]
     if missing:
         op = ctx.nouns.get('op')
-        raise Stop(f'knowledge op={op} needs {", ".join(missing)}.', 'metaform help map knowledge')
+        raise Stop(f'{verb} op={op} needs {", ".join(missing)}.', f'metaform help map {verb}')
     return [ctx.nouns[name] for name in names]
 
 
@@ -234,11 +230,11 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
-    'add-element': frozenset({'address', 'name', 'name_length', 'role', 'refs', 'extra', 'flag', 'flag_note'}),
+    'add-element': frozenset({'address', 'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-join': frozenset({'receiver', 'provider', 'purpose', 'function', 'relation', 'observation', 'non_goal', 'type',
-                           'refs', 'extra', 'flag', 'flag_note'}),
+                           'refs', 'extra'}),
     'add-subtype': frozenset({'join', 'address', 'function', 'relation', 'observation', 'name', 'name_length', 'role',
-                              'refs', 'extra', 'flag', 'flag_note'}),
+                              'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
@@ -306,19 +302,16 @@ def _knowledge(ctx: Context, op: str) -> Any:
                            provenance=provenance, sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
         (address,) = _need(ctx, 'address')
-        return store.add_element(name, address, **_optional(ctx, 'name', 'name_length', 'role', 'refs', 'extra',
-                                                            'flag', 'flag_note'))
+        return store.add_element(name, address, **_optional(ctx, 'name', 'name_length', 'role', 'refs', 'extra'))
     if op == 'add-join':
         receiver, provider, purpose, function, relation, observation = _need(
             ctx, 'receiver', 'provider', 'purpose', 'function', 'relation', 'observation')
         return store.add_join(name, receiver, provider, purpose=purpose, function=function, relation=relation,
-                              observation=observation, **_optional(ctx, 'non_goal', 'type', 'refs', 'extra', 'flag',
-                                                                   'flag_note'))
+                              observation=observation, **_optional(ctx, 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         join, address = _need(ctx, 'join', 'address')
         return store.add_subtype(name, join, address, **_optional(ctx, 'function', 'relation', 'observation', 'name',
-                                                                  'name_length', 'role', 'refs', 'extra', 'flag',
-                                                                  'flag_note'))
+                                                                  'name_length', 'role', 'refs', 'extra'))
     if op == 'add-property':
         element_ref, value = _need(ctx, 'element', 'value')
         return store.add_property(name, _element(element_ref), value, **_optional(ctx, 'refs', 'extra'))
@@ -399,8 +392,64 @@ KNOWLEDGE_NOUNS = (
     _noun('reason', 'correct: why.'),
     _noun('evidence', 'correct: what shows it.'),
     _noun('remove', 'correct: remove the thing instead of changing it.', 'bool'),
-    _noun('flag', 'add-element, add-join and add-subtype: missing, broken or cruft; leave it out when it works.'),
-    _noun('flag_note', 'add-element, add-join and add-subtype: a short note on the flag.'),
+)
+
+# The nouns each work operation reads, besides op.
+WORK_READS: dict[str, frozenset[str]] = {
+    'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
+    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed'}),
+    'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
+    'done': frozenset({'id', 'resolution'}),
+}
+WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
+
+
+def _work_node(value: Any) -> Node:
+    """A node written `kind:<address or id>`, or a bare address or id, which names an element."""
+    if isinstance(value, str) and ':' in value and value.partition(':')[0] in PLACE_KINDS:
+        return Node.parse(value)
+    return Node('element', str(value))
+
+
+def work(ctx: Context) -> Any:
+    """The work records: the condition of an element, join or subtype, apart from the map, MAP-046 and STORE-042.
+    op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
+    op = str(ctx.nouns.get('op', 'list'))
+    if op not in WORK_READS:
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit or done.', 'metaform help map work')
+    unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
+    notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
+    for name in unread:
+        ctx.nouns.pop(name)
+    store, nouns = _store(ctx), ctx.nouns
+    if op == 'list':
+        node = _work_node(nouns['node']) if 'node' in nouns else None
+        return _with_notices(store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx)), notices)
+    if op == 'add':
+        node, condition = _need(ctx, 'node', 'condition', verb='work')
+        return _with_notices(store.add_work(_work_node(node), condition,
+                                            **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
+    (work_id,) = _need(ctx, 'id', verb='work')
+    if op == 'edit':
+        return _with_notices(store.edit_work(work_id, {name: nouns[name] for name in WORK_FIELDS if name in nouns}),
+                             notices)
+    return _with_notices(store.finish_work(work_id, nouns.get('resolution')), notices)
+
+
+WORK_NOUNS = (
+    _noun('op', 'list, the default; add; edit; or done.'),
+    _noun('node', 'list and add: element:<address or id>, join:<id> or subtype:<address or id>; a bare address names '
+                  'an element.'),
+    _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
+                       'broken; or cruft.'),
+    _noun('note', 'add and edit: what and where.'),
+    _noun('task', 'add and edit: what it needs.'),
+    _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
+    _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
+    _noun('id', 'edit and done: the work record id.'),
+    _noun('resolution', 'done: how it was resolved, kept beside the record.'),
+    _noun('open', 'list: true for records not done, false for those done.', 'bool'),
+    *PAGING,
 )
 
 RAW = ('raw',)
@@ -457,9 +506,16 @@ MODULE = Module(
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
-        Verb('findings', findings, 'The objects the intake flagged missing, broken or cruft.',
-             nouns=(_noun('flag', 'missing, broken or cruft.'), _noun('layer', 'Only this layer.'), *PAGING),
-             switches=RAW),
+        Verb('work', work, 'The work records, the condition of an element, join or subtype apart from the map: '
+                           'list them, or add, edit or mark one done.',
+             nouns=WORK_NOUNS,
+             details='A work record is attached to one element, join or subtype and never changes the map. Its '
+                     'condition is tbd, broken or cruft; its note says what and where, its task what it needs. It is '
+                     'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
+                     'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
+             examples=(('metaform map work op=add node=element:code.alarm.audible condition=tbd task="build it"',
+                        'Record that the alarm is in the specs and not built yet.'),
+                       ('metaform map work condition=broken open=true', 'List the open broken records.'))),
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '

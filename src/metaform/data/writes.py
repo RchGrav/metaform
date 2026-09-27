@@ -15,13 +15,14 @@ import json
 from collections.abc import Iterable
 from typing import Any, TypeVar, cast
 
+from .. import home
 from ..errors import StoreError
 from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
 from .ids import as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
-from .records import (EF_WORDS, ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
-                      Version)
+from .records import (CONDITIONS, EF_WORDS, ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property,
+                      Ref, Subtype, Version, WorkRecord)
 from .selection import LayerRow, all_layers
 from .session import Tx
 
@@ -41,8 +42,7 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
 # Elements, joins and subtypes -------------------------------------------------------------------------------
 
 def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_length: Any = None, role: Any = None,
-                refs: Iterable[Any] = (), extra: Any = None, flag: Any = None,
-                flag_note: Any = None) -> Element | Outcome:
+                refs: Iterable[Any] = (), extra: Any = None) -> Element | Outcome:
     """Write an element, or return the one already at the address, STORE-009."""
     pairs = refs_list(refs)
     if not isinstance(address, str):
@@ -75,7 +75,6 @@ def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_leng
         if (descriptor or pairs) and not rows.has_descriptor(tx, element_id, found.layer_id):
             rows.write_descriptor(tx, found, element_id, descriptor, pairs)
         rows.split_items(tx, found, 'element', element_id, split)
-        rows.flag(tx, 'element', element_id, found, flag, flag_note, notices)
         record = views.element(tx, element_id, None)
         assert record is not None
         return _with(record, notices, existing=True, differs=differs)
@@ -87,7 +86,6 @@ def add_element(tx: Tx, layer: str, address: Any, *, name: Any = None, name_leng
     if descriptor or pairs:
         rows.write_descriptor(tx, found, element_id, descriptor, pairs)
     rows.split_items(tx, found, 'element', element_id, split)
-    rows.flag(tx, 'element', element_id, found, flag, flag_note, notices)
     if found.kind == 'correction':
         length = name_length if rows.whole_number(name_length) else None
         return Element(element_id, address, found.layer_id, found.name, reading(address), short_name(address, length),
@@ -106,7 +104,7 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
              ef: Any = None, relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
              type: Any = 'purpose',
-             refs: Iterable[Any] = (), extra: Any = None, flag: Any = None, flag_note: Any = None) -> Join | Outcome:
+             refs: Iterable[Any] = (), extra: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010."""
     pairs = refs_list(refs)
     found = rows.layer(tx, layer)
@@ -141,15 +139,13 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, purpose: Any =
                       (join_id, row, receiver_id, provider_id))
     rows.write_refs(tx, 'join', row, pairs)
     rows.split_items(tx, found, 'join', join_id, split)
-    rows.flag(tx, 'join', join_id, found, flag, flag_note, notices)
     record = views.join(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
     return _with(record, notices)
 
 
 def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, ef: Any = None,
                 relation: Any = None, verb: Any = None, observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
-                refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
-                flag_note: Any = None) -> Subtype | Outcome:
+                refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
     """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
     pairs = refs_list(refs)
     if not isinstance(address, str):
@@ -203,7 +199,6 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
                       (subtype_id, row, join_id, address))
     rows.write_refs(tx, 'subtype', row, pairs)
     rows.split_items(tx, found, 'subtype', subtype_id, split)
-    rows.flag(tx, 'subtype', subtype_id, found, flag, flag_note, notices)
     record = views.subtype(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(), join_id,
                            all_layers(tx.db))
     return _with(record, notices)
@@ -484,18 +479,78 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     return _with(record, notices)
 
 
-def reflag(tx: Tx, thing: str, flag: Any, note: Any) -> Outcome:
-    """Set or clear the flag of an element, join or subtype whose layer can still change in place, STORE-042."""
-    kind = rows.kind_of(tx, thing)
-    _, found = rows.own_row(tx, kind, thing)
-    stop = unchangeable(tx, found, thing)
-    if stop is not None:
-        return Outcome((stop,))
+# Work records --------------------------------------------------------------------------------------------------
+
+WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
+
+
+def _work_text(value: Any, field: str, notices: list[Notice]) -> str | None:
+    """A note, task or resolution: text, or anything else kept as JSON text with a notice, BASE-044."""
+    if value is None or isinstance(value, str):
+        return value
+    notices.append(Notice(field, f'{field} is not text; it was stored as JSON text.'))
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _condition(value: Any, notices: list[Notice]) -> str:
+    if value in CONDITIONS:
+        return str(value)
+    notices.append(Notice('condition', f'{value!r} is not tbd, broken or cruft; it was stored as given.'))
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def _work_row(tx: Tx, work_id: str) -> Any:
+    row = tx.db.execute('SELECT * FROM work WHERE work_id=?', (work_id,)).fetchone()
+    if row is None:
+        raise StoreError(f'No work record has the id {work_id}.', 'metaform map work')
+    return row
+
+
+def add_work(tx: Tx, node: Any, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
+             reviewed: Any = False) -> WorkRecord:
+    """Write the condition of an element, join or subtype as its own record, apart from the map, STORE-042."""
     notices: list[Notice] = []
-    tx.db.execute('DELETE FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
-                  (kind, thing, found.layer_id))
-    rows.flag(tx, kind, thing, found, flag, note, notices)
-    return Outcome(tuple(notices))
+    kind, thing = rows.work_target(tx, node, notices)
+    work_id = new_id()
+    tx.db.execute('INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created) '
+                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  (work_id, kind, thing, _condition(condition, notices), _work_text(note, 'note', notices),
+                   _work_text(task, 'task', notices), int(bool(held)), int(bool(reviewed)), home.now()))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
+    """Change a work record's condition, note, task, held or reviewed in place; other keys are named and not stored."""
+    notices: list[Notice] = []
+    _work_row(tx, work_id)
+    given = as_object(changes)
+    if given is None:
+        raise StoreError('The changes to a work record are an object of its fields.', 'metaform help map work')
+    for key in sorted(given):
+        if key not in WORK_FIELDS:
+            notices.append(Notice(key, f'A work record has no field {key}; it was not stored.'))
+            continue
+        value: Any = given[key]
+        if key == 'condition':
+            value = _condition(value, notices)
+        elif key in ('held', 'reviewed'):
+            value = int(bool(value))
+        else:
+            value = _work_text(value, key, notices)
+        tx.db.execute(f'UPDATE work SET {key}=? WHERE work_id=?', (value, work_id))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:
+    """Mark a work record done, keeping its resolution beside it; a record already done keeps its first resolution."""
+    notices: list[Notice] = []
+    row = _work_row(tx, work_id)
+    if row['done'] is not None:
+        notices.append(Notice('work_id', f'This work record was done at {row["done"]}; its resolution was kept.'))
+        return views.work_record(tx, row, tuple(notices))
+    tx.db.execute('UPDATE work SET done=?, resolution=? WHERE work_id=?',
+                  (home.now(), _work_text(resolution, 'resolution', notices), work_id))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
 def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:
@@ -525,9 +580,6 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
         tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
         if row['target_kind'] == 'element' and rows.is_descriptor(str(row['value'])):
             rows.set_role(tx, str(row['target_id']), found, None)
-    if kind in ('element', 'join', 'subtype'):
-        tx.db.execute('DELETE FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
-                      (kind, thing, found.layer_id))
     tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
     if not users:
         return Outcome()

@@ -33,7 +33,7 @@ WEB_NOTICE = ('Before an intake, start the web GUI with metaform web, or the web
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
-         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_findings', 'feedback',
+         'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
 REPORT = 'The alarm pin is never released after stop.'
 FEEDBACK = 'The subtype provider field repeats the element address.'
@@ -141,8 +141,6 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         # that field, and nothing is refused.
         submission = copy.deepcopy(FIXTURE)
         del submission['elements'][0]['joins'][0]['purpose']
-        submission['elements'][2]['flag'] = 'broken'
-        submission['elements'][1]['joins'][0]['flag'] = 'missing'
         noticed = []
 
         def record(tool, arguments):
@@ -156,7 +154,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         for element in submission['elements']:
             record('intake_element', {'address': element['namespace_address'],
                                       **{key: value for key, value in element.items()
-                                         if key in ('role', 'name', 'name_length', 'refs', 'flag', 'flag_note')}})
+                                         if key in ('role', 'name', 'name_length', 'refs')}})
         for element in submission['elements']:
             for join in element.get('joins', []):
                 made = record('intake_join', {'receiver': element['namespace_address'], **{
@@ -167,14 +165,18 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                                               **{key: value for key, value in subtype.items() if key != 'element'},
                                               **{key: value for key, value in inner.items()
                                                  if key in ('role', 'name', 'name_length', 'refs')}})
+        # The condition of an object is a work record, apart from the map, written by the same agent through
+        # map_work while the intake is being recorded, MAP-046.
+        record('map_work', {'op': 'add', 'node': 'element:code.alarm.audible', 'condition': 'broken',
+                            'note': 'the pin is never released', 'task': 'release it after stop'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
-        assert (report['elements'], report['joins'], report['subtypes'], report['findings']) == (3, 2, 1, 2)
+        assert (report['elements'], report['joins'], report['subtypes'], report['work']) == (3, 2, 1, 1)
         assert noticed == ['purpose']
     finally:
         host.close()
     assert NOTICE not in metaform(cwd=project).stdout
 
-    # A new connection no longer shows the notice; the report, the feedback and the findings are there to read.
+    # A new connection no longer shows the notice; the report, the feedback and the work record are there to read.
     first, initialized = connect()
     second = None
     try:
@@ -184,8 +186,8 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         assert sorted(by_kind) == ['feedback', 'report']
         assert texts(first.call('read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
         assert texts(first.call('read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
-        broken = last_json(first.call('map_findings', {'flag': 'broken'}, limit=LIMIT))['results']
-        assert [row['address'] for row in broken] == ['code.alarm.audible']
+        broken = last_json(first.call('map_work', {'condition': 'broken'}, limit=LIMIT))['results']
+        assert [(row['address'], row['task']) for row in broken] == [('code.alarm.audible', 'release it after stop')]
         said = last_json(first.call('feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
         relisted = {row['name'] for row in last_json(first.call('list_reports', {}, limit=LIMIT))['results']}
         assert set(said['files']) <= relisted and len(relisted) == 3

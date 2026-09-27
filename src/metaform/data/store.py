@@ -28,9 +28,9 @@ from .. import home
 from ..errors import StoreError
 from . import challenges, history, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
-from .records import (ChallengeState, Citation, ContextView, Element, Finding, GraphPage, Item, Join, Layer, Node,
-                      NodeView, Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Recording, Ref,
-                      Report, Roots, Selection, Subtype, Version, Where)
+from .records import (ChallengeState, Citation, ContextView, Element, GraphPage, Item, Join, Layer, Node, NodeView,
+                      Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Recording, Ref, Report,
+                      Roots, Selection, Subtype, Version, Where, WorkRecord)
 from .selection import Resolver
 from .session import Session, Tx
 
@@ -157,39 +157,35 @@ class Store:
     # ---------------------------------------------------------------- the map
 
     def add_element(self, layer: str | None, address: Any, *, name: Any = None, name_length: Any = None,
-                    role: Any = None, refs: Iterable[Any] = (), extra: Any = None, flag: Any = None,
-                    flag_note: Any = None) -> Element | Outcome:
+                    role: Any = None, refs: Iterable[Any] = (), extra: Any = None) -> Element | Outcome:
         """Write an element, or return the one already at the address, STORE-009."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_element(tx, named, address, name=name, name_length=name_length, role=role,
-                                                  refs=refs, extra=extra, flag=flag, flag_note=flag_note), notice)
+                                                  refs=refs, extra=extra), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, purpose: Any = None, function: Any = None,
                  ef: Any = None, relation: Any = None, verb: Any = None, observation: Any = None,
-                 non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (), extra: Any = None,
-                 flag: Any = None, flag_note: Any = None) -> Join | Outcome:
+                 non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
+                 extra: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_join(tx, named, receiver, provider, purpose=purpose, function=function,
                                                ef=ef, relation=relation, verb=verb, observation=observation, non_goal=non_goal,
-                                               type=type, refs=refs, extra=extra, flag=flag, flag_note=flag_note),
-                               notice)
+                                               type=type, refs=refs, extra=extra), notice)
 
     def add_subtype(self, layer: str | None, join: Any, address: Any, *, function: Any = None, ef: Any = None,
                     relation: Any = None, verb: Any = None, observation: Any = None, name: Any = None,
                     name_length: Any = None, role: Any = None,
-                    refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None, flag: Any = None,
-                    flag_note: Any = None) -> Subtype | Outcome:
+                    refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
         """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_subtype(tx, named, join, address, function=function, ef=ef, relation=relation,
                                                   verb=verb,
                                                   observation=observation, name=name, name_length=name_length,
-                                                  role=role, refs=refs, extra=extra, purpose=purpose, flag=flag,
-                                                  flag_note=flag_note), notice)
+                                                  role=role, refs=refs, extra=extra, purpose=purpose), notice)
 
     def add_ref(self, owner: str, key: str, value: str) -> Ref | Outcome:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
@@ -224,10 +220,21 @@ class Store:
         with self._write() as tx:
             return writes.edit(tx, thing, changes)
 
-    def reflag(self, thing: str, flag: Any, note: Any = None) -> Outcome:
-        """Set or clear the flag of a thing whose layer can still change in place; None clears it, STORE-042."""
+    def add_work(self, node: Node, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
+                 reviewed: Any = False) -> WorkRecord:
+        """Write the condition of an element, join or subtype as a work record, apart from the map, STORE-042."""
         with self._write() as tx:
-            return writes.reflag(tx, thing, flag, note)
+            return writes.add_work(tx, node, condition, note=note, task=task, held=held, reviewed=reviewed)
+
+    def edit_work(self, work_id: str, changes: Any) -> WorkRecord:
+        """Change a work record's condition, note, task, held or reviewed in place, STORE-042."""
+        with self._write() as tx:
+            return writes.edit_work(tx, work_id, changes)
+
+    def finish_work(self, work_id: str, resolution: Any = None) -> WorkRecord:
+        """Mark a work record done, its resolution kept beside it, STORE-042."""
+        with self._write() as tx:
+            return writes.finish_work(tx, work_id, resolution)
 
     def remove(self, thing: str | int) -> Outcome:
         """Delete a row a knowledge layer or a building correction layer wrote, with its refs, STORE-032."""
@@ -405,11 +412,12 @@ class Store:
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 
-    def findings(self, flag: str | None = None, layer: str | None = None, *, selection: Sequence[str] | None = None,
-                 raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Finding]:
-        """Flagged objects, by flag, each with its address or its join's ends, STORE-042."""
+    def work(self, node: Node | None = None, condition: str | None = None, open: bool | None = None, *,
+             limit: int = LIMIT, after: str | None = None) -> Page[WorkRecord]:
+        """The work records, by node, condition or whether open, each with its object's address or its join's ends,
+        STORE-042."""
         with self._read() as tx:
-            return reads.findings(tx, None if raw else self._resolver(tx, selection), flag, layer, limit, after)
+            return reads.work(tx, node, condition, open, limit, after)
 
     # --------------------------------------------------------------- reports
 

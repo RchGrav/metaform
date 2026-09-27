@@ -17,9 +17,9 @@ from ..errors import StoreError
 from . import corrections, rows, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
-from .records import (Citation, ContextView, Element, Finding, GraphElement, GraphJoin, GraphPage, Item, Join, Layer,
+from .records import (Citation, ContextView, Element, GraphElement, GraphJoin, GraphPage, Item, Join, Layer,
                       LayerGroup, Node, NodeView, Notice, Page, PeelPreview, Property, Provenance, Report, RootElement,
-                      RootEntry, Roots, Selection, Subtype, Version, Where)
+                      RootEntry, Roots, Selection, Subtype, Version, Where, WorkRecord)
 from .selection import Resolver, all_layers
 from .session import Tx
 
@@ -426,24 +426,27 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
     return Roots(tuple(entry), page.results, page.next)
 
 
-def findings(tx: Tx, res: Resolver | None, flag: str | None, layer: str | None, limit: int,
-             after: str | None) -> Page[Finding]:
-    """Flagged objects, by flag, each with its address or its join's ends, STORE-042."""
-    known = res.layers if res else all_layers(tx.db)
-    layer_id = rows.layer(tx, layer).layer_id if layer else None
+def work(tx: Tx, node: Node | None, condition: str | None, open: bool | None, limit: int,
+         after: str | None) -> Page[WorkRecord]:
+    """The work records, in row order, by node, condition or whether open, STORE-042; not a context read, since a
+    work record has no layer."""
+    target = rows.work_target(tx, node, []) if node is not None else None
 
     def fetch(cursor: str | None, count: int) -> list[Row]:
-        if flag is not None:
-            return tx.db.execute('SELECT row AS key, * FROM findings WHERE flag=? AND row > ? ORDER BY row LIMIT ?',
-                                 (flag, int(cursor or 0), count)).fetchall()
-        return tx.db.execute('SELECT row AS key, * FROM findings WHERE row > ? ORDER BY row LIMIT ?',
-                             (int(cursor or 0), count)).fetchall()
+        where: list[str] = ['row > ?']
+        params: list[Any] = [int(cursor or 0)]
+        if target is not None:
+            where.append('target_kind=? AND target_id=?')
+            params.extend(target)
+        if condition is not None:
+            where.append('condition=?')
+            params.append(condition)
+        if open is not None:
+            where.append('done IS NULL' if open else 'done IS NOT NULL')
+        return tx.db.execute(f'SELECT row AS key, * FROM work WHERE {" AND ".join(where)} ORDER BY row LIMIT ?',
+                             (*params, count)).fetchall()
 
-    def build(row: Row) -> Finding | None:
-        if layer_id is not None and row['layer_id'] != layer_id:
-            return None
-        return views.found_flag(tx, row, known, res)
-    return paged(fetch, build, limit, after)
+    return paged(fetch, lambda row: views.work_record(tx, row), limit, after)
 
 
 def reports(tx: Tx, kind: str | None, layer: str | None, limit: int, after: str | None) -> Page[Report]:

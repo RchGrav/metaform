@@ -8,6 +8,8 @@
   live      the chassis announces the subscriber's write as map.changed, so an open web GUI shows the greeting at once,
             VIEW-018; the module does nothing for it
   forget    a caution verb that acts only with --confirm
+  todo      writes a work record, the condition of this module's own element kept apart from the map, MAP-046;
+            done resolves it, and the status line counts what is still to do
   beep      a verb that runs on one system only, BASE-016
   status    a status hook that adds one line to `metaform` status
 
@@ -82,6 +84,32 @@ def beep(ctx: Context) -> str:
     return '\a'
 
 
+def _own_element(store: Store) -> None:
+    """The element the greetings hang from, made when no greeting has made it yet."""
+    with store.atomic():
+        store.layer(LAYER, 'helloworld', 'Who helloworld has greeted.', mutable=True, hideable=True,
+                    provenance=PROVENANCE)
+        store.add_element(LAYER, HOLDER)
+
+
+def todo(ctx: Context) -> str:
+    """A work record on this module's own element: tbd, with the task given, MAP-046 and STORE-042."""
+    store = ctx.require_store()
+    _own_element(store)
+    record = store.add_work(Node('element', HOLDER), 'tbd', note='helloworld has more to do', task=ctx.nouns['task'])
+    return f'To do: {ctx.nouns["task"]} ({record.work_id})\n'
+
+
+def done(ctx: Context) -> str:
+    """Mark one of this module's work records done, its resolution kept beside it."""
+    record = ctx.require_store().finish_work(ctx.nouns['id'], ctx.nouns['resolution'])
+    return f'Done: {record.task} ({record.resolution})\n'
+
+
+def _to_do(store: Store) -> int:
+    return len(store.work(Node('element', HOLDER), open=True, limit=0).results)
+
+
 def record(payload: dict[str, Any], ctx: Context) -> None:
     """helloworld.greeted: remember the name as one item of this module's layer."""
     store = ctx.require_store()
@@ -97,16 +125,18 @@ def record(payload: dict[str, Any], ctx: Context) -> None:
 def status(ctx: Context) -> Status:
     if ctx.store is None:
         return Status()
-    count = len(_names(ctx.store))
-    return Status(lines=(f'Helloworld: {count} greeted',)) if count else Status()
+    count, open_work = len(_names(ctx.store)), _to_do(ctx.store)
+    if not count and not open_work:
+        return Status()
+    return Status(lines=(f'Helloworld: {count} greeted' + (f', {open_work} to do' if open_work else ''),))
 
 
 MODULE = Module(
     id='helloworld',
     summary='A demonstration of every module feature.',
-    purpose='Shows each Metaform module feature working once: it greets names, keeps them as a layer, and '
-            'publishes an event for each greeting. Use it to see how a module behaves. '
-            'Details: metaform help helloworld.',
+    purpose='Shows each Metaform module feature working once: it greets names, keeps them as a layer, '
+            'publishes an event for each greeting, and keeps what it still has to do as work records. Use it to see '
+            'how a module behaves. Details: metaform help helloworld.',
     details='Settings are declared in code and appear in set, unset and the settings screen. '
             'The favorite setting takes its choices from the names this module has greeted.',
     verbs=(
@@ -120,6 +150,11 @@ MODULE = Module(
         Verb('forget', forget, 'Delete the greeting history.', caution='This deletes the greeting history.'),
         Verb('beep', beep, 'Sound the terminal bell. Shows a verb that runs on one system.',
              supported_os=('windows',)),
+        Verb('todo', todo, "Write a work record on this module's own element: something still to do.",
+             nouns=(Noun('task', 'What it needs.'),),
+             examples=(('metaform helloworld todo "greet in every language"', 'Records a tbd work record.'),)),
+        Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
+             nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
     ),
     subscriptions=(Subscription('helloworld.greeted', record),),
     status=status,

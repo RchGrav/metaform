@@ -39,11 +39,10 @@ def project(run, tmp_path):
     return folder
 
 
-OBJECT_KEYS = {'namespace_address', 'role', 'name', 'name_length', 'refs', 'flag', 'flag_note', 'joins'}
+OBJECT_KEYS = {'namespace_address', 'role', 'name', 'name_length', 'refs', 'joins'}
 JOIN_KEYS = {'type', 'provider', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'refs',
-             'flag', 'flag_note', 'subtypes'}
-SUBTYPE_KEYS = {'provider', 'function', 'ef', 'relation', 'verb', 'observation', 'flag', 'flag_note', 'element',
-                'purpose'}
+             'subtypes'}
+SUBTYPE_KEYS = {'provider', 'function', 'ef', 'relation', 'verb', 'observation', 'element', 'purpose'}
 
 
 def fields(given, names):
@@ -72,18 +71,17 @@ def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
     elements = document['elements']
     for index, element in enumerate(elements):
         call(f'elements[{index}]', 'element', element.get('namespace_address', ''),
-             *fields(element, {'role', 'name', 'name_length', 'refs', 'flag', 'flag_note'}))
+             *fields(element, {'role', 'name', 'name_length', 'refs'}))
     for index, element in enumerate(elements):
         for number, join in enumerate(element.get('joins', [])):
             path = f'elements[{index}].joins[{number}]'
             made = call(path, 'join', element['namespace_address'], join.get('provider', ''),
                         *fields(join, {'type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation',
-                                       'non_goal', 'refs', 'flag', 'flag_note'}))
+                                       'non_goal', 'refs'}))
             for place, subtype in enumerate(join.get('subtypes', [])):
                 inner = subtype.get('element', {})
                 call(f'{path}.subtypes[{place}]', 'subtype', made['join_id'], inner.get('namespace_address', ''),
-                     *fields(subtype, {'function', 'ef', 'relation', 'verb', 'observation', 'flag', 'flag_note',
-                                       'purpose'}),
+                     *fields(subtype, {'function', 'ef', 'relation', 'verb', 'observation', 'purpose'}),
                      *fields(inner, {'role', 'name', 'name_length', 'refs'}))
     finish = [arg for arg in extra if arg.split('=', 1)[0] in ('report', 'feedback')]
     finished = run('intake', 'finish', *finish, *(['--json'] if as_json else []), cwd=cwd)
@@ -162,13 +160,13 @@ def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(r
 def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run, project, tmp_path):
     report = submit(run, project, FIXTURE, tmp_path, extra=('model=claude', 'role=intake agent'))
     assert (report['project'], report['metaform'], report['elements'], report['joins'], report['subtypes'],
-            report['findings']) == ('timer', 'main', 3, 2, 1, 0)
+            report['work']) == ('timer', 'main', 3, 2, 1, 0)
     assert report['notices'] == []
     assert re.fullmatch(r'intake-\d{8}T\d{6}Z-[0-9a-f]{6}', report['layer'])
     store = Store('timer')
     assert store.has_intake()
     kitchen = store.element('code.timer.kitchen')
-    assert (kitchen.name, kitchen.name_length, kitchen.role, kitchen.flag) == ('kitchen timer daemon', 2, 'DE', None)
+    assert (kitchen.name, kitchen.name_length, kitchen.role, kitchen.open_work) == ('kitchen timer daemon', 2, 'DE', ())
     assert [(ref.key, ref.value) for ref in kitchen.descriptors[0].refs] == [('path', 'src/main.c')]
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert (cook_join.provider_address, cook_join.purpose, cook_join.non_goal, cook_join.layer) == (
@@ -358,13 +356,18 @@ def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kep
 @pytest.mark.req('STORE-042')
 @pytest.mark.req('STORE-043')
 @pytest.mark.req('STORE-016')
-def test_a_report_feedback_and_flags_are_saved_listed_and_part_of_provenance(run, project, tmp_path, home):
-    given = copy.deepcopy(FIXTURE)
-    given['elements'][2]['flag'] = 'cruft'
-    given['elements'][2]['flag_note'] = 'disabled since the 2.0 rewrite'
-    report = submit(run, project, given, tmp_path,
+def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_counted_at_the_finish(run, project,
+                                                                                                    tmp_path, home):
+    # The record is written while the intake is being recorded, through the map tool, never through an intake field.
+    run('intake', 'start', '--json', cwd=project)
+    run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
+    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft',
+                          'note=disabled since the 2.0 rewrite', 'task=remove the module and its tests', '--json',
+                          cwd=project).stdout)
+    assert made['condition'] == 'cruft'
+    report = submit(run, project, copy.deepcopy(FIXTURE), tmp_path,
                     extra=('report=The alarm pin is unconnected.', 'feedback=The subtype fields were clear.'))
-    assert report['findings'] == 1
+    assert report['work'] == 1
     layer_id = Store('timer').layers(kind='intake').results[0].layer_id
     folder = home / 'projects' / 'timer' / 'reports'
     assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == 'The alarm pin is unconnected.'
@@ -376,33 +379,24 @@ def test_a_report_feedback_and_flags_are_saved_listed_and_part_of_provenance(run
     provenance = Store('timer').provenance(report['layer'])
     assert sorted((ref.key, ref.value) for ref in provenance.refs) == [
         ('feedback', f'{layer_id}-feedback.md'), ('report', f'{layer_id}-report.md')]
-    cruft = json.loads(run('map', 'findings', 'flag=cruft', '--json', cwd=project).stdout)['results']
-    assert [(row['address'], row['flag'], row['note']) for row in cruft] == [
-        ('code.alarm.audible', 'cruft', 'disabled since the 2.0 rewrite')]
+    cruft = json.loads(run('map', 'work', 'condition=cruft', '--json', cwd=project).stdout)['results']
+    assert [(row['address'], row['condition'], row['note'], row['task']) for row in cruft] == [
+        ('code.alarm.audible', 'cruft', 'disabled since the 2.0 rewrite', 'remove the module and its tests')]
+    assert Store('timer').element('code.alarm.audible').open_work == ('cruft',)
 
 
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('STORE-042')
-def test_each_flag_reads_back_on_its_object_and_working_has_none(run, project, tmp_path):
+def test_the_intake_tools_carry_no_condition_field_and_a_flag_sent_anyway_is_kept_in_extra(run, project, tmp_path):
+    for verb in ('element', 'join', 'subtype', 'edit'):
+        assert not {'flag', 'flag_note'} & set(nouns_of(verb)), verb
     given = copy.deepcopy(FIXTURE)
-    given['elements'][0]['flag'] = 'missing'
-    given['elements'][1]['flag'] = 'broken'
-    given['elements'][1]['joins'][0]['flag'] = 'missing'
-    given['elements'][1]['joins'][0]['subtypes'][0]['flag'] = 'cruft'
-    given['elements'][2]['flag'] = 'sideways'
+    given['elements'][2]['flag'] = 'broken'
     report = submit(run, project, given, tmp_path)
-    assert report['findings'] == 5
-    assert 'elements[2].flag' in notices(report)
-    store = Store('timer')
-    assert store.element('stakeholder.cook.home').flag == 'missing'
-    assert store.element('code.timer.kitchen').flag == 'broken'
-    alarm = store.element('code.alarm.audible')
-    assert (alarm.flag, alarm.flag_note) == ('broken', 'sideways')
-    join = store.joins('code.timer.kitchen').results[0]
-    assert join.flag == 'missing'
-    assert store.subtypes(join.join_id).results[0].flag == 'cruft'
-    working = submit(run, project, FIXTURE, tmp_path)
-    assert working['findings'] == 0 and Store('timer').element('code.timer.kitchen').flag is None
+    assert report['work'] == 0 and 'elements[2].flag' in notices(report)
+    alarm = Store('timer').element('code.alarm.audible')
+    assert alarm.open_work == () and alarm.extra == {'flag': 'broken'}
+    assert not hasattr(alarm, 'flag')
 
 
 @pytest.mark.req('BASE-039')

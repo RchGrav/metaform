@@ -16,10 +16,11 @@ def populated(store):
                    link=Node('element', 'code.alarm.audible'), refs=[('path', 'src/timer.c')])
     store.add_item(notes.name, Node('join', inner.join_id), 'the tone is quiet')
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
-    store.add_element(notes.name, 'code.timer.kitchen.display', flag='missing', flag_note='not wired yet')
-    store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
-                   function='reports remaining time', relation='The timer feeds the display.', observation='LCD',
-                   flag='broken')
+    store.add_element(notes.name, 'code.timer.kitchen.display')
+    shown = store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
+                          function='reports remaining time', relation='The timer feeds the display.', observation='LCD')
+    store.add_work(Node('element', 'code.timer.kitchen.display'), 'tbd', note='not wired yet', task='wire it')
+    store.add_work(Node('join', shown.join_id), 'broken', task='fix the LCD')
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
     store.select('code.alarm.audible', notes.name)
@@ -72,8 +73,10 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'active_metaform': lambda: store.active_metaform(),
         'project': lambda: store.project(),
         'roots': lambda: store.roots(),
-        'findings': lambda: store.findings().results,
-        'findings by flag': lambda: store.findings(flag='broken').results,
+        'work': lambda: store.work().results,
+        'work by condition': lambda: store.work(condition='broken').results,
+        'work at node': lambda: store.work(node=kitchen).results,
+        'work open': lambda: store.work(open=True).results,
     }
     failures = {}
     for name, read in reads.items():

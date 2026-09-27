@@ -678,7 +678,9 @@ It covers the base database, the per-project store, the correction stack, layers
   | `finish(layer)` | | `Layer` with `ready` set; a correction layer is applied on top of the stack, STORE-017 | layer unknown; already finished; a correction layer failing STORE-034 |
   | `edit(thing, changes)` | thing is an element, join, subtype, property or item written in a knowledge layer, or in an intake or correction layer still building; `changes` per STORE-034 | the changed row, in place, with no new version | thing in a finished intake layer, a finished correction layer or memory; a key not allowed for the thing's kind |
   | `remove(thing)` | thing is an element, join, subtype, property, item or ref written in a knowledge layer, or in an intake or correction layer still building | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | thing in a finished intake layer, a finished correction layer or memory; the thing is still the receiver, provider or target of a current row in the layer |
-  | `reflag(thing, flag, note=None)` | an element, join or subtype whose layer can still change in place, as for `edit`; `flag` None clears it | nothing; the thing's findings row in its own layer is replaced, STORE-042 | as for `edit` |
+  | `add_work(node, condition, *, note=None, task=None, held=False, reviewed=False)` | a `Node` naming an element, join or subtype, by address or id; the condition, note and task of MAP-046 | `WorkRecord`, open, attached to the object and to no layer, STORE-042 | a condition outside tbd, broken and cruft, or a node that names no current object: stored as given with a notice |
+  | `edit_work(work_id, changes)` | changes among `condition`, `note`, `task`, `held`, `reviewed` | the `WorkRecord`, changed in place | a key that is not one of the five: named in a notice and not stored |
+  | `finish_work(work_id, resolution=None)` | | the `WorkRecord`, done, with its resolution kept beside it | already done: the first resolution is kept and a notice says so |
   | `discard(layer)` | a knowledge layer, or a correction layer still building | nothing; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; the intake layer; a correction layer on the stack; memory |
   | `add_element(layer, address, *, name=None, name_length=None, role=None, refs=(), extra=None)` | address in the form of STORE-008; name, name_length, role and refs are written as the element's descriptor item in `layer`, STORE-009 | `Element`; the existing current element, marked existing with `differs`, when the address is held, STORE-009 | layer unknown; layer locked and immutable; wrong token for a building layer; malformed address |
   | `add_join(layer, receiver, provider, *, purpose, function, relation, observation, non_goal=None, type='purpose', refs=(), extra=None)` | receiver and provider as address or element id, read as an id exactly when it matches the id form, STORE-007 | `Join` | receiver or provider is not an element; either is a subtype; receiver equals provider, per D11 when confirmed |
@@ -738,7 +740,7 @@ It covers the base database, the per-project store, the correction stack, layers
 
 - Paging: every read in this table that returns a list takes `limit=500` and `after=None` and returns `(results, next)`, where `next` is the cursor for the following page or None, STORE-005. The cursor is the last row's key in the read's index order: the row for `layer_items`, the address for `context` and `children`, the identity id for `joins` and `identity`, the FTS rank position for `search`. `limit=0` returns the whole list.
 - Joins from layers:
-  - Every read that returns an element, a join or a subtype also returns its `flag` and `flag_note` from `findings`, STORE-042, both null when it is working; one lookup on `findings_by_target`.
+  - Every read that returns an element, a join or a subtype also returns its `open_work`, the conditions of its open work records in row order, STORE-042, empty when it has none; one lookup on `work_by_target`.
   - Every read that returns a join, `joins`, `identity`, `node`, `context`, `links_to`, `where` for a subtype, and the graph and export reads, returns with each join its `layer_id` and `layer`, the name of the layer it comes from, read from the join row's `layer_id` through the `layers` primary key. Subtypes carry the layer of the join that holds them.
   - The reads that return joins take `selection=None, raw=False` like `node`. In context, the default, a join is returned only when its layer is finished, not hidden, and in the effective selection at its receiver's address, LAYER-007, and, for a knowledge or memory join, when neither end's `moved` exceeds its `stack_at`, STORE-017. Both ends are read through `current_elements` by primary key in the same statement. With `raw=True`, every stored join is returned, each with its layer name.
   - The intake map's joins go through the same filter, so masking the intake layer at an address removes its joins there like any other layer's.
@@ -769,7 +771,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - How it shows: A project exported from one machine and imported on another answers every read the same way.
 - Build:
   - Commands: `metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...` and `metaform import <file> [<project>]`. Every argument is a noun, BASE-043: `file` and `layer` are optional nouns written as `name=value`, because what to export is data the verb acts on, not a setting. The project, or the argument `all`, CLI-002, is the one positional noun of `export`, optional, and is read as the first word that contains no `=`; `import` likewise takes its file and then an optional project positionally. With no project, export takes the folder's project. `all` exports every registered project. With no file, export writes the document to standard output. `layer` may repeat and limits the export to those layers. Import with no project uses the project record in the document; with a project id, it imports into that registered project.
-  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "metaforms": [M, ...], "active_metaform": <metaform id>}`, and each `M` is `{"metaform": {"metaform_id", "name", "created"}, "types": [...], "layers": [...], "layer_fields": [...], "layer_tags": [...], "layer_sources": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "properties": [...], "refs": [...], "challenge_states": [...], "plans": [...], "element_roles": [...], "findings": [...], "unapplied": [...], "requires": [...]}`. By default export carries every metaform of the project; `metaform=<name>` limits it to one.
+  - The document is JSON: `{"metaform_export": 1, "schema_version": N, "projects": [P, ...]}`. Each `P` is `{"project": {"project_id", "path", "target_type", "target_value"}, "metaforms": [M, ...], "active_metaform": <metaform id>}`, and each `M` is `{"metaform": {"metaform_id", "name", "created"}, "types": [...], "layers": [...], "layer_fields": [...], "layer_tags": [...], "layer_sources": [...], "provenance": [...], "selections": [...], "hidden": [...], "elements": [...], "joins": [...], "subtypes": [...], "items": [...], "properties": [...], "refs": [...], "challenge_states": [...], "plans": [...], "element_roles": [...], "work": [...], "unapplied": [...], "requires": [...]}`. By default export carries every metaform of the project; `metaform=<name>` limits it to one.
   - Each list holds one object per row, including every version. A row object has one member per column of its table, named as the column, except the integer `row` and `owner_row` columns. `M` also holds `"correction_stack"`, the correction layer ids in stack order; import rebuilds `correction_stack` from it and recomputes the current tables. `hidden` is a list of layer ids. `requires` is a list of objects, `{"kind": "element"|"join"|"subtype"|"item", "id": <identity id>}` or `{"kind": "type", "address": <address>}`. Rows refer to each other by identity id and layer id, never by the store's `row` integers, which are not exported. A ref names its owner by kind, identity id and layer id. On import, new `row` values are assigned and every reference is remapped through identity id and layer id.
   - A layer-limited export carries that layer's rows and its provenance, plus `requires`: the identity ids and type addresses its rows point at that belong to other layers. Import of a document whose `requires` are not present in the target store imports what it can; rows pointing at a missing identity are stored orphaned, STORE-017, and each missing identity is named in a notice with the next step to import the project's map, BASE-044.
   - Importing a project into a home where it is not registered registers it from the document's project record. Importing into a registered project keeps that project's path and target.
@@ -796,7 +798,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: A chassis that finds a store at a version it does not know says so and names the next step rather than reading it wrongly.
 - Why: Stores outlive the code that wrote them. A reader that silently misreads an older or newer layout corrupts what agents are told.
 - How it shows: Opening a store written by a newer chassis gives an error naming the version found and the version supported.
-- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. This section's layout is version 1.
+- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. This section's layout is version 3. Rich, 2026-09-27: schema changes start fresh; the version is bumped and no migration code is written.
 - Acceptance: A store with `schema_version` set to 999 is refused with a `StoreError`, and nothing is written to it.
 - Relates to: STORE-027, REQ-110, BASE-020.
 - Status: recommended. Stores written by the current chassis branch, which keep joins as JSON bodies in `objects` and `joins` tables, are not migrated; pre-1.0 data is dropped, D24.
@@ -1064,33 +1066,43 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Relates to: STORE-002, STORE-003, STORE-013, STORE-027, STORE-032, MAP-045, CLI-028, CLI-031, BASE-028, BASE-038.
 - Status: confirmed for more than one metaform per project, every layer attached to one metaform, one active metaform per project, and starting over with a new empty metaform while the old one is kept. The active metaform as a stored per-project choice, not a folder setting, and the tables, the store per metaform, the name `main`, making a new metaform active, and the verbs, are recommended.
 
-### STORE-042 Findings flags are one row per flagged object
-- Requirement: Each element, join or subtype submitted with a finding flag has one row in `findings`, indexed by flag, and reads show the flag.
-- What this means: Working is the default and has no row. A flag is missing, broken or cruft, MAP-046, with an optional note. The flagged object is stored in its layer like any other; the row records the finding about it.
-- Why: Findings must be listed directly, for example every cruft object in a project, and shown wherever the object is read, without scanning the map.
-- How it shows: `metaform map findings flag=cruft` lists each cruft object with its address, layer and note. `metaform map node element:code.old.probe` shows `flag: cruft`.
+### STORE-042 Work records are their own rows, apart from the map
+- Requirement: The condition of an element, join or subtype is a work record: its own row in `work`, attached to that one object, never a field of the object and never a layer. It is open until its task is done, and then it is kept with its resolution.
+- What this means: Rich, 2026-09-27: the metaform is the intended shape of the project, and the intake layer holds only functional shape, never the condition of its objects. A work record holds the condition, MAP-046: `tbd`, `broken` or `cruft`; a note saying what and where; a task saying what it needs; `held`, which keeps it waiting until agents are assigned or take it; and `reviewed`, set once it has been checked for correctness before it is fired off. Marking it done records the resolution beside it; nothing is erased. Any agent writes one at any time, after the intake has finished too; writing one never changes the map and is never a correction. A work record has no layer: it follows the object, so an element removed and recorded again at its address, STORE-009, keeps its records, and discarding a layer leaves them.
+- Why: Agents must list what needs doing without scanning the map, the web GUI must show each node's condition, and the map must stay the intended shape while the work on it proceeds.
+- How it shows: `metaform map work condition=tbd` lists each open tbd record with its object's address, or its join's ends, its note and its task. `metaform map node element:code.old.probe` shows `open_work: ["cruft"]`.
 - Build:
   ```sql
-  CREATE TABLE findings(
+  CREATE TABLE work(
     row         INTEGER PRIMARY KEY,
-    target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join','subtype')),
+    work_id     TEXT NOT NULL UNIQUE,
+    target_kind TEXT NOT NULL,
     target_id   TEXT NOT NULL,
-    layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-    flag        TEXT NOT NULL CHECK(flag IN ('missing','broken','cruft')),
+    condition   TEXT NOT NULL,
     note        TEXT,
-    UNIQUE(target_kind, target_id, layer_id)
+    task        TEXT,
+    held        INTEGER NOT NULL DEFAULT 0,
+    reviewed    INTEGER NOT NULL DEFAULT 0,
+    created     TEXT NOT NULL,
+    done        TEXT,
+    resolution  TEXT
   );
-  CREATE INDEX findings_by_flag   ON findings(flag, row);
-  CREATE INDEX findings_by_target ON findings(target_kind, target_id);
+  CREATE INDEX work_by_target    ON work(target_kind, target_id, row);
+  CREATE INDEX work_by_condition ON work(condition, row);
+  CREATE INDEX work_by_done      ON work(done, row);
   ```
-  - Written by the intake tools, BASE-039, with the element, join or subtype they record, from its `flag` and `flag_note`; `intake_edit` replaces a flag through `reflag` while the intake is building. A flag value outside the three is stored as `broken` with the given value kept in `note` and a notice, BASE-044.
-  - `findings(flag=None, layer=None)` lists rows by flag, paged, STORE-025, joined to the object's address or join ends. The map module serves it as `findings`, BASE-038.
-  - A knowledge layer may flag objects through the knowledge tool with the same fields; the row's layer id is that layer, so the flag is shown when that layer is toggled on.
+  - `work_id` is an identity id, STORE-007. `created` and `done` are UTC timestamps; `done` null means open. `target_kind` is `element`, `join` or `subtype` and `target_id` the object's identity id, so the record stays with the object through every version.
+  - Writes, STORE-024: `add_work(node, condition, *, note=None, task=None, held=False, reviewed=False)` writes one row for the node, given as a `Node` whose element or subtype may be an address, and returns the `WorkRecord`; `edit_work(work_id, changes)` replaces any of `condition`, `note`, `task`, `held` and `reviewed` in place; `finish_work(work_id, resolution=None)` sets `done` and the resolution. Nothing is refused for its content, BASE-044: a condition outside the three is stored as given with a notice naming `condition`; a node that names no current object is stored as given, its kind and id as written, with a notice naming `node`; a note, task or resolution that is not text is stored as JSON text with a notice. Finishing a record already done keeps the first resolution and says so in a notice.
+  - Read, STORE-025: `work(node=None, condition=None, open=None)` lists records in row order, paged, each with its object's address or its join's two ends when the object is current; `open=True` lists those not done, `open=False` those done. The map module serves it as `work`, BASE-038, and `metaform query work` reads it, STORE-028.
+  - Every read that returns an element, a join or a subtype also returns `open_work`, the conditions of its open records in row order, empty when it has none; one lookup on `work_by_target`.
+  - Export and import carry the table as `work`, STORE-027.
 - Acceptance:
-  - A submission flagging one element `missing` and one join `broken` writes exactly two rows, and `findings flag=broken` returns the join with its receiver and provider.
-  - The plan of `findings flag=cruft` uses `findings_by_flag`.
-- Relates to: MAP-046, BASE-039, STORE-025.
-- Status: confirmed that flags exist and are shown and listed; the table is recommended.
+  - A `tbd` record added to an element and a `broken` one to a join write exactly two rows; `work condition=broken` returns the join with its receiver and provider; the element reads back with `open_work` `["tbd"]`.
+  - `finish_work` with a resolution leaves the row, sets `done`, and the element's `open_work` is empty; `work open=false` returns it with the resolution.
+  - The plans of `work condition=tbd`, `work node=element:<id>` and `work open=true` use `work_by_condition`, `work_by_target` and `work_by_done`.
+  - A condition `sideways` is stored as `sideways` and the call's notice names `condition`.
+- Relates to: MAP-046, STORE-007, STORE-009, STORE-024, STORE-025, STORE-027, BASE-038, BASE-044, VIEW-005.
+- Status: Rich, 2026-09-27: the condition apart from the map, `tbd` replacing `missing`, the note and task, the held and reviewed flags, done with a resolution kept, writable by any agent at any time and never a correction are his. Its own table rather than a layer, and `tbd` as one condition whose task says build or decide, are decisions taken for him, pending his word; the columns and operations are recommended.
 
 ### STORE-043 Reports are files with one row each
 - Requirement: Each report, feedback or shape file has one row in the `reports` table of the project's active metaform store, and a row with a layer id is that layer's provenance ref.

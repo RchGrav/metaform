@@ -23,7 +23,7 @@ from metaform import settings
 from metaform.data import ROLES, Element, GraphPage, Layer, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
-from .schema import EF, EXTRA, FLAG, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
+from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -251,8 +251,7 @@ def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[tu
         notices.append({'where': 'role', 'message': 'role is missing; the element was stored without a role.'})
     if own is None:
         made = rec.store.add_element(rec.layer.name, address, name=given.get('name'),
-                                     name_length=given.get('name_length'), role=role, refs=refs or (), extra=extra,
-                                     flag=given.get('flag'), flag_note=given.get('flag_note'))
+                                     name_length=given.get('name_length'), role=role, refs=refs or (), extra=extra)
         _note(notices, made)
         if current is not None and extra is not None:
             _note(notices, rec.store.edit(current.element_id, {'extra': extra}))
@@ -268,8 +267,6 @@ def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[tu
     if refs is not None:
         changes['refs'] = refs
     _note(notices, rec.store.edit(own.item_id, changes))
-    if given.get('flag') is not None:
-        _note(notices, rec.store.reflag(current.element_id, given['flag'], given.get('flag_note')))
     if extra is not None:
         _note(notices, rec.store.edit(current.element_id, {'extra': extra}))
     return current.element_id
@@ -280,7 +277,7 @@ def element(ctx: Context) -> Any:
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
-    given = {name: ctx.nouns.get(name) for name in ('name', 'role', 'flag', 'flag_note')}
+    given = {name: ctx.nouns.get(name) for name in ('name', 'role')}
     given['name_length'] = _whole(ctx.nouns.get('name_length'))
     address = ctx.nouns['address']
     made = _describe(rec, address, given, refs, extra, notices)
@@ -302,8 +299,7 @@ def join(ctx: Context) -> Any:
     receiver, provider = ctx.nouns['receiver'], ctx.nouns['provider']
     made = rec.store.add_join(rec.layer.name, receiver, provider,
                               **{name: ctx.nouns.get(name) for name in (*JOIN_TEXT, 'non_goal')},
-                              type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra,
-                              flag=ctx.nouns.get('flag'), flag_note=ctx.nouns.get('flag_note'))
+                              type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra)
     _note(notices, made)
     return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
             'layer': rec.layer.name, 'notices': notices}
@@ -317,8 +313,7 @@ def subtype(ctx: Context) -> Any:
     _missing(ctx, SUBTYPE_TEXT, notices)
     address = ctx.nouns['address']
     made = rec.store.add_subtype(rec.layer.name, ctx.nouns['join'], address,
-                                 **{name: ctx.nouns.get(name) for name in (*SUBTYPE_TEXT, 'name', 'role', 'purpose',
-                                                                           'flag', 'flag_note')},
+                                 **{name: ctx.nouns.get(name) for name in (*SUBTYPE_TEXT, 'name', 'role', 'purpose')},
                                  name_length=_whole(ctx.nouns.get('name_length')), refs=refs or (), extra=extra)
     _note(notices, made)
     return {'subtype_id': getattr(made, 'subtype_id', None), 'join_id': ctx.nouns['join'], 'address': address,
@@ -340,16 +335,16 @@ def _map(graph: GraphPage, layer: Layer) -> dict[str, Any]:
             undescribed.append(found.address)
         elements.append({'id': found.element_id, 'address': found.address, 'role': found.role, 'name': found.name,
                          'name_length': found.name_length, 'refs': _refs(own.refs if own else ()),
-                         'flag': found.flag, 'flag_note': found.flag_note, 'extra': found.extra})
+                         'extra': found.extra})
     joins = [{'id': held.join_id, 'receiver': held.receiver_address, 'provider': held.provider_address,
               'type': held.type, **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')},
-              'refs': _refs(held.refs), 'flag': held.flag, 'flag_note': held.flag_note, 'extra': held.extra}
+              'refs': _refs(held.refs), 'extra': held.extra}
              for held in graph.joins]
     inside: list[Subtype] = [item for held in graph.joins for item in held.subtypes]
     subtypes = [{'id': item.subtype_id, 'join': item.join_id, 'address': item.address, 'role': item.role,
                  'name': item.name, 'name_length': item.name_length,
-                 **{name: getattr(item, name) for name in SUBTYPE_TEXT}, 'refs': _refs(item.refs), 'flag': item.flag,
-                 'flag_note': item.flag_note, 'extra': item.extra} for item in inside]
+                 **{name: getattr(item, name) for name in SUBTYPE_TEXT}, 'refs': _refs(item.refs),
+                 'extra': item.extra} for item in inside]
     return {'elements': elements, 'joins': joins, 'subtypes': subtypes, 'undescribed': undescribed}
 
 
@@ -382,13 +377,11 @@ def edit(ctx: Context) -> Any:
     changes = {name: ctx.nouns[name] for name in EDITS if ctx.nouns.get(name) is not None}
     if ctx.nouns.get('name_length') is not None:
         changes['name_length'] = _whole(ctx.nouns['name_length'])
-    flag, flag_note = ctx.nouns.get('flag'), ctx.nouns.get('flag_note')
     current = target.element(thing, raw=True)
     if current is not None and found is not None:
         given = {key: changes.pop(key) for key in DESCRIPTOR if key in changes}
-        if given or refs is not None or flag is not None or extra is not None:
-            _describe(found, current.address, {**given, 'role': given.get('role'), 'flag': flag,
-                                               'flag_note': flag_note}, refs, extra, notices)
+        if given or refs is not None or extra is not None:
+            _describe(found, current.address, {**given, 'role': given.get('role')}, refs, extra, notices)
             notices[:] = [notice for notice in notices if not notice['message'].startswith('role is missing')]
         if changes:
             _note(notices, target.edit(current.element_id, changes))
@@ -398,10 +391,7 @@ def edit(ctx: Context) -> Any:
             changes['refs'] = refs
         if extra is not None:
             changes['extra'] = extra
-        if changes or flag is None:
-            _note(notices, target.edit(owner, changes))
-        if flag is not None:
-            _note(notices, target.reflag(owner, flag, flag_note))
+        _note(notices, target.edit(owner, changes))
     return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
 
 
@@ -430,7 +420,7 @@ def finish(ctx: Context) -> Any:
     found = _building(store)
     if found is None:
         return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': 0, 'joins': 0,
-                'subtypes': 0, 'refs': 0, 'findings': 0,
+                'subtypes': 0, 'refs': 0, 'work': 0,
                 'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is nothing '
                                                                      'to finish.'}]}
     recorded = _map(found.store.layer_graph(found.layer.name), found.layer)
@@ -452,11 +442,13 @@ def finish(ctx: Context) -> Any:
         if text is not None:
             save_report(store.project_id, found.layer.layer_id, kind, text, store=found.store,
                         layer=found.layer.layer_id)
-    findings = len(found.store.findings(layer=found.layer.name, raw=True, limit=0).results)
+    # The open work records on what this intake recorded, MAP-046: the condition of an object is apart from the map.
+    recorded_ids = {row['id'] for kind in ('elements', 'joins', 'subtypes') for row in recorded[kind]}
+    work = sum(1 for row in found.store.work(open=True, limit=0).results if row.id in recorded_ids)
     refs = sum(len(row['refs']) for kind in ('elements', 'joins', 'subtypes') for row in recorded[kind])
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform,
             'elements': len(recorded['elements']), 'joins': len(recorded['joins']),
-            'subtypes': len(recorded['subtypes']), 'refs': refs, 'findings': findings, 'notices': notices}
+            'subtypes': len(recorded['subtypes']), 'refs': refs, 'work': work, 'notices': notices}
 
 
 def status_verb(ctx: Context) -> str:
@@ -497,8 +489,6 @@ NOUNS = {noun.name: noun for noun in (
          required=False, schema=NAME_LENGTH),
     Noun('refs', 'Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific '
                  'references, such as key path and a relative path.', required=False, schema=REFS),
-    Noun('flag', 'missing, broken or cruft; leave it out for a working object.', required=False, schema=FLAG),
-    Noun('flag_note', 'A short note on the finding.', required=False),
     Noun('extra', 'Any other field, as a JSON object, kept in the extra.', required=False, schema=EXTRA),
     Noun('type', 'The join type: purpose.', required=False),
     Noun('purpose', 'State the intended goal, standard, or reason why this element or action is needed.',
@@ -527,7 +517,7 @@ SUBTYPE_NOUNS = (
     Noun('observation', 'State the actual real-world condition, format, layout, or limitations of the subtype.',
          required=False),
     Noun('role', 'DE, SE or NE.', required=False, schema=SUBTYPE_ROLE),
-    *_nouns('name', 'name_length', 'refs', 'flag', 'flag_note'),
+    *_nouns('name', 'name_length', 'refs'),
     Noun('purpose', "A subtype join has no purpose; its parent join carries it. Given, it is kept in the subtype's "
                     'extra.', required=False),
     NOUNS['extra'],
@@ -553,13 +543,13 @@ MODULE = Module(
                     Noun('id', "The result's generated id.", required=False))),
         Verb('element', element, 'Record one element, or describe again one already recorded.',
              nouns=(Noun('address', "The element's namespace address, its identity."),
-                    *_nouns('role', 'name', 'name_length', 'refs', 'flag', 'flag_note', 'extra'))),
+                    *_nouns('role', 'name', 'name_length', 'refs', 'extra'))),
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
              nouns=(Noun('receiver', 'The namespace address of the Vested Entity whose Operative Purpose this join '
                                      'states.'),
                     Noun('provider', 'The namespace address of the Providing Element.'),
                     *_nouns('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type',
-                            'refs', 'flag', 'flag_note', 'extra'))),
+                            'refs', 'extra'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join.', nouns=SUBTYPE_NOUNS),
         Verb('show', show, 'The intake being recorded, whole, with the ids to edit or remove.'),
         Verb('edit', edit, 'Change one recorded element, join or subtype join; the fields given replace the ones it '
@@ -568,7 +558,7 @@ MODULE = Module(
                     *_nouns('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type'),
                     Noun('provider', 'A new Providing Element, by namespace address.', required=False),
                     Noun('address', 'A new namespace address for an element or a subtype.', required=False),
-                    *_nouns('role', 'name', 'name_length', 'refs', 'flag', 'flag_note', 'extra'))),
+                    *_nouns('role', 'name', 'name_length', 'refs', 'extra'))),
         Verb('remove', remove, 'Remove one recorded element, join or subtype join.',
              nouns=(Noun('id', 'An element address or id, a join id or a subtype id.'),)),
         Verb('finish', finish, 'Finish the intake: every read sees it from now on, and it changes only through a '

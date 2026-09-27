@@ -23,7 +23,7 @@ OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # a subtype's role, MAP-030
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
-FLAGS = ('missing', 'broken', 'cruft')  # an intake finding, MAP-046
+CONDITIONS = ('tbd', 'broken', 'cruft')  # the condition a work record holds, MAP-046
 
 T = TypeVar('T')
 
@@ -138,8 +138,7 @@ class Element(Record):
     differs: bool = False
     state: str | None = None
     orphaned: bool = False
-    flag: str | None = None
-    flag_note: str | None = None
+    open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
 
 
@@ -164,8 +163,7 @@ class Join(Record):
     extra: dict[str, Any] | None = None
     state: str | None = None
     orphaned: bool = False
-    flag: str | None = None
-    flag_note: str | None = None
+    open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
 
 
@@ -187,8 +185,7 @@ class Subtype(Record):
     observation: str | None
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
-    flag: str | None = None
-    flag_note: str | None = None
+    open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
 
 
@@ -429,17 +426,24 @@ class Roots(Record):
 
 
 @dataclass(frozen=True)
-class Finding(Record):
-    """One flagged object, STORE-042: an element or subtype with its address, or a join with its two ends."""
+class WorkRecord(Record):
+    """The condition of one object, apart from the map, STORE-042: an element or subtype with its address, or a join
+    with its two ends, when the object is current; open until `done` is set, and then kept with its resolution."""
+    work_id: str
     kind: str
     id: str
     address: str | None
     receiver_address: str | None
     provider_address: str | None
-    layer_id: str
-    layer: str
-    flag: str
+    condition: str
     note: str | None
+    task: str | None
+    held: bool
+    reviewed: bool
+    created: str
+    done: str | None
+    resolution: str | None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)

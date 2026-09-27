@@ -12,7 +12,7 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable helloworld`. `MODULE` declares five verbs, one subscription and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable helloworld`. `MODULE` declares seven verbs, one subscription and a status hook.
 
 ## Common base used
 
@@ -25,6 +25,8 @@ Started from template 0.2.0.
 - `history`: returns the names greeted so far. Tool `helloworld_history`.
 - `forget [--confirm]`: deletes the greeting layer. A caution verb. Tool `helloworld_forget`, with `confirm`.
 - `beep`: rings the terminal bell, on Windows only.
+- `todo <task>`: writes a `tbd` work record on the module's own element, `code.module.helloworld`, with the task; returns the record id. Tool `helloworld_todo`.
+- `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `helloworld_done`.
 
 ## Settings
 
@@ -37,6 +39,10 @@ Publishes `helloworld.greeted` with `{"name": ...}`. Subscribes to it to record 
 ## Sync and async
 
 `wait` is a coroutine. Every other verb and the subscriber are plain functions.
+
+## Work records
+
+A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'tbd', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Helloworld: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a tbd record is open and solid once it is done. Every element, join and subtype read carries `open_work`, the conditions of its open records.
 
 ## Layers
 
@@ -69,5 +75,7 @@ metaform enable helloworld
 metaform add project demo .
 metaform helloworld greet world --loud
 metaform helloworld history
+metaform helloworld todo "greet in every language"
+metaform helloworld done <id> "greets in Latin now"
 metaform helloworld forget --confirm
 ```

@@ -1,4 +1,4 @@
-"""The map's entry, roles indexed for it, and findings flags: STORE-009, STORE-025 `roots`, STORE-042."""
+"""The map's entry, roles indexed for it, and work records: STORE-009, STORE-025 `roots`, STORE-042."""
 from __future__ import annotations
 
 import copy
@@ -49,23 +49,77 @@ def test_map_roots_and_where_with_no_address_return_the_entry(run, tmp_path):
 
 @pytest.mark.req('STORE-042')
 @pytest.mark.req('MAP-046')
-def test_one_row_per_flagged_object_listed_by_flag_through_its_index(run, home, tmp_path, traced):
+def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_object(run, home, tmp_path, traced):
+    from metaform.data import Node, export_document
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
-    given = copy.deepcopy(FIXTURE)
-    given['elements'][2]['flag'] = 'missing'
-    given['elements'][1]['joins'][0]['flag'] = 'broken'
-    record_intake(run, folder, given['elements'])
+    record_intake(run, folder, copy.deepcopy(FIXTURE)['elements'])
     store = Store('proj')
-    assert len(dump(store_file(home, store))['findings']) == 2
-    broken = json.loads(run('map', 'findings', 'flag=broken', '--json', cwd=folder).stdout)['results']
-    assert [(row['kind'], row['receiver_address'], row['provider_address'], row['flag']) for row in broken] == [
-        ('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken')]
-    traced.clear()
-    store.findings(flag='cruft')
-    lines = [line for _, plan in plans(home, store, traced) for line in plan]
-    assert any('findings_by_flag' in line for line in lines)
-    view = json.loads(run('map', 'node', 'element:code.alarm.audible', '--json', cwd=folder).stdout)
+    alarm = store.element('code.alarm.audible')
+    join = store.joins('code.timer.kitchen').results[0]
+    before = dump(store_file(home, store))
+    tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='the pin is never released',
+                         task='release the pin after stop')
+    broken = store.add_work(Node('join', join.join_id), 'broken', task='wire the tone', held=True)
+    assert (tbd.condition, tbd.note, tbd.task, tbd.held, tbd.reviewed, tbd.done, tbd.resolution) == (
+        'tbd', 'the pin is never released', 'release the pin after stop', False, False, None, None)
+    assert (tbd.kind, tbd.id, tbd.address) == ('element', alarm.element_id, 'code.alarm.audible')
+    assert (broken.receiver_address, broken.provider_address, broken.held) == ('code.timer.kitchen', 'code.alarm.audible',
+                                                                               True)
+    after = dump(store_file(home, store))
+    assert len(after['work']) == 2
+    assert {name: rows for name, rows in after.items() if name != 'work'} == {name: rows for name, rows in before.items()
+                                                                              if name != 'work'}, 'the map changed'
+    listed = json.loads(run('map', 'work', 'condition=broken', '--json', cwd=folder).stdout)['results']
+    assert [(row['kind'], row['receiver_address'], row['provider_address'], row['condition'], row['task'])
+            for row in listed] == [('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken', 'wire the tone')]
     element = json.loads(run('map', 'element', 'code.alarm.audible', '--json', cwd=folder).stdout)
-    assert element['flag'] == 'missing' and view['node']['kind'] == 'element'
+    assert element['open_work'] == ['tbd'] and 'flag' not in element
+    assert store.joins('code.timer.kitchen').results[0].open_work == ('broken',)
+    assert store.element('code.timer.kitchen').open_work == ()
+    traced.clear()
+    store.work(condition='tbd')
+    store.work(node=Node('element', alarm.element_id))
+    store.work(open=True)
+    lines = [line for _, plan in plans(home, store, traced) for line in plan]
+    for index in ('work_by_condition', 'work_by_target', 'work_by_done'):
+        assert any(index in line for line in lines), index
+    changed = store.edit_work(tbd.work_id, {'reviewed': True, 'task': 'release the pin, then test it'})
+    assert (changed.reviewed, changed.task, changed.note) == (True, 'release the pin, then test it',
+                                                              'the pin is never released')
+    done = store.finish_work(tbd.work_id, 'released in alarm.c')
+    assert done.done is not None and done.resolution == 'released in alarm.c' and done.condition == 'tbd'
+    assert store.element('code.alarm.audible').open_work == ()
+    assert [row.work_id for row in store.work(open=False).results] == [tbd.work_id]
+    assert [row.work_id for row in store.work(open=True).results] == [broken.work_id]
+    assert len(dump(store_file(home, store))['work']) == 2
+    again = store.finish_work(tbd.work_id, 'a second resolution')
+    assert again.resolution == 'released in alarm.c' and [notice.where for notice in again.notices] == ['work_id']
+    document = export_document(['proj'])['projects'][0]['metaforms'][0]
+    assert sorted(row['condition'] for row in document['work']) == ['broken', 'tbd']
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('BASE-044')
+def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, tmp_path):
+    from metaform.data import Node
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    store = Store('proj')
+    small_map(store)
+    sideways = store.add_work(Node('element', 'code.alarm.audible'), 'sideways', note={'pin': 4})
+    assert sideways.condition == 'sideways' and sideways.note == '{"pin": 4}'
+    assert sorted(notice.where for notice in sideways.notices) == ['condition', 'note']
+    nowhere = store.add_work(Node('element', 'code.nowhere'), 'tbd', task='build it')
+    assert (nowhere.kind, nowhere.id, nowhere.address) == ('element', 'code.nowhere', None)
+    assert [notice.where for notice in nowhere.notices] == ['node']
+    assert store.element('code.alarm.audible').open_work == ('sideways',)
+    assert sorted(row.condition for row in store.work().results) == ['sideways', 'tbd']
+    edited = store.edit_work(nowhere.work_id, {'task': 'decide it', 'color': 'red'})
+    assert edited.task == 'decide it' and [notice.where for notice in edited.notices] == ['color']
+    assert json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft',
+                          'note=old probe', '--json', cwd=folder).stdout)['condition'] == 'cruft'
+    assert [row['condition'] for row in json.loads(run('map', 'work', 'node=element:code.alarm.audible', '--json',
+                                                       cwd=folder).stdout)['results']] == ['sideways', 'cruft']

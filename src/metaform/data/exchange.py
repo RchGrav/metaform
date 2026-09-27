@@ -69,7 +69,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'element_roles', 'findings', 'unapplied',
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'element_roles', 'work', 'unapplied',
                  'correction_stack', 'requires'):
         document[name] = []
     path = home.store_path(project_id, metaform.metaform_id)
@@ -130,8 +130,7 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
     document['element_roles'] = [row for row in _rows(db, 'SELECT * FROM element_roles ORDER BY rowid')
                                  if row['layer_id'] in chosen]
-    document['findings'] = _without_row([row for row in _rows(db, 'SELECT * FROM findings ORDER BY row')
-                                         if row['layer_id'] in chosen])
+    document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
     document['unapplied'] = [row for row in _rows(db, 'SELECT * FROM unapplied ORDER BY rowid')
                              if row['layer_id'] in chosen]
     document['correction_stack'] = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack '
@@ -169,7 +168,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'element_roles', 'findings', 'unapplied')
+              *THINGS, 'challenge_states', 'plans', 'element_roles', 'work', 'unapplied')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'position', 'key', 'value')
@@ -475,10 +474,12 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for row in metaform.get('plans', []):
         if row['layer_id'] in fresh:
             _insert(db, 'plans', row, ignore=True)
-    for table in ('element_roles', 'findings', 'unapplied'):
+    for table in ('element_roles', 'unapplied'):
         for row in metaform.get(table, []):
             if row['layer_id'] in fresh:
                 _insert(db, table, row, ignore=True)
+    for row in metaform.get('work', []):  # a work record has no layer; it follows its object, STORE-042
+        _insert(db, 'work', row, ignore=True)
     for layer_id in metaform.get('correction_stack', []):
         if layer_id in fresh:
             db.execute('INSERT INTO correction_stack(position, layer_id) VALUES (?, ?)',

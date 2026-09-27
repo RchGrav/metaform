@@ -2,8 +2,9 @@
 
 Every builder works inside one open transaction. A builder given a `Resolver`
 builds for a read in context: it leaves out what the selection does not reach,
-STORE-019, and shows the flag of a layer that reaches the object, STORE-042.
-Without one it builds for a raw read, and marks what is orphaned, STORE-017.
+STORE-019. Without one it builds for a raw read, and marks what is orphaned,
+STORE-017. Every element, join and subtype carries the conditions of its open
+work records, STORE-042, in context and raw alike, since a work record has no layer.
 """
 from __future__ import annotations
 
@@ -15,23 +16,13 @@ from . import corrections, prompts
 from .corrections import METAFORM_KINDS
 from .ids import decode_extra, descriptor_of
 from .names import reading, short_name
-from .records import (Descriptor, Element, Finding, Item, Join, Layer, Node, Op, Property, Provenance, Ref, Report,
-                      Subtype, Version, VersionRef)
-from .rows import (address_of, layer_name, node_address, read_refs, target_current, whole_number)
+from .records import (Descriptor, Element, Item, Join, Layer, Node, Notice, Op, Property, Provenance, Ref, Report,
+                      Subtype, Version, VersionRef, WorkRecord)
+from .rows import (address_of, layer_name, node_address, open_work, read_refs, target_current, whole_number)
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
 
 Row = sqlite3.Row
-
-
-def finding(tx: Tx, kind: str, thing_id: str, res: Resolver | None,
-            address: str | None) -> tuple[str | None, str | None]:
-    """The flag and note shown with an object: from a layer that reaches it, or any layer in a raw read."""
-    for row in tx.db.execute('SELECT layer_id, flag, note FROM findings WHERE target_kind=? AND target_id=? '
-                             'ORDER BY row', (kind, thing_id)):
-        if res is None or res.reaches(str(row[0]), address):
-            return str(row[1]), row[2]
-    return None, None
 
 
 def element_shows(res: Resolver, layer_id: str, address: str) -> bool:
@@ -75,12 +66,11 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     first = descriptors[0] if descriptors else None
     role = next((item.role for item in descriptors if known[item.layer_id].kind in METAFORM_KINDS), None)
     plan = tx.db.execute('SELECT 1 FROM plans WHERE element_id=?', (element_id,)).fetchone()
-    flag, note = finding(tx, 'element', element_id, res, address)
     return Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
                    reading(address), short_name(address, first.name_length if first else None),
                    first.name if first else None, first.name_length if first else None, role, tuple(descriptors),
                    read_refs(tx.db, 'element', current['row']), decode_extra(current['extra']),
-                   state='plan' if plan else None, flag=flag, flag_note=note)
+                   state='plan' if plan else None, open_work=open_work(tx, 'element', element_id))
 
 
 def join_orphaned(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> bool:
@@ -101,11 +91,11 @@ def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False, 
         if found is not None and found[0] == row['join_id']:
             plan = 'plan'
     receiver_address = address_of(tx, str(row['receiver']))
-    flag, note = finding(tx, 'join', str(row['join_id']), res, receiver_address)
     return Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
                 row['purpose'], row['function'], row['ef'], row['relation'], row['verb'], row['observation'], row['non_goal'],
-                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned, flag, note)
+                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned,
+                open_work(tx, 'join', str(row['join_id'])))
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
@@ -122,11 +112,10 @@ def subtype(tx: Tx, row: Row, join_id: str, layers: dict[str, LayerRow], res: Re
     join_row = tx.db.execute('SELECT j.layer_id FROM current_joins c JOIN joins j ON j.row = c.row '
                              'WHERE c.join_id=?', (join_id,)).fetchone()
     layer_id = str(join_row[0]) if join_row is not None else str(row['layer_id'])
-    flag, note = finding(tx, 'subtype', str(row['subtype_id']), res, str(row['address']))
     return Subtype(str(row['subtype_id']), join_id, layer_id, layers[layer_id].name, str(row['address']),
                    reading(str(row['address'])), row['name'], row['name_length'], row['role'], row['function'],
                    row['ef'], row['relation'], row['verb'], row['observation'], read_refs(tx.db, 'subtype', row['row']),
-                   decode_extra(row['extra']), flag, note)
+                   decode_extra(row['extra']), open_work(tx, 'subtype', str(row['subtype_id'])))
 
 
 def item(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Item:
@@ -201,25 +190,19 @@ def version(tx: Tx, kind: str, row: Row, positions: dict[str, int]) -> Version:
                    read_refs(tx.db, kind, row['row']))
 
 
-def found_flag(tx: Tx, row: Row, layers: dict[str, LayerRow], res: Resolver | None) -> Finding | None:
-    """One findings row as a record, with its object's address or its join's ends; in context when reached."""
+def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecord:
+    """One work row as a record, with its object's address, or its join's two ends, when the object is current."""
     kind, thing = str(row['target_kind']), str(row['target_id'])
     address = receiver = provider = None
     if kind == 'join':
         ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (thing,)).fetchone()
-        if ends is None:
-            return None
-        receiver, provider = address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
-        place = receiver
-    else:
+        if ends is not None:
+            receiver, provider = address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
+    elif kind in ('element', 'subtype'):
         address = node_address(tx, kind, thing)
-        if address is None:
-            return None
-        place = address
-    if res is not None and not res.reaches(str(row['layer_id']), place):
-        return None
-    return Finding(kind, thing, address, receiver, provider, str(row['layer_id']), layers[row['layer_id']].name,
-                   str(row['flag']), row['note'])
+    return WorkRecord(str(row['work_id']), kind, thing, address, receiver, provider, str(row['condition']), row['note'],
+                      row['task'], bool(row['held']), bool(row['reviewed']), str(row['created']), row['done'],
+                      row['resolution'], notices)
 
 
 def report(tx: Tx, row: Row) -> Report:

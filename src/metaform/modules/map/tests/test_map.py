@@ -302,7 +302,44 @@ def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored
     k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
       'hideable=false', *PROVENANCE)
     corrected = json.loads(k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'purpose=Fixed.',
-                             'reason=r', 'flag=broken').stdout)
-    assert [notice['where'] for notice in corrected['notices']] == ['flag']
+                             'reason=r', 'variable=x').stdout)
+    assert [notice['where'] for notice in corrected['notices']] == ['variable']
     assert 'ignored' in corrected['notices'][0]['message'] and corrected['fields']['extra'] is None
 
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('MAP-046')
+@pytest.mark.req('STORE-042')
+def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_never_change_the_map(run, mapped):
+    store = Store('proj')
+    join = store.joins('code.timer.kitchen').results[0]
+    before = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
+    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=tbd', 'note=in the spec, not built',
+              'task=build the piezo driver', 'held=true', cwd=mapped)
+    assert (added['kind'], added['address'], added['condition'], added['held'], added['reviewed'], added['done']) == (
+        'element', 'code.alarm.audible', 'tbd', True, False, None)
+    on_join = j(run, 'work', 'op=add', f'node=join:{join.join_id}', 'condition=broken', 'task=fix the tone', cwd=mapped)
+    assert (on_join['kind'], on_join['receiver_address'], on_join['provider_address']) == (
+        'join', 'code.timer.kitchen', 'code.alarm.audible')
+    listed = j(run, 'work', cwd=mapped)['results']
+    assert [(row['condition'], row['held']) for row in listed] == [('tbd', True), ('broken', False)]
+    assert [row['work_id'] for row in j(run, 'work', 'open=true', 'condition=tbd', cwd=mapped)['results']] == [added['work_id']]
+    assert [row['work_id'] for row in j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']] == [added['work_id']]
+    edited = j(run, 'work', 'op=edit', f'id={added["work_id"]}', 'reviewed=true', 'held=false', cwd=mapped)
+    assert (edited['reviewed'], edited['held'], edited['task']) == (True, False, 'build the piezo driver')
+    done = j(run, 'work', 'op=done', f'id={added["work_id"]}', 'resolution=driver in alarm.c', cwd=mapped)
+    assert done['done'] is not None and done['resolution'] == 'driver in alarm.c'
+    assert [row['work_id'] for row in j(run, 'work', 'open=false', cwd=mapped)['results']] == [added['work_id']]
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == []
+    assert j(run, 'joins', 'code.timer.kitchen', cwd=mapped)['results'][0]['open_work'] == ['broken']
+    after = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
+    strip = lambda page: json.loads(json.dumps(page).replace('"open_work": ["broken"]', '"open_work": []'))
+    assert strip(after) == strip(before), 'a work record changed the map'
+    refused = run('map', 'work', 'op=add', 'condition=tbd', '--json', cwd=mapped, ok=False)
+    assert refused.returncode == 2 and 'node' in refused.stderr
+    unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft', 'later=yes', '--json',
+                  cwd=mapped, ok=False)
+    assert unknown.returncode == 2 and "does not take 'later=yes'" in unknown.stderr  # the chassis grammar, BASE-043
+    assert j(run, 'work', 'op=done', f'id={on_join["work_id"]}', 'task=ignored here', cwd=mapped)['notices'][0]['where'] == 'task'
+    assert run('help', 'map', 'work', cwd=mapped).stdout.count('tbd') >= 1

@@ -8,14 +8,11 @@ from __future__ import annotations
 from typing import Any
 
 from metaform.data import EF_WORDS
-from metaform.data import FLAGS as FLAG_NAMES
 from metaform.data import ROLES as ROLE_NAMES
 from metaform.data import SUBTYPE_ROLES as SUBTYPE_ROLE_NAMES
 
 Schema = dict[str, Any]
 
-FLAG: Schema = {'type': 'string', 'enum': list(FLAG_NAMES),
-                'description': 'missing, broken or cruft; leave it out for a working object, MAP-046.'}
 EF: Schema = {'type': 'string', 'enum': list(EF_WORDS),
               'description': 'Function if it is the encounter of a functionality, Encounter if it is the functionality '
                              'of the encounter.'}

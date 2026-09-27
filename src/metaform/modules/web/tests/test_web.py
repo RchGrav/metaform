@@ -171,15 +171,14 @@ TOGGLED = ['intake-1', *KNOWLEDGE]
 
 
 def build(store):
-    """An intake with a flagged DE and a subtype; a knowledge layer on, one masked at code.alarm, one hidden; and a
+    """An intake with a DE carrying a broken work record and a subtype; a knowledge layer on, one masked at code.alarm, one hidden; and a
     knowledge item orphaned when a correction removes its element, VIEW-004."""
     from metaform.data import Node
     with store.atomic():
         intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                              hideable=False, provenance=PROVENANCE, ready=True)
         store.add_element(intake.name, 'exterior.cook', name='cook', name_length=1, role='VE')
-        store.add_element(intake.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE',
-                          flag='broken', flag_note='drifts')
+        store.add_element(intake.name, 'code.timer.kitchen', name='kitchen timer', name_length=2, role='DE')
         store.add_element(intake.name, 'code.alarm.audible', name='audible alarm', name_length=2, role='SE')
         store.add_element(intake.name, 'code.gone', name='gone', name_length=1, role='SE')
         outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', purpose='Know when food is done.',
@@ -191,6 +190,7 @@ def build(store):
         store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
                           ef='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
                           name='tick loop', name_length=2, role='SE')
+    store.add_work(Node('element', 'code.timer.kitchen'), 'broken', note='drifts', task='hold the tick to one second')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
     store.add_element('notes', 'code.timer.kitchen.display', name='display', name_length=1)
@@ -249,7 +249,8 @@ def test_each_read_endpoint_returns_what_its_store_read_returns_in_context_and_r
         '/api/joins?element=code.timer.kitchen&as=provider':
             lambda raw: store.joins('code.timer.kitchen', as_='provider', raw=raw),
         '/api/layers': lambda raw: store.layers(),
-        '/api/findings': lambda raw: store.findings(raw=raw),
+        '/api/work': lambda raw: store.work(),
+        '/api/work?node=element:code.timer.kitchen': lambda raw: store.work(node=kitchen),
         '/api/search?text=loop': lambda raw: store.search('loop'),
         '/api/stack': lambda raw: store.stack(),
         '/api/provenance?layer=notes': lambda raw: store.provenance('notes'),
@@ -324,7 +325,7 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
                  '/api/graph?project=proj&limit=0', '/api/graph?project=proj&raw=true&layers=notes',
                  '/api/children?project=proj&address=code', '/api/node?project=proj&target=element:code.timer.kitchen',
                  '/api/joins?project=proj&element=code.timer.kitchen', '/api/layers?project=proj',
-                 '/api/findings?project=proj', '/api/search?project=proj&text=loop', '/api/stack?project=proj',
+                 '/api/work?project=proj', '/api/search?project=proj&text=loop', '/api/stack?project=proj',
                  '/api/provenance?project=proj&layer=notes'):
         assert request(web, path)[0] == 200, path
     assert [path.read_bytes() for path in stores] == before
@@ -628,7 +629,7 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("written in C")')
     panel = page.inner_text('#p-object')
-    for shown in ('kitchen timer', 'code.timer.kitchen', 'DE', 'broken', 'drifts', 'intake-1',
+    for shown in ('kitchen timer', 'code.timer.kitchen', 'DE', 'intake-1',
                   'provider · audible alarm', 'receiver · cook', 'receiver · display', 'tick loop', 'Advances each countdown.',
                   'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
         assert shown in panel, shown

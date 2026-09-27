@@ -50,8 +50,8 @@ READS: dict[str, Read] = {
                                                     'root element.'),
     'graph': Read('graph', (), {**CONTEXT, **PAGING}, 'A page of the whole map in address order, with parents, '
                                                       'joins and subtypes.'),
-    'findings': Read('findings', (), {'flag': str, 'layer': str, **CONTEXT, **PAGING},
-                     'The elements, joins and subtypes flagged missing, broken or cruft.'),
+    'work': Read('work', (), {'node': _node, 'condition': str, 'open': _bool, **PAGING},
+                 'The work records: the condition of an element, join or subtype, apart from the map.'),
     'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),
     'joins': Read('joins', (('element', str),), {'as': str, **CONTEXT, **PAGING},
                   'The joins an element owns, or with as=provider those it serves.'),

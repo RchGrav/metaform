@@ -131,3 +131,25 @@ def test_beep_runs_only_on_its_own_system(run, hello):
     if not on_windows:
         refused = run('helloworld', 'beep', cwd=hello, ok=False)
         assert refused.stderr.splitlines() == ['Error: helloworld beep runs on windows.', 'Next: metaform help helloworld']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('QUAL-016')
+@pytest.mark.req('MAP-046')
+def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_it(run, hello):
+    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in helloworld; here a module writes the
+    condition of its own element as a work record, apart from the map, and resolves it, MAP-046."""
+    from metaform.data import Node, Store
+    run('helloworld', 'greet', 'ada', cwd=hello)
+    said = run('helloworld', 'todo', 'greet in every language', cwd=hello).stdout.strip()
+    store = Store('proj')
+    records = store.work(node=Node('element', 'code.module.helloworld')).results
+    assert [(row.condition, row.task, row.done) for row in records] == [('tbd', 'greet in every language', None)]
+    assert said == f'To do: greet in every language ({records[0].work_id})'
+    assert store.element('code.module.helloworld', raw=True).open_work == ('tbd',)
+    assert 'Helloworld: 1 greeted, 1 to do' in run(cwd=hello).stdout.splitlines()
+    run('helloworld', 'done', records[0].work_id, 'greets in Latin now', cwd=hello)
+    finished = store.work(node=Node('element', 'code.module.helloworld')).results[0]
+    assert (finished.resolution, finished.done is not None) == ('greets in Latin now', True)
+    assert store.element('code.module.helloworld', raw=True).open_work == ()
+    assert 'Helloworld: 1 greeted' in run(cwd=hello).stdout.splitlines()

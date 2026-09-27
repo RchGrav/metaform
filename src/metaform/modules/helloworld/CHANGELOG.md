@@ -2,6 +2,10 @@
 
 Each change to the module contract, newest first, so a module copied from the template can follow it.
 
+## Unreleased
+
+- Work records, MAP-046 and STORE-042: the condition of an element, join or subtype is its own record, apart from the map, written by any module through `store.add_work`, `store.edit_work` and `store.finish_work` and read with `store.work`; every element, join and subtype carries `open_work`. The `flag` and `flag_note` fields of elements, joins and subtypes are gone. helloworld's `todo` and `done` show it.
+
 ## 0.3.0
 
 - `Verb` gains `transport`: a transport verb, such as `mcp serve`, runs whatever the folder's command surface, CLI-022 and MCP-004.

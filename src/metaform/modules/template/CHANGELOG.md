@@ -4,6 +4,7 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- Work records, MAP-046 and STORE-042: the condition of an element, join or subtype is its own record, apart from the map, written by any module through `store.add_work`, `store.edit_work` and `store.finish_work` and read with `store.work`; every element, join and subtype carries `open_work`. The `flag` and `flag_note` fields of elements, joins and subtypes are gone. helloworld's `todo` and `done` show it.
 - The topic `map.changed`, `{project, metaform_id}`: the chassis fires it after any command that changes a project's map, so a module does nothing to announce its writes and any module can subscribe; the web module passes it to its server, which pushes it to each open page, VIEW-018. A module publishes it itself only for work done outside a command, in a spawned task. helloworld's greeting shows it.
 - Nothing polls for a change and nothing a person or an agent waits on blocks behind slow work, QUAL-015; what happened is published.
 

@@ -18,7 +18,7 @@ from ..errors import StoreError
 from . import corrections
 from .corrections import METAFORM_KINDS
 from .ids import ADDRESS, as_list, as_object, descriptor_of, encode_extra, encode_value, is_id, new_id, prefixes
-from .records import FLAGS, Node, Notice, Ref
+from .records import Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
@@ -353,29 +353,38 @@ def write_descriptor(tx: Tx, found: LayerRow, element_id: str, descriptor: dict[
     set_role(tx, element_id, found, descriptor.get('role'))
 
 
-def flag(tx: Tx, kind: str, thing_id: str, found: LayerRow, given: Any, note: Any, notices: list[Notice]) -> None:
-    """One findings row for a flagged object, STORE-042; a flag outside the three is kept as broken."""
-    if given is None:
-        if note is not None:
-            notices.append(Notice('flag_note', 'flag_note was given without a flag; it was not stored.'))
-        return
-    text_note = text(note, 'flag_note', notices)
-    chosen = given
-    if given not in FLAGS:
-        notices.append(Notice('flag', f'{given!r} is not missing, broken or cruft; it was stored as broken with the '
-                                      'given value in its note.'))
-        shown = given if isinstance(given, str) else json.dumps(given, ensure_ascii=False)
-        text_note = shown if text_note is None else f'{shown}: {text_note}'
-        chosen = 'broken'
-    existing = tx.db.execute('SELECT flag, note FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
-                             (kind, thing_id, found.layer_id)).fetchone()
-    if existing is not None:
-        if (existing[0], existing[1]) != (chosen, text_note):
-            notices.append(Notice('flag', f'This {kind} is already flagged {existing[0]} in {found.name}; that flag '
-                                          'was kept.'))
-        return
-    tx.db.execute('INSERT INTO findings(target_kind, target_id, layer_id, flag, note) VALUES (?, ?, ?, ?, ?)',
-                  (kind, thing_id, found.layer_id, chosen, text_note))
+def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
+    """The conditions of an object's open work records, in row order, STORE-042; one lookup on `work_by_target`."""
+    return tuple(str(row[0]) for row in tx.db.execute(
+        'SELECT condition FROM work WHERE target_kind=? AND target_id=? AND done IS NULL ORDER BY row', (kind, thing_id)))
+
+
+def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
+    """The kind and identity id a work record attaches to: the current element or subtype at an address, or the object
+    with the id given. A node that names no current object is kept as written, with a notice, BASE-044."""
+    if not isinstance(node, Node):
+        raise StoreError(f'{node!r} is not a node: write element:<address or id>, join:<id> or subtype:<address or id>.',
+                         'metaform help map work')
+    kind, ident = node.kind, node.id
+    if kind == 'type':
+        notices.append(Notice('node', f'{node} is a type address, which no work record attaches to; it was stored as '
+                                      'given, as an element node.'))
+        kind = 'element'
+    if kind == 'element':
+        current = current_element(tx, ident)
+        if current is not None:
+            return kind, str(current['element_id'])
+    elif kind == 'join':
+        if tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (ident,)).fetchone():
+            return kind, ident
+    else:
+        column = 'subtype_id' if is_id(ident) else 'address'
+        row = tx.db.execute(f'SELECT subtype_id FROM current_subtypes WHERE {column}=?', (ident,)).fetchone()
+        if row is not None:
+            return kind, str(row[0])
+    notices.append(Notice('node', f'No current {kind} is at {ident}; the work record was stored as given and will '
+                                  'show once one is recorded there.'))
+    return kind, ident
 
 
 def insert_item(tx: Tx, found: LayerRow, target_kind: str, target_id: str, value: Any, link_kind: str | None,
