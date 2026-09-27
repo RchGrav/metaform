@@ -304,7 +304,7 @@ These terms are used exactly as defined in the Canonical Intake.
 
   When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 - Acceptance:
-  1. Recording a real intake result, such as the MGM map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
+  1. Recording a real intake result, such as a real project's map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-009, STORE-013, STORE-024, BASE-039, MCP-009.
 - Status: confirmed 2026-09-26: recorded one object per call as it is reasoned, read back and proofed in step 12, then finished; the tools' own fields; the mapping of root elements, joins, nested subtype joins and refs. The handling of a missing AUE is recommended.

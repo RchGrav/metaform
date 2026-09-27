@@ -146,10 +146,10 @@ def test_layers_are_tagged_listed_and_filtered(run, mapped):
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
       'tags=["practices"]', *PROVENANCE)
     k(run, mapped, 'op=finish', 'layer=notes')
-    run('map', 'tag', 'notes', 'mgm', cwd=mapped)
+    run('map', 'tag', 'notes', 'review', cwd=mapped)
     listed = j(run, 'layers', 'tag=practices', cwd=mapped)['results']
     assert [(layer['name'], sorted(layer['tags']), layer['ready'] is not None) for layer in listed] == [
-        ('notes', ['mgm', 'practices'], True)]
+        ('notes', ['practices', 'review'], True)]
     run('map', 'untag', 'notes', 'practices', cwd=mapped)
     assert j(run, 'layers', 'tag=practices', cwd=mapped)['results'] == []
 

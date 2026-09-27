@@ -335,11 +335,11 @@ def test_tags_change_on_a_finished_layer_without_touching_it(home, store):
     store.add_item(notes.name, KITCHEN, 'x')
     store.finish(notes.name)
     before = dump(store_file(home, store))
-    store.tag(notes.name, 'mgm')
-    store.tag(notes.name, 'mgm')
+    store.tag(notes.name, 'review')
+    store.tag(notes.name, 'review')
     assert diff(before, dump(store_file(home, store))) == {'layer_tags': (1, 0)}
     listed = {layer.name: layer for layer in store.layers(tag='practices').results}
-    assert set(listed) == {'notes'} and set(listed['notes'].tags) == {'practices', 'mgm'}
+    assert set(listed) == {'notes'} and set(listed['notes'].tags) == {'practices', 'review'}
     store.untag(notes.name, 'practices')
     assert store.layers(tag='practices').results == ()
 

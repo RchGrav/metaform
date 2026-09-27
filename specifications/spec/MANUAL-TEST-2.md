@@ -89,7 +89,7 @@ Date: 2026-09-26. Branch `chassis` at 727ae05. Tester: a Claude agent, by hand, 
 | 47 | `map layers` as an aligned row (D11) | `map layers` | One row per layer: `name kind module tags state on/off/applied`, e.g. `practices  layer  manualtest  ready  on`, `fix-a  correction  map  ready  applied`, `unnamed-… layer map building off` | CLI-033, LAYER-019 | PASS, D11 fixed |
 | 48 | `map stack` as an aligned row (D11) | `map stack` (with `fix-a` applied) | `fix-a  correction  map  ready  applied` | D11 | PASS, D11 fixed |
 | 49 | `map metaforms` as an aligned row (D11) | `map metaforms` | `main  2026-09-26T…  active` | D11 | PASS, D11 fixed |
-| 50 | Tags | `map tag practices mgm`; `map tag practices BAD`; `map layers tag=mgm`; `map untag practices mgm` twice | Tagged; an invalid tag is now stored as given with a notice, `'BAD' is not lowercase letters, digits, ., _ and -; it was stored as given.` (not refused, matching the notices-everywhere policy); listed by tag; untag is a no-op the second time | LAYER-019, BASE-044 | PASS |
+| 50 | Tags | `map tag practices review`; `map tag practices BAD`; `map layers tag=review`; `map untag practices review` twice | Tagged; an invalid tag is now stored as given with a notice, `'BAD' is not lowercase letters, digits, ., _ and -; it was stored as given.` (not refused, matching the notices-everywhere policy); listed by tag; untag is a no-op the second time | LAYER-019, BASE-044 | PASS |
 | 51 | Hide and unhide | `map hide practices` (refused, needs `--confirm`); `--confirm`; `map node element:code.timer.kitchen` | Caution message first; hidden layer absent from the node read (only the intake layer's item shows); `map unhide practices` restores it | LAYER-006, BASE-038 | PASS |
 | 52 | Select, mask, clear, effective-selection | `map mask code practices`; `map select code.timer.kitchen practices`; `query effective-selection <address>`; `map clear …` | `practices` absent from `code`'s effective selection while masked, present at `code.timer.kitchen` after select, and restored to the pre-select/mask set after `clear` | LAYER-007 | PASS |
 | 53 | Self join, resolved (not round one's D11/Q7) | `map knowledge op=add-join layer=practices receiver=code.timer.kitchen provider=code.timer.kitchen …` | Stored, not refused: `Notice: provider: The provider is the receiver itself; the join was stored as given, D82.` | OPEN-QUESTIONS.md D82; 04-chassis-modules.md line 494 | PASS, spec change, not a defect (see note below) |
@@ -125,7 +125,7 @@ Date: 2026-09-26. Branch `chassis` at 727ae05. Tester: a Claude agent, by hand, 
 | # | Feature | Command | Observed | Spec | Result |
 |---|---|---|---|---|---|
 | 65 | Add and switch back | `add metaform second`; `activate metaform main` | New metaform active, then switched back, with the way-back line | MAP-045 | PASS |
-| 66 | `export layer=` with no `metaform=`, two metaforms present (D17) | `export demo layer=practices file=…` | `Exported to …`, succeeds; earlier this failed with `No layer practices-mgm.` | STORE-027 | PASS, D17 fixed |
+| 66 | `export layer=` with no `metaform=`, two metaforms present (D17) | `export demo layer=practices file=…` | `Exported to …`, succeeds; earlier this failed with `No layer practices-notes.` | STORE-027 | PASS, D17 fixed |
 | 67 | Export all, import, re-import | `export all`; `import` into a fresh home; `import` again | `metaforms added: 2`, `layers added: 6`, `things added: 19`; a re-import reports everything skipped, nothing added | STORE-027 | PASS |
 
 ## Build, install and MCP

@@ -813,7 +813,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Requirement: A project is registered with an id, a folder and a target, under fixed rules for ids and duplicates.
 - What this means: The id names the project everywhere: in settings, in `projects/<id>/` under the home, and in every command. The folder is where the project's work happens and how a working folder finds its project. The target is the artifact the map describes, MAP-041.
 - Why: The id becomes a folder name on three systems, so its form must be safe everywhere. Two projects claiming one id or one folder would send an agent's writes to the wrong map with no error.
-- How it shows: `metaform add project mgm ~/mgm-main` registers `mgm` with target type path and target value the resolved folder. `metaform add project photos ~/pics artifact kitchen_photos` registers a project whose target is the artifact named `kitchen_photos` in that folder.
+- How it shows: `metaform add project notes ~/notes` registers `notes` with target type path and target value the resolved folder. `metaform add project photos ~/pics artifact kitchen_photos` registers a project whose target is the artifact named `kitchen_photos` in that folder.
 - Build:
   - Grammar: `metaform add project <id> <path> [<target type> <target value>]`. The target type is one of path, url, artifact, inline or inferred. With no target given, the type is path and the value is the resolved folder. For type inferred, the value may be the word `inferred`.
   - An id matches `^[a-z0-9][a-z0-9_-]{0,63}$`. Uppercase is refused, not folded, so the id is the same on every system.
@@ -821,7 +821,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
   - An id already registered with the same path and target changes nothing and reports `Project <id> is already registered.` An id registered with a different path or target is refused, next step `metaform list projects`. A path already registered under another id is refused, naming that id, next step `metaform list projects`. The current chassis overwrites the path of an existing id; that changes.
   - `project()` returns the project record with id, path, target type and target value. Status shows the target, CLI-028.
 - Acceptance:
-  - `add project Mgm <path>` is refused; `add project mgm <path>` twice succeeds once and reports the second as already registered.
+  - `add project Notes <path>` is refused; `add project notes <path>` twice succeeds once and reports the second as already registered.
   - Registering a second id on a registered path is refused and names the first id.
   - The project record returned by `project()` holds the target type and value given.
 - Relates to: STORE-002, STORE-003, MAP-041, CLI-001, CLI-028.

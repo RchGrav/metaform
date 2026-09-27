@@ -11,7 +11,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: every metaform command line reads as a verb, the nouns it acts on, and switches that change how it runs.
 - What this means: the first word after `metaform` is a chassis verb (`help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `install`, `uninstall`, `build`, `import`, `export`, `query`, `feedback`, `read`, `extract`, `prompts`, `prompt`, `clear`) or a module id followed by that module's verb. `mcp` is not a chassis verb; the MCP server is `metaform mcp serve`, MCP-001. Words that name what the verb acts on are arguments. Words starting with a dash change how the verb runs and never name what it acts on.
 - Why: one consistent grammar makes every command predictable for people and agents, so a user who knows one command can guess the next, and an agent does not have to read source to find out how to call something.
-- How it shows: `metaform add project mgm ~/mgm-main` (verb add, nouns project, mgm, path). `metaform helloworld greet world --loud` (module template, verb greet, noun world, adverb --loud).
+- How it shows: `metaform add project notes ~/notes` (verb add, nouns project, notes, path). `metaform helloworld greet world --loud` (module template, verb greet, noun world, adverb --loud).
 - Build: the parser takes `argv[0]` as the verb; if it is not a chassis verb it is looked up as a module id and `argv[1]` as that module's verb. Remaining words are split into arguments and switches by CLI-004, optional nouns are read by BASE-043, and `--` ends switch parsing, CLI-003. Module verbs declare their nouns and switches in `Verb`, BASE-035; the parser rejects an unknown switch, a missing required noun, or an extra word with one Next line naming `metaform <module> <verb> --help`.
 - Acceptance: a module verb given a noun and a declared switch receives the noun in `nouns` and the switch in its switches; an undeclared switch fails with exit code 2 and a Next line naming `metaform <module> <verb> --help`.
 - Relates to: CLI-004, CLI-005, BASE-002, BASE-006, MCP-003.
@@ -57,8 +57,8 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   ```
   Metaform 0.1.0
   Home: /home/rich/.metaform
-  Folder: /home/rich/mgm-main
-  Project: mgm (/home/rich/mgm-main)
+  Folder: /home/rich/notes
+  Project: notes (/home/rich/notes)
   Projects: 2 registered
   Modules: 3 on
   ```
@@ -202,7 +202,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: `set` stores a folder setting for the folder it runs in, and that value applies to every folder below it until a deeper folder sets its own.
 - What this means: the effective stored value for a folder is the one stored at the nearest folder at or above it.
 - Why: agents run in many folders and worktrees inside one project; a setting made at the project root reaches all of them without being repeated.
-- How it shows: `cd ~/mgm-main && metaform set --modules workflow` then `cd ~/mgm-main/src && metaform config --show` shows modules workflow.
+- How it shows: `cd ~/notes && metaform set --modules workflow` then `cd ~/notes/src && metaform config --show` shows modules workflow.
 - Build: a folder setting's scope at folder F is the `folders.path_key` of the nearest folder at or above F, walking F and then each parent to the root, that holds a `settings` or `glue` row for the setting's owner and key; with none, it is F's own path key. `set` always writes at F's own path key. A global setting's scope is `global`. All values live in the home database under ~/.metaform; nothing is written into the folder.
 - Acceptance: a value set in a parent is effective in a child; a value set in the child overrides it for the child only.
 - Relates to: CLI-021, STORE-001, STORE-002.
@@ -394,9 +394,9 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   ```
   Metaform 0.2.0
   Home: /home/rich/.metaform
-  Folder: /home/rich/mgm-main/src
-  Project: mgm (/home/rich/mgm-main), inherited from /home/rich/mgm-main
-  Target: path /home/rich/mgm-main
+  Folder: /home/rich/notes/src
+  Project: notes (/home/rich/notes), inherited from /home/rich/notes
+  Target: path /home/rich/notes
   Metaform: main
   Projects: 2 registered
   Modules: 4 on
@@ -504,7 +504,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
     layers: all → practices,memory
   $ metaform map layers
   practices-cpp   layer   map   practices        ready   on
-  mgm-foresight   layer   map   foresight        ready   off
+  notes-foresight layer   map   foresight        ready   off
   memory          memory  memory                 ready   on
   $ metaform unset --layers
   Reset 1 setting(s): layers

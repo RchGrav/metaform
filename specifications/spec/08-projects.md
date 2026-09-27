@@ -20,7 +20,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: A project names a source location, and every record Metaform keeps about that project lives in the Metaform home, never in the source location.
 - What this means: Registering a project records its id, its source location and its target, STORE-031. The map, the layers, the history and the settings for the project all live under `~/.metaform`. The source location is read and is never written by Metaform. This holds for a repository and for any other folder, and for every worktree of a repository.
 - Why: Every agent, in any folder or worktree, reaches the same data. A project never carries a copy of Metaform state that goes stale, gets committed by accident, or is picked up by a tool that scans the tree. A stale `.metaform/history/origin/` copy inside a repository once made a package scanner build old packages. Keeping nothing in the source location removes that failure for good.
-- How it shows: After `metaform add project mgm ~/mgm-main` and any amount of work, `git status` in `~/mgm-main` shows nothing Metaform created.
+- How it shows: After `metaform add project notes ~/notes` and any amount of work, `git status` in `~/notes` shows nothing Metaform created.
 - Build: Registration also records the source kind, `repo` when the source location is inside a git working tree and `folder` otherwise. The kind is detected once at registration with `git -C <path> rev-parse --show-toplevel`. When git is not installed, the kind is `folder`. The kind is stored on the project record as a new column `source_kind TEXT NOT NULL CHECK(source_kind IN ('repo','folder'))`, plus `repo_root TEXT`, which is the toplevel for a repo and NULL for a folder. These columns extend STORE-002's `projects` table.
 - Acceptance:
   - Registering a project, writing map records and collecting a variant leaves the source location's file list and contents unchanged, including hidden files.
@@ -32,7 +32,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: Every folder a command or server runs in is recorded in the base database's working-folder table, and that record holds the folder's context.
 - What this means: The folder's context is its folder settings: `project`, `workflow` and `modules`, CLI-021. The folder path is only the key those settings are stored under. A worktree is a working folder like any other. So is a scratch folder outside every project. The table is the single place that answers which folders exist and what each one was working on.
 - Why: Agents run in many folders, including worktrees created anywhere. The home must know each folder's context without writing a marker into it, and resuming after a restart must work by running `metaform` in the same folder.
-- How it shows: An agent runs `metaform set --project mgm` in `/tmp/work`, the machine restarts, and `metaform` in `/tmp/work` still reports project mgm.
+- How it shows: An agent runs `metaform set --project notes` in `/tmp/work`, the machine restarts, and `metaform` in `/tmp/work` still reports project notes.
 - Build: The `folders` row for a folder is written the first time a setting is stored for it, STORE-002. Reads never create rows. A folder's context is resolved by CLI-014 and PROJ-003.
 - Acceptance: A folder that has never had a setting stored leaves no `folders` row after any number of reads.
 - Relates to: STORE-002, CLI-014, CLI-021, PROJ-003.
@@ -43,9 +43,9 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - What this means: Inside a registered project, nothing needs setting, because the home already knows every project's path and shows the local project. From a folder elsewhere, a user or agent selects a project with `metaform set --project <id>`, and the home records that choice against the folder it was run from. Resetting returns the folder to its own project, which is the safe default. A folder outside every project with nothing selected has no project.
 - Why: Selecting a project is ordinary configuration, visible and reversible like any setting, and needs no machinery of its own. The default comes from where the agent already is, so the common case needs no setup, and the way back to it is always the same command.
 - How it shows:
-  - In `~/mgm-main/src`, `metaform` shows project mgm with nothing set.
-  - In `~/mgm-main`, `metaform set --project metaform` switches that folder to metaform.
-  - `metaform unset all` there returns it to mgm, unless the project setting is glued.
+  - In `~/notes/src`, `metaform` shows project notes with nothing set.
+  - In `~/notes`, `metaform set --project metaform` switches that folder to metaform.
+  - `metaform unset all` there returns it to notes, unless the project setting is glued.
 - Build: The resolution is STORE-002's rule. Take the folder's effective stored `project` value by CLI-014. If there is none, take the registered project whose `path_key` is the deepest prefix of the folder's `path_key` on a path-segment boundary. If there is none of those either, the folder has no project. Glue on `project` behaves as for any setting.
 - Acceptance:
   - In a subfolder of a registered project with nothing set, the project is that project.
@@ -58,7 +58,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: When an orchestrator selects a project, the home tracks the folder the CLI was run from against that project, and every later run from that folder resolves to it.
 - What this means: The global store does not need the project folder to hold anything. The selection record is the connection between where the agent works and what it works on. The same record carries the folder's workflow and command surface, so a whole working position is restored by running `metaform` in the same folder.
 - Why: An agent restarted after a reboot or a context reset needs to find its work from where it stands. That must work without markers in the folder and across hosts.
-- How it shows: The orchestrator runs `metaform set --project mgm --workflow intake` in its session folder. After a restart, `metaform` in that folder shows project mgm and workflow intake.
+- How it shows: The orchestrator runs `metaform set --project notes --workflow intake` in its session folder. After a restart, `metaform` in that folder shows project notes and workflow intake.
 - Build: No new records. The selection is the folder's stored `project` setting, and the workflow and surface are its other folder settings, PROJ-002.
 - Acceptance: Covered by PROJ-002 and PROJ-003's acceptance.
 - Relates to: PROJ-002, PROJ-003, CLI-021.
@@ -68,7 +68,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: The CLI and the MCP server resolve the project from their own working folder by PROJ-003, and an agent selects a project for a server's folder the same way it does on the CLI.
 - What this means: A host starts the MCP server in some folder: the agent's folder, a fixed folder, or the user's home. The server is a working folder like any other. If that folder resolves to a project, the server serves it. If it does not, the agent selects one with the `set` tool, which stores the choice for the server's folder exactly as `metaform set --project` would. A host that always starts the server in the same folder keeps that selection across sessions. A single call can still name its project, MCP-025.
 - Why: The server has no special rule to learn, so any host works: one that starts the server in the project, and one that starts it anywhere else. Selection by folder is the same mechanism the CLI uses, which keeps the two surfaces equal.
-- How it shows: A desktop host starts the server in the user's home. Status over MCP reports no project and lists the registered ones. The agent calls `set` with `{"project": "mgm"}`, and every later call in that host reads mgm.
+- How it shows: A desktop host starts the server in the user's home. Status over MCP reports no project and lists the registered ones. The agent calls `set` with `{"project": "notes"}`, and every later call in that host reads notes.
 - Build:
   - At each call, the server resolves the folder it was started in, `os.getcwd()` at start, by PROJ-003. The resolution happens per call, so a selection takes effect on the next call.
   - A call that names `project` uses it for that call only, MCP-025.
@@ -84,7 +84,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: A git worktree, inside the project folder or anywhere else, is a working folder with its own context, and it reaches the same project data as every other folder.
 - What this means: An agent started in a worktree has that worktree as its working path. A worktree inside the project's source location resolves to the project by containment. A worktree created elsewhere resolves to the project once it is selected there, by the orchestrator or by the agent. Because all data is global, no worktree ever needs a copy of Metaform state.
 - Why: Orchestrators put workers in worktrees so their changes stay apart. The worker must reach the same project knowledge wherever git placed the worktree.
-- How it shows: A worker started in `~/mgm-main/.worktrees/fix` sees project mgm. A worker started in `~/mgm-fix`, a sibling worktree, sees mgm after `metaform set --project mgm` is run there.
+- How it shows: A worker started in `~/notes/.worktrees/fix` sees project notes. A worker started in `~/notes-fix`, a sibling worktree, sees notes after `metaform set --project notes` is run there.
 - Build: The worktree follows PROJ-003 with no special case. Whether a worktree outside the source location should default to its repository's project without being selected is open question 2.
 - Acceptance: A worktree inside the source location resolves to the project with nothing set.
 - Relates to: PROJ-002, PROJ-003, PROJ-017.
@@ -128,7 +128,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: For a repository, the origin records the commit hash as its base, and every variant's diff goes off that commit. For a source outside any repository, the origin is a full copy of its content kept in the home.
 - What this means: A repository already holds its commits, so the origin is the commit hash, and the commit's files are read from git when they are needed: for making diffs, reconstruction, comparison and export. Metaform keeps no copy of the commit. A folder with no repository has nothing to return to, so Metaform copies it at the moment the origin is established, and that copy is the base its diffs go off.
 - Why: The commit already anchors a repository's baseline exactly, so a second copy only costs space. A plain folder changes in place and would lose its baseline without a copy.
-- How it shows: Establishing an origin for mgm records the commit hash and copies no files. Establishing one for a photo folder copies the folder into the origin unit.
+- How it shows: Establishing an origin for notes records the commit hash and copies no files. Establishing one for a photo folder copies the folder into the origin unit.
 - Build:
   - For a repository, the origin records the full commit hash of `HEAD` at the moment it is established. Its files are read with `git archive <commit>` when needed.
   - If the working tree is dirty at that moment, the commit is still the origin, and the uncommitted changes are collected at once as the unit's first variant, PROJ-017. Dirty means what `git status --porcelain` reports for the project's folder, so a file git calls unchanged, such as one whose line endings git normalizes, never makes a first variant.
@@ -163,7 +163,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: A retained origin never changes. Moving the baseline to a new commit or new content, called re-anchoring, creates a new origin unit, and the earlier unit and its variants stay exactly as they were.
 - What this means: A different commit is a different origin. Re-anchoring is an explicit operation. Nothing re-anchors implicitly, and no variant ever becomes the baseline for another variant except through re-anchoring. The suffix is not used for re-anchoring. A new baseline has a new digest, and the suffix belongs to import, PROJ-021.
 - Why: Every variant is a diff against its origin. Changing the origin in place would silently corrupt every variant pinned to it. Keeping old units intact keeps every past result reconstructable.
-- How it shows: After re-anchoring mgm to a newer commit, `metaform list origins mgm` shows both origins, and variants of the old one still extract.
+- How it shows: After re-anchoring notes to a newer commit, `metaform list origins notes` shows both origins, and variants of the old one still extract.
 - Build: `metaform add origin [<project>]` establishes an origin from the project's current state, PROJ-012. Its content is the repository's `HEAD` commit, or the folder's current content. If an origin with the same digest already exists for the project, the command reports it and creates nothing. The project's selected origin, the one new variants attach to, is the most recently established one unless a later decision says otherwise.
 - Acceptance:
   - Re-anchoring leaves every file and record of the earlier unit byte-identical.
