@@ -55,13 +55,13 @@ def show(ctx: Context) -> object:
 MODULE = Module(
     id='nodeview',
     summary='Inspect knowledge at a map node.',
-    purpose='Reads the selected knowledge at an element, join, or subtype. '
+    purpose='Reads the selected knowledge at an element or a join. '
             'Use it when examining what is already known at a functional address. '
             'Details: metaform help nodeview.',
     verbs=(
         Verb(
             'show', show, 'Read a node and its participating layer items.',
-            nouns=(Noun('node', 'An element:, join:, or subtype: reference.'),),
+            nouns=(Noun('node', 'An element: or join: reference.'),),
         ),
     ),
 )

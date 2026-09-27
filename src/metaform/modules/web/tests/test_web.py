@@ -280,8 +280,11 @@ def test_each_read_endpoint_returns_what_its_store_read_returns_in_context_and_r
 
 @pytest.mark.req('VIEW-004')
 def test_the_page_data_for_a_node_is_what_map_node_returns(run, web, mapped):
+    from metaform.data import Store
     started(run)
-    for node in ('element:code.timer.kitchen', 'element:exterior.cook', 'subtype:code.loop.tick'):
+    store = Store('proj')
+    tick = store.subtypes(store.joins('exterior.cook').results[0].join_id).results[0].join_id
+    for node in ('element:code.timer.kitchen', 'element:exterior.cook', f'join:{tick}', 'element:code.loop.tick'):
         cli = json.loads(run('map', 'node', node, '--json', cwd=mapped).stdout)
         assert api(web, f'/api/node?project=proj&target={node}') == (200, cli)
 
@@ -445,7 +448,7 @@ def drawn_as_paths(graph, expected):
         purpose = 'p:' + join['join_id']
         assert sorted(by_join.pop(join['join_id'])) == sorted(
             [(join['receiver'], purpose, 'purpose'), (purpose, join['provider'], 'encounter')]
-            + [(purpose, 's:' + subtype['subtype_id'], 'layer') for subtype in join['subtypes']])
+            + [(purpose, 's:' + subtype['join_id'], 'layer') for subtype in join['subtypes']])
     assert by_join == {}
     assert sorted((link['source'], link['target']) for link in links if link['k'] == 'tree') == sorted(
         (by_address[entry['parent']], entry['element']['element_id']) for entry in expected['elements'] if entry['parent'])
@@ -543,12 +546,14 @@ def test_toggling_layers_in_the_page_changes_only_the_view_until_apply(run, web,
 
 
 def stacked(store):
-    """Two more correction layers on the fixture's fix-1: fix-2 moves the alarm to code.alarm.bell, fix-3 to chime."""
-    for name, old, new in (('fix-2', 'code.alarm.audible', 'code.alarm.bell'), ('fix-3', 'code.alarm.bell',
-                                                                                  'code.alarm.chime')):
+    """Two more correction layers on the fixture's fix-1: fix-2 records a bell and moves the timer's alarm join to it,
+    fix-3 records a chime and moves the join on to that; an element never moves, MAP-015."""
+    alarm = store.joins('code.timer.kitchen').results[0].join_id
+    for name, new in (('fix-2', 'code.alarm.bell'), ('fix-3', 'code.alarm.chime')):
         layer = store.layer(name, 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
                             provenance=PROVENANCE)
-        store.correct(layer.name, store.element(old).element_id, {'address': new}, reason=f'it is a {new[11:]}')
+        store.add_element(layer.name, new, name_length=1, role='SE')
+        store.correct(layer.name, alarm, {'provider': new}, reason=f'it is a {new[11:]}')
         store.finish(layer.name)
 
 
@@ -569,8 +574,9 @@ def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_chan
     assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is False
     preview = api(web, '/api/peel-preview?project=proj&layer=fix-3')[1]
     assert preview['top'] is True
-    assert [(change['what'], change['effect'], change['detail']) for change in preview['changes']
-            if change['kind'] == 'element'] == [('code.alarm.chime', 'moves back', 'from code.alarm.chime to code.alarm.bell')]
+    assert [(change['kind'], change['what'], change['effect'], change['detail']) for change in preview['changes']] == [
+        ('element', 'code.alarm.chime', 'disappears', None),
+        ('join', 'code.timer.kitchen -> code.alarm.chime', 'moves back', 'to code.timer.kitchen -> code.alarm.bell')]
     files = sorted((home / 'projects').rglob('store.sqlite3'))
     removed_id = store.layer_ref('fix-3').layer_id
     before = [path.read_bytes() for path in files]
@@ -707,7 +713,7 @@ def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_lege
         else:  # a knowledge join with no word keeps its layer's color, never one of the two
             assert join['layer'] == 'notes' and encounter['color'] == color['k1']
         for subtype in join['subtypes']:
-            link = next(link for link in drawn if link['target'] == 's:' + subtype['subtype_id'])
+            link = next(link for link in drawn if link['target'] == 's:' + subtype['join_id'])
             assert link['color'] == color[subtype['ef'].lower()]
     assert sorted(join['ef'] or '' for join in expected['joins']) == ['', 'Encounter', 'Function']
     assert page.locator('#map2d svg .edgePaths path.ef-function').count() == 1
@@ -726,7 +732,7 @@ def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_lege
 def keys_of(web):
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
     by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
-    subtypes = {subtype['address']: 's:' + subtype['subtype_id'] for join in expected['joins'] for subtype in join['subtypes']}
+    subtypes = {subtype['address']: 's:' + subtype['join_id'] for join in expected['joins'] for subtype in join['subtypes']}
     return expected, by_address, subtypes
 
 
@@ -1019,7 +1025,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
         cwd=mapped)
     run('memory', 'add-observations', f'join:{to_alarm}', 'The tone is too quiet.', cwd=mapped)
-    run('memory', 'add-observations', f'subtype:{tick[2:]}', 'One tick can be lost.', cwd=mapped)
+    run('memory', 'add-observations', f'join:{tick[2:]}', 'One tick can be lost.', cwd=mapped)
     Store('proj').add_property('notes', 'code.timer.kitchen', 'ticks at 1 Hz')
     page, problems, _ = opened(browser, web)
     items = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item")')
@@ -1448,3 +1454,38 @@ def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_ne
     assert (saved.number, saved.text, saved.parent_id) == (4, '<practices>\n  <four/>\n</practices>\n', third.version_id)
     assert prompts.use_of('proj', notes.metaform_id, notes.layer_id).number == 3
     assert problems == [] and remote == []
+
+
+@pytest.mark.req('VIEW-016')
+@pytest.mark.req('MAP-030')
+@pytest.mark.req('MAP-031')
+def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element_it_holds(run, web, mapped, browser):
+    """Rich, 2026-09-27: an absorbed element stays one element record inside its parent's join, and is never drawn as
+    a node of the outer map; so what is attached to it, and to its subtype join, is read at its subtype."""
+    from metaform.data import Node, Store
+    started(run)
+    _, at, subtypes = keys_of(web)
+    tick = subtypes['code.loop.tick']
+    held = Store('proj').element('code.loop.tick').element_id
+    assert held not in at.values()  # the element a subtype join holds is no node of the outer map
+    run('memory', 'add-observations', f'join:{tick[2:]}', 'The tick is its own interrupt.', cwd=mapped)
+    run('memory', 'add-observations', 'element:code.loop.tick', 'One loop serves every timer.', cwd=mapped)
+    Store('proj').add_work(Node('element', 'code.loop.tick'), 'tbd', task='count in milliseconds')
+    page, problems, _ = opened(browser, web)
+    set_layer(page, 'memory', True)
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 2')
+    graph = page.evaluate('window.metaform.graph()')
+    memory = {node['text']: node['id'] for node in graph['nodes'] if node['t'] == 'item' and node['layer'] == 'memory'}
+    edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
+    assert {(tick, memory['The tick is its own interrupt.'], 'item'),
+            (tick, memory['One loop serves every timer.'], 'item')} <= edges
+    page.evaluate(f'window.metaform.select("{tick}")')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("count in milliseconds")')
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{tick}") && '
+                           'window.metaform.inside().filter(key => key.startsWith("i:")).length === 2')
+    words = page.evaluate('document.querySelector("#map2d svg").textContent')
+    assert 'The tick is its own interrupt.' in words and 'One loop serves every timer.' in words
+    assert problems == []

@@ -1,14 +1,18 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 4.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 5.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
-An element is its address, name_length and role, STORE-009; the project's name
-for a functionality is on the join, STORE-010. `current_elements` carries the
-current row's role, so the map's entry is one read on `current_elements_by_role`.
-`address_elements` remembers the element id of every address the store has held,
-so an element recorded again at its address is the same element, STORE-009.
-`work` holds the work records, the condition of an object kept apart from the
-map and attached to no layer, STORE-042. One index is added beyond the
-section's own: `elements_by_address`, for the history of one address, STORE-005.
+An element is its address, name_length and role, STORE-009, and it cannot be
+moved, MAP-015; the project's name for a functionality is on the join, STORE-010.
+`current_elements` carries the current row's role, so the map's entry is one read
+on `current_elements_by_role`. `address_elements` remembers the element id of
+every address the store has held, so an element recorded again at its address is
+the same element, STORE-009. A join's identity holds only its id, so it can be
+moved, MAP-003. A subtype join is a row of `joins` with a parent join, and its
+current row is in `current_subtypes`, never in `current_joins`, which every read of
+the element graph uses, STORE-011. `work` holds the work records, the condition of
+an object kept apart from the map and attached to no layer, STORE-042. One index
+is added beyond the section's own: `elements_by_address`, for the history of one
+address, STORE-005.
 """
 from __future__ import annotations
 
@@ -16,17 +20,10 @@ STORE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS element_ids(element_id TEXT PRIMARY KEY);
-CREATE TABLE IF NOT EXISTS join_ids(
-  join_id  TEXT PRIMARY KEY,
-  receiver TEXT NOT NULL REFERENCES element_ids(element_id)
-);
-CREATE TABLE IF NOT EXISTS subtype_ids(
-  subtype_id TEXT PRIMARY KEY,
-  join_id    TEXT NOT NULL REFERENCES join_ids(join_id)
-);
+CREATE TABLE IF NOT EXISTS join_ids(join_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS identities(
   id   TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK(kind IN ('element','join','subtype','item'))
+  kind TEXT NOT NULL CHECK(kind IN ('element','join','item'))
 );
 
 CREATE TABLE IF NOT EXISTS types(
@@ -105,8 +102,7 @@ CREATE TABLE IF NOT EXISTS current_elements(
   element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
   row        INTEGER NOT NULL UNIQUE REFERENCES elements(row),
   address    TEXT NOT NULL UNIQUE,
-  role       TEXT,
-  moved      INTEGER NOT NULL DEFAULT 0
+  role       TEXT
 );
 CREATE INDEX IF NOT EXISTS current_elements_by_role ON current_elements(role, element_id);
 CREATE TABLE IF NOT EXISTS address_elements(
@@ -121,7 +117,8 @@ CREATE TABLE IF NOT EXISTS joins(
   join_id     TEXT NOT NULL REFERENCES join_ids(join_id),
   layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
   type        TEXT NOT NULL DEFAULT 'purpose',
-  receiver    TEXT NOT NULL REFERENCES element_ids(element_id),
+  parent      TEXT REFERENCES join_ids(join_id),
+  receiver    TEXT REFERENCES element_ids(element_id),
   provider    TEXT NOT NULL REFERENCES element_ids(element_id),
   name        TEXT,
   purpose     TEXT,
@@ -132,7 +129,6 @@ CREATE TABLE IF NOT EXISTS joins(
   observation TEXT,
   non_goal    TEXT,
   extra       TEXT,
-  stack_at    INTEGER NOT NULL DEFAULT 0,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
   evidence    TEXT,
@@ -148,38 +144,18 @@ CREATE INDEX IF NOT EXISTS current_joins_by_receiver ON current_joins(receiver);
 CREATE INDEX IF NOT EXISTS current_joins_by_provider ON current_joins(provider);
 CREATE INDEX IF NOT EXISTS joins_by_layer ON joins(layer_id);
 
-CREATE TABLE IF NOT EXISTS subtypes(
-  row         INTEGER PRIMARY KEY,
-  subtype_id  TEXT NOT NULL REFERENCES subtype_ids(subtype_id),
-  layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-  address     TEXT NOT NULL REFERENCES types(address),
-  name        TEXT,
-  name_length INTEGER,
-  role        TEXT CHECK(role IN ('DE','SE','NE')),
-  function    TEXT,
-  ef          TEXT CHECK(ef IN ('Function','Encounter')),
-  relation    TEXT,
-  verb        TEXT,
-  observation TEXT,
-  extra       TEXT,
-  op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
-  reason      TEXT,
-  evidence    TEXT,
-  UNIQUE(subtype_id, layer_id)
-);
 CREATE TABLE IF NOT EXISTS current_subtypes(
-  subtype_id TEXT PRIMARY KEY REFERENCES subtype_ids(subtype_id),
-  row        INTEGER NOT NULL UNIQUE REFERENCES subtypes(row),
-  join_id    TEXT NOT NULL,
-  address    TEXT NOT NULL
+  join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
+  row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
+  parent   TEXT NOT NULL,
+  provider TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS current_subtypes_by_join ON current_subtypes(join_id);
-CREATE INDEX IF NOT EXISTS current_subtypes_by_address ON current_subtypes(address);
-CREATE INDEX IF NOT EXISTS subtypes_by_layer ON subtypes(layer_id);
+CREATE INDEX IF NOT EXISTS current_subtypes_by_parent ON current_subtypes(parent);
+CREATE INDEX IF NOT EXISTS current_subtypes_by_provider ON current_subtypes(provider);
 
 CREATE TABLE IF NOT EXISTS refs(
   ref_id    INTEGER PRIMARY KEY,
-  owner     TEXT NOT NULL CHECK(owner IN ('element','join','subtype','item','property')),
+  owner     TEXT NOT NULL CHECK(owner IN ('element','join','item','property')),
   owner_row INTEGER NOT NULL,
   position  INTEGER NOT NULL,
   key       TEXT NOT NULL,
@@ -196,10 +172,10 @@ CREATE TABLE IF NOT EXISTS items(
   row         INTEGER PRIMARY KEY,
   item_id     TEXT NOT NULL REFERENCES item_ids(item_id),
   layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-  target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join','subtype')),
+  target_kind TEXT NOT NULL CHECK(target_kind IN ('element','join')),
   target_id   TEXT NOT NULL,
   value       TEXT NOT NULL,
-  link_kind   TEXT CHECK(link_kind IN ('element','join','subtype')),
+  link_kind   TEXT CHECK(link_kind IN ('element','join')),
   link_id     TEXT,
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
@@ -280,14 +256,6 @@ CREATE TABLE IF NOT EXISTS plans(
   item_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS plans_by_layer ON plans(layer_id);
-
-CREATE TABLE IF NOT EXISTS unapplied(
-  layer_id TEXT NOT NULL REFERENCES layers(layer_id),
-  kind     TEXT NOT NULL CHECK(kind IN ('element','join','subtype','property','item')),
-  thing_id TEXT NOT NULL,
-  reason   TEXT NOT NULL,
-  PRIMARY KEY(layer_id, kind, thing_id)
-);
 
 CREATE TABLE IF NOT EXISTS work(
   row         INTEGER PRIMARY KEY,

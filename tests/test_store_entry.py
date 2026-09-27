@@ -16,12 +16,14 @@ FIXTURE = json.loads((Path(__file__).parent / 'fixtures' / 'intake_timer.json').
 
 
 @pytest.mark.req('STORE-009')
+@pytest.mark.req('MAP-031')
 @pytest.mark.req('STORE-025')
 def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home, store, traced):
     small_map(store)
     tables = dump(store_file(home, store))
     assert 'element_roles' not in tables
-    assert sorted(row[3] for row in tables['current_elements']) == ['DE', 'SE', 'VE']
+    # The tick loop a subtype join holds is an element too, MAP-030, and the entry leaves it out, MAP-031.
+    assert sorted(row[3] for row in tables['current_elements']) == ['DE', 'SE', 'SE', 'VE']
     traced.clear()
     roots = store.roots()
     lines = [line for _, plan in plans(home, store, traced) for line in plan]

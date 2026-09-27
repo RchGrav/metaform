@@ -48,16 +48,18 @@ CONTEXT = {'selection': _list, 'raw': _bool}
 READS: dict[str, Read] = {
     'roots': Read('roots', (), {**CONTEXT, **PAGING}, "The map's entry: the VE and the DE with their joins, and every "
                                                     'root element.'),
-    'graph': Read('graph', (), {**CONTEXT, **PAGING}, 'A page of the whole map in address order, with parents, '
-                                                      'joins and subtypes.'),
+    'graph': Read('graph', (), {**CONTEXT, **PAGING}, 'A page of the outer map in address order, with parents, '
+                                                      'joins and subtype joins.'),
     'work': Read('work', (), {'node': _node, 'condition': str, 'open': _bool, **PAGING},
-                 'The work records: the condition of an element, join or subtype, apart from the map.'),
+                 'The work records: the condition of an element or a join, apart from the map.'),
     'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),
     'joins': Read('joins', (('element', str),), {'as': str, **CONTEXT, **PAGING},
                   'The joins an element owns, or with as=provider those it serves.'),
     'identity': Read('identity', (('element', str),), {**CONTEXT, **PAGING}, 'Every join an element provides for.'),
-    'subtypes': Read('subtypes', (('join', str),), {**CONTEXT, **PAGING}, 'The subtypes in a join.'),
-    'where': Read('where', (('address', str),), dict(CONTEXT), 'The element, or the subtype and its join, at an address.'),
+    'subtypes': Read('subtypes', (('join', str),), {**CONTEXT, **PAGING},
+                     'The subtype joins in a join, each with the element it holds.'),
+    'where': Read('where', (('address', str),), dict(CONTEXT),
+                  'The element at an address, with the subtype join and join holding it when those are its only joins.'),
     'children': Read('children', (('address', str),), dict(PAGING), 'The next types toward the leaves.'),
     'layer-items': Read('layer_items', (('layer', str),), {'node': _node, 'in_context': _bool, **PAGING},
                         'A whole layer, or it at one node; in_context=true reads it as the context sees it.'),
@@ -77,8 +79,8 @@ READS: dict[str, Read] = {
     'search': Read('search', (('text', str),), {'layer': str, 'selection': _list, **PAGING}, 'Items by their words.'),
     'has-intake': Read('has_intake', (), {}, 'Whether the active metaform has an intake.'),
     'intake-recording': Read('intake_recording', (), {}, 'The intake being recorded, its metaform and its layer.'),
-    'layer-graph': Read('layer_graph', (('layer', str),), {}, "One layer's own elements, joins and subtypes, building "
-                                                              'or finished.'),
+    'layer-graph': Read('layer_graph', (('layer', str),), {}, "One layer's own elements, joins and subtype joins, "
+                                                              'building or finished.'),
     'metaforms': Read('metaforms', (), dict(PAGING), "The project's metaforms."),
     'active-metaform': Read('active_metaform', (), {}, "The project's active metaform."),
     'project': Read('project', (), {}, 'The project record with its target.'),

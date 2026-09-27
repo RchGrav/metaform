@@ -56,20 +56,31 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
 
 
 @pytest.mark.req('STORE-027')
+@pytest.mark.req('STORE-011')
 @pytest.mark.req('STORE-034')
-def test_a_retype_left_unapplied_stays_unapplied_through_export_and_import(home, store, monkeypatch, tmp_path):
-    small_map(store)
-    alarm = store.element('code.alarm.audible').element_id
+def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they_were(home, store, monkeypatch,
+                                                                                       tmp_path):
+    _, outer, inner = small_map(store)
     fix = correction(store, 'fix-1')
-    store.correct(fix.name, alarm, {'address': 'code.timer.kitchen'}, reason='merge')
-    assert [notice.where for notice in store.finish(fix.name).notices] == [alarm]
+    store.correct(fix.name, inner.join_id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
+    store.finish(fix.name)
+    notes = knowledge(store, 'notes')
+    for address in ('code.a', 'code.p', 'code.q'):
+        store.add_element(notes.name, address)
+    early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', function='g', relation='r', observation='o')
+    later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', function='f', relation='r', observation='o')
+    store.edit(early.join_id, {'parent': later.join_id})
+    store.finish(notes.name)
     first = export_document(['proj'])
     move_home(monkeypatch, tmp_path, 'other-home')
     import_document(json.loads(json.dumps(first)))
     assert export_document(['proj']) == first
     moved = Store('proj')
-    assert moved.element('code.alarm.audible').element_id == alarm
-    assert moved.element('code.timer.kitchen').element_id != alarm
+    assert inner.join_id in [join.join_id for join in moved.joins('stakeholder.cook.home').results]
+    assert [sub.join_id for sub in moved.subtypes(outer.join_id).results] == [
+        store.subtypes(outer.join_id).results[0].join_id]
+    assert [sub.join_id for sub in moved.subtypes(later.join_id).results] == [early.join_id]
+    assert [join.join_id for join in moved.joins('code.a').results] == [later.join_id]
 
 
 @pytest.mark.req('STORE-027')

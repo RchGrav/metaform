@@ -26,9 +26,8 @@ from .schema import STORE_SCHEMA
 from .session import open_store
 
 FORMAT = 1
-THINGS = ('elements', 'joins', 'subtypes', 'items', 'properties')
-KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'subtypes': 'subtype', 'items': 'item',
-                 'properties': 'property'}
+THINGS = ('elements', 'joins', 'items', 'properties')  # a subtype join is a row of joins, STORE-011
+KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'items': 'item', 'properties': 'property'}
 ID_OF_TABLE = {table: corrections.KINDS[kind].id_column for table, kind in KIND_OF_TABLE.items()}
 
 
@@ -70,8 +69,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'unapplied',
-                 'correction_stack', 'requires'):
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'correction_stack', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
@@ -104,10 +102,6 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
         for layer_id in [layer['layer_id'] for layer in document['layers']]:
             rows += _rows(db, f'SELECT * FROM {table} WHERE layer_id=?', (layer_id,))
         rows.sort(key=lambda row: row['row'])
-        if table == 'subtypes':
-            for row in rows:
-                row['join_id'] = db.execute('SELECT join_id FROM subtype_ids WHERE subtype_id=?',
-                                            (row['subtype_id'],)).fetchone()[0]
         for row in rows:
             owner_ids[(KIND_OF_TABLE[table], row['row'])] = (row[ID_OF_TABLE[table]], row['layer_id'])
         document[table] = _without_row(rows)
@@ -124,11 +118,9 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                     if row['item_id'] in item_ids]
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
     document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
-    document['unapplied'] = [row for row in _rows(db, 'SELECT * FROM unapplied ORDER BY rowid')
-                             if row['layer_id'] in chosen]
     document['correction_stack'] = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack '
                                                                  'ORDER BY position') if row[0] in chosen]
-    addresses = {row['address'] for table in ('elements', 'subtypes', 'selections') for row in document[table]}
+    addresses = {row['address'] for table in ('elements', 'selections') for row in document[table]}
     needed = {prefix for address in addresses for prefix in prefixes(address)}
     document['types'] = [row for row in _rows(db, 'SELECT address, parent FROM types ORDER BY rowid')
                          if not layer_names or row['address'] in needed]
@@ -145,7 +137,9 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
             if row['op'] != 'add' and kind != 'property':
                 wanted.append((kind, row[ID_OF_TABLE[table]]))
             if table == 'joins':
-                wanted += [('element', row['receiver']), ('element', row['provider'])]
+                wanted += [('element', end) for end in (row['receiver'], row['provider']) if end is not None]
+                if row['parent'] is not None:
+                    wanted.append(('join', row['parent']))
             if table == 'items':
                 wanted.append((row['target_kind'], row['target_id']))
                 if row['link_kind']:
@@ -161,7 +155,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'work', 'unapplied')
+              *THINGS, 'challenge_states', 'plans', 'work')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'position', 'key', 'value')
@@ -176,7 +170,7 @@ def columns(table: str) -> tuple[str, ...]:
         found = tuple(str(row[1]) for row in db.execute(f'PRAGMA table_info({table})') if row[1] != 'row')
     finally:
         db.close()
-    return (*found, 'join_id') if table == 'subtypes' else found
+    return found
 
 
 def _scalar(value: Any) -> bool:
@@ -392,6 +386,9 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         if need.get('kind') == 'element':
             db.execute('INSERT OR IGNORE INTO element_ids(element_id) VALUES (?)', (need['id'],))
             db.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'element')", (need['id'],))
+        elif need.get('kind') == 'join':
+            db.execute('INSERT OR IGNORE INTO join_ids(join_id) VALUES (?)', (need['id'],))
+            db.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'join')", (need['id'],))
         elif need.get('kind') == 'type':
             db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, NULL)', (need['address'],))
         report['notices'].append({'where': f'requires[{place}]', 'message': (
@@ -420,19 +417,23 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             _insert(db, 'layer_sources', row)
     rows_of: dict[tuple[str, str, str], int] = {}
     touched: dict[str, list[str]] = {kind: [] for kind in corrections.ORDER}
+    new_ids: set[tuple[str, str]] = set()
+    for table in THINGS:  # every identity first, so a subtype join written before its parent finds it, STORE-011
+        kind = KIND_OF_TABLE[table]
+        for row in metaform.get(table, []):
+            if row['layer_id'] in fresh and _identity(db, kind, row):
+                new_ids.add((kind, str(row[ID_OF_TABLE[table]])))
+    counted: set[tuple[str, str]] = set()
     for table in THINGS:
         kind = KIND_OF_TABLE[table]
         column = ID_OF_TABLE[table]
         for row in metaform.get(table, []):
             if row['layer_id'] not in fresh:
                 continue
-            if kind == 'subtype' and not _has_join(db, row['join_id']):
-                report['notices'].append({'where': f'subtypes.{row["subtype_id"]}', 'message': (
-                    f'Subtype {row["subtype_id"]} lives in join {row["join_id"]}, which this store does not hold; it '
-                    "was not imported. Import the project's map first: metaform import <an export of the project>")})
-                continue
-            if _identity(db, kind, row):
+            key = (kind, str(row[column]))
+            if key in new_ids and key not in counted:
                 report['things_added'] += 1
+                counted.add(key)
             else:
                 report['things_skipped'] += 1
             cursor = _insert(db, table, row)
@@ -462,9 +463,6 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for row in metaform.get('plans', []):
         if row['layer_id'] in fresh:
             _insert(db, 'plans', row, ignore=True)
-    for row in metaform.get('unapplied', []):
-        if row['layer_id'] in fresh:
-            _insert(db, 'unapplied', row, ignore=True)
     for row in metaform.get('work', []):  # a work record has no layer; it follows its object, STORE-042
         _insert(db, 'work', row, ignore=True)
     for layer_id in metaform.get('correction_stack', []):
@@ -475,10 +473,6 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     positions = corrections.stack_positions(db)
     for kind in corrections.ORDER:
         corrections.recompute(db, kind, touched[kind], kinds, positions)
-
-
-def _has_join(db: sqlite3.Connection, join_id: str) -> bool:
-    return db.execute('SELECT 1 FROM join_ids WHERE join_id=?', (join_id,)).fetchone() is not None
 
 
 def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
@@ -493,9 +487,7 @@ def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
     if kind == 'element':
         db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (ident,))
     elif kind == 'join':
-        db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (ident, row['receiver']))
-    elif kind == 'subtype':
-        db.execute('INSERT INTO subtype_ids(subtype_id, join_id) VALUES (?, ?)', (ident, row['join_id']))
+        db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (ident,))
     else:
         db.execute('INSERT INTO item_ids(item_id, layer_id) VALUES (?, ?)', (ident, row['layer_id']))
     return True
@@ -503,7 +495,7 @@ def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
 
 def _insert(db: sqlite3.Connection, table: str, row: dict[str, Any], *, ignore: bool = False) -> sqlite3.Cursor:
     """Insert one checked document row; the SQL names only the table's own columns, never a document's keys."""
-    names = [column for column in columns(table) if not (table == 'subtypes' and column == 'join_id')]
+    names = list(columns(table))
     marks = ', '.join('?' for _ in names)
     verb = 'INSERT OR IGNORE' if ignore else 'INSERT'
     return db.execute(f'{verb} INTO {table}({", ".join(names)}) VALUES ({marks})', tuple(row[key] for key in names))

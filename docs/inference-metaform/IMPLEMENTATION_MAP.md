@@ -102,16 +102,16 @@ Relative source links assume these documents are placed at `docs/inference-metaf
 
 ### Data model
 
-The public `Store` delegates into the data package. The core record definitions and SQLite schema distinguish elements, joins, subtypes, items, properties, refs, layers, provenance, selections, findings, challenges, plans, and current/correction views.
+The public `Store` delegates into the data package. The core record definitions and SQLite schema distinguish elements, joins, subtype joins, items, properties, refs, layers, provenance, selections, findings, challenges, plans, and current/correction views.
 
-An element is its identity, its namespace address, its `name_length` and its role, with refs linked to it; its name is its address read through `name_length`. A join identifies its receiver and provider and carries the project's `name` for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, and optional additional fields. An internal subtype belongs to a containing join and has its own identity and functional description, without a separate parent-level purpose.
+An element is its identity, its namespace address, its `name_length` and its role, with refs linked to it; its name is its address read through `name_length`. A join identifies its receiver and provider and carries the project's `name` for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, and optional additional fields. A subtype join is a join of type `subtype` held inside a containing purpose join, with its own join id and functional description and no purpose of its own; it names the element it holds, which stays one ordinary element record. Its current row is kept in `current_subtypes`, apart from the `current_joins` every read of the element graph uses, and an element whose only joins are subtype joins is no root and no node of the outer map. An element cannot be moved: its address is its identity. A join can be moved to another receiver, provider or parent join and keeps its id.
 
 | Source | Symbols and relevant behavior |
 |---|---|
 | [records.py](../../src/metaform/data/records.py) | Record types, `Node`, elements, joins, subtypes, items, properties, layer and context results. |
 | [schema.py](../../src/metaform/data/schema.py) | Tables and indices for stored records and their relationships. |
-| [writes.py:43-207](../../src/metaform/data/writes.py#L43-L207) | `add_element`, `add_join`, `add_subtype`; the element's `name_length` and role, the join's name, and dedicated `ef` fields. |
-| [writes.py:252-309](../../src/metaform/data/writes.py#L252-L309) | `add_item` targets a node; `add_property` attaches to an element. |
+| [writes.py](../../src/metaform/data/writes.py) | `add_element`, `add_join`, `add_subtype`; the element's `name_length` and role, the join's name, and dedicated `ef` fields; `edit`, whose `receiver`, `provider` and `parent` move a join. |
+| [writes.py](../../src/metaform/data/writes.py) | `add_item` targets a node; `add_property` attaches to an element. |
 | [names.py](../../src/metaform/data/names.py) | `reading`, `short_name`; reverse segments and expand underscores. |
 | [roots.json](../../src/metaform/data/roots.json) | Current five root types as data. |
 
@@ -119,7 +119,7 @@ An element is its identity, its namespace address, its `name_length` and its rol
 
 ### Relationship addressability
 
-`Store.node` groups items at an element, join, or subtype by their layer. `links_to` finds items linking to a node. `citing` locates records with a matching ref key/value. `where` can locate a global element or an internal subtype and its containing join. `children` traverses namespace types rather than pretending every type prefix is a separately instantiated global element.
+`Store.node` groups items at an element or a join, a subtype join included, by their layer. `links_to` finds items linking to a node. `citing` locates records with a matching ref key/value. `where` can locate a global element, or an element held only by subtype joins with its subtype join and containing join. `children` traverses namespace types rather than pretending every type prefix is a separately instantiated global element.
 
 `Store.identity(element)` returns current joins for which that element is provider, including receiving purposes and EFs. It is useful for examining who receives a capability. Its name does not change its implementation into the exact semantic definition of `C(T)`.
 
@@ -153,9 +153,9 @@ The implementation retains exact operative wording through this path. Its option
 
 ### Recording
 
-`start` opens a building intake layer, or resumes the one being recorded. `element`, `join` and `subtype` each write one object into it through the store's add operations, as the agent reasons it; `show` reads it back whole through `Store.layer_graph`; `edit` and `remove` change it in place while it is building; `finish` marks it ready. Until then `has_intake()` is false and no context read sees it; the web GUI follows it through `/api/intake-recording` and `/api/layer-graph`.
+`start` opens a building intake layer, or resumes the one being recorded. `element`, `join` and `subtype` each write one object into it through the store's add operations, as the agent reasons it; `absorb` makes a recorded join a subtype join inside its parent's join through `Store.edit` with `parent`; `show` reads it back, whole through `Store.layer_graph` or one receiver's joins; `edit` and `remove` change it in place while it is building; `finish` marks it ready. Every object is named by the key its recording call returned, `element_id` or `join_id`, and an element's address is `namespace_address`. Until then `has_intake()` is false and no context read sees it; the web GUI follows it through `/api/intake-recording` and `/api/layer-graph`.
 
-Each call retains what does not fit, with a notice naming the field: unknown additions go to extra content, a missing field is stored empty, and a join end that names no element gets one in the intake layer. A subtype's independently supplied purpose is preserved in extra rather than silently installed as a second purpose field.
+Each call retains what does not fit, with a notice naming the field: unknown additions go to extra content, a missing field is stored empty, and a join end that names no element gets one in the intake layer. A subtype join's independently supplied purpose, and an absorbed join's purpose, are preserved in extra rather than silently installed as a second purpose field.
 
 A repeat intake is recorded in a new Metaform, which becomes active at the finish. Reports are saved at the finish, linked to the layer.
 
@@ -195,7 +195,7 @@ This is implemented support for scope-sensitive knowledge and the author's Encou
 
 `code.memory.agent`, named `memory module`, maps to [modules/memory/__init__.py](../../src/metaform/modules/memory/__init__.py). `_memory` finds the layer by kind or creates a ready, mutable, hideable `memory` layer on first write. [Layer creation](../../src/metaform/data/layering.py#L98-L111) deliberately skips provenance for memory.
 
-An observation is an item at a node; a relation is an item at its from-node with a link to its to-node. Joins use ids; elements and subtypes can use addresses or ids. `open_nodes` presents related memory, while `read_graph` requests the memory layer in context. The mutation helper `_at` deliberately reads the layer directly to change its items.
+An observation is an item at a node; a relation is an item at its from-node with a link to its to-node. Joins, subtype joins included, use ids; elements can use addresses or ids. `open_nodes` presents related memory, while `read_graph` requests the memory layer in context. The mutation helper `_at` deliberately reads the layer directly to change its items.
 
 The nine operations are declared as module verbs and become MCP tools through the common module contract. `create_entities` can create an element in the memory layer. `delete_entities` removes memory items at requested nodes, not their underlying map identities.
 
@@ -210,13 +210,13 @@ The current map retains `code.stack.correction` as an internal contribution of t
 
 A correction is assembled while building and applied when finished. Current records are recomputed against the applied stack. The top correction can be peeled, returning it to building and recomputing affected current views. Correction layers are not normal selectable/hideable knowledge layers.
 
-Relocation preserves an element id but writes removals for its relevant Metaform joins and their subtypes. Attached items remain associated with that element identity. Removing an element can orphan knowledge; restoring it restores the contextual relationship. Knowledge joins and base Metaform joins have their source-specific handling, so relocation is not simply a string substitution applied to every connected record.
+An element cannot be moved: a correction's `address` for an element is not applied and is named in a notice. A join can be moved: a correction's `receiver`, `provider` or `parent` is a change of the same join, which keeps its id and everything attached to it; with `parent` it becomes a subtype join, and the subtype joins it held pass to its new parent. Removing an element can orphan knowledge; restoring it at the same address restores the contextual relationship.
 
 The source marks layers built from the original adding layer for re-examination when the relevant correction applies. It does not implement an unspecified universal transitive semantic invalidation algorithm. The hidden-layer source closure and correction re-examination are different mechanisms.
 
 A further lifecycle detail matters for ordinary knowledge: `writes.unchangeable` protects a finished intake and finished corrections and redirects memory to its own mutation APIs. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. See [writes.py:362-370](../../src/metaform/data/writes.py#L362-L370), [edit:444-482](../../src/metaform/data/writes.py#L444-L482), and [the finished-layer test](../../tests/test_store_layers.py#L245-L260).
 
-Inspected correction tests cover precedence, history, peeling, orphan/restoration, relocation, re-examination, and retention of `ef`: [test_store_corrections.py](../../tests/test_store_corrections.py).
+Inspected correction tests cover precedence, history, peeling, orphan/restoration, join moves, the element that never moves, re-examination, and retention of `ef`: [test_store_corrections.py](../../tests/test_store_corrections.py).
 
 <a id="prompts"></a>
 ## 8. Prompt versions and lexicalization
@@ -465,7 +465,7 @@ The earlier bus/runtime illustration versus current sequential awaited delivery 
 | Knowledge and memory lifecycle | [test_store_layers.py:124-138](../../tests/test_store_layers.py#L124-L138), [230-277](../../tests/test_store_layers.py#L230-L277). |
 | Relationship-addressed memory | [memory tests](../../src/metaform/modules/memory/tests/test_memory.py): join nodes, relations at both ends, deletion, selection, and newly noted elements. |
 | Challenges and direct plans | [test_store_challenges.py](../../tests/test_store_challenges.py). |
-| Corrections | [test_store_corrections.py](../../tests/test_store_corrections.py): precedence, peel, orphans, relocation, re-examination, and `ef`. |
+| Corrections | [test_store_corrections.py](../../tests/test_store_corrections.py): precedence, peel, orphans, join moves, re-examination, and `ef`. |
 | Prompt version/use | [test_prompts.py](../../tests/test_prompts.py): version retention, use linkage, shipped text, indexed reads. |
 | Module lifecycle | [test_lifecycle.py](../../tests/test_lifecycle.py): spawned task completion before stop, unload/reload, settings restoration, dependency failure. |
 | Event outcomes and async loop | [test_base.py](../../tests/test_base.py). |

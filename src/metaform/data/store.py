@@ -179,16 +179,17 @@ class Store:
                                                extra=extra), notice)
 
     def add_subtype(self, layer: str | None, join: Any, address: Any, *, function: Any = None, ef: Any = None,
-                    relation: Any = None, verb: Any = None, observation: Any = None, name: Any = None,
-                    name_length: Any = None, role: Any = None,
-                    refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
-        """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
+                    relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
+                    name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
+                    extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
+        """Write a subtype join inside its parent join, holding the element at `address`, an ordinary element record;
+        it has no purpose, STORE-011 and MAP-030."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_subtype(tx, named, join, address, function=function, ef=ef, relation=relation,
-                                                  verb=verb,
-                                                  observation=observation, name=name, name_length=name_length,
-                                                  role=role, refs=refs, extra=extra, purpose=purpose), notice)
+                                                  verb=verb, observation=observation, non_goal=non_goal, name=name,
+                                                  name_length=name_length, role=role, refs=refs, extra=extra,
+                                                  purpose=purpose), notice)
 
     def add_ref(self, owner: str, key: str, value: str) -> Ref | Outcome:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
@@ -219,13 +220,15 @@ class Store:
             return writes.delete_item(tx, item)
 
     def edit(self, thing: str, changes: Any) -> Version | Outcome:
-        """Change a thing of a knowledge layer, or of a building correction layer, in place, STORE-032."""
+        """Change a thing of a knowledge layer, or of a building intake or correction layer, in place, STORE-032. A
+        join's receiver, provider and parent move it, MAP-003; an element's address never changes, MAP-015."""
         with self._write() as tx:
             return writes.edit(tx, thing, changes)
 
     def add_work(self, node: Node, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
                  reviewed: Any = False) -> WorkRecord:
-        """Write the condition of an element, join or subtype as a work record, apart from the map, STORE-042."""
+        """Write the condition of an element or a join, a subtype join included, as a work record, apart from the map,
+        STORE-042."""
         with self._write() as tx:
             return writes.add_work(tx, node, condition, note=note, task=task, held=held, reviewed=reviewed)
 
@@ -294,11 +297,13 @@ class Store:
 
     def subtypes(self, join: str, *, selection: Sequence[str] | None = None, raw: bool = False,
                  limit: int = LIMIT, after: str | None = None) -> Page[Subtype]:
+        """The subtype joins in a join, each with the element it holds, STORE-011."""
         with self._read() as tx:
             return reads.subtypes(tx, None if raw else self._resolver(tx, selection), join, limit, after)
 
     def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Where | None:
-        """The element at an address, or the subtype there with the join that holds it."""
+        """The element at an address; for one held only by subtype joins, with the subtype join that holds it and that
+        join's parent join, MAP-031."""
         with self._read() as tx:
             return reads.where(tx, None if raw else self._resolver(tx, selection), address)
 
@@ -406,12 +411,12 @@ class Store:
 
     def graph(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
               after: str | None = None) -> GraphPage:
-        """A page of the whole map in address order, with parents, joins and subtypes, for the viewer, VIEW-010."""
+        """A page of the outer map in address order, with parents, joins and subtype joins, for the viewer, VIEW-010."""
         with self._read() as tx:
             return reads.graph(tx, None if raw else self._resolver(tx, selection), limit, after)
 
     def layer_graph(self, layer: str) -> GraphPage:
-        """One layer's own elements, joins and subtypes, building or finished; not a context read, BASE-039."""
+        """One layer's own elements, joins and subtype joins, building or finished; not a context read, BASE-039."""
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 

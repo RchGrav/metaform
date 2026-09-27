@@ -140,9 +140,9 @@ function graphData() {
     links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
       ef: join.ef});
     for (const subtype of join.subtypes || []) {
-      nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
+      nodes.push({id: 's:' + subtype.join_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
-      links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id,
+      links.push({source: purpose, target: 's:' + subtype.join_id, k: 'layer', layer: subtype.layer, join: join.join_id,
         ef: subtype.ef});
     }
   }
@@ -161,11 +161,17 @@ function graphData() {
   }
   return {nodes, links};
 }
-/* A selection is an element's id, a subtype as 's:<id>' or a join as 'p:<id>', the same keys the 3D view uses. */
-const subtypeOf = new Map();
+/* A selection is an element's id, a subtype as 's:<id>' by its subtype join's id, or a join as 'p:<id>', the same
+ * keys the 3D view uses. The element a subtype join holds is no node of the outer map, MAP-031, so what is attached to
+ * it is shown at its subtype, `heldBy`. */
+const subtypeOf = new Map(), heldBy = new Map();
 function indexSubtypes() {
   subtypeOf.clear();
-  for (const join of S.joins) for (const subtype of join.subtypes || []) subtypeOf.set('s:' + subtype.subtype_id, {subtype, join});
+  heldBy.clear();
+  for (const join of S.joins) for (const subtype of join.subtypes || []) {
+    subtypeOf.set('s:' + subtype.join_id, {subtype, join});
+    if (!heldBy.has(subtype.element_id)) heldBy.set(subtype.element_id, 's:' + subtype.join_id);
+  }
 }
 const joinOf = key => S.joins.find(join => 'p:' + join.join_id === key);
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
@@ -390,7 +396,7 @@ async function build2D() {
     lines.push(`subgraph ${keys.get(id)} ["${label}"]`, 'direction TB');
     for (const subtype of held.get(id)) {
       const key = `s${inner.size}`;
-      inner.set('s:' + subtype.subtype_id, key);
+      inner.set('s:' + subtype.join_id, key);
       lines.push(`${key}["${plain2d(subtype.short_name || subtype.address)}"]:::sub`);
     }
     lines.push('end');
@@ -470,10 +476,11 @@ function showBase() {
 const IN = [];  // the levels entered from the base map: {key, label, more, things}
 const GROUP = 20;
 let insideGen = 0;
-const kindOf = key => key.startsWith('s:') ? 'subtype' : key.startsWith('p:') ? 'join' : 'element';
+const kindOf = key => key.startsWith('s:') || key.startsWith('p:') ? 'join' : 'element';  // a subtype join is a join
 const bareId = key => key.replace(/^[sp]:/, '');
-const keyOf = node => !node ? null : node.kind === 'subtype' ? 's:' + node.id : node.kind === 'join' ? 'p:' + node.id
-  : node.kind === 'element' ? node.id : null;
+const keyOf = node => !node ? null
+  : node.kind === 'join' ? (subtypeOf.has('s:' + node.id) ? 's:' + node.id : 'p:' + node.id)
+  : node.kind === 'element' ? (S.elements.has(node.id) ? node.id : heldBy.get(node.id) || node.id) : null;
 const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
 /* An element's and a subtype's name is its short name, its address read through name_length, MAP-012; a join's is the
@@ -491,9 +498,20 @@ async function drawInside() {
   const generation = ++insideGen;
   const target = `${kindOf(level.key)}:${bareId(level.key)}`;
   let view = null, incoming = [];
+  const held = level.key.startsWith('s:') ? subtypeOf.get(level.key)?.subtype.element_id : null;
   try {
     view = await read('node', {target, ...viewLayers()});
     incoming = (await read('links-to', {target, limit: 0, ...viewLayers()})).results || [];
+    if (held) {  // the absorbed part stays one element, so what is attached to it shows at its subtype, MAP-030
+      const part = await read('node', {target: `element:${held}`, ...viewLayers()});
+      const groups = new Map((view?.layers || []).map(group => [group.layer, group]));
+      for (const group of part?.layers || []) {
+        const into = groups.get(group.layer);
+        if (into) { into.items = [...(into.items || []), ...(group.items || [])]; into.properties = [...(into.properties || []), ...(group.properties || [])]; }
+        else if (view) view.layers = [...(view.layers || []), group];
+      }
+      incoming = [...incoming, ...((await read('links-to', {target: `element:${held}`, limit: 0, ...viewLayers()})).results || [])];
+    }
   } catch (error) { if (error.status !== 404) toast(error.message); }
   if (generation !== insideGen) return;
   const vertical = M.base ? M.base.vertical : true;  // the whole map's orientation, so going inside never turns it
@@ -512,14 +530,14 @@ async function drawInside() {
     if (join) {
       edges.push(`${add(join.receiver, nameOf(join.receiver), 'stub')} --> ${center}`,
         `${center} --> ${add(join.provider, nameOf(join.provider), 'stub')}`);
-      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.short_name || subtype.address, 'sub')}`);
+      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.join_id, subtype.short_name || subtype.address, 'sub')}`);
     }
   } else if (key.startsWith('s:')) {
     const found = subtypeOf.get(key);
     if (found) edges.push(`${add('p:' + found.join.join_id, joinLabel(found.join), 'purpose')} --- ${center}`);
   } else {
     for (const join of S.joins.filter(item => item.provider === key)) for (const subtype of join.subtypes || [])
-      edges.push(`${center} --- ${add('s:' + subtype.subtype_id, subtype.short_name || subtype.address, 'sub')}`);
+      edges.push(`${center} --- ${add('s:' + subtype.join_id, subtype.short_name || subtype.address, 'sub')}`);
     for (const join of S.joins.filter(item => item.receiver === key))
       edges.push(`${center} --> ${add('p:' + join.join_id, joinLabel(join), 'purpose')}`);
   }
@@ -746,7 +764,7 @@ function across(keys) {  // in their order across the 2D map
   return [...keys].sort((a, b) => M.vertical ? at(a).x - at(b).x || at(a).y - at(b).y : at(a).y - at(b).y || at(a).x - at(b).x);
 }
 function insideOf(key) {
-  return across(S.joins.filter(join => join.provider === key).flatMap(join => (join.subtypes || []).map(subtype => 's:' + subtype.subtype_id)));
+  return across(S.joins.filter(join => join.provider === key).flatMap(join => (join.subtypes || []).map(subtype => 's:' + subtype.join_id)));
 }
 function childrenOf(key) {
   if (key.startsWith('p:')) return [joinOf(key)?.provider].filter(Boolean);
@@ -853,9 +871,12 @@ function refsOf(refs) {
 /* The work records of the selected object, MAP-046: each with its condition, note and task, held and reviewed,
  * and its resolution once done; read from /api/work for the node and written into the panel's work box. */
 function workPill(condition) { return h('span', {class: `pill work-${condition}`}, condition); }
-async function renderWork(target, key) {
+async function renderWork(target, key, also = null) {
   let records = [];
-  try { records = (await read('work', {node: target, limit: 0})).results; } catch (error) { toast(error.message); }
+  try {
+    records = (await read('work', {node: target, limit: 0})).results;
+    if (also) records = [...records, ...(await read('work', {node: also, limit: 0})).results];
+  } catch (error) { toast(error.message); }
   const box = $('#work');
   if (!box || S.selected !== key || !records.length) return;
   fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => h('div', {class: 'item work'},
@@ -888,7 +909,7 @@ function joinCard(join, side) {
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
     refsOf(join.refs),
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
-      event.preventDefault(); select('s:' + subtype.subtype_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
+      event.preventDefault(); select('s:' + subtype.join_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
       subtype.name ? h('span', {}, subtype.name, ' ') : null,
       h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
       subtype.observation ? h('div', {}, subtype.observation) : null, refsOf(subtype.refs))));
@@ -915,7 +936,7 @@ function renderSubtype({subtype, join}) {
     h('div', {id: 'work'}),
     h('div', {class: 'eyebrow'}, 'The join it sits in'),
     joinCard(join, 'provider'));
-  renderWork(`subtype:${subtype.subtype_id}`, 's:' + subtype.subtype_id);
+  renderWork(`join:${subtype.join_id}`, 's:' + subtype.join_id, `element:${subtype.element_id}`);
 }
 function renderJoin(join) {
   fill($('#p-object'),

@@ -147,20 +147,19 @@ def discard(tx: Tx, layer: str) -> Outcome:
                                         f'knowledge op=peel layer={found.name}. Nothing changed.'),))
     db = tx.db
     layer_id = found.layer_id
-    owners = {'element': 'elements', 'join': 'joins', 'subtype': 'subtypes', 'property': 'properties',
-              'item': 'items'}
-    for owner, table in owners.items():
+    for owner in corrections.ORDER:
         spec = corrections.KINDS[owner]
-        for row in db.execute(f'SELECT row, {spec.id_column} FROM {table} WHERE layer_id=?', (layer_id,)).fetchall():
+        for row in db.execute(f'SELECT row, {spec.id_column} FROM {spec.table} WHERE layer_id=?',
+                              (layer_id,)).fetchall():
             db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
-            db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row[0],))
+            corrections.drop_current(db, owner, 'row', row[0])
             if owner == 'item':
                 db.execute('DELETE FROM challenge_states WHERE item_id=?', (row[1],))
-            db.execute(f'DELETE FROM {table} WHERE row=?', (row[0],))
+            db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row[0],))
             if owner == 'item':
                 # item_ids names the item's layer, so it goes with the layer; identities keeps the id.
                 db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
-    for table in ('plans', 'selections', 'unapplied', 'hidden_layers', 'layer_tags',
+    for table in ('plans', 'selections', 'hidden_layers', 'layer_tags',
                   'layer_fields', 'provenance', 'layer_sources', 'reexamine'):
         db.execute(f'DELETE FROM {table} WHERE layer_id=?', (layer_id,))
     db.execute('UPDATE reports SET layer_id=NULL WHERE layer_id=?', (layer_id,))
@@ -246,8 +245,9 @@ def correct(tx: Tx, layer: str, thing: str, changes: dict[str, Any] | None = Non
             reason: Any, evidence: Any = None) -> Version | Outcome:
     """Write a change or removal of a thing of the metaform into a building correction layer, STORE-017.
 
-    A key a correction may not change, such as a join's receiver, is named in a notice and not applied; the rest of
-    the correction is written, STORE-034.
+    A key a correction may not change, such as an element's address, is named in a notice and not applied; the rest of
+    the correction is written, STORE-034. A join's receiver, provider and parent move it, MAP-003; a join absorbed
+    into a parent passes the subtype joins of the metaform it holds to that parent in the same layer, MAP-032.
     """
     found = rows.layer(tx, layer)
     if found.kind != 'correction' or found.finished:
@@ -258,14 +258,15 @@ def correct(tx: Tx, layer: str, thing: str, changes: dict[str, Any] | None = Non
     spec = corrections.KINDS[kind]
     notices: list[Notice] = []
     given = {str(key): value for key, value in (changes or {}).items()}
-    allowed = writes.split_changes(kind, given, notices, refused=('receiver',))
+    current = corrections.current_row(tx.db, kind, thing)
+    if current is None:
+        writes.split_changes(kind, given, notices)
+        return Outcome((*notices, Notice('id', f'{thing} is not current in the metaform; nothing was written. See '
+                                               f'metaform map history {thing}')))
+    base = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (current,)).fetchone()
+    allowed = writes.split_changes(kind, given, notices, held=kind == 'join' and base['parent'] is not None)
     if not remove and given and not allowed:
         return Outcome(tuple(notices))
-    current = tx.db.execute(f'SELECT row FROM {spec.current} WHERE {spec.id_column}=?', (thing,)).fetchone()
-    if current is None:
-        return Outcome((Notice('id', f'{thing} is not current in the metaform; nothing was written. See metaform map '
-                                     f'history {thing}'),))
-    base = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (current[0],)).fetchone()
     base_layer = rows.layer(tx, str(base['layer_id']))
     if base_layer.kind not in METAFORM_KINDS:
         return Outcome((Notice('id', f'{thing} belongs to the knowledge layer {base_layer.name}; a correction never '
@@ -275,10 +276,8 @@ def correct(tx: Tx, layer: str, thing: str, changes: dict[str, Any] | None = Non
     columns = {key: base[key] for key in base.keys() if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
     split: list[tuple[str, Any]] = []
     if not remove:
-        changed, split = writes.changed_columns(tx, kind, allowed, found, notices)
+        changed, split = writes.changed_columns(tx, kind, allowed, found, notices, base)
         columns.update(changed)
-    if kind == 'join':
-        columns['stack_at'] = rows.top(tx)
     columns.update({'layer_id': found.layer_id, 'op': 'remove' if remove else 'change',
                     'reason': rows.text(reason, 'reason', notices), 'evidence': rows.text(evidence, 'evidence', notices)})
     previous = tx.db.execute(f'SELECT row FROM {spec.table} WHERE {spec.id_column}=? AND layer_id=?',
@@ -293,12 +292,50 @@ def correct(tx: Tx, layer: str, thing: str, changes: dict[str, Any] | None = Non
     if 'refs' in allowed and not remove:
         rows.write_refs(tx, kind, row, refs_list(allowed['refs']))
     else:
-        rows.write_refs(tx, kind, row, [(ref.key, ref.value) for ref in rows.read_refs(tx.db, kind, int(current[0]))])
+        rows.write_refs(tx, kind, row, [(ref.key, ref.value) for ref in rows.read_refs(tx.db, kind, current)])
+    if kind == 'join' and not remove and 'parent' in columns and columns['parent'] != base['parent']:
+        _lift(tx, found, thing, str(columns['parent']), rows.text(reason, 'reason', []), notices)
     if split:
         notices.append(Notice('extra', 'A correction keeps no list of records in its extra; those records were not '
                                        'written.'))
     record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row,)).fetchone(), {})
     return dataclasses.replace(record, notices=tuple(notices))
+
+
+def _lift(tx: Tx, found: LayerRow, thing: str, parent: str, reason: str | None, notices: list[Notice]) -> None:
+    """The subtype joins of the metaform that a join absorbed into a parent held pass to that parent, each as a change
+    row in the same correction layer, D3 and D5, MAP-032; a knowledge layer's is named and left inside it."""
+    kinds = corrections.layer_kinds(tx.db)
+    lifted: list[str] = []
+    left: list[str] = []
+    for child, child_row in tx.db.execute('SELECT join_id, row FROM current_subtypes WHERE parent=?',
+                                          (thing,)).fetchall():
+        base = tx.db.execute('SELECT * FROM joins WHERE row=?', (child_row,)).fetchone()
+        if kinds.get(str(base['layer_id'])) not in METAFORM_KINDS:
+            left.append(str(child))
+            continue
+        written = tx.db.execute('SELECT row FROM joins WHERE join_id=? AND layer_id=?',
+                                (child, found.layer_id)).fetchone()
+        if written is not None:
+            tx.db.execute('UPDATE joins SET parent=? WHERE row=?', (parent, written[0]))
+        else:
+            columns = {key: base[key] for key in base.keys() if key not in ('row', 'layer_id', 'op', 'reason',
+                                                                            'evidence')}
+            columns.update({'parent': parent, 'layer_id': found.layer_id, 'op': 'change',
+                            'reason': reason or f'its parent join {thing} was absorbed into {parent}'})
+            cursor = tx.db.execute(f'INSERT INTO joins({", ".join(columns)}) VALUES '
+                                   f'({", ".join("?" for _ in columns)})', tuple(columns.values()))
+            rows.write_refs(tx, 'join', int(cursor.lastrowid or 0),
+                            [(ref.key, ref.value) for ref in rows.read_refs(tx.db, 'join', int(child_row))])
+        lifted.append(str(child))
+    if lifted:
+        notices.append(Notice('parent', f"{', '.join(lifted)} sat inside {thing}; a subtype join holds no subtype "
+                                        f'joins, D5, so {"it passes" if len(lifted) == 1 else "they pass"} to {parent} '
+                                        'when this layer is finished.'))
+    if left:
+        notices.append(Notice('parent', f"{', '.join(left)} of a knowledge layer still "
+                                        f"{'sits' if len(left) == 1 else 'sit'} inside {thing}; a correction never "
+                                        'changes a knowledge layer, so it was left as it is.'))
 
 
 def peel(tx: Tx, layer: str) -> Layer | Outcome:

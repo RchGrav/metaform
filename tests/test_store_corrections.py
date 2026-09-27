@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from metaform.data import Node
-from storekit import correction, dump, intake, knowledge, small_map, store_file, values
+from storekit import correction, dump, intake, knowledge, memory, small_map, store_file, values
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -70,13 +70,13 @@ def test_address_lookup_returns_the_highest_correction(store):
     small_map(store)
     element_id = store.element('code.alarm.audible').element_id
     first = correction(store, 'fix-1')
-    store.correct(first.name, element_id, {'address': 'code.alarm.tone'}, reason='it plays a tone')
+    store.correct(first.name, element_id, {'role': 'NE'}, reason='it states a demand')
     store.finish(first.name)
     second = correction(store, 'fix-2')
-    store.correct(second.name, element_id, {'address': 'code.alarm.buzzer'}, reason='it buzzes')
+    store.correct(second.name, element_id, {'role': 'DE', 'name_length': 1}, reason='it defines the timer')
     store.finish(second.name)
-    assert store.element('code.alarm.buzzer').element_id == element_id
-    assert store.element('code.alarm.tone') is None and store.element('code.alarm.audible') is None
+    found = store.element('code.alarm.audible')
+    assert (found.element_id, found.role, found.name_length) == (element_id, 'DE', 1)
 
 
 @pytest.mark.req('STORE-017')
@@ -88,8 +88,8 @@ def test_only_the_top_correction_peels_and_peeling_restores_the_reads(home, stor
     store.finish(first.name)
     between = reads(store)
     second = correction(store, 'fix-2')
-    store.correct(second.name, store.element('code.timer.kitchen').element_id, {'address': 'code.timer.egg'},
-                  reason='r2')
+    inner = store.joins('code.timer.kitchen').results[0].join_id
+    store.correct(second.name, inner, {'receiver': 'stakeholder.cook.home'}, reason='r2')
     store.finish(second.name)
     before = dump(store_file(home, store))
     below = store.peel(first.name)
@@ -99,7 +99,7 @@ def test_only_the_top_correction_peels_and_peeling_restores_the_reads(home, stor
     assert peeled.ready is None
     assert reads(store) == between
     store.finish(second.name)
-    assert store.element('code.timer.egg') is not None
+    assert inner in [join.join_id for join in store.joins('stakeholder.cook.home').results]
 
 
 @pytest.mark.req('STORE-017')
@@ -167,21 +167,28 @@ def test_removing_an_element_orphans_knowledge_on_it_and_putting_it_back_restore
 
 
 @pytest.mark.req('STORE-034')
-def test_a_correction_never_changes_a_joins_receiver_and_names_what_it_did_not_apply(home, store):
-    _, outer, _ = small_map(store)
+@pytest.mark.req('MAP-015')
+def test_a_correction_never_moves_an_element_and_names_the_address_it_did_not_apply(home, store):
+    small_map(store)
+    kitchen = store.element('code.timer.kitchen')
+    notes = memory(store)
+    store.add_item(notes.name, Node('element', kitchen.element_id), 'rings twice')
     fix = correction(store, 'fix-1')
     before = dump(store_file(home, store))
-    receiver = store.correct(fix.name, outer.join_id, {'receiver': 'code.alarm.audible'}, reason='no')
-    colour = store.correct(fix.name, outer.join_id, {'colour': 'blue'}, reason='no')
-    assert [notice.where for notice in receiver.notices] == ['receiver']
+    address = store.correct(fix.name, kitchen.element_id, {'address': 'code.timer.egg'}, reason='egg timer')
+    colour = store.correct(fix.name, kitchen.element_id, {'colour': 'blue'}, reason='no')
+    assert [notice.where for notice in address.notices] == ['address']
+    assert 'cannot be moved' in address.notices[0].message
     assert [notice.where for notice in colour.notices] == ['colour']
     assert dump(store_file(home, store)) == before
-    both = store.correct(fix.name, outer.join_id, {'receiver': 'code.alarm.audible', 'purpose': 'Fixed.'},
-                         reason='r')
-    assert [notice.where for notice in both.notices] == ['receiver'] and both.fields['purpose'] == 'Fixed.'
+    both = store.correct(fix.name, kitchen.element_id, {'address': 'code.timer.egg', 'role': 'SE'}, reason='r')
+    assert [notice.where for notice in both.notices] == ['address']
+    assert (both.fields['address'], both.fields['role']) == ('code.timer.kitchen', 'SE')
     store.finish(fix.name)
-    join = store.joins('stakeholder.cook.home').results[0]
-    assert join.purpose == 'Fixed.' and join.receiver_address == 'stakeholder.cook.home'
+    assert store.element('code.timer.egg') is None
+    found = store.element('code.timer.kitchen')
+    assert (found.element_id, found.role) == (kitchen.element_id, 'SE')
+    assert values(store.node(Node('element', 'code.timer.kitchen')), 'memory') == ['rings twice']
 
 
 @pytest.mark.req('STORE-034')
@@ -199,51 +206,77 @@ def test_finishing_a_removal_that_leaves_a_join_behind_orphans_it_and_names_it(h
 
 
 @pytest.mark.req('STORE-034')
-def test_a_retype_onto_an_address_another_element_holds_stays_unapplied_and_the_rest_applies(home, store):
-    _, outer, _ = small_map(store)
+@pytest.mark.req('STORE-017')
+@pytest.mark.req('MAP-003')
+def test_a_correction_moves_a_join_to_another_receiver_and_peeling_moves_it_back(home, store):
+    _, _, inner = small_map(store)
+    notes = knowledge(store, 'notes')
+    store.add_item(notes.name, Node('join', inner.join_id), 'rings too long')
+    store.finish(notes.name)
+    knowledge_rows = {row for row in dump(store_file(home, store))['items']}
     fix = correction(store, 'fix-1')
-    alarm = store.element('code.alarm.audible').element_id
-    store.correct(fix.name, alarm, {'address': 'code.timer.kitchen'}, reason='merge')
-    store.correct(fix.name, outer.join_id, {'function': 'Counts down and rings loudly.'}, reason='louder')
-    finished = store.finish(fix.name)
-    assert [notice.where for notice in finished.notices] == [alarm]
-    assert store.element('code.alarm.audible').element_id == alarm
-    assert store.joins('stakeholder.cook.home').results[0].function == 'Counts down and rings loudly.'
+    moved = store.correct(fix.name, inner.join_id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
+    assert moved.notices == ()
+    store.finish(fix.name)
+    assert inner.join_id in [join.join_id for join in store.joins('stakeholder.cook.home').results]
+    assert store.joins('code.timer.kitchen').results == ()
+    assert values(store.node(Node('join', inner.join_id)), 'notes') == ['rings too long']
+    assert {row for row in dump(store_file(home, store))['items']} == knowledge_rows
+    assert [(version.layer, version.op) for version in store.history(inner.join_id).results] == [
+        ('intake-1', 'add'), ('fix-1', 'change')]
+    store.peel(fix.name)
+    assert [join.join_id for join in store.joins('code.timer.kitchen').results] == [inner.join_id]
+    assert values(store.node(Node('join', inner.join_id)), 'notes') == ['rings too long']
 
 
 @pytest.mark.req('STORE-034')
-@pytest.mark.req('BASE-044')
-def test_two_retypes_onto_one_free_address_apply_the_first_and_leave_the_second_unapplied(home, store):
-    small_map(store)
+@pytest.mark.req('STORE-017')
+@pytest.mark.req('MAP-030')
+def test_a_correction_absorbs_a_join_into_its_parents_join_and_peeling_restores_it(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'stakeholder.cook', role='VE')
+        store.add_element(base.name, 'code.timer', role='DE')
+        store.add_element(base.name, 'code.alarm', role='SE')
+        parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
+                                function='Counts down and rings.', relation='r', observation='o')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', function='Rings.',
+                              relation='r', observation='o')
     fix = correction(store, 'fix-1')
-    kitchen = store.element('code.timer.kitchen').element_id
-    alarm = store.element('code.alarm.audible').element_id
-    store.correct(fix.name, kitchen, {'address': 'code.device.timer'}, reason='rename')
-    store.correct(fix.name, alarm, {'address': 'code.device.timer'}, reason='rename')
-    finished = store.finish(fix.name)
-    assert finished.ready is not None
-    assert [notice.where for notice in finished.notices] == [alarm]
-    assert store.element('code.device.timer').element_id == kitchen
-    assert store.element('code.alarm.audible').element_id == alarm
+    store.correct(fix.name, part.join_id, {'parent': parent.join_id}, reason='the alarm is part of the timer')
+    store.finish(fix.name)
+    assert [join.join_id for join in store.joins('stakeholder.cook').results] == [parent.join_id]
+    held = store.subtypes(parent.join_id).results
+    assert [(sub.join_id, sub.address, sub.extra) for sub in held] == [
+        (part.join_id, 'code.alarm', {'purpose': 'Hear the end.'})]
+    assert 'code.alarm' not in [root.address for root in store.roots().elements]
+    store.peel(fix.name)
+    assert sorted(join.join_id for join in store.joins('stakeholder.cook').results) == sorted(
+        [parent.join_id, part.join_id])
+    assert store.subtypes(parent.join_id).results == ()
+    assert {join.join_id: join.purpose for join in store.joins('stakeholder.cook').results}[part.join_id] == \
+        'Hear the end.'
 
 
 @pytest.mark.req('STORE-017')
 @pytest.mark.req('MAP-015')
 @pytest.mark.req('STORE-007')
-def test_relocating_an_element_carries_its_items_and_drops_its_joins(store):
-    small_map(store)
-    kitchen = store.element('code.timer.kitchen')
-    notes = knowledge(store, 'notes')
-    store.add_item(notes.name, Node('element', kitchen.element_id), 'first')
-    store.add_item(notes.name, Node('element', kitchen.element_id), 'second')
-    store.finish(notes.name)
+def test_a_correction_records_an_element_at_a_better_address_and_moves_its_join_to_it(store):
+    _, _, inner = small_map(store)
+    alarm = store.element('code.alarm.audible')
+    notes = memory(store)
+    store.add_item(notes.name, Node('join', inner.join_id), 'rings too long')
+    store.add_item(notes.name, Node('element', alarm.element_id), 'a piezo')
     fix = correction(store, 'fix-1')
-    store.correct(fix.name, kitchen.element_id, {'address': 'code.timer.egg'}, reason='egg timer')
+    better = store.add_element(fix.name, 'code.alarm.audible.tone', name_length=2, role='SE')
+    store.correct(fix.name, inner.join_id, {'provider': 'code.alarm.audible.tone'}, reason='it plays a tone')
     store.finish(fix.name)
-    moved = store.element('code.timer.egg')
-    assert moved.element_id == kitchen.element_id
-    assert sorted(values(store.node(Node('element', 'code.timer.egg')), 'notes')) == ['first', 'second']
-    assert store.joins('code.timer.egg').results == () and store.joins('code.timer.egg', as_='provider').results == ()
+    moved = store.joins('code.timer.kitchen').results
+    assert [(join.join_id, join.provider_address) for join in moved] == [(inner.join_id, 'code.alarm.audible.tone')]
+    assert store.element('code.alarm.audible.tone').element_id == better.element_id
+    assert values(store.node(Node('join', inner.join_id)), 'memory') == ['rings too long']
+    assert store.element('code.alarm.audible').element_id == alarm.element_id
+    assert values(store.node(Node('element', 'code.alarm.audible')), 'memory') == ['a piezo']
 
 
 @pytest.mark.req('STORE-012')
@@ -292,44 +325,17 @@ def test_finishing_a_correction_marks_the_layers_built_from_what_it_changed(home
     assert {layer.name: layer.reexamine for layer in store.layers().results}['challenge'] is False
 
 
-@pytest.mark.req('STORE-017')
-def test_a_relocation_removes_metaform_joins_and_orphans_knowledge_joins_until_peeled(home, store):
-    _, _, inner = small_map(store)
-    extra = knowledge(store, 'extra')
-    store.add_element(extra.name, 'code.helper')
-    known = store.add_join(extra.name, 'code.timer.kitchen', 'code.helper', purpose='p', function='f',
-                           relation='r', observation='o')
-    store.finish(extra.name)
-    knowledge_rows = dump(store_file(home, store))['joins']
-    kitchen = store.element('code.timer.kitchen').element_id
-    fix = correction(store, 'fix-1')
-    store.correct(fix.name, kitchen, {'address': 'code.timer.egg'}, reason='egg timer')
-    store.finish(fix.name)
-    rows = store.history(inner.join_id).results
-    assert [(version.layer, version.op) for version in rows][-1] == ('fix-1', 'remove')
-    assert rows[-1].fields['name'] == 'audible alarm'  # the removal keeps the join as it was, its name included
-    assert store.joins(kitchen).results == ()
-    raw = {join.join_id: join for join in store.joins(kitchen, raw=True).results}
-    assert inner.join_id not in raw and raw[known.join_id].orphaned is True
-    assert {row for row in dump(store_file(home, store))['joins'] if row[2] == extra.layer_id} == \
-        {row for row in knowledge_rows if row[2] == extra.layer_id}
-    store.peel(fix.name)
-    assert {join.join_id for join in store.joins(kitchen).results} == {inner.join_id, known.join_id}
-    assert {join.join_id: join.name for join in store.joins(kitchen).results}[inner.join_id] == 'audible alarm'
-    assert store.element(kitchen).address == 'code.timer.kitchen'
-
-
 @pytest.mark.req('VIEW-014')
 @pytest.mark.req('STORE-017')
 def test_the_peel_preview_names_what_removing_a_correction_layer_would_change_and_writes_nothing(home, store):
-    small_map(store)
-    kitchen = store.element('code.timer.kitchen').element_id
+    _, _, inner = small_map(store)
     alarm = store.element('code.alarm.audible').element_id
     notes = knowledge(store, 'notes')
     store.add_item(notes.name, Node('element', alarm), 'loud enough?')
     store.finish(notes.name)
     first = correction(store, 'fix-1')
-    store.correct(first.name, kitchen, {'address': 'code.timer.egg'}, reason='egg timer')
+    store.add_element(first.name, 'code.alarm.audible.tone', role='SE')
+    store.correct(first.name, inner.join_id, {'provider': 'code.alarm.audible.tone'}, reason='it plays a tone')
     added = store.add_join(first.name, 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it.',
                            function='Rings.', relation='The alarm tells the cook.', observation='Loud.')
     store.finish(first.name)
@@ -347,20 +353,17 @@ def test_the_peel_preview_names_what_removing_a_correction_layer_would_change_an
     assert [(change.kind, change.what, change.effect) for change in top.changes] == [
         ('element', 'code.alarm.audible', 'comes back'), ('item', 'loud enough?', 'shows again')]
     found = {(change.kind, change.what, change.effect): change.detail for change in below.changes}
-    assert found[('element', 'code.timer.egg', 'moves back')] == 'from code.timer.egg to code.timer.kitchen'
+    assert found[('join', 'code.timer.kitchen -> code.alarm.audible.tone', 'moves back')] == \
+        'to code.timer.kitchen -> code.alarm.audible'
+    assert ('element', 'code.alarm.audible.tone', 'disappears') in found
     assert ('join', 'stakeholder.cook.home -> code.alarm.audible', 'disappears') in found
-    assert sorted(key for key in found if key[2] == 'comes back') == sorted([
-        ('join', 'stakeholder.cook.home -> code.timer.egg', 'comes back'),
-        ('join', 'code.timer.egg -> code.alarm.audible', 'comes back'),
-        ('subtype', 'code.loop.tick', 'comes back')])
-    assert all(found[key] == 'the move removed it' for key in found if key[2] == 'comes back')
     assert ('item', 'rings twice', 'becomes orphaned') in found
     assert store.peel_preview('notes').changes == () and store.peel_preview('notes').notices
 
 
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('STORE-017')
-def test_a_joins_and_a_subtypes_ef_is_kept_through_every_correction_and_relocation(store):
+def test_a_joins_and_a_subtypes_ef_is_kept_through_every_correction_and_move(store):
     with store.atomic():
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
@@ -372,17 +375,17 @@ def test_a_joins_and_a_subtypes_ef_is_kept_through_every_correction_and_relocati
     assert (join.ef, tick.ef, join.notices, tick.notices) == ('Encounter', 'Function', (), ())
     fix = correction(store, 'fix-1')
     store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
-    store.correct(fix.name, tick.subtype_id, {'ef': 'Encounter'}, reason='relabel')
+    store.correct(fix.name, tick.join_id, {'ef': 'Encounter'}, reason='relabel')
     store.finish(fix.name)
     kept = store.joins('code.a').results[0]
     assert (kept.purpose, kept.ef, store.subtypes(kept.join_id).results[0].ef) == ('q', 'Encounter', 'Encounter')
     move = correction(store, 'fix-2')
-    store.correct(move.name, store.element('code.a').element_id, {'address': 'code.c'}, reason='moved')
+    store.add_element(move.name, 'code.c', role='DE')
+    store.correct(move.name, join.join_id, {'receiver': 'code.c'}, reason='moved')
     store.finish(move.name)
-    removed = store.history(join.join_id).results[-1]
-    assert (removed.op, removed.fields['ef']) == ('remove', 'Encounter')
-    removed_tick = store.history(tick.subtype_id).results[-1]
-    assert (removed_tick.op, removed_tick.fields['ef']) == ('remove', 'Encounter')
+    moved = store.history(join.join_id).results[-1]
+    assert (moved.op, moved.fields['ef']) == ('change', 'Encounter')
+    assert [sub.ef for sub in store.subtypes(store.joins('code.c').results[0].join_id).results] == ['Encounter']
 
 
 @pytest.mark.req('MAP-020')
@@ -405,7 +408,7 @@ def test_ef_holds_only_function_or_encounter_and_any_other_word_is_kept_in_extra
 
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('STORE-017')
-def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_corrections_and_relocation(store):
+def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_corrections_and_moves(store):
     with store.atomic():
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
@@ -418,12 +421,45 @@ def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_correct
     assert (join.verb, tick.verb, join.notices, tick.notices) == ('drive', 'advances', (), ())
     fix = correction(store, 'fix-1')
     store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
-    store.correct(fix.name, tick.subtype_id, {'verb': 'moves'}, reason='plainer')
+    store.correct(fix.name, tick.join_id, {'verb': 'moves'}, reason='plainer')
     store.finish(fix.name)
     kept = store.joins('code.a').results[0]
     assert (kept.purpose, kept.verb, store.subtypes(kept.join_id).results[0].verb) == ('q', 'drive', 'moves')
     move = correction(store, 'fix-2')
-    store.correct(move.name, store.element('code.a').element_id, {'address': 'code.c'}, reason='moved')
+    store.add_element(move.name, 'code.c', role='DE')
+    store.correct(move.name, join.join_id, {'receiver': 'code.c'}, reason='moved')
     store.finish(move.name)
     assert store.history(join.join_id).results[-1].fields['verb'] == 'drive'
-    assert store.history(tick.subtype_id).results[-1].fields['verb'] == 'moves'
+    assert store.history(tick.join_id).results[-1].fields['verb'] == 'moves'
+
+
+
+@pytest.mark.req('MAP-032')
+@pytest.mark.req('STORE-034')
+@pytest.mark.req('STORE-017')
+def test_a_correction_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_the_new_parent(store):
+    with store.atomic():
+        base = intake(store)
+        store.add_element(base.name, 'stakeholder.cook', role='VE')
+        store.add_element(base.name, 'code.timer', role='DE')
+        store.add_element(base.name, 'code.alarm', role='SE')
+        parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
+                                function='Counts down and rings.', relation='r', observation='o')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', function='Rings.',
+                              relation='r', observation='o')
+        piezo = store.add_subtype(base.name, part.join_id, 'code.alarm.piezo', function='Buzzes.', role='SE',
+                                  refs=[('path', 'src/piezo.c')])
+    fix = correction(store, 'fix-1')
+    absorbed = store.correct(fix.name, part.join_id, {'parent': parent.join_id}, reason='the alarm is the timer\'s')
+    assert piezo.join_id in ' '.join(notice.message for notice in absorbed.notices)
+    store.finish(fix.name)
+    assert sorted(sub.join_id for sub in store.subtypes(parent.join_id).results) == sorted(
+        [part.join_id, piezo.join_id])
+    moved = {sub.join_id: sub for sub in store.subtypes(parent.join_id).results}[piezo.join_id]
+    assert (moved.parent, moved.function, [(ref.key, ref.value) for ref in moved.refs]) == (
+        parent.join_id, 'Buzzes.', [('path', 'src/piezo.c')])
+    assert [(version.layer, version.op, version.fields['parent']) for version in store.history(piezo.join_id).results] \
+        == [('intake-1', 'add', part.join_id), ('fix-1', 'change', parent.join_id)]
+    store.peel(fix.name)
+    assert [sub.join_id for sub in store.subtypes(part.join_id).results] == [piezo.join_id]
+    assert [sub.join_id for sub in store.subtypes(parent.join_id).results] == []

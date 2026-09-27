@@ -198,7 +198,7 @@ The Inference Metaform uses reified knowledge hypergraph semantics: a relationsh
 
 This is the practical meaning of a knowledge graph of knowledge graphs. The shape contains functional relationships, and additional knowledge can express relationships about those relationships. A note about why one declaration must satisfy an MCP schema belongs at that receiving join, not necessarily on the plugin system globally.
 
-The implementation provides identities for elements, joins, and internal subtypes, and lets items target them. This realizes relationship addressability without requiring a particular graph-database technology. The [storage correspondence](IMPLEMENTATION_MAP.md#records) explains the concrete records.
+The implementation provides identities for elements and joins, internal subtype joins included, and lets items target them. This realizes relationship addressability without requiring a particular graph-database technology. The [storage correspondence](IMPLEMENTATION_MAP.md#records) explains the concrete records.
 
 <a id="namespaces"></a>
 ## 4. Namespaces, proper nouns, and project names
@@ -298,7 +298,7 @@ This is how the procedure pursues a complete functional account without making t
 
 The intake then anneals and combines elements where a larger functionality can carry their contributions in the same purpose relationship. A subpart is absorbed only when the parent's purpose join already states its purpose. A subpart with an objective purpose that the parent cannot carry remains its own element.
 
-Combining does not optimize functionality away. It changes the level at which the functionality is represented. The absorbed subpart remains an internal subtype in the matching parent join, retaining its atomic EF, active-voice relation, observation, name, and references. It is not emitted again as a global root element.
+Combining does not optimize functionality away. It changes the level at which the functionality is represented. The absorbed subpart is placed in the matching parent join by an internal subtype join, which keeps its atomic EF, active-voice relation, observation, name, and references; the subpart itself stays one element record at its own address and does not move. An element whose only joins are subtype joins is not a global root element.
 
 An internal subtype join has no separate purpose field: the containing parent join carries that purpose. This preserves the reason for convergence instead of hiding an independent requirement inside a parent that cannot express it.
 
@@ -363,7 +363,7 @@ The global list does not repeat `document.procedure.intake`. The join's provider
 
 The current module serves the stored intake text with controlled target and project substitutions, followed by its recording instructions and the report/debug requests selected for the call. Tests compare the resource and its specifications copy. An explicit `intake_file` setting can select another operative file.
 
-The intake is recorded as it is reasoned. The agent starts it, then records each element, join and subtype join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back whole, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
+The intake is recorded as it is reasoned. The agent starts it, then records each element, join and subtype join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context; it anneals with one call per join, which places a join inside its parent's join as a subtype join. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back, whole or one receiver at a time, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
 
 Each call stores its object in a building intake layer, retaining content with notices where fields do not fit. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
 
@@ -498,9 +498,9 @@ A functional element holds:
 
 Memory is therefore one use of the Inference Metaform's functional addressability, not the entire definition of the system.
 
-### Element, join, and subtype targets
+### Element and join targets
 
-The implementation supports three node kinds for memory: `element`, `join`, and `subtype`. Elements and subtypes can be addressed by namespace or identifier; joins have identifiers. A memory observation is an item at its target. A memory relation is an item at the from-node with a link to the to-node and a relation value.
+The implementation supports two node kinds for memory: `element` and `join`. Elements can be addressed by namespace or identifier; joins, subtype joins included, have identifiers. An absorbed subpart is an element, and its subtype join a join. A memory observation is an item at its target. A memory relation is an item at the from-node with a link to the to-node and a relation value.
 
 The memory module exposes nine operations: create entities, create relations, add observations, delete entities, delete observations, delete relations, read graph, search nodes, and open nodes. Its `delete-entities` operation removes the memories at those nodes, not the underlying functional identities of the Metaform.
 
@@ -608,7 +608,7 @@ That distinction supports broad understanding of a mixed realization while prese
 | Prompt version | A saved text version with a parent; earlier text is retained unchanged. |
 | Origin/variant material | File-state history tied to an origin, separate from graph corrections and memory. |
 
-Correction application changes the current graph view while retaining the underlying correction history. Relocation keeps an element's identity, carries its attached items through that identity, and removes the relevant existing Metaform joins and their internal subtypes. Knowledge that depends on affected content can be marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
+Correction application changes the current graph view while retaining the underlying correction history. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, provider or parent join, keeping its identity and its attached items. Knowledge that depends on affected content can be marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
 
 This separation lets an agent reason about what is stored, what currently applies, what has changed, and what a previous operation used without treating those as the same question.
 

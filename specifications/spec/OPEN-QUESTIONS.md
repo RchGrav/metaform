@@ -8,6 +8,8 @@ Only questions that depend on Rich's intent are open. Every question with one te
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.
 
+**D83. Moving elements and joins, and the subtype join.** Rich, 2026-09-27: an element cannot be moved; it is an address in the namespace, and moving it changes its address. A function's join can be moved, mostly while annealing, otherwise to fix a serious misinterpretation or to follow a change in the design's structure, and a moved join is the same join. An element always appears as one element record; annealing places it in its parent's join as a subtype join, and the element itself does not move. The subtype join is a join of type `subtype` held in its parent's purpose join, a row of `joins` whose current row is kept apart from the element graph's, and an element whose only joins are subtype joins is not a root. D3, D4 and D5 carry over to it. MAP-003, MAP-015, MAP-030, MAP-031, MAP-032, STORE-007, STORE-010, STORE-011, STORE-017, STORE-034.
+
 **D82. Submissions that break the shape.** Stored as given; a correction layer or a reviewer deals with them. No agent submission is refused for its content: what does not fit is stored and noted in a notice, and an agent that cannot continue stops and submits a trouble report. BASE-044, STORE-026.
 
 **D81. intake_submit.** It has its own input schema, the metaform's general data pattern, with field names and nesting taken from the Canonical Intake. The agent submits against it once. The intake text is served unchanged with one module line after it, and can change freely as long as its structure keeps that pattern.
@@ -48,13 +50,13 @@ Only questions that depend on Rich's intent are open. Every question with one te
 ## Settled by recommendation
 
 **D3. Can a subtype own joins after annealing?** (MAP, STORE)
-Recommendation: no. Its joins lift to the parent when it is annealed. A subtype is reachable only through its join and is never a root, so it cannot be a receiver in the graph.
+Recommendation: no. Its joins lift to the parent when it is annealed. A subtype is reachable only through its join and is never a root, so it cannot be a receiver in the graph. Since D83 the absorbed element is an ordinary element: the agent lifts its joins by moving them, and until it does the element is a node of the outer map, MAP-032.
 
 **D4. Can one element be a subtype in two different joins?**
-Recommendation: no. A subpart is absorbed only when one parent's join already carries its purpose. A part that serves two joins has a role of its own in the map and stays a root element. This also settles whether a subtype can share an address with a root element: it cannot.
+Recommendation: no. A subpart is absorbed only when one parent's join already carries its purpose. A part that serves two joins has a role of its own in the map and stays a root element. This also settles whether a subtype can share an address with a root element: it cannot. Since D83 an element held by a second subtype join is stored as given with a notice naming the first, BASE-044, MAP-032.
 
 **D5. Can a subtype hold subtypes of its own?**
-Recommendation: no, one level. A subtype lives inside a join, not inside an element. This can be relaxed later without breaking stored maps.
+Recommendation: no, one level. A subtype lives inside a join, not inside an element. This can be relaxed later without breaking stored maps. Since D83 a subtype join's parent is a join held by a receiver; one that names a subtype join cannot be read, and a join absorbed while it holds subtype joins passes them to its new parent, MAP-032.
 
 **D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
 Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.

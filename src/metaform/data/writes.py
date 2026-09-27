@@ -1,4 +1,4 @@
-"""Writing the map's objects into a layer: elements, joins, subtypes, refs, items and properties, STORE-024.
+"""Writing the map's objects into a layer: elements, joins, subtype joins, refs, items and properties, STORE-024.
 
 Every function works inside one open write transaction and never refuses a
 write for its content, BASE-044 and STORE-026: what does not fit is stored as
@@ -21,8 +21,9 @@ from . import corrections, rows, views
 from .corrections import METAFORM_KINDS
 from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_list
 from .names import reading, short_name
-from .records import (CONDITIONS, EF_WORDS, ROLES, SUBTYPE_ROLES, Element, Item, Join, Node, Notice, Outcome, Property,
-                      Ref, Subtype, Version, WorkRecord)
+from .records import (CONDITIONS, EF_WORDS, ROLES, Element, Item, Join, Node, Notice, Outcome, Property, Ref, Subtype,
+                      Version, WorkRecord)
+from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
 
@@ -39,7 +40,7 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
     return [value]
 
 
-# Elements, joins and subtypes -------------------------------------------------------------------------------
+# Elements, joins and subtype joins --------------------------------------------------------------------------
 
 def _element_fields(name_length: Any, role: Any, found: LayerRow,
                     notices: list[Notice]) -> tuple[int | None, str | None, dict[str, Any]]:
@@ -103,13 +104,9 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
                     for field, unapplied in given if unapplied]
         rows.split_items(tx, found, 'element', element_id, split)
         return _with(record, notices, existing=True, differs=differs)
-    length, stored_role, moved = _element_fields(name_length, role, found, notices)
-    if moved:
-        kept_extra = {**(kept_extra or {}), **moved}
-    holder = rows.subtype_holding(tx, address)
-    if holder is not None:
-        notices.append(Notice('address', f'{address} is also held by subtype {holder}; the element was stored as '
-                                         'given.'))
+    length, stored_role, aside = _element_fields(name_length, role, found, notices)
+    if aside:
+        kept_extra = {**(kept_extra or {}), **aside}
     element_id = rows.new_element(tx, found, address, kept_extra, name_length=length, role=stored_role, refs=pairs)
     rows.split_items(tx, found, 'element', element_id, split)
     if found.kind == 'correction':
@@ -151,15 +148,14 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     if kind != 'purpose' and not rows.address_form(kind):
         notices.append(Notice('type', f'{kind!r} is not purpose or an address; it was stored as given.'))
     join_id = new_id()
-    tx.db.execute('INSERT INTO join_ids(join_id, receiver) VALUES (?, ?)', (join_id, receiver_id))
+    tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
         'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, function, ef, relation, verb, '
-        'observation, non_goal, extra, stack_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'observation, non_goal, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (join_id, found.layer_id, kind, receiver_id, provider_id, texts['name'], texts['purpose'], texts['function'],
-         ef,
-         texts['relation'], texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the join'),
-         rows.top(tx)))
+         ef, texts['relation'], texts['verb'], texts['observation'], texts['non_goal'],
+         encode_extra(kept_extra, 'the join')))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':
         tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
@@ -171,9 +167,15 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
 
 
 def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = None, ef: Any = None,
-                relation: Any = None, verb: Any = None, observation: Any = None, name: Any = None, name_length: Any = None, role: Any = None,
-                refs: Iterable[Any] = (), extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
-    """Write a subtype inside the one join it shares with its parent; it has no purpose, STORE-011."""
+                relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
+                name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
+                extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
+    """Write a subtype join inside its parent join, holding the element at `address`; it has no purpose, STORE-011.
+
+    The element is an ordinary element record, MAP-030: one is written in the layer with the name_length and role
+    given when the address holds none; an element already there keeps its own, and each field given that differs is
+    named in a notice, as `add_element` does. The subtype join's refs are its own.
+    """
     pairs = refs_list(refs)
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
@@ -181,54 +183,64 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     stop = rows.frozen(tx, found)
     if stop is not None:
         return Outcome((stop,))
+    parent = _parent_of(tx, join, found)
     notices: list[Notice] = []
-    kept_extra, split = rows.extra_fields(extra, address, notices)
-    moved: dict[str, Any] = {}
+    kept_extra, split = rows.extra_fields(extra, 'the subtype join', notices)
     if purpose is not None:
-        moved['purpose'] = purpose
-        notices.append(Notice('purpose', 'A subtype has no purpose of its own; the purpose was kept in its extra.'))
-    if role is not None and role not in SUBTYPE_ROLES:
-        moved['role'] = role
-        notices.append(Notice('role', f"{role!r} is not DE, SE or NE; it was kept in the subtype's extra."))
-        role = None
-    if name_length is not None and not rows.whole_number(name_length):
-        moved['name_length'] = name_length
-        notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the subtype's "
-                                             'extra.'))
-        name_length = None
-    if moved:
-        kept_extra = {**(kept_extra or {}), **moved}
-    ef, kept_extra = _ef(ef, kept_extra, "the subtype's", notices)
+        kept_extra = {**(kept_extra or {}), 'purpose': purpose}
+        notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. The '
+                                         'purpose was kept in its extra.'))
+    ef, kept_extra = _ef(ef, kept_extra, "the subtype join's", notices)
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('function', function), ('relation', relation), ('verb', verb), ('observation', observation),
-        ('name', name))}
-    join_id = _join_of(tx, join, found)
-    if not rows.address_form(address):
-        notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
-    holder = rows.subtype_holding(tx, address)
-    if holder is not None:
-        notices.append(Notice('address', f'{address} is also held by subtype {holder}; stored as given.'))
-    elif rows.current_element(tx, address) is not None:
-        notices.append(Notice('address', f'{address} is also held by an element; stored as given.'))
-    subtype_id = new_id()
-    tx.db.execute('INSERT INTO subtype_ids(subtype_id, join_id) VALUES (?, ?)', (subtype_id, join_id))
-    rows.identity(tx, subtype_id, 'subtype')
-    rows.types(tx, address)
+        ('non_goal', non_goal), ('name', name))}
+    element_id = _held_element(tx, found, address, name_length, role, notices)
+    for other in rows.holding(tx, element_id):
+        notices.append(Notice('address', f'{address} is already held by subtype join {other}; a part serving two '
+                                         'joins is its own element, D4. Stored as given.'))
+    join_id = new_id()
+    tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
+    rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO subtypes(subtype_id, layer_id, address, name, name_length, role, function, ef, relation, verb, '
-        'observation, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (subtype_id, found.layer_id, address, texts['name'], name_length, role, texts['function'], ef, texts['relation'],
-         texts['verb'],
-         texts['observation'], encode_extra(kept_extra, address)))
+        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, function, ef, relation, verb, "
+        "observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (join_id, found.layer_id, parent, element_id, texts['name'], texts['function'], ef, texts['relation'],
+         texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_subtypes(subtype_id, row, join_id, address) VALUES (?, ?, ?, ?)',
-                      (subtype_id, row, join_id, address))
-    rows.write_refs(tx, 'subtype', row, pairs)
-    rows.split_items(tx, found, 'subtype', subtype_id, split)
-    record = views.subtype(tx, tx.db.execute('SELECT * FROM subtypes WHERE row=?', (row,)).fetchone(), join_id,
-                           all_layers(tx.db))
+        tx.db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
+                      (join_id, row, parent, element_id))
+    rows.write_refs(tx, 'join', row, pairs)
+    rows.split_items(tx, found, 'join', join_id, split)
+    record = views.subtype(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
     return _with(record, notices)
+
+
+def _held_element(tx: Tx, found: LayerRow, address: str, name_length: Any, role: Any,
+                  notices: list[Notice]) -> str:
+    """The element a subtype join holds: the one at the address, or a new one written in the layer, STORE-011."""
+    if not rows.address_form(address) and not is_id(address):
+        notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
+    current = rows.current_element(tx, address)
+    if current is None and found.kind == 'correction':
+        column = 'element_id' if is_id(address) else 'address'
+        written = tx.db.execute(f"SELECT element_id FROM elements WHERE {column}=? AND layer_id=? AND op != 'remove'",
+                                (address, found.layer_id)).fetchone()
+        if written is not None:
+            return str(written[0])
+    if current is None:
+        if is_id(address):
+            raise StoreError(f'No element has the id {address}.', 'metaform map where <address>')
+        length, stored_role, kept = _element_fields(name_length, role, found, notices)
+        return rows.new_element(tx, found, address, kept or None, name_length=length, role=stored_role)
+    element_id = str(current['element_id'])
+    record = views.element(tx, element_id, None)
+    assert record is not None
+    for field, given, own in (('name_length', name_length, record.name_length), ('role', role, record.role)):
+        if given is not None and given != own:
+            notices.append(Notice(field, f'{record.address} is already element {element_id} of layer {record.layer}, '
+                                         f'which keeps its own {field}; the {field} given here was not applied.'))
+    return element_id
 
 
 def _ef(ef: Any, extra: dict[str, Any] | None, owner: str,
@@ -240,13 +252,19 @@ def _ef(ef: Any, extra: dict[str, Any] | None, owner: str,
     return None, {**(extra or {}), 'ef': ef}
 
 
-def _join_of(tx: Tx, join: Any, found: LayerRow) -> str:
-    """The join a subtype lives in; a subtype cannot be stored without one, so an unknown join cannot be read."""
-    if isinstance(join, str) and is_id(join) and (
-            tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (join,)).fetchone() or
-            tx.db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (join, found.layer_id)).fetchone()):
-        return join
-    raise StoreError(f'{join} is not a join in this project; a subtype lives inside one join.',
+def _parent_of(tx: Tx, join: Any, found: LayerRow) -> str:
+    """The join a subtype join sits in: a join held by a receiver, current or written in this layer, STORE-011. A
+    subtype join cannot be stored without one, so any other reference cannot be read, D5 and MAP-032."""
+    if isinstance(join, str) and is_id(join):
+        held = tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (join,)).fetchone()
+        written = tx.db.execute('SELECT parent FROM joins WHERE join_id=? AND layer_id=?',
+                                (join, found.layer_id)).fetchone()
+        if held is not None or (written is not None and written[0] is None):
+            return join
+        if rows.target_current(tx, 'join', join) or written is not None:
+            raise StoreError(f'{join} is a subtype join; a subtype join sits inside a join held by a receiver, and '
+                             'holds no subtype joins of its own.', f'metaform map subtypes {join}')
+    raise StoreError(f'{join} is not a join held by a receiver in this project; a subtype join lives inside one join.',
                      'metaform map joins <element>')
 
 
@@ -255,19 +273,19 @@ def add_ref(tx: Tx, owner: str, key: str, value: str) -> Ref | Outcome:
     (key, value), = refs_list([(key, value)])
     kind = rows.kind_of(tx, owner)
     spec = corrections.KINDS[kind]
-    current = tx.db.execute(f'SELECT row FROM {spec.current} WHERE {spec.id_column}=?', (owner,)).fetchone()
+    current = corrections.current_row(tx.db, kind, owner)
     if current is None:
         return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
                                         f'history {owner}'),))
-    layer_id = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (current[0],)).fetchone()[0]
+    layer_id = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (current,)).fetchone()[0]
     found = rows.layer(tx, str(layer_id))
     if found.kind in METAFORM_KINDS and not (found.kind == 'intake' and (not found.finished or
                                                                         found.layer_id in tx.created)):
         return Outcome((Notice('owner', f'{owner} belongs to {found.name}; its refs change only through a correction '
                                         f'layer: {rows.correct_step(owner)}. Nothing was written.'),))
     last = tx.db.execute('SELECT MAX(position) FROM refs WHERE owner=? AND owner_row=?',
-                         (kind, current[0])).fetchone()[0]
-    rows.write_refs(tx, kind, int(current[0]), [(key, value)], start=(int(last) + 1) if last is not None else 0)
+                         (kind, current)).fetchone()[0]
+    rows.write_refs(tx, kind, current, [(key, value)], start=(int(last) + 1) if last is not None else 0)
     return Ref(key, value)
 
 
@@ -299,7 +317,8 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
     """Attach a property to an element; it travels the namespace and has no join, STORE-039.
 
     Sent to a type address, it goes on the element there, made when the project has none. Sent to a join or a
-    subtype, it is stored as given, orphaned, with the target in its `extra`: properties attach only to elements.
+    subtype join, it is stored as given, orphaned, with the target in its `extra`: properties attach only to
+    elements.
     """
     pairs = refs_list(refs)
     found = rows.layer(tx, layer)
@@ -312,7 +331,7 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
         return Outcome((Notice('value', 'The value was an empty list; there was nothing to store.'),))
     kept_extra, split = rows.extra_fields(extra, 'the property', notices)
     element_id = _property_element(tx, element, found, notices)
-    if isinstance(element, Node) and element.kind in ('join', 'subtype'):
+    if isinstance(element, Node) and element.kind == 'join':
         kept_extra = {**(kept_extra or {}), 'target': str(element)}
     made: list[int] = []
     for answer in answers:
@@ -334,7 +353,7 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
 
 
 def _property_element(tx: Tx, element: Any, found: LayerRow, notices: list[Notice]) -> str:
-    if isinstance(element, Node) and element.kind in ('join', 'subtype'):
+    if isinstance(element, Node) and element.kind == 'join':
         notices.append(Notice('element', f'{element} is a {element.kind}; properties attach only to elements, so it '
                                          'was stored as given, orphaned, with its target in its extra.'))
         return rows.stub_element(tx)
@@ -394,28 +413,84 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     return None
 
 
-def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice],
-                  refused: tuple[str, ...] = ()) -> dict[str, Any]:
-    """The changes a thing of this kind takes; any other key is named in a notice and not applied, STORE-034."""
+MOVED = ("An element cannot be moved: its address is its identity, and another address is a different element, "
+         "MAP-015. address was not applied; record the element at the new address and move its joins to it with "
+         "receiver or provider.")
+
+
+def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice], *, held: bool = False) -> dict[str, Any]:
+    """The changes a thing of this kind takes; any other key is named in a notice and not applied, STORE-034.
+
+    An element's address is never applied, MAP-015. A subtype join, `held`, sits in its parent join, so a receiver
+    given for it is not applied: `parent` moves it.
+    """
     allowed: dict[str, Any] = {}
     for key, value in changes.items():
-        if key == 'refs' or key in rows.EDITABLE[kind]:
+        if kind == 'element' and key == 'address':
+            notices.append(Notice('address', MOVED))
+        elif held and key == 'receiver':
+            notices.append(Notice('receiver', "A subtype join sits in its parent join, whose receiver owns it; receiver "
+                                              'was not applied. parent moves it to another join.'))
+        elif key == 'refs' or key in rows.EDITABLE[kind]:
             allowed[key] = value
-        elif key in refused:
-            notices.append(Notice(key, f'A join keeps its receiver for life; {key} was not applied. To move a join, '
-                                       'remove it and add a new one in the same correction layer.'))
         else:
             notices.append(Notice(key, f'{key} is not a field of a {kind}; it was not applied. The fields are '
                                        f'{", ".join(rows.EDITABLE[kind])} and refs.'))
     return allowed
 
 
-def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
-                    notices: list[Notice]) -> tuple[dict[str, Any], list[tuple[str, Any]]]:
-    """The column values of a change, each checked the way a write checks it; and records split from an extra."""
+def _receiver_of(tx: Tx, join_id: str) -> str | None:
+    """The receiver of a join held by a receiver: its current row's, or the latest row written for it."""
+    found = tx.db.execute('SELECT receiver FROM current_joins WHERE join_id=?', (join_id,)).fetchone()
+    if found is None:
+        found = tx.db.execute('SELECT receiver FROM joins WHERE join_id=? ORDER BY row DESC LIMIT 1',
+                              (join_id,)).fetchone()
+    return None if found is None or found[0] is None else str(found[0])
+
+
+def _naming(tx: Tx, element_id: str, thing: str) -> list[str]:
+    """The other current joins that name an element: as receiver or provider, or as the element a subtype join holds."""
+    found = [str(row[0]) for row in tx.db.execute(
+        'SELECT join_id FROM current_joins WHERE receiver=? UNION SELECT join_id FROM current_joins WHERE provider=? '
+        'UNION SELECT join_id FROM current_subtypes WHERE provider=?', (element_id, element_id, element_id))]
+    return sorted(join_id for join_id in found if join_id != thing)
+
+
+def _absorbed(tx: Tx, base: Row, value: Any, changes: dict[str, Any], found: LayerRow, columns: dict[str, Any],
+              aside: dict[str, Any], notices: list[Notice]) -> None:
+    """A change of a join's parent: it becomes a subtype join inside that join, MAP-030, keeping every field but its
+    receiver, which the parent's receiver now holds, and its purpose, which goes to its extra, STORE-034."""
+    parent = _parent_of(tx, value, found)
+    if parent == base['join_id']:
+        raise StoreError(f'{parent} cannot be held inside itself; a subtype join sits inside another join held by a '
+                         'receiver.', 'metaform map joins <receiver>')
+    columns.update(parent=parent, type='subtype', receiver=None)
+    if base['purpose'] is not None and 'purpose' not in changes:
+        aside['purpose'] = base['purpose']
+        columns['purpose'] = None
+        notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. The '
+                                         'purpose was kept in its extra.'))
+    held_by = _receiver_of(tx, parent)
+    if base['receiver'] is not None and base['receiver'] != held_by:
+        aside['receiver'] = rows.address_of(tx, str(base['receiver'])) or str(base['receiver'])
+        notices.append(Notice('receiver', f"The join's receiver, {aside['receiver']}, is not the receiver of join "
+                                          f'{parent}; it is held inside that join as given, with its receiver kept in '
+                                          'its extra.'))
+    others = _naming(tx, str(columns.get('provider', base['provider'])), str(base['join_id']))
+    if others:
+        notices.append(Notice('join', f"{', '.join(others)} still {'names' if len(others) == 1 else 'name'} the "
+                                      'element this subtype join holds; left as '
+                                      f"{'it is' if len(others) == 1 else 'they are'}."))
+
+
+def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow, notices: list[Notice],
+                    base: Row) -> tuple[dict[str, Any], list[tuple[str, Any]]]:
+    """The column values of a change of `base`, each checked the way a write checks it; and records split from an
+    extra. What does not fit its column is kept in the extra, with the extra's other fields, BASE-044."""
     columns: dict[str, Any] = {}
     split: list[tuple[str, Any]] = []
-    moved: dict[str, Any] = {}
+    aside: dict[str, Any] = {}
+    held = kind == 'join' and (base['parent'] is not None or 'parent' in changes)
     for key, value in changes.items():
         if key == 'refs':
             continue
@@ -426,19 +501,15 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             answers = _as_answers(value, notices)
             columns['value'] = encode_value(answers[0] if answers else None, kind)
             split += [('value', answer) for answer in answers[1:]]
-        elif key == 'address':
-            address = rows.text(value, 'address', notices) or ''
-            if not rows.address_form(address):
-                notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
-            holder = rows.subtype_holding(tx, address)
-            if holder is not None and kind == 'element':
-                notices.append(Notice('address', f'{address} is also held by subtype {holder}; stored as given.'))
-            rows.types(tx, address)
-            columns['address'] = address
-        elif key == 'provider':
-            columns['provider'] = rows.element_at(tx, value, found, 'provider', notices)
-        elif key == 'element':
-            columns['element_id'] = rows.element_at(tx, value, found, 'element', notices)
+        elif key in ('receiver', 'provider', 'element'):
+            columns['element_id' if key == 'element' else key] = rows.element_at(tx, value, found, key, notices)
+        elif key == 'parent':
+            _absorbed(tx, base, value, changes, found, columns, aside, notices)
+        elif key == 'purpose' and held:
+            aside['purpose'] = value
+            columns['purpose'] = None
+            notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. '
+                                             'The purpose was kept in its extra.'))
         elif key == 'link':
             if value is None:
                 columns['link_kind'], columns['link_id'] = None, None
@@ -448,31 +519,51 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
         elif kind == 'element' and key in ('name_length', 'role'):
             length, role, kept = _element_fields(value if key == 'name_length' else None,
                                                  value if key == 'role' else None, found, notices)
-            moved.update(kept)
+            aside.update(kept)
             if key not in kept:
                 columns[key] = length if key == 'name_length' else role
-        elif key == 'role' and value is not None and value not in SUBTYPE_ROLES:
-            moved['role'] = value
-            notices.append(Notice('role', f"{value!r} is not DE, SE or NE; it was kept in the subtype's extra."))
         elif key == 'ef' and value is not None and value not in EF_WORDS:
-            moved['ef'] = value
+            aside['ef'] = value
             notices.append(Notice('ef', f'{value!r} is not Function or Encounter; it was kept in the extra.'))
-        elif key == 'name_length' and value is not None and not rows.whole_number(value):
-            moved['name_length'] = value
-            notices.append(Notice('name_length', "name_length is not a whole number; it was kept in the extra."))
         elif key in rows.TEXT_COLUMNS:
             columns[key] = rows.text(value, key, notices)
         else:
             columns[key] = value
-    if moved:
-        encoded = columns.get('extra')
+    if aside:
+        encoded = columns['extra'] if 'extra' in columns else base['extra']
         current = (as_object(json.loads(encoded)) if isinstance(encoded, str) else None) or {}
-        columns['extra'] = encode_extra({**current, **moved}, kind)
+        columns['extra'] = encode_extra({**current, **aside}, kind)
     return columns, split
 
 
+def _lift(tx: Tx, found: LayerRow, thing: str, parent: str, notices: list[Notice]) -> None:
+    """A join absorbed while it holds subtype joins passes them to its new parent, D3 and D5, MAP-032: those written
+    in the same layer move with it; any other is named and left inside."""
+    lifted: list[str] = []
+    for row in tx.db.execute('SELECT * FROM joins WHERE layer_id=? AND parent=? ORDER BY row',
+                             (found.layer_id, thing)).fetchall():
+        tx.db.execute('UPDATE joins SET parent=? WHERE row=?', (parent, row['row']))
+        if corrections.current_of_row(tx.db, 'join', int(row['row'])) is not None:
+            corrections.drop_current(tx.db, 'join', 'row', row['row'])
+            corrections.insert_current(tx.db, 'join', str(row['join_id']),
+                                       tx.db.execute('SELECT * FROM joins WHERE row=?', (row['row'],)).fetchone())
+        lifted.append(str(row['join_id']))
+    left = [str(row[0]) for row in tx.db.execute('SELECT join_id FROM current_subtypes WHERE parent=?', (thing,))]
+    if lifted:
+        notices.append(Notice('parent', f"{', '.join(lifted)} sat inside {thing}; a subtype join holds no subtype "
+                                        f'joins, D5, so {"it was" if len(lifted) == 1 else "they were"} passed to '
+                                        f'{parent}.'))
+    if left:
+        notices.append(Notice('parent', f"{', '.join(left)} of another layer still {'sits' if len(left) == 1 else 'sit'}"
+                                        f' inside {thing}; left as {"it is" if len(left) == 1 else "they are"}.'))
+
+
 def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
-    """Change a thing of a knowledge layer, or of a building correction layer, in place, STORE-032."""
+    """Change a thing of a knowledge layer, or of a building intake or correction layer, in place, STORE-032.
+
+    A join's receiver, provider and parent move it, and it stays the same join, MAP-003; an element's address is never
+    changed, MAP-015.
+    """
     kind = rows.kind_of(tx, thing)
     row, found = rows.own_row(tx, kind, thing)
     stop = unchangeable(tx, found, thing)
@@ -482,11 +573,12 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     if not given_changes:
         return Outcome((Notice('changes', 'No field to change was named; nothing was written.'),))
     notices: list[Notice] = []
-    allowed = split_changes(kind, {str(key): value for key, value in given_changes.items()}, notices)
+    allowed = split_changes(kind, {str(key): value for key, value in given_changes.items()}, notices,
+                            held=kind == 'join' and row['parent'] is not None)
     if not allowed:
         return Outcome(tuple(notices))
     spec = corrections.KINDS[kind]
-    columns, split = changed_columns(tx, kind, allowed, found, notices)
+    columns, split = changed_columns(tx, kind, allowed, found, notices, row)
     if columns:
         assignments = ', '.join(f'{column}=?' for column in columns)
         tx.db.execute(f'UPDATE {spec.table} SET {assignments} WHERE row=?', (*columns.values(), row['row']))
@@ -497,10 +589,12 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
         target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
                                   else _node_of(kind, thing, row))
         rows.split_items(tx, found, target_kind, target_id, split)
-    if tx.db.execute(f'SELECT 1 FROM {spec.current} WHERE row=?', (row['row'],)).fetchone():
+    if corrections.current_of_row(tx.db, kind, int(row['row'])) is not None:
         updated = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row['row'],)).fetchone()
-        tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
-        corrections.insert_current(tx.db, kind, thing, updated, rows.moved(tx, kind, thing))
+        corrections.drop_current(tx.db, kind, 'row', row['row'])
+        corrections.insert_current(tx.db, kind, thing, updated)
+    if kind == 'join' and 'parent' in columns:
+        _lift(tx, found, thing, str(columns['parent']), notices)
     record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?',
                                                    (row['row'],)).fetchone(), {})
     return _with(record, notices)
@@ -606,7 +700,7 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
     users = _users(tx, kind, thing, found)
     spec = corrections.KINDS[kind]
     tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
-    tx.db.execute(f'DELETE FROM {spec.current} WHERE row=?', (row['row'],))
+    corrections.drop_current(tx.db, kind, 'row', row['row'])
     if kind == 'item':
         tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
     tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
@@ -630,7 +724,8 @@ def _remove_ref(tx: Tx, ref_id: int) -> Outcome:
 
 
 def _users(tx: Tx, kind: str, thing: str, found: LayerRow) -> list[str]:
-    """The current rows of the same layer that use a thing as receiver, provider or target."""
+    """The current rows of the same layer that use a thing as receiver, provider, parent join, held element or
+    target."""
     db = tx.db
     users: list[str] = []
     if kind == 'element':
@@ -638,13 +733,16 @@ def _users(tx: Tx, kind: str, thing: str, found: LayerRow) -> list[str]:
                                                     'WHERE c.receiver=? AND j.layer_id=?', (thing, found.layer_id))]
         users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row '
                                                     'WHERE c.provider=? AND j.layer_id=?', (thing, found.layer_id))]
+        users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_subtypes c JOIN joins j '
+                                                    'ON j.row = c.row WHERE c.provider=? AND j.layer_id=?',
+                                                    (thing, found.layer_id))]
         users += [str(row[0]) for row in db.execute('SELECT property_id FROM current_properties WHERE element_id=? '
                                                     'AND layer_id=?', (thing, found.layer_id))]
     if kind == 'join':
-        users += [str(row[0]) for row in db.execute('SELECT c.subtype_id FROM current_subtypes c JOIN subtypes s '
-                                                    'ON s.row = c.row WHERE c.join_id=? AND s.layer_id=?',
+        users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_subtypes c JOIN joins j '
+                                                    'ON j.row = c.row WHERE c.parent=? AND j.layer_id=?',
                                                     (thing, found.layer_id))]
-    if kind in ('element', 'join', 'subtype'):
+    if kind in ('element', 'join'):
         users += [str(row[0]) for row in db.execute('SELECT item_id FROM current_items WHERE target_kind=? AND '
                                                     'target_id=? AND layer_id=?', (kind, thing, found.layer_id))]
     return users

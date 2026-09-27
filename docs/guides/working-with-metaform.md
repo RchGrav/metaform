@@ -76,21 +76,22 @@ metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3
 metaform map where code.template.module
 ```
 
-The join owns its purpose and has a stable ID. Its internal subtypes explain contributions within that relationship. `where` finds an internal subtype and its containing join; it does not promote that subtype to a global element. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
+The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the purpose join, naming the element it holds, and that element stays one ordinary element record. `where` at the address of an element held only by subtype joins returns the element with its subtype join and the containing join; it does not promote that element to a global one. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
 
 Use `map links <node>` for items that link to a node, and `map citing <key> <value>` for references such as an exact source path. Node forms are:
 
 ```text
 element:<namespace-address-or-id>
 join:<join-id>
-subtype:<namespace-address-or-id>
 ```
+
+A subtype join is a join, named by its join id, and the element it holds is an element.
 
 Commands with paged results return a cursor when more data remains. Pass that returned value as `after=<cursor>`; `limit=0` requests all results. `--json` supplies structured output. `--raw`, where the verb declares it, exposes stored material outside the normal current-view filtering. A raw read is an inspection operation, not a change to selected inference context.
 
 ## Retain a finding where it matters
 
-An observation about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A note about an absorbed implementation contribution can belong at the subtype.
+An observation about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A note about an absorbed implementation contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
 
 The following are example notes written by the commands, not quotations from the original intake:
 
@@ -117,7 +118,7 @@ Tool names use an underscore between module and verb and retain hyphens **within
 ### Connect, locate, and remove memories
 
 ```sh
-metaform memory create-relations element:code.system.plugin exemplified-by subtype:code.module.example
+metaform memory create-relations element:code.system.plugin exemplified-by element:code.module.example
 metaform memory search-nodes "module"
 metaform memory read-graph
 ```

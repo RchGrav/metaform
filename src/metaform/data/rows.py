@@ -22,11 +22,9 @@ from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('address', 'name_length', 'role', 'extra'),
-    'join': ('provider', 'type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
-             'extra'),
-    'subtype': ('address', 'name', 'name_length', 'role', 'function', 'ef', 'relation', 'verb', 'observation',
-                'extra'),
+    'element': ('name_length', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
+    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
+             'observation', 'non_goal', 'extra'),  # receiver, provider and parent move it, MAP-003
     'item': ('value', 'link', 'extra'),
     'property': ('element', 'value', 'extra'),
 }
@@ -147,14 +145,43 @@ def read_refs(db: sqlite3.Connection, owner: str, row: int) -> tuple[Ref, ...]:
 
 def current_element(tx: Tx, ref: str) -> Row | None:
     column = 'element_id' if is_id(ref) else 'address'
-    row: Row | None = tx.db.execute(f'SELECT element_id, row, address, moved FROM current_elements WHERE {column}=?',
+    row: Row | None = tx.db.execute(f'SELECT element_id, row, address FROM current_elements WHERE {column}=?',
                                     (ref,)).fetchone()
     return row
 
 
-def subtype_holding(tx: Tx, address: str) -> str | None:
-    row = tx.db.execute('SELECT subtype_id FROM current_subtypes WHERE address=?', (address,)).fetchone()
-    return None if row is None else str(row[0])
+def holding(tx: Tx, element_id: str) -> list[str]:
+    """The current subtype joins that hold an element, in id order; one read on `current_subtypes_by_provider`."""
+    return [str(row[0]) for row in tx.db.execute('SELECT join_id FROM current_subtypes WHERE provider=? '
+                                                 'ORDER BY join_id', (element_id,))]
+
+
+def held_only(tx: Tx, element_id: str) -> bool:
+    """Whether an element's only current joins are subtype joins holding it, so it is no root and no node of the
+    outer map, MAP-031: the one check every read of the outer map uses for it."""
+    db = tx.db
+    if db.execute('SELECT 1 FROM current_subtypes WHERE provider=? LIMIT 1', (element_id,)).fetchone() is None:
+        return False
+    return (db.execute('SELECT 1 FROM current_joins WHERE receiver=? LIMIT 1', (element_id,)).fetchone() is None and
+            db.execute('SELECT 1 FROM current_joins WHERE provider=? LIMIT 1', (element_id,)).fetchone() is None)
+
+
+def current_join(tx: Tx, join_id: str) -> Row | None:
+    """A join's current version row, held by a receiver or, for a subtype join, by its parent join."""
+    row: Row | None = tx.db.execute('SELECT j.* FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
+                                    (join_id,)).fetchone()
+    if row is None:
+        row = tx.db.execute('SELECT j.* FROM current_subtypes c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
+                            (join_id,)).fetchone()
+    return row
+
+
+def owner_address(tx: Tx, row: Row) -> str | None:
+    """The address a join sits at: its receiver's, or for a subtype join its parent join's receiver's, STORE-019."""
+    if row['parent'] is None:
+        return address_of(tx, str(row['receiver']))
+    parent = tx.db.execute('SELECT receiver FROM current_joins WHERE join_id=?', (row['parent'],)).fetchone()
+    return None if parent is None else address_of(tx, str(parent[0]))
 
 
 def address_of(tx: Tx, element_id: str) -> str | None:
@@ -163,14 +190,12 @@ def address_of(tx: Tx, element_id: str) -> str | None:
 
 
 def node_address(tx: Tx, kind: str, thing_id: str) -> str | None:
-    """Where a node sits: an element's address, a join's receiver's address, or a subtype's own address."""
+    """Where a node sits: an element's address, or a join's receiver's address, a subtype join's parent's
+    receiver's."""
     if kind == 'element':
         return address_of(tx, thing_id)
-    if kind == 'join':
-        row = tx.db.execute('SELECT receiver FROM current_joins WHERE join_id=?', (thing_id,)).fetchone()
-        return None if row is None else address_of(tx, str(row[0]))
-    row = tx.db.execute('SELECT address FROM current_subtypes WHERE subtype_id=?', (thing_id,)).fetchone()
-    return None if row is None else str(row[0])
+    row = current_join(tx, thing_id)
+    return None if row is None else owner_address(tx, row)
 
 
 def kind_of(tx: Tx, thing: Any) -> str:
@@ -182,8 +207,7 @@ def kind_of(tx: Tx, thing: Any) -> str:
         return str(row[0])
     if tx.db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (thing,)).fetchone():
         return 'property'
-    raise StoreError(f'No element, join, subtype, property or item has the id {thing}.',
-                     'metaform map where <address>')
+    raise StoreError(f'No element, join, property or item has the id {thing}.', 'metaform map where <address>')
 
 
 def own_row(tx: Tx, kind: str, thing: str) -> tuple[Row, LayerRow]:
@@ -198,15 +222,7 @@ def own_row(tx: Tx, kind: str, thing: str) -> tuple[Row, LayerRow]:
 
 
 def target_current(tx: Tx, kind: str, thing: str) -> bool:
-    spec = corrections.KINDS[kind]
-    return tx.db.execute(f'SELECT 1 FROM {spec.current} WHERE {spec.id_column}=?', (thing,)).fetchone() is not None
-
-
-def moved(tx: Tx, kind: str, thing: str) -> int:
-    if kind != 'element':
-        return 0
-    row = tx.db.execute('SELECT moved FROM current_elements WHERE element_id=?', (thing,)).fetchone()
-    return int(row[0]) if row else 0
+    return corrections.current_row(tx.db, kind, thing) is not None
 
 
 # Elements, made where a write needs one ---------------------------------------------------------------------
@@ -242,7 +258,7 @@ def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | N
     row = int(cursor.lastrowid or 0)
     corrections.hold_address(tx.db, address, element_id)
     if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_elements(element_id, row, address, role, moved) VALUES (?, ?, ?, ?, 0)',
+        tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
                       (element_id, row, address, role))
     write_refs(tx, 'element', row, refs)
     return element_id
@@ -259,8 +275,8 @@ def stub_element(tx: Tx, element_id: str | None = None) -> str:
 def element_at(tx: Tx, ref: Any, found: LayerRow, what: str, notices: list[Notice]) -> str:
     """An element named by address or id. An address that names no element gets one in the writing layer.
 
-    A bare type address, `type:<address>`, is the element there, made when the project has none, STORE-008. An
-    address a subtype holds gets an element beside it, D82. An id that names no element cannot be read.
+    A bare type address, `type:<address>`, is the element there, made when the project has none, STORE-008. An id
+    that names no element cannot be read.
     """
     if isinstance(ref, Node):
         if ref.kind not in ('element', 'type'):
@@ -279,11 +295,7 @@ def element_at(tx: Tx, ref: Any, found: LayerRow, what: str, notices: list[Notic
             return str(row[0])
     if is_id(ref):
         raise StoreError(f'No element has the id {ref}.', 'metaform map where <address>')
-    if subtype_holding(tx, ref) is not None:
-        notices.append(Notice(what, f"{ref} is a subtype's address; an element was created there in layer "
-                                    f'{found.name} so the write could be stored as given.'))
-    else:
-        notices.append(Notice(what, f'{ref} was not an element; it was created in layer {found.name}.'))
+    notices.append(Notice(what, f'{ref} was not an element; it was created in layer {found.name}.'))
     return new_element(tx, found, ref)
 
 
@@ -294,7 +306,7 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
     kept as given, so the item is stored orphaned, with a notice, BASE-044.
     """
     if not isinstance(node, Node):
-        raise StoreError(f'{node!r} is not a node: give element:, join:, subtype: or type:.', 'metaform help map node')
+        raise StoreError(f'{node!r} is not a node: give element:, join: or type:.', 'metaform help map node')
     if node.kind in ('element', 'type'):
         if node.kind == 'element' and is_id(node.id) and current_element(tx, node.id) is None:
             notices.append(Notice(what, f'No current element has the id {node.id}; stored as given, orphaned.'))
@@ -304,19 +316,11 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
                                         f'{found.name} to hold it.'))
             return 'element', new_element(tx, found, node.id)
         return 'element', element_at(tx, node.id, found, what, notices)
-    if node.kind == 'join':
-        if tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (node.id,)).fetchone() or \
-                tx.db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?',
-                              (node.id, found.layer_id)).fetchone():
-            return 'join', node.id
-        notices.append(Notice(what, f'{node} is not a current join; stored as given, orphaned.'))
+    if target_current(tx, 'join', node.id) or \
+            tx.db.execute('SELECT 1 FROM joins WHERE join_id=? AND layer_id=?', (node.id, found.layer_id)).fetchone():
         return 'join', node.id
-    column = 'subtype_id' if is_id(node.id) else 'address'
-    row = tx.db.execute(f'SELECT subtype_id FROM current_subtypes WHERE {column}=?', (node.id,)).fetchone()
-    if row is not None:
-        return 'subtype', str(row[0])
-    notices.append(Notice(what, f'{node} is not a current subtype; stored as given, orphaned.'))
-    return 'subtype', node.id
+    notices.append(Notice(what, f'{node} is not a current join; stored as given, orphaned.'))
+    return 'join', node.id
 
 
 # Work records and items -------------------------------------------------------------------------------------
@@ -328,10 +332,11 @@ def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
 
 
 def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
-    """The kind and identity id a work record attaches to: the current element or subtype at an address, or the object
-    with the id given. A node that names no current object is kept as written, with a notice, BASE-044."""
+    """The kind and identity id a work record attaches to: the current element at an address, or the object with the
+    id given, a subtype join being a join. A node that names no current object is kept as written, with a notice,
+    BASE-044."""
     if not isinstance(node, Node):
-        raise StoreError(f'{node!r} is not a node: write element:<address or id>, join:<id> or subtype:<address or id>.',
+        raise StoreError(f'{node!r} is not a node: write element:<address or id> or join:<id>.',
                          'metaform help map work')
     kind, ident = node.kind, node.id
     if kind == 'type':
@@ -342,14 +347,8 @@ def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
         current = current_element(tx, ident)
         if current is not None:
             return kind, str(current['element_id'])
-    elif kind == 'join':
-        if tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (ident,)).fetchone():
-            return kind, ident
-    else:
-        column = 'subtype_id' if is_id(ident) else 'address'
-        row = tx.db.execute(f'SELECT subtype_id FROM current_subtypes WHERE {column}=?', (ident,)).fetchone()
-        if row is not None:
-            return kind, str(row[0])
+    elif target_current(tx, 'join', ident):
+        return kind, ident
     notices.append(Notice('node', f'No current {kind} is at {ident}; the work record was stored as given and will '
                                   'show once one is recorded there.'))
     return kind, ident

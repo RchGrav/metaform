@@ -401,7 +401,7 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     async def call(client, init):
         names = set(await tool_names(client))
         started = await client.call_tool('intake_start', {'model': 'claude', 'role': 'intake agent'})
-        described = await client.call_tool('intake_element', {'address': 'code.timer.kitchen', 'role': 'DE',
+        described = await client.call_tool('intake_element', {'namespace_address': 'code.timer.kitchen', 'role': 'DE',
                                                               'name': 'kitchen timer', 'name_length': 2,
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
         named = json.loads(text(described)[-1])['notices']
@@ -410,22 +410,35 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                       'function': 'Rings.', 'ef': 'Encounter', 'relation': 'r',
                                                       'verb': 'rings', 'observation': 'o'})
         join_id = json.loads(text(made)[-1])['join_id']
-        await client.call_tool('intake_subtype', {'join': join_id, 'address': 'code.loop.tick', 'function': 'Ticks.',
+        await client.call_tool('intake_subtype', {'into': join_id, 'namespace_address': 'code.loop.tick',
+                                                  'function': 'Ticks.',
                                                   'ef': 'Function', 'relation': 'r', 'verb': 'advances',
                                                   'observation': 'o', 'role': 'SE'})
+        beat = await client.call_tool('intake_join', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
+                                                      'purpose': 'Keep time.', 'function': 'Beats.', 'ef': 'Function',
+                                                      'relation': 'r', 'verb': 'beats', 'observation': 'o'})
+        beat_id = json.loads(text(beat)[-1])['join_id']
+        absorbed = await client.call_tool('intake_absorb', {'join': beat_id, 'into': join_id})
+        moved = json.loads(text(absorbed)[-1])
         shown = json.loads(text(await client.call_tool('intake_show', {}))[-1])
+        one = json.loads(text(await client.call_tool('intake_show', {'receiver': 'code.timer.kitchen'}))[-1])
         finished = json.loads(text(await client.call_tool('intake_finish', {'report': 'Fine.'}))[-1])
-        return names, started.is_error, shown, finished, named, described.is_error
-    names, error, shown, finished, named, described_error = session(home, folder, call)
-    assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_show', 'intake_edit',
-            'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
+        return (names, started.is_error, shown, finished, named, described.is_error,
+                (absorbed.is_error, moved['join_id'], moved['parent'], beat_id, join_id), one)
+    names, error, shown, finished, named, described_error, absorb, one = session(home, folder, call)
+    assert absorb[0] is False and absorb[1:3] == absorb[3:5]
+    assert [row['join_id'] for row in one['joins']] == [absorb[4]]
+    assert {sub['join_id'] for sub in one['joins'][0]['subtypes']} >= {absorb[3]}
+    assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_absorb', 'intake_show',
+            'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
     assert error is False and described_error is False
     assert [notice['where'] for notice in named] == ['name'] and 'join' in named[0]['message']
     assert [row['name'] for row in shown['joins']] == ['countdown alarm']
-    assert [(row['address'], row['role']) for row in shown['elements']] == [
-        ('code.alarm.audible', None), ('code.timer.kitchen', 'DE')]
-    assert shown['undescribed'] == ['code.alarm.audible'] and len(shown['subtypes']) == 1
-    assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (2, 1, 1, 1)
+    assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
+        ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
+    assert shown['undescribed'] == ['code.alarm.audible', 'code.loop.beat']
+    assert len(shown['joins']) == 1 and len(shown['joins'][0]['subtypes']) == 2
+    assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
     kitchen = Store('fresh').element('code.timer.kitchen')
     assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
     assert (kitchen.short_name, kitchen.extra) == ('kitchen timer', {'name': 'kitchen timer'})

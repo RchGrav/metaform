@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '4'
+SCHEMA_VERSION = '5'
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 _WRITERS: dict[str, threading.RLock] = {}

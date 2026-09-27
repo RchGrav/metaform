@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Verbs
 
-`create-entities`, `create-relations`, `add-observations`, `delete-entities`, `delete-observations`, `delete-relations`, `read-graph`, `search-nodes`, `open-nodes`. Nodes are written `element:<address or id>`, `join:<id>` or `subtype:<address or id>`. Tools are `memory_<verb>`.
+`create-entities`, `create-relations`, `add-observations`, `delete-entities`, `delete-observations`, `delete-relations`, `read-graph`, `search-nodes`, `open-nodes`. Nodes are written `element:<address or id>` or `join:<id>`; a subtype join is a join, and the element it holds an element. Tools are `memory_<verb>`.
 
 ## Settings
 

@@ -1,7 +1,7 @@
 """memory: the reference memory server's operations over the map's own nodes, BASE-040, LAYER-013.
 
-An entity is an element, join or subtype of the map, named by its address or
-id. An observation is one item of the memory layer at that node; a relation is
+An entity is an element or a join of the map, a subtype join included, named by
+its address or id. An observation is one item of the memory layer at that node; a relation is
 one item at the `from` node, linking to the `to` node, with the relation type
 as its value, STORE-020. The memory layer is made on the first write, LAYER-012.
 """
@@ -190,7 +190,7 @@ def open_nodes(ctx: Context) -> Any:
     return {'nodes': nodes, 'relations': relations}
 
 
-NODE = 'element:<address or id>, join:<id> or subtype:<address or id>'
+NODE = 'element:<address or id> or join:<id>, a subtype join being a join'
 
 MODULE = Module(
     id='memory',

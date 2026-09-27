@@ -25,8 +25,8 @@ settings.boolean('raw', False, help='Read every stored layer, building, hidden a
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 EF = {'type': 'string', 'enum': list(EF_WORDS)}
-FIELDS = ('address', 'extra', 'receiver', 'provider', 'type', 'purpose', 'function', 'relation', 'observation',
-          'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'function', 'relation',
+          'observation', 'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
 
 
 def _node(text: str) -> Node:
@@ -243,8 +243,8 @@ READS: dict[str, frozenset[str]] = {
     'add-element': frozenset({'address', 'name_length', 'role', 'refs', 'extra'}),
     'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
                            'observation', 'non_goal', 'type', 'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'function', 'ef', 'relation', 'verb', 'observation', 'name',
-                              'name_length', 'role', 'refs', 'extra'}),
+    'add-subtype': frozenset({'join', 'address', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
+                              'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
@@ -349,8 +349,8 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
                               **_optional(ctx, 'name', 'ef', 'verb', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         return store.add_subtype(name, nouns['join'], nouns['address'],
-                                 **_optional(ctx, 'function', 'ef', 'relation', 'verb', 'observation', 'name',
-                                             'name_length', 'role', 'refs', 'extra'))
+                                 **_optional(ctx, 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
+                                             'name', 'name_length', 'role', 'refs', 'extra'))
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
@@ -404,17 +404,24 @@ KNOWLEDGE_NOUNS = (
     _noun('workflow', 'create: the workflow within that module.'),
     _noun('prompt', 'create: the prompt the layer is made from.'),
     _noun('model', 'create: the model that makes it.'),
-    _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, VE or AUE.'),
+    _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, VE or AUE, the role of '
+                  'the element, the one a subtype join holds included.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
-    _noun('address', 'add-element, add-subtype and edit: a dotted namespace address.'),
+    _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
+                     'the subtype join holds. An element cannot be moved: edit and correct do not apply it.'),
     _noun('name', "add-join and add-subtype: the project's own name for the functionality the join names, its "
                   'canonical or informal name. An element holds no name: its name is its address read through '
                   'name_length.'),
-    _noun('name_length', 'add-element and add-subtype: how many trailing segments form the short name.', 'int'),
+    _noun('name_length', 'add-element and add-subtype: how many trailing segments form the element\'s short name.',
+          'int'),
     _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
     _noun('extra', 'A JSON object of further fields.', 'json', {'type': 'object'}),
-    _noun('receiver', "add-join: the element that holds the purpose."),
-    _noun('provider', 'add-join: the element whose function serves it.'),
+    _noun('receiver', 'add-join: the element that holds the purpose; edit and correct: another receiver, which moves '
+                      'the join.'),
+    _noun('provider', 'add-join: the element whose function serves it; edit and correct: another provider, or on a '
+                      'subtype join another element to hold.'),
+    _noun('parent', 'edit and correct: the id of a join held by a receiver; the join becomes a subtype join inside '
+                    'it, its purpose kept in its extra.'),
     _noun('purpose', 'add-join: the Operative Purpose.'),
     _noun('function', "add-join and add-subtype: the Encounter Function."),
     _noun('ef', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '
@@ -423,12 +430,12 @@ KNOWLEDGE_NOUNS = (
     _noun('verb', 'add-join and add-subtype: the third-person singular present-tense active verb of the relation, '
                   'ending in -s or -es.'),
     _noun('observation', 'add-join and add-subtype: what is actually there.'),
-    _noun('non_goal', 'add-join: what the receiver does not seek.'),
+    _noun('non_goal', 'add-join and add-subtype: what the receiver does not seek.'),
     _noun('type', 'add-join: the join type, purpose by default.'),
-    _noun('join', 'add-subtype and add-plan: the join id.'),
+    _noun('join', 'add-subtype: the id of the join the subtype join sits in; add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
     _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
-    _noun('node', 'add-item: element:<address or id>, join:<id> or subtype:<address or id>.'),
+    _noun('node', 'add-item: element:<address or id> or join:<id>, a subtype join being a join.'),
     _noun('link', 'add-item: a node the item links to.'),
     _noun('owner', 'add-ref: the id of the thing the ref belongs to.'),
     _noun('key', 'add-ref: the ref key.'),
@@ -458,7 +465,7 @@ def _work_node(value: Any) -> Node:
 
 
 def work(ctx: Context) -> Any:
-    """The work records: the condition of an element, join or subtype, apart from the map, MAP-046 and STORE-042.
+    """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
     op = str(ctx.nouns.get('op', 'list'))
     if op not in WORK_READS:
@@ -485,8 +492,8 @@ def work(ctx: Context) -> Any:
 
 WORK_NOUNS = (
     _noun('op', 'list, the default; add; edit; or done.'),
-    _noun('node', 'list and add: element:<address or id>, join:<id> or subtype:<address or id>; a bare address names '
-                  'an element.'),
+    _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
+                  'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
                        'broken; or cruft.'),
     _noun('note', 'add and edit: what and where.'),
@@ -514,8 +521,8 @@ MODULE = Module(
     verbs=(
         Verb('roots', roots, "The map's entry: the VE and the DE with their joins, and every root element.",
              nouns=PAGING, switches=RAW),
-        Verb('where', where, 'The element at an address, or the subtype there with its join; with an empty '
-                             "address, the map's entry.",
+        Verb('where', where, 'The element at an address, and for one held only by subtype joins the subtype join '
+                             "that holds it with its parent join; with an empty address, the map's entry.",
              nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),), switches=RAW),
         Verb('element', element, 'One element: its address, name_length, role and short name, with its refs.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
@@ -524,7 +531,8 @@ MODULE = Module(
              switches=RAW),
         Verb('identity', identity, 'Every join an element provides for: who receives it, why and how.',
              nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW),
-        Verb('subtypes', subtypes, 'The subtypes inside a join.', nouns=(Noun('join', 'A join id.'), *PAGING),
+        Verb('subtypes', subtypes, 'The subtype joins inside a join, each with the element it holds.',
+             nouns=(Noun('join', 'A join id.'), *PAGING),
              switches=RAW),
         Verb('children', children, 'The next types toward the leaves.',
              nouns=(Noun('address', 'A dotted namespace address.'), *PAGING)),
@@ -536,7 +544,8 @@ MODULE = Module(
         Verb('layer', layer, 'Everything one layer holds, or what it holds at one node.',
              nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING)),
         Verb('node', node, "Every layer's items at one node, grouped by layer.",
-             nouns=(Noun('node', 'element:<address or id>, join:<id> or subtype:<address or id>.'),), switches=RAW),
+             nouns=(Noun('node', 'element:<address or id> or join:<id>, a subtype join being a join.'),),
+             switches=RAW),
         Verb('context', context, 'The properties that apply at an address, and those attached toward the leaves from '
                                  'it that are visible there.',
              nouns=(Noun('address', 'A dotted namespace address.'), *PAGING)),
@@ -553,10 +562,11 @@ MODULE = Module(
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
-        Verb('work', work, 'The work records, the condition of an element, join or subtype apart from the map: '
-                           'list them, or add, edit or mark one done.',
+        Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
+                           'or add, edit or mark one done.',
              nouns=WORK_NOUNS,
-             details='A work record is attached to one element, join or subtype and never changes the map. Its '
+             details='A work record is attached to one element or join, a subtype join included, and never changes '
+                     'the map. Its '
                      'condition is tbd, broken or cruft; its note says what and where, its task what it needs. It is '
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',

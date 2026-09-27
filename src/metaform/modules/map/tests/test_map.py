@@ -256,16 +256,23 @@ def test_a_write_sent_without_a_layer_goes_to_a_new_unnamed_layer(run, mapped):
 
 @pytest.mark.req('STORE-034')
 @pytest.mark.req('BASE-044')
-def test_a_correction_asking_to_change_a_receiver_says_so_and_writes_the_rest(run, mapped):
-    join = Store('proj').joins('code.timer.kitchen').results[0]
+def test_a_correction_moves_a_join_by_its_receiver_and_never_moves_an_element(run, mapped):
+    store = Store('proj')
+    join = store.joins('code.timer.kitchen').results[0]
+    kitchen = store.element('code.timer.kitchen').element_id
     k(run, mapped, 'op=create', 'layer=fix-a', 'kind=correction', 'variable=Fixes.', 'mutable=false',
       'hideable=false', *PROVENANCE)
-    done = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={join.join_id}', 'purpose=First fix.',
-               'receiver=code.alarm.audible', 'reason=r', cwd=mapped)
-    assert re.search(r'^Notice: receiver: ', done.stdout, re.M)
+    moved = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={join.join_id}', 'purpose=First fix.',
+                'receiver=stakeholder.cook.home', 'reason=r', cwd=mapped)
+    assert 'Notice:' not in moved.stdout
+    kept = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={kitchen}', 'address=code.timer.egg',
+               'reason=r', cwd=mapped)
+    assert re.search(r'^Notice: address: ', kept.stdout, re.M)
     k(run, mapped, 'op=finish', 'layer=fix-a')
-    after = Store('proj').joins('code.timer.kitchen').results[0]
-    assert (after.purpose, after.receiver_address) == ('First fix.', 'code.timer.kitchen')
+    after = {found.join_id: found for found in Store('proj').joins('stakeholder.cook.home').results}[join.join_id]
+    assert (after.purpose, after.receiver_address) == ('First fix.', 'stakeholder.cook.home')
+    assert Store('proj').element('code.timer.kitchen').element_id == kitchen
+    assert Store('proj').element('code.timer.egg') is None
 
 
 @pytest.mark.req('STORE-039')
@@ -496,3 +503,26 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     assert unknown.returncode == 2 and "does not take 'later=yes'" in unknown.stderr  # the chassis grammar, BASE-043
     assert j(run, 'work', 'op=done', f'id={on_join["work_id"]}', 'task=ignored here', cwd=mapped)['notices'][0]['where'] == 'task'
     assert run('help', 'map', 'work', cwd=mapped).stdout.count('tbd') >= 1
+
+
+@pytest.mark.req('BASE-038')
+@pytest.mark.req('MAP-003')
+@pytest.mark.req('MAP-030')
+def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_parent(run, mapped):
+    k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
+    k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.alarm.visual')
+    first = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
+                         'provider=code.alarm.visual', 'purpose=See the end.', 'function=Flashes.', 'relation=r',
+                         'observation=o').stdout)
+    moved = json.loads(k(run, mapped, 'op=edit', 'layer=notes', f'id={first["join_id"]}',
+                         'receiver=stakeholder.cook.home').stdout)
+    assert moved['notices'] == []
+    store = Store('proj')
+    assert first['join_id'] in [join.join_id for join in store.joins('stakeholder.cook.home', raw=True).results]
+    assert first['join_id'] not in [join.join_id for join in store.joins('code.timer.kitchen', raw=True).results]
+    parent = store.joins('stakeholder.cook.home').results[0].join_id
+    k(run, mapped, 'op=edit', 'layer=notes', f'id={first["join_id"]}', f'parent={parent}')
+    held = store.subtypes(parent, raw=True).results
+    assert [(sub.join_id, sub.address, sub.extra) for sub in held] == [
+        (first['join_id'], 'code.alarm.visual', {'purpose': 'See the end.'})]
+    assert first['join_id'] not in [join.join_id for join in store.joins('stakeholder.cook.home', raw=True).results]

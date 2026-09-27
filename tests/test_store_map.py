@@ -31,7 +31,7 @@ def test_identity_ids_are_32_lowercase_hex(store):
     layer, outer, _ = small_map(store)
     element = store.element('code.timer.kitchen')
     assert ID.match(element.element_id) and ID.match(outer.join_id) and ID.match(layer.layer_id)
-    assert all(ID.match(sub.subtype_id) for sub in store.subtypes(outer.join_id).results)
+    assert all(ID.match(sub.join_id) for sub in store.subtypes(outer.join_id).results)
 
 
 @pytest.mark.req('STORE-008')
@@ -202,68 +202,80 @@ def test_two_elements_may_each_receive_from_the_other(store):
 
 @pytest.mark.req('STORE-010')
 @pytest.mark.req('MAP-031')
-def test_a_subtype_is_never_a_join_end(home, store):
+@pytest.mark.req('MAP-030')
+def test_a_subtype_join_is_never_a_join_end_and_the_element_it_holds_is_an_ordinary_element(home, store):
     _, outer, _ = small_map(store)
     subtype = store.subtypes(outer.join_id).results[0]
     layer = knowledge(store, 'ends')
     before = dump(store_file(home, store))
     with pytest.raises(StoreError) as refused:
-        store.add_join(layer.name, 'code.timer.kitchen', subtype.subtype_id, purpose='p', function='f',
+        store.add_join(layer.name, 'code.timer.kitchen', subtype.join_id, purpose='p', function='f',
                        relation='r', observation='o')
     assert refused.value.next_step
     assert dump(store_file(home, store)) == before
     stored = store.add_join(layer.name, 'code.timer.kitchen', 'code.loop.tick', purpose='p', function='f',
                             relation='r', observation='o')
-    assert [notice.where for notice in stored.notices] == ['provider']
-    assert stored.provider != subtype.subtype_id and store.element('code.loop.tick', raw=True).layer == 'ends'
+    assert stored.notices == () and stored.provider == subtype.element_id
+    assert store.element('code.loop.tick', raw=True).layer == 'intake-1'
 
 
 @pytest.mark.req('STORE-011')
 @pytest.mark.req('MAP-030')
 @pytest.mark.req('MAP-031')
-def test_a_subtype_is_read_only_through_its_join(store):
+def test_a_subtype_join_is_read_only_through_its_join(store):
     _, outer, _ = small_map(store)
     subtypes = store.subtypes(outer.join_id).results
-    assert [(sub.address, sub.function) for sub in subtypes] == [('code.loop.tick', 'Advances each countdown.')]
-    assert store.element('code.loop.tick') is None
-    joins = [*store.joins('code.timer.kitchen').results, *store.joins('code.timer.kitchen', as_='provider').results,
-             *store.identity('code.timer.kitchen').results]
-    assert all(getattr(join, 'subtype_id', None) is None for join in joins)
+    assert [(sub.address, sub.function, sub.parent, sub.type) for sub in subtypes] == [
+        ('code.loop.tick', 'Advances each countdown.', outer.join_id, 'subtype')]
+    tick = subtypes[0].join_id
+    reads = [*store.joins('code.timer.kitchen').results, *store.joins('code.timer.kitchen', as_='provider').results,
+             *store.identity('code.timer.kitchen').results, *store.joins('code.loop.tick', raw=True).results,
+             *store.joins('code.loop.tick', as_='provider', raw=True).results,
+             *(join for entry in store.roots().entry for join in entry.joins)]
+    assert reads and tick not in [join.join_id for join in reads]
     where = store.where('code.loop.tick')
-    assert where.kind == 'subtype' and where.join.join_id == outer.join_id
+    assert where.kind == 'subtype' and where.join.join_id == outer.join_id and where.subtype.join_id == tick
     assert (where.join.receiver_address, where.join.provider_address) == ('stakeholder.cook.home', 'code.timer.kitchen')
 
 
 @pytest.mark.req('STORE-011')
 @pytest.mark.req('MAP-030')
-def test_a_subtype_given_a_purpose_keeps_it_in_its_extra_with_a_notice(home, store):
+def test_a_subtype_join_given_a_purpose_keeps_it_in_its_extra_with_a_notice(home, store):
     _, outer, _ = small_map(store)
     layer = knowledge(store, 'subs')
     stored = store.add_subtype(layer.name, outer.join_id, 'code.loop.other', function='f', purpose='its own why')
     assert stored.extra == {'purpose': 'its own why'} and [notice.where for notice in stored.notices] == ['purpose']
+    assert store.element('code.loop.other', raw=True).element_id == stored.element_id
 
 
 @pytest.mark.req('STORE-011')
 @pytest.mark.req('MAP-031')
 @pytest.mark.req('LAYER-003')
-def test_an_item_at_a_subtype_is_read_at_the_subtype_and_not_its_parent(store):
+def test_an_item_at_a_subtype_join_is_read_at_that_join_and_one_at_its_element_at_the_element(store):
     _, outer, _ = small_map(store)
     subtype = store.subtypes(outer.join_id).results[0]
     notes = memory(store)
-    store.add_item(notes.name, Node('subtype', subtype.subtype_id), 'The tick drifts under load.')
-    assert values(store.node(Node('subtype', 'code.loop.tick')), 'memory') == ['The tick drifts under load.']
+    store.add_item(notes.name, Node('join', subtype.join_id), 'The tick drifts under load.')
+    store.add_item(notes.name, Node('element', 'code.loop.tick'), 'One loop for every timer.')
+    assert values(store.node(Node('join', subtype.join_id)), 'memory') == ['The tick drifts under load.']
+    assert values(store.node(Node('element', 'code.loop.tick')), 'memory') == ['One loop for every timer.']
+    assert values(store.node(Node('join', outer.join_id)), 'memory') == []
     assert values(store.node(Node('element', 'code.timer.kitchen')), 'memory') == []
 
 
 @pytest.mark.req('STORE-011')
-def test_a_subtype_address_held_by_another_is_stored_with_a_notice_naming_the_holder(home, store):
+@pytest.mark.req('MAP-032')
+def test_an_element_held_by_a_subtype_join_held_again_is_stored_with_a_notice_naming_the_first(store):
     _, outer, inner = small_map(store)
     tick = store.subtypes(outer.join_id).results[0]
     layer = knowledge(store, 'subs')
-    twice = store.add_subtype(layer.name, inner.join_id, 'code.loop.tick', function='f')
-    assert tick.subtype_id in twice.notices[0].message
-    element = store.add_subtype(layer.name, inner.join_id, 'code.alarm.audible', function='f')
-    assert 'element' in element.notices[0].message
+    twice = store.add_subtype(layer.name, inner.join_id, 'code.loop.tick', function='f', name_length=1)
+    assert twice.element_id == tick.element_id
+    assert tick.join_id in ' '.join(notice.message for notice in twice.notices)
+    assert 'name_length' in [notice.where for notice in twice.notices]
+    assert store.element('code.loop.tick').name_length == 2
+    alarm = store.add_subtype(layer.name, outer.join_id, 'code.alarm.audible', function='f')
+    assert alarm.notices == () and alarm.element_id == store.element('code.alarm.audible').element_id
 
 
 @pytest.mark.req('STORE-012')
@@ -286,7 +298,8 @@ def test_refs_keep_their_order_and_are_found_by_key_and_value(store):
                              observation='o', refs=[('path', 'c.c'), ('path', 'a.c'), ('path', 'b.c')])
     assert [ref.value for ref in store.joins('code.x', raw=True).results[0].refs] == ['c.c', 'a.c', 'b.c']
     cited = store.citing('path', 'src/tick.c').results
-    assert [(hit.kind, hit.address) for hit in cited] == [('subtype', 'code.loop.tick')]
+    tick = store.subtypes(outer.join_id).results[0]
+    assert [(hit.kind, hit.id) for hit in cited] == [('join', tick.join_id)]
     assert [hit.id for hit in store.citing('path', 'a.c').results] == [grouped.join_id]
 
 
@@ -312,7 +325,149 @@ def test_history_takes_a_bare_id_of_any_kind(store):
     element = store.element('code.timer.kitchen')
     subtype = store.subtypes(outer.join_id).results[0]
     for thing, kind in ((element.element_id, 'element'), (outer.join_id, 'join'),
-                        (subtype.subtype_id, 'subtype'), (item.item_id, 'item')):
+                        (subtype.join_id, 'join'), (item.item_id, 'item')):
         versions = store.history(thing).results
         assert [version.kind for version in versions] == [kind]
         assert versions[0].op == 'add'
+
+
+def failsafe(store, name='notes'):
+    """A knowledge layer where a daemon receives from a gateway failsafe and from an echo probe the failsafe could
+    absorb, and an alarm receives from the probe too."""
+    layer = knowledge(store, name)
+    for address in ('code.daemon', 'code.failsafe.gateway', 'code.probe.echo', 'code.alarm'):
+        store.add_element(layer.name, address, name_length=1)
+    parent = store.add_join(layer.name, 'code.daemon', 'code.failsafe.gateway', name='gateway failsafe',
+                            purpose='Catch a dead gateway.', function='Probes the gateway and fails over.',
+                            relation='The failsafe watches the gateway.', observation='Two probes.')
+    probe = store.add_join(layer.name, 'code.daemon', 'code.probe.echo', name='echo probe',
+                           purpose='Know the gateway answers.', function='Sends an echo each second.', ef='Function',
+                           relation='The echo probe pings the gateway.', verb='pings', observation='ICMP echo.',
+                           non_goal='Measure latency.', refs=[('path', 'src/echo.c')])
+    other = store.add_join(layer.name, 'code.alarm', 'code.probe.echo', purpose='Hear a dead gateway.',
+                           function='Reports a lost echo.', relation='The echo probe tells the alarm.',
+                           observation='One report per loss.')
+    return layer, parent, probe, other
+
+
+@pytest.mark.req('MAP-003')
+@pytest.mark.req('STORE-010')
+@pytest.mark.req('STORE-007')
+def test_a_join_moved_to_another_receiver_keeps_its_id_and_its_memory(store):
+    layer = knowledge(store, 'notes')
+    for address in ('code.a', 'code.b', 'code.c'):
+        store.add_element(layer.name, address)
+    join = store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='p', function='f', relation='r',
+                          observation='o')
+    notes = memory(store)
+    store.add_item(notes.name, Node('join', join.join_id), 'watch this one')
+    moved = store.edit(join.join_id, {'receiver': 'code.c'})
+    assert moved.notices == ()
+    found = store.joins('code.c', raw=True).results
+    assert [(held.join_id, held.receiver_address, held.name) for held in found] == [(join.join_id, 'code.c', 'b')]
+    assert store.joins('code.a', raw=True).results == ()
+    assert values(store.node(Node('join', join.join_id), raw=True), 'memory') == ['watch this one']
+
+
+@pytest.mark.req('MAP-030')
+@pytest.mark.req('MAP-003')
+@pytest.mark.req('STORE-034')
+def test_absorbing_a_join_makes_it_a_subtype_join_with_its_id_its_fields_and_what_is_attached(store):
+    layer, parent, probe, other = failsafe(store)
+    notes = memory(store)
+    store.add_item(notes.name, Node('join', probe.join_id), 'The echo is lost under load.')
+    element = store.element('code.probe.echo', raw=True)
+    absorbed = store.edit(probe.join_id, {'parent': parent.join_id})
+    assert other.join_id in ' '.join(notice.message for notice in absorbed.notices)
+    held = store.subtypes(parent.join_id, raw=True).results
+    assert [sub.join_id for sub in held] == [probe.join_id]
+    sub = held[0]
+    assert (sub.parent, sub.type, sub.element_id, sub.address, sub.name, sub.function, sub.ef, sub.relation, sub.verb,
+            sub.observation, sub.non_goal) == (
+        parent.join_id, 'subtype', element.element_id, 'code.probe.echo', 'echo probe', 'Sends an echo each second.',
+        'Function', 'The echo probe pings the gateway.', 'pings', 'ICMP echo.', 'Measure latency.')
+    assert [(ref.key, ref.value) for ref in sub.refs] == [('path', 'src/echo.c')]
+    assert sub.extra == {'purpose': 'Know the gateway answers.'}
+    assert [join.join_id for join in store.joins('code.daemon', raw=True).results] == [parent.join_id]
+    assert [join.join_id for join in store.joins('code.alarm', raw=True).results] == [other.join_id]
+    assert store.element('code.probe.echo', raw=True) == element
+    assert values(store.node(Node('join', probe.join_id), raw=True), 'memory') == ['The echo is lost under load.']
+
+
+@pytest.mark.req('MAP-031')
+@pytest.mark.req('STORE-011')
+@pytest.mark.req('STORE-025')
+def test_an_element_held_only_by_subtype_joins_is_no_root_and_no_node_of_the_outer_map(store):
+    _, outer, _ = small_map(store)
+    tick = store.element('code.loop.tick')
+    assert tick is not None and (tick.name_length, tick.role, tick.short_name) == (2, 'SE', 'tick loop')
+    sub = store.subtypes(outer.join_id).results[0]
+    assert (sub.element_id, sub.address, sub.name_length, sub.role, sub.short_name) == (
+        tick.element_id, 'code.loop.tick', 2, 'SE', 'tick loop')
+    assert 'code.loop.tick' not in [root.address for root in store.roots().elements]
+    graph = store.graph()
+    assert 'code.loop.tick' not in [placed.element.address for placed in graph.elements]
+    assert [held.join_id for join in graph.joins for held in join.subtypes] == [sub.join_id]
+    where = store.where('code.loop.tick')
+    assert (where.kind, where.element.element_id, where.subtype.join_id, where.join.join_id) == (
+        'subtype', tick.element_id, sub.join_id, outer.join_id)
+    extra = knowledge(store, 'extra')
+    store.add_element(extra.name, 'code.clock')
+    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='p', function='f', relation='r',
+                   observation='o')
+    store.finish(extra.name)
+    assert 'code.loop.tick' in [placed.element.address for placed in store.graph().elements]
+    assert store.where('code.loop.tick').kind == 'element'
+
+
+@pytest.mark.req('MAP-032')
+@pytest.mark.req('STORE-011')
+def test_a_subtype_join_sits_only_inside_a_join_held_by_a_receiver(home, store):
+    _, outer, _ = small_map(store)
+    sub = store.subtypes(outer.join_id).results[0]
+    layer, _, probe, _ = failsafe(store)
+    before = dump(store_file(home, store))
+    for attempt in (lambda: store.add_subtype(layer.name, sub.join_id, 'code.loop.inner', function='f'),
+                    lambda: store.edit(probe.join_id, {'parent': sub.join_id}),
+                    lambda: store.edit(probe.join_id, {'parent': probe.join_id})):
+        with pytest.raises(StoreError) as refused:
+            attempt()
+        assert refused.value.next_step
+    assert dump(store_file(home, store)) == before
+
+
+@pytest.mark.req('MAP-032')
+@pytest.mark.req('STORE-034')
+def test_absorbing_a_join_that_holds_a_subtype_join_passes_that_one_to_the_new_parent(store):
+    layer = knowledge(store, 'notes')
+    for address in ('code.a', 'code.p', 'code.q', 'code.t'):
+        store.add_element(layer.name, address)
+    parent = store.add_join(layer.name, 'code.a', 'code.p', purpose='p', function='f', relation='r', observation='o')
+    part = store.add_join(layer.name, 'code.a', 'code.q', purpose='q', function='g', relation='r', observation='o')
+    inner = store.add_subtype(layer.name, part.join_id, 'code.t', function='h')
+    absorbed = store.edit(part.join_id, {'parent': parent.join_id})
+    assert inner.join_id in ' '.join(notice.message for notice in absorbed.notices)
+    assert sorted(sub.join_id for sub in store.subtypes(parent.join_id, raw=True).results) == sorted(
+        [part.join_id, inner.join_id])
+    assert store.subtypes(part.join_id, raw=True).results == ()
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.req('STORE-010')
+@pytest.mark.req('STORE-011')
+def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver(home, store):
+    small_map(store)
+    db = sqlite3.connect(store_file(home, store))
+    try:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {table: [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
+                   for table in ('join_ids', 'joins', 'current_elements', 'current_subtypes')}
+        version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        kinds = {row[0] for row in db.execute('SELECT type FROM joins')}
+    finally:
+        db.close()
+    assert 'subtypes' not in tables and 'subtype_ids' not in tables and 'unapplied' not in tables
+    assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
+    assert 'moved' not in columns['current_elements']
+    assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
+    assert version == '5' and kinds == {'purpose', 'subtype'}

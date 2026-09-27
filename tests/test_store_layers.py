@@ -306,7 +306,8 @@ def test_properties_apply_toward_the_leaves_and_are_visible_toward_the_trunk(sto
 
 @pytest.mark.req('STORE-035')
 @pytest.mark.req('LAYER-004')
-def test_a_property_follows_its_element_when_it_moves_and_an_item_never_travels(store):
+@pytest.mark.req('MAP-015')
+def test_a_property_stays_with_its_element_which_never_moves_and_an_item_never_travels(store):
     with store.atomic():
         base = intake(store)
         store.add_element(base.name, 'code.engine', role='DE')
@@ -321,11 +322,12 @@ def test_a_property_follows_its_element_when_it_moves_and_an_item_never_travels(
     assert values(store.node(Node('element', 'code.engine.game')), 'practices') == []
     fix = store.layer('move', 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
                       provenance=PROVENANCE)
-    store.correct(fix.name, store.element('code.engine').element_id, {'address': 'code.runtime'},
-                  reason='It is the runtime.')
+    tried = store.correct(fix.name, store.element('code.engine').element_id, {'address': 'code.runtime'},
+                          reason='It is the runtime.')
+    assert [notice.where for notice in tried.notices] == ['address']
     store.finish(fix.name)
-    assert [item.value for item in store.context('code.runtime.game').applying] == ['profile before optimizing']
-    assert store.context('code.engine.game').applying == ()
+    assert [item.value for item in store.context('code.engine.game').applying] == ['profile before optimizing']
+    assert store.context('code.runtime.game').applying == ()
 
 
 @pytest.mark.req('STORE-038')
@@ -376,7 +378,8 @@ def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
     assert 'joins' not in changed and 'current_joins' not in changed and changed['properties'] == (1, 0)
     at_type = store.add_property(media.name, Node('type', 'code'), 'x')
     assert at_type.notices and at_type.address == 'code' and not at_type.orphaned
-    for target in (Node('join', outer.join_id), Node('subtype', 'code.loop.tick')):
+    tick = store.subtypes(outer.join_id).results[0]
+    for target in (Node('join', outer.join_id), Node('join', tick.join_id)):
         stored = store.add_property(media.name, target, 'x')
         assert stored.notices and stored.orphaned
     assert 'joins' not in diff(before, dump(store_file(home, store)))

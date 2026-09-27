@@ -120,7 +120,7 @@ This matters outside software as well. In the author's photograph example, a cou
 
 The dotted typology expresses valid Function or Encounter types, not every convenient metadata label. Encoding alone does not make a functional type. A JPEG encoder can have an encoder-function address; simply appending a file format to a document address does not establish such a function. The [namespace account](../inference-metaform/REFERENCE.md#namespaces) covers the distinctions in depth.
 
-## Internal subtypes preserve detail without adding more global elements
+## Subtype joins preserve detail without adding more global elements
 
 The module-author join contains:
 
@@ -131,7 +131,7 @@ graph TB
     join -.holds.-> example["code.module.example<br/>helloworld"]
 ```
 
-`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent purpose join**. They do not receive independent copies of that purpose merely because they can be named.
+`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent purpose join**, each in a subtype join, a join of type `subtype` that names the element it holds. Each stays one ordinary element record at its own address; an element whose only joins are subtype joins is no root and no node of the outer map. They do not receive independent copies of that purpose merely because they can be named.
 
 ```sh
 metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3
@@ -140,7 +140,7 @@ metaform map where code.module.example
 
 This is the result of convergence: many implementation details are absorbed into load-bearing parent functionalities while their atomic contributions remain available in the matching relationships. Convergence is not loss of the useful detail; it is the decision about where that detail belongs.
 
-The runtime can also create a memory holder named `code.module.helloworld` when the helloworld demo runs. That holder is not the same address as the intake's `code.module.example` subtype. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
+The runtime can also create a memory holder named `code.module.helloworld` when the helloworld demo runs. That holder is not the same address as the element `code.module.example` that the intake's subtype join holds. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
 
 ## Follow Encounters through the applicable structure
 
@@ -174,7 +174,7 @@ The exported graph's broad provider records contain receiver-specific joins. The
 
 ## Distinguish the representation from attached knowledge
 
-An element, join, or subtype provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Corrections retain changes to the representation through a separate stack.
+An element or a join, a subtype join included, provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Corrections retain changes to the representation through a separate stack.
 
 ```sh
 metaform map node element:code.system.plugin

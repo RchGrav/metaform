@@ -12,16 +12,16 @@ from typing import Any, Generic, Literal, NamedTuple, TypeVar, cast
 
 from ..errors import StoreError
 
-NodeKind = Literal['element', 'join', 'subtype', 'type']
+NodeKind = Literal['element', 'join', 'type']
 LayerKind = Literal['layer', 'intake', 'memory', 'correction']
 Op = Literal['add', 'change', 'remove']  # what a row does, STORE-017
 Answer = Literal['A', 'B', 'C', 'plan']  # a challenge's state, STORE-040
-NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join', 'subtype')
+NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')  # a subtype join is a join, STORE-011
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
 LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
-SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # a subtype's role, MAP-030
+SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 CONDITIONS = ('tbd', 'broken', 'cruft')  # the condition a work record holds, MAP-046
 
@@ -49,7 +49,7 @@ class Record:
 
 @dataclass(frozen=True)
 class Node(Record):
-    """A place an item can attach: an element, a join or a subtype, named by address or identity id.
+    """A place an item can attach: an element or a join, a subtype join included, named by address or identity id.
 
     `type:<address>` names a bare type address; a write there attaches to an element at that address, made by the
     writing layer when the project has none, with a notice, STORE-008.
@@ -59,14 +59,15 @@ class Node(Record):
 
     def __post_init__(self) -> None:
         if self.kind not in PLACE_KINDS:
-            raise StoreError(f'{self.kind!r} is not a node kind: use element, join, subtype or type.',
-                             'metaform help map node')
+            raise StoreError(f'{self.kind!r} is not a node kind: use element, join or type. A subtype join is a join, '
+                             'and the element it holds an element.', 'metaform help map node')
 
     @classmethod
     def of(cls, kind: str, ident: str) -> Node:
         """A node whose kind was read as text, such as from a row, checked before it is typed."""
         if kind not in PLACE_KINDS:
-            raise StoreError(f'{kind!r} is not a node kind: use element, join, subtype or type.', 'metaform help map node')
+            raise StoreError(f'{kind!r} is not a node kind: use element, join or type. A subtype join is a join, and '
+                             'the element it holds an element.', 'metaform help map node')
         return cls(kind, ident)
 
     @classmethod
@@ -74,7 +75,7 @@ class Node(Record):
         kind, separator, ident = text.partition(':')
         if not separator or not ident:
             raise StoreError(f'{text!r} is not a node: write element:<address or id>, join:<id> or '
-                             'subtype:<address or id>.', 'metaform help map node')
+                             'type:<address>.', 'metaform help map node')
         return cls.of(kind, ident)
 
     def __str__(self) -> str:
@@ -159,11 +160,16 @@ class Join(Record):
 
 @dataclass(frozen=True)
 class Subtype(Record):
-    subtype_id: str
+    """A subtype join, STORE-011: a join of type subtype held in its parent join, with its own fields and no purpose,
+    and the element it holds, an ordinary element record, by its id, address, reading, short name, name_length and
+    role, MAP-030."""
     join_id: str
+    parent: str
     layer_id: str
     layer: str
-    address: str
+    type: str
+    element_id: str
+    address: str | None
     reading: str
     short_name: str
     name: str | None  # the subtype join's name for the functionality, MAP-020
@@ -174,8 +180,10 @@ class Subtype(Record):
     relation: str | None
     verb: str | None
     observation: str | None
+    non_goal: str | None
     refs: tuple[Ref, ...] = ()
     extra: dict[str, Any] | None = None
+    orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
 
@@ -308,6 +316,8 @@ class Selection(Record):
 
 @dataclass(frozen=True)
 class Where(Record):
+    """The element at an address; for one held only by subtype joins, kind `subtype`, with the subtype join that holds
+    it and that join's parent join, MAP-031."""
     kind: str
     element: Element | None = None
     subtype: Subtype | None = None
@@ -316,7 +326,7 @@ class Where(Record):
 
 @dataclass(frozen=True)
 class GraphJoin(Join):
-    """A join with the subtypes it holds, as a page of the whole map carries it, VIEW-005."""
+    """A join with the subtype joins it holds, as a page of the whole map carries it, VIEW-005."""
     subtypes: tuple[Subtype, ...] = ()
 
 
@@ -418,8 +428,9 @@ class Roots(Record):
 
 @dataclass(frozen=True)
 class WorkRecord(Record):
-    """The condition of one object, apart from the map, STORE-042: an element or subtype with its address, or a join
-    with its two ends, when the object is current; open until `done` is set, and then kept with its resolution."""
+    """The condition of one object, apart from the map, STORE-042: an element with its address, or a join with its
+    two ends, a subtype join with its parent's receiver and the element it holds, when the object is current; open
+    until `done` is set, and then kept with its resolution."""
     work_id: str
     kind: str
     id: str
