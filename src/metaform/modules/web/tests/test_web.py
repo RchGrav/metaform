@@ -636,6 +636,55 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
     assert problems == []
 
 
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-009')
+@pytest.mark.req('MAP-046')
+def test_a_node_with_open_tbd_work_is_ghostly_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
+        run, web, mapped, browser):
+    """Rich, 2026-09-27: a TBD object is drawn ghostly, showing what it will be, and the agent that completes its task
+    makes it solid; a node with an open issue flashes red; cruft keeps its look. The fixture's kitchen timer carries an
+    open broken record."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='in the spec', task='build the piezo driver')
+    store.add_work(Node('element', 'exterior.cook'), 'cruft', task='drop the cook')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
+    look = lambda address: page.evaluate(f'window.metaform.look("{ids[address]}")')
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity3d === 0.7', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity2d === 0.7', timeout=5000)
+    alarm = look('code.alarm.audible')
+    assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['opacity3d'], alarm['animated2d']) == (
+        ['tbd'], ['work-tbd'], 0.7, 0.7, False)
+    cook = look('exterior.cook')
+    assert (cook['work'], cook['classes'], cook['opacity3d'], cook['animated2d'], cook['red3d']) == (
+        ['cruft'], ['work-cruft'], 0.95, False, False)
+    kitchen = look('code.timer.kitchen')
+    assert (kitchen['work'], kitchen['classes'], kitchen['opacity2d'], kitchen['animated2d']) == (['broken'], ['work-broken'], 1, True)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.timer.kitchen"]}").red3d === true', timeout=3000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.timer.kitchen"]}").red3d === false', timeout=3000)
+    legend = page.inner_text('#legend')
+    assert 'work: tbd' in legend and 'work: broken' in legend and 'work: cruft' in legend
+    # The panel lists the selected node's work records.
+    page.evaluate(f'window.metaform.select("{ids["code.timer.kitchen"]}")')
+    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("hold the tick to one second")')
+    panel = page.inner_text('#p-object')
+    for shown in ('WORK', 'broken', 'drifts', 'hold the tick to one second', 'open'):
+        assert shown in panel, shown
+    # Its task done, pushed to the page, the alarm turns solid without a reload.
+    run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity3d === 0.95', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity2d === 1', timeout=5000)
+    solid = look('code.alarm.audible')
+    assert (solid['work'], solid['classes'], solid['opacity2d']) == ([], [], 1)
+    page.evaluate(f'window.metaform.select("{ids["code.alarm.audible"]}")')
+    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("driver written")')
+    assert 'done' in page.inner_text('#p-object')
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-006')
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('VIEW-012')

@@ -128,20 +128,20 @@ function graphData() {
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.element_id]));
   for (const {element, parent} of S.elements.values()) {
     nodes.push({id: element.element_id, t: 'el', name: element.short_name || element.address, address: element.address,
-      role: element.role, flag: element.flag, layer: element.layer});
+      role: element.role, work: element.open_work || [], layer: element.layer});
     if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.element_id, k: 'tree'});
   }
   const ids = new Set(nodes.map(node => node.id));
   for (const join of S.joins) {
     if (!ids.has(join.receiver) || !ids.has(join.provider)) continue;
     const purpose = 'p:' + join.join_id;
-    nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, flag: join.flag});
+    nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []});
     links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id});
     links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
       ef: join.ef});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.subtype_id, t: 'sub', join: join.join_id, layer: subtype.layer,
-        name: subtype.name || subtype.address, flag: subtype.flag});
+        name: subtype.name || subtype.address, work: subtype.open_work || []});
       links.push({source: purpose, target: 's:' + subtype.subtype_id, k: 'layer', layer: subtype.layer, join: join.join_id,
         ef: subtype.ef});
     }
@@ -174,15 +174,50 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
-  inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical};
+  inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
+  look: id => look(id)};
+
+/* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
+ * classes, computed opacity and whether its box is animating, and the 3D sphere's material opacity and whether it is
+ * red at this frame. */
+function look(id) {
+  const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
+  const group = (M.base?.nodes.get(id) || M.nodes.get(id))?.g || null;
+  const box = group?.querySelector('rect') || null;
+  const material = node?.__threeObj?.material || null;
+  return {work: node?.work || [], classes: group ? [...group.classList].filter(name => name.startsWith('work-')) : [],
+    opacity2d: group ? Number(getComputedStyle(group).opacity) : null,
+    animated2d: box ? getComputedStyle(box).animationName !== 'none' : false,
+    opacity3d: material ? material.opacity : null,
+    red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false};
+}
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
+const CONDITIONS = ['tbd', 'broken', 'cruft'];
+const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
-  if (node.t === 'el') return node.flag && FLAGS[node.flag] ? css(FLAGS[node.flag]) : node.role === 'VE' ? css('--signal')
+  if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
     : node.role === 'DE' ? '#ffffff' : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
+}
+const dimmed = node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
+/* The condition of a node in 3D, MAP-046, Rich 2026-09-27: an open tbd record draws it ghostly, at 70% opacity, an
+ * open broken record flashes it red, steady red with reduced motion; cruft keeps its look. The sphere takes its own
+ * material first, so no other node of its color changes. Called every frame for the nodes that carry a record. */
+function paint3d(node) {
+  const object = node.__threeObj;
+  if (!object || !object.material) return;
+  const tbd = has(node, 'tbd'), broken = has(node, 'broken');
+  if (!tbd && !broken) return;
+  if (!object.material.userData.own) {
+    object.material = object.material.clone();
+    object.material.userData.own = true;
+    object.material.transparent = true;
+  }
+  object.material.opacity = tbd ? 0.7 : 0.95;
+  const red = broken && (reduced() || Math.floor(performance.now() / 500) % 2 === 0);
+  object.material.color.set(red ? css('--broken') : dimmed(node) ? '#2b3644' : colorOf(node));
 }
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
@@ -204,7 +239,7 @@ function start3D() {
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
-    .nodeColor(node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id) ? '#2b3644' : colorOf(node))
+    .nodeColor(node => dimmed(node) ? '#2b3644' : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
@@ -271,6 +306,7 @@ function labels() {
   if (G) {
     const box = $('#labels3d');
     for (const node of G.graphData().nodes) {
+      if (node.work && node.work.length) paint3d(node);
       if (node.t !== 'el') continue;
       let tag = tags.get(node.id);
       if (!tag) { tag = h('span', {}, short(node.name, 26)); box.append(tag); tags.set(node.id, tag); }
@@ -312,9 +348,10 @@ function renderLegend() {
   const legend = $('#legend');
   fill(legend, ...rows.map(([color, text, kind]) =>
     h('span', {style: {'--c': `var(${color})`}}, h('i', {class: kind}), text)));
-  const flags = new Set([...S.elements.values()].map(entry => entry.element.flag).concat(S.joins.map(join => join.flag)));
-  for (const flag of ['missing', 'broken', 'cruft']) if (flags.has(flag))
-    legend.append(h('span', {style: {'--c': `var(--${flag})`}}, h('i', {class: 'dot'}), `flag: ${flag}`));
+  const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
+    .concat(S.joins.flatMap(join => (join.open_work || []).concat((join.subtypes || []).flatMap(subtype => subtype.open_work || [])))));
+  for (const condition of CONDITIONS) if (open.has(condition))
+    legend.append(h('span', {style: {'--c': `var(--${condition})`}}, h('i', {class: 'dot'}), `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
     + (following() ? ' · intake being recorded' : '');
@@ -376,12 +413,12 @@ async function build2D() {
   for (const [id, key] of keys) {
     const group = held.has(id) ? svg.querySelector(`g.cluster[id="${key}"], g.cluster[id$="-${key}"]`)
       : svg.querySelector(`[id*="-flowchart-${key}-"]`);
-    if (group) placeIn(nodes, id, group, S.elements.get(id).element.address, S.elements.get(id).element.flag);
+    if (group) placeIn(nodes, id, group, S.elements.get(id).element.address, S.elements.get(id).element.open_work);
   }
   for (const [id, key] of inner) {
     const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
     const {subtype} = subtypeOf.get(id) || {};
-    if (group && subtype) placeIn(nodes, id, group, subtype.address, subtype.flag);
+    if (group && subtype) placeIn(nodes, id, group, subtype.address, subtype.open_work);
   }
   const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
@@ -401,12 +438,12 @@ function mountSvg(result, host, hidden) {
   if (hidden) { svg.style.visibility = 'hidden'; host.append(svg); } else fill(host, svg);
   return svg;
 }
-function placeIn(nodes, id, group, title, flag) {
+function placeIn(nodes, id, group, title, work) {
   const box = group.getBBox();
   const matrix = group.transform.baseVal.consolidate()?.matrix;
   const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
   nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
-  if (flag) group.classList.add(`flag-${flag}`);
+  for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
   const text = document.createElementNS(SVG, 'title');
   text.textContent = title;
   group.append(text);
@@ -810,8 +847,20 @@ function select(id, fly, keepTrail = false, stepping = false) {
 function refsOf(refs) {
   return refs && refs.length ? h('div', {class: 'refs'}, refs.map(ref => `${ref.key}: ${ref.value}`).join(' · ')) : null;
 }
-function flagPill(thing) {
-  return thing.flag ? h('span', {class: `pill flag-${thing.flag}`, title: thing.flag_note || null}, thing.flag) : null;
+/* The work records of the selected object, MAP-046: each with its condition, note and task, held and reviewed,
+ * and its resolution once done; read from /api/work for the node and written into the panel's work box. */
+function workPill(condition) { return h('span', {class: `pill work-${condition}`}, condition); }
+async function renderWork(target, key) {
+  let records = [];
+  try { records = (await read('work', {node: target, limit: 0})).results; } catch (error) { toast(error.message); }
+  const box = $('#work');
+  if (!box || S.selected !== key || !records.length) return;
+  fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => h('div', {class: 'item work'},
+    h('div', {class: 'pills'}, workPill(record.condition), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
+      record.held ? h('span', {class: 'pill'}, 'held') : null, record.reviewed ? h('span', {class: 'pill'}, 'reviewed') : null),
+    record.note ? h('p', {}, record.note) : null,
+    record.task ? h('p', {class: 'fn'}, record.task) : null,
+    record.done ? h('p', {class: 'obs'}, `Resolved: ${record.resolution || ''}`) : null)));
 }
 function efPill(thing) {
   return EF[thing.ef] ? h('span', {class: 'pill ef', style: {'--c': `var(${EF[thing.ef]})`}}, thing.ef) : null;
@@ -833,12 +882,11 @@ function joinCard(join, side) {
     join.relation ? h('p', {class: 'fn'}, join.relation) : null,
     join.observation ? h('p', {class: 'obs'}, join.observation) : null,
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
-    join.flag ? h('div', {class: 'pills'}, flagPill(join), join.flag_note ? h('span', {class: 'empty'}, join.flag_note) : null) : null,
     refsOf(join.refs),
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
       event.preventDefault(); select('s:' + subtype.subtype_id, true); }}, h('b', {}, subtype.name || subtype.address)), ' ',
       h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
-      subtype.observation ? h('div', {}, subtype.observation) : null, flagPill(subtype), refsOf(subtype.refs))));
+      subtype.observation ? h('div', {}, subtype.observation) : null, refsOf(subtype.refs))));
 }
 function itemText(value) {
   if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
@@ -850,17 +898,18 @@ function renderSubtype({subtype, join}) {
     h('div', {class: 'eyebrow'}, 'Subtype'),
     h('h2', {}, subtype.name || subtype.address),
     h('div', {class: 'addr'}, subtype.address),
-    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null, efPill(subtype), flagPill(subtype),
-      layerPill(subtype.layer)),
+    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null, efPill(subtype),
+      (subtype.open_work || []).map(workPill), layerPill(subtype.layer)),
     h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
       elementLink(join.receiver, join.receiver_address), '.'),
     subtype.function ? h('p', {}, subtype.function) : null,
     subtype.relation ? h('p', {class: 'fn'}, subtype.relation) : null,
     subtype.observation ? h('p', {class: 'obs'}, subtype.observation) : null,
-    subtype.flag_note ? h('p', {class: 'empty'}, subtype.flag_note) : null,
     refsOf(subtype.refs),
+    h('div', {id: 'work'}),
     h('div', {class: 'eyebrow'}, 'The join it sits in'),
     joinCard(join, 'provider'));
+  renderWork(`subtype:${subtype.subtype_id}`, 's:' + subtype.subtype_id);
 }
 function renderJoin(join) {
   fill($('#p-object'),
@@ -868,7 +917,10 @@ function renderJoin(join) {
     h('h2', {}, join.relation || `${join.receiver_address} receives from ${join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
       elementLink(join.provider, join.provider_address), '.'),
-    joinCard(join, 'provider'));
+    (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
+    joinCard(join, 'provider'),
+    h('div', {id: 'work'}));
+  renderWork(`join:${join.join_id}`, 'p:' + join.join_id);
 }
 async function renderObject(id) {
   const {element} = S.elements.get(id);
@@ -878,15 +930,17 @@ async function renderObject(id) {
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, element.name || element.short_name || element.address),
     h('div', {class: 'addr'}, element.address),
-    h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null, flagPill(element),
-      layerPill(element.layer), h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
-    element.flag_note ? h('p', {class: 'empty'}, element.flag_note) : null,
+    h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
+      (element.open_work || []).map(workPill), layerPill(element.layer),
+      h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
     refsOf(element.refs),
+    h('div', {id: 'work'}),
     h('div', {id: 'items'}),
     h('div', {class: 'eyebrow'}, 'Joins held by this element'),
     held.length ? held.map(join => joinCard(join, 'provider')) : h('p', {class: 'empty'}, 'This element receives nothing here.'),
     serves.length ? h('div', {class: 'eyebrow'}, 'Serves') : null,
     serves.map(join => joinCard(join, 'receiver')));
+  renderWork(`element:${id}`, id);
   try {
     const node = await read('node', {target: `element:${id}`, ...viewLayers()});
     if (S.selected !== id) return;

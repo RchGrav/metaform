@@ -13,7 +13,7 @@
   --function:#62e3d3; --encounter:#ff4fd8;
   --intake:#7fb0ff; --memory:#c792ff; --correction:#ff7a6b; --tree:#3a4a5e;
   --k1:#f2b35b; --k2:#7ee081; --k3:#ff8fc8; --k4:#5fd0ff; --k5:#e6e66a; --k6:#b0a4ff;
-  --missing:#ffd166; --broken:#ff5d73; --cruft:#9aa3ad;
+  --tbd:#ffd166; --broken:#ff5d73; --cruft:#9aa3ad;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -52,9 +52,9 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .addr{font:12px var(--mono);color:var(--signal);word-break:break-all}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{font:500 11px var(--mono);padding:2px 8px;border-radius:4px;border:1px solid var(--line-2);color:var(--muted)}
-.pill.flag-broken{color:var(--broken);border-color:var(--broken)}
-.pill.flag-cruft{color:var(--cruft);border-color:var(--cruft)}
-.pill.flag-missing{color:var(--missing);border-color:var(--missing)}
+.pill.work-broken{color:var(--broken);border-color:var(--broken)}
+.pill.work-cruft{color:var(--cruft);border-color:var(--cruft)}
+.pill.work-tbd{color:var(--tbd);border-color:var(--tbd)}
 .pill.layer{color:var(--c);border-color:var(--c)}
 .pill.ef{color:var(--c);border-color:var(--c);margin-right:6px}
 .map2d{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);background:var(--ground);overflow:hidden;flex:none}
@@ -66,9 +66,13 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node{cursor:pointer}
 .map2d .node.sel rect{fill:#10303a!important;stroke:var(--signal)!important;stroke-width:2px!important}
 .map2d .node.near rect{stroke:var(--intake)!important}
-.map2d .node.flag-broken rect{stroke:var(--broken)!important}
-.map2d .node.flag-missing rect{stroke:var(--missing)!important;stroke-dasharray:4 3}
-.map2d .node.flag-cruft rect{stroke:var(--cruft)!important;opacity:.7}
+/* The condition of a node, MAP-046: an open tbd record draws it ghostly, at 70% opacity; an open broken record flashes
+ * its box red, steady red with reduced motion; cruft keeps its look. */
+.map2d .node.work-tbd,.map2d .cluster.work-tbd{opacity:.7}
+@keyframes flash{0%,100%{stroke:var(--line-2);fill:var(--panel-2)}50%{stroke:var(--broken);fill:#3a1220}}
+.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash 1s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:#3a1220!important}}
+.map2d .node.work-cruft rect{stroke:var(--cruft)!important;opacity:.7}
 .map2d.focused .node:not(.sel):not(.near){opacity:.28}
 .map2d .edgePaths path{stroke:var(--line-2)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}
