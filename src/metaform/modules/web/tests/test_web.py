@@ -1118,6 +1118,35 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     assert problems == []
 
 
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('BASE-039')
+def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_earlier_metaform(run, home, web,
+                                                                                               browser, tmp_path):
+    """Rich, 2026-09-27: following a new, empty intake, the map cleared and the panel kept the earlier metaform's
+    element."""
+    started(run)
+    folder = tmp_path / 'again'
+    folder.mkdir()
+    run('add', 'project', 'again', str(folder))
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
+    run('intake', 'finish', cwd=folder)
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    problems = []
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.goto(f'http://127.0.0.1:{web}/#p=again')
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.drawn() '
+                           '&& window.metaform.drawn().nodes === 1', timeout=30000)
+    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
+                           timeout=15000)
+    run('intake', 'start', cwd=folder)
+    page.wait_for_function('() => window.metaform.live() !== null', timeout=15000)
+    page.wait_for_function('() => window.metaform.drawn().nodes === 0', timeout=15000)
+    page.wait_for_timeout(300)  # the panel's reads settle
+    assert 'code.timer.kitchen' not in page.inner_text('#p-object')
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-018')
 @pytest.mark.req('QUAL-016')
 @pytest.mark.req('BASE-019')

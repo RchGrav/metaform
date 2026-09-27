@@ -1089,6 +1089,7 @@ async function loadLive() {
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (start) select(start, false);
+  else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
 /* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it has finished. */
 async function follow(found) {
