@@ -359,17 +359,17 @@ The following is a **derived XML illustration using the current project's names 
 
 The global list does not repeat `document.procedure.intake`. The join's provider reference and its contained subtype element use the same namespace value. The recorded project name remains distinct from that address.
 
-### Elicitation, submission, and preservation
+### Elicitation, recording, and preservation
 
-The current module serves the stored intake text with controlled target and project substitutions, followed by its submission instructions and the report/debug requests selected for the call. Tests compare the resource and its specifications copy. An explicit `intake_file` setting can select another operative file.
+The current module serves the stored intake text with controlled target and project substitutions, followed by its recording instructions and the report/debug requests selected for the call. Tests compare the resource and its specifications copy. An explicit `intake_file` setting can select another operative file.
 
-The prompt asks the model for XML, while the implemented submission interface receives an element array: directly over MCP, or as JSON loaded by the CLI. The module does not parse the prompt's XML result itself. The performing agent supplies the interface's data shape.
+The intake is recorded as it is reasoned. The agent starts it, then records each element, join and subtype join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back whole, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
 
-The writer stores a readable submission as one atomic intake layer, retaining content with notices where fields do not fit. Missing or unreadable top-level input is an input-delivery issue, distinct from judging the map's semantic quality. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
+Each call stores its object in a building intake layer, retaining content with notices where fields do not fit. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
 
-An intake layer is immutable and nonhideable. A subsequent intake is written to a new Metaform rather than overwriting the previous base. The author's intention to lock in the operative method on release concerns preservation of its behavior. The current preservation mechanism is exact resource text and controlled substitution; the [implementation map](IMPLEMENTATION_MAP.md#correspondence) records the boundary of the separately discussed encoding idea.
+A finished intake layer is immutable and nonhideable. A subsequent intake is recorded in a new Metaform rather than overwriting the previous base. The author's intention to lock in the operative method on release concerns preservation of its behavior. The current preservation mechanism is exact resource text and controlled substitution; the [implementation map](IMPLEMENTATION_MAP.md#correspondence) records the boundary of the separately discussed encoding idea.
 
-Sources: [complete served Canonical Intake](../../src/metaform/modules/intake/resources/Canonical_Intake.xml), [serving and submission](../../src/metaform/modules/intake/__init__.py), and [submission writer](../../src/metaform/modules/intake/submission.py).
+Sources: [complete served Canonical Intake](../../src/metaform/modules/intake/resources/Canonical_Intake.xml) and [serving and recording](../../src/metaform/modules/intake/__init__.py).
 
 <a id="encounters"></a>
 ## 6. Function, Encounter, and scoped propagation
@@ -912,7 +912,7 @@ This walkthrough reuses one prepared interpretation of the plugin system across 
 
 The functional map describes the map API as the agent-facing encounter with stored elements, joins, and layers. The critic examines the actual implementation with that receiving purpose in view.
 
-The intake writer, store APIs, and record schema support `ef`. The knowledge interface's field lists and dispatch omit it. A submitted `ef` through that path can therefore be retained as extra content with a notice rather than reaching its dedicated field.
+The intake tools, store APIs, and record schema support `ef`. The knowledge interface's field lists and dispatch omit it. A submitted `ef` through that path can therefore be retained as extra content with a notice rather than reaching its dedicated field.
 
 The issue is not that the entire graph lacks Function/Encounter semantics. It is that one interface does not carry an existing semantic field through to its implemented destination. The functional description allows the critic to locate the mismatch precisely: agents using this encounter should be able to supply the distinction supported by the underlying records.
 

@@ -7,7 +7,7 @@ import pytest
 
 from metaform import home as metaform_home
 from metaform.data import Node, Store, StoreError, export_document, import_document
-from storekit import correction, dump, knowledge, memory, small_map, store_file
+from storekit import correction, dump, knowledge, memory, record_intake, small_map, store_file
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -152,12 +152,6 @@ def wheel_home(home, label):
     return home / 'wheels' / label
 
 
-def submit_intake(run, folder, env, elements):
-    path = folder.parent / f'{folder.name}-elements.json'
-    path.write_text(json.dumps(elements), encoding='utf-8')
-    run('intake', 'submit', f'elements={path}', cwd=folder, env=env)
-
-
 def roots_of(run, folder):
     return run('map', 'roots', '--json', cwd=folder).stdout
 
@@ -173,13 +167,13 @@ def test_a_wheels_data_is_pulled_in_as_its_own_metaforms_never_active_and_only_o
     folder.mkdir()
     other.mkdir()
     run('add', 'project', 'proj', str(folder))
-    submit_intake(run, folder, {}, ELEMENTS_MAIN)
+    record_intake(run, folder, ELEMENTS_MAIN, env={})
     before = roots_of(run, folder)
     wheel = {'METAFORM_HOME': str(wheel_home(home, 'metaform-9.9.9'))}
     run('add', 'project', 'proj', str(folder), env=wheel)
-    submit_intake(run, folder, wheel, ELEMENTS_WHEEL)
+    record_intake(run, folder, ELEMENTS_WHEEL, env=wheel)
     run('add', 'project', 'other', str(other), env=wheel)
-    submit_intake(run, other, wheel, ELEMENTS_WHEEL)
+    record_intake(run, other, ELEMENTS_WHEEL, env=wheel)
     pulled = run('import', 'wheel=metaform-9.9.9').stdout
     assert 'metaforms added: 2' in pulled
     rows = [line.split() for line in run('list', 'metaforms', 'proj').stdout.splitlines()]

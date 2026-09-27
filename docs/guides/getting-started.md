@@ -100,33 +100,27 @@ metaform intake prompt
 
 Over MCP, use the `intake_prompt` tool with no arguments when the folder resolves the project, or with `{"project":"example"}` to select it explicitly.
 
-The command serves the operative intake with the target filled in, followed by the current submission/report instructions. It does not run an AI model. The intake module's agent notice directs a subagent to read and follow those instructions. The agent examines the workpiece, reasons through its receiving purposes and providers, converges its functional structure, and submits the completed result.
+The command serves the operative intake with the target filled in, followed by the recording and report instructions. It does not run an AI model. The intake module's agent notice directs a subagent to read and follow those instructions. The agent examines the workpiece, reasons through its receiving purposes and providers, records each object as soon as it is reasoned, converges its functional structure, then reads the whole map back, proofs it and finishes it.
 
-**Your part** is to identify the workpiece and direct the work. **The agent's part** is the substantive inference and submission. **Metaform's part** is to serve the method, retain the result, and make that understanding available through subsequent reads, memory, knowledge, and tools.
+**Your part** is to identify the workpiece and direct the work. **The agent's part** is the substantive inference and recording. **Metaform's part** is to serve the method, retain the result, and make that understanding available through subsequent reads, memory, knowledge, and tools.
 
 The operative procedure is intended to ship with the project. Its wording is part of how it elicits the representation. The introductory guide therefore uses the served procedure rather than replacing it with a shorter homemade intake prompt. [The full reference](../inference-metaform/REFERENCE.md#intake) explains the intake mechanism.
 
-### Submission has a specific interface shape
+### The intake is recorded one object at a time
 
-The served procedure describes an XML result. The runtime submission interface receives the **array of elements**, each containing its joins. On the command line, `elements` names a JSON file containing that array, or `-` for standard input:
+The served procedure's XML schema defines the fields of each object. The agent records the map through the intake tools, one object per call, as it reasons it, so it never holds the whole map in its context:
 
 ```sh
-metaform intake submit elements=elements.json id=example-intake-1
+metaform intake start model=opus role="intake agent" id=example-intake-1
+metaform intake element stakeholder.cook.home role=VE name="Home cook"
+metaform intake join stakeholder.cook.home code.timer.kitchen purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="The kitchen timer tells the cook." verb=tells observation="One countdown per dish."
+metaform intake show
+metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-Over MCP, `intake_submit` receives the array itself:
+Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. `intake_join` returns the join id that `intake_subtype` takes for a subtype join inside it. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
 
-```json
-{
-  "project": "example",
-  "id": "example-intake-1",
-  "elements": []
-}
-```
-
-Here `[]` indicates where the agent's completed array goes; it is not a useful intake to submit. Do not send a filename, raw XML, the entire XML root wrapper, or a Metaform export in that field. The optional `model`, `role`, `blinded`, `report`, and `feedback` fields preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
-
-A successful submission reports the layer, Metaform, record counts, and notices. Read the notices: the writer retains readable material and identifies unsupported or ill-fitting content rather than silently discarding its meaning. An unreadable top-level array produces no stored map. The map write is atomic; attached reports are saved after that transaction.
+Each call returns what it stored and its notices. Read the notices: a call retains readable material and names unsupported or ill-fitting content rather than silently discarding its meaning. Until `finish`, the intake is building: `intake show` returns it whole, `intake edit` and `intake remove` correct it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` reports the layer, the Metaform, the record counts, and any addresses recorded only as the end of a join and never described.
 
 ### What stays available
 
@@ -192,7 +186,6 @@ Imported IDs are retained. Import adds missing identities; it is not an overwrit
 | No project for this folder | `metaform list projects`; enter the registered folder or use `metaform set --project <id>`. |
 | A module is off or in error | `metaform list modules`; the row gives its disabled, platform, dependency, or import condition. |
 | MCP is absent from the build | Install its declared dependency, make sure `mcp` loads, then rebuild. The builder copies loaded modules. |
-| Intake says elements is not an array | Pass the element array to the submission field, not a full export or a wrapper object. |
 | The agent sees another context | Check its launch folder and project override; inspect `metaform config --show`. |
 | A layer is retained but not visible | Read it by name and check its finished/hidden state and current layer selection. |
 

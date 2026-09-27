@@ -112,8 +112,8 @@ def layer_name(tx: Tx, layer_id: str) -> str:
 
 
 def frozen(tx: Tx, found: LayerRow) -> Notice | None:
-    """Why a write into this layer is not applied: the intake after its write and a finished correction layer."""
-    if found.kind == 'intake' and found.layer_id not in tx.created:
+    """Why a write into this layer is not applied: a finished intake and a finished correction layer."""
+    if found.kind == 'intake' and found.finished and found.layer_id not in tx.created:
         return Notice('layer', f'{found.name} is the intake layer; the metaform changes only through a correction '
                                f'layer: {correct_step()}. Nothing was written.')
     if found.kind == 'correction' and found.finished:

@@ -83,7 +83,7 @@ Relative source links assume these documents are placed at `docs/inference-metaf
 
 | Mechanism | Project correspondence | Existing support / implementation boundary |
 |---|---|---|
-| Functional construction | `code.intake`; internal `document.procedure.intake` and `code.writer.submission` | Served Canonical Intake, agent-submitted element array, atomic base-layer writing. |
+| Functional construction | `code.intake`; internal `document.procedure.intake` and `code.writer.submission` | Served Canonical Intake, recorded one object per call into a building intake layer, read back and proofed, then finished. |
 | Type and project naming | Element addresses, descriptors, namespace prefixes | Computed full/short readings and separately retained project names. |
 | Reified relationships | Joins and internal subtypes in `code.store.graph` | Independent identities and node-targeted items. |
 | Exact semantic identity | Provider-side `Store.identity` read | Retrieves receiving joins; no semantic equivalence prover or supplied formal resolution mapping. |
@@ -111,7 +111,7 @@ An element has an identity and a namespace address. Its descriptor is an item ca
 | [records.py](../../src/metaform/data/records.py) | Record types, `Node`, elements, joins, subtypes, items, properties, layer and context results. |
 | [schema.py](../../src/metaform/data/schema.py) | Tables and indices for stored records and their relationships. |
 | [writes.py:43-207](../../src/metaform/data/writes.py#L43-L207) | `add_element`, `add_join`, `add_subtype`; descriptor handling and dedicated `ef` fields. |
-| [writes.py:251-308](../../src/metaform/data/writes.py#L251-L308) | `add_item` targets a node; `add_property` attaches to an element. |
+| [writes.py:252-309](../../src/metaform/data/writes.py#L252-L309) | `add_item` targets a node; `add_property` attaches to an element. |
 | [names.py](../../src/metaform/data/names.py) | `reading`, `short_name`; reverse segments and expand underscores. |
 | [roots.json](../../src/metaform/data/roots.json) | Current five root types as data. |
 
@@ -123,7 +123,7 @@ An element has an identity and a namespace address. Its descriptor is an item ca
 
 `Store.identity(element)` returns current joins for which that element is provider, including receiving purposes and EFs. It is useful for examining who receives a capability. Its name does not change its implementation into the exact semantic definition of `C(T)`.
 
-Sources: [Store reads:263-341](../../src/metaform/data/store.py#L263-L341), [reads.py](../../src/metaform/data/reads.py), and [views.py](../../src/metaform/data/views.py).
+Sources: [Store reads:268-346](../../src/metaform/data/store.py#L268-L346), [reads.py](../../src/metaform/data/reads.py), and [views.py](../../src/metaform/data/views.py).
 
 ### Known Function/Encounter interface difference
 
@@ -139,27 +139,27 @@ The store and intake support `ef`; the map knowledge interface does not fully pa
 | [8-23](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L8-L23) | AUE, Entity, Element, VE, PE, OP, EF, DE, SE, NE, Parametric, and namespace concepts. |
 | [24-47](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L24-L47) | Vested-entity rules and photo examples. |
 | [51-94](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L51-L94) | Namespace meaning, reversible readings, valid prefixes, `name_length`, roots, and validity examples. |
-| [96-114](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L96-L114) | Survey, receiving-purpose recursion, closure, annealing, convergence, and internal subtypes. |
-| [115-144](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L115-L144) | Functional scope, artifact-specific joins, completion, exact address references, and response rules. |
-| [145-175](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L145-L175) | Illustrative XML output shape, including nested subtype joins. |
+| [96-115](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L96-L115) | Survey, receiving-purpose recursion, closure, annealing, convergence, internal subtypes, recording each object as it is reasoned, and the proofing pass. |
+| [116-145](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L116-L145) | Functional scope, artifact-specific joins, completion, exact address references, and recording rules. |
+| [146-176](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L146-L176) | The XML schema that defines each recorded object's fields, including nested subtype joins. |
 
 The live prompt is not merged with the historical test/old/archive variants. It is the resource loaded by the module when the explicit override is empty.
 
 ### Serving
 
-In [intake/__init__.py:33-87](../../src/metaform/modules/intake/__init__.py#L33-L87), `served` loads the resource or selected `intake_file`, substitutes the target's type/value and any `{project_id}`, and appends `footer`. The footer always contains the submission and stop/report instruction; project-report and process-feedback requests follow the call's report/debug settings.
+In [intake/__init__.py:33-92](../../src/metaform/modules/intake/__init__.py#L33-L92), `served` loads the resource or selected `intake_file`, substitutes the target's type/value and any `{project_id}`, and appends `footer`. The footer always contains the recording and stop/report instruction; project-report and process-feedback requests follow the call's report/debug settings.
 
-The implementation retains exact operative wording through this path. Its optional override is an existing operation, not an encoding implementation. Copy and substitution tests are in [test_intake.py:62-89](../../src/metaform/modules/intake/tests/test_intake.py#L62-L89).
+The implementation retains exact operative wording through this path. Its optional override is an existing operation, not an encoding implementation. Copy and substitution tests are in [test_intake.py:116-143](../../src/metaform/modules/intake/tests/test_intake.py#L116-L143).
 
-### Submission
+### Recording
 
-`_elements` receives an array over MCP. On the CLI, it can read JSON from a file or standard input. `submit` creates the intake layer and uses `Writer` to store elements followed by their joins in one `Store.atomic` block. An unreadable top-level array returns a notice and no map; readable content is retained with notices where fields do not fit.
+`start` opens a building intake layer, or resumes the one being recorded. `element`, `join` and `subtype` each write one object into it through the store's add operations, as the agent reasons it; `show` reads it back whole through `Store.layer_graph`; `edit` and `remove` change it in place while it is building; `finish` marks it ready. Until then `has_intake()` is false and no context read sees it; the web GUI follows it through `/api/intake-recording` and `/api/layer-graph`.
 
-`Writer` retains unknown additions in extra content, records missing or unsupported fields with paths, and handles references to providers not yet represented. A subtype's independently supplied purpose is preserved in extra rather than silently installed as a second purpose field.
+Each call retains what does not fit, with a notice naming the field: unknown additions go to extra content, a missing field is stored empty, and a join end that names no element gets one in the intake layer. A subtype's independently supplied purpose is preserved in extra rather than silently installed as a second purpose field.
 
-A repeat intake targets a new Metaform, and that new target is withdrawn if the atomic write fails. After successful storage it becomes active. Reports are saved after the map transaction, linked to the layer. Thus atomic map storage and report-file persistence are related operations, not one undifferentiated transaction covering every external file.
+A repeat intake is recorded in a new Metaform, which becomes active at the finish. Reports are saved at the finish, linked to the layer.
 
-Sources: [submission entry:94-182](../../src/metaform/modules/intake/__init__.py#L94-L182), [writer](../../src/metaform/modules/intake/submission.py), [input schema](../../src/metaform/modules/intake/schema.py).
+Sources: [recording:97-458](../../src/metaform/modules/intake/__init__.py#L97-L458), [field schemas](../../src/metaform/modules/intake/schema.py).
 
 ### Current example and source assertions
 
@@ -184,7 +184,7 @@ At each prefix the resolver removes mask rows and adds selectable select rows. W
 
 The [C++/Bash source test](../../tests/test_store_layers.py#L289-L327) establishes the intended distinction in its assertions: both properties are visible at `code`, neither applies there, and a language property on one branch does not apply to another. A separate assertion shows an item staying local while a property follows its element's applicable scope.
 
-Direct named `layer_items` can inspect hidden or masked content unless `in_context=True` is requested. Raw reads explicitly widen the view. Therefore comments describing universal exclusion must be read together with each public operation's view controls. Selection governs context, not deletion or a security boundary. See [Store.layer_items](../../src/metaform/data/store.py#L294-L303).
+Direct named `layer_items` can inspect hidden or masked content unless `in_context=True` is requested. Raw reads explicitly widen the view. Therefore comments describing universal exclusion must be read together with each public operation's view controls. Selection governs context, not deletion or a security boundary. See [Store.layer_items](../../src/metaform/data/store.py#L299-L308).
 
 ### Source-specific implication
 
@@ -199,7 +199,7 @@ An observation is an item at a node; a relation is an item at its from-node with
 
 The nine operations are declared as module verbs and become MCP tools through the common module contract. `create_entities` can create an element in the memory layer. `delete_entities` removes memory items at requested nodes, not their underlying map identities.
 
-[update_item and delete_item](../../src/metaform/data/writes.py#L338-L356) modify/remove memory in place. Memory has no own edit history in this snapshot. Claims that every memory is immutable, versioned, or provenance-linked would therefore misstate the implementation.
+[update_item and delete_item](../../src/metaform/data/writes.py#L339-L357) modify/remove memory in place. Memory has no own edit history in this snapshot. Claims that every memory is immutable, versioned, or provenance-linked would therefore misstate the implementation.
 
 Inspected tests include [join-addressed memory](../../src/metaform/modules/memory/tests/test_memory.py#L59-L76), [deletion semantics](../../src/metaform/modules/memory/tests/test_memory.py#L78-L92), and [selection](../../src/metaform/modules/memory/tests/test_memory.py#L123-L135). No memory observations from a current live project run are included in the supplied export.
 
@@ -214,7 +214,7 @@ Relocation preserves an element id but writes removals for its relevant Metaform
 
 The source marks layers built from the original adding layer for re-examination when the relevant correction applies. It does not implement an unspecified universal transitive semantic invalidation algorithm. The hidden-layer source closure and correction re-examination are different mechanisms.
 
-A further lifecycle detail matters for ordinary knowledge: `writes.unchangeable` protects intake and finished corrections and redirects memory to its own mutation APIs. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. See [writes.py:361-369](../../src/metaform/data/writes.py#L361-L369), [edit:443-481](../../src/metaform/data/writes.py#L443-L481), and [the finished-layer test](../../tests/test_store_layers.py#L245-L260).
+A further lifecycle detail matters for ordinary knowledge: `writes.unchangeable` protects a finished intake and finished corrections and redirects memory to its own mutation APIs. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. See [writes.py:362-370](../../src/metaform/data/writes.py#L362-L370), [edit:444-482](../../src/metaform/data/writes.py#L444-L482), and [the finished-layer test](../../tests/test_store_layers.py#L245-L260).
 
 Inspected correction tests cover precedence, history, peeling, orphan/restoration, relocation, re-examination, and retention of `ef`: [test_store_corrections.py](../../tests/test_store_corrections.py).
 
@@ -231,7 +231,7 @@ The web prompt editor uses these facilities. The existence of the editor and API
 
 ### Current intake usage
 
-The intake's provenance explicitly stores `prompt=None`; it does not call the version store to preserve the served text. The bundle identifies no populated prompt store, and the intake tests explicitly assert that serving the resource creates no stored prompt version. See [intake provenance](../../src/metaform/modules/intake/__init__.py#L153-L160) and [tests:390-418](../../src/metaform/modules/intake/tests/test_intake.py#L390-L418).
+The intake's provenance explicitly stores `prompt=None`; it does not call the version store to preserve the served text. The bundle identifies no populated prompt store, and the intake tests explicitly assert that serving the resource creates no stored prompt version. See [intake provenance](../../src/metaform/modules/intake/__init__.py#L202-L207) and [tests:453-483](../../src/metaform/modules/intake/tests/test_intake.py#L453-L483).
 
 ### Intended lexicalization producer
 
@@ -345,7 +345,7 @@ The supplied graph separately names intended side-by-side web-variant launching 
 | Project function | Source and current role |
 |---|---|
 | Graph export/import | [data/exchange.py](../../src/metaform/data/exchange.py): exchange of graph records and layers, with identity, dependency, and conflict handling. This is distinct from origin-unit wheel exchange. |
-| Feedback and reports | [reports.py](../../src/metaform/reports.py), [Store report methods](../../src/metaform/data/store.py#L404-L419): retain project reports, process feedback, and shapes and associate available records with layers/runs. |
+| Feedback and reports | [reports.py](../../src/metaform/reports.py), [Store report methods](../../src/metaform/data/store.py#L414-L429): retain project reports, process feedback, and shapes and associate available records with layers/runs. |
 | Wheel construction | [build.py](../../src/metaform/build.py): build from loaded modules and declared dependencies, omit module tests, support pure-Python vendoring and directly runnable wheel packaging. |
 | Host installation | [install.py](../../src/metaform/install.py): supported host registration, skill placement, recorded changes and backups, and removal of those changes. |
 | Registered-server probe | [probe.py](../../src/metaform/probe.py): start the command being registered and check initialization/tool listing, then stop it. This is not the separate per-host skill-loading proof. |
@@ -361,7 +361,7 @@ These entries preserve both the described semantics and the supplied source. The
 
 **Source-inspected.** Intake and Store support `ef` on joins and subtypes. The map module's `FIELDS`, per-operation `READS`, declared knowledge nouns, and add dispatch omit it. `_unread` can retain an unrecognized add field in extra with a notice; that is not equivalent to filling the dedicated column. Edit/correct paths also do not expose the complete dedicated-field route through this interface.
 
-Sources: [map fields](../../src/metaform/modules/map/__init__.py#L26-L28), [operation reads and dispatch](../../src/metaform/modules/map/__init__.py#L234-L321), [intake writer](../../src/metaform/modules/intake/submission.py#L131-L182), [Store add methods](../../src/metaform/data/store.py#L168-L191).
+Sources: [map fields](../../src/metaform/modules/map/__init__.py#L26-L28), [operation reads and dispatch](../../src/metaform/modules/map/__init__.py#L234-L321), [intake recording](../../src/metaform/modules/intake/__init__.py#L276-L323), [Store add methods](../../src/metaform/data/store.py#L168-L191).
 
 **Correspondence:** preserve Function/Encounter in the design and record model. The source-local repair area is the map interface, not removal or reinterpretation of the distinction.
 
@@ -414,16 +414,16 @@ The author's broader account attaches language Encounters such as `code.c` and a
 **Correspondence:** preserving operative behavior on release does not justify inventing a secrecy scheme or asserting that the intake will never be published. The full operative material is appropriate to this internal reference.
 
 <a id="c08"></a>
-### C08. XML elicitation and array submission are separate stages
+### C08. The XML schema defines the fields; the tools record one object per call
 
-**Source-inspected.** The resource requests final XML; the module's submission tool accepts an array and the CLI reads its JSON representation. It does not parse that XML.
+**Source-inspected.** The resource's response protocol says to record each object with the intake tools as it is reasoned; its XML schema defines each object's fields and is not returned as a document. The module never parses XML.
 
-**Correspondence:** the agent performing the intake supplies the tool's data shape. The resource is a model-directed procedure; neither XML parsing nor structural checks amount to deterministic semantic execution of the intake. See [section 4](#intake).
+**Correspondence:** the agent performing the intake fills each tool's fields. The resource is a model-directed procedure; recording and structural notices do not amount to deterministic semantic execution of the intake. See [section 4](#intake).
 
 <a id="c09"></a>
 ### C09. The resource's role prose and schema differ on `AUE`
 
-**Literal resource and current export.** The response prose says an inside element has one role among `DE`, `SE`, and `NE`, while an outside VE has `VE`. The illustrative outer element schema at [line 149](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L149) also includes `AUE`. The current map uses `AUE` for `code.graph.knowledge` and `DE` for `code.chassis`.
+**Literal resource and current export.** The response prose says an inside element has one role among `DE`, `SE`, and `NE`, while an outside VE has `VE`. The illustrative outer element schema at [line 150](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L150) also includes `AUE`. The current map uses `AUE` for `code.graph.knowledge` and `DE` for `code.chassis`.
 
 **Correspondence:** this is recorded as a local role-schema distinction requiring alignment, rather than silently expanding the role prose or rewriting the current export. It does not change the Entity/Element or receiver/provider semantics.
 
@@ -456,10 +456,11 @@ The earlier bus/runtime illustration versus current sequential awaited delivery 
 
 | Mechanism | Test source and representative cases |
 |---|---|
-| Intake integrity | [test_intake.py:62-89](../../src/metaform/modules/intake/tests/test_intake.py#L62-L89): byte copies, target-only substitution, footer settings. |
-| Intake field retention | [test_intake.py:108-253](../../src/metaform/modules/intake/tests/test_intake.py#L108-L253): whole write, `ef`, `verb`, missing fields, extra content, unreadable top-level input. |
-| Repeated intake and non-code artifacts | [test_intake.py:255-378](../../src/metaform/modules/intake/tests/test_intake.py#L255-L378): new active Metaform, duplicate addresses, report/flags, non-software fixture. |
-| No implicit prompt version | [test_intake.py:390-418](../../src/metaform/modules/intake/tests/test_intake.py#L390-L418). |
+| Intake integrity | [test_intake.py:116-143](../../src/metaform/modules/intake/tests/test_intake.py#L116-L143): byte copies, target-only substitution, footer settings. |
+| Intake field retention | [test_intake.py:158-316](../../src/metaform/modules/intake/tests/test_intake.py#L158-L316): recorded object by object and read back whole, `ef`, `verb`, missing fields, extra content. |
+| Repeated intake and non-code artifacts | [test_intake.py:318-441](../../src/metaform/modules/intake/tests/test_intake.py#L318-L441): new active Metaform, duplicate addresses, report/flags, non-software fixture. |
+| No implicit prompt version | [test_intake.py:453-483](../../src/metaform/modules/intake/tests/test_intake.py#L453-L483). |
+| Recording while building | [test_intake.py:486-564](../../src/metaform/modules/intake/tests/test_intake.py#L486-L564): unseen by context reads until the finish, read back, edited and removed while building, started by a first record, resumed, recorded and proofed per the resource. |
 | Local selection and inheritance | [test_store_layers.py:141-173](../../tests/test_store_layers.py#L141-L173), [289-327](../../tests/test_store_layers.py#L289-L327), [349-400](../../tests/test_store_layers.py#L349-L400). The select test is named `test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_and_nowhere_toward_the_trunk`, naming the direction by the tree's parts. |
 | Knowledge and memory lifecycle | [test_store_layers.py:124-138](../../tests/test_store_layers.py#L124-L138), [230-277](../../tests/test_store_layers.py#L230-L277). |
 | Relationship-addressed memory | [memory tests](../../src/metaform/modules/memory/tests/test_memory.py): join nodes, relations at both ends, deletion, selection, and newly noted elements. |

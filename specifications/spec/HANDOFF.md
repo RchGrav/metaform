@@ -25,7 +25,7 @@ This is the starting point for the Metaform session that continues the build in 
   4. The nested subtype join is gone from the schema. Was that intended? Annealed parts now have nowhere to go in the output.
 - **Settled:** AUE stays in the nested element's role list. The VE is at the top, and the AUE can sit beneath it in the VE's join.
 - **Settled:** `map roots` starts where the intake starts, at step 1. It returns the AUE with its type groups, and the join where the DE serves the VE's purpose. Update BASE-038 and STORE-025 to match.
-- Once the four questions are answered, bring `intake_submit`'s schema (BASE-039) and the mapping in MAP-040 in line with the file.
+- Once the four questions are answered, bring the intake tools' fields (BASE-039) and the mapping in MAP-040 in line with the file.
 
 ## What to do next, in order
 

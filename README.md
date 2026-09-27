@@ -233,9 +233,9 @@ metaform add project example .
 metaform intake prompt
 ```
 
-The last command serves the Canonical Intake instructions; **the agent performs the intake**. It examines the workpiece, follows the served method, and submits the final element array through `intake_submit` or `metaform intake submit`. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, or open `metaform web`.
+The last command serves the Canonical Intake instructions; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, or open `metaform web`.
 
-For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, submission shape, retained data, and first useful inspection. It also includes a way to inspect the supplied map without running a new model intake.
+For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also includes a way to inspect the supplied map without running a new model intake.
 
 ## Documentation
 

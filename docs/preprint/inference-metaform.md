@@ -312,7 +312,7 @@ This illustrates the importance of source correspondence. A represented function
 
 | Mechanism | Current realization and boundary |
 |---|---|
-| Canonical Intake | Serves the operative resource and stores the agent's submitted array atomically as an intake layer. The agent performs the inference. |
+| Canonical Intake | Serves the operative resource and records the agent's result one object per call, as it is reasoned, into an intake layer that becomes visible when the agent finishes it after a proofing pass. The agent performs the inference. |
 | Functional records | Elements, receiver-owned joins, internal subtypes, descriptors, and references are stored and queryable. |
 | Knowledge participation | Layer selection, local masks/selects, scoped properties, hidden-source closure, and corrections are implemented. |
 | Addressed memory | Implemented at elements, joins, and subtypes. |

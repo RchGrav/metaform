@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from metaform.data import Store
-from storekit import dump, plans, small_map, store_file
+from storekit import dump, plans, record_intake, small_map, store_file
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -56,9 +56,7 @@ def test_one_row_per_flagged_object_listed_by_flag_through_its_index(run, home, 
     given = copy.deepcopy(FIXTURE)
     given['elements'][2]['flag'] = 'missing'
     given['elements'][1]['joins'][0]['flag'] = 'broken'
-    path = tmp_path / 'elements.json'
-    path.write_text(json.dumps(given['elements']), encoding='utf-8')
-    run('intake', 'submit', f'elements={path}', cwd=folder)
+    record_intake(run, folder, given['elements'])
     store = Store('proj')
     assert len(dump(store_file(home, store))['findings']) == 2
     broken = json.loads(run('map', 'findings', 'flag=broken', '--json', cwd=folder).stdout)['results']

@@ -3,7 +3,7 @@
 Every function works inside one open write transaction and never refuses a
 write for its content, BASE-044 and STORE-026: what does not fit is stored as
 given, and the result carries a notice for it. A write aimed at something that
-cannot change in place, the intake after its write, a finished correction layer
+cannot change in place, a finished intake, a finished correction layer
 or memory through the knowledge tool, writes nothing and returns a notice
 naming the operation that does it. Only a reference that cannot be read at all,
 such as an id that names nothing, raises `StoreError`.
@@ -239,7 +239,8 @@ def add_ref(tx: Tx, owner: str, key: str, value: str) -> Ref | Outcome:
                                         f'history {owner}'),))
     layer_id = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (current[0],)).fetchone()[0]
     found = rows.layer(tx, str(layer_id))
-    if found.kind in METAFORM_KINDS and not (found.kind == 'intake' and found.layer_id in tx.created):
+    if found.kind in METAFORM_KINDS and not (found.kind == 'intake' and (not found.finished or
+                                                                        found.layer_id in tx.created)):
         return Outcome((Notice('owner', f'{owner} belongs to {found.name}; its refs change only through a correction '
                                         f'layer: {rows.correct_step(owner)}. Nothing was written.'),))
     last = tx.db.execute('SELECT MAX(position) FROM refs WHERE owner=? AND owner_row=?',
@@ -365,7 +366,7 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     if found.kind == 'memory':
         return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
                             'delete-observations. Nothing was written.')
-    if found.kind == 'intake' or (found.kind == 'correction' and found.finished):
+    if found.kind in ('intake', 'correction') and found.finished:
         return Notice('id', f'{thing} belongs to {found.name}; the metaform changes only through a correction layer: '
                             f'{rows.correct_step(thing)}. Nothing was written.')
     return None
@@ -481,6 +482,20 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?',
                                                    (row['row'],)).fetchone(), {})
     return _with(record, notices)
+
+
+def reflag(tx: Tx, thing: str, flag: Any, note: Any) -> Outcome:
+    """Set or clear the flag of an element, join or subtype whose layer can still change in place, STORE-042."""
+    kind = rows.kind_of(tx, thing)
+    _, found = rows.own_row(tx, kind, thing)
+    stop = unchangeable(tx, found, thing)
+    if stop is not None:
+        return Outcome((stop,))
+    notices: list[Notice] = []
+    tx.db.execute('DELETE FROM findings WHERE target_kind=? AND target_id=? AND layer_id=?',
+                  (kind, thing, found.layer_id))
+    rows.flag(tx, kind, thing, found, flag, note, notices)
+    return Outcome(tuple(notices))
 
 
 def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:

@@ -31,7 +31,8 @@ WEB_NOTICE = ('After an intake, start the web GUI with metaform web, or the web_
               'running. If it was not running, tell the user its address once it starts, and its token when it gives '
               'one.')
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")
-TOOLS = {'intake_prompt', 'intake_submit', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
+TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
+         'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_findings', 'feedback',
          'list_reports', 'read_report', 'set'}
 REPORT = 'The alarm pin is never released after stop.'
@@ -128,24 +129,46 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         served = texts(host.call('intake_prompt', {}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
-        assert footer.startswith('\nSubmit the result with intake_submit, or metaform intake submit on the command '
-                                 'line. If you cannot continue, stop and submit a trouble report')
+        assert footer.startswith('\nRecord the intake as you reason it, one object per call: intake_start first, '
+                                 'then intake_element, intake_join and intake_subtype')
         stored = SPEC.read_text(encoding='utf-8')
         assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
             re.sub(r'<target [^>]*>', '<target>', stored, count=1)
         assert re.search(r'<target [^>]*type="path"[^>]*value="[^"]*kitchen timer"', body)
 
-        # 7: a submission missing one purpose is stored whole with a notice naming that join; nothing is refused.
+        # 7: the intake is recorded one object per call; a join missing its purpose is stored with a notice naming
+        # that field, and nothing is refused.
         submission = copy.deepcopy(FIXTURE)
         del submission['elements'][0]['joins'][0]['purpose']
         submission['elements'][2]['flag'] = 'broken'
         submission['elements'][1]['joins'][0]['flag'] = 'missing'
-        submission.update({'model': 'fixture', 'role': 'intake subagent', 'report': REPORT, 'feedback': FEEDBACK})
-        stored_result = host.call('intake_submit', submission, limit=LIMIT)
-        assert stored_result.get('isError') is not True, texts(stored_result)
-        report = last_json(stored_result)
+        noticed = []
+
+        def record(tool, arguments):
+            result = host.call(tool, arguments, limit=LIMIT)
+            assert result.get('isError') is not True, texts(result)
+            out = last_json(result)
+            noticed.extend(notice['where'] for notice in out.get('notices', []))
+            return out
+
+        record('intake_start', {'model': 'fixture', 'role': 'intake subagent'})
+        for element in submission['elements']:
+            record('intake_element', {'address': element['namespace_address'],
+                                      **{key: value for key, value in element.items()
+                                         if key in ('role', 'name', 'name_length', 'refs', 'flag', 'flag_note')}})
+        for element in submission['elements']:
+            for join in element.get('joins', []):
+                made = record('intake_join', {'receiver': element['namespace_address'], **{
+                    key: value for key, value in join.items() if key != 'subtypes'}})
+                for subtype in join.get('subtypes', []):
+                    inner = subtype['element']
+                    record('intake_subtype', {'join': made['join_id'], 'address': inner['namespace_address'],
+                                              **{key: value for key, value in subtype.items() if key != 'element'},
+                                              **{key: value for key, value in inner.items()
+                                                 if key in ('role', 'name', 'name_length', 'refs')}})
+        report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
         assert (report['elements'], report['joins'], report['subtypes'], report['findings']) == (3, 2, 1, 2)
-        assert [notice['where'] for notice in report['notices']] == ['elements[0].joins[0]']
+        assert noticed == ['purpose']
     finally:
         host.close()
     assert NOTICE not in metaform(cwd=project).stdout

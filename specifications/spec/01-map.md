@@ -222,7 +222,7 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: Both are encounters. A function encounter is a join: a receiver's purpose served by a provider's function, MAP-020. A join is always a function encounter; there is no property join and no join kind. Supportive is a kind of encounter function: a Supportive Element's encounter is a function, carried by a join. A property is its own record: the element it is attached to, its value, and the layer that owns it, STORE-039. A property attaches only to an element, never to a bare namespace address, a join or a subtype. When a property belongs at a namespace prefix where the project has no element, such as a practice for `code` in general, the knowledge layer creates an element at that prefix, as a layer may create a new element, and attaches the property to it. The namespace tree itself links that element to every element above it, so no join is needed, and its properties apply up to the leaves from there. It is transitive along the namespace from that element's address, LAYER-005: from the address where it is linked, inference goes down to the trunk, and going up it follows to the leaves. Orientation: the trunk is down and the leaves are up. So Bash attached as a property to the installer element applies up toward the leaves at every address above the installer and is visible down at `code`, and a property linked near the trunk applies to every branch after it. Knowledge layers work the same way, LAYER-016: a knowledge item is either a property, transitive and attached to an element, including an element the knowledge layer created and linked to the metaform, or a function, a join. Hard dependency, property and supportive are no longer join roles.
 - Why: A function stays with the one receiver it serves, so it belongs in that receiver's join. A property describes what something is, so it flows along the namespace to everything above it and shows at the trunk; giving it a join would tie it to one receiver and stop it flowing. Two kinds of encounter, one carried by joins and one by properties, keep one model for the map and every knowledge layer.
 - How it shows: A property linked at an address appears as applying at every address above it toward the leaves and as visible at the trunk; a join appears only as its receiver's join.
-- Build: Joins are stored as in STORE-010, with no kind column. Properties are stored as in STORE-039 and read through STORE-035: the applying set at an address holds the properties attached to the elements at it and at every prefix; the visible set holds the properties attached to elements above it toward the leaves. The intake produces no properties; properties come from knowledge layers, MAP-040. Until the intake text emits them, `intake_submit` stores only joins, and properties come from knowledge layers.
+- Build: Joins are stored as in STORE-010, with no kind column. Properties are stored as in STORE-039 and read through STORE-035: the applying set at an address holds the properties attached to the elements at it and at every prefix; the visible set holds the properties attached to elements above it toward the leaves. The intake produces no properties; properties come from knowledge layers, MAP-040. Until the intake text emits them, the intake tools record only elements, joins and subtype joins, and properties come from knowledge layers.
 - Acceptance:
   - With Bash attached as a property to the element at `code.installer`: a read at `code.installer.script` receives Bash as applying; a read at `code` shows Bash as visible and not applying; a read at `code.engine` does not receive it.
   - A join from `code.installer` to a provider is received only as that receiver's join and at no other address.
@@ -275,40 +275,39 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-040 An intake result becomes map records
 
-- Requirement: An intake result is submitted through `intake_submit`'s own input schema and stored as elements, joins, subtypes and refs in one intake layer, with nothing lost.
-- What this means: The intake's instructions are delivered to the performing agent by name. The agent completes the whole method, annealing included through step 11, and submits the final shape once through the intake module's `intake_submit` tool, or `metaform intake submit` on the CLI, BASE-039. The tool has its own input schema and never parses the intake's XML: the agent fills the schema's fields from the result the intake method produced. The tool's schema is the metaform's general data pattern: elements, joins held by receivers with purpose and function, nested subtypes with their own function and no purpose, and refs. The intake text can change as long as its data still follows that pattern, with no change to the tool. There is no record-by-record writing during the trace. The intake produces no properties; properties come from knowledge layers, MAP-022.
-- Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part. A schema owned by the tool keeps storage stable while the intake text improves.
-- How it shows: After an intake, every element, join, subtype and ref in the result is readable from the store.
-- Build: `intake_submit` checks the submission and stores it as one intake layer, with its provenance record, LAYER-010, in one atomic write, STORE-024 and STORE-032. A submission that fails a check writes nothing, so a half-written intake never exists. The current intake schema, `specifications/Canonical_Intake.xml`, maps to the tool schema and the store as follows:
+- Requirement: An intake is recorded through the intake module's tools one object per call, as it is reasoned, and stored as elements, joins, subtypes and refs in one intake layer, with nothing lost.
+- What this means: The intake's instructions are delivered to the performing agent by name. The agent records the map as it works the method: it starts the intake, records each element, join and subtype join in its own call as soon as it is reasoned, and, once everything is recorded, performs the proofing pass of step 12: it reads the recorded map back whole, checks it against the artifact and the intake document, corrects it, anneals it and completes it, then finishes the intake, BASE-039. The tools never parse the intake's XML: each takes one object's fields, named as in the intake's response schema, which is the metaform's general data pattern: elements, joins held by receivers with purpose and function, subtype joins inside their parent join with their own function and no purpose, and refs. The intake text can change as long as its data still follows that pattern, with no change to the tools. The intake produces no properties; properties come from knowledge layers, MAP-022.
+- Why: The map is only useful if everything the intake agent recorded can be read back exactly, and the intake agent's inference is the expensive part. A schema owned by the tools keeps storage stable while the intake text improves. Rich, 2026-09-26: "Intake is a very lengthy process. By allowing the agent to submit work as it is being constructed, I would like the page to react to those changes as they happen. Once they are all submitted and the work is complete, the agent can then perform a proofing pass on it. This will improve the output and enable lesser agents to perform the same task; not many agents have the same context size. This should definitely be a record-as-you-go operation and not one where the agent must keep all of it in their head. I would like the system to aid the agent in constructing the metaform."
+- How it shows: While the intake is recorded, the web GUI draws each object as it arrives, VIEW-005, and no context read sees the intake. After the intake finishes, every element, join, subtype and ref recorded is readable from the store.
+- Build: `intake_start` opens one building intake layer with its provenance record, LAYER-010; each `intake_element`, `intake_join` and `intake_subtype` call writes one object into it, STORE-024; `intake_show` reads it back whole through the store read `layer_graph`, STORE-025; `intake_edit` and `intake_remove` change it in place while it is building, STORE-032; `intake_finish` marks it ready, and from then on it changes only through correction layers, STORE-017. The current intake schema, `specifications/Canonical_Intake.xml`, maps to the tools and the store as follows:
 
-  | Intake XML | Tool input schema | Store |
+  | Intake XML | Tool field | Store |
   |---|---|---|
-  | `result@id` | `id` | `layers.result_id` of the intake layer |
-  | `element@namespace_address` | `elements[].namespace_address` | `elements.address` with a new identity id, STORE-009; the address row in `types`, STORE-008 |
-  | `element/name` text | `elements[].name` | descriptor item of the intake layer on the element, STORE-009 |
-  | `element@name_length` | `elements[].name_length` | descriptor item |
-  | `element@role` AUE, VE, DE, SE, NE | `elements[].role` | descriptor item |
-  | none in the current schema for a root element | `elements[].refs[]` | `refs` rows owned by the descriptor item |
-  | `join`, held inside its receiving element's `joins` | `elements[].joins[]` | `joins` row, receiver the enclosing element, STORE-010 |
-  | `join@type`, always `purpose` | `joins[].type` | `joins.type` |
-  | `join@provider` | `joins[].provider` | `joins.provider`, the provider's identity id resolved by address |
-  | `join@purpose`, `@function`, `@ef`, `@relation`, `@verb`, `@observation`, `@non_goal` | same names | same-named `joins` columns, MAP-020 |
-  | `join/refs/ref@key`, `@value` | `joins[].refs[]` | `refs` rows owned by the join, in order, STORE-012 |
-  | nested `join` inside a `join` | `joins[].subtypes[]` | `subtypes` row in that join, STORE-011 |
-  | nested `join@provider` | `subtypes[].provider` | `subtypes.address`; it must equal the nested element's address |
-  | nested `join@function`, `@ef`, `@relation`, `@verb`, `@observation` | same names | same-named `subtypes` columns |
-  | nested `element@namespace_address` | `subtypes[].element.namespace_address` | `subtypes.address` |
-  | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `subtypes[].element.name`, `name_length`, `role` | same-named `subtypes` columns |
-  | nested `element/refs/ref` | `subtypes[].element.refs[]` | `refs` rows owned by the subtype |
+  | `result@id` | `intake_start` `id` | `layers.result_id` of the intake layer |
+  | `element@namespace_address` | `intake_element` `address` | `elements.address` with a new identity id, STORE-009; the address row in `types`, STORE-008 |
+  | `element/name` text | `intake_element` `name` | descriptor item of the intake layer on the element, STORE-009 |
+  | `element@name_length` | `intake_element` `name_length` | descriptor item |
+  | `element@role` AUE, VE, DE, SE, NE | `intake_element` `role` | descriptor item |
+  | none in the current schema for a root element | `intake_element` `refs` | `refs` rows owned by the descriptor item |
+  | `join`, held inside its receiving element's `joins` | `intake_join`, `receiver` the enclosing element's address | `joins` row, STORE-010 |
+  | `join@type`, always `purpose` | `intake_join` `type`, `purpose` when left out | `joins.type` |
+  | `join@provider` | `intake_join` `provider` | `joins.provider`, the provider's identity id resolved by address |
+  | `join@purpose`, `@function`, `@ef`, `@relation`, `@verb`, `@observation`, `@non_goal` | `intake_join`, same names | same-named `joins` columns, MAP-020 |
+  | `join/refs/ref@key`, `@value` | `intake_join` `refs` | `refs` rows owned by the join, in order, STORE-012 |
+  | nested `join` inside a `join` | `intake_subtype`, `join` the parent join's id | `subtypes` row in that join, STORE-011 |
+  | nested `join@function`, `@ef`, `@relation`, `@verb`, `@observation` | `intake_subtype`, same names | same-named `subtypes` columns |
+  | nested `join@provider`, the nested `element@namespace_address` | `intake_subtype` `address` | `subtypes.address` |
+  | nested `element/name`, `@name_length`, `@role` DE, SE, NE | `intake_subtype` `name`, `name_length`, `role` | same-named `subtypes` columns |
+  | nested `element/refs/ref` | `intake_subtype` `refs` | `refs` rows owned by the subtype |
 
-  Built this way the structure follows the pattern that makes it acyclic: each join is held by its receiver and runs one way to its provider, a subtype sits inside its one join with no purpose, and a relationship in the other direction is its own join with its own purpose, MAP-020 and MAP-030. Only the element-to-element view, which ignores purposes, can show a cycle. Whether a submitted join whose provider is its own receiver, or a subtype's address, is stored or refused is open, BASE-039.
+  Built this way the structure follows the pattern that makes it acyclic: each join is held by its receiver and runs one way to its provider, a subtype sits inside its one join with no purpose, and a relationship in the other direction is its own join with its own purpose, MAP-020 and MAP-030. Only the element-to-element view, which ignores purposes, can show a cycle. A join whose provider is its own receiver is stored as given with a notice, D82.
 
   When the result has no element with role AUE, none is created. The artifact is still recorded by the project's target, MAP-041.
 - Acceptance:
-  1. Submitting a real intake result, such as the MGM map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
+  1. Recording a real intake result, such as the MGM map, then reading the project back yields the same set of root elements with their names, name lengths and roles, joins with every field, subtypes with their functions, and refs in order.
   2. No subtype in the result appears as a root element after storing.
 - Relates to: MAP-015, MAP-020, MAP-021, MAP-030, LAYER-001, LAYER-010, STORE-009, STORE-013, STORE-024, BASE-039, MCP-009.
-- Status: confirmed: submission through the tool's own schema in one atomic write after the whole method; the mapping of root elements, joins, nested subtype joins and refs. The handling of a missing AUE is recommended.
+- Status: confirmed 2026-09-26: recorded one object per call as it is reasoned, read back and proofed in step 12, then finished; the tools' own fields; the mapping of root elements, joins, nested subtype joins and refs. The handling of a missing AUE is recommended.
 
 ---
 
@@ -343,11 +342,11 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The map records where each element lives in the artifact, through refs such as a path. A worker that must judge the artifact itself, such as an intake agent or a sighted critic, is given the project's target and the refs, and reads the real material. A Type's universal description is never a stand-in for looking at the artifact. Metaform-only blind spot analysis is the one deliberate exception: its role is to reason from the map alone, so it receives the map and not the artifact, and its layer's provenance records that it was blinded.
 - Why: A map built or checked from names alone repeats whatever the names suggest, and the errors then look like the artifact's own. Keeping the source identity and the project with the evidence means every conclusion can be traced back to the material it came from.
 - How it shows: The intake instructions a subagent reads name the project's target. Reading an element or a join returns its refs, so an agent can open the exact files or passages behind it.
-- Build: Every element and join read returns its refs in order. The intake instructions served by name carry the project's target, filled into the intake text's `<target>` element, BASE-039. The project id is filled into the text only where the text holds a `{project_id}` placeholder; otherwise `intake_submit` stores into the folder's project, or the project named by its optional project argument, MCP-025. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
+- Build: Every element and join read returns its refs in order. The intake instructions served by name carry the project's target, filled into the intake text's `<target>` element, BASE-039. The project id is filled into the text only where the text holds a `{project_id}` placeholder; otherwise the intake tools record into the folder's project, or the project named by their optional project argument, MCP-025. A workflow that gives a worker source evidence passes refs and the target, never a summary in their place. A blinded role receives map reads only, and its provenance record sets blinded to true.
 - Acceptance:
   1. Reading a join returns its path refs exactly as written.
   2. The served intake instructions for a registered project contain that project's target type and value in the `<target>` element.
-  3. `intake_submit` called with a project argument stores into that project, whatever the folder.
+  3. The intake tools called with a project argument record into that project, whatever the folder.
 - Relates to: MAP-021, MAP-041, LAYER-010, LAYER-015, MCP-009, STORE-025.
 - Status: confirmed.
 
@@ -379,12 +378,12 @@ These terms are used exactly as defined in the Canonical Intake.
 - Status: confirmed for more than one metaform per project, every layer and the correction stack belonging to one metaform, one active metaform per project, starting over as a new empty metaform, and the old one kept and selectable. The storage and verbs are recommended.
 
 ### MAP-046 Intake findings flag objects as missing, broken or cruft
-- Requirement: Each element and join the intake submits can carry a finding flag, missing, broken or cruft, with a short note; working is the default.
+- Requirement: Each element and join the intake records can carry a finding flag, missing, broken or cruft, with a short note; working is the default.
 - What this means: Working code goes in the main metaform as normal, unflagged. `missing` is a function that is part of the project's current specs but is not built; it shows when the agent reviews the whole repository, specs included. `broken` is something in the intake target that is broken, not working, not connected or orphaned. `cruft` is left-over code that is disabled and needs cleaning up. A flagged object is still part of the map, in its place, with its joins, and every read shows its flag, so an agent reading the map sees the finding where it applies.
 - Why: The intake agent sees the whole project, specs included, and what it finds wrong or unfinished is as valuable as the working map. Kept on the object it concerns, a finding reaches the next agent exactly where it is working, and the flags can be listed to plan fixes and clean-up.
 - How it shows: An intake of a repository with a disabled legacy module flags that module's element `cruft` with the note `disabled since the 2.0 rewrite`. `metaform map findings flag=cruft` lists it.
-- Build: `flag` and `flag_note` on elements, joins and subtypes in `intake_submit`'s input schema, BASE-039; stored per STORE-042; shown by every read, STORE-025.
-- Acceptance: An intake submission with one element of each flag reads back each flag on its element, and a working element has no flag.
+- Build: `flag` and `flag_note` as fields of `intake_element`, `intake_join` and `intake_subtype`, and changed with `intake_edit` while the intake is building, BASE-039; stored per STORE-042; shown by every read, STORE-025.
+- Acceptance: An intake with one element of each flag reads back each flag on its element, and a working element has no flag.
 - Relates to: BASE-039, STORE-042, MAP-040, BASE-045.
 - Status: confirmed. Keeping flagged objects in the map in their places is recommended.
 
@@ -398,13 +397,13 @@ These terms are used exactly as defined in the Canonical Intake.
 6. When there are several VEs, is one recorded as primary, and how?
 7. Answered: the intake produces no properties; properties come from knowledge layers, MAP-022, MAP-040.
 8. May a subtype hold subtypes of its own?
-9. Answered: the agent submits once through `intake_submit` after the whole method, MAP-040. Does the intake agent write its result as one whole submission or record by record through tool calls?
+9. Answered 2026-09-26: record by record through tool calls as it is reasoned, then a proofing pass over the whole recorded map before it finishes, MAP-040. The earlier answer was one submission after the whole method. Does the intake agent write its result as one whole submission or record by record through tool calls?
 10. Answered: C(T) is the theory behind how a metaform works and describes no mechanism. No Type record stores a single encounter function. (MAP-001)
 11. May a join have the same element as receiver and provider?
 12. Are Type records shared across projects, as MAP-010 recommends, or kept in each project store, as STORE-008 has them?
 13. Must an element created by a layer other than the intake carry a role? MAP-017 requires exactly one role on every element; STORE-009 allows none.
 14. When a project holds more than one AUE, how is the set of elements belonging to each AUE recorded? (MAP-042)
-15. Answered: the intake text's response protocol will say to submit the final shape through `intake_submit`, with the method word for word, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
+15. Answered 2026-09-26: the intake text's response protocol says to record each object with the intake tools as it is reasoned; its schema defines the fields and is not returned as a document, MAP-040. NEW The Canonical Intake text asks for an XML answer, while the intake is to be written through Metaform's tools. See chassis section question 9. (MAP-040)
 16. NEW The Canonical Intake's reading examples disagree on the root `code`: `code.loop.main` reads as main loop program code, and `code.bus.data.event` as event data bus code. Does a root carry a reading phrase, such as program code for `code`, or does every root read as its own name? (MAP-012)
 17. Hard dependency is no longer a join role, MAP-022. Does it survive in any form, for example as a flag on a join marking that losing the provider breaks the receiver, or is it gone?
 18. Answered: an element record holds only identity and address; name, name_length, role and refs are a descriptor item linked to it, STORE-009, D78. Earlier text: element records carry fields such as name, name_length, role, refs and extra (MAP-015, STORE-009), while element records are described as being just a namespace address, holding no data of their own, with things linked to them. Which fields, if any, does an element record keep, and where do the rest belong? (MAP-015, STORE-009, STORE-017)

@@ -142,7 +142,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
-  loaded: () => !S.loading, editor: () => P.editor};
+  loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer};
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 const FLAGS = {missing: '--missing', broken: '--broken', cruft: '--cruft'};
@@ -282,7 +282,8 @@ function renderLegend() {
   for (const flag of ['missing', 'broken', 'cruft']) if (flags.has(flag))
     legend.append(h('span', {style: {'--c': `var(--${flag})`}}, h('i', {class: 'dot'}), `flag: ${flag}`));
   const shown = G ? G.graphData().nodes.length : 0;
-  $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '');
+  $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
+    + (following() ? ' · intake being recorded' : '');
 }
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
@@ -828,8 +829,48 @@ for (const key of Object.keys(TABS)) $('#t-' + key).onclick = () => showTab(key)
 let toastTimer;
 function toast(message) { const box = $('#toast'); box.textContent = message; box.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true; }, 4200); }
 
+/* ---------- live: an intake being recorded is drawn as each object arrives, BASE-039 ---------- */
+const LIVE = {layer: null, metaform: null, seen: '', busy: false};
+const following = () => LIVE.layer !== null && S.metaform === LIVE.metaform;
+async function loadLive() {
+  const page = await read('layer-graph', {layer: LIVE.layer});
+  const text = JSON.stringify(page);
+  if (text === LIVE.seen || !following()) return;
+  LIVE.seen = text;
+  S.elements = new Map(page.elements.map(entry => [entry.element.element_id, entry]));
+  S.joins = [...page.joins];
+  indexSubtypes(); draw3D(); renderLegend();
+  await build2D();
+  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
+  const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
+    || S.elements.keys().next().value;
+  if (start) select(start, false);
+}
+async function liveTick() {
+  if (LIVE.busy || !S.project) return;
+  LIVE.busy = true;
+  try {
+    const found = (await read('intake-recording')).results[0] || null;
+    if (found && found.layer.name !== LIVE.layer) {
+      Object.assign(LIVE, {layer: found.layer.name, metaform: found.metaform_id, seen: ''});
+      if (S.metaform !== found.metaform_id) await loadProject(found.metaform_id);
+      else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
+      toast(`An intake is being recorded in ${found.layer.name}; the map follows it as each object is recorded.`);
+    } else if (!found && LIVE.layer) {
+      const finished = LIVE.layer;
+      Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+      renderLegend();
+      toast(`The intake ${finished} finished.`);
+      await loadProject();
+      return;
+    }
+    if (following()) await loadLive();
+  } catch (error) { /* the next tick reads again */ } finally { LIVE.busy = false; }
+}
+
 /* ---------- loading: projects, metaforms, layers, then the graph page by page ---------- */
 async function loadGraph() {
+  if (following()) { LIVE.seen = ''; S.loading = 0; return loadLive(); }
   const generation = ++S.loading;
   S.elements = new Map(); S.joins = [];
   let after = null;
@@ -863,15 +904,15 @@ async function loadMetaform() {
   if ($('#p-prov').hidden === false) renderProv();
   await loadGraph();
 }
-async function loadProject() {
+async function loadProject(wanted = null) {
   const metaforms = (await read('metaforms', {limit: 0})).results;
   S.metaforms = metaforms;
-  const active = metaforms.find(item => item.active) || metaforms[0];
+  const active = metaforms.find(item => item.metaform_id === wanted) || metaforms.find(item => item.active) || metaforms[0];
   S.metaform = active ? active.metaform_id : null;
   fill($('#mf'), ...metaforms.map(item => h('option', {value: item.metaform_id, selected: item === active}, item.name + (item.active ? ' · active' : ''))));
   await loadMetaform();
 }
-$('#proj').onchange = () => { S.project = $('#proj').value; location.hash = 'p=' + encodeURIComponent(S.project); loadProject(); };
+$('#proj').onchange = () => { S.project = $('#proj').value; location.hash = 'p=' + encodeURIComponent(S.project); Object.assign(LIVE, {layer: null, metaform: null, seen: ''}); loadProject(); };
 $('#mf').onchange = () => { S.metaform = $('#mf').value; loadMetaform(); };
 
 async function main() {
@@ -886,5 +927,7 @@ async function main() {
   fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
   start3D();
   await loadProject();
+  await liveTick();
+  setInterval(liveTick, 1500);
 }
 main();

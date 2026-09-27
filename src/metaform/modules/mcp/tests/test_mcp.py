@@ -391,22 +391,39 @@ def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, m
 
 
 @pytest.mark.req('BASE-039')
-@pytest.mark.req('BASE-044')
 @pytest.mark.req('MCP-002')
-def test_a_string_for_elements_over_mcp_is_one_notice_and_never_reads_a_file_or_stdin(run, home, mapped, tmp_path):
-    secret = tmp_path / 'elements.json'
-    secret.write_text(json.dumps([{'namespace_address': 'code.leak', 'role': 'DE'}]), encoding='utf-8')
+def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_building(run, home, tmp_path):
+    folder = tmp_path / 'fresh'
+    folder.mkdir()
+    run('add', 'project', 'fresh', str(folder))
 
     async def call(client, init):
-        dashed = await client.call_tool('intake_submit', {'elements': '-'})
-        pathed = await client.call_tool('intake_submit', {'elements': str(secret)})
-        still = await client.call_tool('map_layers', {})
-        return [(result.is_error, json.loads(text(result)[-1])) for result in (dashed, pathed)], still.is_error
-    results, still_error = session(home, mapped, call)
-    for error, report in results:
-        assert error is False and len(report['notices']) == 1 and report['notices'][0]['where'] == 'elements'
-    assert still_error is False
-    assert Store('proj').element('code.leak', raw=True) is None
+        names = set(await tool_names(client))
+        started = await client.call_tool('intake_start', {'model': 'claude', 'role': 'intake agent'})
+        await client.call_tool('intake_element', {'address': 'code.timer.kitchen', 'role': 'DE',
+                                                  'name': 'kitchen timer', 'name_length': 2,
+                                                  'refs': [{'key': 'path', 'value': 'src/main.c'}]})
+        made = await client.call_tool('intake_join', {'receiver': 'code.timer.kitchen',
+                                                      'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
+                                                      'function': 'Rings.', 'ef': 'Encounter', 'relation': 'r',
+                                                      'verb': 'rings', 'observation': 'o'})
+        join_id = json.loads(text(made)[-1])['join_id']
+        await client.call_tool('intake_subtype', {'join': join_id, 'address': 'code.loop.tick', 'function': 'Ticks.',
+                                                  'ef': 'Function', 'relation': 'r', 'verb': 'advances',
+                                                  'observation': 'o', 'role': 'SE'})
+        shown = json.loads(text(await client.call_tool('intake_show', {}))[-1])
+        finished = json.loads(text(await client.call_tool('intake_finish', {'report': 'Fine.'}))[-1])
+        return names, started.is_error, shown, finished
+    names, error, shown, finished = session(home, folder, call)
+    assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_show', 'intake_edit',
+            'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
+    assert error is False
+    assert [(row['address'], row['role']) for row in shown['elements']] == [
+        ('code.alarm.audible', None), ('code.timer.kitchen', 'DE')]
+    assert shown['undescribed'] == ['code.alarm.audible'] and len(shown['subtypes']) == 1
+    assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (2, 1, 1, 1)
+    kitchen = Store('fresh').element('code.timer.kitchen')
+    assert [(ref.key, ref.value) for ref in kitchen.descriptors[0].refs] == [('path', 'src/main.c')]
 
 
 HISTORY_TOOLS = {'add_origin', 'list_origins', 'add_variant', 'list_variants', 'extract'}

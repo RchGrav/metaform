@@ -333,6 +333,15 @@ class GraphJoin(Join):
 
 
 @dataclass(frozen=True)
+class Recording(Record):
+    """The intake being recorded for a project: the metaform it goes into and its building layer, BASE-039."""
+    metaform_id: str
+    metaform: str
+    active: bool
+    layer: Layer
+
+
+@dataclass(frozen=True)
 class GraphElement(Record):
     """An element in context, with the address of its nearest parent element in context, if any."""
     element: Element

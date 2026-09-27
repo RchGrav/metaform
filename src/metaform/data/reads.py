@@ -526,3 +526,32 @@ def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphP
             fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
             held.append(GraphJoin(**fields, subtypes=subtypes(tx, res, join.join_id, 0, None).results))
     return GraphPage(tuple(elements), tuple(held), str(found[-1]['address']) if more else None)
+
+
+def layer_graph(tx: Tx, layer: str) -> GraphPage:
+    """One layer's own elements, and the joins and subtypes it wrote, building or finished, BASE-039 and VIEW-005.
+
+    The intake agent reads its work back with it while it records, and the viewer follows it live. It is not a
+    context read: it shows what one layer wrote and reaches nothing through the selection.
+    """
+    found = rows.layer(tx, layer)
+    written = tx.db.execute('SELECT c.element_id, c.address FROM current_elements c JOIN elements e ON e.row = c.row '
+                            'WHERE e.layer_id=? ORDER BY c.address', (found.layer_id,)).fetchall()
+    addresses = {str(row['address']) for row in written}
+    elements: list[GraphElement] = []
+    held: list[GraphJoin] = []
+    for row in written:
+        element_view = views.element(tx, str(row['element_id']), None)
+        if element_view is None:
+            continue
+        parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses),
+                      None)
+        elements.append(GraphElement(element_view, parent))
+        for join in joins(tx, None, element_view.element_id, 'receiver', 0, None).results:
+            if join.layer_id != found.layer_id:
+                continue
+            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
+            inside = tuple(subtype for subtype in subtypes(tx, None, join.join_id, 0, None).results
+                           if subtype.layer_id == found.layer_id)
+            held.append(GraphJoin(**fields, subtypes=inside))
+    return GraphPage(tuple(elements), tuple(held))

@@ -75,6 +75,9 @@ READS: dict[str, Read] = {
                                 'The layers that reach an address.'),
     'search': Read('search', (('text', str),), {'layer': str, 'selection': _list, **PAGING}, 'Items by their words.'),
     'has-intake': Read('has_intake', (), {}, 'Whether the active metaform has an intake.'),
+    'intake-recording': Read('intake_recording', (), {}, 'The intake being recorded, its metaform and its layer.'),
+    'layer-graph': Read('layer_graph', (('layer', str),), {}, "One layer's own elements, joins and subtypes, building "
+                                                              'or finished.'),
     'metaforms': Read('metaforms', (), dict(PAGING), "The project's metaforms."),
     'active-metaform': Read('active_metaform', (), {}, "The project's active metaform."),
     'project': Read('project', (), {}, 'The project record with its target.'),

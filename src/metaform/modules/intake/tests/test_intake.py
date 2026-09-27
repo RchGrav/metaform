@@ -17,13 +17,15 @@ ROOT = Path(__file__).parents[5]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 RESOURCE = Path(__file__).parents[1] / 'resources' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-ALWAYS = ('Submit the result with intake_submit, or metaform intake submit on the command line. If you cannot '
-          'continue, stop and submit a trouble report with the feedback tool, attaching what you have in its shape '
-          'field; do not retry.')
-REPORT_LINE = ('Include your report on the project you examined in the report field: broken code, things that need '
-               'fixing, anything not working or partially working.')
-DEBUG_LINE = ('Include feedback on this process in the feedback field: bad semantics, a tool that did not match its '
-              'schema, where you got stuck.')
+ALWAYS = ('Record the intake as you reason it, one object per call: intake_start first, then intake_element, '
+          'intake_join and intake_subtype, or metaform intake start, element, join and subtype on the command line. '
+          'Read it back with intake_show, correct it with intake_edit and intake_remove, and end with intake_finish. '
+          'If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have '
+          'in its shape field; do not retry.')
+REPORT_LINE = ('Include your report on the project you examined in the report field of intake_finish: broken code, '
+               'things that need fixing, anything not working or partially working.')
+DEBUG_LINE = ('Include feedback on this process in the feedback field of intake_finish: bad semantics, a tool that '
+              'did not match its schema, where you got stuck.')
 NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
           'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
 
@@ -36,14 +38,65 @@ def project(run, tmp_path):
     return folder
 
 
+OBJECT_KEYS = {'namespace_address', 'role', 'name', 'name_length', 'refs', 'flag', 'flag_note', 'joins'}
+JOIN_KEYS = {'type', 'provider', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'refs',
+             'flag', 'flag_note', 'subtypes'}
+SUBTYPE_KEYS = {'provider', 'function', 'ef', 'relation', 'verb', 'observation', 'flag', 'flag_note', 'element',
+                'purpose'}
+
+
+def fields(given, names):
+    """A record's fields as named arguments, a list or object as JSON. A field no tool names is sent as it is, so
+    the chassis keeps it in the record's extra and names it, BASE-043."""
+    unknown = set(given) - (OBJECT_KEYS | JOIN_KEYS | SUBTYPE_KEYS)
+    return [f'{name}={json.dumps(value) if isinstance(value, (list, dict)) else value}'
+            for name, value in given.items() if name in names | unknown]
+
+
 def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
-    path = tmp_path / 'elements.json'
-    path.write_text(json.dumps(document['elements']), encoding='utf-8')
-    args = ['intake', 'submit', f'elements={path}', *extra]
-    if 'id' in document:
-        args.append(f'id={document["id"]}')
-    result = run(*args, *(['--json'] if as_json else []), cwd=cwd)
-    return json.loads(result.stdout) if as_json else result
+    """Record a document's elements, joins and subtypes one object per call, as an intake agent does, then finish.
+    The notices come back keyed by each object's place in the document and the field they name."""
+    notes, calls = [], []
+
+    def call(path, *args):
+        result = run('intake', *args, '--json', cwd=cwd)
+        calls.append(result)
+        out = json.loads(result.stdout)
+        notes.extend({'where': f'{path}.{notice["where"]}', 'message': notice['message']}
+                     for notice in out.get('notices', []))
+        return out
+
+    start = [arg for arg in extra if arg.split('=', 1)[0] in ('model', 'role', 'blinded')]
+    call('start', 'start', *start, *([f'id={document["id"]}'] if 'id' in document else []))
+    elements = document['elements']
+    for index, element in enumerate(elements):
+        call(f'elements[{index}]', 'element', element.get('namespace_address', ''),
+             *fields(element, {'role', 'name', 'name_length', 'refs', 'flag', 'flag_note'}))
+    for index, element in enumerate(elements):
+        for number, join in enumerate(element.get('joins', [])):
+            path = f'elements[{index}].joins[{number}]'
+            made = call(path, 'join', element['namespace_address'], join.get('provider', ''),
+                        *fields(join, {'type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation',
+                                       'non_goal', 'refs', 'flag', 'flag_note'}))
+            for place, subtype in enumerate(join.get('subtypes', [])):
+                inner = subtype.get('element', {})
+                call(f'{path}.subtypes[{place}]', 'subtype', made['join_id'], inner.get('namespace_address', ''),
+                     *fields(subtype, {'function', 'ef', 'relation', 'verb', 'observation', 'flag', 'flag_note',
+                                       'purpose'}),
+                     *fields(inner, {'role', 'name', 'name_length', 'refs'}))
+    finish = [arg for arg in extra if arg.split('=', 1)[0] in ('report', 'feedback')]
+    finished = run('intake', 'finish', *finish, *(['--json'] if as_json else []), cwd=cwd)
+    if not as_json:
+        return finished
+    report = json.loads(finished.stdout)
+    report['notices'] = notes + [{'where': f'finish.{notice["where"]}', 'message': notice['message']}
+                                 for notice in report.get('notices', [])]
+    return report
+
+
+def nouns_of(verb):
+    from metaform.modules.intake import MODULE
+    return {noun.name: noun for noun in next(item for item in MODULE.verbs if item.name == verb).nouns}
 
 
 def notices(result):
@@ -105,7 +158,7 @@ def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(r
 @pytest.mark.req('MAP-040')
 @pytest.mark.req('MAP-021')
 @pytest.mark.req('LAYER-001')
-def test_a_submission_is_stored_whole_and_reads_back(run, project, tmp_path):
+def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run, project, tmp_path):
     report = submit(run, project, FIXTURE, tmp_path, extra=('model=claude', 'role=intake agent'))
     assert (report['project'], report['metaform'], report['elements'], report['joins'], report['subtypes'],
             report['findings']) == ('timer', 'main', 3, 2, 1, 0)
@@ -148,7 +201,6 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or
     """Each EF is named Function when it is the encounter of a functionality, Encounter when it is the functionality
     of the encounter, Rich 2026-09-26; a closed choice of two, on top-level and subtype joins alike."""
     import xml.etree.ElementTree as ET
-    from metaform.modules.intake.schema import JOIN, SUBTYPE
     root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
     join = root.find('.//schema//join')
     assert join is not None and join.get('ef') == '[Function|Encounter]'
@@ -157,8 +209,8 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or
     step = root.find(".//step[@n='4']").get('text')
     assert 'Function if it is the encounter of a functionality' in step
     assert 'Encounter if it is the functionality of the encounter' in step
-    for schema in (JOIN, SUBTYPE):
-        assert 'ef' in schema['required'] and schema['properties']['ef']['enum'] == ['Function', 'Encounter']
+    for noun in (nouns_of('join')['ef'], nouns_of('subtype')['ef']):
+        assert noun.schema['enum'] == ['Function', 'Encounter']
 
 
 @pytest.mark.req('MAP-020')
@@ -167,7 +219,6 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_the_verb_of
     """The agent infers the relation's verb into its own field, and the relation's subject follows the word: the
     Providing Element for Function, the Vested Entity for Encounter, Rich 2026-09-26; the verb is the agent's word."""
     import xml.etree.ElementTree as ET
-    from metaform.modules.intake.schema import JOIN, SUBTYPE
     root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
     join = root.find('.//schema//join')
     inner = join.find('join')
@@ -177,8 +228,8 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_the_verb_of
     step = root.find(".//step[@n='4']").get('text')
     assert ('with the Providing Element as its subject when ef is Function and the Vested Entity as its subject when '
             'ef is Encounter, the verb of that relation as verb') in step
-    for schema in (JOIN, SUBTYPE):
-        assert 'verb' in schema['required'] and schema['properties']['verb'] == {'type': 'string'}
+    for name in ('join', 'subtype'):
+        assert nouns_of(name)['verb'].kind == 'str'
 
 
 @pytest.mark.req('MAP-020')
@@ -189,8 +240,8 @@ def test_a_join_or_subtype_join_without_ef_is_stored_and_named_in_a_notice(run, 
     del given['elements'][1]['joins'][0]['subtypes'][0]['ef']
     report = submit(run, project, given, tmp_path)
     found = notices(report)
-    assert re.match(r'ef is missing\b', found['elements[0].joins[0]'])
-    assert re.match(r'ef is missing\b', found['elements[1].joins[0].subtypes[0]'])
+    assert re.match(r'ef is missing\b', found['elements[0].joins[0].ef'])
+    assert re.match(r'ef is missing\b', found['elements[1].joins[0].subtypes[0].ef'])
     store = Store('timer')
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert cook_join.ef is None and store.subtypes(store.joins('code.timer.kitchen').results[0].join_id).results[0].ef is None
@@ -203,8 +254,8 @@ def test_a_join_or_subtype_join_without_its_verb_is_stored_and_named_in_a_notice
     del given['elements'][0]['joins'][0]['verb']
     del given['elements'][1]['joins'][0]['subtypes'][0]['verb']
     found = notices(submit(run, project, given, tmp_path))
-    assert re.match(r'verb is missing\b', found['elements[0].joins[0]'])
-    assert re.match(r'verb is missing\b', found['elements[1].joins[0].subtypes[0]'])
+    assert re.match(r'verb is missing\b', found['elements[0].joins[0].verb'])
+    assert re.match(r'verb is missing\b', found['elements[1].joins[0].subtypes[0].verb'])
     store = Store('timer')
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert cook_join.verb is None and store.subtypes(store.joins('code.timer.kitchen').results[0].join_id).results[0].verb is None
@@ -217,9 +268,8 @@ def test_a_join_or_subtype_join_without_its_verb_is_stored_and_named_in_a_notice
 def test_a_join_missing_its_purpose_is_stored_whole_with_a_notice_naming_it(run, project, tmp_path):
     broken = copy.deepcopy(FIXTURE)
     del broken['elements'][0]['joins'][0]['purpose']
-    result = submit(run, project, broken, tmp_path, as_json=False)
-    assert result.returncode == 0
-    assert re.search(r'^Notice: elements\[0\]\.joins\[0\]: .*purpose', result.stdout, re.M)
+    found = notices(submit(run, project, broken, tmp_path))
+    assert re.match(r'purpose is missing\b', found['elements[0].joins[0].purpose'])
     store = Store('timer')
     assert store.has_intake()
     cook_join = store.joins('stakeholder.cook.home').results[0]
@@ -235,7 +285,7 @@ def test_a_subtype_carrying_a_purpose_is_stored_with_the_purpose_in_its_extra(ru
     given = copy.deepcopy(FIXTURE)
     given['elements'][1]['joins'][0]['subtypes'][0]['purpose'] = 'Its own why.'
     report = submit(run, project, given, tmp_path)
-    assert 'elements[1].joins[0].subtypes[0]' in notices(report)
+    assert 'elements[1].joins[0].subtypes[0].purpose' in notices(report)
     store = Store('timer')
     join = store.joins('code.timer.kitchen').results[0]
     tick = store.subtypes(join.join_id).results[0]
@@ -251,38 +301,19 @@ def test_what_does_not_fit_is_stored_as_given_and_named_in_a_notice(run, project
     cook['joins'][0]['provider'] = 'code.nowhere'
     cook['joins'].append({'provider': 'stakeholder.cook.home', 'purpose': 'Cook for itself.', 'function': 'f',
                           'relation': 'r', 'observation': 'o'})
-    tick = given['elements'][1]['joins'][0]['subtypes'][0]
-    tick['provider'] = 'code.loop.other'
     given['elements'][2]['namespace_address'] = 'Code..Alarm'
     given['elements'][2]['colour'] = 'red'
     report = submit(run, project, given, tmp_path)
     found = notices(report)
-    assert {'elements[0].joins[0]', 'elements[0].joins[1]', 'elements[1].joins[0].subtypes[0]',
-            'elements[2].namespace_address', 'elements[2]'} <= set(found)
+    assert {'elements[0].joins[0].provider', 'elements[0].joins[1].provider', 'elements[2].address'} <= set(found)
+    assert re.match(r"colour is not a noun of intake element; it was kept in the record's extra", found['elements[2].colour'])
     store = Store('timer')
     nowhere = store.element('code.nowhere')
     assert nowhere is not None and nowhere.role is None and nowhere.layer == report['layer']
     assert {join.provider_address for join in store.joins('stakeholder.cook.home').results} == {
         'code.nowhere', 'stakeholder.cook.home'}
-    kitchen_join = store.joins('code.timer.kitchen', raw=True).results[0]
-    stored_tick = store.subtypes(kitchen_join.join_id, raw=True).results[0]
-    assert stored_tick.address == 'code.loop.tick' and stored_tick.extra == {'provider': 'code.loop.other'}
     odd = store.where('Code..Alarm', raw=True)
     assert odd is not None and odd.element.extra == {'colour': 'red'}
-
-
-@pytest.mark.req('BASE-039')
-@pytest.mark.req('BASE-044')
-def test_elements_that_cannot_be_read_store_nothing_and_return_one_notice(run, project, tmp_path):
-    path = tmp_path / 'elements.json'
-    path.write_text('{not json', encoding='utf-8')
-    result = run('intake', 'submit', f'elements={path}', '--json', cwd=project)
-    report = json.loads(result.stdout)
-    assert len(report['notices']) == 1 and report['notices'][0]['where'] == 'elements'
-    message = report['notices'][0]['message']
-    assert 'feedback' in message and 'shape' in message and 'again' not in message
-    assert Store('timer').layers().results == ()
-    assert Store('timer').has_intake() is False
 
 
 @pytest.mark.req('BASE-039')
@@ -318,10 +349,8 @@ def test_a_report_feedback_and_flags_are_saved_listed_and_part_of_provenance(run
     given = copy.deepcopy(FIXTURE)
     given['elements'][2]['flag'] = 'cruft'
     given['elements'][2]['flag_note'] = 'disabled since the 2.0 rewrite'
-    path = tmp_path / 'elements.json'
-    path.write_text(json.dumps(given['elements']), encoding='utf-8')
-    report = json.loads(run('intake', 'submit', f'elements={path}', 'report=The alarm pin is unconnected.',
-                            'feedback=The subtype fields were clear.', '--json', cwd=project).stdout)
+    report = submit(run, project, given, tmp_path,
+                    extra=('report=The alarm pin is unconnected.', 'feedback=The subtype fields were clear.'))
     assert report['findings'] == 1
     layer_id = Store('timer').layers(kind='intake').results[0].layer_id
     folder = home / 'projects' / 'timer' / 'reports'
@@ -452,3 +481,87 @@ def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, proje
     layer = Store('timer').layer_ref(result['layer'])
     assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
     assert Store('timer').provenance(result['layer']).prompt is None
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('STORE-032')
+def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(run, project):
+    """Rich, 2026-09-26: the intake is recorded object by object as it is reasoned; agents read it back while it is
+    built, and only a finished intake reaches every other read."""
+    run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', 'name=Home cook', cwd=project)
+    made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen',
+                          'purpose=Know when each dish is done.', 'function=Counts down and rings.', 'ef=Function',
+                          'relation=The kitchen timer tells the cook.', 'verb=tells',
+                          'observation=One countdown per dish.', '--json', cwd=project).stdout)
+    assert made['join_id'] and [notice['where'] for notice in made['notices']] == ['provider']
+    assert 'code.timer.kitchen was not an element' in made['notices'][0]['message']
+    store = Store('timer')
+    assert not store.has_intake() and store.element('stakeholder.cook.home') is None
+    shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
+    assert (len(shown['elements']), len(shown['joins']), len(shown['subtypes'])) == (2, 1, 0)
+    assert shown['undescribed'] == ['code.timer.kitchen']
+    assert 'Intake: being recorded' in run(cwd=project).stdout
+    assert NOTICE not in run(cwd=project).stdout
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name=kitchen timer', cwd=project)
+    assert json.loads(run('intake', 'show', '--json', cwd=project).stdout)['undescribed'] == []
+    finished = json.loads(run('intake', 'finish', '--json', cwd=project).stdout)
+    assert (finished['elements'], finished['joins']) == (2, 1)
+    store = Store('timer')
+    assert store.has_intake() and store.element('code.timer.kitchen').role == 'DE'
+    assert store.provenance(finished['layer']).model == 'claude'
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('STORE-032')
+@pytest.mark.req('BASE-044')
+def test_edit_and_remove_change_a_building_intake_and_a_finished_one_changes_only_by_correction(run, project):
+    run('intake', 'start', cwd=project)
+    run('intake', 'element', 'code.a', 'role=DE', cwd=project)
+    run('intake', 'element', 'code.b', 'role=SE', cwd=project)
+    first = json.loads(run('intake', 'join', 'code.a', 'code.b', 'purpose=p', 'function=f', 'ef=Function',
+                           'relation=r', 'verb=v', 'observation=o', '--json', cwd=project).stdout)
+    second = json.loads(run('intake', 'join', 'code.b', 'code.a', 'purpose=q', 'function=g', 'ef=Encounter',
+                            'relation=s', 'verb=w', 'observation=o', '--json', cwd=project).stdout)
+    run('intake', 'edit', first['join_id'], 'purpose=The better purpose.', cwd=project)
+    run('intake', 'remove', second['join_id'], cwd=project)
+    shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
+    assert [(join['id'], join['purpose']) for join in shown['joins']] == [(first['join_id'], 'The better purpose.')]
+    run('intake', 'finish', cwd=project)
+    late = json.loads(run('intake', 'edit', first['join_id'], 'purpose=Too late.', '--json', cwd=project).stdout)
+    assert 'correction layer' in late['notices'][0]['message']
+    gone = json.loads(run('intake', 'remove', first['join_id'], '--json', cwd=project).stdout)
+    assert 'correction layer' in gone['notices'][0]['message']
+    assert [(join.join_id, join.purpose) for join in Store('timer').joins('code.a').results] == [
+        (first['join_id'], 'The better purpose.')]
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('BASE-044')
+def test_recording_without_a_start_starts_the_intake_and_a_second_start_resumes_it(run, project):
+    made = json.loads(run('intake', 'element', 'code.a', 'role=DE', '--json', cwd=project).stdout)
+    assert any('started' in notice['message'] for notice in made['notices'])
+    layer = json.loads(run('intake', 'show', '--json', cwd=project).stdout)['layer']
+    again = json.loads(run('intake', 'start', '--json', cwd=project).stdout)
+    assert again['layer'] == layer and any('already being recorded' in notice['message']
+                                           for notice in again['notices'])
+    assert len(json.loads(run('intake', 'show', '--json', cwd=project).stdout)['elements']) == 1
+
+
+@pytest.mark.req('BASE-039')
+def test_the_intake_asks_for_each_object_to_be_recorded_as_it_is_reasoned_then_proofed():
+    """Rich, 2026-09-26: construct the intake object by object as it is reasoned, each submitted as the work
+    proceeds, then a proofing pass; the method and its semantics are unchanged."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
+    steps = {step.get('n'): step.get('text') for step in root.iter('step')}
+    assert steps['4'].endswith('Record each element and join as soon as it is reasoned, one object at a time, rather '
+                               'than holding the map until the end.')
+    assert steps['12'] == ('Proof the recorded map: read it back whole, check it against the artifact and this '
+                           'document, correct it, anneal it and complete it, then finish the intake.')
+    said = [instruction.text for instruction in root.iter('instruction')]
+    assert not any('Respond with well-formed XML' in text for text in said)
+    assert ('Record the result with the intake tools, one object per call, as it is reasoned. The schema below '
+            'defines the fields of each object; it is not returned as a document.') in said
+    assert root.find('.//output_instruction').get('text') == ('Record the final shape with the intake tools; nothing '
+                                                              'is returned as a document.')

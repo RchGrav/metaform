@@ -417,7 +417,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   9. For each enabled module on the folder's surface that declares a status hook, BASE-035, in module id order: each of its lines, then its notice, when it returns one, indented two spaces. The chassis prints what the hooks return and names no module. With the intake module on, its hook gives the `Intake:` lines and the no-intake notice shown above, BASE-039.
   10. `Instructions: metaform help agents`, the command that prints the composed agent instructions, MCP-007.
 - Acceptance:
-  - In a registered project with no intake and the intake module on, status contains the notice; after a successful `intake_submit`, it shows `Intake: complete` and no notice.
+  - In a registered project with no intake and the intake module on, status contains the notice; while an intake is being recorded it shows that and no notice; after `intake_finish`, it shows `Intake: complete` and no notice.
   - A test module with a status hook returning one line and one notice gets both printed in its id order; `cli.py` contains no module id.
 - Relates to: CLI-005, MCP-007, MCP-009, STORE-031, BASE-035, BASE-039.
 - Status: recommended. `metaform help agents` follows D40's intent that status leads an agent without MCP to the instructions.

@@ -28,9 +28,9 @@ from .. import home
 from ..errors import StoreError
 from . import challenges, history, layering, reads, rows, views, writes
 from .paging import LIMIT, sliced
-from .records import (ChallengeState, Citation, ContextView, Element, Finding, Item, Join, Layer, Node, NodeView,
-                      GraphPage, Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Ref, Report,
-                      Roots, Selection, Subtype, Version, Where)
+from .records import (ChallengeState, Citation, ContextView, Element, Finding, GraphPage, Item, Join, Layer, Node,
+                      NodeView, Notice, Outcome, Page, PeelPreview, Plan, Property, Provenance, Record, Recording, Ref,
+                      Report, Roots, Selection, Subtype, Version, Where)
 from .selection import Resolver
 from .session import Session, Tx
 
@@ -224,6 +224,11 @@ class Store:
         with self._write() as tx:
             return writes.edit(tx, thing, changes)
 
+    def reflag(self, thing: str, flag: Any, note: Any = None) -> Outcome:
+        """Set or clear the flag of a thing whose layer can still change in place; None clears it, STORE-042."""
+        with self._write() as tx:
+            return writes.reflag(tx, thing, flag, note)
+
     def remove(self, thing: str | int) -> Outcome:
         """Delete a row a knowledge layer or a building correction layer wrote, with its refs, STORE-032."""
         with self._write() as tx:
@@ -395,6 +400,11 @@ class Store:
         with self._read() as tx:
             return reads.graph(tx, None if raw else self._resolver(tx, selection), limit, after)
 
+    def layer_graph(self, layer: str) -> GraphPage:
+        """One layer's own elements, joins and subtypes, building or finished; not a context read, BASE-039."""
+        with self._read() as tx:
+            return reads.layer_graph(tx, layer)
+
     def findings(self, flag: str | None = None, layer: str | None = None, *, selection: Sequence[str] | None = None,
                  raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Finding]:
         """Flagged objects, by flag, each with its address or its join's ends, STORE-042."""
@@ -433,6 +443,16 @@ class Store:
 
     def metaforms(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Metaform]:
         return sliced(home.metaforms(self.project_id), limit, after)
+
+    def intake_recording(self) -> Page[Recording]:
+        """The intake being recorded for this project, in whichever of its metaforms it is building: a page of none
+        or one, BASE-039."""
+        for metaform in home.metaforms(self.project_id):
+            found = Store(self.project_id, metaform=metaform.metaform_id)
+            for layer in found.layers(kind='intake', limit=0).results:
+                if layer.ready is None:
+                    return Page((Recording(metaform.metaform_id, metaform.name, metaform.active, layer),), None)
+        return Page((), None)
 
     def active_metaform(self) -> home.Metaform | None:
         return home.active_metaform(self.project_id)

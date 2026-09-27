@@ -7,6 +7,7 @@ The full-text index's shadow tables are left out: they are the index of
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -46,6 +47,32 @@ def diff(before: dict[str, frozenset], after: dict[str, frozenset]) -> dict[str,
 def intake(store, name='intake-1', ready=True):
     return store.layer(name, 'intake', 'The functional map of the artifact.', kind='intake', mutable=False,
                        hideable=False, provenance=PROVENANCE, ready=ready)
+
+
+def _named(given, names):
+    return [f'{name}={json.dumps(value) if isinstance(value, (list, dict)) else value}'
+            for name, value in given.items() if name in names]
+
+
+def record_intake(run, folder, elements, env=None, finish=()):
+    """Record an intake through the command line one object per call, as an intake agent does, then finish it."""
+    def call(*args):
+        return json.loads(run('intake', *args, '--json', cwd=folder, env=env).stdout)
+    call('start')
+    for element in elements:
+        call('element', element['namespace_address'],
+             *_named(element, ('role', 'name', 'name_length', 'refs', 'flag', 'flag_note')))
+    for element in elements:
+        for join in element.get('joins', []):
+            made = call('join', element['namespace_address'], join['provider'],
+                        *_named(join, ('type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation',
+                                       'non_goal', 'refs', 'flag', 'flag_note')))
+            for subtype in join.get('subtypes', []):
+                inner = subtype.get('element', {})
+                call('subtype', made['join_id'], inner['namespace_address'],
+                     *_named(subtype, ('function', 'ef', 'relation', 'verb', 'observation', 'flag', 'flag_note')),
+                     *_named(inner, ('role', 'name', 'name_length', 'refs')))
+    return call('finish', *finish)
 
 
 def knowledge(store, name, *, hideable=True, tags=(), sources=()):

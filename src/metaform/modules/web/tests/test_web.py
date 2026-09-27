@@ -860,6 +860,39 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
     assert problems == []
 
 
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('BASE-039')
+def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home, web, browser, tmp_path):
+    """Rich, 2026-09-26: the page reacts to the intake's records as they happen, then shows the finished map."""
+    started(run)
+    folder = tmp_path / 'live'
+    folder.mkdir()
+    run('add', 'project', 'live', str(folder))
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    problems = []
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.goto(f'http://127.0.0.1:{web}/#p=live')
+    page.wait_for_function('() => window.metaform && window.metaform.drawn() && window.metaform.drawn().nodes === 1',
+                           timeout=30000)
+    assert page.evaluate('window.metaform.live()') is not None
+    assert 'intake being recorded' in page.inner_text('#count')
+    made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'function=f',
+                          'ef=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
+    page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=15000)
+    page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
+    run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'function=f', 'ef=Function', 'relation=r',
+        'verb=advances', 'observation=o', 'role=SE', cwd=folder)
+    page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
+    run('intake', 'finish', cwd=folder)
+    page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 4', timeout=15000)
+    assert 'intake being recorded' not in page.inner_text('#count')
+    drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=live&limit=0')[1])
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-013')
 @pytest.mark.req('VIEW-011')
 @pytest.mark.req('STORE-044')
