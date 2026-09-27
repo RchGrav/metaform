@@ -900,6 +900,61 @@ def inside(page):
     return page.evaluate('window.metaform.inside()'), page.inner_text('#crumbs') if page.is_visible('#crumbs') else ''
 
 
+SAMPLE_2D = '''() => { window.samples = []; window.sampling = true;
+    const tick = () => { const svg = document.querySelector("#map2d svg");
+        if (svg) { const box = svg.viewBox.baseVal;
+            window.samples.push({base: svg.dataset.base === "yes", o: Number(getComputedStyle(svg).opacity),
+                                 w: box ? box.width : 0}); }
+        if (window.sampling) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); }'''
+
+
+@pytest.mark.req('VIEW-016')
+def test_going_inside_a_node_zooms_into_it_as_the_map_fades_and_its_own_graph_fades_in(run, web, mapped, browser):
+    """Rich, 2026-09-27: the zoom in and fade effect when going inside was nice and was lost when going inside became a
+    swap to the node's own graph. The base map zooms into the node as it fades out, the node's graph fades in, and
+    going back out runs the other way; with reduced motion the views change at once."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, _ = keys_of(web)
+    cook = at['exterior.cook']
+    page.evaluate('() => { document.querySelector("#map2d svg").dataset.base = "yes"; }')
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.wait_for_timeout(900)  # the selection's own camera move settles first
+    page.evaluate(SAMPLE_2D)
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    page.wait_for_timeout(900)
+    going_in = page.evaluate('() => { window.sampling = false; return window.samples; }')
+    base = [sample for sample in going_in if sample['base']]
+    own = [sample for sample in going_in if not sample['base']]
+    assert base and own
+    assert min(sample['o'] for sample in base) < 0.5  # the map fades as the camera goes in
+    assert base[-1]['w'] < base[0]['w'] * 0.8  # and the camera zooms into the node
+    assert own[0]['o'] < 0.5 and own[-1]['o'] == 1  # the node's own graph fades in
+
+    page.evaluate(SAMPLE_2D)
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.inside().length === 0')
+    page.wait_for_timeout(1200)
+    going_out = page.evaluate('() => { window.sampling = false; return window.samples; }')
+    own = [sample for sample in going_out if not sample['base']]
+    back = [sample for sample in going_out if sample['base']]
+    assert own and back
+    assert min(sample['o'] for sample in own) < 0.5  # the node's graph fades out
+    assert back[0]['o'] < 0.5 and back[-1]['o'] == 1  # the map fades back in
+    assert back[-1]['w'] > back[0]['w'] * 1.25  # and the camera eases out from the node
+    assert problems == []
+
+    page.emulate_media(reduced_motion='reduce')
+    page.evaluate(SAMPLE_2D)
+    page.keyboard.press('Enter')
+    page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
+    page.wait_for_timeout(400)
+    still = page.evaluate('() => { window.sampling = false; return window.samples; }')
+    assert still and all(sample['o'] == 1 for sample in still)  # nothing fades for a person who turned motion off
+
+
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('VIEW-008')
 def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_the_visible_layers_attach(

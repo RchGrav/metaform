@@ -497,13 +497,20 @@ function fitOf(svg) {
   const scene = svg.querySelector('g').getBBox();
   return {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
 }
-function showBase() {
+function showBase(left = null) {
   const base = M.base;
   renderCrumbs();
   if (!base) return;
   cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
   Object.assign(M, {svg: base.svg, nodes: base.nodes, edges: base.edges, fit: base.fit, vertical: base.vertical, drawn: null});
   fill($('#viewport'), base.svg);
+  const node = left ? base.nodes.get(left) : null;
+  if (node && !reduced()) {  // back from inside the node: the map returns zoomed on it and fades in, VIEW-016
+    setCam(frame(into(node)));
+    arrive(base.svg);
+    return;
+  }
+  base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
   setCam(base.cam || frame(base.fit));
 }
 
@@ -529,7 +536,7 @@ function nameOf(key, fallback = key) {
   const found = S.elements.get(key)?.element;
   return found ? found.short_name || found.address : fallback;
 }
-async function drawInside() {
+async function drawInside(arriving = false) {
   const level = IN.at(-1);
   if (!level) return showBase();
   const generation = ++insideGen;
@@ -619,6 +626,7 @@ async function drawInside() {
   catch (error) { fill($('#viewport'), h('p', {class: 'empty', style: {padding: '16px'}}, 'This node could not be drawn.')); return; }
   if (generation !== insideGen || IN.at(-1) !== level) return;
   const svg = mountSvg(result, $('#viewport'), false);
+  if (arriving) arrive(svg);  // the node's own graph fades in, VIEW-016
   const nodes = new Map();
   for (const [thingKey, id] of ids) {
     const group = svg.querySelector(`[id*="-flowchart-${id}-"]`), thing = things.get(thingKey);
@@ -657,16 +665,22 @@ async function enter(key) {
   }
   if (level?.key === key) return;
   if (!IN.length && M.base) M.base.cam = {...M.cam};
+  const node = M.nodes.get(key);
+  if (M.svg && node && !reduced()) {  // the camera goes into the node as the view it is on fades, VIEW-016
+    moveCam(into(node));
+    await fade(M.svg, 0);
+  }
   IN.push({key, label: nameOf(key, thing?.label || key), more: {}, things: new Map()});
-  await drawInside();
+  await drawInside(true);
   select(key, false, true);
 }
 /* Up to a level: 0 is the base map. The node left is selected where it shows. */
 async function goTo(depth) {
   if (depth >= IN.length) return;
   const left = IN[depth].key;
+  if (M.svg && !reduced()) await fade(M.svg, 0);  // the node's graph fades as it is left, VIEW-016
   IN.length = depth;
-  if (depth) await drawInside(); else showBase();
+  if (depth) await drawInside(true); else showBase(left);
   select(left, true, true);
 }
 function renderThing(thing) {
@@ -691,6 +705,21 @@ function frame(box) {
   if (w / height > a) { const nh = w / a; y -= (nh - height) / 2; height = nh; } else { const nw = height * a; x -= (nw - w) / 2; w = nw; }
   return {x, y, w, h: height};
 }
+/* A view fades in or out, and the promise settles once it has; with reduced motion it changes at once, VIEW-016. */
+function fade(svg, to, ms = 480) {
+  if (reduced()) { svg.style.transition = ''; svg.style.opacity = ''; return Promise.resolve(); }
+  svg.style.transition = `opacity ${ms}ms ease`;
+  svg.getBoundingClientRect();  // the fade starts from the opacity the view has now
+  svg.style.opacity = String(to);
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+/* A view that has just been put in place, faded in from nothing. */
+function arrive(svg) {
+  if (reduced()) return;
+  svg.style.transition = ''; svg.style.opacity = '0';
+  fade(svg, 1);
+}
+const into = node => ({x: node.x - node.w * 0.6, y: node.y - node.h * 0.6, w: node.w * 1.2, h: node.h * 1.2});
 function setCam(cam) { M.cam = cam; M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`); }
 function moveCam(target, animate = true) {
   if (!M.svg) return;

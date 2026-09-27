@@ -207,6 +207,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 ### VIEW-016 Going inside a node replaces the 2D map with the node's own graph
 
 - Requirement: Every node in the 2D map can be entered. Going inside it replaces the map with another graph: the node, what it holds, and what the layers turned on attach to it. The base map stays the project's current shape and is never made busier.
+- Motion: Rich, 2026-09-27: the zoom in and fade when going inside was nice and was lost when going inside became a swap. Going inside, the camera zooms into the node as the map it is on fades out, and the node's own graph fades in; going back out, the node's graph fades out and the map returns zoomed on the node left, fades in, and eases out to show it among its joins. With reduced motion the views change at once.
 - What this means: Rich, 2026-09-26: any node can be entered, whether or not it holds subtypes; going inside a node replaces the map with another graph; the other layers are read by going into a node, which shows only what is attached to the node being viewed, so the base map never gets busier; and the person checks which layers are on, so it gets only as busy as the layers turned on. The inside graph holds:
   - the node itself, at the center;
   - for an element, the subtypes of the joins it provides, and each join it holds, drawn as its purpose; for a join, its receiver and provider and its subtypes;

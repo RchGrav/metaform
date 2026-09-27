@@ -598,3 +598,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 
 - CI's lint step, `ruff check src tests conftest.py`, failed on 120 inherited findings. Ruff's own safe fixes are applied: import order, `datetime.UTC`, regex flag names, `encode()` defaults, joined `with` statements, `from` imports, the order of `__all__`, and one unused import; 79 changes across 42 files, none of them a change of behavior. The whole suite, 615 tests, and pyright pass on them.
 - Left for a pass that decides each site: 56 findings, among them `subprocess.run` without an explicit `check`, implicit string joins inside lists, unused unpacked names, and broad `except` clauses, most of them deliberate.
+
+## Step 62: going inside a node zooms in as the map fades
+
+- Rich, 2026-09-27: the zoom in and fade when going inside was nice and was lost. Step 35 made going inside replace the map with the node's own graph, as he asked, and swapped the two views at once. Asked whether to bring back the motion from Codex's viewer on `main-wip-2026-09-24`, which eased the camera and dimmed unselected nodes, he chose this one.
+- Going inside, the camera zooms into the node as the map it is on fades out, and the node's own graph fades in. Going back out, the node's graph fades out, and the map returns zoomed on the node left, fades in, and eases out to show it among its joins. With reduced motion the views change at once. The camera's easing is the existing `moveCam`; the fades are CSS opacity transitions, one timer each for their length. VIEW-016.
+- Test written first and seen failing: every frame is sampled while entering and leaving a node; the map fades below half and its view narrows as the camera goes in; the node's graph starts faded and ends whole; the way out runs the other way; with reduced motion nothing fades. The step 35 go-inside test passes unchanged.
