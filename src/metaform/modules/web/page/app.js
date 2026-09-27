@@ -1007,7 +1007,9 @@ async function renderObject(id) {
     serves.map(join => joinCard(join, 'receiver')));
   renderWork(`element:${id}`, id);
   try {
-    const node = await read('node', {target: `element:${id}`, ...viewLayers()});
+    // While the page follows an intake being recorded, the element is shown as the building layer records it; that
+    // layer is in no reading context until it finishes, LAYER-007, so a node read could only find nothing and is not made.
+    const node = following() ? {layers: []} : await read('node', {target: `element:${id}`, ...viewLayers()});
     if (S.selected !== id) return;
     const box = $('#items');
     for (const group of node.layers || []) {
@@ -1212,7 +1214,9 @@ async function loadLive() {
   if (start) select(start, false);
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
-/* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it has finished. */
+/* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it is no longer being
+ * recorded, saying what happened: it finished when its metaform still stands, or it stopped because the project was
+ * cleared, the one thing that takes a metaform away, VIEW-019. */
 async function follow(found) {
   if (found && found.layer !== LIVE.layer) {
     Object.assign(LIVE, {layer: found.layer, metaform: found.metaform_id, seen: ''});
@@ -1220,10 +1224,11 @@ async function follow(found) {
     else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
-    const finished = LIVE.layer;
+    const {layer, metaform} = LIVE;
+    const stands = (await read('metaforms', {limit: 0})).results.some(item => item.metaform_id === metaform);
     Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
     renderLegend();
-    toast(`The intake ${finished} finished.`);
+    toast(stands ? `The intake ${layer} finished.` : `The intake ${layer} stopped: ${S.project} was cleared.`);
     await loadProject();
     return;
   }

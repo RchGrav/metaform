@@ -1174,6 +1174,7 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     problems, asked = [], []
+    page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
     page.on('pageerror', lambda error: problems.append(str(error)))
     page.on('request', lambda sent: asked.append(sent.url) if '/api/' in sent.url else None)
     page.goto(f'http://127.0.0.1:{web}/#p=live')
@@ -1202,7 +1203,7 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 4', timeout=15000)
     assert 'intake being recorded' not in page.inner_text('#count')
     drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=live&limit=0')[1])
-    assert problems == []
+    assert problems == []  # the console stayed clean through the whole intake: no read that could only find nothing
 
 
 @pytest.mark.req('VIEW-005')
@@ -1755,8 +1756,13 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
     assert not page.is_disabled('#mf') and 'no metaform' not in page.inner_text('#count')
     run('intake', 'finish', cwd=mapped)
     page.wait_for_function('() => window.metaform.live() === null && window.metaform.loaded()', timeout=15000)
+    for shown in (page, other):  # the finished map is drawn and the panel's reads for it have settled
+        shown.wait_for_function('() => document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
+                                timeout=15000)
+    page.wait_for_timeout(300)
     run('clear', 'project', '--confirm', cwd=mapped)
     no_metaform_shown(page)
+    assert problems == [] and other_problems == []  # through the live intake too
 
 
 @pytest.mark.req('VIEW-019')
@@ -1778,3 +1784,114 @@ def test_the_page_names_what_the_clear_could_not_remove_with_its_reason_and_what
     assert line.startswith(f'{stuck}: ') and len(line) > len(f'{stuck}: ')
     assert page.inner_text('#clearbox .next') == LEFT
     assert problems == []
+
+
+WATCHER = '''
+    import json
+    from pathlib import Path
+    from metaform.module import Module, Subscription
+    SUPPORTED_OS = ('linux', 'macos', 'windows')
+    LOG = Path(LOGPATH)
+    def saw(payload, ctx):
+        with LOG.open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps({**payload, 'surface': ctx.surface}) + '\\n')
+    MODULE = Module(id='watcher', summary='x', purpose='Watches the map. Details: metaform help watcher.',
+                    subscriptions=(Subscription('map.changed', saw),))
+'''
+
+
+def heard_by(log):
+    """What the watcher heard since it was last asked, once."""
+    found = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
+    log.unlink(missing_ok=True)
+    return found
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('BASE-010')
+def test_a_write_from_the_page_is_announced_on_the_event_bus_as_a_command_is(run, home, web, mapped, tmp_path,
+                                                                          user_module):
+    """A module of the user's own hears the page's clear and correction removal once each, as it hears the command's,
+    and the open pages still hear each once; a write that changes nothing is not announced."""
+    from metaform import home as metaform_home
+    from metaform.data import Store
+    log = tmp_path / 'heard.jsonl'
+    user_module('watcher', WATCHER.replace('LOGPATH', repr(str(log))))
+    stacked(Store('proj'))
+    started(run)
+    active = metaform_home.active_metaform('proj').metaform_id
+    heard, first = events_on(web)
+    heard_by(log)
+    status, answer = remove(web, 'fix-2')  # not on top: nothing changes, nothing is announced
+    assert status == 200 and answer['removed'] is False
+    status, answer = clear(web)  # the caution alone: nothing changes, nothing is announced
+    assert status == 400
+    time.sleep(0.5)
+    assert heard_by(log) == [] and heard == []
+    status, answer = remove(web, 'fix-3')
+    assert status == 200 and answer['removed'] is True
+    assert first.wait(5)
+    time.sleep(0.5)
+    assert heard_by(log) == [{'project': 'proj', 'metaform_id': active, 'surface': 'web'}]
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': active}}]
+    heard.clear()
+    status, answer = clear(web, confirm=True)
+    assert status == 200 and answer['metaforms'] == ['main']
+    time.sleep(0.5)
+    assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'web'}]
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+    run('clear', 'project', '--confirm', cwd=mapped)  # the command's clear reaches the same subscriber the same way
+    assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'cli'}]
+
+
+def watching_toasts(page):
+    """Every message the page shows, however briefly, as `window.toasts`."""
+    page.evaluate('''() => { window.toasts = [];
+        new MutationObserver(() => window.toasts.push(document.querySelector('#toast').textContent))
+            .observe(document.querySelector('#toast'), {childList: true, characterData: true, subtree: true}); }''')
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-018')
+def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_and_finished_when_it_finishes(
+        run, home, web, browser, tmp_path):
+    started(run)
+    folder = tmp_path / 'live'
+    folder.mkdir()
+    run('add', 'project', 'live', str(folder))
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    problems = []
+    page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.goto(f'http://127.0.0.1:{web}/#p=live')
+    page.wait_for_function('() => window.metaform && window.metaform.live() !== null && window.metaform.drawn().nodes === 1',
+                           timeout=30000)
+    watching_toasts(page)
+    run('clear', 'project', '--confirm', cwd=folder)
+    page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
+    no_metaform_shown_for(page, 'live')
+    said = page.evaluate('window.toasts')
+    assert [text for text in said if text.startswith('The intake intake-') and text.endswith(' stopped: live was cleared.')]
+    assert not [text for text in said if 'finished' in text]
+    run('intake', 'start', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    page.wait_for_function('() => window.metaform.live() !== null && window.metaform.drawn().nodes === 1', timeout=15000)
+    page.evaluate('window.toasts = []')
+    run('intake', 'finish', cwd=folder)
+    page.wait_for_function('() => window.metaform.live() === null && window.metaform.loaded()', timeout=15000)
+    said = page.evaluate('window.toasts')
+    assert [text for text in said if text.startswith('The intake intake-') and text.endswith(' finished.')]
+    assert not [text for text in said if 'stopped' in text]
+    assert problems == []
+
+
+def no_metaform_shown_for(page, project):
+    line = f'{project} has no metaform yet. The next intake creates one.'
+    page.wait_for_function(f'() => document.querySelector("#viewport").innerText.includes("{line}") && '
+                           f'document.querySelector("#p-object").innerText.includes("{line}")', timeout=5000)
+    assert page.inner_text('#count') == 'no metaform yet'

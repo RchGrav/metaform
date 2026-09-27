@@ -357,7 +357,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Acceptance:
   - Without `--confirm`: exit 2, nothing changed, and the caution names each metaform and the report count.
   - With `--confirm`, on a project with two metaforms, a memory item, a report file, an origin and a variant: `list metaforms` lists none, the metaform folders and the report files are gone, `list origins` and `list variants` answer as before, the registration and the folder's `project` setting stand, and the project folder's files are unchanged. A write to the project then creates `main` again.
-  - A module subscribed to `map.changed` hears `{"project": <id>, "metaform_id": null}` once for the command.
+  - A module subscribed to `map.changed` hears `{"project": <id>, "metaform_id": null}` once for the command, and once for the page's clear, VIEW-018.
   - Over MCP, `clear_project` without `confirm` returns `is_error` true with the caution and one Next line and changes nothing; with `confirm` true it clears; the tool is absent when the surface excludes the chassis.
   - The caution and the output read `no metaforms`, `one metaform, main, with its store,` and `two metaforms, main and fresh, with their stores,`, and `no report files`, `one report file`, never `(s)`.
   - With a report file that cannot be removed, made so on Linux and macOS by taking write permission off its folder and on Windows by holding it open: the command exits 0, the metaform rows are gone, the file is still on disk, and the output names that file alone, with its reason, and the Next line; over MCP the result names it in `not_removed` with one notice. Running the clear again once the file can be removed removes it.

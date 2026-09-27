@@ -220,13 +220,13 @@ class Handler(BaseHTTPRequestHandler):
             body: Any = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'null')
         except ValueError:
             return self.send(400, {'error': 'The body is not JSON.'})
+        given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
         try:
-            writes[path](cast(dict[str, Any], body) if isinstance(body, dict) else {})
-        finally:  # the page's own write reaches every open page, VIEW-018
-            for project, metaforms in sorted(changes.take().items()):
-                for metaform in sorted(metaforms):
-                    self.gui.push({'topic': 'map.changed', 'payload': {'project': project,
-                                                                       'metaform_id': metaform or None}})
+            writes[path](given)
+        finally:  # announced as a command's write is: map.changed on the module event bus, VIEW-018 and BASE-010.
+            # The web module's own subscriber hands it back to this server, which pushes it to every open page.
+            project = home.project(str(given.get('project', '')))
+            changes.announce(Path(project.path) if project is not None else home.home(), 'web')
 
     def remove_correction(self, given: dict[str, Any]) -> None:
         """Peel the top correction layer and discard it, in one write, only while it is still the top, VIEW-014."""

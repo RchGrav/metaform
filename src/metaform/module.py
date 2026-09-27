@@ -29,7 +29,7 @@ __all__ = ['Context', 'Handler', 'Hook', 'Module', 'Noun', 'NounKind', 'Status',
 
 VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
 NounKind = Literal['str', 'int', 'bool', 'json']
-Surface = Literal['cli', 'mcp']
+Surface = Literal['cli', 'mcp', 'web']  # where a call or a change was made; verbs are offered on SURFACES only
 NOUN_KINDS: tuple[NounKind, ...] = ('str', 'int', 'bool', 'json')
 SURFACES: tuple[Surface, ...] = ('cli', 'mcp')
 
