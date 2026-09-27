@@ -8,12 +8,26 @@ anything is written).
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 from .errors import StoreError
 
 SCHEMA_VERSION = '3'
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
+
+_WRITERS: dict[str, threading.RLock] = {}
+_WRITERS_GUARD = threading.Lock()
+
+
+def writer_lock(path: Path | str) -> threading.RLock:
+    """One lock per database file in this process, held while a connection to it is opened and prepared and for
+    the whole of a write transaction. Writers take turns here, so SQLite's busy wait, which polls and is not fair,
+    settles only writers of other processes, and a thread is never starved past it. Opening is inside it because
+    a new file's switch to WAL fails at once, with no busy wait, against any lock another connection holds on the
+    file, STORE-006."""
+    with _WRITERS_GUARD:
+        return _WRITERS.setdefault(str(path), threading.RLock())
 
 
 def connect(path: Path | str) -> sqlite3.Connection:

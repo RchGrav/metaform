@@ -184,23 +184,39 @@ def _unit(mform_sha_id: str) -> Path:
 @contextmanager
 def _db(project_id: str, *, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     path = home.home() / 'projects' / project_id / 'history.sqlite3'
-    if not write and not path.exists():
-        db = sqlite.memory(HISTORY_SCHEMA)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite.connect(path)
-        sqlite.prepare(db, path, HISTORY_SCHEMA, create=write)
-    db.row_factory = sqlite3.Row
+    # Connections to the file are opened one at a time in this process, and a write holds its turn to the end of
+    # its transaction, STORE-006; a read lets go once its connection is prepared, so it never waits on a writer.
+    lock = sqlite.writer_lock(path)
+    lock.acquire()
+    held = True
     try:
-        db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+        if not write and not path.exists():
+            db = sqlite.memory(HISTORY_SCHEMA)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = sqlite.connect(path)
+            try:
+                sqlite.prepare(db, path, HISTORY_SCHEMA, create=write)
+            except BaseException:
+                db.close()
+                raise
+        if not write:
+            lock.release()
+            held = False
+        db.row_factory = sqlite3.Row
         try:
-            yield db
-        except BaseException:
-            db.execute('ROLLBACK')
-            raise
-        db.execute('COMMIT')
+            db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+            try:
+                yield db
+            except BaseException:
+                db.execute('ROLLBACK')
+                raise
+            db.execute('COMMIT')
+        finally:
+            db.close()
     finally:
-        db.close()
+        if held:
+            lock.release()
 
 
 def _origin(row: sqlite3.Row, count: int = 0) -> Origin:
