@@ -417,7 +417,8 @@ def test_an_element_held_only_by_subtype_joins_is_no_root_and_no_node_of_the_out
                    observation='o')
     store.finish(extra.name)
     assert 'code.loop.tick' in [placed.element.address for placed in store.graph().elements]
-    assert store.where('code.loop.tick').kind == 'element'
+    tick_now = store.where('code.loop.tick')
+    assert (tick_now.kind, tick_now.subtype.join_id, tick_now.join.join_id) == ('element', sub.join_id, outer.join_id)
 
 
 @pytest.mark.req('MAP-032')

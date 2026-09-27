@@ -188,6 +188,30 @@ def test_a_map_verb_outside_a_project_names_the_way_to_register_one(run, tmp_pat
 
 
 @pytest.mark.req('BASE-038')
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('LAYER-017')
+def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped):
+    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=tbd', 'note=no speaker yet',
+        'task=wire the piezo', cwd=mapped)
+    kitchen = j(run, 'where', 'code.timer.kitchen', cwd=mapped)
+    assert set(kitchen) == {'kind', 'element', 'provides', 'receives'}
+    assert (kitchen['element']['short_name'], kitchen['element']['role']) == ('kitchen timer', 'DE')
+    assert [(join['receiver'], join['purpose'], join['function'], join['name']) for join in kitchen['provides']] == [
+        ('stakeholder.cook.home', 'Know when a dish is done.', 'Counts down and rings.', 'kitchen timer')]
+    assert [(join['provider'], join['function'], join['layer']) for join in kitchen['receives']] == [
+        ('code.alarm.audible', 'Plays a tone.', 'intake-1')]
+    alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)
+    assert alarm['work'] == [{'condition': 'tbd', 'note': 'no speaker yet', 'task': 'wire the piezo'}]
+    assert 'element_id' not in alarm['element'] and 'join_id' not in alarm['provides'][0]
+    full = j(run, 'where', 'code.alarm.audible', 'full=true', cwd=mapped)
+    store = Store('proj')
+    assert full['element']['element_id'] == store.element('code.alarm.audible').element_id
+    assert full['provides'][0]['join_id'] == store.joins('code.timer.kitchen').results[0].join_id
+    assert full['work'][0]['work_id'] and full['held'] is None
+    assert 'map_where' in run('help', 'map', cwd=mapped).stdout or 'where' in run('help', 'map', cwd=mapped).stdout
+
+
+@pytest.mark.req('BASE-038')
 def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
     store = Store('proj')
     kitchen = store.element('code.timer.kitchen')

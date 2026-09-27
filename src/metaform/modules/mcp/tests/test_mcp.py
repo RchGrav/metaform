@@ -265,6 +265,22 @@ def test_an_async_verb_and_a_string_result_over_mcp(run, home, mapped):
     assert session(home, mapped, call) == ['waited 0 s\n']
 
 
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('LAYER-017')
+def test_map_where_over_mcp_shows_what_relies_on_an_address_and_what_it_relies_on(run, home, mapped):
+    cli = json.loads(run('map', 'where', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
+
+    async def call(client, init):
+        small = text(await client.call_tool('map_where', {'address': 'code.timer.kitchen'}))
+        full = text(await client.call_tool('map_where', {'address': 'code.timer.kitchen', 'full': True}))
+        return json.loads(small[-1]), json.loads(full[-1])
+    small, full = session(home, mapped, call)
+    assert small == cli and set(small) == {'kind', 'element', 'receives'}
+    assert [(join['provider'], join['function']) for join in small['receives']] == [('code.alarm.audible',
+                                                                                     'Plays a tone.')]
+    assert 'join_id' not in small['receives'][0] and full['receives'][0]['join_id']
+
+
 @pytest.mark.req('STORE-028')
 @pytest.mark.req('LAYER-007')
 def test_a_masked_layer_is_absent_from_the_tool_read_too(run, home, mapped):

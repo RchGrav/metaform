@@ -425,7 +425,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   | Verb | Nouns | Operation |
   |---|---|---|
   | `roots` | none | `roots`, STORE-025: the map's entry, the VE and the DE with their joins, and every root element, one direct read |
-  | `where` | address; with no address it returns the same entry as `roots` | `where`: the element, and for one held only by subtype joins the subtype join holding it with its parent join, MAP-031 |
+  | `where` | address; optional `full` as a `bool` noun; with no address it returns the same entry as `roots` | `where`: one read of an address, the read an agent orients from: the element, what relies on it, what it relies on, the subtype joins inside those joins and the one holding it, its open work records and the layers in context at it, STORE-025. Ids and empty fields are left out unless `full=true` |
   | `element` | element | `element` |
   | `joins` | element, optional `as` receiver or provider | `joins` |
   | `identity` | element | `identity` |

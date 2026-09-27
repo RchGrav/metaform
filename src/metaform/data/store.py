@@ -301,11 +301,13 @@ class Store:
         with self._read() as tx:
             return reads.subtypes(tx, None if raw else self._resolver(tx, selection), join, limit, after)
 
-    def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Where | None:
-        """The element at an address; for one held only by subtype joins, with the subtype join that holds it and that
-        join's parent join, MAP-031."""
+    def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False,
+              full: bool = False) -> Where | None:
+        """One read of an address: the element, what relies on it, what it relies on, the subtype joins inside those
+        joins and the one holding it, its open work records and the layers in context at it, STORE-025; `full` keeps
+        ids and empty fields in its plain data."""
         with self._read() as tx:
-            return reads.where(tx, None if raw else self._resolver(tx, selection), address)
+            return reads.where(tx, self._resolver(tx, selection), raw, address, full)
 
     def children(self, address: str, *, limit: int = LIMIT, after: str | None = None) -> Page[str]:
         """The next types toward the leaves."""

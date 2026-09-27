@@ -77,25 +77,42 @@ def subtypes(tx: Tx, res: Resolver | None, join: str, limit: int, after: str | N
     return paged(fetch, lambda row: views.visible_subtype(tx, row, res), limit, after)
 
 
-def where(tx: Tx, res: Resolver | None, address: str) -> Where | None:
-    """The element at an address; for one held only by subtype joins, the subtype join that holds it and that join's
-    parent join, MAP-031."""
+def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where | None:
+    """One read of an address, STORE-025: the element, what relies on it, what it relies on, the subtype joins inside
+    those joins and the one holding it with the join it sits in, MAP-031, its open work records and what the layers
+    in context hold at it. In context, the default, every part follows the reading context, LAYER-007."""
+    context = None if raw else res
     current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
     if current is None:
         return None
-    found = views.element(tx, str(current[0]), res)
+    found = views.element(tx, str(current[0]), context)
     if found is None:
         return None
-    if not rows.held_only(tx, found.element_id):
-        return Where('element', element=found)
+    held: Subtype | None = None
+    holding: Join | None = None
     for join_id in rows.holding(tx, found.element_id):
         row = rows.current_join(tx, join_id)
-        held = None if row is None else views.visible_subtype(tx, row, res)
+        held = None if row is None else views.visible_subtype(tx, row, context)
         parent = None if held is None else rows.current_join(tx, held.parent)
-        holding = None if parent is None else views.visible_join(tx, parent, res)
+        holding = None if parent is None else views.visible_join(tx, parent, context)
         if held is not None and holding is not None:
-            return Where('subtype', element=found, subtype=held, join=holding)
-    return Where('element', element=found)
+            break
+        held = holding = None
+    kind = 'subtype' if held is not None and rows.held_only(tx, found.element_id) else 'element'
+
+    def with_subtypes(as_: str) -> tuple[GraphJoin, ...]:
+        placed: list[GraphJoin] = []
+        for join in joins(tx, context, found.element_id, as_, 0, None).results:
+            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
+            placed.append(GraphJoin(**fields, subtypes=subtypes(tx, context, join.join_id, 0, None).results))
+        return tuple(placed)
+
+    open_work = tuple(views.work_record(tx, row) for row in tx.db.execute(
+        "SELECT * FROM work WHERE target_kind='element' AND target_id=? AND done IS NULL ORDER BY row",
+        (found.element_id,)))
+    at = node(tx, res, Node('element', found.element_id), raw)
+    return Where(kind, found, held, holding, with_subtypes('provider'), with_subtypes('receiver'), open_work,
+                 () if at is None else at.layers, full)
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:

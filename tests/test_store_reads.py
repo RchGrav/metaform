@@ -109,6 +109,112 @@ def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store,
 
 
 @pytest.mark.req('STORE-025')
+@pytest.mark.req('LAYER-017')
+@pytest.mark.req('STORE-042')
+def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(store):
+    _, outer, inner = populated(store)
+    kitchen = store.where('code.timer.kitchen')
+    assert (kitchen.kind, kitchen.element.address, kitchen.element.short_name, kitchen.element.role) == (
+        'element', 'code.timer.kitchen', 'kitchen timer', 'DE')
+    relying = {join.receiver_address: join for join in kitchen.provides}
+    assert set(relying) == {'stakeholder.cook.home', 'code.timer.kitchen.display'}
+    cook = relying['stakeholder.cook.home']
+    assert (cook.join_id, cook.purpose, cook.function, cook.name, cook.layer) == (
+        outer.join_id, 'Know when each dish is done.', 'Counts down and rings.', 'kitchen timer', 'intake-1')
+    assert [(sub.address, sub.short_name, sub.function) for sub in cook.subtypes] == [
+        ('code.loop.tick', 'tick loop', 'Advances each countdown.')]
+    assert relying['code.timer.kitchen.display'].layer == 'notes'
+    assert [(join.join_id, join.provider_address, join.function, join.layer) for join in kitchen.receives] == [
+        (inner.join_id, 'code.alarm.audible', 'Plays a loud tone.', 'fix-1')]
+    assert kitchen.subtype is None and kitchen.join is None and kitchen.work == ()
+    assert {group.layer: ([item.value for item in group.items], [prop.value for prop in group.properties])
+            for group in kitchen.layers} == {'notes': (['keep the loop small'], ['C']),
+                                             'memory': (['drifts under load'], [])}
+    display = store.where('code.timer.kitchen.display')
+    assert [(record.condition, record.note, record.task) for record in display.work] == [
+        ('tbd', 'not wired yet', 'wire it')]
+    assert [join.provider_address for join in display.receives] == ['code.timer.kitchen']
+    assert display.receives[0].open_work == ('broken',)
+
+
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('LAYER-007')
+def test_the_read_of_an_address_follows_the_reading_context(store):
+    populated(store)
+    store.mask('code.timer', 'notes')
+    kitchen = store.where('code.timer.kitchen')
+    assert [join.receiver_address for join in kitchen.provides] == ['stakeholder.cook.home']
+    assert [group.layer for group in kitchen.layers] == ['memory']
+    everything = store.where('code.timer.kitchen', raw=True)
+    assert {join.receiver_address for join in everything.provides} == {'stakeholder.cook.home',
+                                                                        'code.timer.kitchen.display'}
+    assert [group.layer for group in everything.layers] == ['notes', 'memory']
+
+
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('MAP-031')
+def test_the_read_of_a_held_element_shows_the_subtype_join_and_the_join_it_sits_in(store):
+    _, outer, _ = populated(store)
+    tick = store.where('code.loop.tick')
+    held = store.subtypes(outer.join_id).results[0]
+    assert (tick.kind, tick.subtype.join_id, tick.join.join_id, tick.provides, tick.receives) == (
+        'subtype', held.join_id, outer.join_id, (), ())
+    extra = knowledge(store, 'extra')
+    store.add_element(extra.name, 'code.clock')
+    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='keep time', function='ticks',
+                   relation='r', observation='o')
+    store.finish(extra.name)
+    tick = store.where('code.loop.tick')
+    assert (tick.kind, tick.subtype.join_id, tick.join.join_id) == ('element', held.join_id, outer.join_id)
+    assert [join.provider_address for join in tick.receives] == ['code.clock']
+
+
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('BASE-036')
+def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(store):
+    _, outer, inner = populated(store)
+    small = store.where('code.timer.kitchen').to_dict()
+
+    def keys(data):
+        if isinstance(data, dict):
+            for key, value in data.items():
+                yield key, value
+                yield from keys(value)
+        elif isinstance(data, list):
+            for value in data:
+                yield from keys(value)
+    assert set(small) == {'kind', 'element', 'provides', 'receives', 'layers'}
+    assert not [key for key, _ in keys(small) if key.endswith('_id') or key in ('parent', 'target')]
+    assert not [key for key, value in keys(small) if value in (None, '', [], {}, False)]
+    cook = next(join for join in small['provides'] if join['receiver'] == 'stakeholder.cook.home')
+    assert 'provider' not in cook and cook['name'] == 'kitchen timer' and cook['layer'] == 'intake-1'
+    assert cook['subtypes'] == [{'element': 'code.loop.tick', 'reading': 'tick loop code', 'short_name': 'tick loop',
+                                 'name': 'tick loop', 'name_length': 2, 'role': 'SE', 'type': 'subtype',
+                                 'function': 'Advances each countdown.', 'relation': 'The tick loop drives the timer.',
+                                 'observation': 'One tick per second.', 'refs': [{'key': 'path', 'value': 'src/tick.c'}],
+                                 'layer': 'intake-1'}]
+    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
+                                  'purpose': 'Get attention when a countdown ends.', 'function': 'Plays a loud tone.',
+                                  'relation': 'The alarm rings for the timer.', 'observation': 'A piezo speaker.',
+                                  'name': 'audible alarm', 'layer': 'fix-1'}]
+    assert [group['layer'] for group in small['layers']] == ['notes', 'memory']
+    alarm = store.element('code.alarm.audible').element_id
+    assert small['layers'][0]['items'] == [{'layer': 'notes', 'value': 'keep the loop small',
+                                            'link': {'kind': 'element', 'id': alarm},
+                                            'refs': [{'key': 'path', 'value': 'src/timer.c'}]}]
+    display = store.where('code.timer.kitchen.display').to_dict()
+    assert display['work'] == [{'condition': 'tbd', 'note': 'not wired yet', 'task': 'wire it'}]
+    tick = store.where('code.loop.tick').to_dict()
+    assert set(tick) == {'kind', 'element', 'held'} and set(tick['held']) == {'subtype', 'join'}
+    assert tick['held']['join']['receiver'] == 'stakeholder.cook.home'
+    full = store.where('code.timer.kitchen', full=True).to_dict()
+    assert full['element']['element_id'] == store.element('code.timer.kitchen').element_id
+    assert [join['join_id'] for join in full['receives']] == [inner.join_id]
+    assert full['receives'][0]['ef'] is None and full['held'] is None and full['work'] == []
+    assert outer.join_id in [join['join_id'] for join in full['provides']]
+
+
+@pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-016')
 def test_every_join_carries_the_name_of_its_layer(store):
     _, outer, inner = populated(store)

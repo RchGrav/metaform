@@ -315,19 +315,85 @@ class Selection(Record):
 
 
 @dataclass(frozen=True)
+class GraphJoin(Join):
+    """A join with the subtype joins it holds, as a page of the whole map carries it, VIEW-005."""
+    subtypes: tuple[Subtype, ...] = ()
+
+
+# The fields a small read leaves out, STORE-025: identity ids, and the ends a join names by id beside their addresses.
+ID_FIELDS = frozenset({'element_id', 'layer_id', 'join_id', 'parent', 'work_id', 'item_id', 'property_id', 'target',
+                       'receiver', 'provider', 'receiver_address', 'provider_address'})
+
+
+def small(value: Any) -> Any:
+    """Plain data without its ids and empty fields: None, empty text, empty lists and dicts, and false."""
+    if isinstance(value, dict):
+        kept: dict[str, Any] = {}
+        for key, item in cast(dict[str, Any], value).items():
+            if key in ID_FIELDS:
+                continue
+            item = small(item)
+            if item is None or item is False or item == '' or item == [] or item == {}:
+                continue
+            kept[str(key)] = item
+        return kept
+    if isinstance(value, (list, tuple)):
+        return [small(item) for item in cast(Sequence[Any], value)]
+    return value
+
+
+@dataclass(frozen=True)
 class Where(Record):
-    """The element at an address; for one held only by subtype joins, kind `subtype`, with the subtype join that holds
-    it and that join's parent join, MAP-031."""
+    """One read of an address, the read an agent orients from, LAYER-017 and STORE-025: the element; `provides`, what
+    relies on it, every join where it is the provider with the subtype joins each holds; `receives`, what it relies on,
+    every join it receives with the subtype joins each holds; the subtype join holding it and the join that sits in,
+    MAP-031, kind `subtype` when it is held only; its open work records, STORE-042; and what the layers in context hold
+    at it, as `node` gives them. `to_dict()` leaves ids and empty fields out unless `full`."""
     kind: str
     element: Element | None = None
     subtype: Subtype | None = None
     join: Join | None = None
+    provides: tuple[GraphJoin, ...] = ()
+    receives: tuple[GraphJoin, ...] = ()
+    work: tuple[WorkRecord, ...] = ()
+    layers: tuple[LayerGroup, ...] = ()
+    full: bool = False
 
+    def to_dict(self) -> dict[str, Any]:
+        held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
+        if self.full:
+            return {'kind': self.kind, 'element': plain(self.element), 'provides': plain(self.provides),
+                    'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
+                    'layers': plain(self.layers)}
+        data: dict[str, Any] = {'kind': self.kind, 'element': small(plain(self.element))}
+        if self.provides:
+            data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
+        if self.receives:
+            data['receives'] = [self._join(plain(join), 'provider') for join in self.receives]
+        if held is not None:
+            data['held'] = {'subtype': self._subtype(held['subtype']),
+                            'join': self._join(held['join'], 'receiver', 'provider')}
+        if self.work:
+            data['work'] = small([{'condition': record.condition, 'note': record.note, 'task': record.task}
+                                  for record in self.work])
+        if self.layers:
+            data['layers'] = small(plain(self.layers))
+        return data
 
-@dataclass(frozen=True)
-class GraphJoin(Join):
-    """A join with the subtype joins it holds, as a page of the whole map carries it, VIEW-005."""
-    subtypes: tuple[Subtype, ...] = ()
+    @staticmethod
+    def _subtype(data: dict[str, Any]) -> dict[str, Any]:
+        """A subtype join with the element it holds named by its address, as `element`."""
+        return {'element': data.get('address'), **small({key: value for key, value in data.items() if key != 'address'})}
+
+    @classmethod
+    def _join(cls, data: Any, *ends: str) -> dict[str, Any]:
+        """A join with the ends asked for as addresses, and its subtype joins."""
+        fields = cast(dict[str, Any], data)
+        named = {end: fields.get(f'{end}_address') for end in ends}
+        inside = [cls._subtype(cast(dict[str, Any], subtype))
+                  for subtype in cast(list[Any], fields.get('subtypes') or [])]
+        return {**named, **small({key: value for key, value in fields.items() if key != 'subtypes'}),
+                **({'subtypes': inside} if inside else {})}
 
 
 @dataclass(frozen=True)

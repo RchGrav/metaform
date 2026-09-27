@@ -47,8 +47,10 @@ def test_map_roots_and_where_with_no_address_return_the_entry(run, tmp_path):
     assert {item['element']['address'] for item in roots['entry']} == {'stakeholder.cook.home', 'code.timer.kitchen'}
     assert json.loads(run('map', 'where', '', '--json', cwd=folder).stdout) == roots
     purpose = run('help', 'agents', cwd=folder).stdout
-    assert 'Start with map_roots: it returns the map\'s entry, the VE and the DE with their joins, and the root ' \
-           'elements.' in purpose
+    assert 'With no address, start with map_roots: the map\'s entry, the VE and the DE with their joins, and the ' \
+           'root elements.' in purpose
+    assert 'Handed an address, start with map_where: one read of the address returns the element, what relies on ' \
+           'it' in purpose
 
 
 @pytest.mark.req('STORE-042')

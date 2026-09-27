@@ -235,7 +235,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
   - The orchestrator chooses exactly which knowledge layers are available for a job, through select and mask, LAYER-007.
 - Why: The working agent starts from project-specific wording and prepared knowledge instead of reconstructing them, which is the orientation cost Metaform exists to save, MAP-005. Namespace addresses are perfectly indexed proper nouns, so linking them costs almost nothing and removes ambiguity.
 - How it shows: A preprocessed prompt names the project's elements by their readings and ends with their addresses; the chosen layers appear between the prompt text and the footer.
-- Build: Module work, pending the workflow module's own spec, D44. The chassis supplies the reads it needs: addresses and readings, MAP-012; layers at a node, LAYER-008; and selection, LAYER-007.
+- Build: Module work, pending the workflow module's own spec, D44. The chassis supplies the reads it needs: addresses and readings, MAP-012; one read of an address, `where`, which shows what relies on that functionality and what it relies on with the layers in context at it, so an agent handed an address goes straight to it instead of getting oriented first, STORE-025; layers at a node, LAYER-008; and selection, LAYER-007.
 - Acceptance: Belongs to the workflow module's spec.
 - Relates to: MAP-005, MAP-012, LAYER-007, LAYER-008, LAYER-015, LAYER-016.
 - Status: confirmed as design; deferred for the first working test.

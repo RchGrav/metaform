@@ -75,9 +75,10 @@ def roots(ctx: Context) -> Any:
 
 
 def where(ctx: Context) -> Any:
+    """One read of an address: what relies on it and what it relies on, STORE-025; the entry with no address."""
     if not ctx.nouns['address']:
         return roots(ctx)
-    return _store(ctx).where(ctx.nouns['address'], **_reading(ctx))
+    return _store(ctx).where(ctx.nouns['address'], full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
 
 
 def element(ctx: Context) -> Any:
@@ -511,9 +512,12 @@ RAW = ('raw',)
 MODULE = Module(
     id='map',
     summary="Read and write this project's functional map and its layers.",
-    purpose="Reads and writes this project's functional map. Start with map_roots: it returns the map's entry, the "
-            'VE and the DE with their joins, and the root elements. Before changing a part, read it with map_where or '
-            'map_element and follow its joins: the receiver holds the purpose, the provider delivers the function. '
+    purpose="Reads and writes this project's functional map. Handed an address, start with map_where: one read of "
+            'the address returns the element, what relies on it, every join it provides with the receiver and its '
+            'purpose, what it relies on, every join it receives with the provider and its function, the subtype joins '
+            'inside them, its open work records and what the layers in context hold at it; full=true keeps ids. With '
+            "no address, start with map_roots: the map's entry, the VE and the DE with their joins, and the root "
+            'elements. The receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
             'map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
             'time, and finish it when the task is done. Details: metaform help map.',
@@ -521,9 +525,12 @@ MODULE = Module(
     verbs=(
         Verb('roots', roots, "The map's entry: the VE and the DE with their joins, and every root element.",
              nouns=PAGING, switches=RAW),
-        Verb('where', where, 'The element at an address, and for one held only by subtype joins the subtype join '
-                             "that holds it with its parent join; with an empty address, the map's entry.",
-             nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),), switches=RAW),
+        Verb('where', where, 'One read of an address: the element, what relies on it, what it relies on, the subtype '
+                             'joins inside those joins and the one holding it, its open work records and the layers '
+                             "in context at it; with an empty address, the map's entry.",
+             nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),
+                    _noun('full', 'true keeps ids and empty fields, which are left out by default.', 'bool')),
+             switches=RAW),
         Verb('element', element, 'One element: its address, name_length, role and short name, with its refs.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
         Verb('joins', joins, 'The joins an element owns, or with as=provider those it serves.',
