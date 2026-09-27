@@ -43,6 +43,25 @@ def k(run, cwd, *args, ok=True):
     return run('map', 'knowledge', *args, '--json', cwd=cwd, ok=ok)
 
 
+def without_open_work(value):
+    """The parsed structure with every `open_work` field removed, wherever it sits."""
+    if isinstance(value, dict):
+        return {key: without_open_work(inner) for key, inner in value.items() if key != 'open_work'}
+    if isinstance(value, list):
+        return [without_open_work(inner) for inner in value]
+    return value
+
+
+def open_work_in(value):
+    """Every non-empty `open_work` in a parsed structure, in document order."""
+    if isinstance(value, dict):
+        return [inner for key, inner in value.items() if key == 'open_work' and inner] + [
+            found for inner in value.values() for found in open_work_in(inner)]
+    if isinstance(value, list):
+        return [found for inner in value for found in open_work_in(inner)]
+    return []
+
+
 @pytest.mark.req('MAP-012')
 def test_an_address_reads_as_its_name_reversed():
     from metaform.data import reading, short_name
@@ -494,8 +513,9 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == []
     assert j(run, 'joins', 'code.timer.kitchen', cwd=mapped)['results'][0]['open_work'] == ['broken']
     after = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
-    strip = lambda page: json.loads(json.dumps(page).replace('"open_work": ["broken"]', '"open_work": []'))
-    assert strip(after) == strip(before), 'a work record changed the map'
+    # Only open_work may differ between the two graphs: the conditions of the open records, on the join now.
+    assert without_open_work(after) == without_open_work(before), 'a work record changed the map'
+    assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
     refused = run('map', 'work', 'op=add', 'condition=tbd', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
     unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft', 'later=yes', '--json',

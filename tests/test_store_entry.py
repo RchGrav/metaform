@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from metaform.data import Store
-from storekit import dump, plans, record_intake, small_map, store_file
+from metaform.data import Node, Store
+from storekit import dump, knowledge, plans, record_intake, small_map, store_file
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -107,7 +107,6 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
 @pytest.mark.req('STORE-042')
 @pytest.mark.req('BASE-044')
 def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, tmp_path):
-    from metaform.data import Node
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -141,3 +140,69 @@ def test_a_work_record_without_a_condition_is_stored_as_empty_text_with_a_notice
     assert [row.condition for row in store.work().results] == ['']
     cleared = store.edit_work(unsaid.work_id, {'condition': None})
     assert cleared.condition == '' and [notice.where for notice in cleared.notices] == ['condition']
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('STORE-009')
+def test_a_work_record_follows_its_element_through_removal_and_recording_again(store):
+    """A work record has no layer: it is on the object's identity, which its address gives back, STORE-009."""
+    layer = knowledge(store, 'again')
+    first = store.add_element(layer.name, 'code.engine')
+    record = store.add_work(Node('element', 'code.engine'), 'tbd', task='build it')
+    assert store.element('code.engine', raw=True).open_work == ('tbd',)
+    store.remove(first.element_id)
+    assert store.element('code.engine', raw=True) is None
+    assert [(row.work_id, row.address) for row in store.work(open=True).results] == [(record.work_id, None)]
+    again = store.add_element(layer.name, 'code.engine')
+    assert again.element_id == first.element_id
+    store.finish(layer.name)
+    assert store.element('code.engine').open_work == ('tbd',)
+    assert [(row.work_id, row.address) for row in store.work(open=True).results] == [(record.work_id, 'code.engine')]
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('STORE-032')
+def test_discarding_a_layer_leaves_the_work_records_of_its_objects_in_place(home, store):
+    small_map(store)
+    layer = knowledge(store, 'draft')
+    store.add_element(layer.name, 'code.draft.probe')
+    join = store.add_join(layer.name, 'code.timer.kitchen', 'code.draft.probe', purpose='p', function='f',
+                          relation='r', observation='o')
+    on_element = store.add_work(Node('element', 'code.draft.probe'), 'cruft', note='old probe')
+    on_join = store.add_work(Node('join', join.join_id), 'broken')
+    on_intake = store.add_work(Node('element', 'code.alarm.audible'), 'tbd')
+    before = dump(store_file(home, store))
+    store.discard(layer.name)
+    assert dump(store_file(home, store))['work'] == before['work']
+    assert [found.name for found in store.layers().results] == ['intake-1']
+    listed = {row.work_id: (row.kind, row.id, row.address, row.condition) for row in store.work().results}
+    assert listed == {on_element.work_id: ('element', on_element.id, None, 'cruft'),
+                      on_join.work_id: ('join', join.join_id, None, 'broken'),
+                      on_intake.work_id: ('element', on_intake.id, 'code.alarm.audible', 'tbd')}
+    assert store.element('code.alarm.audible').open_work == ('tbd',)
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('STORE-011')
+def test_a_work_record_attaches_to_a_subtype_join_or_to_the_element_it_holds_and_reads_back_there(home, store):
+    _, outer, _ = small_map(store)
+    tick = store.subtypes(outer.join_id).results[0]
+    before = dump(store_file(home, store))
+    on_join = store.add_work(Node('join', tick.join_id), 'tbd', task='one tick per second, not two')
+    assert (on_join.kind, on_join.id, on_join.receiver_address, on_join.provider_address) == (
+        'join', tick.join_id, 'stakeholder.cook.home', 'code.loop.tick')
+    after = dump(store_file(home, store))
+    assert len(after['work']) == 1 and {name: rows for name, rows in after.items() if name != 'work'} == {
+        name: rows for name, rows in before.items() if name != 'work'}
+    assert store.subtypes(outer.join_id).results[0].open_work == ('tbd',)
+    assert store.where('code.loop.tick').subtype.open_work == ('tbd',)
+    assert store.element('code.loop.tick').open_work == ()
+    assert store.element('stakeholder.cook.home').open_work == ()
+    assert store.joins('stakeholder.cook.home').results[0].open_work == ()
+    on_element = store.add_work(Node('element', 'code.loop.tick'), 'broken')
+    assert (on_element.kind, on_element.id, on_element.address) == ('element', tick.element_id, 'code.loop.tick')
+    assert store.element('code.loop.tick').open_work == ('broken',)
+    assert store.where('code.loop.tick').element.open_work == ('broken',)
+    assert store.subtypes(outer.join_id).results[0].open_work == ('tbd',)
+    assert [row.work_id for row in store.work(node=Node('join', tick.join_id)).results] == [on_join.work_id]
+    assert [row.work_id for row in store.work(node=Node('element', tick.element_id)).results] == [on_element.work_id]
