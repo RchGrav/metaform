@@ -785,8 +785,10 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: A chassis that finds a store at a version it does not know says so and names the next step rather than reading it wrongly.
 - Why: Stores outlive the code that wrote them. A reader that silently misreads an older or newer layout corrupts what agents are told.
 - How it shows: Opening a store written by a newer chassis gives an error naming the version found and the version supported.
-- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. This section's layout is version 5: step 52 made a subtype join a row of `joins` and took out the relocation of elements. Rich, 2026-09-27: schema changes start fresh; the version is bumped and no migration code is written.
-- Acceptance: A store with `schema_version` set to 999 is refused with a `StoreError`, and nothing is written to it.
+- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. Each kind of database has its own version, so a change to one kind's layout never refuses another: the metaform store's layout is version 5, since step 52 made a subtype join a row of `joins` and took out the relocation of elements; the base database, a project's history database and the prompt database are each version 1. Rich, 2026-09-27: schema changes start fresh; a changed layout bumps its own kind's version and no migration code is written. Before step 60 every kind shared one number, and the store's changes refused his whole home, the registry of projects and settings included, whose own layout had not changed.
+- Acceptance:
+  - A store with `schema_version` set to 999 is refused with a `StoreError`, and nothing is written to it.
+  - A home whose base and history databases are at version 1 opens while the store's layout is at version 5, and its projects, settings and origins read back.
 - Relates to: STORE-027, REQ-110, BASE-020.
 - Status: recommended. Stores written by the current chassis branch, which keep joins as JSON bodies in `objects` and `joins` tables, are not migrated; pre-1.0 data is dropped, D24.
 

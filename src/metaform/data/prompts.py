@@ -18,6 +18,7 @@ from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
+PROMPT_SCHEMA_VERSION = '1'  # the prompt database's own layout, apart from the store's, STORE-029
 PROMPT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts(
@@ -82,7 +83,8 @@ class PromptUse(Record):
 
 @contextmanager
 def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
-    with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write) as db:
+    with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write,
+                       version=PROMPT_SCHEMA_VERSION) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:

@@ -30,6 +30,7 @@ from .. import home, sqlite
 from ..errors import StoreError
 from .records import Record
 
+HISTORY_SCHEMA_VERSION = '1'  # a project's history database's own layout, apart from the store's, STORE-029
 HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS origins(
@@ -184,7 +185,7 @@ def _unit(mform_sha_id: str) -> Path:
 @contextmanager
 def _db(project_id: str, *, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     path = home.home() / 'projects' / project_id / 'history.sqlite3'
-    with sqlite.opened(path, HISTORY_SCHEMA, write=write) as db:
+    with sqlite.opened(path, HISTORY_SCHEMA, write=write, version=HISTORY_SCHEMA_VERSION) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:

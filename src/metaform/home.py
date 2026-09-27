@@ -27,6 +27,7 @@ from . import changes, sqlite
 from .errors import StoreError
 from .wording import counted, listed
 
+BASE_SCHEMA_VERSION = '1'  # the base database's own layout, apart from the store's, STORE-029
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(
@@ -122,7 +123,7 @@ def path_key(path: Path | str) -> str:
 @contextmanager
 def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the base database. A read of a home with no base database creates nothing."""
-    with sqlite.opened(base_path(), BASE_SCHEMA, write=write) as db:
+    with sqlite.opened(base_path(), BASE_SCHEMA, write=write, version=BASE_SCHEMA_VERSION) as db:
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db

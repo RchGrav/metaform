@@ -36,7 +36,7 @@ _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
 @contextmanager
 def open_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to one store file, opened inside its lock, STORE-006."""
-    with sqlite.opened(path, STORE_SCHEMA, write=write) as db:
+    with sqlite.opened(path, STORE_SCHEMA, write=write, version=sqlite.SCHEMA_VERSION) as db:
         db.row_factory = sqlite3.Row
         yield db
 

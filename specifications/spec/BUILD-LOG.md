@@ -580,3 +580,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - Written down, as the code already does: `metaform import`'s summary lines, one per count in words, STORE-027; and a `refs` value that is not a JSON array read as a list holding that one ref, BASE-039.
 - Begun by a Fable builder, which wrote the three records and was stopped when Rich moved the work to Opus only; the orchestrator wrote the test, saw it fail, and made the change.
 - Test written first and seen failing: `feedback` sent a number as its text and `list_reports` sent a list as its kind are read, noted and answered, not refused.
+
+## Step 60: each kind of database keeps its own schema version
+
+- Rich, 2026-09-27: after steps 41 to 52, every `metaform` command in his home failed with "metaform.sqlite3 has schema version 1; this Metaform supports version 5". The base database, the history databases, the prompt database and every metaform store shared one version number, so each change to the store's layout refused the registry of projects and settings too, whose layout had not changed since before step 41.
+- `sqlite.opened` and `sqlite.prepare` now take the version of the kind of database they open: the metaform store's `sqlite.SCHEMA_VERSION`, 5; `BASE_SCHEMA_VERSION`, `HISTORY_SCHEMA_VERSION` and `PROMPT_SCHEMA_VERSION`, each 1, beside their schemas. STORE-029 says so. Existing homes open again without any migration; metaform stores written before step 52 are still refused, as Rich decided.
+- Test written first and seen failing with his exact error: a home whose base and history databases are at version 1 opens while the store is at 5, and its projects and origins read back and take new writes. The concurrency tests that call the opener and `prepare` directly pass the version.

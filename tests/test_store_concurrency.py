@@ -79,7 +79,7 @@ def test_a_file_another_connection_creates_between_the_first_reads_is_not_refuse
     def competitor():
         other = sqlite.connect(path)
         try:
-            sqlite.prepare(other, path, STORE_SCHEMA, create=True)
+            sqlite.prepare(other, path, STORE_SCHEMA, create=True, version=sqlite.SCHEMA_VERSION)
         finally:
             other.close()
             done.set()
@@ -105,7 +105,7 @@ def test_a_file_another_connection_creates_between_the_first_reads_is_not_refuse
 
     db = sqlite.connect(path)
     try:
-        sqlite.prepare(Racing(db), path, STORE_SCHEMA, create=True)
+        sqlite.prepare(Racing(db), path, STORE_SCHEMA, create=True, version=sqlite.SCHEMA_VERSION)
     finally:
         db.close()
     assert done.wait(10)
@@ -189,13 +189,13 @@ def test_a_file_another_process_is_creating_reads_as_empty_and_is_not_refused(tm
     from metaform.data.schema import STORE_SCHEMA
     path = tmp_path / 'creating.sqlite3'
     path.touch()
-    with sqlite.opened(path, STORE_SCHEMA, write=False) as db:
+    with sqlite.opened(path, STORE_SCHEMA, write=False, version=sqlite.SCHEMA_VERSION) as db:
         assert db.execute('SELECT COUNT(*) FROM elements').fetchone() == (0,)
     creator = sqlite.connect(path)
     try:
         creator.execute('PRAGMA journal_mode=WAL')
         assert path.stat().st_size > 0
-        with sqlite.opened(path, STORE_SCHEMA, write=False) as db:
+        with sqlite.opened(path, STORE_SCHEMA, write=False, version=sqlite.SCHEMA_VERSION) as db:
             assert db.execute('SELECT COUNT(*) FROM elements').fetchone() == (0,)
     finally:
         creator.close()
@@ -211,7 +211,7 @@ def test_the_schema_of_a_new_file_is_written_in_wal_mode(tmp_path):
     db = sqlite.connect(path)
     db.set_trace_callback(statements.append)
     try:
-        sqlite.prepare(db, path, STORE_SCHEMA, create=True)
+        sqlite.prepare(db, path, STORE_SCHEMA, create=True, version=sqlite.SCHEMA_VERSION)
     finally:
         db.close()
     switch = next(n for n, statement in enumerate(statements) if 'journal_mode' in statement)
@@ -269,12 +269,12 @@ def lock_trace(monkeypatch):
     real = sqlite.prepare
     seen: dict[str, list[tuple[str, bool]]] = {}
 
-    def prepare(db, path, schema, *, create):
+    def prepare(db, path, schema, *, create, version):
         lock = sqlite.writer_lock(path)
         events = seen.setdefault(path.name, [])
         events.append(('prepare', not _free(lock)))
         db.set_trace_callback(lambda statement: events.append((statement, not _free(lock))))
-        return real(db, path, schema, create=create)
+        return real(db, path, schema, create=create, version=version)
     monkeypatch.setattr(sqlite, 'prepare', prepare)
     return seen
 

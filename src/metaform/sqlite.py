@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '5'
+SCHEMA_VERSION = '5'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 _WRITERS: dict[str, threading.RLock] = {}
@@ -48,7 +48,7 @@ def memory(schema: str) -> sqlite3.Connection:
 
 
 @contextmanager
-def opened(path: Path, schema: str, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
+def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to the file, opened inside the file's lock, STORE-006; the caller begins and ends
     the transaction. A write holds the lock until the block ends and creates the file when there is none. A read
     lets go of the lock once its connection is prepared, and reads a file with nothing committed yet, no file, no
@@ -62,7 +62,7 @@ def opened(path: Path, schema: str, *, write: bool) -> Generator[sqlite3.Connect
             path.parent.mkdir(parents=True, exist_ok=True)
             db = connect(path)
             try:
-                prepare(db, path, schema, create=True)
+                prepare(db, path, schema, create=True, version=version)
             except BaseException:
                 db.close()
                 raise
@@ -70,7 +70,7 @@ def opened(path: Path, schema: str, *, write: bool) -> Generator[sqlite3.Connect
             if _has_bytes(path):
                 db = connect(path)
                 try:
-                    if not prepare(db, path, schema, create=False):
+                    if not prepare(db, path, schema, create=False, version=version):
                         db.close()
                         db = None
                 except BaseException:
@@ -96,21 +96,22 @@ def _has_bytes(path: Path) -> bool:
         return False
 
 
-def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool) -> bool:
+def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, version: str) -> bool:
     """Check the schema version, creating the schema first when the file is new and creation is allowed. False
     when the file holds no tables and creation is not allowed: another process is creating it, and nothing in it
-    is committed yet, so the caller reads it as empty."""
-    version = _version(db)
-    if version is None:
+    is committed yet, so the caller reads it as empty. `version` is the version this kind of database is at, STORE-029.
+    """
+    found = _version(db)
+    if found is None:
         # The tables and the version are read in one transaction, so a file another connection creates between
         # the two reads is seen whole, with its version, and never taken for an earlier one.
         db.execute('BEGIN')
         try:
             tables = db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
-            version = _version(db) if tables else None
+            found = _version(db) if tables else None
         finally:
             db.execute('COMMIT')
-        if version is None:
+        if found is None:
             if tables:
                 raise StoreError(f'{path} was written by an earlier Metaform and has no schema version.',
                                  f'rename {path} and run metaform again')
@@ -120,11 +121,11 @@ def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool) ->
             # process never waits on it or holds a lock across the switch, STORE-006.
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript('BEGIN IMMEDIATE;\n' + schema +
-                             f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{SCHEMA_VERSION}');"
+                             f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{version}');"
                              '\nCOMMIT;')
-            version = _version(db)
-    if version != SCHEMA_VERSION:
-        raise StoreError(f'{path} has schema version {version}; this Metaform supports version {SCHEMA_VERSION}.',
+            found = _version(db)
+    if found != version:
+        raise StoreError(f'{path} has schema version {found}; this Metaform supports version {version}.',
                          'install the Metaform release that wrote it')
     db.execute('PRAGMA foreign_keys=ON')
     db.execute('PRAGMA journal_mode=WAL')

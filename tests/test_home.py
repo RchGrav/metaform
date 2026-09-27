@@ -96,6 +96,27 @@ def test_a_base_database_of_an_unknown_schema_version_is_refused_and_not_written
 
 
 @pytest.mark.req('STORE-029')
+def test_a_home_written_before_the_stores_layout_changed_still_opens(home, tmp_path):
+    """Rich, 2026-09-27: the metaform store's layout changed and his whole home was refused, the registry of projects
+    and settings included, whose own layout had not changed. Each kind of database keeps its own version."""
+    from metaform.data import history, prompts
+    folder = tmp_path / 'p'
+    folder.mkdir()
+    metaform_home.add_project('p', folder)
+    history.add_origin('p')
+    prompts.prompts()
+    for path in (home / 'metaform.sqlite3', home / 'projects' / 'p' / 'history.sqlite3'):
+        db = sqlite3.connect(path)
+        db.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
+        db.commit()
+        db.close()
+    assert metaform_home.project('p') is not None
+    assert len(history.origins('p')) == 1
+    metaform_home.add_project('q', tmp_path)
+    assert {record.project_id for record in metaform_home.projects()} == {'p', 'q'}
+
+
+@pytest.mark.req('STORE-029')
 def test_a_store_of_an_unknown_schema_version_is_refused_and_not_written(home, store):
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
