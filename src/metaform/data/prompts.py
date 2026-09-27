@@ -82,15 +82,8 @@ class PromptUse(Record):
 
 @contextmanager
 def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
-    path = home.home() / 'prompts.sqlite3'
-    if not write and not path.exists():
-        db = sqlite.memory(PROMPT_SCHEMA)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite.connect(path)
-        sqlite.prepare(db, path, PROMPT_SCHEMA, create=write)
-    db.row_factory = sqlite3.Row
-    try:
+    with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write) as db:
+        db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db
@@ -98,8 +91,6 @@ def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
             db.execute('ROLLBACK')
             raise
         db.execute('COMMIT')
-    finally:
-        db.close()
 
 
 def _version(row: sqlite3.Row, notices: tuple[Notice, ...] = ()) -> PromptVersion:

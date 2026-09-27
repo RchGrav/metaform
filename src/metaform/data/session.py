@@ -31,15 +31,14 @@ class Tx:
 
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
-def open_store(path: Path, *, create: bool) -> sqlite3.Connection:
-    db = sqlite.connect(path)
-    try:
-        sqlite.prepare(db, path, STORE_SCHEMA, create=create)
-    except BaseException:
-        db.close()
-        raise
-    db.row_factory = sqlite3.Row
-    return db
+
+
+@contextmanager
+def open_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
+    """A prepared connection to one store file, opened inside its lock, STORE-006."""
+    with sqlite.opened(path, STORE_SCHEMA, write=write) as db:
+        db.row_factory = sqlite3.Row
+        yield db
 
 
 class Session:
@@ -72,21 +71,16 @@ class Session:
         if metaform is None:
             raise StoreError(f'Project {self.project_id} has no metaform {self.metaform_id}.', 'metaform list metaforms')
         path = home.store_path(self.project_id, metaform.metaform_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite.writer_lock(path):
-            db = open_store(path, create=True)
+        with open_store(path, write=True) as db:
+            db.execute('BEGIN IMMEDIATE')
             try:
-                db.execute('BEGIN IMMEDIATE')
-                try:
-                    yield Tx(db, metaform.metaform_id, self.project_id, True, named=self.metaform_id is not None)
-                except BaseException:
-                    db.execute('ROLLBACK')
-                    raise
-                db.execute('COMMIT')
-                if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
-                    changes.note(self.project_id, metaform.metaform_id)
-            finally:
-                db.close()
+                yield Tx(db, metaform.metaform_id, self.project_id, True, named=self.metaform_id is not None)
+            except BaseException:
+                db.execute('ROLLBACK')
+                raise
+            db.execute('COMMIT')
+            if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
+                changes.note(self.project_id, metaform.metaform_id)
 
     @contextmanager
     def read(self) -> Generator[Tx, None, None]:
@@ -95,24 +89,20 @@ class Session:
             yield joined
             return
         metaform = self._metaform(create=False)
-        path = None if metaform is None else home.store_path(self.project_id, metaform.metaform_id)
-        if path is None or not path.exists():
+        if metaform is None:
             db = sqlite.memory(STORE_SCHEMA)
             db.row_factory = sqlite3.Row
             try:
-                yield Tx(db, None if metaform is None else metaform.metaform_id, self.project_id, False)
+                yield Tx(db, None, self.project_id, False)
             finally:
                 db.close()
             return
-        db = open_store(path, create=False)
-        try:
+        with open_store(home.store_path(self.project_id, metaform.metaform_id), write=False) as db:
             db.execute('BEGIN')
             try:
-                yield Tx(db, metaform.metaform_id if metaform else None, self.project_id, False)
+                yield Tx(db, metaform.metaform_id, self.project_id, False)
             finally:
                 db.execute('COMMIT')
-        finally:
-            db.close()
 
     @contextmanager
     def atomic(self) -> Generator[Tx, None, None]:

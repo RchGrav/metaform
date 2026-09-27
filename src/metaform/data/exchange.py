@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from collections.abc import Iterable, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -72,16 +73,10 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
                  'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'unapplied',
                  'correction_stack', 'requires'):
         document[name] = []
-    path = home.store_path(project_id, metaform.metaform_id)
-    if not path.exists():
-        return document
-    db = open_store(path, create=False)
-    try:
+    with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
         _fill(db, document, layer_names)
         db.execute('COMMIT')
-    finally:
-        db.close()
     return document
 
 
@@ -347,42 +342,37 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
                               'layers_skipped': 0, 'things_added': 0, 'things_skipped': 0, 'notices': notices}
     opened: list[sqlite3.Connection] = []
     created: list[Path] = []
-    try:
-        for item in planned:
-            path = home.store_path(item.project_id, item.metaform['metaform']['metaform_id'])
-            if not path.exists():
-                created.append(path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            db = open_store(path, create=True)
-            opened.append(db)
-            db.execute('BEGIN IMMEDIATE')
-            _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
-        with home.base(write=True) as base:
+    with ExitStack() as stores:
+        try:
             for item in planned:
-                if not item.registered:
-                    home.register_in(base, item.record)
-                head = item.metaform['metaform']
-                added = home.import_metaform_in(base, item.project_id, head['metaform_id'], head['name'],
-                                                head['created'], activate=item.activate,
-                                                never_active=item.never_active)
-                report['metaforms_added' if added else 'metaforms_skipped'] += 1
-        for db in opened:
-            db.execute('COMMIT')
-    except BaseException as error:
-        for db in opened:
-            if db.in_transaction:
-                db.execute('ROLLBACK')
-        for db in opened:
-            db.close()
-        opened = []
-        for path in created:
-            home.remove_store(path)
-        if isinstance(error, sqlite3.IntegrityError):
-            raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
-        raise
-    finally:
-        for db in opened:
-            db.close()
+                path = home.store_path(item.project_id, item.metaform['metaform']['metaform_id'])
+                if not path.exists():
+                    created.append(path)
+                db = stores.enter_context(open_store(path, write=True))
+                opened.append(db)
+                db.execute('BEGIN IMMEDIATE')
+                _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
+            with home.base(write=True) as base:
+                for item in planned:
+                    if not item.registered:
+                        home.register_in(base, item.record)
+                    head = item.metaform['metaform']
+                    added = home.import_metaform_in(base, item.project_id, head['metaform_id'], head['name'],
+                                                    head['created'], activate=item.activate,
+                                                    never_active=item.never_active)
+                    report['metaforms_added' if added else 'metaforms_skipped'] += 1
+            for db in opened:
+                db.execute('COMMIT')
+        except BaseException as error:
+            for db in opened:
+                if db.in_transaction:
+                    db.execute('ROLLBACK')
+            stores.close()
+            for path in created:
+                home.remove_store(path)
+            if isinstance(error, sqlite3.IntegrityError):
+                raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
+            raise
     return report
 
 

@@ -120,19 +120,7 @@ def path_key(path: Path | str) -> str:
 @contextmanager
 def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the base database. A read of a home with no base database creates nothing."""
-    path = base_path()
-    if not write and not path.exists():
-        db = sqlite.memory(BASE_SCHEMA)
-        try:
-            yield db
-        finally:
-            db.close()
-        return
-    if write:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite.connect(path)
-    try:
-        sqlite.prepare(db, path, BASE_SCHEMA, create=write)
+    with sqlite.opened(base_path(), BASE_SCHEMA, write=write) as db:
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db
@@ -140,8 +128,6 @@ def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
             db.execute('ROLLBACK')
             raise
         db.execute('COMMIT')
-    finally:
-        db.close()
 
 
 # Projects ---------------------------------------------------------------------
