@@ -106,7 +106,43 @@ function showLayers(open) {
 $('#layersBtn').onclick = event => { event.stopPropagation(); showLayers($('#layerlist').hidden); };
 document.addEventListener('click', event => {
   if (!$('#layerlist').hidden && !event.target.closest('.layerpick')) showLayers(false);
+  if (!$('#clearbox').hidden && !event.target.closest('.clearpick')) showClear(false);
 });
+
+/* ---------- clearing the project: what goes and what stays, asked on the page, VIEW-019 ----------
+ * The warning is the command's own caution and the clear is the command's own operation, PROJ-025; every open page,
+ * this one among them, follows it by the push, VIEW-018. */
+function showClear(open) {
+  $('#clearbox').hidden = !open;
+  $('#clearBtn').setAttribute('aria-expanded', String(open));
+}
+$('#clearBtn').onclick = async event => {
+  event.stopPropagation();
+  if (!$('#clearbox').hidden) return showClear(false);
+  let found;
+  try { found = await getJson(`/api/clear-preview?project=${encodeURIComponent(S.project)}`); }
+  catch (error) { return toast(error.message); }
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, `Clear ${found.project}?`), h('span', {}, found.caution),
+    h('div', {class: 'toolbar'},
+      h('button', {class: 'btn danger confirm', onclick: () => clearProject(found.project)}, 'Clear it'),
+      h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
+  showClear(true);
+};
+async function clearProject(project) {
+  const response = await fetch('/api/clear-project', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project, confirm: true})});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) { showClear(false); return toast(body.error || 'The project was not cleared.'); }
+  const left = body.not_removed || [];
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'said'}, body.said),
+    left.length ? [h('b', {}, 'Not removed, still on disk:'),
+      h('ul', {class: 'left'}, left.map(item => h('li', {}, `${item.path}: ${item.reason}`)))] : null,
+    (body.notices || []).map(notice => h('span', {class: 'next'}, notice.message)),
+    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+}
+/* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
+const noMetaform = () => !S.metaforms.length;
+const noneYet = () => `${S.project} has no metaform yet. The next intake creates one.`;
 $('#apply').onclick = async () => {
   if (S.view === null) return;
   const response = await fetch('/api/apply-layers', {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -360,7 +396,8 @@ function renderLegend() {
   for (const condition of CONDITIONS) if (open.has(condition))
     legend.append(h('span', {style: {'--c': `var(--${condition})`}}, h('i', {class: 'dot'}), `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
-  $('#count').textContent = `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
+  $('#count').textContent = noMetaform() ? 'no metaform yet'
+    : `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
     + (following() ? ' · intake being recorded' : '');
 }
 
@@ -404,7 +441,7 @@ async function build2D() {
   if (inner.size) lines.push('classDef sub font-size:11px');
   drawn.forEach((join, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(join.provider)}`));
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
-  if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'This metaform has no elements in these layers.')); return; }
+  if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, noMetaform() ? noneYet() : 'This metaform has no elements in these layers.')); return; }
   if (S.elements.size > MAP2D) {
     M.svg = null; M.nodes = new Map(); M.edges = [];
     fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, `The 2D map lays out at most ${MAP2D} elements; these layers show ${S.elements.size}. The 3D view shows them all.`));
@@ -802,6 +839,7 @@ function backOut() {
 }
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !$('#layerlist').hidden) { event.preventDefault(); showLayers(false); $('#layersBtn').focus(); return; }
+  if (event.key === 'Escape' && !$('#clearbox').hidden) { event.preventDefault(); showClear(false); $('#clearBtn').focus(); return; }
   if (event.target.closest('select, input, textarea, .CodeMirror')) return;
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
   if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
@@ -996,6 +1034,7 @@ async function renderObject(id) {
 let provLayer = null;
 async function renderProv() {
   const pane = $('#p-prov');
+  if (noMetaform()) return fill(pane, h('p', {class: 'empty'}, noneYet()));
   provLayer = provLayer && S.layers.some(layer => layer.name === provLayer) ? provLayer : S.layers[0]?.name;
   const list = h('div', {class: 'layerlist'}, S.layers.map(layer => h('button', {'aria-pressed': String(layer.name === provLayer),
     style: {'--c': `var(${colorVar(layer.name)})`}, onclick: () => { provLayer = layer.name; renderProv(); }},
@@ -1099,6 +1138,7 @@ $('#saveBtn').onclick = async () => {
 /* ---------- corrections: removed one at a time from the top, after a warning, VIEW-014 ---------- */
 async function renderCorr(warning = null) {
   const pane = $('#p-corr');
+  if (noMetaform()) return fill(pane, h('p', {class: 'empty'}, noneYet()));
   fill(pane, h('div', {class: 'eyebrow'}, 'Correction stack · applied in order, newest on top'),
     h('p', {class: 'empty'}, 'Correction layers always apply and cannot be toggled. Only the top one can be removed.'));
   let stack;
@@ -1273,7 +1313,7 @@ async function loadGraph() {
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
-  if (!start) fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
+  if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
   else {
     select(start, false);
     if (!keep) setTimeout(() => { if (G) G.zoomToFit(reduced() ? 0 : 800, 60); }, 2200);
@@ -1284,6 +1324,7 @@ async function loadMetaform() {
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();
   if ($('#p-prov').hidden === false) renderProv();
+  if ($('#p-corr').hidden === false) renderCorr();
   await loadGraph();
 }
 async function loadProject(wanted = null) {
@@ -1291,7 +1332,9 @@ async function loadProject(wanted = null) {
   S.metaforms = metaforms;
   const active = metaforms.find(item => item.metaform_id === wanted) || metaforms.find(item => item.active) || metaforms[0];
   S.metaform = active ? active.metaform_id : null;
-  fill($('#mf'), ...metaforms.map(item => h('option', {value: item.metaform_id, selected: item === active}, item.name + (item.active ? ' · active' : ''))));
+  fill($('#mf'), ...(metaforms.length ? metaforms.map(item => h('option', {value: item.metaform_id, selected: item === active}, item.name + (item.active ? ' · active' : '')))
+    : [h('option', {}, 'none yet')]));
+  $('#mf').disabled = !metaforms.length;
   await loadMetaform();
 }
 $('#proj').onchange = () => { S.project = $('#proj').value; location.hash = 'p=' + encodeURIComponent(S.project); Object.assign(LIVE, {layer: null, metaform: null, seen: ''}); loadProject(); };

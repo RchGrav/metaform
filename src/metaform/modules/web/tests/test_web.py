@@ -1489,3 +1489,260 @@ def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element
     words = page.evaluate('document.querySelector("#map2d svg").textContent')
     assert 'The tick is its own interrupt.' in words and 'One loop serves every timer.' in words
     assert problems == []
+
+
+# ---------- clearing the project from the page, VIEW-019 and PROJ-025 ----------
+
+CLEARED = ('Cleared proj: one metaform, main, and one report file. Its registration, folder, settings, origins and '
+           'variants stay.')
+NO_METAFORM = 'proj has no metaform yet. The next intake creates one.'
+LEFT = ('It could not be removed and is still on disk. Close any program that has it open, such as a running web GUI, '
+        'or fix its permissions, then use Clear project again.')
+
+
+def own_write(port):
+    """The headers of a write from the GUI's own page: its Origin and a JSON body, VIEW-002."""
+    return {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{port}'}
+
+
+def clear(port, project='proj', **given):
+    return api(port, '/api/clear-project', method='POST', body=json.dumps({'project': project, **given}),
+               headers=own_write(port))
+
+
+def caution_of(run, folder):
+    """The caution `metaform clear project` prints when it stops without --confirm, PROJ-025."""
+    return run('clear', 'project', cwd=folder, ok=False).stderr.splitlines()[0].removeprefix('Error: ')
+
+
+def metaform_names(run, folder):
+    return [line.split()[0] for line in run('list', 'metaforms', cwd=folder).stdout.splitlines()]
+
+
+def kept(home):
+    """The bytes of every store, the home's base and every report file, to show nothing changed."""
+    paths = sorted((home / 'projects').rglob('*.sqlite3')) + [home / 'metaform.sqlite3'] + sorted(
+        path for path in (home / 'projects').rglob('reports/*') if path.is_file())
+    return {str(path): path.read_bytes() for path in paths}
+
+
+def events_on(port):
+    """Open the events stream as a page does; returns what it hears and an event set when the first arrives."""
+    import threading
+    heard, ready, first = [], threading.Event(), threading.Event()
+
+    def listen():
+        stream = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
+        try:
+            stream.request('GET', '/api/events', headers={'Host': f'127.0.0.1:{port}'})
+            answer = stream.getresponse()
+            ready.set()
+            for line in answer:
+                if line.startswith(b'data:'):
+                    heard.append(json.loads(line[5:]))
+                    first.set()
+        except OSError:
+            pass
+        finally:
+            stream.close()
+    threading.Thread(target=listen, daemon=True).start()
+    assert ready.wait(10)
+    return heard, first
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('VIEW-002')
+@pytest.mark.req('PROJ-025')
+def test_the_page_reads_the_commands_caution_and_a_clear_without_confirm_or_from_elsewhere_changes_nothing(
+        run, home, web, mapped):
+    run('feedback', 'The subtype fields did not match.', cwd=mapped)
+    started(run)
+    before = kept(home)
+    caution = caution_of(run, mapped)
+    assert caution.startswith('Clearing proj removes one metaform, main, with its store, and one report file.')
+    assert api(web, '/api/clear-preview?project=proj') == (200, {'project': 'proj', 'metaforms': ['main'],
+                                                                 'reports': 1, 'caution': caution})
+    for given in ({}, {'confirm': False}):
+        assert clear(web, **given) == (400, {'error': caution, 'next': 'If you are sure: send confirm true'})
+    confirmed = json.dumps({'project': 'proj', 'confirm': True})
+    as_json = {'Content-Type': 'application/json'}
+    assert request(web, '/api/clear-project', method='POST', body=confirmed, headers=as_json)[0] == 403
+    assert request(web, '/api/clear-project', method='POST', body=confirmed,
+                   headers={**as_json, 'Origin': 'http://rebound.example'})[0] == 403
+    assert request(web, '/api/clear-project', method='POST', body=confirmed,
+                   headers={'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'text/plain'})[0] == 415
+    rebound = f'rebound.example:{web}'
+    assert request(web, '/api/clear-project', method='POST', body=confirmed, host=rebound,
+                   headers={**as_json, 'Origin': f'http://{rebound}'})[0] == 403
+    status, answer = api(web, '/api/clear-preview?project=nobody')
+    assert status == 404 and answer['next'] == 'metaform list projects'
+    status, answer = clear(web, 'nobody', confirm=True)
+    assert status == 404 and answer['next'] == 'metaform list projects'
+    assert kept(home) == before
+    assert metaform_names(run, mapped) == ['main']
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('VIEW-018')
+def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_page_is_told(run, home, web, mapped,
+                                                                                       tmp_path):
+    run('memory', 'add-observations', 'element:code.timer.kitchen', 'Drifts under load.', cwd=mapped)
+    run('add', 'metaform', 'fresh', cwd=mapped)
+    run('feedback', 'The subtype fields did not match.', cwd=mapped)
+    run('add', 'origin', cwd=mapped)
+    work = tmp_path / 'work'
+    work.mkdir()
+    (work / 'notes.txt').write_text('second\n', encoding='utf-8')
+    run('add', 'variant', str(work), cwd=mapped)
+    (mapped / 'notes.txt').write_text('first\n', encoding='utf-8')
+    started(run)
+    before = {'origins': run('list', 'origins', cwd=mapped).stdout,
+              'variants': run('list', 'variants', cwd=mapped).stdout,
+              'settings': run('config', '--show', '--json', cwd=mapped).stdout,
+              'files': sorted(path.name for path in mapped.iterdir())}
+    heard, first = events_on(web)
+    status, answer = clear(web, confirm=True)
+    assert status == 200 and answer == {
+        'project': 'proj', 'metaforms': ['main', 'fresh'], 'reports': 1,
+        'said': ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
+                 'settings, origins and variants stay.')}
+    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    assert run(cwd=mapped).stdout.count('Metaform: none yet') == 1
+    assert run('list', 'origins', cwd=mapped).stdout == before['origins']
+    assert run('list', 'variants', cwd=mapped).stdout == before['variants']
+    assert run('config', '--show', '--json', cwd=mapped).stdout == before['settings']
+    assert [line.split()[0] for line in run('list', 'projects').stdout.splitlines()] == ['proj']
+    assert sorted(path.name for path in mapped.iterdir()) == before['files']
+    assert (mapped / 'notes.txt').read_text(encoding='utf-8') == 'first\n'
+    assert api(web, '/api/metaforms?project=proj')[1]['results'] == []
+    assert first.wait(5)
+    time.sleep(0.5)  # a second event, if one were sent, arrives within this
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('PROJ-025')
+def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_and_what_to_do(run, home, web, mapped,
+                                                                                            unremovable):
+    run('feedback', 'The subtype fields did not match.', cwd=mapped)
+    reports = home / 'projects' / 'proj' / 'reports'
+    (stuck,) = reports.iterdir()
+    started(run)
+    with unremovable(stuck):
+        status, answer = clear(web, confirm=True)
+        assert stuck.is_file()
+    assert status == 200 and answer['said'] == CLEARED
+    assert [entry['path'] for entry in answer['not_removed']] == [str(stuck)] and answer['not_removed'][0]['reason']
+    assert answer['notices'] == [{'where': 'not_removed', 'message': LEFT}]
+    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+    assert clear(web, confirm=True) == (200, {
+        'project': 'proj', 'metaforms': [], 'reports': 1,
+        'said': ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins and '
+                 'variants stay.')})
+    assert not reports.exists()
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-002')
+def test_on_another_bind_address_the_clear_and_its_preview_need_the_token(run, web, mapped):
+    lan = lan_address()
+    if lan is None:
+        pytest.skip('this machine has no address besides loopback')
+    run('set', '--web-bind=0.0.0.0')
+    token = started(run)['token']
+    body = json.dumps({'project': 'proj', 'confirm': True})
+    headers = {'Content-Type': 'application/json', 'Origin': f'http://{lan}:{web}'}
+    assert request(web, '/api/clear-preview?project=proj', address=lan)[0] == 403
+    assert request(web, '/api/clear-project', address=lan, method='POST', body=body, headers=headers)[0] == 403
+    assert metaform_names(run, mapped) == ['main']
+    assert request(web, '/api/clear-preview?project=proj', address=lan, headers={'X-Metaform-Token': token})[0] == 200
+    status, _, _ = request(web, '/api/clear-project', address=lan, method='POST', body=body,
+                           headers={**headers, 'X-Metaform-Token': token})
+    assert status == 200 and metaform_names(run, mapped) == []
+
+
+def no_metaform_shown(page):
+    """The page shows the project with no metaform: in the metaform list, the 2D map, the panel and the count line."""
+    page.wait_for_function(f'() => document.querySelector("#viewport").innerText.includes("{NO_METAFORM}") && '
+                           f'document.querySelector("#p-object").innerText.includes("{NO_METAFORM}")', timeout=5000)
+    assert page.inner_text('#count') == 'no metaform yet'
+    assert page.evaluate('[...document.querySelectorAll("#mf option")].map(option => option.textContent)') == [
+        'none yet']
+    assert page.is_disabled('#mf')
+    assert page.evaluate('window.metaform.drawn().nodes') == 0
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-012')
+def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_open_page_shows_no_metaform(
+        run, home, web, mapped, browser):
+    run('feedback', 'The subtype fields did not match.', cwd=mapped)
+    started(run)
+    caution = caution_of(run, mapped)
+    page, problems, remote = opened(browser, web)
+    other, other_problems, _ = opened(browser, web)
+    for shown in (page, other):
+        shown.wait_for_function('() => window.metaform.loaded()')
+    assert page.inner_text('header #clearBtn') == 'Clear project'
+    other.click('#t-corr')  # a tab left open is redrawn by the push, not only when clicked again
+    other.wait_for_selector('#p-corr .lyr.top')
+    before = kept(home)
+    page.click('#clearBtn')
+    page.wait_for_selector('#clearbox .warn')
+    assert caution in page.inner_text('#clearbox')
+    page.keyboard.press('Escape')
+    assert page.is_hidden('#clearbox')
+    page.click('#clearBtn')
+    page.click('#clearbox button.keep')
+    assert page.is_hidden('#clearbox')
+    assert kept(home) == before and metaform_names(run, mapped) == ['main']
+    page.click('#clearBtn')
+    page.click('#clearbox button.confirm')
+    page.wait_for_selector('#clearbox .said')
+    assert page.inner_text('#clearbox .said') == CLEARED
+    assert 'Not removed' not in page.inner_text('#clearbox')
+    assert metaform_names(run, mapped) == []
+    for shown in (page, other):
+        no_metaform_shown(shown)
+    other.wait_for_function(f'() => document.querySelector("#p-corr").innerText.includes("{NO_METAFORM}")',
+                            timeout=5000)
+    other.click('#t-prov')
+    other.wait_for_function(f'() => document.querySelector("#p-prov").innerText.includes("{NO_METAFORM}")')
+    assert problems == [] and other_problems == [] and remote == []
+    run('intake', 'start', cwd=mapped)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=mapped)
+    page.wait_for_function('() => window.metaform.live() !== null && window.metaform.drawn().nodes === 1',
+                           timeout=15000)
+    page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 1', timeout=15000)
+    assert not page.is_disabled('#mf') and 'no metaform' not in page.inner_text('#count')
+    run('intake', 'finish', cwd=mapped)
+    page.wait_for_function('() => window.metaform.live() === null && window.metaform.loaded()', timeout=15000)
+    run('clear', 'project', '--confirm', cwd=mapped)
+    no_metaform_shown(page)
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-012')
+def test_the_page_names_what_the_clear_could_not_remove_with_its_reason_and_what_to_do(run, home, web, mapped, browser,
+                                                                                      unremovable):
+    run('feedback', 'The subtype fields did not match.', cwd=mapped)
+    (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.click('#clearBtn')
+    page.wait_for_selector('#clearbox button.confirm')
+    with unremovable(stuck):
+        page.click('#clearbox button.confirm')
+        page.wait_for_selector('#clearbox .left li')
+    assert page.inner_text('#clearbox .said') == CLEARED
+    assert 'Not removed, still on disk:' in page.inner_text('#clearbox')
+    (line,) = page.locator('#clearbox .left li').all_inner_texts()
+    assert line.startswith(f'{stuck}: ') and len(line) > len(f'{stuck}: ')
+    assert page.inner_text('#clearbox .next') == LEFT
+    assert problems == []

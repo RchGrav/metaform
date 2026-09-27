@@ -39,6 +39,11 @@ header{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20p
 .layerrow .meta{margin-left:auto;font:11px var(--mono);color:var(--faint);white-space:nowrap}
 .layerrow input{accent-color:var(--signal);margin:0}
 .layerrow.fixed,.layerrow:has(input:disabled){cursor:default;color:var(--muted)}
+.clearpick{position:relative}
+.clearbtn{padding:5px 12px;border:1px solid var(--line-2);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;font-size:12px}
+.clearbtn[aria-expanded="true"]{border-color:var(--correction);color:var(--correction)}
+.clearbox{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(420px,92vw);background:var(--panel);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.clearbox .left{font:12px var(--mono);word-break:break-all}
 .apply{padding:5px 12px;border-radius:6px;border:1px solid var(--signal);background:transparent;color:var(--signal);cursor:pointer;font-size:12px}
 .apply[disabled]{opacity:.35;cursor:default}
 .note{font-size:12px;color:var(--faint);margin:8px 0}

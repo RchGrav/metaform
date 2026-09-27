@@ -6,6 +6,8 @@ Metaform's one web GUI for the user: one server per Metaform home, serving every
 
 People see the map in a browser. `metaform web` starts the server and prints its address; run again from any folder, it prints the address it already runs at. `metaform web stop` stops it. Before an intake, agents start it and tell the user the address, while `--web-autostart` is on, so the map can be watched as it is recorded. It ships enabled.
 
+Clear project in the header clears the selected project as `metaform clear project <project> --confirm` does, PROJ-025 and VIEW-019: it shows the command's caution, what goes and what stays, asks on the page, then clears through the same chassis operation and names any file it could not remove with what to do. Every open page then shows the project with no metaform until the next intake.
+
 The page shows each node's condition from its work records, MAP-046: a node with an open `tbd` record is drawn ghostly, at 70% opacity, and turns solid when its task is done; one with an open `broken` record flashes red until it is resolved; `cruft` keeps its look. The panel lists the selected object's records with their note, task, held and reviewed flags, and the resolution once done. `/api/work` is the store's `work` read.
 
 ## Template version
@@ -33,7 +35,7 @@ Started from template 0.3.0.
 
 ## The server
 
-`server.py` runs the standard library's threading HTTP server. Every request must carry a `Host` header naming the server's own address and port; on a wildcard bind only the port is checked, since the token guards every request there. On a bind address other than loopback, every request needs the home's token, kept in `run/web-token`: as `?t=` on the page URL, which also sets an `HttpOnly`, `SameSite=Strict` cookie, as that cookie, or as the `X-Metaform-Token` header. It serves `page/` at `/`, `vendor/` under `/vendor/`, `/api/server` with its process id and home, and `/api/projects` with every registered project. It writes what went wrong to `run/web.log`.
+`server.py` runs the standard library's threading HTTP server. Every request must carry a `Host` header naming the server's own address and port; on a wildcard bind only the port is checked, since the token guards every request there. On a bind address other than loopback, every request needs the home's token, kept in `run/web-token`: as `?t=` on the page URL, which also sets an `HttpOnly`, `SameSite=Strict` cookie, as that cookie, or as the `X-Metaform-Token` header. It serves `page/` at `/`, `vendor/` under `/vendor/`, `/api/server` with its process id and home, `/api/projects` with every registered project, and `/api/clear-preview` with what clearing a project removes and keeps. Its four writes, VIEW-011, are POSTs from its own page, with the page's `Origin` and a JSON body: `/api/apply-layers`, `/api/save-prompt`, `/api/remove-correction` and `/api/clear-project`, which clears only with `confirm` true. It writes what went wrong to `run/web.log`.
 
 ## Events
 

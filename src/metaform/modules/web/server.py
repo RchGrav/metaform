@@ -134,6 +134,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/projects':
             return self.send(200, {'projects': [{'id': found.project_id, 'path': found.path}
                                                 for found in home.projects()]})
+        if url.path == '/api/clear-preview':
+            return self.clear_preview(query.get('project', [''])[-1])
         if url.path.startswith('/api/'):
             return self.read(url.path[5:], {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/':
@@ -204,14 +206,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the three writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the four writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
-                  '/api/save-prompt': self.save_prompt}
+                  '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -266,6 +268,29 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error), 'next': error.next_step})
         self.send(200, {'project': project.project_id, 'folder': str(folder), 'layers': assigned.new,
                         'notices': [{'where': 'layers', 'message': notice} for notice in assigned.notices]})
+
+    def clear_preview(self, project: str) -> None:
+        """What clearing the project removes and keeps, in the command's own caution; it changes nothing, VIEW-019."""
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        found = home.to_clear(project)
+        self.send(200, {**found.to_dict(), 'caution': found.caution})
+
+    def clear_project(self, given: dict[str, Any]) -> None:
+        """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and
+        only with `confirm` true, as the command only with `--confirm`, PROJ-025 and VIEW-019."""
+        project = str(given.get('project', ''))
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        if given.get('confirm') is not True:
+            return self.send(400, {'error': home.to_clear(project).caution,
+                                   'next': 'If you are sure: send confirm true'})
+        cleared = home.clear_project(project)
+        answer = {**cleared.to_dict(), 'said': cleared.said}
+        if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
+            answer['notices'] = [{'where': 'not_removed',
+                                  'message': f'{cleared.left} {cleared.remedy("use Clear project again")}'}]
+        self.send(200, answer)
 
     def given_token(self, query: dict[str, list[str]]) -> str | None:
         if query.get('t'):
