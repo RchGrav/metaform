@@ -632,3 +632,9 @@ Started by the stopped fix pass, reviewed and finished in the next session.
 - CAPTURE.md marks each point with the records that carry it, notes where a later decision replaced an earlier marker, and holds a new section of the points brought in from the orchestrator's notes.
 - Not placed, with the reason on each in CAPTURE.md: Jev, parked; coarse and deep intake, replaced by the one-step Canonical Intake; the XML workflow format, the workflow module's spec, D44; the DE as nearly the artifact and as this repository's chassis, an explanation of a term the Canonical Intake defines and a fact of this project's own map; the broken knowledge-tool node and the orientation-size measurement, which are not requirements.
 - No code, test or Canonical Intake changed. Checks: pytest collects all 616 tests, so every test's requirement marker names a record of the spec; every record ID and D number the sections and OPEN-QUESTIONS.md cite exists.
+
+## Step 64: the page's sizes on one scale, its secondary details quieter
+
+- The web page mixed font sizes of 10 to 15 px chosen one at a time, put the layer id in a bright bordered pill louder than the element's own name, wrote refs as `path: … · path: …`, and boxed every pill, the legend and each control. Sizes now come from one scale, 12, 14, 16, 18, 20 and 24 px; one radius and two control heights, 32 px in the header and 24 px on the maps, are tokens beside the palette.
+- Hierarchy: the layer shows as its color dot and quiet text, a ref as a muted key beside its value, pills as a soft tint of their color with no outline, the legend without its box, and Clear project as a quiet text action, since it is not the page's main action. The approved prototype's palette, fonts and dark map are unchanged.
+- Found and left for its own step: the 3D map fills about a third of its canvas, and neither the fit after load nor the F key widens it, so the fit's measure of the view is wrong somewhere. The 52 web tests pass.

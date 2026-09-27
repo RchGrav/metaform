@@ -933,7 +933,7 @@ function select(id, fly, keepTrail = false, stepping = false) {
 }
 
 function refsOf(refs) {
-  return refs && refs.length ? h('div', {class: 'refs'}, refs.map(ref => `${ref.key}: ${ref.value}`).join(' · ')) : null;
+  return refs && refs.length ? h('div', {class: 'refs'}, refs.map(ref => h('span', {}, h('span', {class: 'k'}, ref.key), ref.value))) : null;
 }
 /* The work records of the selected object, MAP-046: each with its condition, note and task, held and reviewed,
  * and its resolution once done; read from /api/work for the node and written into the panel's work box. */
