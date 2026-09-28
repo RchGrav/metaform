@@ -1983,7 +1983,7 @@ def contrast(one, other):
 
 
 LAYER_COLORS = ['--intake', '--memory', '--correction', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
-NODE_COLORS = ['--de', '--signal', '--text', '--cruft', '--dim', '--broken', *LAYER_COLORS]
+NODE_COLORS = ['--de', '--signal', '--text', '--cruft', '--broken', *LAYER_COLORS]
 LINK_COLORS = ['--tree', '--function', '--encounter', *LAYER_COLORS]
 LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--cruft',
             *LAYER_COLORS]
@@ -2011,12 +2011,18 @@ def test_in_every_theme_each_color_of_the_graph_stands_clear_of_its_background()
     """Every node, link and line of both views holds 3 to 1 against the background it is drawn on, a link as it is
     seen at its drawn opacity, and every label of the 2D map holds 4.5 to 1 against its box."""
     assert ".linkOpacity(Number(css('--link-opacity')))" in page_file('app.js')
+    assert "Number(css('--dim-keep'))" in page_file('app.js')
     low = []
     for name, colors in themes().items():
         ground, opacity = rgb(colors['--ground']), float(colors['--link-opacity'])
         for color in NODE_COLORS + LINES_2D + LABELS_3D:
             if contrast(rgb(colors[color]), ground) < 3:
                 low.append((name, color, 'on the background'))
+        keep = float(colors['--dim-keep'])  # a dimmed node keeps this much of its own color, the rest is the background
+        for color in NODE_COLORS:
+            seen = tuple(keep * own + (1 - keep) * back for own, back in zip(rgb(colors[color]), ground))
+            if contrast(seen, ground) < 3:
+                low.append((name, color, f'dimmed, keeping {keep}'))
         for color in LINK_COLORS:
             seen = tuple(opacity * own + (1 - opacity) * back for own, back in zip(rgb(colors[color]), ground))
             if contrast(seen, ground) < 3:
@@ -2051,6 +2057,10 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
       const others = [...document.querySelectorAll('#map2d svg g.node:not(.sel):not(.near), #map2d .edgePaths path, #labels3d span')];
       return others.length > 0 && !others.some(node => !/work-/.test(node.getAttribute('class') || '') && faded(node)); }''')
     assert before['ground'] == themes()['space']['--ground']
+    # the 2D map is drawn in a holder of no size, so drawing it adds nothing to the page and no scrollbar shows
+    page.evaluate('''() => { window.added = [];
+      new MutationObserver(list => { for (const change of list) for (const node of change.addedNodes)
+        if (node.parentNode === document.body) window.added.push(node.id); }).observe(document.body, {childList: true}); }''')
     for name, colors in themes().items():
         if name == 'space':
             continue
@@ -2061,6 +2071,8 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
         drawn = page.evaluate('window.metaform.linkColors()')
         assert {link['color'] for link in drawn if link['k'] == 'tree'} == {colors['--tree']}
         assert page.evaluate(box) != before['box']
+    assert page.evaluate('window.added') == []
+    assert page.evaluate('[document.documentElement.scrollWidth, document.documentElement.scrollHeight]') == [1280, 800]
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
     assert page.evaluate('document.documentElement.dataset.theme') == name == page.input_value('#theme')

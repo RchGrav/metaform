@@ -243,6 +243,12 @@ function colorOf(node) {
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
+/* A dimmed node keeps its own hue: its color with part of the background mixed in, the share set by the theme. */
+function dim(color) {
+  const keep = Number(css('--dim-keep')), channels = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
+  const back = channels(css('--ground'));
+  return '#' + channels(color).map((own, at) => Math.round(keep * own + (1 - keep) * back[at]).toString(16).padStart(2, '0')).join('');
+}
 const dimmed = node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
 /* The condition of a node in 3D, MAP-046, Rich 2026-09-27: an open tbd record draws it ghostly, at 70% opacity, an
  * open broken record flashes it red, steady red with reduced motion; cruft keeps its look. The sphere takes its own
@@ -259,7 +265,7 @@ function paint3d(node) {
   }
   object.material.opacity = tbd ? 0.7 : 0.95;
   const red = broken && (reduced() || Math.floor(performance.now() / 500) % 2 === 0);
-  object.material.color.set(red ? css('--broken') : dimmed(node) ? css('--dim') : colorOf(node));
+  object.material.color.set(red ? css('--broken') : dimmed(node) ? dim(colorOf(node)) : colorOf(node));
 }
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
@@ -281,7 +287,7 @@ function start3D() {
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
-    .nodeColor(node => dimmed(node) ? css('--dim') : colorOf(node))
+    .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
@@ -461,7 +467,7 @@ async function build2D() {
     return;
   }
   let result;
-  try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n')); }
+  try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   if (generation !== M.generation) return;
   const inside = IN.length > 0;
@@ -635,7 +641,7 @@ async function drawInside(arriving = false) {
   }
   lines.push(...edges, ...['center', 'item', 'stub', 'more', 'purpose', 'sub'].map(kind => `classDef ${kind} font-size:11px`));
   let result;
-  try { result = await window.mermaid.render(`inside${generation}`, lines.join('\n')); }
+  try { result = await window.mermaid.render(`inside${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill($('#viewport'), h('p', {class: 'empty', style: {padding: '16px'}}, 'This node could not be drawn.')); return; }
   if (generation !== insideGen || IN.at(-1) !== level) return;
   const svg = mountSvg(result, $('#viewport'), false);

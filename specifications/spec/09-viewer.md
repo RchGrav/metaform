@@ -318,6 +318,9 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - Each theme is one block of the page's styles, `:root[data-theme="<name>"]`, that defines the same set of colors; `space` is the theme of a page with no choice made. The script and the other style rules hold no color of their own and read each from the theme.
   - Every theme's graph colors come from one rule: the hue and chroma of the color's role, and the lightness at which it holds its contrast on that theme's background, with chroma reduced where the screen cannot show it.
   - Contrast is the WCAG ratio. A node, a line of the 2D map, and a link as it is seen at its drawn opacity each hold 3 to 1 against the background. A label of the 2D map holds 4.5 to 1 against its box.
+  - Each role takes the most colorful color the screen shows for its hue at a lightness that holds its ratio. The dark themes have a background near black and text near white.
+  - A dimmed node keeps its own hue: its color with part of the background mixed in, the share set by the theme as `--dim-keep`, and it holds 3 to 1 so.
+  - The 2D map is laid out in a holder of no size before it is shown, so drawing it adds nothing to the page and no scrollbar shows.
   - The choice is the viewer's own and is kept in the browser's local storage, so it changes no setting, VIEW-007. A small script in the page's head applies it before the page is drawn.
   - On a change both views are recolored in place: the 3D view takes the new background, node and link colors, and the 2D map is drawn again.
   - `window.metaform.ground()` returns the 3D view's background color, so a browser check can read it.
