@@ -1,0 +1,97 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<result id="metaform-merged-sonnet-20260920">
+	<elements location="/home/rich/metaform">
+		<receiving_entity namespace_address="entity.agent.host" name_length="2" external="true">
+			<joins>
+				<join type="purpose" namespace_address="code.chassis.metaform" purpose="Start each task on a project from its recorded functional account instead of re-reading the artifact, and keep that account current as the artifact changes." non_goal="Never leave the agent to author storage detail beyond the notable elements and joins it was asked for." function="Hosts installed modules behind one operation boundary reachable by command line, MCP and web, stores each project's account as revisioned receiver-owned joins over a namespace of Types, and hands fresh workers one bound assignment at a time." relation="hosts the modules and records the account for" observation="A metaform chassis records purpose joins owned by their receivers, not a file-by-file description of the artifact." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.chassis.metaform" name_length="2" role="DE">
+			<joins>
+				<join type="purpose" namespace_address="code.runtime.module" purpose="Add or remove a capability by installing a module, with no change to the chassis." non_goal="Never execute a module's code only to list or inspect it." function="Discovers modules from installed sources under a plain-text installation policy, reads their declared platform and commands without importing them, activates each in a private import that reads current source, and serves its operations, events and asynchronous jobs from one persistent global host until it tears the module down settled." relation="activates and serves modules for" observation="Every capability of a metaform chassis reaches its users through a module's registered operations." />
+				<join type="purpose" namespace_address="code.store.namespace" purpose="Keep the project's account as durable records that later assignments and modules read without new inference." non_goal="Never overwrite a recorded revision when the account changes." function="Stores Types, Elements and joins per owner across configured SQLite files and portable JSON graphs, holds immutable payload blobs and versioned component schemas, captures model revisions, and resolves owner-qualified references." relation="stores the account for" observation="Each join is stored under the entity that owns the need and names its provider by namespace address." />
+				<join type="purpose" namespace_address="code.intake.artifact" purpose="Obtain the first account of an artifact from a fresh Native worker that reads the artifact itself." non_goal="Never make the worker describe more than notable elements and joins." function="Starts a resumable versioned run that captures a source baseline, assigns a Native worker under a coarse contract of elements keyed by namespace position and receiver-owned joins, then expands the contribution into Type, Element, binding and join records the same way every time and reports source changes against the baseline." relation="builds the first account for" observation="Intake records what the artifact does for its receivers, keyed by namespace position." />
+				<join type="purpose" namespace_address="code.generator.knowledge" purpose="Get knowledge of recorded functions and of whole property-qualified composites, and an outside-in report of what the account misses." non_goal="Never replace the recorded account with generated knowledge." function="Renders base knowledge and composite knowledge from a captured revision with property applicability traced to its origin, and attaches knowledge layers, blind-spot reports included, as immutable generations associated to a model." relation="generates knowledge for" observation="Generated knowledge attaches to a recorded model revision and does not alter it." />
+				<join type="purpose" namespace_address="code.transformer.model" purpose="Change or grow a recorded model on purpose and see what the change touched." non_goal="Never alter a recorded model implicitly." function="Applies explicit structural patches and purposeful expansions through the workflow lifecycle, clones and compares models, measures structural correspondence between independently authored graphs, and records each change's knowledge consequences." relation="transforms models for" observation="Structural change to a model is an explicit recorded act." />
+				<join type="purpose" namespace_address="code.engine.workflow" purpose="Run multi-step procedures over the account with state that survives restarts." non_goal="Never execute a procedure merely because it was imported." function="Stores authored workflows in a native grammar as revisable receiver-owned joins, imports other formats losslessly without executing them, evaluates JSON expressions on transitions, holds run state durably over the assignment and namespace services, and regenerates from retained causal context on request." relation="runs procedures for" observation="Workflow definitions and their runs are stored as joins in the same namespace as the account." />
+				<join type="purpose" namespace_address="code.interface.command" purpose="Reach every operation and set up modules from a terminal without knowing command names." function="Presents contextual Click menus scoped to the project, nonce and module of the current context, and a full-screen setup driven by registered module declarations, forwarding each choice to the persistent host." relation="presents the operations to" observation="The command line and the setup screen show only what installed modules declare." />
+				<join type="purpose" namespace_address="code.transport.mcp" purpose="Give a host agent the assigned-work operations inside its own client." function="Serves the chassis's explicit assigned-work operations over MCP stdio and returns tool content as blocks the host consumes." relation="exposes the operations to" observation="MCP presents the same operations the command line does and adds no behavior of its own." />
+				<join type="purpose" namespace_address="code.server.web" purpose="Let a person see and edit the account, its namespace graph and its workflows in a browser." non_goal="Never let a browser session act without its own token access." function="Runs one ASGI process for the global data root that serves the explorer, namespace graph and workflow editor, admits browsers through token access links and independent sessions, and shuts down on acknowledgment." relation="shows the account to" observation="The web interface is a projection over the shared store and holds no data of its own." />
+				<join type="purpose" namespace_address="code.history.artifact" purpose="Checkpoint and recover an artifact's working files without committing to its repository." function="Records parent-linked work versions as ordinary extractable files with origins and sibling variants tied to namespace provenance, and lists, diffs and extracts them." relation="checkpoints artifacts for" observation="Artifact versions are kept apart from the artifact's own version control." />
+				<join type="purpose" namespace_address="code.packager.portable" purpose="Carry a project's account and chosen modules to a machine that has no chassis installed, and share reusable knowledge." non_goal="Never export the account without the global references its joins name." function="Captures the project plus its exact eligible global reference dependencies as an owner-aware closure, builds a self-contained wheel or executable archive with explicit modules, verified dependencies and a dependency-free MCP, pushes global knowledge through a Git remote, and starts the packaged CI in a fork." relation="packages the account for" observation="An exported project runs offline with only the features it carries." />
+				<join type="purpose" namespace_address="code.guide.onboarding" purpose="Know the project's stage and next action without starting an assignment." function="Reads the selected project's onboarding stage from stored state and returns packaged host guidance with a next command and its arguments." relation="orients" observation="Guidance is read-only and never advances a project." />
+				<join type="purpose" namespace_address="code.generator.image" purpose="Produce and edit images for media artifacts from any harness." function="Wraps the Codex image tool as an operation that generates or edits images for a media project." relation="generates images for" observation="Image generation is delegated to an outside tool." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.runtime.module" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.contract.module" purpose="Accept modules from any author under one public contract." non_goal="Never let a module own chassis storage." function="Defines the live Python contributions the chassis accepts, the integration operations an installed module may call, and copyable template modules that keep behavior in the module and storage in the chassis." relation="binds modules to" observation="A module owns behavior and the chassis owns storage." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.store.namespace" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.registry.project" purpose="Keep one artifact's account apart from another's while sharing global Types." function="Registers projects with the shared service, binds working folders and client sessions to a project, and places each project's namespace records in its own owner." relation="separates projects for" observation="Every record carries the owner it belongs to." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.intake.artifact" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.dispatcher.assignment" purpose="Get the Native worker's understanding recorded through supplied tools under a contract it was given." function="Issues the Native assignment with its artifact context, tools, response schema and exact handoff, and receives the worker's headed answers as submissions." relation="assigns the Native worker for" observation="Intake produces its account through assignments and not through direct writes by the chassis." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.engine.workflow" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.dispatcher.assignment" purpose="Have each prompt, user response and tool call of a run admitted once and resumed after interruption." non_goal="Never hand a worker a step from another run." function="Admits a prompt as an assignment bound to the run's step and working folder, records the pending state as joins, and resumes from the nonce the assignment carries." relation="delegates steps to" observation="A workflow step that needs inference becomes an assignment named by a nonce." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.dispatcher.assignment" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.adapter.harness" purpose="Get each assigned worker running with only its assignment's tools and answer path." non_goal="Never let a bound worker change its project or assignment." function="Launches a fresh command harness under authored deadlines and a retry-once-then-fail policy, bridges only the assignment's scoped tools, and releases the process on completion or abort." relation="launches workers for" observation="A worker carries the identity of exactly one assignment." />
+				<join type="purpose" namespace_address="code.manager.workfolder" purpose="Give the worker a folder it may change that the account can trace." function="Resolves stable namespace references to local working folders, stores their files as blob-backed content, and creates, diffs, applies and cleans them up." relation="places workers in" observation="A working folder is referenced by namespace, and its local path is a separate placement." />
+				<join type="purpose" namespace_address="code.library.prompt" purpose="Put the exact authored prompt, rules and response schema into each assignment." function="Stores prompt records and rulebook rules as revisions, and renders them with bindings and knowledge into the assignment's header and rendered prompt." relation="supplies instructions to" observation="An assignment retains the exact rendered prompt it delivered." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.adapter.harness" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="entity.tool.harness" purpose="Run the assigned prompt in a configured noninteractive agent command and read its answer back." function="Speaks a stdin JSON protocol to Codex and Claude command adapters, describes a launch-local MCP transport for the provider session, and reads the model's XML answer into the shape the expansion consumes." relation="drives" observation="The chassis holds no model and depends on an outside harness to answer." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.interface.command" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.session.terminal" purpose="Run configured tools and the setup screen in a real terminal that a browser can also watch." function="Runs configured tools and the chassis TUI in POSIX PTYs owned by operations until reaped, with browser replay and flow control over the job's live stream." relation="runs terminals for" observation="A terminal session belongs to the operation that launched it." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.transport.mcp" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="entity.client.mcp" purpose="Get inference for an assignment from the client's own model when it can supply it." function="Requests sampling with the assignment's tools when the client advertises it, and otherwise returns the assignment for the host to answer through its answer command." relation="asks for inference from" observation="Where the client cannot sample, the host agent answers the assignment itself." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.server.web" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.store.namespace" purpose="Show the Type namespace and receiver-owned joins as a graph a person can follow." function="Projects collected XML and stored records into graph data and namespace views without inferring relationships." relation="reads the account from" observation="The graph shows joins as recorded, from their receiving entity to their provider." />
+				<join type="purpose" namespace_address="code.engine.workflow" purpose="Edit workflows in a browser and see their runs." function="Serves the workflow editor and HTTP adapters over the workflow module's public operations." relation="edits workflows through" observation="Editing a workflow stores a revision and does not run it." />
+				<join type="purpose" namespace_address="code.session.terminal" purpose="Work in the configured terminal tools from the browser." function="Serves xterm views over operation-owned terminal sessions." relation="hosts terminals for" observation="The browser attaches to an existing terminal session and does not own it." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.packager.portable" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="entity.remote.git" purpose="Share reusable global knowledge and run CI in the user's fork." function="Pushes exported global knowledge through the configured Git remote and activates the packaged CI workflow in the caller's GitHub repository." relation="pushes knowledge to" observation="Sharing goes through the user's own remote." />
+			</joins>
+		</receiving_entity>
+		<receiving_entity namespace_address="code.generator.image" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="entity.tool.image" purpose="Get image generation and editing without the chassis implementing either." function="Delegates each request to the Codex image tool and returns its result to the calling harness." relation="delegates images to" observation="Image work depends on an outside tool being present." />
+			</joins>
+		</receiving_entity>
+		<element namespace_address="code.contract.module" name_length="2" role="SE" />
+		<element namespace_address="code.registry.project" name_length="2" role="SE" />
+		<element namespace_address="code.manager.workfolder" name_length="2" role="SE" />
+		<element namespace_address="code.library.prompt" name_length="2" role="SE" />
+		<element namespace_address="code.session.terminal" name_length="2" role="SE" />
+		<element namespace_address="code.history.artifact" name_length="2" role="SE" />
+		<element namespace_address="code.guide.onboarding" name_length="2" role="SE" />
+		<element namespace_address="entity.tool.harness" name_length="2" role="NE" />
+		<element namespace_address="entity.client.mcp" name_length="2" role="NE" />
+		<element namespace_address="entity.remote.git" name_length="2" role="NE" />
+		<element namespace_address="entity.tool.image" name_length="2" role="NE" />
+	</elements>
+</result>

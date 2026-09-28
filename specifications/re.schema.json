@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metaform:re",
+  "title": "Receiving Entity",
+  "type": "object",
+  "required": ["ef", "name_length", "aliases", "joins"],
+  "properties": {
+    "ef": {"type": "string"},
+    "name_length": {"type": "integer", "minimum": 1},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "joins": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["op", "relation", "observation"],
+        "properties": {
+          "op": {"type": "string"},
+          "relation": {"type": "string"},
+          "observation": {"type": "string"},
+          "refs": {"type": "object", "additionalProperties": {}}
+        }
+      }
+    }
+  }
+}

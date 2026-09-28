@@ -1,0 +1,530 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<knowledge_layer id="metaform-chassis-best-practices-20260916" ref="metaform-specs-20260915-7c8f4d21" version="1.1" kind="implementation-practices">
+  <title>Metaform chassis: foundational implementation practices</title>
+  <coverage elements="9" joins="16" instructions="94" />
+  <purpose>Build a complete, maintainable Python chassis whose external modules extend real shared services through a documented, demonstrable public contract.</purpose>
+  <scope>
+    This companion layer attaches implementation instructions to all nine Elements and all sixteen joins in the supplied graph. Instruction counts follow each subject's engineering needs. Each instruction includes observable verification. These are implementation directives, not claims that implementation has been inspected or completed.
+  </scope>
+  <binding>
+    The ref attribute identifies the supplied base result. Each element is attached by its unchanged namespace_address. Each nested join is attached by its receiving element, providing element, original relation, and original Operative Purpose; instruction IDs identify this layer's instructions, not new graph elements or new join identities. The base graph, its Encounter Functions, and its empty subtypes list remain unchanged.
+  </binding>
+  <basis>
+    The supplied graph determines attachment targets. The archive's plugin-system.md and global-data.md supply the chassis and storage requirements; the supplied intake process supplies the current graph semantics. The subsequent source-visibility clarification settles the rule that knowledge generated from a prompt is hidden whenever any node directly used in that prompt is hidden, including transitive dependent inference. It also requires explicit layer selection for inference and mutable, toggleable attachments around the stable intake shape. Remaining source decisions are identified with their original D01-D08 references where relevant. Repository documents linked from the archive but absent from it were not examined.
+  </basis>
+  <sources>
+    <source id="S-REQUEST" kind="request">The developer's request for a dependable extensible Python chassis, dynamic module detection, module-supplied user-friendly settings, sound signal and async handling, and an external template and demonstrative module; the subsequent instruction to select instruction counts and substance by engineering judgment.</source>
+    <source id="S-VISIBILITY" kind="request">The subsequent clarification: tie generated knowledge layers to the graph nodes directly used in their generating prompts; hide dependent knowledge when any such node is hidden or removed, including when removal of a linked property hides its PE; propagate hiding through dependent inference; allow the layers included for knowledge generation to be specified; preserve the intake Metaform as the stable shape while all linked properties and knowledge remain mutable and toggleable.</source>
+    <source id="S-GRAPH" kind="graph" ref="metaform-specs-20260915-7c8f4d21">The supplied nine-element, sixteen-join Metaform graph.</source>
+    <source id="S-PLUGIN" kind="attachment" path="specs.zip/plugin-system.md">Metaform chassis and plugin system specification, 2026-09-15; requirements R01-R22, decisions D01-D08, and acceptance evidence.</source>
+    <source id="S-DATA" kind="attachment" path="specs.zip/global-data.md">Metaform global data pattern, 2026-09-15.</source>
+    <source id="S-INTAKE" kind="attachment" path="specs.zip/intake.md">Authored coarse intake method, considered with the newer intake process supplied in the conversation.</source>
+    <source id="S-RE" kind="attachment" path="specs.zip/re.schema.json">Receiving Entity record fields and owned join dictionary.</source>
+    <source id="P-PACKAGING" kind="primary" href="https://packaging.python.org/en/latest/guides/creating-and-discovering-plugins/">Python Packaging User Guide: creating and discovering plugins.</source>
+    <source id="P-IMPORT" kind="primary" href="https://docs.python.org/3/library/importlib.html">Python importlib: execution, discovery caches, and reload limitations.</source>
+    <source id="P-ASYNC" kind="primary" href="https://docs.python.org/3/library/asyncio-task.html">Python asyncio: task ownership, structured concurrency, cancellation, and thread dispatch.</source>
+    <source id="P-RUNNER" kind="primary" href="https://docs.python.org/3/library/asyncio-runner.html">Python asyncio runners: event-loop ownership and keyboard interruption.</source>
+    <source id="P-SIGNAL" kind="primary" href="https://docs.python.org/3/library/signal.html">Python signal: main-thread ownership and platform differences.</source>
+    <source id="P-LOOP" kind="primary" href="https://docs.python.org/3/library/asyncio-eventloop.html">Python event loop: cross-thread scheduling and signal integration.</source>
+    <source id="P-WORKER" kind="primary" href="https://docs.python.org/3/library/concurrent.futures.html">Python executors: worker lifecycle and cancellation limitations.</source>
+    <source id="P-SQLITE" kind="primary" href="https://docs.python.org/3/library/sqlite3.html">Python SQLite: connection ownership, explicit transactions, and backups.</source>
+    <source id="P-XML" kind="primary" href="https://docs.python.org/3/library/xml.etree.elementtree.html">Python ElementTree: ordered children, attributes, text, and tails.</source>
+    <source id="P-CLICK" kind="primary" href="https://click.palletsprojects.com/en/stable/complex/">Click: contexts, nested commands, and lazy loading.</source>
+    <source id="P-ARCHIVE" kind="primary" href="https://docs.python.org/3/library/zipapp.html">Python executable archives: root entrypoint and dependency limitations.</source>
+  </sources>
+  <elements>
+    <element namespace_address="code.platform.inference">
+      <instructions>
+        <instruction id="E01.01" title="Compose a small, concrete chassis" source_refs="S-PLUGIN">
+          <imperative>Compose independently constructible module, settings, execution, assignment, data, provenance, event, and CLI services. Give each service one explicit owner and public interface. Keep workflow features, memory tools, harness integrations, and web presentation in external modules using those interfaces.</imperative>
+          <verification>Construct two isolated runtimes and run chassis administration with every feature module absent; confirm that neither runtime shares mutable state with the other.</verification>
+        </instruction>
+        <instruction id="E01.02" title="Publish a typed extension contract" source_refs="S-PLUGIN">
+          <imperative>Define the public plugin object, lifecycle hooks, service methods, operation descriptors, contexts, return values, and error types with Python typing and runnable examples. Resolve D01 through this contract. Version the public API and document compatibility changes so module authors can build against a stable boundary.</imperative>
+          <verification>Type-check and run a separately packaged consumer that imports only the documented public API and exercises every required hook.</verification>
+        </instruction>
+        <instruction id="E01.03" title="Make public imports context-correct" source_refs="S-PLUGIN">
+          <imperative>Implement from metaform import settings, event, cli, data as access to the active service instances. Keep project, module, assignment, and operation identity in invocation context. Make import-time behavior define interfaces while runtime startup owns resource creation.</imperative>
+          <verification>Import the public surface without creating a database, process, listener, or assignment; interleave two project contexts through the same imported interfaces.</verification>
+        </instruction>
+        <instruction id="E01.04" title="Establish executable code-quality evidence" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Keep service and adapter boundaries small, type-check public contracts, and run consistent formatting, linting, unit tests, integration tests, and artifact smoke tests in CI. Trace tests to the specification requirements and this layer's instruction IDs. Test observable behavior with isolated stores and explicit synchronization.</imperative>
+          <verification>Run the suite on the declared Python and operating-system support matrix; demonstrate that representative broken lifecycle, context, and persistence behavior is detected.</verification>
+        </instruction>
+        <instruction id="E01.05" title="Deliver the actual distribution" source_refs="S-PLUGIN P-ARCHIVE">
+          <imperative>Build the installable distribution and executable wheel with their real modules, dependencies, and assets. Route the installed command, python -m metaform, and python metaform.whl to the same CLI. Test any dependency extraction or preparation needed by the archive form, including dependencies that cannot execute directly from ZIP.</imperative>
+          <verification>Run all three entry forms from outside the checkout in clean supported environments, including the complete CLI journey without web or MCP.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.platform.inference" pe="code.kernel.plugin" relation="loads feature capability through" op="Keep Metaform's stable chassis independent of feature implementations while allowing built-in and community features to be enabled, disabled, loaded, and removed through the same public contract.">
+          <instructions>
+            <instruction id="J01.01" title="Ship an external module template" source_refs="S-REQUEST S-PLUGIN P-PACKAGING">
+              <imperative>Create a copyable, chassis-external module template with its public entry object, package metadata, dependency declarations, lifecycle hooks, full command parameters, module-owned setting definitions, resources, tests, and concise author instructions. Support the documented self-contained module-folder route; document entry-point discovery if also implemented.</imperative>
+              <verification>Copy and rename the template outside the chassis tree, discover it through the normal loader, and invoke its parameterized operation without editing chassis code.</verification>
+            </instruction>
+            <instruction id="J01.02" title="Build a substantive demonstration module" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Build an external demo from that template using settings, event, cli, and data. Demonstrate a parameterized synchronous record operation, an asynchronous job, contributed settings, event publication and subscription, namespace and owned-join attachment, persisted results, and inspectable provenance. Include a small workflow using those operations through the workflow module.</imperative>
+              <verification>Run a documented transcript from discovery to result inspection; match every advertised demo capability to an actual public-service call and observable result.</verification>
+            </instruction>
+            <instruction id="J01.03" title="Prove extension reversibility" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Exercise enable, disable, activation, deactivation, removal, and reinstallation with the demo. Preserve its saved settings and produced records according to their ownership while releasing executable contributions. Keep chassis administration and unrelated modules usable throughout the documented lifecycle.</imperative>
+              <verification>Repeat lifecycle transitions, remove the demo's files, restart, and reinstall; inspect commands, subscriptions, settings, records, and unrelated operation results after each transition.</verification>
+            </instruction>
+            <instruction id="J01.04" title="Make the demo an executable SDK example" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Package the demo's source, fixtures, example commands, expected outcomes, and extension guide together. Explain where to add an operation, setting, subscriber, workflow contribution, and cleanup hook. Use a deterministic harness fixture to demonstrate assignment delivery and submission while keeping external provider credentials optional for the demonstration.</imperative>
+              <verification>Follow the guide in a clean environment, add one setting and operation using public hooks, and run the demo's contract tests unchanged.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.service.knowledge" relation="organizes project understanding through" op="Give Metaform a base project memory graph of namespace-addressed Elements and RE-owned joins that later knowledge layers, memories, and inference can extend.">
+          <instructions>
+            <instruction id="J02.01" title="Preserve the semantic foundation" source_refs="S-GRAPH S-PLUGIN S-INTAKE S-RE">
+              <imperative>Represent each Element by its namespace address and Encounter Function, and retain each Operative Purpose with its Receiving Entity's join. Preserve the conjunction C(T) = { (r_i AND p_i AND e) } when reading, rendering, attaching knowledge, and serializing the graph.</imperative>
+              <verification>Round-trip the supplied graph and compare every address, EF, RE, PE, OP, relation, and observation without substituting names for identities.</verification>
+            </instruction>
+            <instruction id="J02.02" title="Preserve a stable base with mutable attachments" source_refs="S-GRAPH S-INTAKE S-PLUGIN S-VISIBILITY">
+              <imperative>Preserve the intake Metaform as the stable base shape. Keep linked properties, knowledge layers, memories, and later inference as mutable, individually toggleable attachments to its elements and owned joins. Preserve combined-entity addresses and inactive subtype records when present, and apply attachment edits, removals, and toggles without rewriting the base shape.</imperative>
+              <verification>Attach this companion layer and language properties, then edit, hide, reveal, and unlink attachments; retrieve the same original nine-element, sixteen-join base graph throughout.</verification>
+            </instruction>
+            <instruction id="J02.03" title="Demonstrate memory through the community contract" source_refs="S-PLUGIN">
+              <imperative>Implement the basic memory feature as an external module with create, read, search, update, and delete operations. Index memory by namespace objects and owned joins, associate its author or agent and provenance, and retrieve it using the active work context's layer selection.</imperative>
+              <verification>Perform the complete memory lifecycle through CLI operations, including two agents with separate contexts and retrieval at a specific owned join.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.engine.workflow" relation="executes authored processes through" op="Execute intake and other authored inference operations as real workflows while preserving authored text, bindings, context references, and operative behavior.">
+          <instructions>
+            <instruction id="J03.01" title="Execute definitions as workflows" source_refs="S-PLUGIN S-INTAKE">
+              <imperative>Implement intake as an executable workflow definition consumed by the shared engine. Execute its actual authored steps, bindings, handoffs, and completion behavior through public operations; preserve the complete Native account delivered to subsequent Latent reasoning.</imperative>
+              <verification>Run the supplied intake procedure through the engine and trace the executed definition revision, step sequence, assignment deliveries, and resulting graph.</verification>
+            </instruction>
+            <instruction id="J03.02" title="Separate import from semantic editing" source_refs="S-PLUGIN">
+              <imperative>Distinguish deterministic native serialization, conversion of an external workflow into the native grammar, and explicit lexicalization. Preserve original imported material and record each conversion or authoring revision so every executable definition has an inspectable source.</imperative>
+              <verification>Import a workflow, export it, and compare its operative text; invoke lexicalization separately and inspect that operation's changed revision.</verification>
+            </instruction>
+            <instruction id="J03.03" title="Keep workflow delivery module-owned" source_refs="S-PLUGIN S-DATA">
+              <imperative>Implement workflow preparation, uploadable workflow packaging, and workflow execution commands in the workflow module. Use generic chassis packaging, data, runtime, and entrypoint services to carry definitions, required context, retained history, and reconstruction references into the delivered artifact.</imperative>
+              <verification>Prepare and execute a delivered workflow through the actual wheel entrypoint, then remove the workflow module and confirm chassis administration remains functional.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.service.execution" relation="coordinates operations through" op="Coordinate Metaform module operations and agent assignments across synchronous, asynchronous, direct-harness, and in-harness execution without losing work identity.">
+          <instructions>
+            <instruction id="J04.01" title="Own one shared runtime per global instance" source_refs="S-PLUGIN S-DATA">
+              <imperative>Define how independent CLI and MCP invocations locate, start, and contact the shared runtime independently of the web plugin. Coordinate startup so concurrent clients reuse the same instance. Retain endpoint and process-instance identity, and distinguish a live owner from stale process metadata.</imperative>
+              <verification>Launch concurrent clients from two repositories and a plain folder; verify one shared instance, correct project ownership, and successful restart after stale metadata.</verification>
+            </instruction>
+            <instruction id="J04.02" title="Unify harness integration" source_refs="S-PLUGIN">
+              <imperative>Implement direct-launch and in-harness adapters around the same durable assignment, delivered header, prompt bindings, and asynchronous completion contract. Keep process identifiers as operational metadata while using the supplied work identity to associate agent responses.</imperative>
+              <verification>Complete equivalent assignments through a directly launched harness fixture and separate in-harness CLI calls; compare their stored work identity and lifecycle.</verification>
+            </instruction>
+            <instruction id="J04.03" title="Demonstrate concurrent service use" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Exercise a pending asynchronous agent assignment while synchronous module work, another asynchronous job, settings reads, and status queries complete. Attribute all resulting records and failures to their originating operation and project.</imperative>
+              <verification>Use synchronization barriers to interleave two assignments deterministically and confirm responsiveness and correct attribution throughout the demo.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.adapter.interface" relation="exposes operations through" op="Expose the same Metaform functional operations through contextual CLI, MCP, and web surfaces while keeping the CLI complete when web and MCP are absent.">
+          <instructions>
+            <instruction id="J05.01" title="Make the CLI functionally complete" source_refs="S-PLUGIN">
+              <imperative>Give every functional operation a module-contributed or chassis-owned CLI route, including settings, assignment delivery and submission, workflow authoring and execution, memory, knowledge, history, and provenance inspection. Maintain a coverage map between public operations and their CLI routes.</imperative>
+              <verification>Complete those journeys with web and MCP absent using installed, module, and executable-wheel entrypoints.</verification>
+            </instruction>
+            <instruction id="J05.02" title="Make guidance discoverable at the point of use" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Provide grouped, contextual help with current status, parameter descriptions, examples, and next available operations. Expose module development guidance, workflow import guidance, and contributed module help through the same discoverable catalog. Keep setting explanations beside their controls and CLI help.</imperative>
+              <verification>Follow the first-run and demo journeys using only installed help; locate configuration, module authoring, assigned work, and completion instructions without source-code inspection.</verification>
+            </instruction>
+            <instruction id="J05.03" title="Keep web behavior in the web module" source_refs="S-PLUGIN">
+              <imperative>Implement metaform web and metaform web stop in the web plugin. Contribute bind-address and port settings through the chassis settings service, document their defaults and application timing, and reuse one global web instance across projects. Expose graph, context, prompt, workflow, job, and provenance views through shared services.</imperative>
+              <verification>Open multiple projects through one listener, apply the documented configuration procedure, inspect a live demo job, and stop web without stopping unrelated chassis work.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.service.persistence" relation="retains system state through" op="Retain project-owned Metaform state, origins, variants, assignments, knowledge, modules, settings, edit copies, and reconstruction references in the initial global store while source artifacts remain at their existing locations.">
+          <instructions>
+            <instruction id="J06.01" title="Map the existing store explicitly" source_refs="S-PLUGIN S-DATA">
+              <imperative>Inventory existing records and map project, operating-folder, origin, variant, assignment, knowledge, module, setting, and provenance identity into the one-root, one-database model. Resolve D07 with migration examples that retain existing source records and ownership while keeping source artifacts at their original locations.</imperative>
+              <verification>Migrate fixtures representing two repositories and a non-repository project; compare their identifiers, sources, prompts, answers, relationships, and retained history.</verification>
+            </instruction>
+            <instruction id="J06.02" title="Preserve origin and variant semantics" source_refs="S-DATA">
+              <imperative>Implement commit-based repository origins and content-manifest-based non-repository origins. Retain the full digest and lineage suffix alongside both specified derived IDs. Keep sibling variants relative to their selected origin; retain changed binaries whole and implement the documented whole-text versus diff representation with an explicit threshold calculation.</imperative>
+              <verification>Reconstruct additions, removals, text edits, and binary replacements from multiple sibling variants; compare the result with each recorded manifest and test the representation boundary.</verification>
+            </instruction>
+            <instruction id="J06.03" title="Preserve divergent histories during transfer" source_refs="S-DATA">
+              <imperative>Export an origin history unit with its baseline, variants, ownership, and provenance. When an import would replace distinct local history, allocate the specified new lineage suffix and retain both instances. Return the imported identity and location through the shared service.</imperative>
+              <verification>Import divergent histories and reconstruct each independently from an exported artifact in a clean Python environment.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.platform.inference" pe="code.service.provenance" relation="traces produced records through" op="Make every Metaform-produced record traceable to its producer, prompt revision, rendered prompt, bindings, referenced inputs, received answer, and dependent inference.">
+          <instructions>
+            <instruction id="J07.01" title="Integrate lineage into production" source_refs="S-PLUGIN">
+              <imperative>Make producer attribution part of the public record-creation and revision APIs. Link generated results to their producing operation, prompt revision, rendered prompt, bindings, referenced input revisions, and received answer. Describe deterministic module-produced records by their actual operation inputs and outputs.</imperative>
+              <verification>Start from demo-generated records and resolve their complete production chain, including records created by an event subscriber.</verification>
+            </instruction>
+            <instruction id="J07.02" title="Represent real source and authoring origins" source_refs="S-PLUGIN S-DATA">
+              <imperative>Represent imported, authored, deterministic, and inferred material with their actual origin types and applicable evidence. Preserve source and authoring provenance through later revisions, attachment, and export, and expose forward dependent-inference links as well as backward source links.</imperative>
+              <verification>Inspect one record of each origin type and traverse from source to derived knowledge and back after a restart.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.kernel.plugin">
+      <instructions>
+        <instruction id="E02.01" title="Discover modules deterministically" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Discover executable modules from the documented installation locations independently of the current working directory. Reconcile added, moved, and removed packages with stable module identities and persisted enable/disable state. Separate discovery metadata from activation, and obtain executable capabilities from the loaded public plugin object.</imperative>
+          <verification>Add, move, disable, remove, and reinstall the template; repeat discovery from unrelated directories and inspect the same module identities and configuration.</verification>
+        </instruction>
+        <instruction id="E02.02" title="Make activation an owned lifecycle" source_refs="S-PLUGIN">
+          <imperative>Give activation an explicit sequence for resolving the module, constructing its object, supplying services, registering contributions, and running startup hooks. Track acquired resources and registrations by module instance. Unwind partial acquisition if activation fails and expose the original failure with its module and phase.</imperative>
+          <verification>Raise a test failure at each activation phase; verify release of the failed module's partial registrations and continued operation of unrelated modules.</verification>
+        </instruction>
+        <instruction id="E02.03" title="Define real deactivation semantics" source_refs="S-REQUEST S-PLUGIN P-IMPORT">
+          <imperative>Implement deactivation by withdrawing contributions and completing the documented handling of in-flight operations, then running teardown and releasing owned resources. State when enable/disable changes take effect. Treat Python code replacement as a separate reload or restart concern: deleting an import-cache entry does not dispose of existing objects.</imperative>
+          <verification>Deactivate during an active demo operation, then reactivate; verify accurate status, exactly one contribution set, and no abandoned handlers or resources.</verification>
+        </instruction>
+        <instruction id="E02.04" title="Make discovery and loading failures diagnosable" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Report a module's discovered location, identity, enabled state, active state, API compatibility, and last loading error. Resolve contribution-name collisions explicitly and identify missing declared dependencies. Keep errors attributable to their module while retaining the usable administrative surface.</imperative>
+          <verification>Exercise a missing dependency, duplicate contribution, and import error; locate the cause from chassis status and help while invoking an unrelated healthy module.</verification>
+        </instruction>
+        <instruction id="E02.05" title="Let modules define their own settings" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Define a settings contribution contract carrying a module-owned key, value type, default, readable label, explanation, examples, and application timing. Let modules supply constraints intrinsic to their actual settings. Render the same definitions through the settings menu, CLI, and available web controls.</imperative>
+          <verification>Add a new setting to the external demo and confirm that its control, help, default, and editing behavior appear without chassis-specific code.</verification>
+        </instruction>
+        <instruction id="E02.06" title="Make configuration understandable and reversible" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Group settings by module, support finding a setting by name or explanation, and show its effective value, default, saved value, and source. Provide equivalent interactive and non-interactive read, set, and reset operations. Explain whether each change applies immediately, on the next operation, or after restart.</imperative>
+          <verification>Configure the demo entirely through installed help, reset one value, and verify the same effective configuration through another interface and a fresh process.</verification>
+        </instruction>
+        <instruction id="E02.07" title="Preserve configuration ownership" source_refs="S-REQUEST S-PLUGIN S-DATA">
+          <imperative>Namespace persisted settings by stable module identity and update them through the shared settings service. Preserve user values across disable, unload, and restart. Make setting-key migrations explicit, retain values needing reconciliation, and distinguish an invalid supplied value from a missing value that uses the module's default.</imperative>
+          <verification>Run two modules with the same local setting name; disable and upgrade one, then confirm isolated values, preserved configuration, and precise setting-level diagnostics.</verification>
+        </instruction>
+        <instruction id="E02.08" title="Load complete Python packages correctly" source_refs="S-REQUEST S-PLUGIN P-PACKAGING">
+          <imperative>Load each plugin under a consistent package identity that supports relative imports, submodules, and packaged assets. Reconcile discovery caches at the documented refresh boundary and distinguish package refresh from replacing live objects. Preserve the same resource-access behavior in installed and portable delivery.</imperative>
+          <verification>Load two plugins with identically named internal files, import their relative helpers, and access their packaged assets from outside the checkout.</verification>
+        </instruction>
+        <instruction id="E02.09" title="Document the actual plugin execution boundary" source_refs="S-REQUEST S-PLUGIN P-IMPORT">
+          <imperative>Document that importing a Python plugin executes its module body and that in-process plugins share the host's privileges and process resources. Teach module authors to define capabilities at import time and acquire resources through owned lifecycle hooks; retain module and dependency origin information for diagnosis.</imperative>
+          <verification>Inspect the template's import behavior and installation metadata; confirm that the demo acquires its runtime resources during activation and releases them during teardown.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.kernel.plugin" pe="code.bus.event" relation="distributes runtime changes through" op="Let dynamically loaded Metaform modules publish runtime changes and subscribe to them without coupling feature implementations to one another or moving workflow progression into notifications.">
+          <instructions>
+            <instruction id="J08.01" title="Bind subscriptions to module instances" source_refs="S-PLUGIN">
+              <imperative>Register subscriptions through the public event service with a module-instance owner and a disposable subscription handle. Include those handles in activation rollback and deactivation cleanup, and define the treatment of handlers already dispatched when a subscription is removed.</imperative>
+              <verification>Repeat load, partial-load failure, unload, and reload while publishing; verify one delivery per active subscription and the documented in-flight behavior.</verification>
+            </instruction>
+            <instruction id="J08.02" title="Publish committed facts" source_refs="S-PLUGIN S-DATA">
+              <imperative>Publish record-change notifications after the underlying operation has committed its state. Put affected record references and producer context in the event, and let subscribers read authoritative data through the public service. Keep requested operation results in the operation response.</imperative>
+              <verification>Have a subscriber read the announced record immediately; roll back another write and confirm that it produces no committed-change notification.</verification>
+            </instruction>
+            <instruction id="J08.03" title="Demonstrate independent subscribers" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Use the demo to publish a change consumed by independent synchronous and asynchronous subscribers. Attribute a subscriber failure to its owner, and keep explicit workflow progression with the workflow engine.</imperative>
+              <verification>Make one subscriber fail, inspect its failure record, and confirm the other subscriber's outcome and the workflow's actual recorded step progression.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.service.knowledge">
+      <instructions>
+        <instruction id="E03.01" title="Resolve objects and owned joins exactly" source_refs="S-PLUGIN S-RE S-GRAPH">
+          <imperative>Implement object access by namespace_address, preserving EF, name_length, aliases, typed join entries, and combined-entity addresses. Resolve D06's owned-join reference encoding using the receiver and a stable identity within its record; make the same reference usable for memory, knowledge attachment, and provenance.</imperative>
+          <verification>Resolve an object, an owned join, and a combined entity through the public data service; update a join's prose while retaining its attached knowledge identity.</verification>
+        </instruction>
+        <instruction id="E03.02" title="Implement the settled selection order" source_refs="S-PLUGIN">
+          <imperative>Implement project selection initially all ones, object selection initially all zeros, and object masks initially all ones. At each object, apply its mask to incoming selection, then apply its own selection: effective = (incoming AND mask) OR local_select. Propagate from trunk toward leaves; apply the same object masks to workflow selection.</imperative>
+          <verification>Test inherited selection, blocking masks, same-object selection above its mask, and selection re-enabled farther toward a leaf.</verification>
+        </instruction>
+        <instruction id="E03.03" title="Specify the remaining layer semantics with examples" source_refs="S-PLUGIN S-VISIBILITY">
+          <imperative>Resolve D04's remaining representation and step-selector details using concrete project, workflow, and step examples. Preserve the settled mask ordering and retain selected layers with the assignment context. Apply source-dependency hiding to selected knowledge so a layer selection cannot reveal knowledge whose prompt-source node is hidden.</imperative>
+          <verification>Select a layer whose directly used source node is hidden; confirm that service, CLI, and workflow views keep its knowledge hidden and identify the contributing dependency.</verification>
+        </instruction>
+        <instruction id="E03.04" title="Keep regional knowledge reads precise" source_refs="S-PLUGIN S-GRAPH S-VISIBILITY">
+          <imperative>Expose object, owned-join, layer, revision, and provenance selection explicitly in knowledge queries. Apply current dependency visibility before returning the requested regional knowledge with its attachment references. Key cached views by project, subject revision, selection context, and the graph and attachment visibility state affecting those results.</imperative>
+          <verification>Read a join's attached guidance, hide its source property, and repeat the read through a previously cached view; confirm that the dependent guidance disappears in the correct project context.</verification>
+        </instruction>
+        <instruction id="E03.05" title="Select the layers used to generate knowledge" source_refs="S-PLUGIN S-VISIBILITY">
+          <imperative>Let each knowledge-generation operation specify which attached layers to include for inference, including intake-only context with no attached layers. Resolve that selection against current graph, property, and dependency visibility when assembling the prompt. Record the requested selection, effective selection, and exact node, property, layer, and revision references actually included, and expose this choice through the operation's CLI and other available interfaces.</imperative>
+          <verification>Generate attached knowledge from intake-only, C++-selected, and JavaScript-selected contexts; inspect each issued prompt and its recorded input dependencies to confirm that it used the specified context.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.service.knowledge" pe="code.service.provenance" relation="tracks knowledge dependencies through" op="Hide or reveal Metaform-derived layers from their contributing namespace objects and dependent inference while retaining the saved knowledge and its source relationships.">
+          <instructions>
+            <instruction id="J09.01" title="Link generated layers to their actual prompt sources" source_refs="S-PLUGIN S-VISIBILITY">
+              <imperative>Record a generated layer's dependencies on every graph node directly used in its generating prompt, including linked-property providers (PEs), plus any included knowledge objects and their source revisions. Keep source dependencies distinct from the elements and joins where the output attaches. Associate the produced knowledge with that dependency set and link subsequent inference to the knowledge it consumed.</imperative>
+              <verification>Generate a layer using two graph nodes and an existing knowledge layer; inspect its direct input references, output attachment targets, and the dependency path of later inference consuming it.</verification>
+            </instruction>
+            <instruction id="J09.02" title="Hide knowledge when any prompt-source node is hidden" source_refs="S-PLUGIN S-VISIBILITY">
+              <imperative>Hide a generated knowledge layer and its produced knowledge whenever any graph node directly used in its generating prompt is hidden or removed from the active graph. Apply the same rule when removing a linked property makes its PE hidden or absent. Propagate hiding through dependent inference while retaining stored content, identities, and provenance. Apply this rule consistently to displayed knowledge, service reads, and inference-context assembly.</imperative>
+              <verification>Hide one of two directly used source nodes, then exercise removal of a linked property; verify that the generated layer and its dependent inference are hidden while independently sourced layers remain unaffected.</verification>
+            </instruction>
+            <instruction id="J09.03" title="Propagate attachment and visibility changes" source_refs="S-PLUGIN S-VISIBILITY">
+              <imperative>Recompute dependent visibility when contributing nodes, linked properties, or source knowledge layers are hidden, removed, or restored, and when new inferred results arrive. Hide knowledge produced by an in-flight prompt if its source has since become hidden. When a source is restored, clear only the hiding attributable to that source while preserving other dependency effects and explicit attachment toggles. Retain the original producing revisions.</imperative>
+              <verification>Hide a dependency during generation, inspect the hidden result on completion, and restore the dependency; verify propagation through downstream layers and preservation of separately chosen hidden states.</verification>
+            </instruction>
+            <instruction id="J09.04" title="Demonstrate a change of inference context" source_refs="S-REQUEST S-VISIBILITY">
+              <imperative>Extend the demo with code.cpp and code.javascript property attachments, separately generated memory-management layers, and a further layer inferred from the C++ guidance. Demonstrate explicit generation-layer selection, source hiding, linked-property removal, and reattachment while preserving the intake shape and saved knowledge.</imperative>
+              <verification>Switch the active language context from C++ to JavaScript and back; verify that C++ guidance and its downstream inference follow their dependencies, JavaScript guidance follows its own, and the stable intake graph remains unchanged.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.engine.workflow">
+      <instructions>
+        <instruction id="E04.01" title="Define a reversible native representation" source_refs="S-PLUGIN P-XML">
+          <imperative>Resolve D06 with an ElementTree-to-dictionary mapping that preserves attributes, namespaces, repeated siblings, child order, embedded schemas, and mixed text through explicit text and tail representation. Specify whitespace and comment handling separately from semantic fidelity, then use that mapping for native XML and JSON round trips.</imperative>
+          <verification>Round-trip representative supplied structures with repeated tags, interleaved text, references, and embedded schemas; compare content and order structurally.</verification>
+        </instruction>
+        <instruction id="E04.02" title="Execute the authored control flow" source_refs="S-PLUGIN">
+          <imperative>Interpret executable workflow definitions through registered operations and explicit step state. Follow the definition's authored sequencing, branching, repetition, handoffs, and completion behavior where expressed by the native grammar. Report unsupported constructs precisely while retaining the original definition.</imperative>
+          <verification>Execute representative definitions for each implemented construct and compare actual operation order and results with the authored behavior.</verification>
+        </instruction>
+        <instruction id="E04.03" title="Version definitions and edits independently of runs" source_refs="S-PLUGIN">
+          <imperative>Store authored definition and prompt revisions separately from run state. Bind an executing run to the revisions it actually uses, and make GUI or CLI edits produce inspectable subsequent revisions with their source relationships.</imperative>
+          <verification>Edit a prompt while an earlier run remains active; inspect the text and bindings delivered by that run and by a new run.</verification>
+        </instruction>
+        <instruction id="E04.04" title="Preserve workflow continuity" source_refs="S-PLUGIN S-DATA">
+          <imperative>Persist the step's dispatched work, returned result, and progression state through the shared services. Describe restart behavior for completed, waiting, failed, and interrupted steps, and perform retry or repetition according to the workflow's actual authored execution contract.</imperative>
+          <verification>Restart between dispatch, result recording, and progression; demonstrate the documented continuation and inspect whether an external action has an unknown outcome.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.engine.workflow" pe="code.service.knowledge" relation="binds project context through" op="Lexicalize Metaform workflow steps with namespace object references, selected knowledge layers, appended imperatives, and inspectable context objects without automatically rewriting imported workflow text.">
+          <instructions>
+            <instruction id="J10.01" title="Bind references as objects" source_refs="S-PLUGIN">
+              <imperative>Represent inserted context as namespace and owned-join references with revision and layer context. Render proper names using name_length while preserving the underlying identity, and make the bound object and its provenance inspectable from the editor and CLI.</imperative>
+              <verification>Insert two similarly named objects and one owned join; follow each rendered reference to the correct record and revision.</verification>
+            </instruction>
+            <instruction id="J10.02" title="Snapshot the issued inference context" source_refs="S-PLUGIN S-VISIBILITY">
+              <imperative>Resolve each step's explicit inference-layer selection and dependency visibility through the common knowledge service, then assemble its prompt and append selected imperatives in the documented order. Snapshot the exact issued text, bindings, effective layers, and graph nodes and properties actually included. Preserve this snapshot with the authored prompt revision and use it to establish the generated knowledge's source dependencies.</imperative>
+              <verification>Change layer selection and hide a property after assignment delivery; reconstruct the original issued prompt and verify that its eventual output retains the original dependencies and obeys current visibility.</verification>
+            </instruction>
+            <instruction id="J10.03" title="Make lexicalization an inspectable operation" source_refs="S-PLUGIN">
+              <imperative>Expose explicit lexicalization through the workflow module's shared operations. Record the original step, revised step, inserted objects, and producing operation so semantic edits remain distinguishable from rendering or serialization.</imperative>
+              <verification>Compare an imported step before and after explicit lexicalization, then inspect the revised prompt's source and inserted-object provenance.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.engine.workflow" pe="code.service.execution" relation="runs assigned steps through" op="Issue assignments and execute intake and other authored Metaform workflows through the shared runtime rather than treating workflow names as passive run metadata.">
+          <instructions>
+            <instruction id="J11.01" title="Dispatch steps with durable work identity" source_refs="S-PLUGIN">
+              <imperative>Issue each executable step through the shared runtime with workflow and definition revision, run, step, operation, project, prompt bindings, and assignment identity. Let the engine consume an explicit runtime result to advance the authored workflow.</imperative>
+              <verification>Trace the demo workflow from its definition through dispatched operations to final results, including an agent-facing asynchronous step.</verification>
+            </instruction>
+            <instruction id="J11.02" title="Define submission and finalization precisely" source_refs="S-PLUGIN">
+              <imperative>Resolve D02 and D03 with executable single-step and multi-step examples defining the supplied submission header, answer recording, step completion, assignment finalization, and abort. Preserve work identity throughout; reject missing submission headers as specified in R07.</imperative>
+              <verification>Submit intermediate and final answers through CLI and MCP, test a missing header, and confirm the exact step and assignment transitions.</verification>
+            </instruction>
+            <instruction id="J11.03" title="Keep lifecycle outcomes truthful" source_refs="S-PLUGIN S-REQUEST">
+              <imperative>Carry operation success, failure, cancellation requests, completed cancellation, and unresolved interruption back to the owning workflow with their evidence. Retain pending asynchronous work across client invocations, and keep process shutdown distinct from authored assignment abort.</imperative>
+              <verification>Interrupt a client and later the runtime during a pending step; inspect the resulting durable work state and the workflow's documented continuation.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.service.execution">
+      <instructions>
+        <instruction id="E05.01" title="Own the event loop explicitly" source_refs="S-PLUGIN P-RUNNER P-LOOP">
+          <imperative>Expose an awaitable execution API and keep loop creation at the standalone application boundary. Integrate with an already-running host loop through that API. Supply synchronous bridges only from appropriate non-loop threads, and schedule cross-thread work through thread-safe loop APIs.</imperative>
+          <verification>Invoke the same operation from the standalone CLI, an existing async host, and a worker thread; check for nested-loop errors and deadlocks.</verification>
+        </instruction>
+        <instruction id="E05.02" title="Dispatch work according to its execution needs" source_refs="S-PLUGIN P-WORKER">
+          <imperative>Use each operation's declared execution mode to await asynchronous work on the owning loop and dispatch blocking synchronous work through an appropriate worker adapter. Preserve context across threads and pass explicit serializable context across processes. Keep thread-affine resources with their owners; use a process adapter for CPU-bound work when its workload requires one.</imperative>
+          <verification>Run a blocking demo operation beside a responsive async job and verify matching project, module, assignment, and provenance context in both results.</verification>
+        </instruction>
+        <instruction id="E05.03" title="Distinguish requested cancellation from stopped work" source_refs="S-REQUEST P-WORKER">
+          <imperative>Define cooperative cancellation for synchronous workers and subprocess ownership for directly launched work. Track a running thread until its callable actually returns: cancelling its awaiter or future does not stop the underlying function. Retain resources and truthful operation status while cancellation remains pending.</imperative>
+          <verification>Cancel a blocked thread-backed operation, release it deliberately, and confirm that resource cleanup and final status follow actual worker completion.</verification>
+        </instruction>
+        <instruction id="E05.04" title="Give every async task an owner" source_refs="S-REQUEST P-ASYNC">
+          <imperative>Use structured task scopes for related work, retain references to background tasks, and retrieve their outcomes. Scope TaskGroup failure propagation to work that should fail together. Run cleanup in finally blocks and propagate CancelledError after cleanup so cancellation remains effective.</imperative>
+          <verification>Cancel and fail nested demo tasks; confirm complete cleanup, observed exceptions, and continued execution of unrelated assignments.</verification>
+        </instruction>
+        <instruction id="E05.05" title="Handle signals at the application boundary" source_refs="S-REQUEST P-SIGNAL P-RUNNER P-LOOP">
+          <imperative>Install process signal handling in the main thread of the owning application, with Ctrl-C and supported termination signals mapped to the shutdown coordinator. Keep handlers limited to scheduling shutdown. Implement the appropriate Windows console or host-stop route, and preserve the host's handlers when embedded.</imperative>
+          <verification>Exercise real Ctrl-C and supported termination events in subprocess tests on each supported platform; confirm that importing or embedding the SDK leaves host signal ownership intact.</verification>
+        </instruction>
+        <instruction id="E05.06" title="Shut down in dependency order" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Quiesce new external dispatch, settle owned operations under their documented cancellation contracts, and run module teardown while required services remain available. Then settle subscriber work, persist terminal or interrupted state, close storage and owned resources, and release process ownership. Make cleanup repeatable; document graceful-stop timing and repeated-interrupt behavior.</imperative>
+          <verification>Interrupt during startup, a write, an async wait, and teardown; verify honest exit status, restartable state, released listeners, and reported cleanup failures.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.service.execution" pe="code.service.persistence" relation="recovers work continuity through" op="Recover Metaform assignment context from nonce and workfolder bindings across independent command invocations and retain durable completion history after active local bindings are cleared.">
+          <instructions>
+            <instruction id="J12.01" title="Recover the complete assignment context" source_refs="S-PLUGIN S-DATA">
+              <imperative>Resolve the workfolder's .agentid/nonce marker to the globally stored project, module or workflow, run, step, prompt bindings, selected layers, submissions, and lifecycle. Keep the marker a discovery reference and retain authoritative assignment state in the shared database.</imperative>
+              <verification>Issue work in one process, exit, change invocations, and recover identical assigned work from the operating folder without exported environment state.</verification>
+            </instruction>
+            <instruction id="J12.02" title="Commit completion before clearing the binding" source_refs="S-PLUGIN S-DATA">
+              <imperative>Implement the D02 finalization contract so the answer, provenance, workflow state, and durable completion are committed before clearing the matching local nonce marker and active binding. Make repeated finalization of that completed assignment return its recorded outcome.</imperative>
+              <verification>Interrupt between durable completion and marker cleanup; repeat finalization and verify preserved history, correct cleanup, and an unaffected separate assignment.</verification>
+            </instruction>
+            <instruction id="J12.03" title="Reconcile durable work after interruption" source_refs="S-PLUGIN S-DATA">
+              <imperative>On runtime restart, reconcile recorded active work with actual process and harness state. Preserve waiting in-harness assignments, identify abandoned local execution, and expose uncertain external outcomes. Distinguish stale discovery markers from missing durable assignments in diagnostics.</imperative>
+              <verification>Restart with a waiting agent, an interrupted worker, a stale marker, and a reused PID; inspect each correctly attributed recovery result.</verification>
+            </instruction>
+          </instructions>
+        </join>
+        <join re="code.service.execution" pe="code.service.provenance" relation="records operation lineage through" op="Record Metaform operation context and produced results as assignments, module calls, agent submissions, and workflow steps execute.">
+          <instructions>
+            <instruction id="J13.01" title="Capture lineage across the operation lifecycle" source_refs="S-PLUGIN">
+              <imperative>Create operation provenance when work is issued, attach its actual input bindings and producer context, and update its lifecycle as work starts and settles. Link nested module calls and subscriber-produced records to their actual parent operation or causal event.</imperative>
+              <verification>Trace one workflow step through a module call and event subscriber to their stored results, including an interrupted attempt.</verification>
+            </instruction>
+            <instruction id="J13.02" title="Retain the issued prompt and its source bindings" source_refs="S-PLUGIN S-VISIBILITY">
+              <imperative>Capture the prompt revision, fully rendered prompt, requested and effective layer selections, actual input node and property references, input knowledge revisions, binding map, and supplied header when work is issued. Associate the received answer and produced knowledge with that original context and the correct assignment and step, preserving the original answer separately from derived representations.</imperative>
+              <verification>Interleave two assignments using different layer selections, change the active graph before their answers arrive, and verify that each result retains the dependencies of its own issued prompt.</verification>
+            </instruction>
+            <instruction id="J13.03" title="Make failures observable as failures" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Record operation errors, subscriber errors, cancellation requests, actual cancellations, and interruption with module and work attribution. Preserve original exception context for diagnostics, and keep successful writes already committed distinguishable from an operation's later failure.</imperative>
+              <verification>Fail the demo before a write, after a committed write, and during cleanup; inspect accurate record lineage and distinct operation outcomes.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.adapter.interface">
+      <instructions>
+        <instruction id="E06.01" title="Build one contextual command snapshot" source_refs="S-PLUGIN P-CLICK">
+          <imperative>Implement contextual Click Group command discovery from current module objects and persisted work context. Use one resolved capability snapshot for listing, help, completion, and named invocation. Preserve complete module-owned command objects, including nested groups, arguments, option types, and defaults.</imperative>
+          <verification>Compare help, completion, and named calls in chassis, module, assignment, and disabled-module contexts using the demo's full parameter set.</verification>
+        </instruction>
+        <instruction id="E06.02" title="Resolve context before eager help" source_refs="S-PLUGIN P-CLICK">
+          <imperative>Resolve read-side assignment and module context before Click's eager help formatting. Make -h and --help show status, current work, available operations, and applicable guidance without creating an assignment or advancing its activity. Resolve D08's distinction between unbound administration and agent entry explicitly.</imperative>
+          <verification>Test nonce-before-help and help-before-nonce, marker discovery, bare invocation, and both help spellings; compare assignment state before and after.</verification>
+        </instruction>
+        <instruction id="E06.03" title="Support people and unattended callers" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Provide readable interactive output and selectable structured output, with diagnostics separate from result data. Accept structured input through files or stdin, document exit statuses, and keep fully specified operations non-interactive. When a required nonce or argument is missing without a terminal, identify the exact input needed.</imperative>
+          <verification>Pipe inputs and outputs between independent commands, exercise multiline prompts and errors, and confirm machine-readable output remains parseable.</verification>
+        </instruction>
+        <instruction id="E06.04" title="Keep presentation faithful to operation contracts" source_refs="S-PLUGIN">
+          <imperative>Translate interface inputs and outputs without changing the operation's types, defaults, identities, or result meaning. Preserve distinctions among omitted values, null values, empty strings, false, and zero when the operation contract distinguishes them. Use accessible labels and keyboard-operable controls in the web presentation.</imperative>
+          <verification>Run shared parameter fixtures through CLI, MCP, and web adapters and compare the normalized invocation and semantic result.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.adapter.interface" pe="code.service.execution" relation="invokes shared operations through" op="Make contextual CLI, MCP, and web calls invoke the same Metaform module operations and assignment lifecycle, including complete non-web CLI operation from the installed command, module entrypoint, or executable wheel.">
+          <instructions>
+            <instruction id="J14.01" title="Delegate behavior to the shared operation" source_refs="S-PLUGIN">
+              <imperative>Route each contributed command, MCP tool, and web action to the same registered operation and execution context. Keep business logic, persistence, provenance, and assignment transitions in the shared operation path while adapters handle transport and presentation.</imperative>
+              <verification>Call one demo operation through each available surface and compare its records, provenance, state changes, and errors.</verification>
+            </instruction>
+            <instruction id="J14.02" title="Carry explicit work identity across transports" source_refs="S-PLUGIN">
+              <imperative>Carry the delivered nonce and submission header in ordinary operation arguments for CLI, MCP, and web submissions. Associate shared server processes with their actual work records while routing each invocation by its submitted identity.</imperative>
+              <verification>Interleave two nonces on one MCP process and complete their separate steps correctly; exercise the specified missing-header error.</verification>
+            </instruction>
+            <instruction id="J14.03" title="Separate client interruption from global shutdown" source_refs="S-REQUEST S-PLUGIN">
+              <imperative>Define how client disconnect, Ctrl-C, operation cancellation, assignment abort, and explicit runtime stop map to their respective lifecycle owners. Propagate the appropriate request through the shared service and report whether work is still running, cancelled, interrupted, or complete.</imperative>
+              <verification>Interrupt one CLI client while another assignment is active, then invoke explicit runtime stop and inspect both outcomes and durable records.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.bus.event">
+      <instructions>
+        <instruction id="E07.01" title="Use attributable event envelopes" source_refs="S-PLUGIN">
+          <imperative>Define an event envelope with event identity, event type, publishing module, project, assignment when applicable, producer or operation reference, and affected record references. Give each subscriber a stable event view so one handler's mutation cannot alter another handler's input.</imperative>
+          <verification>Dispatch one event to multiple handlers, attempt a local payload mutation, and confirm that attribution and other handlers' inputs remain unchanged.</verification>
+        </instruction>
+        <instruction id="E07.02" title="Specify notification delivery semantics" source_refs="S-PLUGIN">
+          <imperative>Document subscription ordering, concurrent delivery, and whether publication completion means scheduled or fully handled. State that the initial in-process bus carries live notifications and distinguish it from durable records and workflow progression.</imperative>
+          <verification>Demonstrate the documented order and completion behavior, then restart the process and recover authoritative state through data reads.</verification>
+        </instruction>
+        <instruction id="E07.03" title="Make dispatch pressure observable" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Give pending dispatch work an explicit capacity and backpressure policy suited to the runtime. Expose pending work and handler failures through diagnostics, and define reentrant publication behavior so a subscriber publishing another event cannot deadlock a fully occupied dispatcher.</imperative>
+          <verification>Publish a burst with a deliberately slow subscriber and a nested publisher; observe the documented pressure behavior and successful settlement of accepted work.</verification>
+        </instruction>
+        <instruction id="E07.04" title="Define subscription mutation during dispatch" source_refs="S-PLUGIN">
+          <imperative>Specify the subscription membership used by a publication and handle subscribe, unsubscribe, and module teardown consistently while delivery is active. Release completed dispatch references so unloaded module objects can be reclaimed.</imperative>
+          <verification>Subscribe and unsubscribe during a paused publication, repeat module cycles, and verify the documented delivery set and absence of retained obsolete subscriptions.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.bus.event" pe="code.service.execution" relation="runs subscribed handlers through" op="Run Metaform module subscribers on the shared synchronous and asynchronous runtime while retaining publishing module, project, assignment, provenance, and failure attribution.">
+          <instructions>
+            <instruction id="J15.01" title="Dispatch handlers through the common scheduler" source_refs="S-PLUGIN P-ASYNC">
+              <imperative>Execute synchronous and asynchronous handlers through the same execution adapters used by module operations. Carry the captured publishing context and a distinct subscribing-module identity into each handler invocation.</imperative>
+              <verification>Interleave events from two assignments across sync and async handlers; confirm that all handler results retain both causal and executing-module attribution.</verification>
+            </instruction>
+            <instruction id="J15.02" title="Contain unrelated handler failures" source_refs="S-PLUGIN P-ASYNC">
+              <imperative>Observe each handler's exception and record it against its subscription and event. Keep independent subscribers in independently supervised failure scopes so one failure does not cancel unrelated subscribers or assignments.</imperative>
+              <verification>Fail one handler while two others wait and complete; inspect every outcome and confirm the unrelated assignment remains active.</verification>
+            </instruction>
+            <instruction id="J15.03" title="Include subscribers in coordinated teardown" source_refs="S-PLUGIN S-REQUEST">
+              <imperative>Track active handler work as module-owned runtime work. Coordinate unsubscribe, in-flight settlement, and service cleanup so handlers retain required services until their documented completion or cancellation path finishes.</imperative>
+              <verification>Unload a subscriber during a database operation, then stop the runtime; verify the handler's truthful outcome and correctly ordered resource release.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+    <element namespace_address="code.service.persistence">
+      <instructions>
+        <instruction id="E08.01" title="Implement one authoritative global store" source_refs="S-PLUGIN S-DATA">
+          <imperative>Resolve one configured user-folder data root and one authoritative database for projects, assignments, module state, settings, knowledge, lineage, and retained artifact references. Keep project ownership explicit in records and queries, and expose access through chassis services.</imperative>
+          <verification>Operate from several tracked folders, inspect the actual database and data-root locations, and verify that identical namespace addresses retain separate project ownership.</verification>
+        </instruction>
+        <instruction id="E08.02" title="Make database transactions and ownership explicit" source_refs="S-REQUEST P-SQLITE">
+          <imperative>Use parameterized SQL, declared relationships, explicit commit and rollback boundaries, and a documented connection-ownership model. Choose transaction behavior deliberately rather than depending on changing driver defaults. Serialize writes as needed and keep database waits off the runtime loop.</imperative>
+          <verification>Run concurrent readers and writers, provoke a transaction failure and lock contention, and verify rollback, context isolation, and runtime responsiveness.</verification>
+        </instruction>
+        <instruction id="E08.03" title="Coordinate payload durability with record commits" source_refs="S-DATA">
+          <imperative>Write retained payloads completely to staged files, establish their final durable location, and commit their database references in a defined order. Record manifests and ownership so recovery can distinguish referenced payloads, incomplete writes, and orphaned staging material without confusing them with valid history.</imperative>
+          <verification>Interrupt each file-and-database transition and restart; verify that committed records resolve complete payloads and incomplete work is accurately identified.</verification>
+        </instruction>
+        <instruction id="E08.04" title="Make migrations and recovery reproducible" source_refs="S-REQUEST S-DATA P-SQLITE">
+          <imperative>Version database and stored-record migrations, retain recoverable source evidence, and provide a consistent backup and restore procedure covering both database and referenced payloads. Exercise recovery against real retained records rather than only empty databases.</imperative>
+          <verification>Upgrade and restore representative project history, settings, assignments, knowledge, and provenance; compare reconstructed artifacts and cross-record relationships.</verification>
+        </instruction>
+      </instructions>
+      <joins />
+    </element>
+    <element namespace_address="code.service.provenance">
+      <instructions>
+        <instruction id="E09.01" title="Model source-dependent provenance as domain objects" source_refs="S-PLUGIN S-VISIBILITY">
+          <imperative>Implement producers, operation attempts, prompts, rendered deliveries, bindings, input node and property dependencies, source knowledge revisions, answers, produced layers, output attachment targets, and derivation links as inspectable related objects. Expose typed methods that resolve a generated layer to its actual prompt sources and a source to all dependent knowledge.</imperative>
+          <verification>Inspect the demo's memory-management layer through the public API and CLI; resolve its code.cpp input dependency, target elements and joins, generating prompt, and downstream inference.</verification>
+        </instruction>
+        <instruction id="E09.02" title="Retain historical evidence by revision" source_refs="S-PLUGIN S-DATA">
+          <imperative>Preserve the actual content and revision identity used to produce a result. Keep subsequent prompt edits, input revisions, answer parsing, and derived results linked to that evidence rather than changing the historical production account.</imperative>
+          <verification>Edit a prompt and source object after producing a result; reconstruct the earlier account and compare its issued prompt, inputs, and answer exactly.</verification>
+        </instruction>
+        <instruction id="E09.03" title="Support precise bidirectional traversal" source_refs="S-PLUGIN">
+          <imperative>Resolve provenance from a produced object or an RE-owned join to its sources and from a source to dependent inference. Use exact revision references, project-scoped lookup, and cycle-aware traversal; report unavailable historical material explicitly.</imperative>
+          <verification>Traverse shared dependencies, cycles, and an unavailable source revision; confirm correct identities and bounded traversal without inventing missing evidence.</verification>
+        </instruction>
+        <instruction id="E09.04" title="Keep provenance and diagnostics complementary" source_refs="S-REQUEST S-PLUGIN">
+          <imperative>Use structured diagnostics carrying operation, module, project, assignment, and producer references to explain execution behavior. Link those diagnostics to durable provenance while keeping operational log retention separate from the authoritative history of produced records.</imperative>
+          <verification>Locate a failed demo operation from its diagnostic reference, inspect its durable lineage, and retrieve that lineage after rotating operational logs.</verification>
+        </instruction>
+      </instructions>
+      <joins>
+        <join re="code.service.provenance" pe="code.service.persistence" relation="stores lineage through" op="Keep Metaform lineage, source ownership, prompt and answer history, dependency records, and produced-object relationships durable inside the global project-aware store.">
+          <instructions>
+            <instruction id="J16.01" title="Commit records with their lineage links" source_refs="S-PLUGIN S-DATA">
+              <imperative>Persist produced records and their required provenance relationships in one database transaction when they share the store. Coordinate external payload references through the persistence service's durability contract, and preserve committed record lineage when a later operation stage fails.</imperative>
+              <verification>Inject a failure during combined record-and-lineage persistence; verify either a complete committed relationship set or a rolled-back transaction.</verification>
+            </instruction>
+            <instruction id="J16.02" title="Preserve reference integrity across history operations" source_refs="S-PLUGIN S-DATA">
+              <imperative>Carry provenance identities, project ownership, prompt and answer revisions, input bindings, owned-join references, and dependency links through migration, export, import, and backup restoration. Preserve original producer identities when importing retained history.</imperative>
+              <verification>Transfer a history unit containing inferred and authored material, then traverse an owned join's knowledge back to the same source evidence.</verification>
+            </instruction>
+            <instruction id="J16.03" title="Verify durable lineage after real interruption" source_refs="S-REQUEST S-DATA">
+              <imperative>Exercise interruption and restart with active operations, committed results, staged payloads, and pending submissions. Reconcile incomplete operation state with retained evidence while preserving all completed production relationships.</imperative>
+              <verification>Restart after graceful termination and abrupt process loss; compare committed prompts, answers, result references, and dependent-inference links with the pre-interruption evidence.</verification>
+            </instruction>
+          </instructions>
+        </join>
+      </joins>
+    </element>
+  </elements>
+</knowledge_layer>

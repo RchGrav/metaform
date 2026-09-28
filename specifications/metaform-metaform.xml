@@ -1,0 +1,1067 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="metaform-intended-shape-20260918-417d3a2b">
+  <entities>
+    <entity namespace_address="code.host.plugin" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.manager.lifecycle.plugin" name_length="3">
+          <joins>
+            <join type="purpose" namespace_address="code.interface.command"
+                data="Show each active module's commands, help and availability inside that module's own menu, keep chassis administration usable when every module is disabled, absent or broken, and withdraw a module's surface when it unloads."
+                function="Composes contributed commands into one context-resolved surface where help, completion, status and invocation use the same live capability resolution."
+                operator="presents contributions through"
+                observation="A plugin host surfaces plugin-contributed commands through a command interface it composes.">
+              <combined>
+                <entity namespace_address="code.interface.command.administration" name_length="3" operator="administers" observation="An administration command interface manages a host and its plugins independently of any plugin." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-030 REQ-038 REQ-039 REQ-071 REQ-072 REQ-077" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.settings"
+                data="Register the settings each module declares in Python, hydrate missing values from those declarations, and keep saved and glued values while the module is disabled, removed or restored."
+                function="Persists declared settings under module identity in one external state root and resolves the effective value from default, saved value and glue."
+                operator="registers declarations with"
+                observation="A plugin host persists plugin-declared settings outside the plugin's own code.">
+              <refs>
+                <ref key="requirement" value="REQ-060 REQ-061 REQ-062 REQ-063 REQ-064 REQ-065" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bus.data.event"
+                data="Bind a module's subscriptions at activation and withdraw them at unload, so modules request work and receive the eventual response without importing each other."
+                function="Delivers published events that carry managed object references to subscribers and records publisher, subscriber, project, work identity and delivery outcome."
+                operator="binds subscriptions to"
+                observation="A plugin host decouples plugins by routing their messages through a shared bus.">
+              <refs>
+                <ref key="requirement" value="REQ-038 REQ-040 REQ-095" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Run each module's registered public operations synchronously or asynchronously under their owning module, let one module invoke another's public operation without importing it, and track the tasks, workers and subprocesses a module starts until they actually stop at unload."
+                function="Invokes registered operations on one shared runtime with explicit caller context, persists job state and receipts, and tracks owned background work to its terminal state."
+                operator="runs module work through"
+                observation="A plugin host executes plugin code inside a runtime it controls.">
+              <combined>
+                <entity namespace_address="code.runtime.execution.job" name_length="3" operator="tracks" observation="A job execution runtime returns a durable receipt for long work and persists its outcome." />
+                <entity namespace_address="code.runtime.execution.process" name_length="3" operator="owns" observation="A process execution runtime registers the subprocesses it starts and follows them to exit." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-038 REQ-041 REQ-053 REQ-054 REQ-090 REQ-091 REQ-093 REQ-094" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Give every module the same namespace objects, receiver-owned typed joins and exact revisioned references, in unified or split, global or project databases as configured, and keep a removed module's records readable for inspection or its return."
+                function="Stores namespace objects with owned typed joins and revisions under project ownership, and resolves a join by project, receiving namespace, join ID and exact revision wherever it is placed."
+                operator="shares objects through"
+                observation="A plugin host gives plugins one common data model so their results can be exchanged by reference.">
+              <combined>
+                <entity namespace_address="code.store.graph.mirror" name_length="3" operator="places" observation="A mirror graph store holds part of the same graph in another database without changing identity." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-013 REQ-016 REQ-017 REQ-018 REQ-100 REQ-107 REQ-108 REQ-110" />
+                <ref key="migration" value="Earlier representations convert with source records and reference mapping kept. Unmapped or conflicting material stays visible." />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bootstrap.runtime"
+                data="Start the same chassis and discover modules under modules/ whether Metaform is installed, run as python -m metaform, or run directly from the wheel, on Linux, macOS and Windows, with every feature module disabled or physically absent."
+                function="Prepares an isolated owned runtime from the delivered package when needed and enters the same command contract without touching an installed copy."
+                operator="starts from"
+                observation="A plugin host has an entrypoint that locates its plugins and state before any plugin loads.">
+              <refs>
+                <ref key="requirement" value="REQ-030 REQ-031 REQ-035 REQ-042 REQ-170 REQ-171 REQ-213" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.interface.command" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Replace the chassis menu with the assigned work when a nonce is entered or found through the hidden working-folder marker, showing its actual instructions, prompt, selected context, knowledge addresses, submission header, status and lifecycle commands. Exiting the menu leaves the work open."
+                function="Resolves a nonce or a working-folder marker to the durable assignment and its delivered context."
+                operator="narrows to assigned work through"
+                observation="A contextual command interface changes its available commands from resolved work context.">
+              <refs>
+                <ref key="requirement" value="REQ-070 REQ-074 REQ-075 REQ-076 REQ-083" />
+                <ref key="marker" value="The working-folder marker is a discovery reference. The assignment record is authoritative." />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Send every command to the one owning operation, fully specified by arguments or structured input with no prompt required, so CLI, MCP, web, workflow and events never carry parallel feature logic."
+                function="Dispatches a named operation with supplied arguments and returns a structured result separate from diagnostics."
+                operator="dispatches commands through"
+                observation="A command interface delegates behavior to an execution layer.">
+              <refs>
+                <ref key="requirement" value="REQ-054 REQ-073 REQ-078" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.store.settings" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.interface.command"
+                data="Offer a concise keyboard-driven setup screen and equivalent scripted commands for inspecting, editing, enabling, disabling, resetting and gluing, with staged changes, save or discard, and help read from the live declarations."
+                function="Builds a settings and module-management surface from live declarations and applies staged edits on save."
+                operator="is edited through"
+                observation="A settings store is changed by a user through an interface.">
+              <combined>
+                <entity namespace_address="code.interface.command.configuration" name_length="3" operator="edits" observation="A configuration command interface stages, saves and resets declared settings." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-077 REQ-078 REQ-079 REQ-217" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.bus.data.event" name_length="3">
+          <joins>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Run each subscriber's handler as attributable work, so a slow or failing handler is reported for that handler and never blocks the publisher or another module."
+                function="Schedules handler invocations synchronously or asynchronously with the event's project and work context and records each outcome."
+                operator="runs handlers through"
+                observation="An event data bus hands each delivery to a runtime that executes the subscriber.">
+              <refs>
+                <ref key="requirement" value="REQ-039 REQ-095 REQ-096" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Carry stored requests, answers and variables as managed references, so an event announces work and the record stays in storage."
+                function="Supplies exact references that a subscriber resolves to the stored record."
+                operator="references records in"
+                observation="An event data bus passes references to stored data and leaves the data in its store.">
+              <refs>
+                <ref key="requirement" value="REQ-095 REQ-097 REQ-100" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.store.graph" name_length="2">
+          <joins />
+        </element>
+        <element role="SE" namespace_address="code.runtime.execution" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Carry project, module, operation, assignment, nonce, producer, step and working folder into each operation explicitly, so concurrent operations never inherit each other's context."
+                function="Supplies the resolved work identity and context for the operation being run."
+                operator="takes work context from"
+                observation="An execution runtime binds each unit of work to an explicit context.">
+              <refs>
+                <ref key="requirement" value="REQ-051 REQ-052 REQ-080" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Attribute every write made during an operation to that producing occurrence, and stop background work from writing under a producer that has completed."
+                function="Opens a producing occurrence for an operation and accepts the writes made under it."
+                operator="attributes writes through"
+                observation="An execution runtime labels the results of work with the run that produced them.">
+              <refs>
+                <ref key="requirement" value="REQ-093 REQ-102 REQ-103" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.ledger.provenance" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Name every prompt, binding, consumed input and produced output by exact join revision, keep two runs with equal content as two occurrences, and let one reference lead back through answer, prompt and inserted earlier answers to the original selected context."
+                function="Supplies immutable revisions and exact references that keep resolving after the current content is edited, hidden, moved or deleted."
+                operator="anchors occurrences in"
+                observation="A provenance ledger refers to immutable versions of the things it links.">
+              <refs>
+                <ref key="requirement" value="REQ-101 REQ-102 REQ-104 REQ-105 REQ-106" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.registry.assignment" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Keep each assignment, its exact issued prompt and its headed submission as durable records that outlive the client, the transport, the process and the working folder."
+                function="Persists assignment records under project ownership."
+                operator="persists work in"
+                observation="An assignment registry keeps work records beyond the process that created them.">
+              <refs>
+                <ref key="requirement" value="REQ-080 REQ-081 REQ-082 REQ-092" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Count what a nonce actually received through CLI read, MCP read, module call, event or job, including context fetched after issuance, as consumed input of its answer at exact revisions."
+                function="Records each delivered revision against the producing occurrence of the assignment."
+                operator="records deliveries in"
+                observation="An assignment registry can report what each assignee was given.">
+              <refs>
+                <ref key="requirement" value="REQ-101 REQ-102 REQ-145" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.bootstrap.runtime" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.settings"
+                data="Resolve the same authoritative configuration for the same state root from an installed command and from a directly run wheel, and hydrate missing values on a cold first run without overwriting glued, unknown or newer compatible values."
+                function="Resolves configuration from the selected external root, independent of package, extraction or wheel path."
+                operator="locates configuration through"
+                observation="A runtime bootstrap finds durable configuration outside the code it unpacks.">
+              <refs>
+                <ref key="requirement" value="REQ-061 REQ-062 REQ-063 REQ-066 REQ-174" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Let an older and a newer 1.x surface read and write the same state in either order, each preserving the fields, references, revisions and provenance it does not interpret, with no one-way migration and no change to an installed copy."
+                function="Reads and writes records while preserving unknown compatible content."
+                operator="shares state through"
+                observation="A runtime bootstrap opens existing state through a store before it runs a command.">
+              <refs>
+                <ref key="requirement" value="REQ-180 REQ-181 REQ-182 REQ-183 REQ-184 REQ-185 REQ-216" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin" name_length="1">
+      <joins>
+        <join type="purpose" namespace_address="code.manager.lifecycle.plugin"
+            data="Be found under modules/ from information readable before import, be skipped when listed in modules/disabled or when the platform is unsupported, activate as one owned lifecycle that rolls back on failure, and unload without leaving commands, subscriptions, tasks or processes behind. Shipped and community modules take this same path, as one Python file or one contained package."
+            function="Discovers candidates without importing them, activates one module as a single owned lifecycle, and withdraws every contribution it registered."
+            operator="is activated by"
+            observation="A plugin becomes live only through its host's lifecycle.">
+          <refs>
+            <ref key="requirement" value="REQ-033 REQ-034 REQ-035 REQ-036 REQ-037 REQ-038 REQ-039 REQ-042 REQ-201 REQ-202 REQ-214" />
+            <ref key="teaching_modules" value="showcase is the all-services template. event_requester and harness_runner follow the same contract and run without showcase installed." />
+          </refs>
+        </join>
+      </joins>
+      <elements>
+        <element role="DE" namespace_address="code.declaration.plugin" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.operation.public"
+                data="Name the feature's behavior once as registered operations, so the module's own commands and event handlers, other modules, MCP, web and workflow steps all reach one owning implementation that lives inside the module."
+                function="Implements feature behavior as synchronous or asynchronous callables that accept the chassis-supplied context and return results through the public operation contract."
+                operator="exposes behavior as"
+                observation="A plugin declaration lists the callable operations its host may invoke.">
+              <refs>
+                <ref key="requirement" value="REQ-032 REQ-040 REQ-041 REQ-054" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.adapter.operation"
+                data="Contribute complete Click commands with their own help and availability predicates, and event subscriptions with their handlers, each only adapting an outside trigger to a registered operation."
+                function="Translates an outside trigger into a call to a registered operation and adds no feature logic of its own."
+                operator="contributes"
+                observation="A plugin declaration lists the adapters through which its operations are reached.">
+              <combined>
+                <entity namespace_address="code.adapter.operation.command" name_length="3" operator="parses" observation="A command operation adapter turns parsed command arguments into an operation call." />
+                <entity namespace_address="code.adapter.operation.event" name_length="3" operator="handles" observation="An event operation adapter turns a delivered event into an operation call." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-054 REQ-072 REQ-077" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.declaration.settings"
+                data="Declare the module's setting keys, types, defaults, descriptions and constraints in Python, including settings that turn its own commands on or off."
+                function="States each setting as a typed declaration the host can register without running feature code."
+                operator="declares configuration through"
+                observation="A plugin declaration includes the settings the plugin owns.">
+              <refs>
+                <ref key="requirement" value="REQ-060" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.hook.lifecycle"
+                data="Acquire the module's tasks, subprocesses, listeners, caches and sessions in startup and release them in shutdown, so importing the module starts nothing and unloading it leaves nothing running."
+                function="Runs module-owned startup and shutdown inside the host's activation and deactivation."
+                operator="acquires resources through"
+                observation="A plugin declaration names the hooks its host calls at activation and deactivation.">
+              <refs>
+                <ref key="requirement" value="REQ-038 REQ-093" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="document.guide.developer"
+                data="Explain the module to the next developer: purpose, template derivation, entry declaration, imported services, operations, CLI, settings, events, sync and async behavior, data ownership, provenance, lifecycle, dependencies, platforms, resources, nonce context, installed and direct-wheel execution, and a runnable demonstration."
+                function="Documents the module at its public boundary so ownership can be read without the source."
+                operator="is explained by"
+                observation="A plugin ships with documentation of its public contract.">
+              <refs>
+                <ref key="requirement" value="REQ-200 REQ-203" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.operation.public" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.object.access.data"
+                data="Read and write the feature's domain records through metaform.data only, never a raw SQLite connection or another module's store, and keep project, producer and assignment context on every write."
+                function="Translates between the module's domain types and the host data service."
+                operator="reaches storage through"
+                observation="A public operation that keeps state reaches it through a data access object.">
+              <refs>
+                <ref key="requirement" value="REQ-040 REQ-050 REQ-100" />
+                <ref key="source" value="module-structure-refined.md section 7" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Run under the chassis runtime with the caller's project, nonce and producer preserved, declare blocking or long work so it is scheduled as a job, and never start a private event loop, scheduler or second runtime."
+                function="Invokes the operation synchronously or asynchronously with explicit context and owns any job it becomes."
+                operator="runs on"
+                observation="A public operation of a plugin executes on the host's runtime.">
+              <refs>
+                <ref key="requirement" value="REQ-051 REQ-052 REQ-053 REQ-090" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Create every produced Metaform record through the provenance path with its actual inputs, and give authored, imported, migrated and deterministic results their real origin instead of a fictional prompt."
+                function="Records the producing occurrence and the inputs the operation states it used."
+                operator="attributes results through"
+                observation="A public operation that produces records states what produced them.">
+              <refs>
+                <ref key="requirement" value="REQ-102 REQ-103" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.adapter.operation" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.operation.public"
+                data="Delegate every command and every event handler to the registered operation, so a Click callback or a handler is never the only implementation of a feature and both observe the same availability."
+                function="Accepts a call with arguments and context from any adapter."
+                operator="delegates to"
+                observation="An operation adapter calls an operation and holds no behavior of its own.">
+              <refs>
+                <ref key="requirement" value="REQ-054" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.interface.command"
+                data="Appear inside the module's own menu when the module is entered, stay out of the chassis root, and answer help and direct invocation from the same live state."
+                function="Mounts contributed commands under their owning module's context."
+                operator="mounts commands in"
+                observation="A command adapter becomes reachable once a command interface mounts it.">
+              <refs>
+                <ref key="requirement" value="REQ-071 REQ-072 REQ-074 REQ-077" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bus.data.event"
+                data="Publish and receive object-referenced events with the chassis attribution intact, including the request and eventual response pattern for success, failure and cancellation."
+                function="Delivers events to the module's subscriptions and accepts its publications."
+                operator="exchanges events through"
+                observation="An event adapter receives events from a bus it subscribes to.">
+              <refs>
+                <ref key="requirement" value="REQ-095 REQ-096 REQ-097" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.declaration.settings" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.settings"
+                data="Have the chassis persist, display, reset, glue and resolve these declarations, so the module keeps no second configuration system and generated feature configuration lands in writable runtime space."
+                function="Persists and resolves the declared settings under the module's identity."
+                operator="is persisted by"
+                observation="A settings declaration takes effect through a store that holds the values.">
+              <refs>
+                <ref key="requirement" value="REQ-060 REQ-062 REQ-064 REQ-065" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.hook.lifecycle" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Register every long-lived task, worker and subprocess with an owner, treat a cancel request as a request, and track the work to its actual terminal state before unload completes."
+                function="Tracks owned background work and reports requested cancellation apart from completed cancellation."
+                operator="registers owned work with"
+                observation="A lifecycle hook that starts background work hands its ownership to the host runtime.">
+              <refs>
+                <ref key="requirement" value="REQ-093 REQ-094" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.object.access.data" name_length="3">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Persist domain records as namespace objects and owned typed joins, define the module's own join types without closing the schema, and keep chassis references, addresses and revisions as they are instead of private copies."
+                function="Stores and returns objects, joins and exact references, preserving join content it does not interpret."
+                operator="persists through"
+                observation="A data access object maps domain types onto a store it does not own.">
+              <refs>
+                <ref key="requirement" value="REQ-017 REQ-100" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="document.guide.developer" name_length="2">
+          <joins />
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.workflow" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.engine.workflow" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="document.procedure"
+                data="Execute the maintained Canonical Intake, Native then Latent, through the same engine as any other authored workflow, with its terminology, response protocol, annealing and completion semantics intact, and let later operations deepen an element, join, branch or bounded region."
+                function="States an authored procedure with its sequence, roles, handoffs, response protocol and completion condition."
+                operator="executes"
+                observation="A workflow engine runs procedures authored apart from its code.">
+              <refs>
+                <ref key="requirement" value="REQ-020 REQ-021 REQ-022 REQ-024 REQ-025" />
+                <ref key="target_forms" value="URL, Type and inline content, as the Canonical Intake target declares them." />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.serializer.workflow"
+                data="Round-trip a workflow through XML, JSON and Markdown with execution meaning, object bindings, order, repeated content, attributes, mixed text, schemas, aliases and section names preserved, and with no inference performed."
+                function="Maps one canonical workflow representation to and from each supported serialization."
+                operator="loads definitions through"
+                observation="A workflow engine reads its definitions through a serializer.">
+              <refs>
+                <ref key="requirement" value="REQ-141 REQ-142" />
+                <ref key="xml_mapping" value="ElementTree" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.converter.workflow"
+                data="Infer executable steps, handoffs and how earlier outputs become later inputs from an external procedure, as reasoning of its own, keeping the original source and the resulting interpretation separately."
+                function="Produces an executable interpretation of a foreign procedure and retains the source beside it."
+                operator="imports foreign procedures through"
+                observation="A workflow engine that accepts foreign procedures converts them before running them.">
+              <refs>
+                <ref key="requirement" value="REQ-140 REQ-141" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.lexicalizer.workflow"
+                data="Bind the nouns of a procedure to this project's namespace objects as an explicit, inspectable agent task that preserves the source definition and records a new revision. Import alone never lexicalizes."
+                function="Inserts namespace references where a procedure names project subjects and leaves the readable name visible."
+                operator="orients procedures through"
+                observation="A workflow lexicalizer ties the language of a procedure to addressable subjects.">
+              <refs>
+                <ref key="requirement" value="REQ-143 REQ-144" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.renderer.prompt"
+                data="Issue each step as an exact snapshot of the authored text, resolved bindings, selected knowledge, applicable rules, object index, imperatives and submission header actually delivered, with those contributions kept distinguishable from authored text."
+                function="Renders a step's stored text and bindings into the exact prompt, by the same path for preview and for issue."
+                operator="issues steps through"
+                observation="A workflow engine that prompts agents renders each prompt from a stored definition.">
+              <refs>
+                <ref key="requirement" value="REQ-143 REQ-145" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.reader.answer"
+                data="Route each headed answer where the authored workflow sends it, turning an intake answer into namespace objects and receiver-owned joins while the exact answer stays retained even when it cannot be read."
+                function="Reads a submitted answer into objects and owned joins and records every mismatch beside the retained answer."
+                operator="routes answers through"
+                observation="A workflow engine passes each step's answer to a reader that makes it usable by later steps.">
+              <refs>
+                <ref key="requirement" value="REQ-021 REQ-023 REQ-140 REQ-211" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Deliver each issued step under a nonce with its required submission header, accept a submission as belonging to that assignment by its header, keep submit, advance, complete, abort and navigation exit distinct, and hold an authored human wait open until a person answers."
+                function="Issues a nonce for stored work and verifies that a submission belongs to it."
+                operator="assigns steps through"
+                observation="A workflow engine that hands steps to agents identifies each handoff.">
+              <refs>
+                <ref key="requirement" value="REQ-076 REQ-081 REQ-082 REQ-148 REQ-149" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Run agent steps, tools, branches, loops, parallel work and nested handoffs as asynchronous jobs that survive the client that started them and return later without blocking other activity."
+                function="Schedules long work as durable jobs and resumes continuation from retained state."
+                operator="runs steps on"
+                observation="A workflow engine delegates step execution to a runtime.">
+              <refs>
+                <ref key="requirement" value="REQ-090 REQ-091 REQ-092 REQ-140" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Keep definition revisions and runs independent, so editing a step creates a new revision, a replay from the edited point reuses earlier retained outputs, and the earlier run stays intact."
+                function="Stores definitions, runs and outputs as revisioned joins that earlier references keep resolving."
+                operator="retains definitions and runs in"
+                observation="A workflow engine keeps its definitions and run history in durable storage.">
+              <refs>
+                <ref key="requirement" value="REQ-146 REQ-147" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bus.data.event"
+                data="Announce step issue, completion, failure and cancellation as events while sequence, branching and synchronization stay in the engine."
+                function="Publishes announcements to subscribers without deciding what runs next."
+                operator="announces progress through"
+                observation="A workflow engine can announce progress on a bus without handing it control.">
+              <refs>
+                <ref key="requirement" value="REQ-097" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.launcher.agent"
+                data="Hand an assigned step to a configured harness through the shared event request and eventual response when Metaform launches the agent, and work the same way when an agent already inside a harness enters the nonce itself."
+                function="Launches a harness for a nonce as a public operation and publishes the stored response reference."
+                operator="requests agent work from"
+                observation="A workflow engine that uses external agents asks a launcher to start them.">
+              <refs>
+                <ref key="requirement" value="REQ-040 REQ-087 REQ-096" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.builder.distribution"
+                data="Prepare a workflow and its pending assignment for upload inside the workflow module, and leave building the wheel to the generic distribution and runtime services."
+                function="Builds a delivery artifact from selected modules and project data as a public operation."
+                operator="packages pending work through"
+                observation="A workflow engine whose work moves between machines hands packaging to a builder.">
+              <refs>
+                <ref key="requirement" value="REQ-150" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.serializer.workflow" name_length="2">
+          <joins />
+        </element>
+        <element role="SE" namespace_address="code.renderer.prompt" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Resolve inline references to namespace objects, joins, knowledge, variables and prior outputs at exact revisions, show the readable name from name_length, and never reduce a binding to copied text."
+                function="Resolves a reference to the stored content of one exact revision and renders an address as its readable name."
+                operator="resolves bindings in"
+                observation="A prompt renderer fills a template from referenced stored content.">
+              <refs>
+                <ref key="requirement" value="REQ-013 REQ-101 REQ-143" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.selector.layer"
+                data="Insert only the knowledge that the workflow selection and the namespace masks allow, on direct object, property, provider and workflow paths alike."
+                function="Answers which contributions are selected at an object for an operation, as a public operation of the knowledge module."
+                operator="selects context through"
+                observation="A prompt renderer that includes optional context asks a selector what to include.">
+              <refs>
+                <ref key="requirement" value="REQ-121 REQ-122" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.resolver.property"
+                data="Bring the properties that apply to a bound object by its namespace placement, such as the language of an installer, without applying them to unrelated branches."
+                function="Resolves which property joins apply to an object from their placement between trunk and leaf."
+                operator="gathers applicable properties through"
+                observation="A prompt renderer can add the inherited properties of a subject to its context.">
+              <refs>
+                <ref key="requirement" value="REQ-122" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="data.rulebook"
+                data="Contextually add the rulebook's semantic rules for the task to a prompt that is not semantic by itself, for an internal workflow such as intake or importing a prompt or workflow, as the instructions and constraints tied to the agent's operation, and keep the issued rule revisions in the snapshot so later edits change only later work."
+                function="Holds semantic rules keyed to the task they govern, each with its concise statement, explanation, examples and teaching distinctions, at a revision."
+                operator="adds task rules from"
+                observation="A prompt renderer can add the rules that govern a task to the prompt it builds for that task.">
+              <refs>
+                <ref key="requirement" value="REQ-130 REQ-131 REQ-133 REQ-134" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Record for every inference the prompt definition and revision, exact rendered text, variables, bindings, consumed revisions, selected layers, submitted answer, produced outputs and the link to earlier producing occurrences."
+                function="Records a producing occurrence with its exact inputs and links it to the occurrences whose outputs it consumed."
+                operator="records issued prompts in"
+                observation="A prompt renderer knows exactly what text and inputs it delivered.">
+              <refs>
+                <ref key="requirement" value="REQ-102 REQ-145" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.converter.workflow" name_length="2">
+          <joins />
+        </element>
+        <element role="NE" namespace_address="code.lexicalizer.workflow" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Find this project's namespace objects by address and readable name, so each noun binds to the subject it means."
+                function="Returns objects by namespace address and by the name their name_length yields."
+                operator="finds subjects in"
+                observation="A workflow lexicalizer looks up the subjects it binds language to.">
+              <refs>
+                <ref key="requirement" value="REQ-013 REQ-144" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.reader.answer" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Materialize elements, receiver-owned joins with their encounter functions, and annealed positions kept addressable as inactive, and apply a structural correction only as an explicit revision recording previous state, new state, reason and evidence."
+                function="Stores objects and joins with open authored fields and marks positions inactive without deleting them."
+                operator="materializes answers into"
+                observation="An answer reader writes what it reads into durable storage.">
+              <refs>
+                <ref key="requirement" value="REQ-012 REQ-014 REQ-015 REQ-016 REQ-023 REQ-026" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Keep Native and Latent outputs separately attributable, with Latent findings attached at the subjects they concern as their own contribution."
+                function="Attributes each contribution to its own producing occurrence."
+                operator="attributes contributions through"
+                observation="An answer reader records which run each answer came from.">
+              <refs>
+                <ref key="requirement" value="REQ-025" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="document.procedure" name_length="1">
+          <joins />
+        </element>
+        <element role="NE" namespace_address="data.rulebook" name_length="1">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Keep each rule as a revisioned record that a user can discover by the operation it governs, inspect with its history, and edit through the common object interface, with CLI access independent of web."
+                function="Stores revisioned records and returns current and historical revisions by exact reference."
+                operator="is kept in"
+                observation="A rulebook persists its rules in a store that keeps their revisions.">
+              <refs>
+                <ref key="requirement" value="REQ-132 REQ-134" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.knowledge" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.layer.knowledge" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.selector.layer"
+                data="Decide which layers enter an operation at each object. The project supplies the initial selection, each object applies outgoing selection = (incoming selection AND local mask) OR local selection from trunk to leaf, a descendant can select again after a mask, and an unsupported selector stays stored and reported instead of widening to project defaults."
+                function="Computes effective selection per object from inherited selection, local mask and local selection."
+                operator="is selected through"
+                observation="A knowledge layer reaches a consumer only when a selector includes it.">
+              <refs>
+                <ref key="requirement" value="REQ-121 REQ-122 REQ-123" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.resolver.property"
+                data="Apply knowledge carried on a property or provider to the objects its placement covers, forward to the named branches and back toward the trunk, under the same selection, so an unselected layer cannot enter through a provider."
+                function="Resolves which property joins apply to an object from their placement between trunk and leaf."
+                operator="applies by placement through"
+                observation="A knowledge layer attached to a property applies where the property applies.">
+              <refs>
+                <ref key="requirement" value="REQ-122" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.memory.agent"
+                data="Let an agent record what it learned against the elements and joins it was working with, as editable knowledge selected through the same mechanism as any layer and reachable from CLI, MCP and web through the same memory operations."
+                function="Creates, reads, searches, updates and deletes localized memories at element and owned-join addresses."
+                operator="gains working memory through"
+                observation="A knowledge layer system can hold memories written by the agents that use it.">
+              <refs>
+                <ref key="requirement" value="REQ-126 REQ-128" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.engine.workflow"
+                data="Apply one authored request to every selected object and every owned join as assigned inference, such as three best practices per object or blind spots per join, and attach each answer at the subject it explains."
+                function="Runs an authored request per subject as assigned steps, as a public operation of the workflow module."
+                operator="generates layers through"
+                observation="A knowledge layer is produced by running a request over many subjects.">
+              <refs>
+                <ref key="requirement" value="REQ-010 REQ-040 REQ-120" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Attach each contribution as a typed join on the element or owned join it explains, with attachment location kept separate from the inputs that caused it."
+                function="Stores typed joins on an object and addresses an owned join as a subject."
+                operator="attaches knowledge in"
+                observation="A knowledge layer stores its contributions at the subjects they describe.">
+              <refs>
+                <ref key="requirement" value="REQ-016 REQ-120" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Record the nodes, properties, prior knowledge and revisions actually included in the producing prompt and nothing merely available, hide inference transitively when a source it consumed is hidden while keeping it stored, and leave other hides in place when one source returns."
+                function="Reports, for a contribution, the inputs it consumed and the contributions that consumed it."
+                operator="traces dependencies through"
+                observation="A derived knowledge layer depends on the sources recorded when it was produced.">
+              <refs>
+                <ref key="requirement" value="REQ-124 REQ-125" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.selector.layer" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Read project selection, local selections and local masks from the namespace objects along the path from trunk to leaf."
+                function="Returns the objects on a namespace path with their stored selection fields."
+                operator="reads selection from"
+                observation="A layer selector evaluates selection data stored with the hierarchy it walks.">
+              <refs>
+                <ref key="requirement" value="REQ-121" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.resolver.property" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Read property joins and where they sit in the namespace, so applicability follows placement."
+                function="Returns the joins of a role along a namespace path."
+                operator="reads placement from"
+                observation="A property resolver walks the hierarchy that holds the properties.">
+              <refs>
+                <ref key="requirement" value="REQ-122" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.memory.agent" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Keep every memory as a revisioned join at an existing element or join address, so an edit or delete changes what later work receives, never what an earlier prompt consumed, and removing one memory hides nothing else."
+                function="Stores revisioned joins and keeps historical revisions resolvable after update or delete."
+                operator="stores memories in"
+                observation="An agent memory persists entries addressed to the subjects they concern.">
+              <refs>
+                <ref key="requirement" value="REQ-106 REQ-126 REQ-127" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.history" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.history.artifact" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.snapshot.artifact"
+                data="Capture one selected artifact boundary the same way for baseline, change, comparison, reconstruction and export, including tracked, untracked, ignored, binary, added, removed and renamed content and applicable metadata. A selected Git origin keeps the selected commit's bytes and a folder origin keeps an equally explicit baseline. Later work never overwrites an origin, and experiments against it stay sibling variants."
+                function="Captures the content and metadata inside a boundary as an immutable baseline or as a change against one."
+                operator="captures states through"
+                observation="An artifact history is built from captured states of the artifact.">
+              <combined>
+                <entity namespace_address="code.snapshot.artifact.origin" name_length="3" operator="fixes" observation="An origin artifact snapshot fixes the baseline that later states are compared against." />
+                <entity namespace_address="code.snapshot.artifact.variant" name_length="3" operator="records" observation="A variant artifact snapshot records a changed state against an origin." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-011 REQ-160 REQ-162" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.reconstructor.artifact"
+                data="Rebuild a selected origin or variant, with its text, binary and filesystem content, using Python alone, without the originating repository or a Git executable."
+                function="Rebuilds an artifact state from a retained baseline and its changes."
+                operator="restores states through"
+                observation="An artifact history can return an earlier state of the artifact.">
+              <refs>
+                <ref key="requirement" value="REQ-163" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Keep origin identity, baselines, variant payloads and their references durable under project ownership, with payload writes that an interruption cannot leave half replaced."
+                function="Stores payload bytes and the joins that reference them with recoverable writes."
+                operator="retains payloads in"
+                observation="An artifact history keeps its captured states in durable storage.">
+              <refs>
+                <ref key="requirement" value="REQ-109 REQ-162" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.ledger.provenance"
+                data="Tie each variant to the run that actually produced it."
+                function="Links an output to its producing occurrence."
+                operator="attributes variants through"
+                observation="An artifact history can say what produced each recorded state.">
+              <refs>
+                <ref key="requirement" value="REQ-102 REQ-162" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.snapshot.artifact" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Tell Metaform's own context, nonce, discovery, runtime and navigation markers apart from the artifact, so they never count as edits or appear in a reconstructed project."
+                function="Identifies the marker files that belong to work context."
+                operator="excludes markers named by"
+                observation="A snapshot taken inside a working folder separates tool state from the subject.">
+              <refs>
+                <ref key="requirement" value="REQ-161" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.reconstructor.artifact" name_length="2">
+          <joins />
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.distribution" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.builder.distribution" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.declaration.plugin"
+                data="Read each selected module's implementation, owned resources, dependencies and platform limits from the module's own declaration, so a wheel holds exactly the selected modules, a zero-module wheel holds only the chassis, no built-in name gets special treatment, and native content produces an accurate platform tag."
+                function="Declares what a module owns and requires in a form readable before the module runs."
+                operator="derives contents from"
+                observation="A distribution builder decides package contents from declared ownership.">
+              <refs>
+                <ref key="requirement" value="REQ-036 REQ-175 REQ-176 REQ-177" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bootstrap.runtime"
+                data="Make the wheel directly executable as python /path/to/metaform.whl, cold and offline with no installation, checkout, network or prepared cache, so a hosted agent in ChatGPT or an Anthropic environment can fetch its assignment, reason in its own context and submit through separate invocations."
+                function="Prepares an isolated owned runtime from the delivered package when needed and enters the same command contract without touching an installed copy."
+                operator="embeds"
+                observation="A distribution that runs without installation carries its own bootstrap.">
+              <refs>
+                <ref key="requirement" value="REQ-170 REQ-171 REQ-172 REQ-173 REQ-174 REQ-215" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.transfer.project"
+                data="Put the selected work's necessary closure in the delivery: project knowledge, eligible referenced global knowledge, exact historical contributions, rules, prompts, workflow definitions, artifact payloads and pending assignment state, with no unrelated project's content."
+                function="Exports and imports a project's selected closure with identities intact."
+                operator="carries project work through"
+                observation="A distribution that continues work elsewhere includes the work's data.">
+              <combined>
+                <entity namespace_address="code.transfer.project.export" name_length="3" operator="gathers" observation="An export project transfer gathers the closure of selected work into a portable form." />
+                <entity namespace_address="code.transfer.project.import" name_length="3" operator="merges" observation="An import project transfer merges carried work into existing state." />
+              </combined>
+              <refs>
+                <ref key="requirement" value="REQ-107 REQ-164 REQ-172" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="SE" namespace_address="code.transfer.project" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Copy objects, joins, revisions, project ownership and provenance with identities unchanged, coordinate the writes so an interrupted import never replaces complete state with partial state, and keep both histories visible when an import conflicts."
+                function="Reads and writes records by exact identity and reports a conflicting identity instead of replacing it."
+                operator="moves records through"
+                observation="A project transfer reads from one store and writes into another.">
+              <refs>
+                <ref key="requirement" value="REQ-107 REQ-109 REQ-165" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Carry a pending assignment with its dedicated workfolder content, staged inputs, generated outputs and binary files, so the nonce resumes elsewhere with its physical inputs."
+                function="Supplies the assignment record and names the workfolder content that belongs to it."
+                operator="carries pending work from"
+                observation="A project transfer that continues work includes the unfinished work's state.">
+              <refs>
+                <ref key="requirement" value="REQ-164" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.history.artifact"
+                data="Include the origin baseline and the variants needed to reconstruct the selected artifact without the original repository."
+                function="Exports retained origins and variants as a public operation of the history module."
+                operator="carries artifact history from"
+                observation="A project transfer can include the recorded states of the project's artifact.">
+              <refs>
+                <ref key="requirement" value="REQ-040 REQ-163" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.adapter.harness" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.launcher.agent" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Give a launched Codex, Claude or other configured harness only the nonce and the Metaform invocation, so the agent fetches the exact stored assignment itself and nothing is paraphrased."
+                function="Issues a nonce for stored work and resolves it to the exact assignment for whoever presents it."
+                operator="hands off work by"
+                observation="An agent launcher passes the agent a reference to its work.">
+              <refs>
+                <ref key="requirement" value="REQ-081 REQ-087" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Launch the harness as an owned asynchronous process that returns a durable receipt, own its descendants to their actual exit, and report success, failure, requested cancellation, completed cancellation and interruption apart."
+                function="Registers a launched process under its owning operation and tracks it to its terminal state."
+                operator="owns processes through"
+                observation="An agent launcher starts a process that a runtime then supervises.">
+              <refs>
+                <ref key="requirement" value="REQ-091 REQ-093 REQ-094" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.bus.data.event"
+                data="Take a stored request reference from any requester module, queue the harness job and return at once, then publish the stored response reference for success, failure and cancellation."
+                function="Delivers the request event and carries the response event back to the requester's subscription."
+                operator="answers requests through"
+                observation="An agent launcher can take work requests from a bus and answer on it.">
+              <refs>
+                <ref key="requirement" value="REQ-096 REQ-202" />
+                <ref key="teaching_pair" value="event_requester sends the request and receives the response. harness_runner responds." />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.fixture.agent"
+                data="Exercise launch, nonce entry, headed submission and response without credentials, labeled as a fixture and never reported as a provider run."
+                function="Answers the assignment protocol deterministically on the local machine."
+                operator="is proven mechanically by"
+                observation="An agent launcher can be tested with a stand-in agent.">
+              <refs>
+                <ref key="requirement" value="REQ-087 REQ-212" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.fixture.agent" name_length="2">
+          <joins />
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.adapter.tool" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.server.tool" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.registry.assignment"
+                data="Resolve each MCP request's own nonce, from the designated Metaform header or from an explicit argument where the transport has no headers, to its assignment, project, workfolder and producer, so one server process interleaves many assignments and no process or connection identity stands in for the work."
+                function="Resolves a presented nonce to its durable assignment and context."
+                operator="identifies requests through"
+                observation="A tool server that serves several callers identifies the work behind each request.">
+              <refs>
+                <ref key="requirement" value="REQ-080 REQ-084 REQ-085" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Invoke the same owning operations the CLI invokes, so MCP delivers the same assignment, actual prompt, references, selected knowledge and memory, lifecycle and submission contract, and never replaces the CLI."
+                function="Dispatches a named operation with supplied arguments and the caller's resolved context."
+                operator="serves operations through"
+                observation="A tool server exposes operations that something else implements.">
+              <refs>
+                <ref key="requirement" value="REQ-054 REQ-086" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.adapter.web" name_length="2">
+      <joins />
+      <elements>
+        <element role="DE" namespace_address="code.interface.web" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Present and invoke the same module operations, work identity, references, provenance and durable state as CLI and MCP, with no private workflow or data path, and stay removable with CLI, data, workflow, memory, provenance and administration still working."
+                function="Dispatches a named operation with supplied arguments and the caller's resolved context."
+                operator="invokes operations through"
+                observation="A web interface calls the operations of the system it fronts.">
+              <refs>
+                <ref key="requirement" value="REQ-054 REQ-190 REQ-191 REQ-193" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.store.settings"
+                data="Own bind, port, token access and the explicitly enabled trusted-environment bypass as module settings, with unauthenticated non-loopback access never the default, and serve the tracked projects of one state root from one instance."
+                function="Persists and resolves the module's declared settings."
+                operator="is configured through"
+                observation="A web interface reads its binding and access policy from configuration.">
+              <refs>
+                <ref key="requirement" value="REQ-194 REQ-195" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.viewer.graph"
+                data="Show the collected namespace objects and receiver-owned joins as they are stored, with names from name_length, details and attached layers on inspection, and no invented edges, filler or confidence decoration."
+                function="Draws stored nodes and labeled edges with stable positions, pan, zoom and keyboard movement between connected nodes."
+                operator="shows the Metaform through"
+                observation="A web interface for graph data includes a view of the graph.">
+              <refs>
+                <ref key="requirement" value="REQ-192" />
+                <ref key="source" value="intake-graph-viewer-plan.md" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.editor.workflow"
+                data="Let a person edit the surrounding prompt text while inline object identities, selected contributions and exact revisions stay inspectable and never turn into copied prose, and preview exactly what an issued step will deliver."
+                function="Edits authored text around typed inline bindings and previews the rendered result."
+                operator="authors procedures through"
+                observation="A web interface for workflows includes an editor for them.">
+              <refs>
+                <ref key="requirement" value="REQ-143 REQ-192" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.viewer.graph" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.store.graph"
+                data="Read objects, owned joins and layer attachments for the current project through the shared object service, and refresh them as agents record them while keeping camera, selection and unfinished text."
+                function="Returns a project's objects, owned joins and contributions with exact references."
+                operator="reads the graph from"
+                observation="A graph viewer draws what a store returns.">
+              <refs>
+                <ref key="requirement" value="REQ-191 REQ-192" />
+                <ref key="source" value="intake-graph-viewer-plan.md, live updates requested 2026-09-18" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+        <element role="NE" namespace_address="code.editor.workflow" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.renderer.prompt"
+                data="Show inline object content and the prompt preview from the same renderer that issues the step."
+                function="Renders a step's stored text and bindings into the exact prompt, as a public operation of the workflow module."
+                operator="previews through"
+                observation="A workflow editor previews a step with the renderer that will issue it.">
+              <refs>
+                <ref key="requirement" value="REQ-145 REQ-191" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.engine.workflow"
+                data="Save edits as new definition revisions and start, inspect and continue runs through the workflow module's own operations."
+                function="Accepts definition edits and run lifecycle calls as public operations."
+                operator="saves and runs through"
+                observation="A workflow editor changes definitions that an engine owns.">
+              <refs>
+                <ref key="requirement" value="REQ-146 REQ-191" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+    <entity namespace_address="code.plugin.adapter.terminal" name_length="2">
+      <joins>
+        <join type="purpose" namespace_address="code.manager.lifecycle.plugin"
+            data="Declare its narrower operating-system support, so it is skipped before its platform-specific imports run anywhere else and the chassis and the web module stay untouched."
+            function="Reads a module's declared platform limits before importing it and skips an incompatible module."
+            operator="is skipped where unsupported by"
+            observation="A plugin with platform limits relies on its host to check them before loading it.">
+          <refs>
+            <ref key="requirement" value="REQ-037 REQ-042 REQ-196" />
+          </refs>
+        </join>
+      </joins>
+      <elements>
+        <element role="DE" namespace_address="code.emulator.terminal" name_length="2">
+          <joins>
+            <join type="purpose" namespace_address="code.interface.web"
+                data="Add a browser terminal for a shell or a coding agent to the workbench as a separate optional module."
+                function="Accepts module-owned web contributions through the shared module contract."
+                operator="appears in"
+                observation="A terminal emulator served to a browser is shown inside a web interface.">
+              <refs>
+                <ref key="requirement" value="REQ-196" />
+              </refs>
+            </join>
+            <join type="purpose" namespace_address="code.runtime.execution"
+                data="Own each shell or agent process it starts and release it at unload."
+                function="Registers a launched process under its owning module and tracks it to its terminal state."
+                operator="owns processes through"
+                observation="A terminal emulator runs a child process for each session.">
+              <refs>
+                <ref key="requirement" value="REQ-093" />
+              </refs>
+            </join>
+          </joins>
+        </element>
+      </elements>
+    </entity>
+  </entities>
+  <subtypes>
+    <subtype namespace_address="code.interface.command.administration" />
+    <subtype namespace_address="code.interface.command.configuration" />
+    <subtype namespace_address="code.runtime.execution.job" />
+    <subtype namespace_address="code.runtime.execution.process" />
+    <subtype namespace_address="code.store.graph.mirror" />
+    <subtype namespace_address="code.adapter.operation.command" />
+    <subtype namespace_address="code.adapter.operation.event" />
+    <subtype namespace_address="code.snapshot.artifact.origin" />
+    <subtype namespace_address="code.snapshot.artifact.variant" />
+    <subtype namespace_address="code.transfer.project.export" />
+    <subtype namespace_address="code.transfer.project.import" />
+  </subtypes>
+</result>

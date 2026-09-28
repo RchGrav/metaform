@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="dt-codex-20260915-8d3f2c1a">
+    <artifact type="code" name="OpenAI Codex" description="A terminal-oriented programming-agent system with interactive, automated, server, extension, and programmatic execution surfaces." />
+    <elements>
+        <element role="DE" namespace_address="code.agent.programming" name_length="2" ef="Transforms software-development intent into iterative model-guided reasoning and actions against a working software artifact.">
+            <joins>
+                <join pe="code.runtime.session" op="Maintain Codex conversations, turns, context, resumability, and ongoing execution state while coding work progresses." relation="maintains work through" observation="A conversational programming agent carries iterative task state through a session runtime.">
+                    <combined>
+                        <entity namespace_address="code.runtime.session.thread" name_length="3" name="thread session runtime" relation="organizes" observation="A thread groups successive agent turns into one continuing conversation." />
+                        <entity namespace_address="code.runtime.session.history" name_length="3" name="history session runtime" relation="retains" observation="Session history preserves prior interaction state for later continuation." />
+                        <entity namespace_address="code.runtime.session.context" name_length="3" name="context session runtime" relation="supplies" observation="Session context supplies prior interaction state to subsequent agent work." />
+                    </combined>
+                </join>
+                <join pe="code.runtime.tool" op="Let Codex inspect files, run commands, search resources, modify the working tree, and perform other callable coding operations." relation="acts through" observation="A programming agent performs concrete work through callable tool operations.">
+                    <combined>
+                        <entity namespace_address="code.runtime.tool.command" name_length="3" name="command tool runtime" relation="executes" observation="A command tool runtime executes host commands and returns their results." />
+                        <entity namespace_address="code.runtime.tool.patch" name_length="3" name="patch tool runtime" relation="applies" observation="A patch tool runtime transforms files from structured patch instructions." />
+                        <entity namespace_address="code.runtime.tool.search" name_length="3" name="search tool runtime" relation="retrieves" observation="A search tool runtime locates information requested during agent work." />
+                    </combined>
+                </join>
+                <join pe="code.control.execution" op="Constrain Codex actions according to sandbox boundaries, approval decisions, and executable-operation policy." relation="subjects execution to" observation="Agent-controlled host operations pass through execution controls before unrestricted effects are permitted.">
+                    <combined>
+                        <entity namespace_address="code.control.execution.sandbox" name_length="3" name="sandbox execution control" relation="restricts" observation="A sandbox limits the host resources available to an executing operation." />
+                        <entity namespace_address="code.control.execution.approval" name_length="3" name="approval execution control" relation="authorizes" observation="Approval control determines whether an operation requiring additional authority may proceed." />
+                        <entity namespace_address="code.control.execution.policy" name_length="3" name="policy execution control" relation="evaluates" observation="Execution policy classifies operations against configured rules before execution." />
+                    </combined>
+                </join>
+                <join pe="code.interface.command" op="Expose Codex locally as both an interactive terminal experience and a non-interactive command suitable for scripted execution." relation="accepts work through" observation="A terminal programming agent exposes command-driven interaction for human or automated callers.">
+                    <combined>
+                        <entity namespace_address="code.interface.command.interactive" name_length="3" name="interactive command interface" relation="presents" observation="An interactive command interface exchanges incremental input and output with a human operator." />
+                        <entity namespace_address="code.interface.command.automation" name_length="3" name="automation command interface" relation="emits" observation="An automation command interface supports unattended invocation and machine-consumable results." />
+                    </combined>
+                </join>
+                <join pe="code.server.application" op="Provide Codex agent lifecycle operations to richer clients without embedding the core runtime directly into each client surface." relation="exposes lifecycle through" observation="An application server presents agent lifecycle operations across a client-server boundary." />
+            </joins>
+        </element>
+        <element role="SE" namespace_address="code.runtime.session" name_length="2" ef="Owns continuing conversational execution state and coordinates successive agent turns within that state.">
+            <joins>
+                <join pe="code.protocol.session" op="Represent Codex thread, turn, item, request, and event state consistently across runtime boundaries." relation="communicates through" observation="A session runtime exchanges lifecycle state through a defined session protocol." />
+                <join pe="code.runtime.tool" op="Execute the model-requested operations belonging to each Codex turn." relation="dispatches actions through" observation="A session runtime dispatches requested operations to a tool runtime while a turn is active." />
+            </joins>
+        </element>
+        <element role="SE" namespace_address="code.runtime.tool" name_length="2" ef="Registers callable operations, resolves requested tools, and dispatches their execution to concrete handlers.">
+            <joins>
+                <join pe="code.control.execution" op="Apply Codex permission and execution restrictions before effectful tool operations reach the host environment." relation="routes effects through" observation="Tool operations that can affect host resources are mediated by execution controls." />
+                <join pe="code.runtime.extension" op="Make Codex tool capabilities expandable through MCP servers, plugins, connectors, skills, and hooks." relation="receives capabilities from" observation="An extensible tool runtime can incorporate externally or separately defined capabilities into its callable catalog.">
+                    <combined>
+                        <entity namespace_address="code.runtime.extension.mcp" name_length="3" name="MCP extension runtime" relation="integrates" observation="An MCP extension runtime discovers and invokes capabilities through Model Context Protocol servers." />
+                        <entity namespace_address="code.runtime.extension.plugin" name_length="3" name="plugin extension runtime" relation="loads" observation="A plugin extension runtime introduces separately packaged capabilities into a host runtime." />
+                        <entity namespace_address="code.runtime.extension.connector" name_length="3" name="connector extension runtime" relation="connects" observation="A connector extension runtime exposes capabilities backed by external services." />
+                        <entity namespace_address="code.runtime.extension.skill" name_length="3" name="skill extension runtime" relation="supplies" observation="A skill extension runtime supplies reusable task guidance and supporting resources." />
+                        <entity namespace_address="code.runtime.extension.hook" name_length="3" name="hook extension runtime" relation="intercepts" observation="A hook extension runtime invokes configured behavior at defined lifecycle events." />
+                    </combined>
+                </join>
+            </joins>
+        </element>
+        <element role="SE" namespace_address="code.control.execution" name_length="2" ef="Mediates host operations according to isolation boundaries, permission requirements, and executable-operation rules.">
+            <joins />
+        </element>
+        <element role="NE" namespace_address="code.interface.command" name_length="2" ef="Presents agent capabilities as terminal commands with interactive and automation-oriented execution modes.">
+            <joins>
+                <join pe="code.server.application" op="Drive Codex threads and turns from the TUI and exec surfaces through the shared in-process application-server lifecycle." relation="drives" observation="Command surfaces can share an application-server lifecycle instead of independently implementing agent-session orchestration." />
+            </joins>
+        </element>
+        <element role="NE" namespace_address="code.server.application" name_length="2" ef="Exposes agent lifecycle operations as structured requests, responses, notifications, and streamed state changes.">
+            <joins>
+                <join pe="code.runtime.session" op="Create, resume, steer, inspect, and manage Codex threads and turns on behalf of client applications." relation="manages" observation="An agent application server delegates conversational lifecycle operations to a session runtime." />
+                <join pe="code.protocol.session" op="Encode Codex application-server requests, responses, notifications, and lifecycle data in a stable typed contract." relation="serializes through" observation="An application server communicates with clients through a defined request and event protocol." />
+            </joins>
+        </element>
+        <element role="NE" namespace_address="code.protocol.session" name_length="2" ef="Defines typed representations for agent submissions, lifecycle requests, responses, notifications, events, and conversation state.">
+            <joins />
+        </element>
+        <element role="NE" namespace_address="code.client.programmatic" name_length="2" ef="Lets host programs start, resume, run, and consume programming-agent conversations through a software API.">
+            <joins>
+                <join pe="code.interface.command" op="Let the Codex TypeScript SDK start or resume agent threads by invoking the packaged Codex executable and consuming its structured execution stream." relation="invokes" observation="A subprocess-backed programmatic client can expose a command-driven agent as a host-language API." />
+            </joins>
+        </element>
+        <element role="NE" namespace_address="code.runtime.extension" name_length="2" ef="Discovers, loads, and connects separately defined capabilities that augment the host agent runtime.">
+            <joins>
+                <join pe="code.runtime.tool" op="Expose enabled Codex extensions as capabilities the agent can discover or invoke during work." relation="contributes capabilities to" observation="An extension runtime augments a host tool runtime with additional discoverable behavior." />
+            </joins>
+        </element>
+    </elements>
+    <subtypes>
+        <subtype namespace_address="code.runtime.session.thread" />
+        <subtype namespace_address="code.runtime.session.history" />
+        <subtype namespace_address="code.runtime.session.context" />
+        <subtype namespace_address="code.runtime.tool.command" />
+        <subtype namespace_address="code.runtime.tool.patch" />
+        <subtype namespace_address="code.runtime.tool.search" />
+        <subtype namespace_address="code.control.execution.sandbox" />
+        <subtype namespace_address="code.control.execution.approval" />
+        <subtype namespace_address="code.control.execution.policy" />
+        <subtype namespace_address="code.interface.command.interactive" />
+        <subtype namespace_address="code.interface.command.automation" />
+        <subtype namespace_address="code.runtime.extension.mcp" />
+        <subtype namespace_address="code.runtime.extension.plugin" />
+        <subtype namespace_address="code.runtime.extension.connector" />
+        <subtype namespace_address="code.runtime.extension.skill" />
+        <subtype namespace_address="code.runtime.extension.hook" />
+    </subtypes>
+</result>

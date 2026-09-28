@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<result id="metaform-specs-20260915-7c8f4d21">
+  <artifact type="code" name="Metaform" description="Community-extensible inference platform that maps artifacts into typed project knowledge, executes authored workflows, and coordinates agent work through a plugin microkernel." />
+  <elements>
+    <element role="DE" namespace_address="code.platform.inference" name_length="2" ef="Provides an extensible runtime that turns artifact structure into addressable typed knowledge and uses that knowledge to coordinate reusable inference work.">
+      <joins>
+        <join pe="code.kernel.plugin" op="Keep Metaform's stable chassis independent of feature implementations while allowing built-in and community features to be enabled, disabled, loaded, and removed through the same public contract." relation="loads feature capability through" observation="A plugin kernel keeps extension modules outside the stable kernel and activates them through a defined extension boundary." />
+        <join pe="code.service.knowledge" op="Give Metaform a base project memory graph of namespace-addressed Elements and RE-owned joins that later knowledge layers, memories, and inference can extend." relation="organizes project understanding through" observation="A knowledge service resolves addressable objects and the relationships and layers attached to them." />
+        <join pe="code.engine.workflow" op="Execute intake and other authored inference operations as real workflows while preserving authored text, bindings, context references, and operative behavior." relation="executes authored processes through" observation="A workflow engine converts workflow definitions into ordered executable work while retaining definition structure." />
+        <join pe="code.service.execution" op="Coordinate Metaform module operations and agent assignments across synchronous, asynchronous, direct-harness, and in-harness execution without losing work identity." relation="coordinates operations through" observation="An execution service carries work context and lifecycle across operation boundaries." />
+        <join pe="code.adapter.interface" op="Expose the same Metaform functional operations through contextual CLI, MCP, and web surfaces while keeping the CLI complete when web and MCP are absent." relation="exposes operations through" observation="An interface adapter maps external interaction surfaces onto a shared operation contract." />
+        <join pe="code.service.persistence" op="Retain project-owned Metaform state, origins, variants, assignments, knowledge, modules, settings, edit copies, and reconstruction references in the initial global store while source artifacts remain at their existing locations." relation="retains system state through" observation="A persistence service preserves authoritative state beyond individual process lifetimes." />
+        <join pe="code.service.provenance" op="Make every Metaform-produced record traceable to its producer, prompt revision, rendered prompt, bindings, referenced inputs, received answer, and dependent inference." relation="traces produced records through" observation="A provenance service links produced records to the inputs and operations that created them." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.kernel.plugin" name_length="2" ef="Provides a stable microkernel that discovers, enables, disables, loads, and unloads external feature modules through shared chassis services and a public extension contract.">
+      <joins>
+        <join pe="code.bus.event" op="Let dynamically loaded Metaform modules publish runtime changes and subscribe to them without coupling feature implementations to one another or moving workflow progression into notifications." relation="distributes runtime changes through" observation="An event bus dispatches published events to registered subscribers." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.service.knowledge" name_length="2" ef="Resolves namespace-addressed objects and receiver-owned joins, attaches selectable knowledge layers, and exposes memory and inference at those addresses.">
+      <joins>
+        <join pe="code.service.provenance" op="Hide or reveal Metaform-derived layers from their contributing namespace objects and dependent inference while retaining the saved knowledge and its source relationships." relation="tracks knowledge dependencies through" observation="Derived knowledge can be traced to the records and operations on which it depends." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.engine.workflow" name_length="2" ef="Preserves authored workflow definitions, converts supported serializations, binds context objects, and executes ordered steps through shared operations.">
+      <joins>
+        <join pe="code.service.knowledge" op="Lexicalize Metaform workflow steps with namespace object references, selected knowledge layers, appended imperatives, and inspectable context objects without automatically rewriting imported workflow text." relation="binds project context through" observation="A workflow engine can bind addressable context objects and selected knowledge to executable steps." />
+        <join pe="code.service.execution" op="Issue assignments and execute intake and other authored Metaform workflows through the shared runtime rather than treating workflow names as passive run metadata." relation="runs assigned steps through" observation="A workflow engine delegates executable steps to a runtime that owns operation lifecycle and completion." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.service.execution" name_length="2" ef="Runs synchronous and asynchronous operations with explicit assignment context, work identity, lifecycle, and harness adaptation.">
+      <joins>
+        <join pe="code.service.persistence" op="Recover Metaform assignment context from nonce and workfolder bindings across independent command invocations and retain durable completion history after active local bindings are cleared." relation="recovers work continuity through" observation="An execution service persists assignment state when work must continue across separate invocations." />
+        <join pe="code.service.provenance" op="Record Metaform operation context and produced results as assignments, module calls, agent submissions, and workflow steps execute." relation="records operation lineage through" observation="An execution service associates each operation result with the context and inputs that produced it." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.adapter.interface" name_length="2" ef="Adapts shared operation and object services to external interaction surfaces without changing the underlying execution semantics.">
+      <joins>
+        <join pe="code.service.execution" op="Make contextual CLI, MCP, and web calls invoke the same Metaform module operations and assignment lifecycle, including complete non-web CLI operation from the installed command, module entrypoint, or executable wheel." relation="invokes shared operations through" observation="An interface adapter delegates work to an execution service instead of implementing feature behavior itself." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.bus.event" name_length="2" ef="Publishes runtime changes to dynamically registered synchronous and asynchronous subscribers with attributable module and work context.">
+      <joins>
+        <join pe="code.service.execution" op="Run Metaform module subscribers on the shared synchronous and asynchronous runtime while retaining publishing module, project, assignment, provenance, and failure attribution." relation="runs subscribed handlers through" observation="An event bus can dispatch synchronous and asynchronous handlers through a shared runtime." />
+      </joins>
+    </element>
+    <element role="SE" namespace_address="code.service.persistence" name_length="2" ef="Maintains authoritative durable state for projects, source origins, variants, assignments, settings, knowledge, module state, and reconstruction references.">
+      <joins />
+    </element>
+    <element role="SE" namespace_address="code.service.provenance" name_length="2" ef="Relates produced records to their producer, prompt revision, rendered prompt, bindings, inputs, received answer, and dependent inference.">
+      <joins>
+        <join pe="code.service.persistence" op="Keep Metaform lineage, source ownership, prompt and answer history, dependency records, and produced-object relationships durable inside the global project-aware store." relation="stores lineage through" observation="A provenance service persists lineage records so traceability survives the producing process." />
+      </joins>
+    </element>
+  </elements>
+  <subtypes />
+</result>

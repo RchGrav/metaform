@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="res-metaform-repo-sample-a-20260920">
+  <elements location="/home/rich/metaform">
+    <element namespace_address="stakeholder.owner.project" name_length="2">
+      <joins>
+        <join type="purpose" namespace_address="code.engine.context" purpose="Direct agents on my artifact so each one starts from the recorded functional understanding of it, works on the part that concerns its task, and leaves work I can trace, without my re-explaining the project or the agent rebuilding it from raw files each session." function="Turns the recorded functional map into exact, scoped assignments for agents, drives the intake that produces the map, and records what each agent was given and returned." relation="directs agents through" observation="A context engine lets a later agent begin from recorded understanding instead of raw evidence." non_goal="Agents that each re-derive the project from its files, or that work from a paraphrase of an earlier session.">
+          <refs>
+            <ref key="path" value="README.md" />
+            <ref key="path" value="src/metaform" />
+            <ref key="path" value="modules/workflows" />
+            <ref key="path" value="modules/knowledge" />
+            <ref key="path" value="modules/mcp" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.interface.command" purpose="Work from a terminal and see only what my current context needs, while every operation stays reachable by command." function="Shows chassis status and a few actions at the root, a module's own commands after entering it, and an assignment's surface after entering its nonce, all generated from what is loaded, with the same operations available non-interactively." relation="drives Metaform from" observation="A command interface can present a different command set per context while calling one set of operations." non_goal="A root menu that lists every command of every module.">
+          <refs>
+            <ref key="path" value="src/metaform/cli.py" />
+            <ref key="path" value="src/metaform/contextual_cli.py" />
+            <ref key="path" value="src/metaform/navigation.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.interface.graphical" purpose="See the recorded map and the workflow runs as they stand, and write workflow prompts that point at project objects, from any device and without a terminal." function="Serves a project chooser, a graph of collected namespace objects and their joins, and a workflow editor whose inline object references show the text they render to, behind token sign-in." relation="inspects and edits through" observation="A graphical interface shows connections among records that a listing shows one at a time." non_goal="A private path to data that the command line cannot reach.">
+          <refs>
+            <ref key="path" value="modules/web" />
+            <ref key="path" value="modules/web/namespace_graph.js" />
+            <ref key="path" value="modules/web/workflow_editor.js" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.history.artifact" purpose="Keep my artifact as I gave it and every variant an agent produces from it, so I can compare them and recover any one without the original repository." function="Captures an origin, optionally at a committed baseline, keeps each sibling variant against it as immutable content-addressed payloads, and reconstructs a chosen state into an empty folder." relation="preserves versions of my artifact in" observation="Artifact history keeps an origin separate from the variants derived from it." non_goal="A later experiment overwriting the origin, or navigation markers appearing as edits to the artifact.">
+          <refs>
+            <ref key="path" value="modules/history" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.distribution.portable" purpose="Hand the project, its recorded understanding and its pending work to an agent in an environment with no Metaform, no source checkout and no network, and have that agent continue." function="Builds an executable wheel from chosen modules and chosen project data that runs directly with Python, prepares its own isolated runtime, and leaves an installed Metaform untouched." relation="delivers my project through" observation="A portable distribution carries what it needs to run, so the target environment supplies only Python." non_goal="A permanent install, a remote inference service, or the engine of an excluded module hidden inside the wheel.">
+          <refs>
+            <ref key="path" value="modules/distribution" />
+            <ref key="path" value="packaging" />
+            <ref key="path" value="src/metaform/portable.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="stakeholder.agent" name_length="1" role="NE">
+      <joins>
+        <join type="purpose" namespace_address="code.assignment.work" purpose="Do exactly the work I am assigned, from its stored prompt, scope and knowledge, and have my answer land on that work." function="Resolves the nonce to the stored assignment, returns its exact prompt, submission header, context and permitted operations, accepts a headed answer, and settles or aborts the work." relation="receives work through" observation="An assignment identifies work by its nonce, not by a process, connection or folder." non_goal="An orchestrator's paraphrase of the assignment, or a submission check that scores answer quality.">
+          <refs>
+            <ref key="path" value="src/metaform/assignments.py" />
+            <ref key="path" value="src/metaform/work.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.interface.agent" purpose="Reach that work from whatever session I run in, including several assignments interleaved on one connection." function="Offers assignment, submit, complete, abort, call, status, namespace and resolve tools that each carry the nonce, and serves the same work by command from the working folder." relation="reaches work through" observation="An agent interface can carry many assignments over one connection when each call names its work.">
+          <refs>
+            <ref key="path" value="modules/mcp" />
+            <ref key="path" value="src/metaform/mcp_server.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.layer.memory" purpose="Keep what I learn at the element it concerns, so the next agent to touch that element starts with it." function="Creates, reads, searches, updates and deletes memory at namespace addresses through the same operations every other client uses, keeping each earlier revision." relation="writes and recalls what it learned in" observation="Memory attached to an address stays with that address when the code moves." non_goal="A chronological log of the conversation.">
+          <refs>
+            <ref key="path" value="modules/knowledge/memory.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="stakeholder.author.module" name_length="2" role="NE">
+      <joins>
+        <join type="purpose" namespace_address="code.chassis" purpose="Add or replace a capability of any size by loading it as a module, and have a failing or missing module leave the base and every other module running." function="Finds modules in the system, user and project places in that priority, reads what must be known before importing them, activates each as one reversible lifecycle, skips an incompatible one, and lets a disable policy hold back a same-name copy." relation="extends Metaform through" observation="A base that owns only shared services lets independently authored modules cooperate without knowing one another's internals." non_goal="A feature engine embedded in the base that a module merely forwards to.">
+          <refs>
+            <ref key="path" value="src/metaform/plugin_runtime.py" />
+            <ref key="path" value="src/metaform/module_catalog.py" />
+            <ref key="path" value="src/metaform/plugin_contract.py" />
+            <ref key="path" value="modules/README.md" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.template.module" purpose="Write my own module by deriving from a working example, so that it runs when the example is absent." function="Shows settings, conditional commands, owned joins, exact references, nonce assignments, sync and async operations, jobs, events and lifecycle hooks in modules that can each be copied whole." relation="teaches me the module contract through" observation="A module template teaches the public contract with working code that a derived module copies rather than imports.">
+          <refs>
+            <ref key="path" value="modules/showcase" />
+            <ref key="path" value="modules/event_requester" />
+            <ref key="path" value="modules/harness_runner" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.engine.context" name_length="2" role="DE">
+      <joins>
+        <join type="purpose" namespace_address="data.metaform" purpose="Serve agents from one durable record of what the project does for its receivers, addressed by meaning, so moving or rewriting the code leaves each understanding where it was." function="Holds each element under its namespace address with joins owned by the receiving element, each carrying purpose and encounter, with every revision kept and referenced by project, address, join id and revision." relation="reads and writes understanding in" observation="A namespace address names a functional type, and its name reads back from the last name_length segments reversed." non_goal="Understanding copied into prompts as text, or records whose meaning changes when storage moves.">
+          <refs>
+            <ref key="path" value="src/metaform/namespace_objects.py" />
+            <ref key="path" value="src/metaform/namespace_store.py" />
+            <ref key="path" value="src/metaform/namespace_service.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.engine.workflow" purpose="Obtain the project's functional understanding by running the maintained Canonical Intake on the actual artifact, then deepen a chosen region when more detail is needed, each as an authored run." function="Runs authored steps durably, issues each step's exact prompt to an agent, retains every answer, and turns an accepted intake answer into namespace records without inference of its own." relation="obtains understanding through" observation="A workflow engine keeps a run on the definition revision it started with." non_goal="A second special-purpose intake engine, or the engine adding gates to the authored procedure.">
+          <refs>
+            <ref key="path" value="modules/workflows" />
+            <ref key="path" value="modules/workflows/resources/Canonical_Intake.xml" />
+            <ref key="path" value="modules/workflows/intake_documents.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.assignment.work" purpose="Give each agent exactly one stored piece of work, with its prompt, scope and knowledge unaltered, and accept back only an answer routed to that work." function="Issues a nonce-identified assignment holding the stored prompt, required submission header, working folder and enabled operations, checks the header on submission, and keeps the exact snapshot issued." relation="hands work to agents through" observation="An assignment retains the exact text and references delivered, so a later edit cannot change what an earlier agent was given." non_goal="The submission judging the quality of the answer.">
+          <refs>
+            <ref key="path" value="src/metaform/assignments.py" />
+            <ref key="path" value="src/metaform/work.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.layer.knowledge" purpose="Put before an agent only the knowledge I left visible for that element, and never let a hidden layer reach a prompt by a side path." function="Applies the mask rule at each element, so selection is the incoming selection kept by the mask together with the local selection, hides dependent inference when a source is hidden, and reports a selector it cannot yet execute." relation="scopes context with" observation="A layer attachment lives with its receiving element and points to its source by exact reference, so several receivers can share one source." non_goal="Retrieval by similarity, or broad project defaults substituted for a selector that cannot be executed.">
+          <refs>
+            <ref key="path" value="modules/knowledge" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.provenance" purpose="Answer why an output is as it is by tying each result to the prompt, knowledge and revisions that produced it." function="Records the producing operation, rendered prompt, bindings, the revisions actually consumed and the outputs, and follows any reference back through its producers to their inputs." relation="explains outputs through" observation="Two operations that produce identical content remain separate producing occurrences." non_goal="A generic activity log standing in for the inputs actually consumed, or an invented prompt history for content that was authored or imported.">
+          <refs>
+            <ref key="path" value="src/metaform/production_joins.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.chassis" purpose="Run every capability as a removable module over one small shared base, so a feature can be added, disabled or lost without the base failing." function="Supplies module lifecycle, settings, event delivery, job execution, project and work context and the common object model, and nothing specific to a feature." relation="hosts capabilities on" observation="A base that holds only shared services can run with every feature absent." non_goal="Feature behavior built into the base.">
+          <refs>
+            <ref key="path" value="src/metaform" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.engine.workflow" name_length="2" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="document.workflow" purpose="Run procedures exactly as authored, including their waits for a person, without approvals, retries or gates the author did not write." function="Reads steps, branches, loops, waits and roles from workflow documents kept as owned joins, evaluates only the grammar's own expressions, and binds prompt text to object, knowledge and earlier-answer references instead of copied text." relation="executes" observation="A workflow document keeps its authored wording and bindings when moved between XML, JSON and Markdown." non_goal="An agent supplying an answer that the workflow waits for from a person.">
+          <refs>
+            <ref key="path" value="modules/workflows/control.py" />
+            <ref key="path" value="modules/workflows/formats.py" />
+            <ref key="path" value="modules/workflows/expressions.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.assignment.work" purpose="Turn each agent step into an exact issued snapshot and continue the run from the answer submitted through it." function="Issues a step as an assignment with its rendered prompt and bindings, waits for the headed submission, and seals the accepted answer so the next step can insert it by exact reference." relation="issues steps through" observation="An assignment can be sealed at its accepted answer without waiting for the provider to finish." non_goal="Rewording the stored step before an agent receives it.">
+          <refs>
+            <ref key="path" value="modules/workflows/execution.py" />
+            <ref key="path" value="modules/workflows/operations.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.runner.agent" purpose="Carry a run to completion with an installed agent, so intake needs no one to carry a nonce from step to step." function="Starts the chosen provider in a fresh workfolder with MCP configuration local to that launch, cancels and settles its process on abort, and keeps an answer already submitted over the provider's later final summary." relation="launches agents through" observation="An agent runner starts an agent for one assignment without changing the host's global agent configuration." non_goal="Changing global harness configuration, or treating the transport fixture as an intake model.">
+          <refs>
+            <ref key="path" value="modules/harness_runner" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.runtime.execution" purpose="Keep a run alive after the command that started it exits, and resume it after a restart without repeating a tool call that already finished." function="Runs the driver as a persisted background job that publishes progress, completion, abort and failure, and retains an interrupted tool's result for resume." relation="keeps runs alive through" observation="A background job has its own persisted identity, separate from the client that started it.">
+          <refs>
+            <ref key="path" value="modules/workflows/operations.py" />
+            <ref key="path" value="src/metaform/runtime_server.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.layer.knowledge" purpose="Attach what agents generate, including an outside report from an agent that cannot read the project's files, as named layers beside the map and never as changes to it." function="Issues per-element and per-join inference assignments from an instruction, records the exact context each consumed, and publishes each answer into the named layer, while the outside role receives the complete recorded account and no repository access." relation="generates layers for" observation="Generated knowledge records the context actually included in its prompt, not everything that was available." non_goal="An outside report becoming elements of the recorded map, or work scheduled without a request.">
+          <refs>
+            <ref key="path" value="modules/workflows/regeneration.py" />
+            <ref key="path" value="modules/workflows/operations.py" />
+            <ref key="path" value="modules/workflows/resources/latent-role.md" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.assignment.work" name_length="2" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="stakeholder.agent" purpose="Have each step reasoned in the agent's own host context from exactly the stored instructions, with no model service of Metaform's own." function="The agent reads its assignment by nonce, reasons on the supplied context, and submits a headed answer, including when it runs a delivered wheel inside a hosted environment." relation="relies on for reasoning" observation="An agent reasons over the context delivered to it and over nothing else." non_goal="Metaform holding its own inference connection.">
+          <refs>
+            <ref key="path" value="src/metaform/portable_mcp.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="document.rulebook" purpose="Deliver with the assignment the rules I authored for this operation, unedited, so every agent applies the same rules on every run." function="Attaches the applicable rule revisions to the issued assignment and keeps those exact revisions, so a later edit reaches only later work." relation="issues rules from" observation="A rulebook keeps a rule's concise statement and its explanation with examples as authored." non_goal="A universal retry, rejection or scoring gate applied because a rule exists.">
+          <refs>
+            <ref key="path" value="src/metaform/rulebook.py" />
+            <ref key="path" value="src/metaform/data/rulebook.json" />
+            <ref key="path" value="docs/rulebook" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.chassis" name_length="1" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="data.settings.module" purpose="Give each module durable configuration that survives the module's absence and never overwrites a value I pinned." function="Registers each module's declared settings, fills missing values from those declarations without overwriting existing ones, keeps pinned baselines through reset, and shows them in one keyboard-driven menu." relation="stores configuration in" observation="Module settings keep their saved values while the module is disabled or removed.">
+          <refs>
+            <ref key="path" value="src/metaform/settings.py" />
+            <ref key="path" value="src/metaform/tui.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.bus.data.event" purpose="Let modules cooperate through published events, with neither importing the other's internals." function="Delivers a published event to each subscribed module with the producing operation attached, and returns the response event when a request's work ends." relation="lets modules cooperate through" observation="An event bus separates a publisher from the modules that subscribe.">
+          <refs>
+            <ref key="path" value="src/metaform/event.py" />
+            <ref key="path" value="modules/event_requester" />
+            <ref key="path" value="modules/harness_runner" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.runtime.execution" purpose="Run module operations synchronously or asynchronously without one operation inheriting another's context or blocking unrelated work." function="Carries project, module, operation, assignment and producer context through each call, runs blocking work in worker threads, and owns background jobs with truthful cancellation state." relation="runs operations through" observation="An execution runtime can keep separate context for operations that run at the same time.">
+          <refs>
+            <ref key="path" value="src/metaform/plugin_runtime.py" />
+            <ref key="path" value="src/metaform/runtime_server.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.metaform" purpose="Let independent modules exchange work by exact object and join reference instead of private structures." function="Exposes namespace objects with owned, revisioned joins and typed references through sync and async services, and preserves fields it does not understand." relation="shares records through" observation="Extension content that is valid but unknown survives reads, edits, copies and export.">
+          <refs>
+            <ref key="path" value="src/metaform/module_api.py" />
+            <ref key="path" value="src/metaform/namespace_objects.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.bus.data.event" name_length="3" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="code.runtime.execution" purpose="Run each subscriber's handler as attributable work, so a slow or failing handler is reported for that handler and never blocks the publisher or another module." function="Hands each delivery to the execution runtime, which runs the subscriber with its producing occurrence recorded." relation="hands deliveries to" observation="An execution runtime can report the outcome of each handler separately.">
+          <refs>
+            <ref key="path" value="src/metaform/event.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.interface.graphical" name_length="2" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="data.metaform" purpose="Let the owner browse the recorded map as connected objects and joins together with their production history." function="Draws collected namespace objects and joins as a graph that can be panned, zoomed and fitted, and opens a selected contribution's full retained revision with its parent, input and output references." relation="draws" observation="A graph of records shows connections that a listing does not.">
+          <refs>
+            <ref key="path" value="modules/web/namespace_graph.js" />
+            <ref key="path" value="modules/web/graph_data.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="document.workflow" purpose="Author and revise workflow prompts with project objects inserted as references, and follow each step through its answers." function="Edits the authored text around readonly inline object text rendered by the workflow module, imports and exports Markdown, XML and JSON, and links saved prompts and answers to their exact inputs." relation="edits" observation="An authoring surface can show a reference's rendered text without turning the reference into copied text.">
+          <refs>
+            <ref key="path" value="modules/web/workflow_editor.js" />
+            <ref key="path" value="modules/web/workflow_ui.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="code.session.terminal" purpose="Start a shell, the chassis configuration menu or an agent session from the same page, in a browser tab." function="Adds launcher entries to the web menu from configured commands and streams an interactive terminal into the browser on the same port." relation="opens sessions through" observation="A terminal session runs as a job that owns its process.">
+          <refs>
+            <ref key="path" value="modules/terminal" />
+            <ref key="path" value="modules/web/contributions.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="code.distribution.portable" name_length="2" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="code.chassis" purpose="Carry the chassis and only the modules I select, with their resources and dependencies, so that it runs offline and never disturbs an installed Metaform." function="Assembles an executable wheel from the chassis and the selected modules, derives dependencies from module ownership, tags the wheel for its native content, prepares an isolated runtime on first run, and installs missing defaults without overwriting existing files." relation="packages" observation="A wheel built with no feature modules contains only the base." non_goal="The engine of an excluded module hidden in the wheel, or a downgrade of the installed package.">
+          <refs>
+            <ref key="path" value="modules/distribution" />
+            <ref key="path" value="packaging/hatch_build.py" />
+          </refs>
+        </join>
+        <join type="purpose" namespace_address="data.metaform" purpose="Carry the selected project's recorded understanding, with exact retained revisions and the folders its pending work needs, so the receiving agent continues instead of restarting." function="Captures the project's namespace objects, owned joins and referenced payloads together with registered workfolder contents, and reports each reference it left unresolved and why." relation="carries the project's records in" observation="A portable copy keeps object identity and revision as they were.">
+          <refs>
+            <ref key="path" value="modules/distribution/closure.py" />
+            <ref key="path" value="src/metaform/workfolders.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="data.metaform" name_length="1" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="data.provenance" purpose="Never let a later edit rewrite what an earlier run consumed." function="Keeps every join revision under its owner with its producing occurrence, so a run's recorded inputs still resolve to the revisions it read after the record changes." relation="records each write in" observation="A revision read for reasoning stays retrievable after the record is edited.">
+          <refs>
+            <ref key="path" value="src/metaform/namespace_store.py" />
+            <ref key="path" value="src/metaform/production_joins.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="data.layer.knowledge" name_length="2" role="SE">
+      <joins>
+        <join type="purpose" namespace_address="data.metaform" purpose="Attach generated knowledge to the elements and joins it concerns without copying it into them." function="Stores a layer as a namespace object and each attachment as a join inside the receiving element, pointing to the exact source join, the layer, its causal inputs and an optional subject join of that element." relation="attaches to" observation="Where knowledge is attached and what it was caused by are separate facts.">
+          <refs>
+            <ref key="path" value="modules/knowledge/engine.py" />
+          </refs>
+        </join>
+      </joins>
+    </element>
+
+    <element namespace_address="data.layer.memory" name_length="2" role="SE" />
+    <element namespace_address="data.provenance" name_length="1" role="SE" />
+    <element namespace_address="data.history.artifact" name_length="2" role="SE" />
+    <element namespace_address="data.settings.module" name_length="2" role="SE" />
+    <element namespace_address="code.runtime.execution" name_length="2" role="SE" />
+    <element namespace_address="code.runner.agent" name_length="2" role="SE" />
+    <element namespace_address="code.session.terminal" name_length="2" role="SE" />
+    <element namespace_address="code.interface.command" name_length="2" role="SE" />
+    <element namespace_address="code.interface.agent" name_length="2" role="SE" />
+    <element namespace_address="code.template.module" name_length="2" role="SE" />
+    <element namespace_address="document.workflow" name_length="1" role="NE" />
+    <element namespace_address="document.rulebook" name_length="1" role="NE" />
+  </elements>
+</result>

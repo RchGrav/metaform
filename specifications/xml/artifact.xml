@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graph>
+
+  <artifact type="code" name="YuE">
+    An open-weights inference and finetuning codebase that turns a tag-and-lyrics specification, optionally plus a reference audio excerpt, into a multi-minute two-track song.
+  </artifact>
+
+  <elements>
+
+    <element id="pipe" role="DE" namespace="code.pipeline.inference" name_length="2">
+      <ef>Exposes a single parameterized entry point that accepts a declarative specification of a desired output, sequences trained models and transforms over it in a fixed order while threading each stage's product into the next, and terminates by writing a finished work to a durable location.</ef>
+    </element>
+
+    <element id="asm" role="SE" namespace="code.assembler.prompt" name_length="2">
+      <ef>Collects heterogeneous human-authored conditioning inputs, normalizes each into the model's own input vocabulary, and concatenates them in a fixed positional order so that the conditioning surface of a run is authored declaratively rather than as raw token identifiers.</ef>
+      <subtypes>
+        <subtype namespace="code.assembler.prompt.tag"/>
+        <subtype namespace="code.assembler.prompt.section"/>
+        <subtype namespace="code.assembler.prompt.exemplar"/>
+      </subtypes>
+    </element>
+
+    <element id="loop" role="SE" namespace="code.loop.decode.autoregressive" name_length="3">
+      <ef>Advances a sequence one token at a time by feeding accumulated context back into the model, applying sampling policy and repetition constraints at each step, and halting on a budget or terminal token; carries context across chunk boundaries so that output length exceeds any single forward window.</ef>
+      <subtypes>
+        <subtype namespace="code.loop.decode.autoregressive.segmented"/>
+        <subtype namespace="code.loop.decode.autoregressive.constrained"/>
+        <subtype namespace="code.loop.decode.autoregressive.seeded"/>
+      </subtypes>
+    </element>
+
+    <element id="ref" role="SE" namespace="code.refiner.residual" name_length="2">
+      <ef>Consumes a coarse, low-rate symbol stream already committed by an earlier stage and predicts the remaining detail layers that a reconstructor requires, processing independent spans in parallel batches so that fidelity is added without re-deciding content.</ef>
+    </element>
+
+    <element id="codec" role="SE" namespace="code.codec.audio.neural" name_length="2">
+      <ef>Maps a continuous waveform to a discrete multi-layer token sequence and maps such a sequence back to a waveform, providing the single boundary at which a symbol-predicting model meets a perceptible signal in either direction.</ef>
+      <subtypes>
+        <subtype namespace="code.codec.audio.neural.tokenizer"/>
+        <subtype namespace="code.codec.audio.neural.upsampler"/>
+        <subtype namespace="code.codec.audio.neural.vocoder"/>
+      </subtypes>
+    </element>
+
+    <element id="wt" role="PE" namespace="data.weight.model" name_length="2">
+      <ef>Supplies the fitted parameters that carry all learned behavior, resolved by identifier from an external registry at run time and never produced by the consuming code itself.</ef>
+    </element>
+
+    <element id="rt" role="PE" namespace="code.runtime.model.transformer" name_length="3">
+      <ef>Provides the externally maintained execution surface that loads parameters, allocates accelerator memory, and performs attention and generation calls, bounding what sequence lengths and batch sizes a caller may request.</ef>
+    </element>
+
+    <element id="harn" role="NE" namespace="code.harness.model" name_length="2">
+      <ef>Provides out-of-band entry points that act upon the model itself rather than through it, either adapting its parameters on supplied examples or measuring a stated property of its output against a defined criterion.</ef>
+      <subtypes>
+        <subtype namespace="code.harness.model.tuning.lowrank"/>
+        <subtype namespace="code.harness.model.eval.pitch"/>
+      </subtypes>
+    </element>
+
+    <element id="guide" role="NE" namespace="document.guide.usage" name_length="2">
+      <ef>States the environment preconditions, invocation forms, and authoring conventions under which the executable parts behave as intended, converting undocumented failure modes into stated constraints a reader can satisfy in advance.</ef>
+      <subtypes>
+        <subtype namespace="document.guide.usage.install"/>
+        <subtype namespace="document.guide.usage.prompt"/>
+        <subtype namespace="document.guide.usage.parameter"/>
+      </subtypes>
+    </element>
+
+    <element id="lic" role="NE" namespace="document.grant.license" name_length="2">
+      <ef>Declares the rights conveyed to a downstream party over both the work and what the work produces, and assigns responsibility for downstream use to the party exercising those rights.</ef>
+    </element>
+
+  </elements>
+
+  <joins>
+
+    <join id="j1" re="pipe" ef_ref="asm">
+      <op>So that a generation run can be specified as a space-delimited genre-instrument-mood-gender-timbre tag string plus lyrics divided into structure-labeled sessions, with an optional reference excerpt, instead of as a hand-built token sequence.</op>
+      <relation>delegates conditioning construction to</relation>
+      <observation>A conditioned generative run has an input surface distinct from its decoding procedure.</observation>
+      <refs>
+        <ref key="tag_source">top_200_tags.json open vocabulary</ref>
+        <ref key="section_delimiter">blank line between structure-labeled sessions</ref>
+        <ref key="flags">--genre_txt, --lyrics_txt, --use_audio_prompt, --use_dual_tracks_prompt</ref>
+      </refs>
+      <combined_entities>
+        <entity name="tag vocabulary">
+          <relation>constrains style selection to</relation>
+          <observation>An open tag vocabulary is published with a recommended stable subset.</observation>
+        </entity>
+        <entity name="lyric section labeler">
+          <relation>partitions the text into</relation>
+          <observation>Each labeled section maps to one bounded generation span.</observation>
+        </entity>
+        <entity name="audio exemplar prompt">
+          <relation>binds the output style to</relation>
+          <observation>A supplied exemplar narrows the reachable output space relative to an unprompted run.</observation>
+        </entity>
+      </combined_entities>
+    </join>
+
+    <join id="j2" re="pipe" ef_ref="loop">
+      <op>So that a multi-minute two-track song is produced as a coarse token stream carrying a vocal part and an accompaniment part together, generated session by session under a per-session token budget rather than in one pass.</op>
+      <relation>drives content generation through</relation>
+      <observation>Long-form output is produced by repeated bounded decoding rather than a single unbounded call.</observation>
+      <refs>
+        <ref key="session_default">2 sessions, one verse and one chorus</ref>
+        <ref key="budget">--max_new_tokens 3000, roughly 30 seconds per session</ref>
+        <ref key="controls">--repetition_penalty, seeding, --run_n_segments</ref>
+      </refs>
+    </join>
+
+    <join id="j3" re="loop" ef_ref="wt">
+      <op>So that the decoding step is backed by a first-stage checkpoint chosen for the lyric language and for whether the run is exemplar-free or exemplar-conditioned, fetched by identifier from the model registry at launch.</op>
+      <relation>resolves its predictive behavior from</relation>
+      <observation>Decoding code holds no learned behavior of its own and is inert without resolved parameters.</observation>
+      <refs>
+        <ref key="stage1_variants">English, Japanese-Korean, and Chinese annealed checkpoints in reasoning and exemplar forms</ref>
+        <ref key="stage2">a smaller general checkpoint shared across languages</ref>
+      </refs>
+    </join>
+
+    <join id="j4" re="loop" ef_ref="rt">
+      <op>So that long token sequences fit in accelerator memory at all, with memory-efficient attention treated as mandatory and the number of sessions per run reduced on smaller devices to avoid exhaustion.</op>
+      <relation>bounds its sequence length against</relation>
+      <observation>The runtime's memory envelope sets the hard ceiling on how much output one invocation can produce.</observation>
+      <refs>
+        <ref key="floor">24 GB devices limited to about 2 sessions</ref>
+        <ref key="full_song">80 GB or multiple devices with tensor parallelism</ref>
+        <ref key="throughput">about 150 seconds per 30 seconds of audio on an H800</ref>
+      </refs>
+    </join>
+
+    <join id="j5" re="pipe" ef_ref="ref">
+      <op>So that the committed coarse stream from the first stage is expanded into the full set of code layers the reconstructor needs, in parallel batches sized to available memory, without altering the musical content already decided.</op>
+      <relation>escalates fidelity through</relation>
+      <observation>Coarse-to-fine staging separates the decision of content from the completion of detail.</observation>
+      <refs>
+        <ref key="flag">--stage2_batch_size</ref>
+        <ref key="stage_split">a large first-stage model paired with a smaller second-stage model</ref>
+      </refs>
+    </join>
+
+    <join id="j6" re="pipe" ef_ref="codec">
+      <op>So that the completed token layers become audible files, emitting a vocal track, an instrumental track, and a mix, with a separate upsampling model raising the reconstruction before the final waveform is written.</op>
+      <relation>renders its committed tokens through</relation>
+      <observation>A symbol-space generator requires a reconstructor to yield anything perceptible.</observation>
+      <refs>
+        <ref key="component">a minimal inference build of the codec vendored beside the inference code</ref>
+        <ref key="output">separate stems plus a mixed render per run</ref>
+      </refs>
+      <combined_entities>
+        <entity name="signal tokenizer">
+          <relation>discretizes supplied audio into</relation>
+          <observation>The same codebook serves both analysis of input and synthesis of output.</observation>
+        </entity>
+        <entity name="upsampler">
+          <relation>raises reconstruction detail of</relation>
+          <observation>A separate model improves the rendered signal after token prediction has finished.</observation>
+        </entity>
+        <entity name="vocoder">
+          <relation>synthesizes a waveform from</relation>
+          <observation>Final synthesis is the last irreversible step of the pipeline.</observation>
+        </entity>
+      </combined_entities>
+    </join>
+
+    <join id="j7" re="asm" ef_ref="codec">
+      <op>So that a reference excerpt of about thirty seconds, supplied either as a mix or as separated vocal and instrumental tracks, enters the prompt in the same token space as the material to be generated.</op>
+      <relation>encodes its exemplar input through</relation>
+      <observation>Exemplar conditioning requires the exemplar to be expressed in the model's own representation.</observation>
+      <refs>
+        <ref key="window">--prompt_start_time and --prompt_end_time</ref>
+        <ref key="preference">separated two-track exemplars reported to condition better than a mix</ref>
+        <ref key="separation">stem separation is left to external tools</ref>
+      </refs>
+    </join>
+
+    <join id="j8" re="harn" ef_ref="wt">
+      <op>So that the published checkpoints can be adapted on a user's own material through low-rank adapters, and so that a specific musical property of generated output can be measured independently of listening.</op>
+      <relation>operates directly upon</relation>
+      <observation>Model-facing tooling exists beside the inference path and does not participate in a generation run.</observation>
+      <refs>
+        <ref key="tuning">low-rank adapter finetuning added after initial release</ref>
+        <ref key="measurement">a pitch-range evaluation kept beside the inference code</ref>
+      </refs>
+      <combined_entities>
+        <entity name="low-rank tuning adapter">
+          <relation>injects trainable parameters into</relation>
+          <observation>Adaptation modifies a small added parameter set rather than the base weights.</observation>
+        </entity>
+        <entity name="property evaluator">
+          <relation>scores generated output against</relation>
+          <observation>An evaluator asserts a measurable criterion over outputs the pipeline already produced.</observation>
+        </entity>
+      </combined_entities>
+    </join>
+
+    <join id="j9" re="guide" ef_ref="asm">
+      <op>So that the authoring conventions the model was trained to expect are stated rather than discovered: five tag components, sessions kept near the per-session budget, opening on a verse or chorus, and a chorus chosen as the exemplar span.</op>
+      <relation>prescribes authoring conventions for</relation>
+      <observation>A conditioned generator's usable range is narrower than its accepted input, and the gap is closed by documentation.</observation>
+      <refs>
+        <ref key="environment">memory-efficient attention, accelerator toolkit version, and large-file checkout stated as preconditions</ref>
+        <ref key="external_surfaces">community interfaces and quantized runtimes named but not vendored</ref>
+      </refs>
+    </join>
+
+    <join id="j10" re="lic" ef_ref="pipe">
+      <op>So that the code and the fitted parameters carry the same permissive grant, outputs may be incorporated into commercial work with attribution requested rather than required, and responsibility for originality and labeling of released work rests with the user.</op>
+      <relation>conveys use rights over</relation>
+      <observation>An openly distributed generative system must state the standing of what it produces, not only of itself.</observation>
+      <refs>
+        <ref key="grant">Apache License 2.0, applied to code and weights after an initial restricted release</ref>
+        <ref key="attribution">credit requested as YuE by HKUST and M-A-P</ref>
+        <ref key="labeling">disclosure of machine generation recommended, not mandated</ref>
+      </refs>
+    </join>
+
+  </joins>
+
+</graph>

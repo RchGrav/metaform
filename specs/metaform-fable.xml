@@ -1,0 +1,175 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<result id="dt-metaform-fable-20260920">
+	<elements location="~/metaform">
+		<receiving_element namespace_address="entity.agent.inference" name_length="2" role="NE">
+			<joins>
+				<join type="purpose" namespace_address="code.store.join.namespace" purpose="Begin work on a project from its recorded functional account, reading elements by namespace address and receiver-owned joins by join_id and revision instead of re-deriving them from the source files." function="NamespaceStore assembles a project's namespace_objects and revisioned namespace_joins across the configured SQLite files and returns a NamespaceObject with its joins for an address or scope." relation="The inference agent reads and writes the namespace join store." observation="A store of this type returns the joins owned by the receiving address it is asked for.">
+					<refs>
+						<ref key="path" value="src/metaform/namespace_store.py" />
+						<ref key="path" value="src/metaform/namespace_objects.py" />
+						<ref key="path" value="src/metaform/namespace_service.py" />
+						<ref key="path" value="src/metaform/namespace.py" />
+						<ref key="path" value="src/metaform/payload_store.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.delivery.assignment" purpose="Receive exactly one prompt with its inputs and submission header under a nonce, and hand back an answer that is accepted once for that nonce." function="Assignments issues a nonce per project, module and step, binds it to a workfolder on begin, accepts a headed answer on submit, and seals it on finish or abort." relation="The inference agent answers the delivered assignment." observation="An assignment delivery binds one unit of work to one token and one answer.">
+					<refs>
+						<ref key="path" value="src/metaform/assignments.py" />
+						<ref key="path" value="src/metaform/continuation.py" />
+						<ref key="path" value="src/metaform/work.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.server.tool" purpose="Call assignment, submit, complete, abort, namespace, resolve, operations, call and status as tools from inside a Codex or Claude session holding a nonce." function="ChassisMCP presents the chassis's assigned-work services over MCP stdio, and portable_mcp serves the same tools without dependencies from an exported wheel." relation="The inference agent calls the tool server." observation="A tool server exposes named operations with declared inputs to a model host.">
+					<refs>
+						<ref key="path" value="modules/mcp/server.py" />
+						<ref key="path" value="src/metaform/mcp_server.py" />
+						<ref key="path" value="src/metaform/portable_mcp.py" />
+						<ref key="path" value="src/metaform/actor.py" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="entity.operator.project" name_length="2" role="NE">
+			<joins>
+				<join type="purpose" namespace_address="code.store.join.namespace" purpose="Hold each registered project's intake result, workflow state, knowledge layers and artifact history as one inspectable body of joins that survives across sessions and tools." function="ProjectNamespaces places each project's joins into routed SQLite databases under the global data root, and exports or imports whole scopes with conflict preflight before writing." relation="The project operator keeps projects in the namespace join store." observation="A store of this type retains every revision of a join it has accepted." />
+				<join type="purpose" namespace_address="code.engine.workflow" purpose="Run the packaged Canonical_Intake procedure, or an imported XML procedure, on a project folder and get its answer materialized as receiver-owned namespace joins." function="WorkflowExecution starts a run from a workflow JoinRef, NativeControl ticks frames and issues each step as an assignment, and intake_documents imports the returned result XML into the project's namespace." relation="The project operator starts workflow runs." observation="A workflow engine advances an authored sequence of steps and retains the state of each run." />
+				<join type="purpose" namespace_address="code.interface.command" purpose="Drive projects, modules, settings and pending work from a shell, with the visible menu narrowed to the working folder's bound assignment." function="contextual_cli builds Click groups from the registered module commands, finds the workfolder marker to scope the menu to a nonce, and ChassisTUI renders setup from the same module declarations." relation="The project operator issues commands through the command interface." observation="A command interface maps typed invocations onto registered operations.">
+					<refs>
+						<ref key="path" value="src/metaform/contextual_cli.py" />
+						<ref key="path" value="src/metaform/cli.py" />
+						<ref key="path" value="src/metaform/tui.py" />
+						<ref key="path" value="src/metaform/navigation.py" />
+						<ref key="path" value="src/metaform/installation.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.server.web" purpose="Browse a project's namespace as a graph, edit workflow definitions, and attach to running terminal sessions from a browser behind a token link." function="The web module runs one ASGI child process for the global data root, WebAuth issues token access links and browser sessions, graph_data projects imported result XML into nodes and joins, and the terminal module streams operation-owned PTY sessions." relation="The project operator views projects through the web server." observation="A web server answers browser requests with projections of stored state.">
+					<refs>
+						<ref key="path" value="modules/web" />
+						<ref key="path" value="modules/terminal" />
+						<ref key="path" value="src/metaform/viewer.py" />
+					</refs>
+					<combined>
+						<entity namespace_address="code.server.web.terminal" name_length="3" relation="The web server carries the terminal sessions." observation="A web terminal relays a pseudo-terminal's byte stream to a browser." />
+					</combined>
+				</join>
+				<join type="purpose" namespace_address="code.packager.wheel" purpose="Hand a project and its chosen modules to another machine as one offline executable wheel." function="The distribution module captures the project's knowledge closure and the selected modules, bundles the core with its dependencies into a wheel, and portable_seed restores modules, shared objects and data on first run." relation="The project operator builds wheels with the wheel packager." observation="A wheel packager emits an installable archive with verified contents.">
+					<refs>
+						<ref key="path" value="modules/distribution" />
+						<ref key="path" value="src/metaform/portable.py" />
+						<ref key="path" value="src/metaform/portable_seed.py" />
+						<ref key="path" value="src/metaform/portable_runtime.py" />
+						<ref key="path" value="src/metaform/packaging.py" />
+						<ref key="path" value="packaging" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="entity.author.module" name_length="2" role="NE">
+			<joins>
+				<join type="purpose" namespace_address="code.runtime.module" purpose="Add commands, operations, settings and event subscriptions to the chassis by dropping in a Python package, without owning storage, processes or transports." function="Runtime discovers Plugin declarations from the System, User and Project places, executes each module's source under private imports, admits its operations through one invocation boundary with a WorkContext, and withdraws its subscriptions on teardown." relation="The module author extends the chassis through the module runtime." observation="A module runtime loads separately authored units and invokes them through a fixed contract.">
+					<refs>
+						<ref key="path" value="src/metaform/plugin_runtime.py" />
+						<ref key="path" value="src/metaform/plugin_contract.py" />
+						<ref key="path" value="src/metaform/plugin_policy.py" />
+						<ref key="path" value="src/metaform/plugin_store.py" />
+						<ref key="path" value="src/metaform/module_api.py" />
+						<ref key="path" value="src/metaform/module_catalog.py" />
+						<ref key="path" value="src/metaform/module_metadata.py" />
+						<ref key="path" value="src/metaform/registry.py" />
+						<ref key="path" value="src/metaform/settings.py" />
+						<ref key="path" value="modules/showcase" />
+						<ref key="path" value="modules/record_demo" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="code.store.join.namespace" name_length="3" role="DE">
+			<joins>
+				<join type="purpose" namespace_address="code.recorder.provenance" purpose="Know which module, operation, assignment and input joins produced every join it holds, so a stored answer traces back to the prompt revision and inputs that caused it." function="production_joins stages a Producer for each execution, records its input JoinRefs, and flushes a universal production join when the operation or assignment finishes." relation="The namespace join store attributes its joins through the provenance recorder." observation="A provenance recorder links a stored result to the execution that produced it.">
+					<refs>
+						<ref key="path" value="src/metaform/production_joins.py" />
+						<ref key="path" value="src/metaform/objects.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.engine.workflow" purpose="Receive its intake joins from inference that ran under an authored procedure, with the procedure's source and every answer retained beside the joins they produced." function="The workflow engine stores definitions, run state and answers as receiver-owned joins, and materializes each receiving_element of a returned result as joins under that element's namespace address." relation="The namespace join store is populated by the workflow engine." observation="A workflow engine writes its outputs to durable storage between steps.">
+					<refs>
+						<ref key="path" value="modules/workflows" />
+						<ref key="path" value="modules/workflows/resources/Canonical_Intake.xml" />
+						<ref key="path" value="src/metaform/coarse.py" />
+						<ref key="path" value="src/metaform/answers.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.layer.knowledge" purpose="Carry knowledge generated after intake as selectable layers over an unchanged foundation, so a layer can be attached, hidden, regenerated or removed without rewriting the intake joins." function="The knowledge Layers engine projects layer selection and visibility over the universal receiving-owned joins, explains property applicability back to the origin, and memory.py keeps mutable current memories as retained join revisions." relation="The namespace join store is extended by the knowledge layer." observation="A knowledge layer adds records over a base without altering the base.">
+					<refs>
+						<ref key="path" value="modules/knowledge" />
+						<ref key="path" value="src/metaform/layers.py" />
+						<ref key="path" value="src/metaform/knowledge.py" />
+						<ref key="path" value="src/metaform/properties.py" />
+						<ref key="path" value="src/metaform/models.py" />
+						<ref key="path" value="src/metaform/knowledge_export.py" />
+					</refs>
+					<combined>
+						<entity namespace_address="code.layer.knowledge.memory" name_length="3" relation="The knowledge layer holds the current memories." observation="A memory is a revisable record attached to a named address." />
+					</combined>
+				</join>
+				<join type="purpose" namespace_address="code.versioning.artifact" purpose="Tie its joins to the state of the source files they describe, so an origin and each sibling variant can be reconstructed and compared against the intake baseline." function="ArtifactHistory captures an artifact origin and collects variants with namespace provenance, history.py checkpoints parent-linked work versions as ordinary files, and change_report compares source files to the recorded baseline." relation="The namespace join store is anchored to files by artifact versioning." observation="Artifact versioning retains recoverable states of a set of files.">
+					<refs>
+						<ref key="path" value="modules/history" />
+						<ref key="path" value="src/metaform/history.py" />
+						<ref key="path" value="src/metaform/change_report.py" />
+						<ref key="path" value="src/metaform/workfolders.py" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="code.engine.workflow" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.delivery.assignment" purpose="Turn each pending step of a run into work an outside agent can pick up later, and resume the frame when that step's answer arrives." function="NativeControl issues a step as an assignment with its rendered prompt and bound inputs, records the attempt, and respond completes the step from the submitted answer or stops the run under the step's failure policy." relation="The workflow engine hands steps to assignment delivery." observation="Assignment delivery decouples the issuer of work from its executor." />
+				<join type="purpose" namespace_address="code.adapter.harness" purpose="Have an issued step answered without a person in the loop, by a fresh Codex or Claude process that sees only the assignment." function="The harness runner queues an assignment as an owned asynchronous job, launches the provider's noninteractive command with a launch-local MCP description and the nonce in its environment, and reports the captured streams." relation="The workflow engine delegates inference to the harness adapter." observation="A harness adapter translates one request protocol into a provider's invocation.">
+					<refs>
+						<ref key="path" value="modules/harness_runner" />
+						<ref key="path" value="modules/event_requester" />
+						<ref key="path" value="src/metaform/harness.py" />
+						<ref key="path" value="src/metaform/child_process.py" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="code.delivery.assignment" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.runtime.module" purpose="Survive the issuing process ending, so a nonce issued in one command is still answerable from another process, a background job or an MCP session." function="runtime_server keeps one persistent local Host per user that owns module operations, jobs and tracked process ids, and runtime_client attaches commands to it without executing module hooks; locking serializes short state transitions across processes." relation="The assignment delivery runs inside the module runtime." observation="A module runtime outlives the individual invocations it serves.">
+					<refs>
+						<ref key="path" value="src/metaform/runtime_server.py" />
+						<ref key="path" value="src/metaform/runtime_client.py" />
+						<ref key="path" value="src/metaform/service.py" />
+						<ref key="path" value="src/metaform/service_context.py" />
+						<ref key="path" value="src/metaform/locking.py" />
+					</refs>
+				</join>
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="code.runtime.module" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.bus.event" purpose="Let one module request work from another it does not import, as the event requester does of the harness runner and the web module does of its contributors." function="event.publish delivers an EventMessage to each module Subscription with execution provenance and keeps a delivery history, and the Runtime withdraws a module's subscriptions when it unloads." relation="The module runtime connects modules through the event bus." observation="An event bus delivers a published message to every current subscriber of its topic.">
+					<refs>
+						<ref key="path" value="src/metaform/event.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.store.join.namespace" purpose="Give every module the same storage, so module records are joins in the caller's project and no module opens its own database." function="The Runtime's read_namespace and resolve_join transport NamespaceObject and JoinRef values to module handlers under the caller's WorkContext, and ModuleAPI exposes put and read over them." relation="The module runtime stores module records in the namespace join store." observation="A shared store gives separately authored units one addressing scheme." />
+			</joins>
+		</receiving_element>
+		<receiving_element namespace_address="code.recorder.provenance" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.layer.knowledge" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.versioning.artifact" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.adapter.harness" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.bus.event" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.server.tool" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.server.web" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.interface.command" name_length="2" role="SE"><joins /></receiving_element>
+		<receiving_element namespace_address="code.packager.wheel" name_length="2" role="SE"><joins /></receiving_element>
+	</elements>
+	<subtypes>
+		<subtype namespace_address="code.server.web.terminal" />
+		<subtype namespace_address="code.layer.knowledge.memory" />
+	</subtypes>
+</result>

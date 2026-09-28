@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<knowledge_layer id="kl-codex-developer-best-practices-20260915" type="developer_best_practice" base_result_ref="dt-codex-20260915-8d3f2c1a">
+    <namespace_practices>
+        <object namespace_address="code.agent.programming">
+            <practice id="bp-agent-1">Keep planning, reasoning, tool selection, and result interpretation distinct enough that failures can be attributed to the stage that produced them.</practice>
+            <practice id="bp-agent-2">Prefer observable tool results and repository state over assumptions made during model reasoning.</practice>
+            <practice id="bp-agent-3">Preserve enough turn provenance to reconstruct why an action occurred without making internal reasoning itself part of the execution contract.</practice>
+        </object>
+        <object namespace_address="code.runtime.session">
+            <practice id="bp-session-1">Treat session identity and turn identity as stable durable identifiers rather than deriving them from presentation-layer state.</practice>
+            <practice id="bp-session-2">Make session continuation deterministic with respect to persisted conversation state, configuration, and execution context.</practice>
+            <practice id="bp-session-3">Separate recoverable persisted state from ephemeral process-local state so interrupted sessions can resume cleanly.</practice>
+        </object>
+        <object namespace_address="code.runtime.session.thread">
+            <practice id="bp-thread-1">Keep thread ordering explicit and preserve the causal order of turns and events.</practice>
+            <practice id="bp-thread-2">Do not let presentation concerns mutate canonical thread state.</practice>
+        </object>
+        <object namespace_address="code.runtime.session.history">
+            <practice id="bp-history-1">Persist history in a form that remains readable across process restarts and compatible schema evolution.</practice>
+            <practice id="bp-history-2">Record enough provenance to distinguish user input, model output, tool invocation, tool result, and system-generated events.</practice>
+        </object>
+        <object namespace_address="code.runtime.session.context">
+            <practice id="bp-context-1">Construct context from explicit session state and relevant artifacts rather than ambient process state.</practice>
+            <practice id="bp-context-2">Keep context assembly reproducible so the source of an unexpected model behavior can be inspected.</practice>
+            <practice id="bp-context-3">Avoid duplicating large unchanged context when a stable reference or canonical representation is available.</practice>
+        </object>
+        <object namespace_address="code.runtime.tool">
+            <practice id="bp-tool-1">Give every tool a clear input contract, output contract, and failure representation.</practice>
+            <practice id="bp-tool-2">Keep tool discovery separate from tool execution so capability enumeration does not cause side effects.</practice>
+            <practice id="bp-tool-3">Return structured execution results whenever downstream agent logic must distinguish success, partial success, rejection, and failure.</practice>
+        </object>
+        <object namespace_address="code.runtime.tool.command">
+            <practice id="bp-command-tool-1">Capture command, working directory, exit status, stdout, and stderr as distinct execution data.</practice>
+            <practice id="bp-command-tool-2">Do not infer command success from output text when the process provides an authoritative exit status.</practice>
+            <practice id="bp-command-tool-3">Preserve the actual environment and working-directory context needed to reproduce a command failure.</practice>
+        </object>
+        <object namespace_address="code.runtime.tool.patch">
+            <practice id="bp-patch-tool-1">Apply patches against explicit file state and report conflicts instead of silently approximating the requested change.</practice>
+            <practice id="bp-patch-tool-2">Keep modifications localized to the requested files and hunks unless the operation explicitly requires broader changes.</practice>
+            <practice id="bp-patch-tool-3">Return the resulting changed-file set so later verification operates on what actually changed.</practice>
+        </object>
+        <object namespace_address="code.runtime.tool.search">
+            <practice id="bp-search-tool-1">Return source identity and location with search results so retrieved evidence remains traceable.</practice>
+            <practice id="bp-search-tool-2">Distinguish an empty result from a failed, truncated, or inaccessible search.</practice>
+        </object>
+        <object namespace_address="code.control.execution">
+            <practice id="bp-execution-control-1">Centralize execution decisions so equivalent operations receive equivalent treatment regardless of which interface initiated them.</practice>
+            <practice id="bp-execution-control-2">Keep execution control separate from tool business logic so permissions and isolation behavior remain inspectable and reusable.</practice>
+            <practice id="bp-execution-control-3">Represent denial, required approval, sandbox limitation, and execution failure as distinct outcomes.</practice>
+        </object>
+        <object namespace_address="code.control.execution.sandbox">
+            <practice id="bp-sandbox-1">Make sandbox boundaries explicit to the executor rather than relying on undocumented environmental behavior.</practice>
+            <practice id="bp-sandbox-2">Report sandbox-caused failures distinctly from failures produced by the invoked operation itself.</practice>
+        </object>
+        <object namespace_address="code.control.execution.approval">
+            <practice id="bp-approval-1">Bind approval to the concrete operation being authorized so materially changed operations require a new decision.</practice>
+            <practice id="bp-approval-2">Preserve approval outcome and operation identity as execution provenance.</practice>
+        </object>
+        <object namespace_address="code.control.execution.policy">
+            <practice id="bp-policy-1">Evaluate policy from the actual requested operation and execution context rather than from presentation-layer labels.</practice>
+            <practice id="bp-policy-2">Keep policy decisions explainable in terms of the rule and operation that produced the decision.</practice>
+        </object>
+        <object namespace_address="code.interface.command">
+            <practice id="bp-command-interface-1">Keep command semantics stable across interactive and non-interactive surfaces even when their presentation differs.</practice>
+            <practice id="bp-command-interface-2">Return meaningful process exit codes for automation-facing commands.</practice>
+            <practice id="bp-command-interface-3">Keep human formatting separate from machine-readable output modes.</practice>
+        </object>
+        <object namespace_address="code.interface.command.interactive">
+            <practice id="bp-interactive-1">Preserve long-running session state across incremental user interactions without requiring callers to reconstruct it manually.</practice>
+            <practice id="bp-interactive-2">Surface tool activity, failures, and state transitions clearly enough for the operator to understand what the agent is doing.</practice>
+        </object>
+        <object namespace_address="code.interface.command.automation">
+            <practice id="bp-automation-1">Avoid prompts requiring human interaction unless the invocation explicitly requests an interactive behavior.</practice>
+            <practice id="bp-automation-2">Provide structured output and deterministic exit behavior suitable for scripts and CI systems.</practice>
+        </object>
+        <object namespace_address="code.server.application">
+            <practice id="bp-app-server-1">Keep protocol handling separate from agent-domain state transitions so transport changes do not redefine runtime behavior.</practice>
+            <practice id="bp-app-server-2">Treat thread and turn lifecycle transitions as explicit operations with identifiable state.</practice>
+            <practice id="bp-app-server-3">Make streamed events ordered and attributable to their originating thread, turn, and operation.</practice>
+        </object>
+        <object namespace_address="code.protocol.session">
+            <practice id="bp-session-protocol-1">Version protocol structures when compatibility cannot be preserved through additive change.</practice>
+            <practice id="bp-session-protocol-2">Prefer additive evolution over changing the meaning of an existing field or event.</practice>
+            <practice id="bp-session-protocol-3">Define terminal, error, cancellation, and partial-progress states explicitly rather than encoding them as ordinary messages.</practice>
+        </object>
+        <object namespace_address="code.client.programmatic">
+            <practice id="bp-programmatic-client-1">Expose host-language abstractions without hiding important underlying lifecycle, error, and cancellation semantics.</practice>
+            <practice id="bp-programmatic-client-2">Keep subprocess or transport details behind the client API while preserving actionable error information.</practice>
+            <practice id="bp-programmatic-client-3">Support explicit start, resume, cancellation, and result-consumption operations rather than inferring lifecycle from object existence.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension">
+            <practice id="bp-extension-1">Keep extension discovery, enablement, loading, and invocation as distinct lifecycle operations.</practice>
+            <practice id="bp-extension-2">An extension that fails to load should identify itself and its failure without making unrelated extensions indistinguishable from the failure.</practice>
+            <practice id="bp-extension-3">Expose extension-provided capabilities through the same callable abstraction used for native capabilities where their semantics are equivalent.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension.mcp">
+            <practice id="bp-mcp-1">Treat MCP server capability discovery as runtime data rather than assuming a fixed server tool catalog.</practice>
+            <practice id="bp-mcp-2">Preserve server identity with discovered capabilities so calls and failures remain attributable to the correct provider.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension.plugin">
+            <practice id="bp-plugin-1">Keep plugin enablement explicit and separate from plugin discovery.</practice>
+            <practice id="bp-plugin-2">Do not require importing or initializing unrelated plugins to determine that they exist.</practice>
+            <practice id="bp-plugin-3">A plugin failure should remain attributable to that plugin rather than appearing as a generic host failure.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension.connector">
+            <practice id="bp-connector-1">Separate connector authentication state from the capability contract exposed to the agent.</practice>
+            <practice id="bp-connector-2">Return provider-originated errors with enough context to distinguish authentication, transport, authorization, and application failures.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension.skill">
+            <practice id="bp-skill-1">Keep skill instructions self-contained enough that the runtime can determine when and how they apply.</practice>
+            <practice id="bp-skill-2">Treat skills as reusable guidance rather than silently changing unrelated runtime semantics.</practice>
+        </object>
+        <object namespace_address="code.runtime.extension.hook">
+            <practice id="bp-hook-1">Define hook invocation points and ordering explicitly.</practice>
+            <practice id="bp-hook-2">Prevent hook execution from silently changing the canonical meaning of the event it observes.</practice>
+            <practice id="bp-hook-3">Make hook failure visible to the lifecycle that invoked it when that failure affects the operation.</practice>
+        </object>
+    </namespace_practices>
+    <join_practices>
+        <join re="code.agent.programming" pe="code.runtime.session" relation="maintains work through">
+            <practice id="bp-join-agent-session-1">Pass session state through an explicit session abstraction rather than allowing the agent to reconstruct state independently on every turn.</practice>
+            <practice id="bp-join-agent-session-2">Persist the state required for continuation before reporting a turn as durably complete.</practice>
+        </join>
+        <join re="code.agent.programming" pe="code.runtime.tool" relation="acts through">
+            <practice id="bp-join-agent-tool-1">Require tool actions to pass through the registered tool runtime so execution, result handling, and provenance remain consistent.</practice>
+            <practice id="bp-join-agent-tool-2">Return actual tool outcomes to the agent rather than synthesizing expected outcomes from the requested action.</practice>
+        </join>
+        <join re="code.agent.programming" pe="code.control.execution" relation="subjects execution to">
+            <practice id="bp-join-agent-control-1">Apply execution controls before the effect occurs, while preserving the original requested operation for later inspection.</practice>
+            <practice id="bp-join-agent-control-2">Do not encode execution-control decisions into agent reasoning when they belong to the execution-control layer.</practice>
+        </join>
+        <join re="code.agent.programming" pe="code.interface.command" relation="accepts work through">
+            <practice id="bp-join-agent-command-1">Translate command input into the same internal task representation used by other supported client surfaces.</practice>
+            <practice id="bp-join-agent-command-2">Keep command parsing and display formatting outside the agent's core behavior.</practice>
+        </join>
+        <join re="code.agent.programming" pe="code.server.application" relation="exposes lifecycle through">
+            <practice id="bp-join-agent-server-1">Expose agent lifecycle operations through stable server contracts instead of leaking internal runtime objects across the boundary.</practice>
+            <practice id="bp-join-agent-server-2">Map runtime state changes to server events without inventing an independent second lifecycle model.</practice>
+        </join>
+        <join re="code.runtime.session" pe="code.protocol.session" relation="communicates through">
+            <practice id="bp-join-session-protocol-1">Keep the protocol representation faithful to canonical session state while allowing protocol-specific serialization details to remain outside the runtime model.</practice>
+            <practice id="bp-join-session-protocol-2">Ensure every externally visible lifecycle transition has an unambiguous protocol representation.</practice>
+        </join>
+        <join re="code.runtime.session" pe="code.runtime.tool" relation="dispatches actions through">
+            <practice id="bp-join-session-tool-1">Associate every dispatched tool action and result with its originating session and turn.</practice>
+            <practice id="bp-join-session-tool-2">Complete or terminate outstanding tool operations explicitly when a turn is cancelled or interrupted.</practice>
+        </join>
+        <join re="code.runtime.tool" pe="code.control.execution" relation="routes effects through">
+            <practice id="bp-join-tool-control-1">Route effectful execution through the control layer without duplicating policy decisions inside individual tool handlers.</practice>
+            <practice id="bp-join-tool-control-2">Preserve the tool's requested operation unchanged until the control layer has evaluated it.</practice>
+        </join>
+        <join re="code.runtime.tool" pe="code.runtime.extension" relation="receives capabilities from">
+            <practice id="bp-join-tool-extension-1">Normalize extension-provided capabilities into the tool runtime's normal discovery and invocation contracts.</practice>
+            <practice id="bp-join-tool-extension-2">Preserve extension provenance so a capability can be traced back to the extension that supplied it.</practice>
+        </join>
+        <join re="code.interface.command" pe="code.server.application" relation="drives">
+            <practice id="bp-join-command-server-1">Let the command interface consume the server lifecycle rather than recreating thread and turn orchestration independently.</practice>
+            <practice id="bp-join-command-server-2">Translate server events into terminal presentation without changing their semantic meaning.</practice>
+        </join>
+        <join re="code.server.application" pe="code.runtime.session" relation="manages">
+            <practice id="bp-join-server-session-1">Keep session creation, lookup, resume, and termination centralized behind explicit runtime operations.</practice>
+            <practice id="bp-join-server-session-2">Do not let client connection lifetime implicitly define session lifetime unless that relationship is part of the declared contract.</practice>
+        </join>
+        <join re="code.server.application" pe="code.protocol.session" relation="serializes through">
+            <practice id="bp-join-server-protocol-1">Validate incoming protocol messages before they mutate application-server state.</practice>
+            <practice id="bp-join-server-protocol-2">Serialize canonical lifecycle state rather than maintaining a second independently mutable protocol-state representation.</practice>
+        </join>
+        <join re="code.client.programmatic" pe="code.interface.command" relation="invokes">
+            <practice id="bp-join-client-command-1">Treat the command process as a defined transport boundary with explicit startup, streaming, cancellation, termination, and error behavior.</practice>
+            <practice id="bp-join-client-command-2">Avoid parsing human-oriented terminal prose when a structured command output is available.</practice>
+        </join>
+        <join re="code.runtime.extension" pe="code.runtime.tool" relation="contributes capabilities to">
+            <practice id="bp-join-extension-tool-1">Register only capabilities actually supplied by enabled and successfully loaded extensions.</practice>
+            <practice id="bp-join-extension-tool-2">Remove or deactivate an extension's contributed capabilities when that extension becomes unavailable rather than leaving stale callable entries.</practice>
+        </join>
+    </join_practices>
+</knowledge_layer>

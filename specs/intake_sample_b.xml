@@ -1,0 +1,152 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<result id="res-a6b260ad12e4">
+	<elements location="/home/rich/metaform">
+		<element namespace_address="entity.owner.project" name_length="2">
+			<joins>
+				<join type="purpose" namespace_address="code.store.namespace" purpose="Have every agent that works on my project start from the recorded purposes of its parts, so no session rebuilds them from files and chat." non_goal="The record must never drift into a description of the implementation, so that a refactor or a language port leaves it stale." function="The namespace store keeps each functional element of the project under a stable address with the joins it owns, and writes a new revision beside the earlier one instead of overwriting it." relation="The namespace store gives the project owner's agents one addressed, revisioned record of what each part of the project is for." observation="The record addresses each element by what it does and keeps the artifact's files outside itself.">
+					<refs>
+						<ref key="path" value="src/metaform/namespace_store.py" />
+						<ref key="path" value="src/metaform/namespace_objects.py" />
+						<ref key="path" value="src/metaform/namespace_service.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.store.namespace" name_length="2" role="DE">
+			<joins>
+				<join type="purpose" namespace_address="code.intake.artifact" purpose="Have the project's functional form written into the store by tracing the artifact element by element, not authored by hand." non_goal="The written form must never name the artifact's files, medium or style in place of what it does." function="Intake starts a versioned run of the Canonical Intake workflow, issues the trace to an agent one assignment at a time, stores each answer it submits, and resumes a stopped run from its stored contribution and assignment snapshots." relation="Artifact intake fills the namespace store with the functional form of the project." observation="An intake records what the artifact does in the store and leaves the artifact itself unchanged.">
+					<refs>
+						<ref key="path" value="src/metaform/intake.py" />
+						<ref key="path" value="src/metaform/coarse.py" />
+						<ref key="path" value="modules/workflows/resources/Canonical_Intake.xml" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.assignment.work" purpose="Have each agent receive exactly one scoped piece of work with its position and the knowledge in scope, and return its answer under a stated header." non_goal="An agent must never be handed the whole project or left to infer its scope from a past session's chat." function="A nonce names one stored assignment carrying the exact prompt, inputs and submission header, and the agent reads it, submits a headed answer, and completes or aborts through the MCP tools assignment, submit, complete and abort or through the entered command menu." relation="Work assignment delivers one scoped task from the store to an agent and takes its headed answer back." observation="Every assignment is delivered under a nonce and settled by completion or abortion.">
+					<refs>
+						<ref key="path" value="src/metaform/assignments.py" />
+						<ref key="path" value="src/metaform/work.py" />
+						<ref key="path" value="modules/mcp/server.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.layer.knowledge" purpose="Have an agent see exactly the knowledge in scope for the element it works on, and change what later agents see without changing addresses or past prompts." non_goal="Knowledge must never be picked by embedding distance or deleted from the record when it stops applying." function="A knowledge layer is a namespace object whose sources attach to receiving elements, selection and mask joins decide per address what flows toward the leaves, and hide adds a visibility revision that show restores." relation="Knowledge layers select and hide knowledge for each element of the store." observation="A layer hides and restores by new revisions, so every earlier selection stays resolvable.">
+					<refs>
+						<ref key="path" value="modules/knowledge" />
+						<ref key="path" value="src/metaform/layers.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.trace.production" purpose="Answer why an element is as it is by a query for the prompt, knowledge, run and diff that produced it." non_goal="A record must never exist without the operation that produced it being reachable." function="Each write carries a Producer reference to the operation, its inputs and its outputs, and pending attempts keep those references across invocations and restarts until they finish." relation="Production trace binds each stored record to the operation and inputs that produced it." observation="Every record in the store names the operation that produced it.">
+					<refs>
+						<ref key="path" value="src/metaform/production_joins.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.transform.structural" purpose="Rearrange the project's form, and carry a capability from another project into it, without its addresses or purposes drifting." function="Explicit structural patches, model clones and impact comparisons record the consequence of each change on attached knowledge, and similarity scores the correspondence between independently authored graphs." relation="Structural transform reshapes the store and records what each reshaping did to the knowledge attached to it." observation="A transform changes the shape and leaves the earlier revisions in the store.">
+					<refs>
+						<ref key="path" value="src/metaform/transform.py" />
+						<ref key="path" value="src/metaform/similarity.py" />
+						<ref key="path" value="src/metaform/expansion.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.explorer.namespace" purpose="See the project's whole functional shape at once, and follow its running work, from any device on the network." non_goal="The view must never become a second copy of the shape that can disagree with the store." function="The web module serves a graph explorer over the namespace, a workflow editor and a Jobs view on one port, signs each browser in from a token link, and opens the setup menu in a browser terminal." relation="The namespace explorer shows the owner the store's shape and the running work." observation="The explorer reads the shape from the store and holds none of its own.">
+					<refs>
+						<ref key="path" value="modules/web" />
+						<ref key="path" value="modules/terminal" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.interface.command" purpose="Reach every capability from one command surface that offers only what the loaded modules and current settings allow, with help at the point of use." non_goal="A menu must never list a command that no loaded module provides." function="Click commands and contextual menus are built from module declarations, entering a module or a nonce writes a hidden working-folder binding so its menu persists across invocations, and a full-screen setup edits the settings that hide commands." relation="The command interface presents the loaded modules' commands and help to the owner." observation="Commands and help are read from module declarations.">
+					<refs>
+						<ref key="path" value="src/metaform/cli.py" />
+						<ref key="path" value="src/metaform/contextual_cli.py" />
+						<ref key="path" value="src/metaform/tui.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.distribution.portable" purpose="Hand the project's functional form and its work to another machine that has never installed the platform." non_goal="An export must never lose retained bytes or leave a reference dangling without saying so." function="distribution build assembles one executable wheel holding the chassis, the selected modules, and the selected projects' namespace objects, joins and retained payloads, reports its SHA-256 digest, and lists unresolved references in a manifest." relation="Portable distribution packages a selected project and modules as one wheel that runs offline." observation="A distribution carries the project's records together with the bytes they reference.">
+					<refs>
+						<ref key="path" value="modules/distribution" />
+						<ref key="path" value="src/metaform/portable.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.module.chassis" purpose="Add or remove any capability, authored by anyone, without changing the chassis or losing what the module stored." non_goal="A module must never keep live resources running after it is unloaded." function="Each module folder exports a PLUGIN declaring commands, settings, help, operations, events and lifecycle hooks, is discovered in the System, User and Project places without being executed, and unloads with its live resources settled while its settings, objects and provenance stay." relation="The chassis module contract loads, isolates and withdraws each capability the project owner adds." observation="Every capability beyond the chassis arrives through the module contract.">
+					<refs>
+						<ref key="path" value="src/metaform/plugin_contract.py" />
+						<ref key="path" value="src/metaform/plugin_runtime.py" />
+						<ref key="path" value="src/metaform/module_catalog.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.intake.artifact" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.engine.workflow" purpose="Run the trace the same way each time, resumable and visible while it runs." non_goal="A run must never send an agent's answer back for repair or repeat a request until an answer passes." function="The Canonical Intake definition ships with the workflows module and runs as a durable workflow run whose visits and attempts are recorded, with Native and Latent as its two stages." relation="Artifact intake runs its trace on the workflow engine." observation="An intake run accepts the answer it receives and records mismatches for the owner to observe.">
+					<refs>
+						<ref key="path" value="modules/workflows/system_workflows.py" />
+						<ref key="path" value="modules/workflows/resources/Canonical_Intake.xml" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.assignment.work" purpose="Have a fresh agent trace the artifact and record what it finds, one assignment at a time." non_goal="The tracing agent must never inherit another session's conclusions about the project." function="Each intake request becomes a stored assignment, and the intake expands the submitted coarse contribution into store records by its own rules." relation="Artifact intake issues assignments to agents and expands their answers into store records." observation="Each intake answer arrives as one submission to one assignment.">
+					<refs>
+						<ref key="path" value="src/metaform/coarse.py" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="document.rulebook.semantic" purpose="Have every tracing agent reason under the same typology rules, whichever vendor or session supplies it." non_goal="The rules must never be paraphrased into the agent's own vocabulary." function="The rulebook and semantic texts prime each intake assignment as authored, with the namespace rules and the Canonical Intake instructions carried word for word." relation="Artifact intake primes its agents with the semantic rulebook." observation="Intake instructions are authored text that the agent receives unchanged.">
+					<refs>
+						<ref key="path" value="src/metaform/rulebook.py" />
+						<ref key="path" value="src/metaform/prompts.py" />
+						<ref key="path" value="src/metaform/data/rulebook.json" />
+						<ref key="path" value="src/metaform/data/semantics" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.history.artifact" purpose="Know exactly which state of the artifact an intake describes and what has changed since." non_goal="Later edits must never pass silently as what the intake described." function="History captures the artifact as an origin, optionally at a base commit, and the change report compares the current source files against that recorded baseline as a percentage without writing anything." relation="Artifact history anchors each intake to the artifact state it read." observation="An intake describes one captured state of the artifact.">
+					<refs>
+						<ref key="path" value="modules/history" />
+						<ref key="path" value="src/metaform/change_report.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.assignment.work" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="entity.harness.agent" purpose="Have a model-driven agent read the assignment and answer it, whichever vendor supplies it." non_goal="The assignment must never depend on which harness or process carries it." function="The nonce and not the process or client identifies the work, so Codex, Claude or the deterministic local fixture receives the same prompt, has its PID recorded against the nonce, and answers under the same header." relation="Work assignment asks an agent harness to answer one prompt." observation="The agent harness sits outside the platform and is reached only through an assignment nonce.">
+					<refs>
+						<ref key="path" value="modules/harness_runner" />
+					</refs>
+				</join>
+				<join type="purpose" namespace_address="code.runtime.execution" purpose="Launch the harness as background work so the command that assigned it returns at once." non_goal="Assigning must never block the requester while the harness runs." function="The runtime spawns the harness as a job that retains its PID, project, nonce, prompt, output and exit outcome, and settles as completed, failed, cancelled or interrupted." relation="Work assignment hands the harness launch to the execution runtime as a job." observation="Assigned work runs as a job that outlives the command that started it.">
+					<refs>
+						<ref key="path" value="modules/harness_runner/execution.py" />
+						<ref key="path" value="modules/harness_runner/processes.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.engine.workflow" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.assignment.work" purpose="Turn each authored prompt step into an assignment and let a later step read an earlier answer." function="Prompt, user, tool, branch, loop, parallel and nested steps run as recorded visits and attempts, and a later step inserts an earlier answer by its exact contribution reference." relation="The workflow engine issues its prompt steps as assignments and reads their answers back by reference." observation="A workflow output is bound to the exact assignment revision it used.">
+					<refs>
+						<ref key="path" value="modules/workflows/engine.py" />
+						<ref key="path" value="modules/workflows/execution.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.module.chassis" name_length="2" role="SE">
+			<joins>
+				<join type="purpose" namespace_address="code.runtime.execution" purpose="Run each module's operations, event handlers and jobs as attributable work, so a slow or failing handler is reported for that handler and never blocks the publisher or another module." non_goal="A failing handler must never stop the publisher or another module." function="One persistent authenticated host per data root runs module operations, delivers each published event to every subscribed module as its own job, and records delivery outcomes for inspection." relation="The chassis module contract runs module work and event deliveries on the execution runtime." observation="Modules cooperate by publishing events to the runtime and not by importing each other.">
+					<refs>
+						<ref key="path" value="src/metaform/runtime_server.py" />
+						<ref key="path" value="src/metaform/event.py" />
+					</refs>
+				</join>
+			</joins>
+		</element>
+		<element namespace_address="code.layer.knowledge" name_length="2" role="SE" />
+		<element namespace_address="code.trace.production" name_length="2" role="SE" />
+		<element namespace_address="code.transform.structural" name_length="2" role="SE" />
+		<element namespace_address="code.explorer.namespace" name_length="2" role="SE" />
+		<element namespace_address="code.interface.command" name_length="2" role="SE" />
+		<element namespace_address="code.distribution.portable" name_length="2" role="SE" />
+		<element namespace_address="code.runtime.execution" name_length="2" role="SE" />
+		<element namespace_address="code.history.artifact" name_length="2" role="SE" />
+		<element namespace_address="document.rulebook.semantic" name_length="2" role="SE" />
+		<element namespace_address="entity.harness.agent" name_length="2" role="NE" />
+	</elements>
+</result>
