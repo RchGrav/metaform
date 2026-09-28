@@ -28,6 +28,8 @@ Started from template 0.2.0.
 
 A packet that was changed stops each verb with `This packet was tampered with`. A packet sealed with evidence this tool does not hold stops it with `sealed with other evidence`, which is not tampering. A `.metaform/` folder holding anything but its two files is refused.
 
+`vary.py` keeps work as a variation of its origin, PROJ-026: `changes.diff`, a diff of the text that differs; `files/`, a whole copy of each binary file that differs; and `removed.txt`. `scripts/expand.sh` and `scripts/expand.ps1` expand a variation where there is no Metaform: `expand.sh <origin> <variation> <output>` and `expand.ps1 -Origin <origin> -Variation <variation> -Output <output>`. They call on no git and no patch command, and stop, naming the file, when the origin is not the one the diff was taken from.
+
 ## Settings
 
 `--packet-evidence <file>`: a file of 32 bytes or more to seal and open with, for someone who needs secrecy. Empty means the evidence every copy of Metaform holds.
