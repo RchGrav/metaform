@@ -783,9 +783,13 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     assert sorted(reach['elements']) == reached
     assert reach['edges'] == 4  # the namespace edges that join them
     assert page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')['reach2d'] is True
-    seen = page.evaluate("""async () => { const seen = [];
-        for (let at = 0; at < 44; at++) { await new Promise(done => setTimeout(done, 50)); seen.push(window.metaform.wave()); }
-        return seen; }""")
+    # Sampled until the wave has been everywhere it goes; a slow machine draws fewer frames, and the wave keeps its
+    # order whatever the speed.
+    seen = page.evaluate("""async count => { const seen = [], lit = new Set();
+        for (let at = 0; at < 240 && lit.size < count; at++) {
+          await new Promise(done => setTimeout(done, 50));
+          const now = window.metaform.wave(); seen.push(now); now.lit.forEach(node => lit.add(node)); }
+        return seen; }""", len(reached))
     first = {}
     for index, moment in enumerate(seen):
         for node in moment['lit']:
@@ -1230,6 +1234,36 @@ def test_the_page_files_are_checked_with_the_server_on_every_load(run, web):
     for path in ('/', '/page/app.js', '/page/app.css'):
         status, _, headers = request(web, path)
         assert status == 200 and headers['Cache-Control'] == 'no-cache', path
+
+
+@pytest.mark.req('VIEW-025')
+@pytest.mark.req('VIEW-003')
+def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_outside(run, web, mapped, browser):
+    """A node is made of a material that lets light through, in each theme alike, with no mode to choose. The glass
+    comes from the copy of three.js the page carries, so it works with no network."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    fetched = []
+    page.on('request', lambda request: fetched.append(request.url))
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()')
+    _, at, subtypes = keys_of(web)
+    themes = page.evaluate('[...document.querySelectorAll("#theme option")].map(option => option.value)')
+    assert len(themes) > 1
+    page.wait_for_function(f'() => window.metaform.look("{at["code.timer.kitchen"]}").material', timeout=10000)
+    for theme in themes:
+        page.select_option('#theme', theme)
+        page.wait_for_timeout(250)
+        for node in (at['code.timer.kitchen'], at['code.alarm.audible'], subtypes['code.loop.tick']):
+            seen = page.evaluate(f'window.metaform.look("{node}")')
+            assert seen['material'] == 'MeshPhysicalMaterial' and seen['transmission'] > 0, (theme, node, seen)
+    # one shape for every node of a size, however many nodes there are
+    sizes = page.evaluate('new Set(window.metaform.graph().nodes.filter(node => node.t === "el" || node.t === "sub")'
+                          '.map(node => window.metaform.look(node.id).shape)).size')
+    assert sizes <= 4
+    assert any(url.endswith('/vendor/three.module.min.js') for url in fetched)
+    assert all(url.startswith((f'http://127.0.0.1:{web}/', 'data:', 'blob:')) for url in fetched), fetched
+    assert problems == []
 
 
 @pytest.mark.req('MAP-052')

@@ -3,6 +3,10 @@
  * store is always set as text, never as HTML, VIEW-009. */
 'use strict';
 
+// three.js, for the glass the nodes are made of, VIEW-025. It is the release the graph library holds and does not
+// give out, carried in vendor/ so the page loads nothing from outside itself, VIEW-003.
+import * as THREE from '/vendor/three.module.min.js';
+
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -230,7 +234,14 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), fit: () => fit2D(), bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
+  look: id => look(id), fit: () => fit2D(),
+  glass: (on, options = {}, segments = 16) => {  // to measure what it costs
+    if (!G) return;
+    Object.assign(GLASS, options);
+    SEGMENTS = segments;
+    shapes.clear();
+    G.nodeThreeObject(node => on && isGlass(node) ? bead(node) : false);
+  }, bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
   wave: () => ({dots: W.dots.length, shapes: G ? G.renderer().info.memory.geometries : 0,
     lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.children.some(child => child.userData.pulse)).map(node => node.id) : []}),
   waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; },
@@ -257,6 +268,8 @@ function look(id) {
     animated2d: box ? getComputedStyle(box).animationName !== 'none' || getComputedStyle(group).animationName !== 'none' : false,
     opacity3d: material ? material.opacity : null,
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
+    material: material ? material.type : null, transmission: material ? material.transmission || 0 : 0,
+    shape: node?.__threeObj?.geometry ? node.__threeObj.geometry.uuid : null,
     bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)),
     glow3d: node?.__threeObj?.userData.glow ?? 0,
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
@@ -287,6 +300,32 @@ function dim(color) {
   return '#' + channels(color).map((own, at) => Math.round(keep * own + (1 - keep) * back[at]).toString(16).padStart(2, '0')).join('');
 }
 const dimmed = node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
+/* Light drawn around a node: added to what is behind it, and seen from every side. It is plain light and never
+ * glass, whatever the node it surrounds is made of. */
+const lightOf = opacity => new THREE.MeshBasicMaterial({transparent: true, opacity, blending: THREE.AdditiveBlending,
+  depthWrite: false, side: THREE.BackSide, toneMapped: false});
+/* A node's color, given to whatever it is made of: glass takes it as its tint, as the color light takes on inside
+ * it, and as the light it gives off. */
+function colored(material, color) {
+  material.color.set(color);
+  if (material.isMeshPhysicalMaterial) { material.attenuationColor.set(color); material.emissive.set(color); }
+}
+/* Glass, VIEW-025: in every theme an element is made of a material that obeys reality. Light passes through it and
+ * is tinted by it, so the theme's background shows through the node. It gives off a little of its own color, since
+ * clear glass on a dark background with nothing to reflect shows as black. One shape serves every node of a size. */
+const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1.35, attenuationDistance: 7, clearcoat: 0.6,
+  clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0};
+const shapes = new Map();
+let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
+const isGlass = node => node.t === 'el' || node.t === 'sub';
+function bead(node) {
+  const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
+  if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
+  const material = new THREE.MeshPhysicalMaterial(GLASS);
+  material.userData.own = true;
+  colored(material, colorOf(node));
+  return new THREE.Mesh(shapes.get(radius), material);
+}
 /* The circles around a part that needs building, VIEW-005: three shells around the sphere in its own color, each
  * larger and fainter, lit additively, so the node glows and keeps its color and opacity. They are steady while the
  * part waits and pulsate once an agent has taken its task. The shells are made from the sphere's own geometry and
@@ -299,9 +338,7 @@ function bloom3d(object, strength, color) {
   if (!strength) { for (const shell of shells) object.remove(shell); return; }
   if (!shells.length) for (const [scale, opacity] of SHELLS) {
     const shell = object.clone(false);
-    shell.material = object.material.clone();
-    Object.assign(shell.material, {transparent: true, opacity, blending: 2, depthWrite: false, side: 1});  // additive, back side
-    shell.material.emissiveIntensity = 0;
+    shell.material = lightOf(opacity);
     shell.position.set(0, 0, 0);
     shell.scale.setScalar(scale);
     shell.userData.bloom = true;
@@ -353,12 +390,10 @@ function setReach(key) {
 }
 /* One material for each color, shared by every dot of that color, and one shape for every dot: a shape or a
  * material made for each dot would fill the graphics card's memory as the waves run. */
-function glowOf(from, color) {
+function glowOf(color) {
   if (!W.glows.has(color)) {
-    const made = from.clone();
-    made.color.set(color);
-    if (made.emissive) { made.emissive.set(color); made.emissiveIntensity = 2.6; }
-    Object.assign(made, {transparent: false, opacity: 1});
+    const made = new THREE.MeshBasicMaterial({toneMapped: false});
+    made.color.set(color).multiplyScalar(2.6);  // more than full brightness, which the bloom pass spreads
     W.glows.set(color, made);
   }
   return W.glows.get(color);
@@ -383,7 +418,7 @@ function send(data, id, from, outward) {
     const to = down ? endOf(link.target) : endOf(link.source);
     if (to === from || (outward !== null && down !== outward)) continue;
     const mesh = template.clone(false);
-    mesh.material = glowOf(template.material, R.color);
+    mesh.material = glowOf(R.color);
     mesh.scale.setScalar(0.32);
     G.scene().add(mesh);
     W.dots.push({mesh, link, back: up, to, from: id, outward: down, start: W.clock, length: Math.max(0.034, timed('cross'))});
@@ -398,26 +433,24 @@ function pulse3d(node, depth) {
   let shell = object.children.find(child => child.userData.pulse);
   if (!depth) {
     if (shell) { object.remove(shell); shell.material.dispose(); }
-    if (object.material.userData.pulsed) { object.material.color.set(colorOf(node)); object.material.userData.pulsed = false; }
+    if (object.material.userData.pulsed) { colored(object.material, colorOf(node)); object.material.userData.pulsed = false; }
     return;
   }
   const own = channels(ownColor(node)), light = channels(R.color);
   const body = own.map((part, at) => part + (light[at] * (1 - TIMES.opacity + TIMES.opacity * part) - part) * depth);
   if (!object.material.userData.own) { object.material = object.material.clone(); object.material.userData.own = true; }
-  object.material.color.set(colorFrom(body));
+  colored(object.material, colorFrom(body));
   object.material.userData.pulsed = true;
   if (!shell) {
     shell = object.clone(false);
-    shell.material = object.material.clone();
-    Object.assign(shell.material, {transparent: true, blending: 2, depthWrite: false, side: 1});  // additive, back side
+    shell.material = lightOf(0);
     shell.position.set(0, 0, 0);
     shell.scale.setScalar(1.5);
     shell.userData.pulse = true;
     object.add(shell);
   }
-  shell.material.color.set(colorFrom(body));
+  shell.material.color.set(colorFrom(body)).multiplyScalar(1 + 1.6 * depth);  // the body's own color, as light
   shell.material.opacity = 0.6 * depth;
-  if (shell.material.emissive) { shell.material.emissive.set(colorFrom(body)); shell.material.emissiveIntensity = 2.2 * depth; }
 }
 function wave3d(data) {
   const now = performance.now() / 1000;
@@ -530,7 +563,7 @@ function paint3d(node) {
   const beat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
   const shown = fixing || (broken && beat) ? css('--broken') : cruft ? (beat ? css('--cruft') : ownColor(node))
     : colorOf(node);
-  object.material.color.set(dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
+  colored(object.material, dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
 }
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
@@ -553,6 +586,7 @@ function start3D() {
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
+    .nodeThreeObject(node => isGlass(node) ? bead(node) : false)
     .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
@@ -621,6 +655,9 @@ const tags = new Map();
 function labels() {
   if (G) {
     const box = $('#labels3d');
+    // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
+    for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
+      colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
     wave3d(G.graphData());
     for (const node of G.graphData().nodes) {
       if ((node.work && node.work.length) || node.__threeObj?.userData.glow) paint3d(node);
