@@ -61,6 +61,37 @@ def _sources(tx: Tx, sources: Sequence[Any], notices: list[Notice]) -> list[str]
     return found
 
 
+def complete(tx: Tx, name: str, provenance: dict[str, Any], result_id: str | None = None) -> Outcome:
+    """Fill in what a layer still being built lacks of its provenance and its result id, LAYER-010.
+
+    What the layer holds is kept: a different value given for it is named in a notice and not stored, so the record
+    of what made the layer never changes once it says something.
+    """
+    row = tx.db.execute('SELECT l.layer_id, l.result_id, l.ready, p.model, p.role, p.blinded FROM layers l '
+                        'LEFT JOIN provenance p ON p.layer_id=l.layer_id WHERE l.name=?', (name,)).fetchone()
+    if row is None:
+        raise StoreError(f'No layer {name}.', 'metaform map layers')
+    notices: list[Notice] = []
+    if row['ready'] is not None:
+        return Outcome((Notice('layer', f'Layer {name} is finished; its provenance was kept as it is.'),))
+    given = {'model': provenance.get('model'), 'role': provenance.get('role'), 'blinded': provenance.get('blinded'),
+             'id': result_id}
+    for key, value in given.items():
+        if value is None:
+            continue
+        held = row['result_id' if key == 'id' else key]
+        value = int(bool(value)) if key == 'blinded' else value
+        if held is None:
+            if key == 'id':
+                tx.db.execute('UPDATE layers SET result_id=? WHERE layer_id=?', (value, row['layer_id']))
+            else:
+                tx.db.execute(f'UPDATE provenance SET {key}=? WHERE layer_id=?', (value, row['layer_id']))
+        elif held != value:
+            shown = (bool(held), bool(value)) if key == 'blinded' else (held, value)
+            notices.append(Notice(key, f'The layer holds {key} {shown[0]}; {shown[1]} was given and was not stored.'))
+    return Outcome(tuple(notices))
+
+
 def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'layer', mutable: bool, hideable: bool,
            fields: Sequence[str] = (), tags: Sequence[Any] = (), provenance: dict[str, Any] | None = None,
            result_id: str | None = None, sources: Sequence[Any] = (), ready: bool = False) -> Layer:

@@ -216,6 +216,10 @@ def start(ctx: Context) -> Any:
         notices.append({'where': 'intake', 'message': f'An intake is already being recorded in layer '
                                                       f'{found.layer.name} of metaform {found.metaform}; this call '
                                                       'resumes it. intake show reads back what it holds.'})
+        # What the layer lacks of its provenance is filled in; what it holds is kept, LAYER-010.
+        _note(notices, found.store.complete(
+            found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role', 'blinded')},
+            _text(ctx, 'id', notices)))
     else:
         found = _open(ctx, store, notices)
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, 'notices': notices}

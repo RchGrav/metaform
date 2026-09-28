@@ -138,6 +138,11 @@ class Store:
                                    fields=fields, tags=tags, provenance=provenance, result_id=result_id,
                                    sources=sources, ready=ready)
 
+    def complete(self, layer: str, provenance: dict[str, Any], result_id: str | None = None) -> Outcome:
+        """Fill in what a layer still being built lacks of its provenance and its result id, LAYER-010."""
+        with self._write() as tx:
+            return layering.complete(tx, layer, provenance, result_id)
+
     def finish(self, layer: str) -> Layer | Outcome:
         """Mark a layer ready; a correction layer is also applied on top of the stack, STORE-017."""
         with self._write() as tx:

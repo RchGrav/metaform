@@ -647,6 +647,27 @@ def test_recording_without_a_start_starts_the_intake_and_a_second_start_resumes_
 
 
 @pytest.mark.req('BASE-039')
+@pytest.mark.req('LAYER-010')
+@pytest.mark.req('BASE-044')
+def test_a_resumed_intake_keeps_the_provenance_the_agent_gives_that_its_layer_lacks(run, project):
+    """An orchestrator starts the intake with the model; the agent's own start resumes it and gives its role and its
+    result's id. What the layer lacks is filled in; what it already holds is kept, and a different value is named."""
+    from metaform.data import Store
+    first = json.loads(run('intake', 'start', 'model=opus', '--json', cwd=project).stdout)
+    again = json.loads(run('intake', 'start', 'model=opus', 'role=intake agent', 'id=result-1', 'blinded=false',
+                           '--json', cwd=project).stdout)
+    assert again['layer'] == first['layer']
+    store = Store('timer')
+    kept = store.provenance(first['layer'])
+    assert (kept.model, kept.role, kept.blinded) == ('opus', 'intake agent', False)
+    assert [layer.result_id for layer in store.layers(kind='intake', limit=0).results] == ['result-1']
+    third = json.loads(run('intake', 'start', 'model=sonnet', '--json', cwd=project).stdout)
+    assert any(notice['where'] == 'model' and 'opus' in notice['message'] and 'sonnet' in notice['message']
+               for notice in third['notices'])
+    assert store.provenance(first['layer']).model == 'opus'
+
+
+@pytest.mark.req('BASE-039')
 def test_the_intake_asks_for_each_object_to_be_recorded_as_it_is_reasoned_then_proofed():
     """Rich, 2026-09-26: construct the intake object by object as it is reasoned, each submitted as the work
     proceeds, then a proofing pass; the method and its semantics are unchanged."""
