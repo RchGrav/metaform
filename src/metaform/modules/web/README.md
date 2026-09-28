@@ -8,6 +8,8 @@ People see the map in a browser. `metaform web` starts the server and prints its
 
 Clear project in the header clears the selected project as `metaform clear project <project> --confirm` does, PROJ-025 and VIEW-019: it shows the command's caution, what goes and what stays, asks on the page, then clears through the same chassis operation and names any file it could not remove with what to do. Every open page then shows the project with no metaform until the next intake.
 
+The `colors` picker in the header chooses one of the page's color themes, dark and light, VIEW-023. Each theme is one block of `page/app.css`, `:root[data-theme="<name>"]`, and defines the same colors; the script and the other rules hold none. In every theme each node, link and line holds 3 to 1 against its background, and each 2D label 4.5 to 1 against its box. The choice is kept in the browser's local storage and changes no setting. `page/theme.js` applies it before the page is drawn.
+
 The page shows each node's condition from its work records, MAP-046: a node with an open `tbd` record is drawn ghostly, at 70% opacity, and turns solid when its task is done; one with an open `broken` record flashes red until it is resolved; `cruft` keeps its look. The panel lists the selected object's records with their note, task, held and reviewed flags, and the resolution once done. `/api/work` is the store's `work` read.
 
 ## Template version

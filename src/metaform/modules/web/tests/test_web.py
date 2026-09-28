@@ -1951,3 +1951,118 @@ def no_metaform_shown_for(page, project):
     page.wait_for_function(f'() => document.querySelector("#viewport").innerText.includes("{line}") && '
                            f'document.querySelector("#p-object").innerText.includes("{line}")', timeout=5000)
     assert page.inner_text('#count') == 'no metaform yet'
+
+
+def page_file(name):
+    from metaform.modules.web import server
+    return (server.STATIC['page'] / name).read_text(encoding='utf-8')
+
+
+def themes():
+    """Each theme of the page's styles with its colors: the blocks `:root[data-theme="<name>"]` of app.css."""
+    import re
+    found = {}
+    for selector, body in re.findall(r'([^{}]*:root\[data-theme="[\w-]+"\][^{}]*)\{([^{}]*)\}', page_file('app.css')):
+        colors = dict(re.findall(r'(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6}|[\d.]+)\s*;', body))
+        for name in re.findall(r':root\[data-theme="([\w-]+)"\]', selector):
+            found[name] = colors
+    return found
+
+
+def rgb(color):
+    return tuple(int(color[index:index + 2], 16) / 255 for index in (1, 3, 5))
+
+
+def contrast(one, other):
+    """The WCAG contrast ratio of two colors, 1 for the same color and 21 for black on white."""
+    def luminance(color):
+        red, green, blue = (v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in color)
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    high, low = sorted((luminance(one), luminance(other)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+LAYER_COLORS = ['--intake', '--memory', '--correction', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
+NODE_COLORS = ['--de', '--signal', '--text', '--cruft', '--dim', '--broken', *LAYER_COLORS]
+LINK_COLORS = ['--tree', '--function', '--encounter', *LAYER_COLORS]
+LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--cruft',
+            *LAYER_COLORS]
+LABELS_3D = ['--text', '--muted', '--faint', '--signal']
+LABELS_2D = [('--text', '--node'), ('--text', '--node-sel'), ('--text', '--node-broken'), ('--text', '--group'),
+             ('--muted', '--node-sub'), ('--text', '--node-sub')]
+
+
+@pytest.mark.req('VIEW-023')
+def test_the_picker_offers_each_theme_of_the_styles_dark_and_light_and_each_defines_every_color():
+    import re
+    found = themes()
+    offered = re.findall(r'<option value="([\w-]+)"', re.search(r'<select id="theme".*?</select>',
+                                                                 page_file('index.html'), re.S).group(0))
+    assert sorted(offered) == sorted(found) and len(offered) == len(set(offered)) > 1
+    assert all(colors.keys() == found['space'].keys() for colors in found.values())
+    grounds = [contrast(rgb(colors['--ground']), (1, 1, 1)) for colors in found.values()]
+    assert [ratio for ratio in grounds if ratio > 10] and [ratio for ratio in grounds if ratio < 2]
+    assert len({colors['--ground'] for colors in found.values()}) == len(found)
+
+
+@pytest.mark.req('VIEW-006')
+@pytest.mark.req('VIEW-023')
+def test_in_every_theme_each_color_of_the_graph_stands_clear_of_its_background():
+    """Every node, link and line of both views holds 3 to 1 against the background it is drawn on, a link as it is
+    seen at its drawn opacity, and every label of the 2D map holds 4.5 to 1 against its box."""
+    assert ".linkOpacity(Number(css('--link-opacity')))" in page_file('app.js')
+    low = []
+    for name, colors in themes().items():
+        ground, opacity = rgb(colors['--ground']), float(colors['--link-opacity'])
+        for color in NODE_COLORS + LINES_2D + LABELS_3D:
+            if contrast(rgb(colors[color]), ground) < 3:
+                low.append((name, color, 'on the background'))
+        for color in LINK_COLORS:
+            seen = tuple(opacity * own + (1 - opacity) * back for own, back in zip(rgb(colors[color]), ground))
+            if contrast(seen, ground) < 3:
+                low.append((name, color, f'as a link at {opacity}'))
+        for text, box in LABELS_2D:
+            if contrast(rgb(colors[text]), rgb(colors[box])) < 4.5:
+                low.append((name, text, f'on {box}'))
+    assert low == []
+
+
+@pytest.mark.req('VIEW-006')
+def test_the_colors_are_defined_once_in_the_styles_and_the_script_holds_none():
+    import re
+    assert re.findall(r'''['"]#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})['"]''', page_file('app.js')) == []
+    styles = page_file('app.css')
+    rules = re.sub(r'[^{}]*:root[^{}]*\{[^{}]*\}', '', styles)
+    assert re.findall(r'#[0-9a-fA-F]{3,8}\b|rgba?\(', rules) == []
+
+
+@pytest.mark.req('VIEW-023')
+def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run, web, mapped, browser):
+    started(run)
+    page, problems, remote = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    token = lambda name: page.evaluate(f'getComputedStyle(document.documentElement).getPropertyValue("{name}").trim()')
+    box = 'getComputedStyle(document.querySelector("#map2d svg g.node rect")).stroke'
+    assert page.evaluate('document.documentElement.dataset.theme') == 'space' == page.input_value('#theme')
+    before = {'ground': token('--ground'), 'tree': token('--tree'), 'box': page.evaluate(box)}
+    # with a node selected, the others are quieter in color and none is faded toward the background
+    assert page.evaluate('window.metaform.selected()') and page.evaluate('''() => {
+      const faded = node => Number(getComputedStyle(node).opacity) < 1;
+      const others = [...document.querySelectorAll('#map2d svg g.node:not(.sel):not(.near), #map2d .edgePaths path, #labels3d span')];
+      return others.length > 0 && !others.some(node => !/work-/.test(node.getAttribute('class') || '') && faded(node)); }''')
+    assert before['ground'] == themes()['space']['--ground']
+    for name, colors in themes().items():
+        if name == 'space':
+            continue
+        page.select_option('#theme', name)
+        page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length > 0')
+        assert page.evaluate('document.documentElement.dataset.theme') == name
+        assert token('--ground') == colors['--ground'] == page.evaluate('window.metaform.ground()')
+        drawn = page.evaluate('window.metaform.linkColors()')
+        assert {link['color'] for link in drawn if link['k'] == 'tree'} == {colors['--tree']}
+        assert page.evaluate(box) != before['box']
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    assert page.evaluate('document.documentElement.dataset.theme') == name == page.input_value('#theme')
+    assert page.evaluate('window.metaform.ground()') == themes()[name]['--ground']
+    assert problems == [] and remote == []

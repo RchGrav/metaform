@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
 <link rel="stylesheet" href="/vendor/codemirror/dialog.css">
 <link rel="stylesheet" href="/page/app.css">
+<script src="/page/theme.js"></script>
 </head>
 <body>
 <div class="app">
@@ -21,6 +22,19 @@
     <div class="clearpick">
       <button class="clearbtn" id="clearBtn" aria-expanded="false" aria-controls="clearbox" title="Remove this project's metaforms and reports; it says what goes and what stays, and asks first">Clear project</button>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
+    </div>
+    <div class="themepick">
+      <label for="theme">colors</label>
+      <select id="theme">
+        <option value="space">space</option>
+        <option value="midnight">midnight</option>
+        <option value="graphite">graphite</option>
+        <option value="plum">plum</option>
+        <option value="forest">forest</option>
+        <option value="ember">ember</option>
+        <option value="paper">paper</option>
+        <option value="mist">mist</option>
+      </select>
     </div>
     <div class="layerpick">
       <button class="layersbtn" id="layersBtn" aria-expanded="false" aria-controls="layerlist">Layers</button>

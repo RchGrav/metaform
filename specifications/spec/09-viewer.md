@@ -88,9 +88,9 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - A legend shows every color and style currently in view with the layer name.
 - Why: Color by layer shows at a glance what each layer adds to the metaform. Style by kind keeps functions and properties apart, since only properties travel along the namespace.
 - How it shows: Turning on a best-practice layer adds its joins in its own color. A broken element flashes red in both views.
-- Build: The palette is defined once in the page's styles and checked for contrast in light and dark backgrounds. Colors come from the layer's position in `/api/layers`, not from its name, so renaming a layer does not change its color.
+- Build: The palette is defined once in the page's styles, one block for each theme, and each theme's graph colors hold their contrast on its background, VIEW-023. Colors come from the layer's position in `/api/layers`, not from its name, so renaming a layer does not change its color.
 - Acceptance: For a store with the intake, one correction layer, two knowledge layers, memory and one element with each condition, the legend lists each with its color, and every edge and node carries the style its kind, layer and condition call for.
-- Relates to: LAYER-011, LAYER-012, LAYER-015, LAYER-016, MAP-046, VIEW-005, VIEW-020.
+- Relates to: LAYER-011, LAYER-012, LAYER-015, LAYER-016, MAP-046, VIEW-005, VIEW-020, VIEW-023.
 - Status: confirmed for colored edges by layer and kind. The conditions as work records, in place of the flags missing, broken and cruft, follow MAP-046, 2026-09-27. The specific styles and palette are recommended.
 
 ### VIEW-007 Viewing never changes settings; a separate control applies the layer choice
@@ -308,6 +308,22 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Acceptance: Open with D88.
 - Relates to: LAYER-005, LAYER-020, MAP-022, STORE-035, VIEW-005.
 - Status: confirmed as design, 2026-09-26 and 2026-09-27. The property node waits on D88.
+
+### VIEW-023 The page offers a variety of color themes, and the graph stands clear of the background in each
+- Requirement: The page offers several color themes, dark and light, chosen from a picker in the header. In every theme each node, link and line of both views stands clear of the background it is drawn on.
+- What this means: A theme sets every color of the page: the backgrounds, the text, and the colors of the graph. A layer, a kind and a condition keep their hue in every theme, so intake is blue and Function is teal on any background; the theme sets how light each is, so it shows on that theme's background. No mark of the graph is close to its background in lightness: a dimmed node, a namespace edge and a 2D box's border are quieter than the rest and still seen.
+- Why: A map is read by its colors, VIEW-006, so a color that is lost against the background hides part of the map. People differ in the background they read best on and in the room they work in, so one fixed look suits only some of them.
+- How it shows: Choosing `paper` in the header's picker turns the page light at once, both views with it, and the namespace edges show as gray lines on the light background. The page opens in the same theme the next time.
+- Build:
+  - Each theme is one block of the page's styles, `:root[data-theme="<name>"]`, that defines the same set of colors; `space` is the theme of a page with no choice made. The script and the other style rules hold no color of their own and read each from the theme.
+  - Every theme's graph colors come from one rule: the hue and chroma of the color's role, and the lightness at which it holds its contrast on that theme's background, with chroma reduced where the screen cannot show it.
+  - Contrast is the WCAG ratio. A node, a line of the 2D map, and a link as it is seen at its drawn opacity each hold 3 to 1 against the background. A label of the 2D map holds 4.5 to 1 against its box.
+  - The choice is the viewer's own and is kept in the browser's local storage, so it changes no setting, VIEW-007. A small script in the page's head applies it before the page is drawn.
+  - On a change both views are recolored in place: the 3D view takes the new background, node and link colors, and the 2D map is drawn again.
+  - `window.metaform.ground()` returns the 3D view's background color, so a browser check can read it.
+- Acceptance: The picker lists each theme of the styles, and each theme defines every color. In every theme each graph color holds its ratio. Choosing a theme recolors both views without a reload, and a reload keeps it.
+- Relates to: VIEW-005, VIEW-006, VIEW-007, VIEW-012.
+- Status: confirmed for more color options of a nice variety and for graph colors that do not conflict with the background, Rich 2026-09-27. The themes offered, their colors, the ratios and the storage are recommended.
 
 ## Open questions
 

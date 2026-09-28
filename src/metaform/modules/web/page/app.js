@@ -217,7 +217,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id)};
+  look: id => look(id), ground: () => G ? G.backgroundColor() : null};
 
 /* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
  * classes, computed opacity and whether its box is animating, and the 3D sphere's material opacity and whether it is
@@ -239,7 +239,7 @@ const CONDITIONS = ['tbd', 'broken', 'cruft'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
   if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
-    : node.role === 'DE' ? '#ffffff' : layerColor(node.layer);
+    : node.role === 'DE' ? css('--de') : layerColor(node.layer);
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
@@ -259,7 +259,7 @@ function paint3d(node) {
   }
   object.material.opacity = tbd ? 0.7 : 0.95;
   const red = broken && (reduced() || Math.floor(performance.now() / 500) % 2 === 0);
-  object.material.color.set(red ? css('--broken') : dimmed(node) ? '#2b3644' : colorOf(node));
+  object.material.color.set(red ? css('--broken') : dimmed(node) ? css('--dim') : colorOf(node));
 }
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
@@ -281,7 +281,7 @@ function start3D() {
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
-    .nodeColor(node => dimmed(node) ? '#2b3644' : colorOf(node))
+    .nodeColor(node => dimmed(node) ? css('--dim') : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
     .nodeLabel(() => '')  // the page shows its own tooltip, anchored above the node, not under the pointer
@@ -291,7 +291,7 @@ function start3D() {
       if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); }
     })
     .linkColor(linkColor)
-    .linkOpacity(0.55)
+    .linkOpacity(Number(css('--link-opacity')))
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
     .linkCurvature(link => link.k === 'layer' || link.k === 'item' ? 0 : 0.18)
     .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
@@ -378,6 +378,19 @@ function draw3D() {
   $('#tip3d').hidden = !hovered;
   G.graphData(data);
 }
+/* A theme recolors both views in place, VIEW-023: the 3D view rereads its colors, the 2D map is drawn again. The
+ * choice is the viewer's own, kept in this browser. */
+function setTheme(name) {
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem('metaform.theme', name); } catch (error) { /* storage can be blocked; the theme still shows */ }
+  if (G) G.backgroundColor(css('--ground')).linkOpacity(Number(css('--link-opacity'))).nodeColor(G.nodeColor())
+    .linkColor(G.linkColor()).linkDirectionalParticleColor(G.linkDirectionalParticleColor());
+  mermaidReady = false;
+  build2D();
+}
+$('#theme').value = document.documentElement.dataset.theme;
+if ($('#theme').selectedIndex < 0) $('#theme').value = document.documentElement.dataset.theme = 'space';  // a kept name that is no longer a theme
+$('#theme').onchange = () => setTheme($('#theme').value);
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
 addEventListener('resize', resize);
 
@@ -413,9 +426,9 @@ async function build2D() {
   if (!mermaidReady) {
     window.mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: 'base', htmlLabels: false,
       flowchart: {htmlLabels: false, useMaxWidth: false, curve: 'basis', nodeSpacing: 28, rankSpacing: 45},
-      themeVariables: {background: '#06080c', primaryColor: '#111821', primaryBorderColor: '#2a3747',
-        primaryTextColor: '#d9e2ec', lineColor: '#7fb0ff', fontFamily: 'IBM Plex Sans, sans-serif', fontSize: '13px',
-        tertiaryColor: '#0c1117'}});
+      themeVariables: {background: css('--ground'), primaryColor: css('--node'), primaryBorderColor: css('--node-line'),
+        primaryTextColor: css('--text'), lineColor: css('--edge'), fontFamily: 'IBM Plex Sans, sans-serif', fontSize: '13px',
+        tertiaryColor: css('--group')}});
     mermaidReady = true;
   }
   const keys = new Map([...S.elements.keys()].map((id, index) => [id, `n${index}`]));
