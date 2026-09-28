@@ -350,7 +350,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Build: Open. What the scene needs beyond the graph is loaded only when it is chosen, so a person who never chooses it fetches none of it: the glass needs three.js's physical material, which the graph library holds and does not give out, so a copy of three.js goes in `vendor/` with its license and hash, VIEW-003. The theme's block of the styles states which way to draw, and the script reads that as it reads a color. The setting for the level is declared by the web module and follows every settings rule, CLI-010. What each level holds is open, question 10. The entry's name in the list is open, question 11; Rendered, Reality and Zero-G are the candidates.
 - Acceptance: Open with the build. It will hold that with a color scheme chosen the page loads nothing of the rendered scene, and that the map holds the same elements, joins and conditions in the scene as in a color scheme.
 - Relates to: VIEW-003, VIEW-005, VIEW-022, VIEW-023, VIEW-026, CLI-010.
-- Status: confirmed as design, 2026-09-28. The scene changes how the map is drawn and never what it says.
+- Status: confirmed as design, 2026-09-28, as an experiment. The scene changes how the map is drawn and never what it says, so nothing depends on it, and it is built after what the map needs in order to be read. The bloom and the wave are not part of the experiment: they tell a reader something and every theme needs them, VIEW-026.
 
 ### VIEW-026 A property's reach travels as a wave
 
