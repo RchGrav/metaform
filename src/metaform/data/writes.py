@@ -24,9 +24,9 @@ from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .names import reading, short_name
 from .records import (
     CONDITIONS,
-    TAKEN,
     EF_WORDS,
     ROLES,
+    TAKEN,
     Element,
     Item,
     Join,

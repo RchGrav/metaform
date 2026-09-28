@@ -892,7 +892,7 @@ def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(ru
 def test_every_element_and_subtype_can_be_reached_with_the_arrow_keys(run, web, mapped, browser):
     started(run)
     page, problems, _ = opened(browser, web)
-    expected, at, inside = keys_of(web)
+    _, at, inside = keys_of(web)
     everything = set(at.values()) | set(inside.values())
     start = page.evaluate('window.metaform.selected()')
     reached, queue = {start}, [start]
@@ -1358,7 +1358,7 @@ def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_v
     zoomed out, zoomed in and regular."""
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, inside = keys_of(web)
+    _, at, _ = keys_of(web)
     cook, kitchen, alarm, display = (at[address] for address in (
         'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display'))
     selected = lambda: page.evaluate('window.metaform.selected()')
@@ -2238,7 +2238,7 @@ def test_the_picker_offers_each_theme_of_the_styles_dark_and_light_and_each_defi
     import re
     found = themes()
     offered = re.findall(r'<option value="([\w-]+)"', re.search(r'<select id="theme".*?</select>',
-                                                                 page_file('index.html'), re.S).group(0))
+                                                                 page_file('index.html'), re.DOTALL).group(0))
     assert sorted(offered) == sorted(found) and len(offered) == len(set(offered)) > 1
     assert all(colors.keys() == found['space'].keys() for colors in found.values())
     grounds = [contrast(rgb(colors['--ground']), (1, 1, 1)) for colors in found.values()]

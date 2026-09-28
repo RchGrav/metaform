@@ -606,8 +606,8 @@ MODULE = Module(
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
                      'operations change one object each; op=finish marks it ready.',
-             examples=(('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
-                        'mutable=true hideable=true', 'Start a knowledge layer.'),)),
+             examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
+                         'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
         Verb('mask', mask, 'Stop a layer flowing into an address and every address toward the leaves from it.',
