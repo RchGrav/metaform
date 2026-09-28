@@ -227,7 +227,7 @@ metaform map work node=element:code.alarm.audible
 metaform map work op=done id=<work_id> resolution="Wired on revision two."
 ```
 
-`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `tbd` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built has circles around it, and they pulsate while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
 
 ## Correct represented understanding
 
@@ -299,6 +299,15 @@ The Prompt tab exposes existing prompt versions, comparisons, and **Save as new 
 **Clear project** in the header does what `metaform clear project <project> --confirm` does for the selected project: it removes the project's metaforms and report files and keeps its registration, folder, settings, origins and variants. It first shows the command's own caution and asks on the page. Afterwards every open page shows the project with no metaform until the next intake.
 
 ## Retain and exchange the work
+
+Write the map as a short Markdown document, to read or to pass on:
+
+```text
+metaform map markdown file=kitchen-map.md
+metaform map markdown address=code.timer.kitchen
+```
+
+It holds each element's name, address, role and paths, and each join's receiver, provider, relation, purpose and non_goal. With an address it covers that element and what stands around it. The web GUI's Export button saves the same document.
 
 Export the current project to a file:
 
