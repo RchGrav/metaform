@@ -404,6 +404,17 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Relates to: PROJ-021, PROJ-026, PROJ-027.
 - Status: confirmed as design, 2026-09-28. It answers question 13: history keeps both, and STORE-027's rule that importing what exists does nothing covers the map's exchange document only.
 
+### PROJ-029 A small source is kept whole, with no diffs
+
+- Requirement: For a source under 10 MB, Metaform makes no diffs: each variation of the work is kept as a whole copy of the source, and a set of variations is carried as a ZIP of whole copies.
+- What this means: The size is that of the source alone, the files a person wrote. Git's own files are not counted and are never copied, and neither is byte code or anything else built from the source. A source of 10 MB or more is kept as diffs against its commit, PROJ-026.
+- Why: A diff saves space only when the source is large; ten whole copies of a 2 MB project are 20 MB, which costs nothing. A whole copy needs no rebuilding, so every variation in the ZIP opens and runs as it is, where a diff has to be applied to its origin first and that step can fail. And the work that makes many variations of one artifact is mostly done on small artifacts, a game or a clock in a few files, so the common case gets the simple path. Counting only the source keeps a small project with a long history, or with built files beside it, from being treated as large.
+- How it shows: Ten variations of a 300 KB game are ten folders in one ZIP, each complete.
+- Build: Open. How a small source's variations are laid out in the project's folder, and whether each still sits under a folder named by its commit, is open, question 16.
+- Acceptance: Open with the build.
+- Relates to: PROJ-012, PROJ-015, PROJ-020, PROJ-026, PROJ-027.
+- Status: confirmed, 2026-09-28: the threshold, whole copies under it, and the source alone counted and copied.
+
 ## Open questions
 
 1. A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)
@@ -421,3 +432,5 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 13. Answered 2026-09-28: history keeps both, PROJ-028. It asked: everything exported carries its unique id, and importing something that already exists does nothing, STORE-027. PROJ-021 instead keeps both on divergence, with the next suffix, or advances the local unit when the incoming one includes it. Does the does-nothing rule govern history units too, so a unit whose `mform_id` already exists is skipped, or do history units keep PROJ-021's rule? (PROJ-021, STORE-027)
 14. Answered 2026-09-28: by the full path of its source with each separator replaced, followed by a number, PROJ-026. It asked: how is a project's folder in the home named: by the identity of its source, as Tempo did, which is the same on every machine and survives a move; by its working folder's path with each separator replaced, as Claude Code does, which needs no lookup and can be read by eye; or by a name a person picks, as today? (PROJ-026)
 15. NEW Are diffs of work made on their own between commits, and by what event, or only when `add_variant` is called? (PROJ-012, PROJ-015)
+16. NEW For a source under 10 MB, do its variations still sit under a folder named by the commit they came from, holding whole copies in place of diffs? (PROJ-029)
+17. NEW What stands in Metaform for the two inputs of Tempo's key that Metaform does not have yet, the tool's system evidence and the wave number? (PROJ-027)
