@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import sys
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
@@ -135,6 +136,23 @@ def _text(ctx: Context, name: str, notices: Notices) -> str | None:
         return value
     notices.append({'where': name, 'message': f'{name} is not text; it was stored as its JSON text.'})
     return json.dumps(value, ensure_ascii=False)
+
+
+def _given(ctx: Context, name: str, notices: Notices) -> str | None:
+    """A report or feedback. On the command line a value that names a file is read from the file and `-` from
+    standard input, as `metaform feedback` reads them, BASE-045; a tool is handed the text and opens no path."""
+    value = _text(ctx, name, notices)
+    if value is None or ctx.surface != 'cli':
+        return value
+    if value == '-':
+        return sys.stdin.read()
+    path = Path(value) if Path(value).is_absolute() else ctx.folder / value
+    try:
+        if path.is_file():
+            return path.read_bytes().decode('utf-8')
+    except (OSError, ValueError):
+        return value
+    return value
 
 
 def _json(ctx: Context, name: str) -> tuple[Any, bool]:
@@ -504,8 +522,8 @@ def finish(ctx: Context) -> Any:
     """Finish the intake: its layer becomes the metaform's intake, seen by every read, and cannot change in place."""
     store = ctx.require_store()
     notices: Notices = []
-    report = _text(ctx, 'report', notices)
-    feedback = _text(ctx, 'feedback', notices)
+    report = _given(ctx, 'report', notices)
+    feedback = _given(ctx, 'feedback', notices)
     found = _building(store)
     if found is None:
         return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': 0, 'joins': 0,
@@ -679,7 +697,8 @@ MODULE = Module(
         Verb('finish', finish, 'Finish the intake: every read sees it from now on, and it changes only through a '
                                'correction layer.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
-                                   'anything not working or partially working.', required=False),
+                                   'anything not working or partially working. On the command line a file is read '
+                                   'and - is standard input.', required=False),
                     Noun('feedback', 'Feedback on the Metaform process: bad semantics, a tool that did not match its '
                                      'schema, where you got stuck.', required=False))),
         Verb('status', status_verb, 'Whether this project has an intake, and whether one is being recorded.'),

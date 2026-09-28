@@ -647,6 +647,43 @@ def test_recording_without_a_start_starts_the_intake_and_a_second_start_resumes_
 
 
 @pytest.mark.req('BASE-039')
+@pytest.mark.req('BASE-045')
+def test_the_finish_reads_a_long_report_from_a_file_or_from_standard_input_on_the_command_line(run, project,
+                                                                                            tmp_path, home):
+    """A report runs to pages, with quotes and new lines in it, which no command line carries well. On the command
+    line a value that names a file is read from the file and `-` from standard input, as `metaform feedback` reads
+    them; text that names no file is the report itself."""
+    text = 'Broken:\n- the "alarm" pin is unconnected.\n\nCruft:\n- none.\n'
+    (tmp_path / 'report.md').write_text(text, encoding='utf-8')
+    run('intake', 'start', '--json', cwd=project)
+    run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
+    run('intake', 'finish', f'report={tmp_path / "report.md"}', 'feedback=-', '--json', cwd=project,
+        input='Said on standard input.\n')
+    layer_id = Store('timer').layers(kind='intake').results[0].layer_id
+    folder = home / 'projects' / 'timer' / 'reports'
+    assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == text
+    assert (folder / f'{layer_id}-feedback.md').read_text(encoding='utf-8') == 'Said on standard input.\n'
+
+
+@pytest.mark.req('BASE-039')
+def test_over_mcp_a_report_is_the_text_given_and_no_file_is_read(home, project, tmp_path, monkeypatch):
+    """An agent hands its report over as text. A tool never opens a path it is given, so a report that happens to
+    name a file is kept as those words."""
+    import anyio
+
+    from metaform.modules.mcp import server
+    monkeypatch.setenv('METAFORM_HOME', str(home))
+    secret = tmp_path / 'secret.txt'
+    secret.write_text('not for a report', encoding='utf-8')
+    anyio.run(server.run_tool, project, 'intake_start', {})
+    anyio.run(server.run_tool, project, 'intake_element', {'namespace_address': 'code.alarm.audible', 'role': 'SE'})
+    anyio.run(server.run_tool, project, 'intake_finish', {'report': str(secret)})
+    layer_id = Store('timer').layers(kind='intake').results[0].layer_id
+    kept = (home / 'projects' / 'timer' / 'reports' / f'{layer_id}-report.md').read_text(encoding='utf-8')
+    assert kept == str(secret)
+
+
+@pytest.mark.req('BASE-039')
 @pytest.mark.req('LAYER-010')
 @pytest.mark.req('BASE-044')
 def test_a_resumed_intake_keeps_the_provenance_the_agent_gives_that_its_layer_lacks(run, project):
