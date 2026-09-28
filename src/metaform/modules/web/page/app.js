@@ -381,14 +381,15 @@ function addBloom() {
       sum += (texture2D(tDiffuse, vUv + along * 3.0).rgb + texture2D(tDiffuse, vUv - along * 3.0).rgb) * 0.054054;
       sum += (texture2D(tDiffuse, vUv + along * 4.0).rgb + texture2D(tDiffuse, vUv - along * 4.0).rgb) * 0.016216;
       gl_FragColor = vec4(sum, 1.0); }`, {tDiffuse: {value: null}, along: {value: [0, 0]}});
-  // The picture arrives in linear light and is shown as the screen expects it; the background arrives as the value
-  // the screen shows already, so it is passed through as it is.
+  // The background arrives as the color the screen shows; what is drawn over it arrives as light.
   const mix = shader(`uniform sampler2D tDiffuse; uniform sampler2D near; uniform sampler2D mid; uniform sampler2D far;
     uniform float strength; uniform vec3 ground; varying vec2 vUv;
     void main() { vec4 base = texture2D(tDiffuse, vUv);
       vec3 glow = texture2D(near, vUv).rgb + texture2D(mid, vUv).rgb * 1.2 + texture2D(far, vUv).rgb * 1.4;
-      vec3 shown = distance(base.rgb, ground) < 0.002 ? ground
-        : linearToOutputTexel(vec4(min(base.rgb, vec3(1.0)), 1.0)).rgb;
+      // What is drawn over the background is taken apart from it before it is made ready for the screen, so a glow
+      // fades into the background itself and not into a grey.
+      vec3 light = clamp(base.rgb - ground, 0.0, 1.0);
+      vec3 shown = ground + linearToOutputTexel(vec4(light, 1.0)).rgb;
       gl_FragColor = vec4(shown + strength * linearToOutputTexel(vec4(glow, 1.0)).rgb, base.a);
     }`, {tDiffuse: {value: null}, near: {value: null}, mid: {value: null}, far: {value: null}, strength: {value: 0.8},
     ground: {value: [0, 0, 0]}});
