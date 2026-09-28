@@ -754,10 +754,11 @@ def test_a_part_being_worked_on_pulsates_a_part_waiting_is_steady_and_a_part_don
 
 
 @pytest.mark.req('VIEW-022')
-def test_clicking_a_property_lights_its_reach_toward_the_trunk_and_toward_the_leaves(run, web, mapped, browser):
-    """A property carries from the element it is linked to, toward the leaves where it applies and toward the trunk
-    where it is visible. Clicking it lights those elements and the namespace edges between them in the property's
-    color, with a bloom, and nothing else; selecting something else puts the map back."""
+@pytest.mark.req('VIEW-026')
+def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(run, web, mapped, browser):
+    """Clicking a property sends a wave out from the element it is linked to, toward the leaves where it applies and
+    toward the trunk where it is visible. A node is lit only while it holds a dot, so the near elements light before
+    the far ones and an element the property does not reach never lights. Selecting anything else puts the map back."""
     from metaform.data import Store
     store = Store('proj')
     for address in ('code.timer', 'code.timer.kitchen.dial', 'code.timer.kitchen.dial.pointer'):
@@ -767,25 +768,46 @@ def test_clicking_a_property_lights_its_reach_toward_the_trunk_and_toward_the_le
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     _, at, _ = keys_of(web)
+    names = {at[address]: address for address in at}
     assert page.evaluate('window.metaform.bloom()') == {'pass': True, 'levels': 3}
     assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
+    page.evaluate('window.metaform.waveTimes({every: 2.4, cross: 0.5, hold: 0.3, gaussian: false})')
     key = 'r:' + written.property_id
     page.wait_for_function(f'() => window.metaform.graph().nodes.some(node => node.id === "{key}")', timeout=5000)
     page.evaluate(f'window.metaform.select("{key}")')
     reach = page.evaluate('window.metaform.reach()')
     assert reach['property'] == key
     # the fixture's display sits toward the leaves from the kitchen timer too
-    assert sorted(reach['elements']) == ['code.timer', 'code.timer.kitchen', 'code.timer.kitchen.dial',
-                                         'code.timer.kitchen.dial.pointer', 'code.timer.kitchen.display']
+    reached = ['code.timer', 'code.timer.kitchen', 'code.timer.kitchen.dial', 'code.timer.kitchen.dial.pointer',
+               'code.timer.kitchen.display']
+    assert sorted(reach['elements']) == reached
     assert reach['edges'] == 4  # the namespace edges that join them
-    lit = page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')
-    dark = page.evaluate(f'window.metaform.look("{at["code.alarm.audible"]}")')
-    assert lit['reach3d'] is True and lit['reach2d'] is True and dark['reach3d'] is False and dark['reach2d'] is False
-    page.wait_for_function(f'() => window.metaform.look("{at["code.timer.kitchen.dial"]}").light3d > 1', timeout=3000)
-    assert page.evaluate(f'window.metaform.look("{at["code.alarm.audible"]}").light3d') <= 1
+    assert page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')['reach2d'] is True
+    seen = page.evaluate("""async () => { const seen = [];
+        for (let at = 0; at < 44; at++) { await new Promise(done => setTimeout(done, 50)); seen.push(window.metaform.wave()); }
+        return seen; }""")
+    first = {}
+    for index, moment in enumerate(seen):
+        for node in moment['lit']:
+            first.setdefault(names[node], index)
+    assert sorted(first) == reached  # every element of the reach lit, and no other
+    home = first['code.timer.kitchen']
+    assert home < first['code.timer'] and home < first['code.timer.kitchen.dial'] and home < first['code.timer.kitchen.display']
+    assert first['code.timer.kitchen.dial'] < first['code.timer.kitchen.dial.pointer']  # a hop further, later
+    assert max(len(moment['lit']) for moment in seen) < len(reached)  # lit while holding a dot, never all at once
+    assert any(moment['dots'] for moment in seen)
+    assert any(at['code.timer.kitchen'] not in moment['lit'] and moment['lit'] for moment in seen)  # the wave moved on
+    # an edge keeps its own look: the dots carry the property's color
+    colors = {link['color'].lower() for link in page.evaluate('window.metaform.linkColors()') if link['k'] == 'tree'}
+    assert len(colors) == 1
+    # a minute of waves would fill the graphics card's memory if each dot kept a shape of its own
+    early = page.evaluate('window.metaform.wave().shapes')
+    page.wait_for_timeout(6000)
+    assert page.evaluate('window.metaform.wave().shapes') == early
     page.evaluate(f'window.metaform.select("{at["code.alarm.audible"]}")')
     assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
-    page.wait_for_function(f'() => window.metaform.look("{at["code.timer.kitchen.dial"]}").light3d <= 1', timeout=3000)
+    page.wait_for_function('() => { const wave = window.metaform.wave(); return !wave.dots && !wave.lit.length; }',
+                           timeout=3000)
     assert page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')['reach2d'] is False
     assert problems == []
 

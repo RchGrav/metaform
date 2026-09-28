@@ -231,6 +231,9 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   look: id => look(id), fit: () => fit2D(), bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
+  wave: () => ({dots: W.dots.length, shapes: G ? G.renderer().info.memory.geometries : 0,
+    lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.children.some(child => child.userData.pulse)).map(node => node.id) : []}),
+  waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; },
   reach: () => ({property: R.key, edges: R.edges,
     elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.element_id)).map(element => element.address)}),
   own: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null; return node ? ownColor(node).toLowerCase() : null; },
@@ -257,7 +260,7 @@ function look(id) {
     bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)),
     glow3d: node?.__threeObj?.userData.glow ?? 0,
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
-    light3d: material?.emissive ? Math.max(material.emissive.r, material.emissive.g, material.emissive.b) * material.emissiveIntensity : 0,
+
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
     color3d: material ? '#' + material.color.getHexString() : null,
     label3d: [...(tags.get(id)?.classList || [])].filter(name => name.startsWith('work-')),
@@ -311,53 +314,139 @@ function bloom3d(object, strength, color) {
   }
 }
 
-/* A property's reach, VIEW-022: clicking a property node lights the elements it carries to, toward the leaves where
- * it applies and toward the trunk where it is visible, and the namespace edges between them, in the property's color.
- * Each lit object gives off light at more than full brightness, which nothing else on the map reaches, and the bloom
- * pass spreads that into a glow. Selecting anything else puts the map back. */
-const R = {key: null, color: null, nodes: new Set(), edges: 0};
+/* A property's reach, VIEW-022 and VIEW-026. Clicking a property node sends a wave out from the element it is linked
+ * to, toward the leaves where it applies and toward the trunk where it is visible. A dot travels each namespace edge
+ * away from that element; a node pulses when a dot arrives, holds it, and sends it on. The dots carry the property's
+ * color and give off light at more than full brightness, which the bloom pass spreads; the edges keep their own
+ * look. Selecting anything else puts the map back. */
+const R = {key: null, color: null, home: null, nodes: new Set(), edges: 0};
 const endOf = end => end?.id ?? end;
 const inReach = link => R.key && link.k === 'tree' && R.nodes.has(endOf(link.source)) && R.nodes.has(endOf(link.target));
+/* The wave's times in seconds, chosen by eye and not settled, VIEW-026: how often a wave leaves, how long a dot takes
+ * to cross an edge, which is the same for every edge since an edge's length on screen carries no meaning, and how
+ * long a node holds a dot, which is how long it pulses. `gaussian` names the timers multiplied by rnd + rnd each time
+ * they are used: that runs from 0 to 2 and is 1 on average, so a timer averages its time and never repeats.
+ * `opacity` is how much a node tints the light passing through it; the node is drawn solid whatever it is. */
+const TIMES = {every: 3, cross: 1, hold: 0.25, opacity: 0.6, gaussian: ['every']};
+const timed = name => TIMES[name] * (TIMES.gaussian.includes(name) ? Math.random() + Math.random() : 1);
+const W = {clock: 0, last: 0, next: 0, dots: [], held: [], pulses: new Map(), glows: new Map()};
 function setReach(key) {
   const thing = key?.startsWith('r:') ? S.items.get(key) : null;
-  const home = thing ? [...S.elements.values()].find(entry => entry.element.element_id === thing.item.element_id)?.element.address : null;
+  const home = thing ? [...S.elements.values()].find(entry => entry.element.element_id === thing.item.element_id)?.element : null;
   if (!home && !R.key) return;
   R.key = home ? key : null;
   R.color = home ? layerColor(thing.layer) : null;
+  R.home = home ? home.element_id : null;
   R.nodes = new Set(home ? [...S.elements.values()].map(entry => entry.element)
-    .filter(({address}) => address === home || home.startsWith(address + '.') || address.startsWith(home + '.'))
+    .filter(({address}) => address === home.address || home.address.startsWith(address + '.') || address.startsWith(home.address + '.'))
     .map(element => element.element_id) : []);
   R.edges = G ? G.graphData().links.filter(inReach).length : 0;
   if (BLOOM) BLOOM.enabled = Boolean(R.key);
-  if (G) G.nodeColor(G.nodeColor()).linkColor(G.linkColor()).linkDirectionalParticles(G.linkDirectionalParticles())
-    .linkDirectionalParticleColor(G.linkDirectionalParticleColor());
+  for (const dot of W.dots) G.scene().remove(dot.mesh);
+  if (G) for (const node of G.graphData().nodes) pulse3d(node, 0);  // no node is left lit
+  Object.assign(W, {dots: [], held: [], next: W.clock, pulses: new Map()});
+  if (G) G.nodeColor(G.nodeColor());  // every node back to its own color
   for (const [id, node] of M.base?.nodes || []) {
     node.g.classList.toggle('reach', R.nodes.has(id));
     node.g.style.setProperty('--reach', R.color || '');
   }
 }
-/* Light given off in a color at more than full brightness, whatever the color's own brightness. */
-function lit(material, color, on) {
-  if (!material.emissive) return;
-  if (on) material.emissive.set(color); else material.emissive.setRGB(0, 0, 0);
-  material.emissiveIntensity = on ? 1.9 / Math.max(0.2, material.emissive.r, material.emissive.g, material.emissive.b) : 1;
-}
-function light3d(data) {
-  if (!R.key) return;
-  const own = object => {
-    if (object && object.material && !object.material.userData.own) {
-      object.material = object.material.clone();
-      object.material.userData.own = true;
-    }
-    return object?.material;
-  };
-  for (const node of data.nodes) if (R.nodes.has(node.id)) {
-    const material = own(node.__threeObj);
-    if (material) { material.color.set(R.color); lit(material, R.color, true); }
+/* One material for each color, shared by every dot of that color, and one shape for every dot: a shape or a
+ * material made for each dot would fill the graphics card's memory as the waves run. */
+function glowOf(from, color) {
+  if (!W.glows.has(color)) {
+    const made = from.clone();
+    made.color.set(color);
+    if (made.emissive) { made.emissive.set(color); made.emissiveIntensity = 2.6; }
+    Object.assign(made, {transparent: false, opacity: 1});
+    W.glows.set(color, made);
   }
-  for (const link of data.links) if (inReach(link)) {
-    const material = own(link.__lineObj);
-    if (material) { material.color.set(R.color); material.opacity = 1; lit(material, R.color, true); }
+  return W.glows.get(color);
+}
+const channels = color => [1, 3, 5].map(at => parseInt(color.slice(at, at + 2), 16) / 255);
+const colorFrom = parts => '#' + parts.map(part => Math.round(Math.min(1, Math.max(0, part)) * 255).toString(16).padStart(2, '0')).join('');
+/* A dot arrives: the node pulses for as long as it holds the dot, then sends it on. */
+function reached(id, from, outward) {
+  const hold = Math.max(0.017, timed('hold'));
+  W.pulses.set(id, {start: W.clock, length: hold});
+  W.held.push({at: W.clock + hold, id, from, outward});
+}
+/* From the element the property is linked to the wave goes both ways; past it, it keeps its way, on toward the
+ * leaves or on toward the trunk, and never out along a branch the property does not reach. */
+function send(data, id, from, outward) {
+  const template = data.nodes.find(node => node.id === id)?.__threeObj;
+  if (!template || !template.material) return;
+  for (const link of data.links) {
+    if (!inReach(link)) continue;
+    const down = endOf(link.source) === id, up = endOf(link.target) === id;
+    if (!down && !up) continue;
+    const to = down ? endOf(link.target) : endOf(link.source);
+    if (to === from || (outward !== null && down !== outward)) continue;
+    const mesh = template.clone(false);
+    mesh.material = glowOf(template.material, R.color);
+    mesh.scale.setScalar(0.32);
+    G.scene().add(mesh);
+    W.dots.push({mesh, link, back: up, to, from: id, outward: down, start: W.clock, length: Math.max(0.034, timed('cross'))});
+  }
+}
+/* The pulse through a node, VIEW-026. Its depth is 0 as the dot enters, 1 at the node's center and 0 as it leaves.
+ * The node tints the pulse as colored glass tints light; its body moves from its own color toward that tinted color
+ * by the depth, and the glow is the body's own color and brightness, so the two are never apart. */
+function pulse3d(node, depth) {
+  const object = node.__threeObj;
+  if (!object || !object.material) return;
+  let shell = object.children.find(child => child.userData.pulse);
+  if (!depth) {
+    if (shell) { object.remove(shell); shell.material.dispose(); }
+    if (object.material.userData.pulsed) { object.material.color.set(colorOf(node)); object.material.userData.pulsed = false; }
+    return;
+  }
+  const own = channels(ownColor(node)), light = channels(R.color);
+  const body = own.map((part, at) => part + (light[at] * (1 - TIMES.opacity + TIMES.opacity * part) - part) * depth);
+  if (!object.material.userData.own) { object.material = object.material.clone(); object.material.userData.own = true; }
+  object.material.color.set(colorFrom(body));
+  object.material.userData.pulsed = true;
+  if (!shell) {
+    shell = object.clone(false);
+    shell.material = object.material.clone();
+    Object.assign(shell.material, {transparent: true, blending: 2, depthWrite: false, side: 1});  // additive, back side
+    shell.position.set(0, 0, 0);
+    shell.scale.setScalar(1.5);
+    shell.userData.pulse = true;
+    object.add(shell);
+  }
+  shell.material.color.set(colorFrom(body));
+  shell.material.opacity = 0.6 * depth;
+  if (shell.material.emissive) { shell.material.emissive.set(colorFrom(body)); shell.material.emissiveIntensity = 2.2 * depth; }
+}
+function wave3d(data) {
+  const now = performance.now() / 1000;
+  W.clock += Math.min(0.1, Math.max(0, now - (W.last || now)));
+  W.last = now;
+  if (!R.key) return;
+  if (reduced()) {  // no wave: the reach is shown lit and still
+    for (const node of data.nodes) if (R.nodes.has(node.id)) pulse3d(node, 1);
+    return;
+  }
+  if (W.clock >= W.next) { W.next = W.clock + Math.max(0.2, timed('every')); reached(R.home, null, null); }
+  const leaving = W.held.filter(item => item.at <= W.clock);
+  W.held = W.held.filter(item => item.at > W.clock);
+  for (const item of leaving) send(data, item.id, item.from, item.outward);
+  const still = [];
+  for (const dot of W.dots) {
+    const through = (W.clock - dot.start) / dot.length;
+    if (through >= 1) { G.scene().remove(dot.mesh); reached(dot.to, dot.from, dot.outward); continue; }
+    const along = dot.back ? 1 - through : through, from = dot.link.source, to = dot.link.target;
+    const place = dot.link.__curve ? dot.link.__curve.getPoint(along)
+      : {x: from.x + (to.x - from.x) * along, y: from.y + (to.y - from.y) * along, z: from.z + (to.z - from.z) * along};
+    dot.mesh.position.set(place.x, place.y, place.z);
+    still.push(dot);
+  }
+  W.dots = still;
+  for (const node of data.nodes) {
+    if (!R.nodes.has(node.id)) continue;
+    const pulse = W.pulses.get(node.id), gone = pulse ? (W.clock - pulse.start) / pulse.length : 2;
+    pulse3d(node, gone >= 0 && gone <= 1 ? Math.sin(Math.PI * gone) : 0);
   }
 }
 /* The bloom pass, added to the graph's own render chain: what is over full brightness is kept in its hue, blurred at
@@ -446,7 +535,6 @@ function paint3d(node) {
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {
-  if (inReach(link)) return R.color;
   if (link.k === 'tree') return css('--tree');
   if ((link.work || []).includes('cruft')) return css('--cruft');
   if (EF[link.ef]) return css(EF[link.ef]);
@@ -478,7 +566,7 @@ function start3D() {
     .linkOpacity(Number(css('--link-opacity')))
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
     .linkCurvature(link => link.k === 'layer' || link.k === 'item' ? 0 : 0.18)
-    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter' || inReach(link)) ? 2 : 0)
+    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
@@ -533,7 +621,7 @@ const tags = new Map();
 function labels() {
   if (G) {
     const box = $('#labels3d');
-    light3d(G.graphData());
+    wave3d(G.graphData());
     for (const node of G.graphData().nodes) {
       if ((node.work && node.work.length) || node.__threeObj?.userData.glow) paint3d(node);
       if (node.t !== 'el') continue;
