@@ -2290,15 +2290,19 @@ LABELS_2D = [('--text', '--node'), ('--text', '--node-sel'), ('--text', '--node-
 
 
 @pytest.mark.req('VIEW-023')
-def test_the_picker_offers_each_theme_of_the_styles_dark_and_light_and_each_defines_every_color():
+def test_the_picker_offers_each_theme_of_the_styles_none_of_them_glares_and_each_defines_every_color():
     import re
     found = themes()
     offered = re.findall(r'<option value="([\w-]+)"', re.search(r'<select id="theme".*?</select>',
                                                                  page_file('index.html'), re.DOTALL).group(0))
     assert sorted(offered) == sorted(found) and len(offered) == len(set(offered)) > 1
     assert all(colors.keys() == found['space'].keys() for colors in found.values())
-    grounds = [contrast(rgb(colors['--ground']), (1, 1, 1)) for colors in found.values()]
-    assert [ratio for ratio in grounds if ratio > 10] and [ratio for ratio in grounds if ratio < 2]
+    # A page is looked at for hours: no theme's background is bright enough to glare, and the themes still differ in
+    # how dark they are, from near black to a dim paper.
+    grounds = {name: contrast(rgb(colors['--ground']), (1, 1, 1)) for name, colors in found.items()}
+    assert all(ratio >= 9 for ratio in grounds.values()), grounds
+    assert max(grounds.values()) > 19 and min(grounds.values()) < 15, grounds
+    assert {'paper', 'mist'} <= set(found)
     assert len({colors['--ground'] for colors in found.values()}) == len(found)
 
 
