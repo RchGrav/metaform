@@ -23,7 +23,10 @@ OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
-CONDITIONS = ('tbd', 'broken', 'cruft')  # the condition a work record holds, MAP-046
+# The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
+# taken its task, a part to be built being in progress and a broken one being fixed.
+CONDITIONS = ('tbd', 'broken', 'cruft', 'in-progress', 'fixing')
+TAKEN = {'tbd': 'in-progress', 'broken': 'fixing'}
 
 T = TypeVar('T')
 

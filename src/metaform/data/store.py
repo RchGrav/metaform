@@ -263,6 +263,11 @@ class Store:
         with self._write() as tx:
             return writes.edit_work(tx, work_id, changes)
 
+    def take_work(self, work_id: str) -> WorkRecord:
+        """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049."""
+        with self._write() as tx:
+            return writes.take_work(tx, work_id)
+
     def finish_work(self, work_id: str, resolution: Any = None) -> WorkRecord:
         """Mark a work record done, its resolution kept beside it, STORE-042."""
         with self._write() as tx:

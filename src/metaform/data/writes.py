@@ -24,6 +24,7 @@ from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .names import reading, short_name
 from .records import (
     CONDITIONS,
+    TAKEN,
     EF_WORDS,
     ROLES,
     Element,
@@ -649,7 +650,8 @@ def _condition(value: Any, notices: list[Notice]) -> str:
     if value is None:
         notices.append(Notice('condition', 'condition is missing; stored empty.'))
         return ''
-    notices.append(Notice('condition', f'{value!r} is not tbd, broken or cruft; it was stored as given.'))
+    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress or fixing; it was stored '
+                                       'as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
@@ -693,6 +695,22 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
             value = _work_text(value, key, notices)
         tx.db.execute(f'UPDATE work SET {key}=? WHERE work_id=?', (value, work_id))
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def take_work(tx: Tx, work_id: str) -> WorkRecord:
+    """An agent takes the record's task, MAP-049: a part to be built is in progress, a broken one is being fixed, and
+    the record waits no longer. A record taken or done cannot be taken again, so two agents never hold one task."""
+    row = _work_row(tx, work_id)
+    condition = str(row['condition'])
+    if row['done'] is not None:
+        raise StoreError(f'This work record was done at {row["done"]}.', 'metaform map work open=true')
+    if condition in TAKEN.values():
+        raise StoreError('This task is already taken.', 'metaform map work open=true')
+    if condition not in TAKEN:
+        raise StoreError(f'A {condition or "record with no condition"} has no task to take.',
+                         'metaform map work open=true')
+    tx.db.execute('UPDATE work SET condition=?, held=0 WHERE work_id=?', (TAKEN[condition], work_id))
+    return views.work_record(tx, _work_row(tx, work_id), ())
 
 
 def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:

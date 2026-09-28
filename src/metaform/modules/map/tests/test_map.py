@@ -594,3 +594,107 @@ def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_
     store = Store('proj')
     stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
     assert stored.refs == () and stored.extra == {'refs': [['line', 12]]}
+
+
+@pytest.fixture
+def described(run, tmp_path):
+    """A registered project whose intake map has a non_goal, a relation for each ef, a subtype join and paths."""
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    store = Store('proj')
+    with store.atomic():
+        layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                            hideable=False, provenance={'module': 'intake'}, ready=True)
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
+        store.add_element(layer.name, 'code.display.digit', name_length=2, role='SE',
+                          refs=[('path', 'src/display.py'), ('spec', 'DISP-001')])
+        store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
+                       purpose='Know when a dish is done.', function='Counts down and rings.', ef='Encounter',
+                       relation='learns from the timer when a dish is done', observation='One countdown per dish.')
+        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
+                       function='Plays a tone.', ef='Function', relation='rings for the timer',
+                       observation='A piezo.')
+        join = store.add_join(layer.name, 'code.timer.kitchen', 'code.display.digit', purpose='See the time left.',
+                              function='Draws four digits from a count of seconds.', ef='Function',
+                              relation='shows the time left to the timer', verb='shows',
+                              observation='A seven segment panel on pin 4.', non_goal='It keeps no time itself.')
+        store.add_subtype(layer.name, join.join_id, 'code.driver.segment', name_length=2, role='SE',
+                          function='Lights the segments of one digit.', relation='lights each digit',
+                          observation='Multiplexed at 200 Hz.')
+    return folder
+
+
+@pytest.mark.req('MAP-052')
+def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, described):
+    """The document holds what a reader finds its way by, and none of the function or observation text."""
+    text = run('map', 'markdown', cwd=described).stdout
+    for address in ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible', 'code.display.digit'):
+        assert f'`{address}`' in text
+    for name in ('home cook', 'kitchen timer', 'audible alarm', 'digit display'):
+        assert name in text
+    assert 'DE' in text and 'VE' in text
+    assert 'Paths: src/display.py' in text and 'DISP-001' not in text
+    assert 'kitchen timer receives from digit display' in text
+    assert 'digit display shows the time left to the timer' in text
+    assert 'home cook learns from the timer when a dish is done' in text
+    assert 'Why: See the time left.' in text and 'Why: Know when a dish is done.' in text
+    assert 'Not: It keeps no time itself.' in text
+    assert 'segment driver' in text and 'lights each digit' in text
+    for left_out in ('Draws four digits', 'seven segment panel', 'Counts down and rings', 'One countdown per dish',
+                     'Lights the segments', 'Multiplexed', 'A piezo'):
+        assert left_out not in text
+    assert text.index('home cook') < text.index('## kitchen timer') < text.index('## audible alarm')
+
+
+@pytest.mark.req('MAP-052')
+def test_the_markdown_document_of_an_address_shows_all_around_it(run, described):
+    """At one address: the element, what it relies on and what relies on it, and nothing of the rest of the map."""
+    text = run('map', 'markdown', 'address=code.timer.kitchen', cwd=described).stdout
+    assert '## kitchen timer' in text
+    assert 'kitchen timer receives from audible alarm' in text and 'kitchen timer receives from digit display' in text
+    assert 'home cook receives from kitchen timer' in text and 'Why: Know when a dish is done.' in text
+    assert '## audible alarm' not in text and '## digit display' not in text
+
+
+@pytest.mark.req('MAP-052')
+def test_the_markdown_document_is_written_to_a_file_when_one_is_named(run, described, tmp_path):
+    target = tmp_path / 'out' / 'map.md'
+    target.parent.mkdir()
+    said = run('map', 'markdown', f'file={target}', cwd=described).stdout
+    assert str(target) in said and '## kitchen timer' not in said
+    assert target.read_text(encoding='utf-8') == run('map', 'markdown', cwd=described).stdout
+
+
+@pytest.mark.req('MAP-052')
+@pytest.mark.req('CLI-037')
+def test_the_markdown_document_is_a_command_and_never_a_tool(run, described, home, monkeypatch):
+    """Writing a document is a person's or an orchestrator's act; it adds nothing to what an agent meets."""
+    monkeypatch.setenv('METAFORM_HOME', str(home))
+    from metaform.modules.mcp import server
+    names = set(server.tools(described))
+    assert 'map_where' in names and 'map_markdown' not in names
+
+
+@pytest.mark.req('MAP-046')
+@pytest.mark.req('MAP-049')
+def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_is_done(run, mapped):
+    """Taking a task says work has started on the part: a part to be built is in progress, a broken one is being
+    fixed, and the record no longer waits to be taken. Done, the part is as any other."""
+    store = Store('proj')
+    build = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it', held=True)
+    fix = store.add_work(Node('element', 'code.timer.kitchen'), 'broken', task='fix it', held=True)
+    taken = json.loads(run('map', 'work', 'op=take', f'id={build.work_id}', '--json', cwd=mapped).stdout)
+    assert (taken['condition'], taken['held']) == ('in-progress', False)
+    assert json.loads(run('map', 'work', 'op=take', f'id={fix.work_id}', '--json', cwd=mapped).stdout)[
+        'condition'] == 'fixing'
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['in-progress']
+    listed = json.loads(run('map', 'work', 'condition=in-progress', '--json', cwd=mapped).stdout)['results']
+    assert [record['work_id'] for record in listed] == [build.work_id]
+    again = run('map', 'work', 'op=take', f'id={build.work_id}', '--json', cwd=mapped, ok=False)
+    assert again.returncode != 0 and 'already' in again.stderr + again.stdout
+    run('map', 'work', 'op=done', f'id={build.work_id}', 'resolution=built', cwd=mapped)
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped).get('open_work', []) == []
+

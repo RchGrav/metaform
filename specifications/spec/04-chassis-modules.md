@@ -681,6 +681,17 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-027, MAP-005, STORE-001, STORE-027.
 - Status: confirmed as design, 2026-09-19. Where it lives and how it arrives are open, D102.
 
+### BASE-049 Modules are planned whose details wait for a stable core
+
+- Requirement: The core is built so that modules planned for later can be carried on it, and their details are not recorded here until the core is stable.
+- What this means: Further modules are designed. At Rich's request their details are held back for now. What they need of the core is what CLI-037 and CLI-038 already require: a small top menu, contents reached by entering, and the working folder deciding what is shown and holding the continuity of the work.
+- Why: This specification describes what is being built now. Details of later work would be read as work to do, and would send builders after features the core cannot carry yet. Stating that the modules are planned tells a builder why the core's menu and folder rules are firm, without describing what is not ready to be built.
+- How it shows: No record describes these modules.
+- Build: Nothing is built for them now.
+- Acceptance: None needed.
+- Relates to: BASE-046, CLI-037, CLI-038.
+- Status: confirmed, 2026-09-27.
+
 ## Open questions
 
 1. Answered in part: the project place is part of the design, BASE-014. Where it lives, given all data is global, is open, D93.

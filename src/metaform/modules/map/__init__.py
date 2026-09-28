@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from pathlib import Path
 from typing import Any, cast
 
-from metaform import settings
+from metaform import outline, settings
 from metaform.data import EF_WORDS, PLACE_KINDS, Node, Notice, Store
 from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
 
@@ -78,6 +79,17 @@ def where(ctx: Context) -> Any:
     if not ctx.nouns['address']:
         return roots(ctx)
     return _store(ctx).where(ctx.nouns['address'], full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
+
+
+def markdown(ctx: Context) -> Any:
+    """The map, or the part around one address, as a short Markdown document to find one's way by, MAP-052."""
+    text = outline.markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
+    target = ctx.nouns.get('file')
+    if not target:
+        return text
+    path = Path(target) if Path(target).is_absolute() else ctx.folder / target
+    path.write_text(text, encoding='utf-8')
+    return {'written': str(path)}
 
 
 def element(ctx: Context) -> Any:
@@ -451,10 +463,12 @@ WORK_READS: dict[str, frozenset[str]] = {
     'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'done': frozenset({'id', 'resolution'}),
+    'take': frozenset({'id'}),
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
-WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',)}
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
+                                          'take': ('id',)}
 
 
 def _work_node(value: Any) -> Node:
@@ -469,7 +483,7 @@ def work(ctx: Context) -> Any:
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
     op = str(ctx.nouns.get('op', 'list'))
     if op not in WORK_READS:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit or done.', 'metaform help map work')
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take or done.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
@@ -484,6 +498,8 @@ def work(ctx: Context) -> Any:
         return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
     work_id = nouns['id']
+    if op == 'take':
+        return _with_notices(store.take_work(work_id), notices)
     if op == 'edit':
         return _with_notices(store.edit_work(work_id, {name: nouns[name] for name in WORK_FIELDS if name in nouns}),
                              notices)
@@ -491,16 +507,16 @@ def work(ctx: Context) -> Any:
 
 
 WORK_NOUNS = (
-    _noun('op', 'list, the default; add; edit; or done.'),
+    _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; or done.'),
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
-                       'broken; or cruft.'),
+                       'broken; or cruft, surpassed code left in the codebase, never a document, a note, an example or data.'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
-    _noun('id', 'edit and done: the work record id.'),
+    _noun('id', 'edit, take and done: the work record id.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true for records not done, false for those done.', 'bool'),
     *PAGING,
@@ -530,6 +546,10 @@ MODULE = Module(
              nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),
                     _noun('full', 'true keeps ids and empty fields, which are left out by default.', 'bool')),
              switches=RAW),
+        Verb('markdown', markdown, 'The map, or the part around one address, as a short Markdown document.',
+             nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
+                    _noun('file', 'A file to write the document to; without one, it is printed.')),
+             switches=RAW, surfaces=('cli',)),
         Verb('element', element, 'One element: its address, name_length, role and short name, with its refs.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
         Verb('joins', joins, 'The joins an element owns, or with as=provider those it serves.',
@@ -573,7 +593,10 @@ MODULE = Module(
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join, a subtype join included, and never changes '
                      'the map. Its '
-                     'condition is tbd, broken or cruft; its note says what and where, its task what it needs. It is '
+                     'condition is tbd, broken or cruft; its note says what and where, its task what it needs. cruft is '
+                     'code only: code that was surpassed and left in the codebase. A document, a note, a '
+                     'specification, an example or data is never cruft, and nothing is removed without the '
+                     "owner's word. It is "
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=tbd task="build it"',

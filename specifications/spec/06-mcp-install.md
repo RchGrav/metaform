@@ -36,7 +36,7 @@ It also defines the first working test, which exercises all three end to end.
 - Build: For each surfaced verb whose `surfaces` include `mcp`: name `<module>_<verb>`; description the verb's summary, followed by ` Caution: <caution>` for a caution verb; input schema `{"type": "object", "properties": {...}, "required": [...], "additionalProperties": false}` with one property per noun, typed by BASE-035, which gives the schema for each noun kind including `bool` and `json`, a many noun as an array, required nouns listed in `required`; one property per switch the verb reads, keyed by the setting key, typed by CLI-027; each noun and switch property carries the noun's or the setting's help as its `description`, as does every property of the chassis's own tools, `set`, `feedback`, `list_reports` and `read_report`, so an agent reads over MCP what `metaform help` says, such as the values `map_knowledge`'s `op` takes; `confirm` of type boolean for a caution verb; and on every tool, an optional `project` property of type string, MCP-025. An invalid tool name is refused at load, BASE-037. A tool's result is the verb's result, BASE-036, so every tool result that holds a join carries the join's `layer`, the name of the layer it comes from, exactly as the CLI shows it, STORE-025, LAYER-016. The current code puts all nouns in one `nouns` array and silently skips invalid names; both change.
 - Acceptance: A verb added to a test module appears as a tool with no MCP code written for it. A module declaring an invalid verb name fails to load and says why.
 - Relates to: BASE-006, CLI-001, MCP-004, MCP-005.
-- Status: confirmed.
+- Status: confirmed. Corrected 2026-09-27 by CLI-037: one tool for each verb of every module is not the design; the record stands for building a command and its tool from one declaration.
 
 ### MCP-004 The tool list follows the folder's command surface
 
@@ -47,7 +47,7 @@ It also defines the first working test, which exercises all three end to end.
 - Build: The surface is the loaded modules whose ids pass the `modules` check of CLI-022 for the server's folder, and within them the verbs whose `surfaces` include `mcp` and whose `supported_os` includes this system, BASE-016. `list_tools` lists exactly those. `call_tool` for any other name returns `is_error` true with `Error: No tool <name> on this surface.` and `Next: metaform help commands`.
 - Acceptance: With the surface narrowed to a module other than `mcp`, `metaform mcp serve` starts and serves; the narrowed-out tool is absent from `tools/list`, and calling it by name returns `is_error` true. With the surface restored, both work.
 - Relates to: CLI-022, BASE-016, MCP-003.
-- Status: confirmed.
+- Status: confirmed. Corrected 2026-09-27 by CLI-037 and CLI-038: what an agent receives is the top menu and what its folder is given.
 
 ### MCP-005 Tool arguments follow the command grammar, and booleans appear once
 
@@ -85,7 +85,7 @@ It also defines the first working test, which exercises all three end to end.
   `metaform help agents` prints the same composed text for the folder, CLI-029, so an agent without MCP reads the same instructions.
 - Acceptance: The instructions returned at initialization contain exactly the sections of the surfaced modules, in id order, and change after an enable or disable with no other step.
 - Relates to: MCP-008, MCP-009, BASE-012, CLI-005, BASE-044, CLI-034.
-- Status: confirmed. The base text wording is recommended.
+- Status: confirmed. The base text wording is recommended. Corrected 2026-09-27 by MCP-029.
 
 ### MCP-008 Each module adds concise instructions that defer to help
 
@@ -100,7 +100,7 @@ It also defines the first working test, which exercises all three end to end.
   - `mcp`: `Serves Metaform's tools to AI tools over MCP. Every tool is also a metaform command on the CLI. Details: metaform help mcp.`
 - Acceptance: A module missing the field fails to load with a next step. It is not served with empty instructions.
 - Relates to: MCP-007, BASE-012, BASE-019.
-- Status: confirmed. Using `purpose` follows D39, recommended.
+- Status: confirmed. Using `purpose` follows D39, recommended. Corrected 2026-09-27 by MCP-029.
 
 ### MCP-009 A project with no intake gets a notice to delegate the intake to a subagent
 
@@ -388,6 +388,17 @@ It also defines the first working test, which exercises all three end to end.
 - Relates to: MCP-013, MCP-016, MCP-021, CLI-028, CLI-036, STORE-001.
 - Status: confirmed as design, 2026-09-11. Whether it stands beside the installer of MCP-013 to MCP-021, and the commands it offers, are open, D96.
 
+### MCP-029 The instructions tell the agent what to do, and the host shows them whole
+
+- Requirement: The instructions an agent receives when it connects tell it what to do next, and are short enough that the host shows all of them. When the project is not onboarded, they tell the agent to onboard it.
+- What this means: The instructions are not a description of each module. They say where the agent is, what state the project is in and the next step to take. What a module is for is read in that module's help, when the agent enters it.
+- Why: An agent that connects needs its next action. A catalogue of modules gives it things to read and nothing to do, and it is charged for the reading in every session. A host shows only so much: on 2026-09-27 Claude Code cut the instructions off at about 2,000 characters, so the sections after that point never reached the agent, and a notice placed last, where MCP-007 places the no-intake notice, is the first thing lost. The most important line has to be inside what every host shows.
+- How it shows: An agent connecting in a project with no intake reads, within the first lines, that the project is not onboarded and what to do about it.
+- Build: Open. Today `compose` in `src/metaform/instructions.py` joins the base text and each surfaced module's `purpose`, MCP-007 and MCP-008. The wording of the instructions is set by Rich and is open, question 13.
+- Acceptance: Open with the build. It will hold that the whole text is within what the supported hosts show, and that the not-onboarded instruction is in it.
+- Relates to: MCP-007, MCP-008, MCP-009, CLI-037.
+- Status: confirmed as design, 2026-09-27. It corrects MCP-007 and MCP-008, which compose the instructions from module descriptions.
+
 ## Open questions
 
 1. When a host starts the server outside the project folder, how does the server know the project (MCP-011)?
@@ -402,3 +413,4 @@ It also defines the first working test, which exercises all three end to end.
 10. What is the PyPI distribution name (MCP-010)?
 11. NEW Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? D96. (MCP-028)
 12. NEW Can a person submit work directly in the web GUI, as the explanation offered with an intake says? D92. (MCP-027)
+13. NEW What do the instructions say, word for word? (MCP-029)

@@ -647,11 +647,11 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('VIEW-009')
 @pytest.mark.req('MAP-046')
-def test_a_node_with_open_tbd_work_is_ghostly_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
+def test_a_node_with_open_tbd_work_has_a_bloom_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
         run, web, mapped, browser):
     """Rich, 2026-09-27: a TBD object is drawn ghostly, showing what it will be, and the agent that completes its task
-    makes it solid; a node with an open issue flashes red; cruft keeps its look. The fixture's kitchen timer carries an
-    open broken record."""
+    makes it solid; a node with an open issue flashes red; cruft is drawn by the test below. The fixture's kitchen
+    timer carries an open broken record."""
     from metaform.data import Node, Store
     store = Store('proj')
     tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='in the spec', task='build the piezo driver')
@@ -661,14 +661,17 @@ def test_a_node_with_open_tbd_work_is_ghostly_a_broken_one_flashes_red_until_res
     page.wait_for_function('() => window.metaform.loaded()')
     ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
     look = lambda address: page.evaluate(f'window.metaform.look("{ids[address]}")')
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity3d === 0.7', timeout=5000)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity2d === 0.7', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom3d === true', timeout=5000)
     alarm = look('code.alarm.audible')
-    assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['opacity3d'], alarm['animated2d']) == (
-        ['tbd'], ['work-tbd'], 0.7, 0.7, False)
+    # A part not built yet keeps its own color and its full opacity, and a bloom around it marks it, in both views.
+    assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['animated2d']) == (['tbd'], ['work-tbd'], 1, False)
+    assert alarm['opacity3d'] is None or alarm['opacity3d'] >= 0.95
+    assert alarm['color3d'] == page.evaluate('window.metaform.own(' + json.dumps(ids['code.alarm.audible']) + ')')
+    assert alarm['bloom2d'] is True and alarm['label3d'] == ['work-tbd']
+    assert look('exterior.cook')['bloom3d'] is False and look('exterior.cook')['bloom2d'] is False
+    assert look('code.timer.kitchen')['label3d'] == ['work-broken']
     cook = look('exterior.cook')
-    assert (cook['work'], cook['classes'], cook['opacity3d'], cook['animated2d'], cook['red3d']) == (
-        ['cruft'], ['work-cruft'], 0.95, False, False)
+    assert (cook['work'], cook['classes'], cook['red3d']) == (['cruft'], ['work-cruft'], False)
     kitchen = look('code.timer.kitchen')
     assert (kitchen['work'], kitchen['classes'], kitchen['opacity2d'], kitchen['animated2d']) == (['broken'], ['work-broken'], 1, True)
     page.wait_for_function(f'() => window.metaform.look("{ids["code.timer.kitchen"]}").red3d === true', timeout=3000)
@@ -683,13 +686,139 @@ def test_a_node_with_open_tbd_work_is_ghostly_a_broken_one_flashes_red_until_res
         assert shown in panel, shown
     # Its task done, pushed to the page, the alarm turns solid without a reload.
     run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity3d === 0.95', timeout=5000)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").opacity2d === 1', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom3d === false', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom2d === false', timeout=5000)
     solid = look('code.alarm.audible')
     assert (solid['work'], solid['classes'], solid['opacity2d']) == ([], [], 1)
     page.evaluate(f'window.metaform.select("{ids["code.alarm.audible"]}")')
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("driver written")')
     assert 'done' in page.inner_text('#p-object')
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('MAP-046')
+def test_a_join_that_is_not_built_yet_has_a_bloom_in_both_views(run, web, mapped, browser):
+    """An open tbd record on a join shows on the join itself: a bloom around its purpose node in 3D and around its
+    edge in 2D, with its color and opacity as they are."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    joins = list(store.joins('code.timer.kitchen').results)
+    store.add_work(Node('join', joins[0].join_id), 'tbd', task='build it')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    links = page.evaluate('window.metaform.linkColors()')
+    assert not any(link['color'].startswith('rgba(') for link in links)  # its links keep their color and opacity
+    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].join_id}").bloom3d === true', timeout=5000)
+    built = [join['join_id'] for join in keys_of(web)[0]['joins'] if join['join_id'] != joins[0].join_id]
+    assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").bloom3d') is False
+    assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-tbd']
+    glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-tbd');
+        const style = getComputedStyle(path); return [Number(style.opacity), style.filter]; })()""")
+    assert glow[0] == 1 and 'drop-shadow' in glow[1]
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('MAP-046')
+def test_a_part_being_worked_on_pulsates_a_part_waiting_is_steady_and_a_part_done_is_normal(run, web, mapped, browser):
+    """The circles around a part say it needs building; they pulsate once an agent has taken the task, so the map
+    shows where work is happening now; and they go when the work is done."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    waiting = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
+    working = store.add_work(Node('element', 'exterior.cook'), 'tbd', task='build that')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook')}
+    run('map', 'work', 'op=take', f'id={working.work_id}', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").work[0] === "in-progress"', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").glow3d === 1', timeout=5000)
+    page.wait_for_timeout(600)  # the page redraws once for the change it was pushed
+    samples = page.evaluate(f"""async () => {{ const seen = {{still: [], moving: []}};
+        for (let at = 0; at < 24; at++) {{ await new Promise(done => setTimeout(done, 80));
+          seen.still.push(window.metaform.look("{ids['code.alarm.audible']}").glow3d);
+          seen.moving.push(window.metaform.look("{ids['exterior.cook']}").glow3d); }}
+        return seen; }}""")
+    assert set(samples['still']) == {1}  # steady
+    assert max(samples['moving']) - min(samples['moving']) > 0.5  # it pulsates
+    cook = page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}")')
+    assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
+    assert 'work: in-progress' in page.inner_text('#legend')
+    run('map', 'work', 'op=done', f'id={working.work_id}', 'resolution=built', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").bloom3d === false', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").classes.length === 0', timeout=5000)
+    assert waiting.work_id and problems == []
+
+
+@pytest.mark.req('VIEW-022')
+def test_clicking_a_property_lights_its_reach_toward_the_trunk_and_toward_the_leaves(run, web, mapped, browser):
+    """A property carries from the element it is linked to, toward the leaves where it applies and toward the trunk
+    where it is visible. Clicking it lights those elements and the namespace edges between them in the property's
+    color, with a bloom, and nothing else; selecting something else puts the map back."""
+    from metaform.data import Store
+    store = Store('proj')
+    for address in ('code.timer', 'code.timer.kitchen.dial', 'code.timer.kitchen.dial.pointer'):
+        store.add_element('notes', address, name_length=1)
+    written = store.add_property('notes', 'code.timer.kitchen', 'written in C11')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    _, at, _ = keys_of(web)
+    assert page.evaluate('window.metaform.bloom()') == {'pass': True, 'levels': 3}
+    assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
+    key = 'r:' + written.property_id
+    page.wait_for_function(f'() => window.metaform.graph().nodes.some(node => node.id === "{key}")', timeout=5000)
+    page.evaluate(f'window.metaform.select("{key}")')
+    reach = page.evaluate('window.metaform.reach()')
+    assert reach['property'] == key
+    # the fixture's display sits toward the leaves from the kitchen timer too
+    assert sorted(reach['elements']) == ['code.timer', 'code.timer.kitchen', 'code.timer.kitchen.dial',
+                                         'code.timer.kitchen.dial.pointer', 'code.timer.kitchen.display']
+    assert reach['edges'] == 4  # the namespace edges that join them
+    lit = page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')
+    dark = page.evaluate(f'window.metaform.look("{at["code.alarm.audible"]}")')
+    assert lit['reach3d'] is True and lit['reach2d'] is True and dark['reach3d'] is False and dark['reach2d'] is False
+    page.wait_for_function(f'() => window.metaform.look("{at["code.timer.kitchen.dial"]}").light3d > 1', timeout=3000)
+    assert page.evaluate(f'window.metaform.look("{at["code.alarm.audible"]}").light3d') <= 1
+    page.evaluate(f'window.metaform.select("{at["code.alarm.audible"]}")')
+    assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
+    page.wait_for_function(f'() => window.metaform.look("{at["code.timer.kitchen.dial"]}").light3d <= 1', timeout=3000)
+    assert page.evaluate(f'window.metaform.look("{at["code.timer.kitchen.dial"]}")')['reach2d'] is False
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('MAP-046')
+def test_an_open_cruft_record_stands_out_on_an_element_and_on_a_join_in_both_views(run, web, mapped, browser):
+    """Cruft is the one condition that ends in removal, so it is the one a person most needs to see: the object
+    pulses in the cruft color, which nothing else on the map uses, whether it is an element or a join."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    join = next(iter(store.joins('code.timer.kitchen').results))
+    store.add_work(Node('element', 'exterior.cook'), 'cruft', task='drop the cook')
+    store.add_work(Node('join', join.join_id), 'cruft', task='drop the join')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    cook, purpose = store.element('exterior.cook').element_id, 'p:' + join.join_id
+    cruft = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--cruft").trim().toLowerCase()')
+    others = page.evaluate("""() => { const style = getComputedStyle(document.documentElement);
+        return ['--broken', '--tbd', '--function', '--encounter', '--signal', '--de', '--intake', '--memory',
+                '--correction', '--tree', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
+            .map(name => style.getPropertyValue(name).trim().toLowerCase()); }""")
+    assert cruft and cruft not in others
+    for node in (cook, purpose):
+        page.wait_for_function(f'() => window.metaform.look("{node}").cruft3d === true', timeout=3000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").cruft3d === false', timeout=3000)
+    seen = page.evaluate(f'window.metaform.look("{cook}")')
+    assert (seen['classes'], seen['animated2d']) == (['work-cruft'], True)
+    colors = {link['color'].lower() for link in page.evaluate('window.metaform.linkColors()')
+              if link['join'] == join.join_id}
+    assert colors == {cruft}
+    assert page.evaluate(f'window.metaform.edge2d("{join.join_id}")') == ['work-cruft']
     assert problems == []
 
 
@@ -892,6 +1021,13 @@ def click_node(page, title):
     """A real click on the 2D node whose full text is this title."""
     box = box_of(page, title)
     assert box, title
+    view = page.evaluate("""(() => { const box = document.querySelector('#viewport').getBoundingClientRect();
+        return {x: box.left, y: box.top, w: box.width, h: box.height}; })()""")
+    x, y = box['x'] + box['w'] / 2, box['y'] + box['h'] / 2
+    if not (view['x'] <= x <= view['x'] + view['w'] and view['y'] <= y <= view['y'] + view['h']):
+        page.evaluate('window.metaform.fit()')  # the view opens at a readable size, so a node may be outside it
+        page.wait_for_timeout(900)
+        box = box_of(page, title)
     page.mouse.click(box['x'] + box['w'] / 2, box['y'] + box['h'] / 2)
 
 
@@ -1064,6 +1200,108 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     assert problems == []
 
 
+@pytest.mark.req('VIEW-003')
+def test_the_page_files_are_checked_with_the_server_on_every_load(run, web):
+    """A page file the browser keeps would show a person the page as it was before an update, with nothing to say
+    so. Each page file tells the browser to ask again before using its copy."""
+    started(run)
+    for path in ('/', '/page/app.js', '/page/app.css'):
+        status, _, headers = request(web, path)
+        assert status == 200 and headers['Cache-Control'] == 'no-cache', path
+
+
+@pytest.mark.req('MAP-052')
+@pytest.mark.req('VIEW-024')
+def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writes(run, web, mapped, browser):
+    """A person exports the understanding of a system from the page they read it on. The page and the command give
+    one document, written by one piece of the chassis."""
+    started(run)
+    written = run('map', 'markdown', cwd=mapped).stdout
+    assert '## kitchen timer' in written
+    status, body, headers = request(web, '/api/markdown?project=proj')
+    assert status == 200 and body == written
+    assert headers['Content-Type'].startswith('text/markdown')
+    around = request(web, '/api/markdown?project=proj&address=code.timer.kitchen')[1]
+    assert around == run('map', 'markdown', 'address=code.timer.kitchen', cwd=mapped).stdout
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    with page.expect_download() as saved:
+        page.click('#exportBtn')
+    assert saved.value.suggested_filename == 'proj-map.md'
+    assert Path(saved.value.path()).read_text(encoding='utf-8') == written
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-008')
+def test_the_2d_map_opens_at_a_size_that_can_be_read_and_only_fit_changes_the_zoom(run, web, mapped, browser):
+    """Zoom is the person's choice: the map opens with its labels readable, selecting a node moves the view to it at
+    the same zoom, and the zoom changes only when Fit is asked."""
+    from metaform.data import Store
+    store = Store('proj')
+    for index in range(30):  # a map far wider than the view
+        store.add_element('notes', f'code.part.number{index}', name_length=2)
+        store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}', purpose='Keep the timer working.',
+                       function='Does one thing.', relation='serves the timer')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, _ = keys_of(web)
+    page.wait_for_function('() => window.metaform.loaded() && document.querySelector("#map2d svg")')
+    width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
+    view = page.evaluate('document.querySelector("#viewport").getBoundingClientRect().width')
+    assert view / width() >= 0.99  # labels are drawn at the size they are written in, or larger
+    before = width()
+    for address in ('code.part.number3', 'code.part.number27', 'code.timer.kitchen'):
+        page.evaluate(f'window.metaform.select("{at[address]}")')
+        page.wait_for_timeout(900)  # the camera eases for 700 ms
+        assert width() == pytest.approx(before, rel=0.01)
+        shown = page.evaluate(f"""(() => {{ const view = document.querySelector('#viewport').getBoundingClientRect();
+            const box = window.metaform.box2d("{at[address]}");
+            return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; }})()""")
+        assert shown, address
+    page.evaluate('window.metaform.fit()')
+    page.wait_for_timeout(900)
+    assert width() > before * 1.5  # Fit shows the whole map
+    whole = width()
+    page.evaluate(f'window.metaform.select("{at["code.part.number3"]}")')
+    page.wait_for_timeout(900)
+    assert width() == pytest.approx(whole, rel=0.01)  # and a click leaves it there
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-016')
+def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_read(run, web, mapped, browser):
+    """A node that holds many joins has an inside graph far wider than the view. It opens on the node at a size whose
+    labels can be read, and Fit still shows the whole of it."""
+    from metaform.data import Store
+    store = Store('proj')
+    for index in range(14):
+        store.add_element('notes', f'code.part.number{index}', name_length=2)
+        store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}',
+                       name=f'the long name of part number {index} of the kitchen timer',
+                       purpose='Keep the timer working.', function='Does one thing.', relation='serves the timer')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at, _ = keys_of(web)
+    kitchen = at['code.timer.kitchen']
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.keyboard.press('Enter')
+    page.wait_for_function('() => window.metaform.inside().length > 14')
+    page.wait_for_timeout(900)
+    scale = lambda: page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+        return view.width / Number(document.querySelector('#map2d svg').getAttribute('viewBox').split(' ')[2]); })()""")
+    opened_at = scale()
+    assert opened_at >= 0.99  # a label's 11px text is drawn at 11px or larger
+    inside = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
+        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === 'kitchen timer');
+        const box = title.parentNode.getBoundingClientRect();
+        return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; })()""")
+    assert inside  # the node entered is in view
+    page.evaluate('window.metaform.fit()')
+    page.wait_for_timeout(900)
+    assert scale() < opened_at  # Fit shows the whole graph
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-017')
 @pytest.mark.req('VIEW-005')
 def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_node_and_what_it_links(
@@ -1138,7 +1376,6 @@ def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_v
     assert selected() == kitchen
     width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
     page.wait_for_timeout(900)
-    regular = width()
     page.click('#fitBtn')
     page.wait_for_timeout(900)
     out = width()
@@ -1151,7 +1388,11 @@ def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_v
     zoomed = width()
     page.click('#fitBtn')
     page.wait_for_timeout(900)
-    assert regular > zoomed and abs(width() - regular) < 1
+    regular = width()
+    assert regular > zoomed and out > zoomed
+    page.click('#fitBtn')  # and round again to the whole map
+    page.wait_for_timeout(900)
+    assert abs(width() - out) < 1
     assert selected() == kitchen
     assert problems == []
 

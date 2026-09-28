@@ -285,7 +285,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Build: the chassis declares `project`, a folder select whose choices are the registered project ids and whose default comes from the folder, STORE-002, and `modules`, a folder list whose default is empty, and `layers`, a folder list whose default is empty, CLI-033. `workflow` is declared by the workflow module as a select, not by the chassis, since the chassis does not run workflows. The values each accepts are CLI-030.
 - Acceptance: in a subfolder of a registered project with nothing set, `--project` is that project; `unset --project` returns to it.
 - Relates to: CLI-014, CLI-022, STORE-002, MCP-011.
-- Status: confirmed.
+- Status: confirmed. Corrected 2026-09-27: the `modules` list is what an alias grew out of, CLI-039, and `set` is for configuration settings only, CLI-040; "empty means all" does not stand, CLI-037.
 
 ### CLI-022 Narrowing the command surface hides and blocks, and states the way back
 - Requirement: commands outside the folder's command surface are neither shown nor run, on the CLI or over MCP, and the `set` that narrows the surface states the exact way back.
@@ -306,7 +306,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   - A command group is shown when `modules` is empty or contains the group, where a group is `chassis` or a module id. `help`, `set`, `unset` and `config` always run, whatever the surface, so the surface can always be restored; `feedback`, `list reports` and `read report` always run too, so an agent can always report, BASE-045. `mcp serve` is the transport, not a command an agent runs, so it always runs, whatever the surface; `--modules` narrows which tools the server lists and runs, MCP-004. The same check filters the commands index, help pages, dispatch and the MCP tool list, MCP-004. Until D35 and D50 are answered, the way back line is `To restore them: metaform unset --modules`, which is the current text.
 - Acceptance: after narrowing to one module, a chassis verb outside the surface exits 2 and is absent from `help commands` and from the MCP tool list.
 - Relates to: CLI-008, CLI-021, MCP-004, BASE-016, PROJ-007.
-- Status: confirmed for hiding and blocking, for the name `--modules` and its help text, and for the `folder=<path>` noun that stores the value for another folder. The way-back text depends on D35 and D50.
+- Status: confirmed for hiding and blocking, for the name `--modules` and its help text, and for the `folder=<path>` noun that stores the value for another folder. The way-back text depends on D35 and D50. Corrected 2026-09-27: narrowing by `set --modules` moves to forcing a menu on a folder and to aliases, CLI-038 to CLI-040.
 
 ### CLI-023 Defaults are never written, and a changed default never replaces a stored value
 
@@ -494,7 +494,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Build: The commands index and the settings screen group commands by chassis and by module id, in the order of CLI-031 and module id order.
 - Acceptance: `help commands` lists every enabled module's verbs under that module's id, and no module verb at the top level.
 - Relates to: CLI-001, CLI-008, CLI-022, CLI-031.
-- Status: confirmed for the hierarchy.
+- Status: confirmed for the hierarchy. Extended 2026-09-27 by CLI-037: the top menu shows names only, and a module's commands are shown when it is entered.
 
 ### CLI-033 `--layers` toggles the layers on for a folder
 - Requirement: the layers toggled on for a folder are the context setting `--layers`, which follows every settings rule.
@@ -553,6 +553,50 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Relates to: CLI-006, CLI-007, CLI-029, CLI-032, CLI-035, QUAL-008.
 - Status: confirmed, 2026-09-21; help saying what needs to be done to use a feature, 2026-09-11. Where the standard's text is kept is open, D98.
 
+### CLI-037 The top menu shows names, and a module's commands are reached inside it
+
+- Requirement: The first thing a person or an agent meets is the top menu, which shows one name for each thing that can be entered and none of the commands beneath it. A module's commands are written `<module>:<command>` and are shown when the module is entered.
+- What this means: The top menu is kept as small as possible. Each module is one name, and each alias, CLI-039, is one name. Typing a module's name, or asking for its help, shows that module's commands. `map:where` is the command `where` of the module `map`: the command is a subcommand of the name, so a module reads as one command with everything it does beneath it. A command's switches are shown by that command's help and are not sent ahead of need. The same holds over MCP: what an agent receives when it connects is the top menu, not every command of every module.
+- Why: Whatever is at the top is paid for by every session, whether the work uses it or not, so each thing placed there is a cost charged to everyone. Metaform exists to spend an agent's orientation in advance; a surface that hands an agent every command when it connects spends that saving before the work begins. A reader shown every command must also weigh each one against its task, and most have nothing to do with it. The cause of clutter is structural: a rule that adds one entry at the top for each command makes the top grow with every module anyone writes, so it returns however often it is cleaned. One name for each module means a new module adds one line.
+- How it shows: The top menu lists `intake`, `map`, `mcp`, `memory` and `web`, one line each. Entering `map` lists `map:roots`, `map:where` and the rest of its commands.
+- Build: Open. Measured on 2026-09-27 with five modules on: the MCP server sent 64 tools whose schemas are 55,139 bytes, and the instructions of 2,573 bytes were cut off by the host at about 2,000 characters. The tool list is built in `tools()` of `src/metaform/modules/mcp/server.py`, one tool for each verb. The tool name rule of MCP-003 has no colon, so how `<module>:<command>` travels over MCP is open, question 13. Where the chassis's own commands sit is open, question 14.
+- Acceptance: Open with the build. It will hold that the top menu's size does not change when a command is added to a module.
+- Relates to: CLI-032, CLI-038, CLI-039, CLI-040, MCP-003, MCP-004, MCP-029.
+- Status: confirmed as design, 2026-09-27. It corrects MCP-003 and MCP-004, which serve every command of every module at once.
+
+### CLI-038 The working folder decides what is shown, and holds the continuity of the work
+
+- Requirement: Metaform is aware of the working folder. What an agent is shown and can run is decided for the folder it works in, and the record of the work done in a folder stays with the folder.
+- What this means: A module's menu is reached in two ways: the orchestrator forces a menu on a folder before a worker starts there, or an agent enters a module by its name. No agent identity is tracked. An agent that starts work in a folder receives what was done there before and carries it on, whichever agent it is.
+- Why: An agent has nothing lasting that identifies it: subagents of one session share its session id and process id, so a design that depends on knowing which agent is which fails or needs a token the agent can lose or pass on. The folder is a fact the orchestrator sets and the agent does not control, so it can be relied on to say what the agent there is meant to be doing. Continuity is the history of the work, and a history kept with the place reaches whoever continues the work without anything having to be proved. Deciding by folder is also what keeps an agent from widening what it was given by asking for more.
+- How it shows: An orchestrator forces the `map` menu on a worker's folder; the worker there meets the `map` commands. A second agent that later starts in the same folder is shown the same menu and the record of the first one's work.
+- Build: Open. The folder table and the `folder=<path>` noun of CLI-022 and PROJ-007 already store values for a folder. The command that forces a menu is open, question 15.
+- Acceptance: Open with the build.
+- Relates to: CLI-021, CLI-022, CLI-037, PROJ-007, MCP-012.
+- Status: confirmed as design, 2026-09-27.
+
+### CLI-039 An alias is one top-level name that stands for several modules
+
+- Requirement: The orchestrator can define an alias, a name at the top menu that stands for two or more modules, and entering it gives the commands of all of them.
+- What this means: An alias is a convenience for work that crosses modules. It is one more name at the top menu, beside the module names.
+- Why: Without it, the only answer to an agent that needs three modules is to show it everything, which brings the clutter back. An alias gives that agent what its work needs under one name and keeps the top menu short.
+- How it shows: An alias `mapping` for `map` and `memory` appears at the top menu as one line, and entering it lists the `map:` and the `memory:` commands.
+- Build: Open. The folder setting `modules`, CLI-021, holds a list of modules today and is what an alias grew out of; how an alias is defined and stored is open, question 16.
+- Acceptance: Open with the build.
+- Relates to: CLI-021, CLI-037, CLI-038.
+- Status: confirmed as design, 2026-09-27.
+
+### CLI-040 `set` and `unset` are for configuration settings only
+
+- Requirement: `set` and `unset` store and clear configuration settings, the same settings the settings screen edits, and do nothing else. They are not how a module is entered.
+- What this means: Entering a module, forcing a menu and defining an alias are acts of their own, CLI-037 to CLI-039.
+- Why: A command with one meaning can be read without knowing its history. If `set` both configures and moves an agent between menus, a person reading a folder's settings cannot tell a preference from a place, and an agent that changes a setting may change what it can reach without meaning to.
+- How it shows: Every key `set` accepts is a row of the settings screen, CLI-026.
+- Build: Open. Today `set --modules` narrows a folder's command surface, CLI-022; that use moves to the acts of CLI-038 and CLI-039.
+- Acceptance: Open with the build.
+- Relates to: CLI-010, CLI-021, CLI-022, CLI-026, CLI-038, CLI-039.
+- Status: confirmed as design, 2026-09-27.
+
 ## Open questions
 
 1. Scope of settings: every context setting is per folder. Do some settings stay global (applying in every folder), as the chassis `Setting.scope` allows today, and which?
@@ -567,3 +611,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 10. Dropped: stacking commands is not part of the design. CLI-032 keeps only the hierarchy.
 11. NEW mvm's `config <group>` and `config --wizard`, and its help page's sections for when to use a command and for its subcommands: are they wanted? D97. (CLI-035)
 12. NEW Where is the writing standard's text kept? D98. (CLI-036)
+13. NEW How does `<module>:<command>` travel over MCP, whose tool names have no colon: as the name of a tool, or as a value given to the module's tool? (CLI-037)
+14. NEW Where do the chassis's own commands, such as help, config, install and export, sit: at the top menu beside the module names, or under one name of their own? (CLI-037)
+15. NEW Which command forces a menu on a folder? (CLI-038)
+16. NEW How is an alias defined and stored? (CLI-039)

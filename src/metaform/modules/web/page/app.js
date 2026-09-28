@@ -116,6 +116,18 @@ function showClear(open) {
   $('#clearbox').hidden = !open;
   $('#clearBtn').setAttribute('aria-expanded', String(open));
 }
+/* Export saves the map as the short Markdown document the command writes, MAP-052 and VIEW-024. */
+$('#exportBtn').onclick = async () => {
+  const query = new URLSearchParams({project: S.project, ...(S.metaform ? {metaform: S.metaform} : {}), ...viewLayers()});
+  const response = await fetch(`/api/markdown?${query}`);
+  if (!response.ok) return toast((await response.json().catch(() => ({}))).error || 'The map could not be exported.');
+  const link = h('a', {href: URL.createObjectURL(new Blob([await response.text()], {type: 'text/markdown'})),
+    download: `${S.project}-map.md`});
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+};
 $('#clearBtn').onclick = async event => {
   event.stopPropagation();
   if (!$('#clearbox').hidden) return showClear(false);
@@ -172,14 +184,15 @@ function graphData() {
     if (!ids.has(join.receiver) || !ids.has(join.provider)) continue;
     const purpose = 'p:' + join.join_id;
     nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []});
-    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id});
+    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id,
+      work: join.open_work || []});
     links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
-      ef: join.ef});
+      ef: join.ef, work: join.open_work || []});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.join_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
       links.push({source: purpose, target: 's:' + subtype.join_id, k: 'layer', layer: subtype.layer, join: join.join_id,
-        ef: subtype.ef});
+        ef: subtype.ef, work: join.open_work || []});
     }
   }
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
@@ -217,11 +230,20 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), ground: () => G ? G.backgroundColor() : null};
+  look: id => look(id), fit: () => fit2D(), bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
+  reach: () => ({property: R.key, edges: R.edges,
+    elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.element_id)).map(element => element.address)}),
+  own: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null; return node ? ownColor(node).toLowerCase() : null; },
+  box2d: id => { const box = M.nodes.get(id)?.g.getBoundingClientRect(); return box ? {left: box.left, right: box.right, top: box.top, bottom: box.bottom} : null; },
+  edge2d: join => [...(M.base?.edges.find(edge => edge.join.join_id === join)?.path?.classList || [])]
+    .filter(name => name.startsWith('work-')),
+  ground: () => G ? G.backgroundColor() : null};
 
 /* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
  * classes, computed opacity and whether its box is animating, and the 3D sphere's material opacity and whether it is
  * red at this frame. */
+const toHex = color => { const found = (color || '').match(/\d+/g);
+  return found ? '#' + found.slice(0, 3).map(part => Number(part).toString(16).padStart(2, '0')).join('') : null; };
 function look(id) {
   const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
   const group = (M.base?.nodes.get(id) || M.nodes.get(id))?.g || null;
@@ -229,20 +251,32 @@ function look(id) {
   const material = node?.__threeObj?.material || null;
   return {work: node?.work || [], classes: group ? [...group.classList].filter(name => name.startsWith('work-')) : [],
     opacity2d: group ? Number(getComputedStyle(group).opacity) : null,
-    animated2d: box ? getComputedStyle(box).animationName !== 'none' : false,
+    animated2d: box ? getComputedStyle(box).animationName !== 'none' || getComputedStyle(group).animationName !== 'none' : false,
     opacity3d: material ? material.opacity : null,
-    red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false};
+    red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
+    bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)),
+    glow3d: node?.__threeObj?.userData.glow ?? 0,
+    reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
+    light3d: material?.emissive ? Math.max(material.emissive.r, material.emissive.g, material.emissive.b) * material.emissiveIntensity : 0,
+    bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
+    color3d: material ? '#' + material.color.getHexString() : null,
+    label3d: [...(tags.get(id)?.classList || [])].filter(name => name.startsWith('work-')),
+    stroke2d: box ? toHex(getComputedStyle(box).stroke) : null,
+    cruft3d: material ? '#' + material.color.getHexString() === css('--cruft').toLowerCase() : false};
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['tbd', 'broken', 'cruft'];
+const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
   if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
     : node.role === 'DE' ? css('--de') : layerColor(node.layer);
+  if (has(node, 'cruft')) return css('--cruft');
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
+/* The color an object has apart from any condition, which a cruft record pulses against. */
+const ownColor = node => colorOf({...node, work: []});
 /* A dimmed node keeps its own hue: its color with part of the background mixed in, the share set by the theme. */
 function dim(color) {
   const keep = Number(css('--dim-keep')), channels = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
@@ -250,27 +284,170 @@ function dim(color) {
   return '#' + channels(color).map((own, at) => Math.round(keep * own + (1 - keep) * back[at]).toString(16).padStart(2, '0')).join('');
 }
 const dimmed = node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
-/* The condition of a node in 3D, MAP-046, Rich 2026-09-27: an open tbd record draws it ghostly, at 70% opacity, an
- * open broken record flashes it red, steady red with reduced motion; cruft keeps its look. The sphere takes its own
+/* The circles around a part that needs building, VIEW-005: three shells around the sphere in its own color, each
+ * larger and fainter, lit additively, so the node glows and keeps its color and opacity. They are steady while the
+ * part waits and pulsate once an agent has taken its task. The shells are made from the sphere's own geometry and
+ * material, since the graph library holds the 3D classes. */
+const SHELLS = [[1.8, 0.5], [2.8, 0.28], [4.2, 0.14]];
+const pulse = () => reduced() ? 1 : 0.95 + 0.6 * Math.sin(performance.now() / 1600 * 2 * Math.PI);
+function bloom3d(object, strength, color) {
+  const shells = object.children.filter(child => child.userData.bloom);
+  object.userData.glow = strength;
+  if (!strength) { for (const shell of shells) object.remove(shell); return; }
+  if (!shells.length) for (const [scale, opacity] of SHELLS) {
+    const shell = object.clone(false);
+    shell.material = object.material.clone();
+    Object.assign(shell.material, {transparent: true, opacity, blending: 2, depthWrite: false, side: 1});  // additive, back side
+    shell.material.emissiveIntensity = 0;
+    shell.position.set(0, 0, 0);
+    shell.scale.setScalar(scale);
+    shell.userData.bloom = true;
+    shell.userData.opacity = opacity;
+    object.add(shell);
+  }
+  for (const shell of object.children) if (shell.userData.bloom) {
+    shell.material.color.set(color);
+    shell.material.opacity = shell.userData.opacity * strength;
+  }
+}
+
+/* A property's reach, VIEW-022: clicking a property node lights the elements it carries to, toward the leaves where
+ * it applies and toward the trunk where it is visible, and the namespace edges between them, in the property's color.
+ * Each lit object gives off light at more than full brightness, which nothing else on the map reaches, and the bloom
+ * pass spreads that into a glow. Selecting anything else puts the map back. */
+const R = {key: null, color: null, nodes: new Set(), edges: 0};
+const endOf = end => end?.id ?? end;
+const inReach = link => R.key && link.k === 'tree' && R.nodes.has(endOf(link.source)) && R.nodes.has(endOf(link.target));
+function setReach(key) {
+  const thing = key?.startsWith('r:') ? S.items.get(key) : null;
+  const home = thing ? [...S.elements.values()].find(entry => entry.element.element_id === thing.item.element_id)?.element.address : null;
+  if (!home && !R.key) return;
+  R.key = home ? key : null;
+  R.color = home ? layerColor(thing.layer) : null;
+  R.nodes = new Set(home ? [...S.elements.values()].map(entry => entry.element)
+    .filter(({address}) => address === home || home.startsWith(address + '.') || address.startsWith(home + '.'))
+    .map(element => element.element_id) : []);
+  R.edges = G ? G.graphData().links.filter(inReach).length : 0;
+  if (BLOOM) BLOOM.enabled = Boolean(R.key);
+  if (G) G.nodeColor(G.nodeColor()).linkColor(G.linkColor()).linkDirectionalParticles(G.linkDirectionalParticles())
+    .linkDirectionalParticleColor(G.linkDirectionalParticleColor());
+  for (const [id, node] of M.base?.nodes || []) {
+    node.g.classList.toggle('reach', R.nodes.has(id));
+    node.g.style.setProperty('--reach', R.color || '');
+  }
+}
+/* Light given off in a color at more than full brightness, whatever the color's own brightness. */
+function lit(material, color, on) {
+  if (!material.emissive) return;
+  if (on) material.emissive.set(color); else material.emissive.setRGB(0, 0, 0);
+  material.emissiveIntensity = on ? 1.9 / Math.max(0.2, material.emissive.r, material.emissive.g, material.emissive.b) : 1;
+}
+function light3d(data) {
+  if (!R.key) return;
+  const own = object => {
+    if (object && object.material && !object.material.userData.own) {
+      object.material = object.material.clone();
+      object.material.userData.own = true;
+    }
+    return object?.material;
+  };
+  for (const node of data.nodes) if (R.nodes.has(node.id)) {
+    const material = own(node.__threeObj);
+    if (material) { material.color.set(R.color); lit(material, R.color, true); }
+  }
+  for (const link of data.links) if (inReach(link)) {
+    const material = own(link.__lineObj);
+    if (material) { material.color.set(R.color); material.opacity = 1; lit(material, R.color, true); }
+  }
+}
+/* The bloom pass, added to the graph's own render chain: what is over full brightness is kept in its hue, blurred at
+ * a half, a quarter and an eighth of the size, and added to the picture. It runs only while a property's reach is
+ * lit, so the map with nothing lit is drawn exactly as it is without the pass. It is built from the classes of the objects
+ * the chain already holds, since the graph library keeps its 3D classes to itself and the page loads nothing else. */
+let BLOOM = null;
+function addBloom() {
+  const composer = G.postProcessingComposer(), copy = composer?.copyPass;
+  if (!copy || !composer.renderTarget1) return;
+  const Target = composer.renderTarget1.constructor, Material = copy.material.constructor, Quad = copy.fsQuad.constructor;
+  const vertex = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+  const shader = (fragmentShader, uniforms) => new Material({uniforms, vertexShader: vertex, fragmentShader, depthTest: false, depthWrite: false});
+  const over = shader(`uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec3 c = texture2D(tDiffuse, vUv).rgb; float top = max(c.r, max(c.g, c.b));
+      gl_FragColor = vec4(top > 1.0 ? c * (1.0 - 1.0 / top) : vec3(0.0), 1.0); }`, {tDiffuse: {value: null}});
+  const blur = shader(`uniform sampler2D tDiffuse; uniform vec2 along; varying vec2 vUv;
+    void main() { vec3 sum = texture2D(tDiffuse, vUv).rgb * 0.227027;
+      sum += (texture2D(tDiffuse, vUv + along * 1.0).rgb + texture2D(tDiffuse, vUv - along * 1.0).rgb) * 0.1945946;
+      sum += (texture2D(tDiffuse, vUv + along * 2.0).rgb + texture2D(tDiffuse, vUv - along * 2.0).rgb) * 0.1216216;
+      sum += (texture2D(tDiffuse, vUv + along * 3.0).rgb + texture2D(tDiffuse, vUv - along * 3.0).rgb) * 0.054054;
+      sum += (texture2D(tDiffuse, vUv + along * 4.0).rgb + texture2D(tDiffuse, vUv - along * 4.0).rgb) * 0.016216;
+      gl_FragColor = vec4(sum, 1.0); }`, {tDiffuse: {value: null}, along: {value: [0, 0]}});
+  // The picture arrives in linear light and is shown as the screen expects it; the background arrives as the value
+  // the screen shows already, so it is passed through as it is.
+  const mix = shader(`uniform sampler2D tDiffuse; uniform sampler2D near; uniform sampler2D mid; uniform sampler2D far;
+    uniform float strength; uniform vec3 ground; varying vec2 vUv;
+    void main() { vec4 base = texture2D(tDiffuse, vUv);
+      vec3 glow = texture2D(near, vUv).rgb + texture2D(mid, vUv).rgb * 1.2 + texture2D(far, vUv).rgb * 1.4;
+      vec3 shown = distance(base.rgb, ground) < 0.002 ? ground
+        : linearToOutputTexel(vec4(min(base.rgb, vec3(1.0)), 1.0)).rgb;
+      gl_FragColor = vec4(shown + strength * linearToOutputTexel(vec4(glow, 1.0)).rgb, base.a);
+    }`, {tDiffuse: {value: null}, near: {value: null}, mid: {value: null}, far: {value: null}, strength: {value: 0.8},
+    ground: {value: [0, 0, 0]}});
+  const quad = new Quad(over), type = composer.renderTarget1.texture.type;
+  const levels = [2, 4, 8].map(() => ({across: new Target(1, 1, {type}), down: new Target(1, 1, {type})}));
+  const draw = (renderer, material, target) => { quad.material = material; renderer.setRenderTarget(target); quad.render(renderer); };
+  BLOOM = {isPass: true, enabled: false, needsSwap: true, clear: false, renderToScreen: false, levels: levels.length,
+    setSize(width, height) {
+      levels.forEach((level, index) => {
+        const size = [Math.max(1, Math.round(width / 2 ** (index + 1))), Math.max(1, Math.round(height / 2 ** (index + 1)))];
+        level.across.setSize(...size); level.down.setSize(...size);
+      });
+    },
+    render(renderer, writeBuffer, readBuffer) {
+      let from = readBuffer.texture;
+      levels.forEach((level, index) => {
+        if (index === 0) { over.uniforms.tDiffuse.value = from; draw(renderer, over, level.down); from = level.down.texture; }
+        blur.uniforms.tDiffuse.value = from; blur.uniforms.along.value = [1 / level.across.width, 0];
+        draw(renderer, blur, level.across);
+        blur.uniforms.tDiffuse.value = level.across.texture; blur.uniforms.along.value = [0, 1 / level.down.height];
+        draw(renderer, blur, level.down);
+        from = level.down.texture;
+      });
+      mix.uniforms.tDiffuse.value = readBuffer.texture;
+      mix.uniforms.ground.value = [1, 3, 5].map(at => parseInt(css('--ground').slice(at, at + 2), 16) / 255);
+      [mix.uniforms.near.value, mix.uniforms.mid.value, mix.uniforms.far.value] = levels.map(level => level.down.texture);
+      draw(renderer, mix, this.renderToScreen ? null : writeBuffer);
+    },
+    dispose() { for (const level of levels) { level.across.dispose(); level.down.dispose(); } }};
+  composer.addPass(BLOOM);
+}
+/* The condition of a node in 3D, MAP-046 and VIEW-005: an open tbd record puts the circles around it, which pulsate
+ * once its task is taken; a broken part being fixed is steady red with pulsating circles; an open
+ * broken record flashes it red, steady red with reduced motion, and an open cruft record pulses it between the cruft
+ * color and its own, steady in the cruft color with reduced motion. The sphere takes its own
  * material first, so no other node of its color changes. Called every frame for the nodes that carry a record. */
 function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material) return;
-  const tbd = has(node, 'tbd'), broken = has(node, 'broken');
-  if (!tbd && !broken) return;
+  const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
+  const strength = has(node, 'in-progress') || fixing ? pulse() : has(node, 'tbd') ? 1 : 0;
+  bloom3d(object, strength, fixing ? css('--broken') : ownColor(node));  // at full strength when the node is dimmed too
+  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing)) return;
   if (!object.material.userData.own) {
     object.material = object.material.clone();
     object.material.userData.own = true;
     object.material.transparent = true;
   }
-  object.material.opacity = tbd ? 0.7 : 0.95;
-  const red = broken && (reduced() || Math.floor(performance.now() / 500) % 2 === 0);
-  object.material.color.set(red ? css('--broken') : dimmed(node) ? dim(colorOf(node)) : colorOf(node));
+  const beat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
+  const shown = fixing || (broken && beat) ? css('--broken') : cruft ? (beat ? css('--cruft') : ownColor(node))
+    : colorOf(node);
+  object.material.color.set(dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
 }
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {
+  if (inReach(link)) return R.color;
   if (link.k === 'tree') return css('--tree');
+  if ((link.work || []).includes('cruft')) return css('--cruft');
   if (EF[link.ef]) return css(EF[link.ef]);
   return layerColor(link.layer);
 }
@@ -300,11 +477,12 @@ function start3D() {
     .linkOpacity(Number(css('--link-opacity')))
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
     .linkCurvature(link => link.k === 'layer' || link.k === 'item' ? 0 : 0.18)
-    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
+    .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter' || inReach(link)) ? 2 : 0)
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
     .onNodeClick(clicked3d);
+  addBloom();
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
   resize();
@@ -354,8 +532,9 @@ const tags = new Map();
 function labels() {
   if (G) {
     const box = $('#labels3d');
+    light3d(G.graphData());
     for (const node of G.graphData().nodes) {
-      if (node.work && node.work.length) paint3d(node);
+      if ((node.work && node.work.length) || node.__threeObj?.userData.glow) paint3d(node);
       if (node.t !== 'el') continue;
       let tag = tags.get(node.id);
       if (!tag) { tag = h('span', {}, short(node.name, 26)); box.append(tag); tags.set(node.id, tag); }
@@ -364,7 +543,9 @@ function labels() {
       const point = G.graph2ScreenCoords(node.x, node.y, node.z);
       tag.style.left = point.x + 'px';
       tag.style.top = point.y + 'px';
-      tag.className = node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '';
+      tag.className = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
+        ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '']
+        .filter(Boolean).join(' ');
     }
     placeTip();
   }
@@ -413,7 +594,10 @@ function renderLegend() {
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
     .concat(S.joins.flatMap(join => (join.open_work || []).concat((join.subtypes || []).flatMap(subtype => subtype.open_work || [])))));
   for (const condition of CONDITIONS) if (open.has(condition))
-    legend.append(h('span', {style: {'--c': `var(--${condition})`}}, h('i', {class: 'dot'}), `work: ${condition}`));
+    legend.append(h('span', {style: {'--c': condition === 'tbd' || condition === 'in-progress' ? 'var(--text)'
+      : `var(--${condition === 'fixing' ? 'broken' : condition})`}},
+      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse'}[condition] || 'dot'}),
+      `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
     : `${S.elements.size} elements · ${S.joins.length} joins · ${shown} nodes shown` + (S.loading ? ' · loading' : '')
@@ -486,6 +670,7 @@ async function build2D() {
   const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
   for (const edge of edges) if (EF[edge.join.ef]) edge.path?.classList.add(`ef-${edge.join.ef.toLowerCase()}`);
+  for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
   M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
@@ -512,6 +697,16 @@ function placeIn(nodes, id, group, title, work) {
   group.append(text);
   group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
 }
+/* Where the camera opens on a node's own graph, VIEW-016: the whole graph when its labels can be read at that size,
+ * otherwise the node entered, at the size its labels are written in. Fit still shows the whole graph. */
+function readable(fit, center) {
+  const view = $('#viewport').getBoundingClientRect();
+  if (!center || !view.width || view.width / frame(fit).w >= 1) return fit;
+  const w = view.width, height = view.height || w;
+  const x = Math.min(Math.max(center.x - w / 2, fit.x), Math.max(fit.x, fit.x + fit.w - w));
+  const y = Math.min(Math.max(center.y - height / 2, fit.y), Math.max(fit.y, fit.y + fit.h - height));
+  return {x, y, w, h: height};
+}
 function fitOf(svg) {
   const scene = svg.querySelector('g').getBBox();
   return {x: scene.x - 30, y: scene.y - 30, w: scene.width + 60, h: scene.height + 60};
@@ -525,12 +720,17 @@ function showBase(left = null) {
   fill($('#viewport'), base.svg);
   const node = left ? base.nodes.get(left) : null;
   if (node && !reduced()) {  // back from inside the node: the map returns zoomed on it and fades in, VIEW-016
-    setCam(frame(into(node)));
+    const kept = base.cam || frame(readable(base.fit, node));  // the zoom held before going inside
+    setCam(frame(into(node)), false);
+    M.zoom = {w: kept.w, h: kept.h};
     arrive(base.svg);
+    moveCam({x: node.x - kept.w / 2, y: node.y - kept.h / 2, w: kept.w, h: kept.h});
     return;
   }
   base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
-  setCam(base.cam || frame(base.fit));
+  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id;
+  setCam(base.cam || frame(readable(base.fit, base.nodes.get(S.selected) || base.nodes.get(entry)
+    || base.nodes.values().next().value)));
 }
 
 /* ---------- inside a node: the 2D map is replaced by the node's own graph, VIEW-016 ----------
@@ -662,7 +862,7 @@ async function drawInside(arriving = false) {
   level.things = things;
   cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
   Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: level});
-  setCam(frame(M.fit));
+  setCam(frame(readable(M.fit, nodes.get(level.key))));
   renderCrumbs();
   if (S.selected && nodes.has(S.selected)) focus2D(S.selected, false);
 }
@@ -739,17 +939,24 @@ function arrive(svg) {
   fade(svg, 1);
 }
 const into = node => ({x: node.x - node.w * 0.6, y: node.y - node.h * 0.6, w: node.w * 1.2, h: node.h * 1.2});
-function setCam(cam) { M.cam = cam; M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`); }
+/* M.zoom is the zoom the person has: the size the view opened at, what Fit set, or what they set by wheel. A
+ * selection moves the view at that size; a camera still easing toward it never changes it, VIEW-008. */
+function setCam(cam, settled = true) {
+  M.cam = cam;
+  if (settled) M.zoom = {w: cam.w, h: cam.h};
+  M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
+}
 function moveCam(target, animate = true) {
   if (!M.svg) return;
   cancelAnimationFrame(M.frame);
   const to = frame(target), from = {...M.cam};
+  M.zoom = {w: to.w, h: to.h};
   if (!animate || reduced()) return setCam(to);
   const start = performance.now(), duration = 700;
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const step = now => {
     const k = ease(Math.min(1, (now - start) / duration));
-    setCam({x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, w: from.w + (to.w - from.w) * k, h: from.h + (to.h - from.h) * k});
+    setCam({x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, w: from.w + (to.w - from.w) * k, h: from.h + (to.h - from.h) * k}, false);
     if (k < 1) M.frame = requestAnimationFrame(step);
   };
   M.frame = requestAnimationFrame(step);
@@ -765,15 +972,17 @@ function focus2D(id, animate = true, framing = 'around', zoom = false) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
   if (!node || !M.svg) return;
-  if (IN.length) {  // inside a node its whole graph stays in view; the camera moves only when Fit asks
+  if (IN.length) {
     for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id);
-    if (!zoom) return;
   } else {
     $('#map2d').classList.add('focused');
     for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
     for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
       : edge.join.receiver === id || edge.join.provider === id);
   }
+  // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008.
+  const held = M.zoom || M.cam;
+  if (!zoom) return moveCam({x: node.x - held.w / 2, y: node.y - held.h / 2, w: held.w, h: held.h}, animate);
   // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
   // 'close' moves nearer to a node that holds nothing.
   M.view = framing === 'around' ? 'around' : 'in';
@@ -933,6 +1142,7 @@ function select(id, fly, keepTrail = false, stepping = false) {
   }
   showSteps();
   S.selected = id;
+  setReach(id);
   if (!known) { S.neighbors = new Set(); focus2D(id, fly); showTab('object'); renderThing(thing); return; }
   S.neighbors = subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
     : join ? new Set([join.receiver, join.provider])

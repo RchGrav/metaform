@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
-from metaform import changes, home, query, results, settings
+from metaform import changes, home, outline, query, results, settings
 from metaform.context import toggled_for
 from metaform.data import Outcome, Store, prompts
 from metaform.data.records import plain
@@ -136,6 +136,8 @@ class Handler(BaseHTTPRequestHandler):
                                                 for found in home.projects()]})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
+        if url.path == '/api/markdown':
+            return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/'):
             return self.read(url.path[5:], {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/':
@@ -164,6 +166,16 @@ class Handler(BaseHTTPRequestHandler):
         if found is None:
             return self.send(404, {'error': f'Nothing for {name} here, in these layers.'})
         self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def markdown(self, given: dict[str, str]) -> None:
+        """The map as the Markdown document the command writes, MAP-052, for the page's export, VIEW-024, with the
+        page's layers or the folder's."""
+        try:
+            text = outline.markdown(opened(given), given.get('address') or None)
+        except (Stop, StoreError) as error:
+            return self.send(404 if isinstance(error, StoreError) else 400,
+                             {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.reply(200, text.encode('utf-8'), 'text/markdown; charset=utf-8', {'Cache-Control': 'no-store'})
 
     def notify(self) -> None:
         """A module's event, handed over by the web module's subscriber in the publishing process, VIEW-018. Only
@@ -306,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': 'Nothing here.'})
         body = resolved.read_bytes()
         kind = TYPES.get(resolved.suffix.lower(), 'application/octet-stream')
-        headers = {'Content-Security-Policy': PAGE_POLICY}
+        # The browser asks again before it uses its copy, so an updated page is the page a person sees.
+        headers = {'Content-Security-Policy': PAGE_POLICY, 'Cache-Control': 'no-cache'}
         if set_cookie and self.gui.token is not None:
             headers['Set-Cookie'] = f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'
         self.reply(200, body, kind, headers)

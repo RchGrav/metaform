@@ -1,5 +1,9 @@
 # Specifications
 
+## Start here to rebuild the specification
+
+- `UNBUILT-DESIGN-2026-09-27.md`: every design point that is not built or is built differently, each with what it is, why, its state and the record that mentions it.
+
 ## The specification
 
 - `spec/00-index.md`: the Metaform specification, the contract a builder builds from. Start here. It lists the sections below and the record format.
@@ -30,3 +34,38 @@
 - `spec/MANUAL-TEST.md` and `spec/MANUAL-TEST-2.md` to `spec/MANUAL-TEST-5.md`: manual tests of the build, each dated with its commit.
 - `spec/REVIEW-CODE.md` and `spec/REVIEW-CODE-2.md` to `spec/REVIEW-CODE-7.md`: code reviews against the quality standard and the spec.
 - `spec/TEST-REVIEW-2.md` to `spec/TEST-REVIEW-8.md`: reviews of the tests against the records they protect.
+
+## Earlier specifications, restored to this folder on 2026-09-27
+
+These files were left off the `chassis` branch when it was started on 2026-09-24 and were restored unchanged from the `main` branch. They hold design from before the rebuild. They are listed by name only; none has been checked against the nine sections yet.
+
+- `Canonical_Intake_draft.xml`
+- `IMPLEMENTATION-PLAN.md`
+- `Inference_Metaform_Reference.zip`
+- `REMEDIATION-MATRIX.md`
+- `brief.md`
+- `chassis-design-conformance-2026-09-18.md`
+- `chassis-full-code-review.md`
+- `chassis-product.md`
+- `data_folder.md`
+- `digital-typolo.xml`
+- `global-data.md`
+- `intake-graph-viewer-plan.md`
+- `intake.xml`
+- `join_record_proposal-rough.md`
+- `metaform functional walkthrough.md`
+- `metaform-chassis-best-practices.xml`
+- `metaform-metaform.xml`
+- `metaform-specs-20260915-7c8f4d21.xml`
+- `module-structure-refined.md`
+- `namespace-join-implementation-plan.md`
+- `plugin-system.md`
+- `re.schema.json`
+- `product/`: `DECISIONS-AND-CONFLICTS.md`, `PRODUCT-SPECIFICATION.md`, `SOURCES.md`, `UNDERSTANDING.md`, `source-manifest.json`
+- `sample/`: `metaform.dt-codex-20260915-8d3f2c1a.xml`, `metaform.kl-codex-developer-best-practices-20260915.xml`
+- `xml/`: `Canonical_Intake.xml`, `Intake.xml`, `README.md`, `artifact.xml`, `digital-archeology-deep.xml`, `digital-archeology-expand.xml`, `digital-archeology-shallow.xml`, `intake2.xml`, `intake_nested.xml`, `metaform-specs-20260915-7c8f4d21.xml`, `prompt_generator_orchestration.xml`
+
+## Outside this folder
+
+- `specs/` at the repository root: intake samples, `agent-mcp-design.md`, `jev-analysis.md` and the `code_metaform` files, restored from `main-wip-2026-09-24`.
+- `feature-briefs/` at the repository root: the native metaform variants and shared knowledge service specifications, restored from `main`.
