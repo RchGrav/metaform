@@ -460,10 +460,14 @@ class Cleared:
     metaforms: tuple[str, ...]
     reports: int
     not_removed: tuple[tuple[str, str], ...] = ()
+    backup: str | None = None  # the backup made before anything was removed, PROJ-030
 
     def to_dict(self) -> dict[str, Any]:
         found: dict[str, Any] = {'project': self.project_id, 'metaforms': list(self.metaforms),
                                  'reports': self.reports}
+        if self.backup:
+            found['backup'] = self.backup
+            found['restore'] = self.restore
         if self.not_removed:
             found['not_removed'] = [{'path': path, 'reason': reason} for path, reason in self.not_removed]
         return found
@@ -489,6 +493,16 @@ class Cleared:
         return (f'Cleared {self.project_id}: {self._metaforms(False)} and '
                 f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
                 'and variants stay.')
+
+    @property
+    def restore(self) -> str:
+        """The one command that brings back what the clear removed."""
+        return f'metaform restore project {self.project_id}'
+
+    @property
+    def held(self) -> str:
+        """What the project held, as a backup and a restore say it."""
+        return f'{self._metaforms(False)} and {counted(self.reports, "report file", "report files")}'
 
     def remedy(self, again: str) -> str:
         """What to do about what could not be removed; `again` is how the surface clears the project once more."""
@@ -518,6 +532,13 @@ def clear_project(project_id: str) -> Cleared:
     rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
     """
     found = to_clear(project_id)
+    # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
+    # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
+    try:
+        saved = backup_project(project_id)
+    except OSError as error:
+        raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: '
+                         f'{error.strerror or error}.', 'metaform list backups') from error
     with base(write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
@@ -525,7 +546,124 @@ def clear_project(project_id: str) -> Cleared:
     for name in ('metaforms', 'reports'):
         _remove_tree(home() / 'projects' / project_id / name, failed)
     changes.note(project_id)
-    return Cleared(found.project_id, found.metaforms, found.reports, _innermost(failed))
+    return Cleared(found.project_id, found.metaforms, found.reports, _innermost(failed),
+                   saved.name if saved is not None else None)
+
+
+@dataclass(frozen=True)
+class Backup:
+    """What a project held when it was cleared, kept so it can be brought back, PROJ-030."""
+    project_id: str
+    name: str
+    metaforms: tuple[str, ...]
+    reports: int
+
+    @property
+    def held(self) -> str:
+        return Cleared(self.project_id, self.metaforms, self.reports).held
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'project': self.project_id, 'name': self.name, 'metaforms': list(self.metaforms),
+                'reports': self.reports, 'held': self.held}
+
+
+def _backups(project_id: str) -> Path:
+    return home() / 'backups' / 'clear' / project_id
+
+
+def _copied(source: Path, target: Path) -> None:
+    """A folder copied whole. A store is copied through SQLite's own backup, so one another program holds open is
+    copied as it stands, with what its write-ahead log holds."""
+    for path in sorted(source.rglob('*')):
+        to = target / path.relative_to(source)
+        if path.is_dir():
+            to.mkdir(parents=True, exist_ok=True)
+        elif path.suffix == '.sqlite3':
+            to.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as read, sqlite3.connect(to) as write:
+                read.backup(write)
+            read.close()
+            write.close()
+        elif not path.name.endswith(('.sqlite3-wal', '.sqlite3-shm')):
+            to.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, to)
+
+
+def backup_project(project_id: str) -> Backup | None:
+    """Save what a clear would remove, or nothing when the project holds nothing."""
+    found = to_clear(project_id)
+    if not found.metaforms and not found.reports:
+        return None
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
+    _backups(project_id).mkdir(parents=True, exist_ok=True)
+    name, number = stamp, 1
+    while (_backups(project_id) / name).exists():
+        number += 1
+        name = f'{stamp}-{number}'
+    kept = _backups(project_id) / name
+    kept.mkdir()
+    forms = metaforms(project_id)
+    rows = {'metaforms': [{'metaform_id': form.metaform_id, 'name': form.name, 'created': form.created}
+                          for form in forms],
+            'active': next((form.metaform_id for form in forms if form.active), None), 'reports': found.reports}
+    for part in ('metaforms', 'reports'):
+        if (home() / 'projects' / project_id / part).is_dir():
+            _copied(home() / 'projects' / project_id / part, kept / part)
+        else:
+            (kept / part).mkdir()
+    (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
+    return Backup(project_id, name, found.metaforms, found.reports)
+
+
+def backups(project_id: str) -> tuple[Backup, ...]:
+    """The project's backups, the newest first."""
+    found: list[Backup] = []
+    folder = _backups(project_id)
+    for kept in sorted((path for path in folder.iterdir() if (path / 'rows.json').is_file()),
+                       key=lambda path: path.name, reverse=True) if folder.is_dir() else ():
+        rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
+        found.append(Backup(project_id, kept.name, tuple(row['name'] for row in rows['metaforms']),
+                            int(rows.get('reports', 0))))
+    return tuple(found)
+
+
+@dataclass(frozen=True)
+class Restored:
+    """A backup brought back, and the backup of what the project held before, when it held anything."""
+    backup: Backup
+    held_before: str | None = None
+
+    @property
+    def said(self) -> str:
+        return f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.'
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before}
+
+
+def restore_project(project_id: str, name: str | None = None) -> Restored:
+    """Bring a backup back, the newest when none is named. A project that holds metaforms or reports is cleared
+    first, which backs up what it holds, so a restore loses nothing either, PROJ-030."""
+    known = backups(project_id)
+    chosen = next((one for one in known if name is None or one.name == name), None)
+    if chosen is None:
+        raise StoreError(f'No backup {name} of {project_id}.' if name else f'{project_id} has no backup.',
+                         f'metaform list backups {project_id}')
+    before = clear_project(project_id).backup
+    kept = _backups(project_id) / chosen.name
+    rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
+    for part in ('metaforms', 'reports'):
+        if any((kept / part).iterdir()):
+            _copied(kept / part, home() / 'projects' / project_id / part)
+    with base(write=True) as db:
+        for row in rows['metaforms']:
+            db.execute('INSERT INTO metaforms(metaform_id, project_id, name, created) VALUES (?, ?, ?, ?)',
+                       (row['metaform_id'], project_id, row['name'], row['created']))
+        if rows.get('active'):
+            db.execute('INSERT INTO active_metaforms(project_id, metaform_id) VALUES (?, ?)',
+                       (project_id, rows['active']))
+    changes.note(project_id)
+    return Restored(chosen, before)
 
 
 def _remove_tree(path: Path, failed: list[tuple[str, str]]) -> None:

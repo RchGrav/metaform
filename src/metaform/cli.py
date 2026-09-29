@@ -218,6 +218,10 @@ def list_(args: list[str], folder: Path) -> None:
         for form in home.metaforms(project_id):
             out(f'{form.name}  {form.created}' + ('  (active)' if form.active else ''))
         return
+    if args[:1] == ['backups'] and len(args) in (1, 2):
+        for kept in home.backups(_project_arg(folder, args[1] if len(args) == 2 else None)):
+            out(f'{kept.name}  {kept.held}')
+        return
     if args[:1] == ['origins'] and len(args) in (1, 2):
         for item in Store(_project_arg(folder, args[1] if len(args) == 2 else None)).origins():
             out(f'{item.mform_id}  {item.kind}  {item.commit_id or item.source_path}  {item.established}  '
@@ -231,7 +235,7 @@ def list_(args: list[str], folder: Path) -> None:
             out(f'{made.variant_id}  {made.collected}  {made.source_path}  {made.workflow or "-"}')
         return
     if args != ['projects']:
-        raise Stop('list needs a noun: projects, modules, metaforms, reports, origins or variants.',
+        raise Stop('list needs a noun: projects, modules, metaforms, reports, backups, origins or variants.',
                    'metaform list projects')
     registered = home.projects()
     if not registered:
@@ -320,11 +324,27 @@ def clear(args: list[str], folder: Path) -> None:
         raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
     cleared = home.clear_project(project_id)
     out(cleared.said)
+    if cleared.backup:
+        out(f'Backed up as {cleared.backup}.')
+        out(f'To bring it back: {cleared.restore}')
     if cleared.not_removed:
         out('Not removed, still on disk:')
         for path, reason in cleared.not_removed:
             out(f'  {path}: {reason}')
         out(f'Next: {cleared.remedy(f"run metaform clear project {project_id} --confirm again")}')
+
+
+def restore(args: list[str], folder: Path) -> None:
+    """`restore project [<project>] [<backup>]`: a backup is brought back, the newest when none is named, PROJ-030."""
+    if args[:1] != ['project'] or len(args) > 3:
+        raise Stop('restore needs: project [<project>] [<backup>].', 'metaform restore project')
+    project_id = _project_arg(folder, args[1] if len(args) >= 2 else None)
+    if home.project(project_id) is None:
+        raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
+    restored = home.restore_project(project_id, args[2] if len(args) == 3 else None)
+    out(restored.said)
+    if restored.held_before:
+        out(f'What it held was backed up as {restored.held_before}.')
 
 
 def _toggle(args: list[str], on: bool) -> None:
@@ -660,7 +680,7 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
-    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear}
+    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -809,6 +829,7 @@ docs.command(Command('add', 'Register a project, or start a new metaform for one
 docs.command(Command('list', "List registered projects, modules, a project's metaforms, or its reports.",
                      ('metaform list projects', 'metaform list modules', 'metaform list metaforms [<project>]',
                       'metaform list reports [<project>] [kind=<kind>] [layer=<layer>] [--json]',
+                      'metaform list backups [<project>]',
                       'metaform list origins [<project>]', 'metaform list variants [origin=<id>]'),
                      details='list modules shows each module, whether it is on, where it was found, and why it did '
                              'not load when it did not.', see_also=('add', 'enable', 'disable')))
@@ -901,13 +922,25 @@ docs.command(Command('clear', "Remove a project's metaforms and reports; its reg
                                  'from nothing. Every metaform goes with its store, and every report, feedback and '
                                  'shape file. The registration, the folder and every file in it, the folder settings, '
                                  'and the origins and variants stay.',
-                     details='Without --confirm it says exactly what it would remove and removes nothing. After a '
+                     details='It backs the project up before it removes anything, says the backup\'s name, and '
+                             'metaform restore project brings it back. '
+                             'Without --confirm it says exactly what it would remove and removes nothing. After a '
                              'clear the project has no metaform until the next intake, or any other write, creates '
                              'main again. A file it cannot remove, such as a store a running web GUI holds open on '
                              'Windows, stays on disk and is named with the reason and what to do.',
                      examples=(('metaform clear project', 'Say what clearing this folder\'s project would remove.'),
                                ('metaform clear project notes --confirm', 'Clear the project notes.')),
-                     see_also=('list', 'add')))
+                     see_also=('list', 'add', 'restore')))
+docs.command(Command('restore', 'Bring back what a clear removed, from the backup the clear made.',
+                     ('metaform restore project [<project>] [<backup>]',),
+                     description='Puts the project back as it was when the backup was made: its metaforms with their '
+                                 'stores, the one that was active, and its report files.',
+                     details='With no backup named it brings back the newest. A project that holds metaforms or '
+                             'reports is cleared first, which backs up what it holds, so nothing is lost. '
+                             'metaform list backups lists them, the newest first.',
+                     examples=(('metaform restore project', "Bring back this folder's project from its newest backup."),
+                               ('metaform list backups', 'List the backups of this folder\'s project.')),
+                     see_also=('clear', 'list')))
 docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
                      details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
                      see_also=('install',)))

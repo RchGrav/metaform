@@ -641,7 +641,9 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
                               'Next: If you are sure: call metaform with command clear_project and confirm true in its arguments')]
     assert still.is_error is False  # the caution alone changed nothing
     assert cleared.is_error is False
-    assert json.loads(text(cleared)[-1]) == {'project': 'proj', 'metaforms': ['main'], 'reports': 1}
+    told = json.loads(text(cleared)[-1])
+    assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    assert told == {'project': 'proj', 'metaforms': ['main'], 'reports': 1}
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
     assert not (home / 'projects' / 'proj' / 'reports').exists()
     run('set', '--modules', 'map', cwd=mapped)
