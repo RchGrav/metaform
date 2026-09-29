@@ -13,11 +13,14 @@ connection; the stop signal ends the process, QUAL-015.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import hmac
 import ipaddress
 import json
 import os
 import queue
+import re
 import socket
 import socketserver
 import sys
@@ -46,6 +49,18 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=u
          '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.md': 'text/plain; charset=utf-8',
          '.txt': 'text/plain; charset=utf-8'}  # fixed, since Windows's registry can give .js a type browsers refuse
 PAGE_POLICY = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+IMPORT_MAP = re.compile(rb'<script type="importmap">(.*?)</script>', re.DOTALL)
+
+
+def policy(body: bytes, kind: str) -> str:
+    """The Content Security Policy a file is sent with, VIEW-003. A page's import map is an inline script, which a
+    browser runs only when the policy names its SHA-256; it is read from the page itself, so the two always agree, and
+    no other inline script is allowed."""
+    found = IMPORT_MAP.search(body) if kind.startswith('text/html') else None
+    if found is None:
+        return PAGE_POLICY
+    digest = base64.b64encode(hashlib.sha256(found.group(1)).digest()).decode('ascii')
+    return f"{PAGE_POLICY}; script-src 'self' 'sha256-{digest}'"
 
 
 class Server(ThreadingHTTPServer):
@@ -353,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
         body = resolved.read_bytes()
         kind = TYPES.get(resolved.suffix.lower(), 'application/octet-stream')
         # The browser asks again before it uses its copy, so an updated page is the page a person sees.
-        headers = {'Content-Security-Policy': PAGE_POLICY, 'Cache-Control': 'no-cache'}
+        headers = {'Content-Security-Policy': policy(body, kind), 'Cache-Control': 'no-cache'}
         if set_cookie and self.gui.token is not None:
             headers['Set-Cookie'] = f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'
         self.reply(200, body, kind, headers)

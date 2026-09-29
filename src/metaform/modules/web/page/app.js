@@ -6,6 +6,9 @@
 // three.js, for the glass the nodes are made of, VIEW-025. It is the release the graph library holds and does not
 // give out, carried in vendor/ so the page loads nothing from outside itself, VIEW-003.
 import * as THREE from '/vendor/three.module.min.js';
+// drei's transmission material in its vanilla form, the glass itself, VIEW-025. It imports three.js as `three`, which
+// the page's import map names as the same file, so both share one three.js.
+import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
 
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -293,7 +296,13 @@ function look(id) {
     glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
-    material: material ? material.type : null, transmission: material ? material.transmission || 0 : 0,
+    material: material ? (material instanceof MeshTransmissionMaterial ? 'MeshTransmissionMaterial' : material.type) : null,
+    // the light the glass lets through: drei's own amount, since three.js's `transmission` stays 0
+    transmission: material ? (material._transmission ?? material.transmission) || 0 : 0,
+    chromatic: material?.chromaticAberration ?? 0, distortion: material?.distortion ?? 0,
+    // the near wall reads the picture that holds the far walls, and its far wall is drawn into it
+    backside: Boolean(material?.userData.back && BEHIND.main && material.buffer === BEHIND.main.texture
+      && material.userData.back.side === THREE.BackSide),
     shape: node?.__threeObj?.geometry ? node.__threeObj.geometry.uuid : null,
     // what is drawn around the node besides the node itself; the node that fades in over text is the node
     around3d: node?.__threeObj ? node.__threeObj.children.filter(child => !child.userData.arriving).length : null,
@@ -333,19 +342,83 @@ function colored(material, color) {
 }
 /* Glass, VIEW-025: in every theme an element is made of a material that obeys reality. Light passes through it and
  * is tinted by it, so the theme's background shows through the node. It gives off a little of its own color, since
- * clear glass on a dark background with nothing to reflect shows as black. One shape serves every node of a size. */
+ * clear glass on a dark background with nothing to reflect shows as black. It is drei's transmission material: the
+ * light behind it is read `samples` times, each color at its own index of refraction, which parts the colors at the
+ * edges, `chromaticAberration`; the surface bends it by a noise, `distortion` at `distortionScale`, drifting at
+ * `temporalDistortion`; the reads spread along the ray blur it, `anisotropicBlur`. What is behind the glass is drawn
+ * by `addBehind`, as drei's own component draws it, with the far wall of every node in it: a node shows its own far
+ * wall and the glass behind it, the backside. The drei values are a start and are not settled: with the frosting and
+ * the absorption above, what is behind a node is blurred and tinted almost to its own color, so they hardly show. One
+ * shape serves every node of a size. */
 const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1.35, attenuationDistance: 7, clearcoat: 0.6,
-  clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0};
+  clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0,
+  chromaticAberration: 0.06, distortion: 0.25, distortionScale: 0.35, temporalDistortion: 0.1, anisotropicBlur: 0.1,
+  samples: 6};
+const DRIFT = {value: 0};  // the one clock the distortion of every node drifts by; still with reduced motion
 const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
 const isGlass = node => node.t === 'el' || node.t === 'sub';
 function bead(node) {
   const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
   if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
-  const material = new THREE.MeshPhysicalMaterial(GLASS);
+  const {transmission, thickness, roughness, attenuationDistance, chromaticAberration, distortion, distortionScale,
+    temporalDistortion, anisotropicBlur, samples, ...physical} = GLASS;
+  // drei's amount of light let through is `_transmission`; three.js's own `transmission` stays 0, since the page
+  // draws what is behind the glass itself.
+  const made = side => Object.assign(new MeshTransmissionMaterial({samples, _transmission: transmission, thickness,
+    roughness, attenuationDistance, chromaticAberration, distortion, distortionScale, temporalDistortion,
+    anisotropicBlur}), physical, {side});
+  // The near wall reads the picture with every far wall in it. The far wall is a material of its own, since three.js
+  // keeps a material's program when only its side changes; it shares every setting of the near wall but the picture
+  // it reads, which is the scene with no glass in it.
+  const material = made(THREE.FrontSide), back = made(THREE.BackSide);
+  material.uniforms.time = DRIFT;
+  material.uniforms.buffer.value = BEHIND.main?.texture ?? null;
+  back.uniforms = {...material.uniforms, buffer: {value: BEHIND.back?.texture ?? null}};
+  material.userData.back = back;
+  back.userData.front = material;
   material.userData.own = true;
   colored(material, colorOf(node));
   return new THREE.Mesh(shapes.get(radius), material);
+}
+/* What is behind the glass, drawn each frame as drei's component draws it, once for every node, VIEW-025: the scene
+ * with the glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the
+ * near walls read `main` in the frame itself. Both are drawn at `scale` of the view's size, drei's `resolution` and
+ * `backsideResolution`. It runs before the frame in the graph's own render chain. */
+const BEHIND = {back: null, main: null, scale: 0.5};
+function addBehind() {
+  const composer = G.postProcessingComposer();
+  if (!composer?.insertPass) return;
+  const type = THREE.HalfFloatType;  // light over full brightness, seen through glass, is still spread by the bloom
+  BEHIND.back = new THREE.WebGLRenderTarget(1, 1, {type});
+  BEHIND.main = new THREE.WebGLRenderTarget(1, 1, {type});
+  composer.insertPass({isPass: true, enabled: true, needsSwap: false, clear: false, renderToScreen: false,
+    setSize(width, height) {
+      const size = [Math.max(1, Math.round(width * BEHIND.scale)), Math.max(1, Math.round(height * BEHIND.scale))];
+      BEHIND.back.setSize(...size);
+      BEHIND.main.setSize(...size);
+    },
+    render(renderer) {
+      const scene = G.scene(), camera = G.camera(), glass = [], was = renderer.getRenderTarget();
+      scene.traverseVisible(object => { if (object.material?.userData.back) glass.push(object); });
+      if (!glass.length) return;
+      for (const object of glass) object.visible = false;
+      renderer.setRenderTarget(BEHIND.back);
+      renderer.render(scene, camera);
+      // The far wall takes the node's tint and gives off no light toward the eye: a node's light leaves its glass
+      // outward, so the far wall's light goes away from the eye, and the node is as bright as its near wall makes it.
+      for (const object of glass) {
+        const near = object.material, far = near.userData.back;
+        far.color.copy(near.color);
+        Object.assign(far, {emissiveIntensity: 0, opacity: near.opacity, transparent: near.transparent});
+        Object.assign(object, {material: far, visible: true});
+      }
+      renderer.setRenderTarget(BEHIND.main);
+      renderer.render(scene, camera);
+      for (const object of glass) object.material = object.material.userData.front;
+      renderer.setRenderTarget(was);
+    },
+    dispose() { BEHIND.back.dispose(); BEHIND.main.dispose(); }}, 0);
 }
 /* The light a node gives off, VIEW-029: the glass's own little light, VIEW-025, raised toward LIGHT in the given
  * color by `lit`, from 0 to 1. Above full brightness it is spread by the bloom pass past the node's outline, behind
@@ -889,6 +962,7 @@ function start3D() {
     .onNodeClick(clicked3d)
     .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
   grounded();
+  addBehind();
   addBloom();
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
@@ -942,6 +1016,7 @@ function labels() {
     // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
     for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
       colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
+    DRIFT.value = reduced() ? 0 : performance.now() / 1000;  // the distortion of the glass drifts, VIEW-025
     wave3d(G.graphData());
     text3d();
     let signaled = false;

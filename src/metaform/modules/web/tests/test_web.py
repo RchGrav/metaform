@@ -361,8 +361,18 @@ NAMESPACES = ('http://www.w3.org/2000/svg',)  # a namespace name the script uses
 def test_the_page_loads_only_the_servers_own_files(run, web):
     import re
     started(run)
+    import base64
+    import hashlib
     status, page, headers = request(web, '/')
-    assert status == 200 and headers['Content-Security-Policy'].startswith("default-src 'self'")
+    policy = headers['Content-Security-Policy']
+    assert status == 200 and policy.startswith("default-src 'self'")
+    # The one inline script is the import map, allowed by its hash; no other inline script runs.
+    inline = re.findall(r'<script(?![^>]*\bsrc=)([^>]*)>(.*?)</script>', page, re.DOTALL)
+    assert [attributes.strip() for attributes, _ in inline] == ['type="importmap"']
+    digest = base64.b64encode(hashlib.sha256(inline[0][1].encode('utf-8')).digest()).decode()
+    script = next(part.strip() for part in policy.split(';') if part.strip().startswith('script-src'))
+    assert script.split() == ['script-src', "'self'", f"'sha256-{digest}'"]
+    assert json.loads(inline[0][1]) == {'imports': {'three': '/vendor/three.module.min.js'}}
     loaded = re.findall(r'(?:src|href)="([^"]+)"', page)
     assert loaded and all(path.startswith('/') and not path.startswith('//') for path in loaded)
     texts = [page]
@@ -392,7 +402,7 @@ def test_the_wheel_carries_the_page_and_every_vendor_file_with_its_license(run, 
                for path in (folder / part).rglob('*') if path.is_file()]
     assert shipped and {f'metaform/modules/web/{name}' for name in shipped} <= names
     licenses = ['mermaid.LICENSE', '3d-force-graph.LICENSE', 'three.LICENSE', 'fonts/IBM-Plex.LICENSE',
-                'codemirror/LICENSE']
+                'codemirror/LICENSE', 'drei-vanilla/LICENSE']
     assert all(f'metaform/modules/web/vendor/{license}' in names for license in licenses)
 
 
@@ -690,7 +700,7 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
     # Its task done, pushed to the page, the alarm turns solid without a reload.
     run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
     # glass, as every built element, once the text has given way to it
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").material === "MeshPhysicalMaterial"',
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").material === "MeshTransmissionMaterial"',
                            timeout=12000)
     assert look('code.alarm.audible')['text3d'] is False
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom2d === false', timeout=5000)
@@ -760,7 +770,7 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
     assert 'work: in-progress' in page.inner_text('#legend')
     run('map', 'work', 'op=done', f'id={working.work_id}', 'resolution=built', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").material === "MeshPhysicalMaterial"',
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").material === "MeshTransmissionMaterial"',
                            timeout=12000)
     assert page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}").text3d') is False
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").classes.length === 0', timeout=5000)
@@ -1276,12 +1286,15 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
         page.wait_for_timeout(250)
         for node in (at['code.timer.kitchen'], at['code.alarm.audible'], subtypes['code.loop.tick']):
             seen = page.evaluate(f'window.metaform.look("{node}")')
-            assert seen['material'] == 'MeshPhysicalMaterial' and seen['transmission'] > 0, (theme, node, seen)
+            # drei's glass, Rich 2026-09-29: it lets light through, parts its colors, bends it and draws its far wall
+            assert seen['material'] == 'MeshTransmissionMaterial' and seen['transmission'] > 0, (theme, node, seen)
+            assert seen['chromatic'] > 0 and seen['distortion'] > 0 and seen['backside'] is True, (theme, node, seen)
     # one shape for every node of a size, however many nodes there are
     sizes = page.evaluate('new Set(window.metaform.graph().nodes.filter(node => node.t === "el" || node.t === "sub")'
                           '.map(node => window.metaform.look(node.id).shape)).size')
     assert sizes <= 4
     assert any(url.endswith('/vendor/three.module.min.js') for url in fetched)
+    assert any(url.endswith('/vendor/drei-vanilla/MeshTransmissionMaterial.js') for url in fetched)
     assert all(url.startswith((f'http://127.0.0.1:{web}/', 'data:', 'blob:')) for url in fetched), fetched
     assert problems == []
 
