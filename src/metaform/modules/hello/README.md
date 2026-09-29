@@ -12,33 +12,44 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable hello`. `MODULE` declares seven verbs, one subscription and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable hello`. `MODULE` declares its verbs, one subscription, `start` and `stop` hooks, a status hook, and `default='history'`, so `metaform hello` with no verb runs `history`; `metaform hello --help` still prints the syntax.
 
 ## Common base used
 
-`metaform.module` for the declaration and `Context`, `metaform.settings` for its three settings, `metaform.data` for its layer.
+`metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer and work records. `metaform.nonce` for `task`.
 
 ## Verbs
 
 - `greet <name> [--loud]`: returns the greeting and publishes `hello.greeted`. Tool `hello_greet`.
 - `wait <seconds>`: waits, then returns `waited <n> s`. Tool `hello_wait`.
-- `history`: returns the names greeted so far. Tool `hello_history`.
+- `history`: returns the names greeted so far. The default verb. Tool `hello_history`.
 - `forget [--confirm]`: deletes the greeting layer. A caution verb. Tool `hello_forget`, with `confirm`.
 - `beep`: rings the terminal bell, on Windows only.
 - `todo <task>`: writes a `tbd` work record on the module's own element, `code.module.hello`, with the task; returns the record id. Tool `hello_todo`.
 - `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `hello_done`.
+- `count`: says `hello has greeted <n> names.` with `ctx.say` and returns `{"greeted": n}`. With `--json` the sentence goes to standard error and only the data to standard output; over MCP it is a line of the result. Tool `hello_count`.
+- `welcome <name>`: an async verb that publishes `hello.greeted` with `await ctx.publish_async(...)`; `ctx.publish` inside a running loop is refused, BASE-009. Returns `welcome, <name>`. Tool `hello_welcome`.
+- `later <name> <seconds>`: starts a task with `ctx.spawn` that greets the name after the seconds, and returns at once. The task belongs to hello: it runs on after the verb returns for as long as the process runs, as the MCP server does, and the chassis cancels it when the process ends or hello unloads, BASE-018. From the command line the process ends at once, so the name is not greeted. Tool `hello_later`.
+- `greet-favorite`: greets the `--favorite` name. With none set it raises `Stop('No favorite is set.', 'metaform set --favorite <name>')`, which the CLI prints as `Error:` and `Next:` lines with exit 2, CLI-009. Tool `hello_greet-favorite`.
+- `uptime`: returns how long ago `start` ran in this process. Tool `hello_uptime`.
+- `repeat <name> [--times <n>]`: returns the greeting `--times` times. Tool `hello_repeat`.
+- `greet-friends [--friends <names>]`: greets each name in `--friends` and publishes `hello.greeted` for each. Tool `hello_greet-friends`.
+- `report <text>`: saves a report with `save_report`, run id and layer the id of `hello.greetings`, and returns the file name; the layer's provenance then carries it as a `report` ref, BASE-045. Tool `hello_report`.
+- `feedback <text>`: saves feedback on the Metaform process with `feedback` and returns the project, the run id and the file names. Tool `hello_feedback`.
+- `reports`: returns the file names `list_reports` gives for this project, one a line. Tool `hello_reports`.
+- `read-report <name>`: returns one listed file's text exactly with `read_report`; a name that is not listed stops with `Next: metaform list reports`. Tool `hello_read-report`.
 
 ## Settings
 
-`--greeting`, default `hello`. `--loud`, default off, also greet's switch. `--favorite`, a select whose choices are the names greeted in this folder's project.
+`--greeting`, default `hello`. `--loud`, default off, also greet's switch. `--favorite`, a select whose choices are the names greeted in this folder's project. `--times`, a number from 1 to 10, default 1, repeat's switch. `--friends`, a list, default empty, written `--friends ada,bob`, greet-friends' switch.
 
 ## Events
 
-Publishes `hello.greeted` with `{"name": ...}`. Subscribes to it to record the name, and finishes its layer on the first greeting so it is seen in context. It has no code to announce the write: the chassis fires `map.changed` when the greet command ends, so an open web GUI shows the greeting at once, VIEW-018 and QUAL-016.
+Publishes `hello.greeted` with `{"name": ...}`, from `greet` with `ctx.publish` and from `welcome` and `later` with `ctx.publish_async`. Subscribes to it to record the name, and finishes its layer on the first greeting so it is seen in context. It has no code to announce the write: the chassis fires `map.changed` when the greet command ends, so an open web GUI shows the greeting at once, VIEW-018 and QUAL-016.
 
 ## Sync and async
 
-`wait` is a coroutine. Every other verb and the subscriber are plain functions.
+`wait`, `welcome` and `later` are coroutines, and so is the task `later` spawns. Every other verb, the subscriber and the hooks are plain functions.
 
 ## Work records
 
@@ -50,7 +61,7 @@ A module keeps the condition of an object as a work record, apart from the map, 
 
 ## Lifecycle and cleanup
 
-No `start` or `stop`, and no tasks. Unloading leaves the layer in the store.
+`start` runs once when hello loads, before its first verb, subscriber or tool call, and records when it ran; `uptime` reads that. `stop` runs once when hello unloads or the process ends, after the chassis has cancelled the tasks `later` spawned, and clears it. Unloading leaves the layer and the report files in place.
 
 ## Modules relied on
 
@@ -62,7 +73,7 @@ Linux, macOS and Windows. `beep` runs on Windows only.
 
 ## Resources owned
 
-None beyond its layer.
+Its layer, and the report and feedback files `report` and `feedback` write under the home's `projects/<id>/reports/`, never in the project folder.
 
 ## Installed and direct wheel
 
@@ -79,3 +90,20 @@ metaform hello todo "greet in every language"
 metaform hello done <id> "greets in Latin now"
 metaform hello forget --confirm
 ```
+
+Each public import a module can use, and the command that shows it:
+
+| Import | Command |
+|---|---|
+| `ctx.say` | `metaform hello count`, and `metaform hello count --json` to see the sentence leave standard output |
+| `ctx.publish_async` | `metaform hello welcome ada` |
+| `ctx.spawn` | `metaform hello later ada 5`; over MCP, `later` with name `ada` and seconds `5`, then `history` after five seconds |
+| `Stop` from a verb | `metaform hello greet-favorite` with no favorite set |
+| `start` and `stop` | `metaform hello uptime` |
+| `Module.default` | `metaform hello` |
+| `settings.number` | `metaform hello repeat ada --times 3` |
+| `settings.items` | `metaform set --friends ada,bob`, then `metaform hello greet-friends` |
+| `save_report` | `metaform hello report "Greets in English only."` |
+| `feedback` | `metaform hello feedback "The greet help was clear."` |
+| `list_reports` | `metaform hello reports` |
+| `read_report` | `metaform hello read-report <name>`, a name `reports` lists |

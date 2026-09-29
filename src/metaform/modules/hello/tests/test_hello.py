@@ -1,6 +1,11 @@
 """hello exercises each chassis feature once; each test fails if the chassis drops that feature, BASE-019."""
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+import sys
+
 import pytest
 
 pytestmark = pytest.mark.kind('fixture')
@@ -165,3 +170,175 @@ def test_a_task_is_handed_out_by_nonce_and_closed_when_it_is_finished(run, hello
     assert run(nonce, 'finish', cwd=hello).stdout.strip() == 'ada is greeted; the task is complete.'
     assert run('hello', 'history', cwd=hello).stdout.split() == ['ada']
     assert run(nonce, cwd=hello, ok=False).returncode == 2
+
+
+# Each public import a module can use, shown once, BASE-019.
+
+@pytest.fixture
+def loaded(hello):
+    """hello loaded in this process, as a long-running server loads it; unloaded afterwards."""
+    from metaform import loader
+    loader.reset()
+    try:
+        yield loader.get('hello')
+    finally:
+        loader.reset()
+
+
+def _verb(found, name):
+    return next(verb for verb in found.module.verbs if verb.name == name)
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('BASE-036')
+def test_count_says_a_message_for_a_person_and_returns_the_data(run, hello):
+    """ctx.say: the sentence is for a person; the data an agent needs is the return value, so --json keeps them
+    apart."""
+    run('hello', 'greet', 'ada', cwd=hello)
+    assert run('hello', 'count', cwd=hello).stdout.splitlines() == ['hello has greeted 1 name.', 'greeted: 1']
+    as_json = run('hello', 'count', '--json', cwd=hello)
+    assert json.loads(as_json.stdout) == {'greeted': 1}
+    assert as_json.stderr.splitlines() == ['hello has greeted 1 name.']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-009')
+@pytest.mark.req('BASE-010')
+def test_welcome_publishes_from_an_async_verb(run, hello):
+    """ctx.publish_async: an async verb publishes without blocking its loop, and the subscriber still records."""
+    assert run('hello', 'welcome', 'ada', cwd=hello).stdout == 'welcome, ada\n'
+    assert run('hello', 'history', cwd=hello).stdout.split() == ['ada']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-018')
+def test_later_greets_from_a_task_hello_owns_and_the_chassis_cancels_it(run, hello, loaded):
+    """ctx.spawn: the task outlives the verb while the process runs, as in the MCP server, and belongs to hello, so
+    ending the process or unloading hello cancels it."""
+    from metaform import loader
+    from metaform.module import context
+    later = _verb(loaded, 'later')
+
+    async def served():
+        said = await later.run(context('hello', hello, nouns={'name': 'bob', 'seconds': 0}))
+        owned = loader.tasks_of('hello')
+        assert len(owned) == 1
+        await asyncio.gather(*owned)
+        await later.run(context('hello', hello, nouns={'name': 'cy', 'seconds': 3600}))
+        (waiting,) = loader.tasks_of('hello')
+        await loader.unload_async('hello')
+        return said, waiting
+    said, waiting = asyncio.run(served())
+    assert said == 'Greeting bob in 0 s from a task hello owns; the chassis cancels the task if the process ends first.\n'
+    assert waiting.cancelled()
+    assert run('hello', 'history', cwd=hello).stdout.split() == ['bob']
+    ended = run('hello', 'later', 'dee', '3600', cwd=hello)
+    assert 'destroyed' not in ended.stderr and 'Event loop is closed' not in ended.stderr, ended.stderr
+    assert run('hello', 'history', cwd=hello).stdout.split() == ['bob']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('CLI-009')
+def test_greet_favorite_stops_with_one_next_step_when_no_favorite_is_set(run, hello):
+    """Stop from a verb: what happened and the one command to run next, exit 2."""
+    refused = run('hello', 'greet-favorite', cwd=hello, ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines() == ['Error: No favorite is set.', 'Next: metaform set --favorite <name>']
+    run('hello', 'greet', 'zed', cwd=hello)
+    run('set', '--favorite', 'zed', cwd=hello)
+    assert run('hello', 'greet-favorite', cwd=hello).stdout == 'hello, zed\n'
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-018')
+def test_start_runs_when_hello_loads_and_stop_when_it_unloads(run, hello, loaded):
+    """Module start and stop: start sets up what the process uses before the first verb; stop takes it down."""
+    from metaform import loader
+    shown = run('hello', 'uptime', cwd=hello).stdout
+    assert re.fullmatch(r'hello started \d+\.\d s ago in this process\.\n', shown), shown
+    namespace = sys.modules[loaded.import_name]
+    assert set(namespace._loaded) == {'at'}
+    loader.unload('hello')
+    assert namespace._loaded == {}
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-035')
+def test_hello_with_no_verb_runs_its_default_verb(run, hello):
+    """Module.default: `metaform hello` runs history; --help still prints the syntax."""
+    run('hello', 'greet', 'ada', cwd=hello)
+    assert run('hello', cwd=hello).stdout == 'ada\n'
+    assert run('hello', '--help', cwd=hello).stdout.startswith('Usage: metaform hello <verb>')
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('CLI-010')
+@pytest.mark.req('CLI-027')
+def test_repeat_reads_a_number_setting(run, hello):
+    """settings.number: a whole number with a least and a most, a switch on the call and a stored setting."""
+    assert run('hello', 'repeat', 'ada', cwd=hello).stdout == 'hello, ada\n'
+    assert run('hello', 'repeat', 'ada', '--times', '3', cwd=hello).stdout == 'hello, ada\n' * 3
+    run('set', '--times', '2', cwd=hello)
+    assert run('hello', 'repeat', 'ada', cwd=hello).stdout == 'hello, ada\n' * 2
+    refused = run('set', '--times', '0', cwd=hello, ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[0] == 'Error: --times is at least 1.'
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('CLI-010')
+@pytest.mark.req('CLI-027')
+def test_greet_friends_greets_each_name_of_an_items_setting(run, hello):
+    """settings.items: a list of names, stored or passed on the call, each greeted and recorded."""
+    assert run('hello', 'greet-friends', cwd=hello).stdout == 'No friends set. Try: metaform set --friends ada,bob\n'
+    run('set', '--friends', 'ada,bob', cwd=hello)
+    assert run('hello', 'greet-friends', cwd=hello).stdout.splitlines() == ['hello, ada', 'hello, bob']
+    assert run('hello', 'greet-friends', '--friends', 'cy', cwd=hello).stdout.splitlines() == ['hello, cy']
+    assert run('hello', 'history', cwd=hello).stdout.split() == ['ada', 'bob', 'cy']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-045')
+@pytest.mark.req('STORE-043')
+def test_report_saves_a_report_that_hellos_layer_carries_in_its_provenance(run, hello, home):
+    """save_report: one report file in the home, never in the project folder, recorded on hello's layer."""
+    from metaform.data import Store
+    name = run('hello', 'report', 'Greets in English only.', cwd=hello).stdout.strip()
+    layer = Store('proj').layer_ref('hello.greetings')
+    assert name == f'{layer.layer_id}-report.md'
+    assert (home / 'projects' / 'proj' / 'reports' / name).read_text(encoding='utf-8') == 'Greets in English only.'
+    assert [(ref.key, ref.value) for ref in Store('proj').provenance('hello.greetings').refs
+            if ref.key == 'report'] == [('report', name)]
+    assert list(hello.iterdir()) == []
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-045')
+def test_feedback_saves_feedback_on_the_metaform_process_from_a_module(run, hello, home):
+    """feedback: saved whatever it says, in the home, and its file names returned."""
+    said = json.loads(run('hello', 'feedback', 'The greet help was clear.', '--json', cwd=hello).stdout)
+    assert said['project'] == 'proj' and said['notices'] == []
+    (name,) = said['files']
+    assert name == f'{said["run"]}-feedback.md'
+    assert (home / 'projects' / 'proj' / 'reports' / name).read_text(encoding='utf-8') == 'The greet help was clear.'
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-045')
+def test_reports_lists_the_projects_report_files(run, hello):
+    """list_reports: every report, feedback and shape file of the folder's project, one name a line."""
+    assert run('hello', 'reports', cwd=hello).stdout == 'No reports yet.\n'
+    report = run('hello', 'report', 'Greets in English only.', cwd=hello).stdout.strip()
+    feedback = json.loads(run('hello', 'feedback', 'Clear.', '--json', cwd=hello).stdout)['files'][0]
+    assert sorted(run('hello', 'reports', cwd=hello).stdout.splitlines()) == sorted([report, feedback])
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-045')
+def test_read_report_reads_one_listed_file_exactly(run, hello):
+    """read_report: the file's text exactly; a name that is not listed stops with the chassis's next step."""
+    name = run('hello', 'report', 'Line one.\nLine two.', cwd=hello).stdout.strip()
+    assert run('hello', 'read-report', name, cwd=hello).stdout == 'Line one.\nLine two.'
+    refused = run('hello', 'read-report', 'nothing-report.md', cwd=hello, ok=False)
+    assert refused.stderr.splitlines() == ['Error: No report nothing-report.md.', 'Next: metaform list reports']
