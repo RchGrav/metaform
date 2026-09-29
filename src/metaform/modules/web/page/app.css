@@ -192,10 +192,11 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 /* A property's reach, VIEW-022: the elements it carries to, in its color. */
 .map2d .node.reach rect,.map2d .cluster.reach rect{stroke:var(--reach)!important;stroke-width:2px}
 .map2d .node.reach,.map2d .cluster.reach{filter:drop-shadow(0 0 4px var(--reach)) drop-shadow(0 0 12px var(--reach))}
-@keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node)}50%{stroke:var(--broken);fill:var(--node-broken)}}
+/* The box gives off light in the lit half of its flash, VIEW-029. The light is on the box and not on its group, since the group's own animation is the fade of going inside a node. */
+@keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
 .map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash 1s ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:var(--node-broken)!important}}
-@keyframes pulse-cruft{0%,100%{stroke:var(--node-line)}50%{stroke:var(--cruft)}}
+@keyframes pulse-cruft{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--cruft);filter:drop-shadow(0 0 4px var(--cruft)) drop-shadow(0 0 12px var(--cruft)) drop-shadow(0 0 24px var(--cruft))}}
 .map2d .node.work-cruft rect,.map2d .cluster.work-cruft rect{stroke:var(--cruft)!important;stroke-width:2px;animation:pulse-cruft 1s ease-in-out infinite}
 .map2d .edgePaths path.work-cruft,.map2d path.work-cruft{stroke:var(--cruft)!important;stroke-width:2px}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-cruft rect,.map2d .cluster.work-cruft rect{animation:none}}

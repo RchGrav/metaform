@@ -269,10 +269,13 @@ function look(id) {
     opacity2d: group ? Number(getComputedStyle(group).opacity) : null,
     animated2d: box ? getComputedStyle(box).animationName !== 'none' || getComputedStyle(group).animationName !== 'none' : false,
     opacity3d: material ? material.opacity : null,
+    light3d: material ? material.emissiveIntensity ?? null : null,
+    glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question'].some(name => group.classList.contains('work-' + name))
+      && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
     material: material ? material.type : null, transmission: material ? material.transmission || 0 : 0,
     shape: node?.__threeObj?.geometry ? node.__threeObj.geometry.uuid : null,
-    bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)),
+    bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)) && !node.__threeObj.userData.light,
     glow3d: node?.__threeObj?.userData.glow ?? 0,
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
 
@@ -556,9 +559,16 @@ function paint3d(node) {
   const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question');
-  const strength = asked || has(node, 'in-progress') || fixing ? pulse() : has(node, 'tbd') ? 1 : 0;
-  bloom3d(object, strength, asked ? css('--question') : fixing ? css('--broken') : ownColor(node));  // at full strength when the node is dimmed too
-  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing)) return;
+  // A flash gives off its light on its beat and a trace of it between, so the circles are made once, VIEW-029.
+  const flashing = (has(node, 'broken') || has(node, 'cruft')) && !fixing;
+  const onBeat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
+  const strength = flashing ? (onBeat ? 1.4 : 0.02) : asked || has(node, 'in-progress') || fixing ? pulse()
+    : has(node, 'tbd') ? 1 : 0;
+  bloom3d(object, strength, has(node, 'broken') || fixing ? css('--broken') : has(node, 'cruft') ? css('--cruft')
+    : asked ? css('--question') : ownColor(node));
+  // The circles of a part not built yet or in work are a mark of their own; those of a flash are its light.
+  object.userData.light = flashing && !has(node, 'tbd') && !has(node, 'in-progress');  // at full strength when the node is dimmed too
+  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing && !asked)) return;
   if (!object.material.userData.own) {
     object.material = object.material.clone();
     object.material.userData.own = true;
@@ -568,7 +578,16 @@ function paint3d(node) {
   const shown = fixing || (broken && beat) ? css('--broken') : cruft ? (beat ? css('--cruft') : ownColor(node))
     : colorOf(node);
   colored(object.material, dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
+  // While it is lit the node gives off light, which the bloom spreads past its outline, VIEW-029: a flash is lit
+  // on its beat, a pulse swells for half its period and rests for the other half.
+  const swell = reduced() ? 1 : Math.max(0, Math.sin(performance.now() / 1600 * 2 * Math.PI));
+  const lit = broken || cruft ? (beat ? 1 : 0) : swell;
+  if (!object.material.isMeshPhysicalMaterial) return;
+  if (asked && !broken && !cruft && !fixing && lit > 0) object.material.emissive.set(css('--question'));
+  object.material.emissiveIntensity = GLASS.emissiveIntensity + (LIGHT - GLASS.emissiveIntensity) * lit;
 }
+const LIGHT = 2.6;  // the light a node gives off when it is lit, chosen by eye; full brightness on a screen is 1
+
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {

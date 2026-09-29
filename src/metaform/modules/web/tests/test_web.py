@@ -2502,3 +2502,41 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
         return box('#stage').width * box('#stage').height > 2 * box('#map2d').width * box('#map2d').height; }""")
     assert boxes() == first and chosen
     assert problems == []
+
+
+@pytest.mark.req('VIEW-029')
+def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_does(run, web, mapped, browser):
+    """Rich, 2026-09-28: when the nodes light up and flash they give off some glow, and the chart flashes too. A
+    flash inside a node's outline is lost on a whole map; light that spreads past it is seen from across the map."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    asked = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
+    kitchen, alarm, cook = (store.element(address).element_id
+                            for address in ('code.timer.kitchen', 'code.alarm.audible', 'exterior.cook'))
+    broken = [record for record in store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results]
+    assert broken  # the fixture's kitchen is broken
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    own = page.evaluate(f'window.metaform.look("{cook}").light3d')
+    assert 0 < own < 1                                    # a node with no record: the glass's own little light
+    assert page.evaluate(f'window.metaform.look("{cook}").glow3d') == 0
+    for node in (kitchen, alarm):
+        for _ in range(2):                                # it comes and goes
+            page.wait_for_function(f'() => window.metaform.look("{node}").light3d > 1 '
+                                   f'&& window.metaform.look("{node}").glow3d >= 1', timeout=4000)
+            page.wait_for_function(f'() => window.metaform.look("{node}").light3d <= {own}', timeout=4000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").glow2d', timeout=4000)
+    assert page.evaluate(f'window.metaform.look("{cook}").glow2d') is False
+    for record in broken:
+        store.finish_work(record.work_id, 'fixed')
+    store.finish_work(asked.work_id, 'Yes.')
+    for record in store.work(None, None, True, limit=0).results:  # nothing on the map needs attention now
+        if record.condition in ('broken', 'fixing', 'cruft', 'question'):
+            store.finish_work(record.work_id, 'done')
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.wait_for_timeout(1200)
+    assert page.evaluate(f'["{kitchen}", "{alarm}"].map(id => window.metaform.look(id).glow3d)') == [0, 0]
+    assert page.evaluate(f'[\"{kitchen}\", \"{alarm}\"].map(id => window.metaform.look(id).light3d)') == [own, own]
+    assert problems == []

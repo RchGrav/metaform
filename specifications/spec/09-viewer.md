@@ -399,6 +399,17 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-005, VIEW-008, VIEW-009, VIEW-023.
 - Status: asked for by Rich 2026-09-28: the chart in the big view and the graph in the other on demand, since the chart is so small. Where the button sits and how the choice is kept are recommended.
 
+### VIEW-029 A node that needs attention gives off light, in both views
+
+- Requirement: A node that flashes or pulses because it needs attention gives off light while it is lit, in the 3D map and in the 2D map: a broken part, a part being fixed, cruft, and an open question. The light is the color of what it signals.
+- What this means: In the 3D map the node's glass gives off more light at the moment it is lit, and circles of that light in the signal's color stand around the node, past its outline. In the 2D map the box has a glow of the same color around it at that moment. Between flashes the node is as it is without a record. A node with no record gives off only the little light of VIEW-025.
+- Why: A flash that stays inside a node's outline is as small as the node, and on a whole map zoomed out a node is a few pixels, so the flash is lost. Light that spreads past the outline is seen from across the map, which is where a person looks first to find what needs them. The light has the signal's color so that what kind of attention is needed is read before the node is reached.
+- How it shows: With the whole map in view, a broken part is a red glow that comes and goes, and a question a pink one that swells and fades.
+- Build: In `paint3d` the glass's `emissiveIntensity` is raised while the node is lit and put back to VIEW-025's value between flashes, and the circles of VIEW-005 are drawn around the node in the signal's color at that moment. The bloom pass of VIEW-022 is not used for this: tried 2026-09-28, it ran for as long as any record was open and, on a renderer with no graphics card, slowed the page enough that the 2D map's fade of VIEW-009 was no longer seen. The circles cost nothing that was measured. In the styles the 2D box takes a `drop-shadow` in the signal's color during the lit half of its animation; a question's glow swells on the group, as work in progress does. `window.metaform.look(id).light3d` returns the light the glass gives off, and `glow3d` the strength of its circles. In the 2D map the light is on the box and not on its group, since the group's own animation is the fade of going inside a node, VIEW-009. With reduced motion the light is steady. The strength, 2.6, is chosen by eye.
+- Acceptance: For a node with an open broken record, `light3d` rises above 1 with circles around the node at full strength, and falls back to the glass's own value, again and again. The same holds for an open question. The 2D box of each has a glow at some moment of its animation. A node with no such record has no circles and its `light3d` is the glass's own value.
+- Relates to: VIEW-005, VIEW-016, VIEW-021, VIEW-022, VIEW-025, MAP-046.
+- Status: asked for by Rich 2026-09-28: when the nodes light up and flash they give off some glow, the ones with errors and notifications, and the chart flashes as the big one does. The strength is open.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
