@@ -12,11 +12,24 @@ from pathlib import Path
 
 import pytest
 
-from metaform.modules.packet import vary
+
+
+class _Vary:
+    """The module, imported when a test first uses it. Imported as this file is collected, it would declare the
+    packet's setting for every test of the run, and the module ships disabled."""
+
+    def __getattr__(self, name):
+        if name.startswith('_') or name in ('pytestmark', 'obj'):  # pytest looking the object over as it collects
+            raise AttributeError(name)
+        from metaform.modules.packet import vary
+        return getattr(vary, name)
+
+
+vary = _Vary()
 
 pytestmark = pytest.mark.kind('fixture')
 
-SCRIPTS = Path(vary.__file__).parent / 'scripts'
+SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'  # beside the module, found without importing it
 ORIGIN = {
     'main.py': b'import sys\n\n\ndef main():\n    print("one")\n    print("two")\n    return 0\n\n\nsys.exit(main())\n',
     'long.txt': ''.join(f'line {number}\n' for number in range(1, 61)).encode(),
