@@ -24,16 +24,34 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 ROOT = Path(__file__).parents[1]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
-          'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
-WEB_NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already '
-              'running. If it was not running, tell the user its address once it starts, and its token when it gives '
-              'one.')
+NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
+          'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
+WEB_NOTICE = ('Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell '
+              'the user the address it returns, and its token when it gives one.')
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
+ENTERED = ('intake', 'map', 'memory', 'web')
+
+
+def asked(host, name, arguments, *, limit):
+    """Run a command as an agent does, CLI-037: the tool it belongs to, its command, and its arguments."""
+    tool = next((one for one in ENTERED if name.startswith(one + '_')), 'metaform')
+    return host.call(tool, {'command': name if tool == 'metaform' else name[len(tool) + 1:], 'arguments': arguments},
+                     limit=limit)
+
+
+def commands(host):
+    """Every command the server offers, by the name it runs under, read by entering each tool."""
+    found = set()
+    for tool in host.request('tools/list', {}, deadline=_deadline())['tools']:
+        for one in last_json(host.call(tool['name'], {}, limit=LIMIT))['commands']:
+            found.add(one['command'] if tool['name'] == 'metaform' else f"{tool['name']}_{one['command']}")
+    return found
+
+
 REPORT = 'The alarm pin is never released after stop.'
 FEEDBACK = 'The subtype provider field repeats the element address.'
 CURSOR = {'mcpServers': {'other': {'command': 'other-server', 'args': ['--port', '1']}}}
@@ -118,19 +136,20 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     try:
         instructions = initialized['instructions']
         assert instructions.startswith(BASE)
-        assert [line[3:] for line in instructions.splitlines() if line.startswith('## ')] == [
-            'intake', 'map', 'mcp', 'memory', 'web']
+        assert '## ' not in instructions and len(instructions) < 2000
         assert instructions.rstrip().endswith(NOTICE + '\n\n' + WEB_NOTICE)
-        listed = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
+        tools = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
+        assert tools == {'intake', 'map', 'memory', 'web', 'metaform'}
+        listed = commands(host)
         assert TOOLS <= listed and not any(name.startswith(('helloworld_', 'template_')) for name in listed)
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
-        served = texts(host.call('intake_prompt', {}, limit=LIMIT))[-1]
+        served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
         assert footer.startswith('\nDo not read past memories or any other details other than the material targeted '
-                                 'for intake. Record each element as you work through the process. Use intake_start '
-                                 'first, then intake_element, intake_join and intake_subtype')
+                                 'for intake. Record each element as you work through the process. Use the '
+                                 'intake tool: its command start first, then element, join and subtype')
         stored = SPEC.read_text(encoding='utf-8')
         assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
             re.sub(r'<target [^>]*>', '<target>', stored, count=1)
@@ -143,7 +162,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         noticed = []
 
         def record(tool, arguments):
-            result = host.call(tool, arguments, limit=LIMIT)
+            result = asked(host, tool, arguments, limit=LIMIT)
             assert result.get('isError') is not True, texts(result)
             out = last_json(result)
             noticed.extend(notice['where'] for notice in out.get('notices', []))
@@ -182,47 +201,47 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     second = None
     try:
         assert NOTICE not in initialized['instructions']
-        listed = last_json(first.call('list_reports', {}, limit=LIMIT))['results']
+        listed = last_json(asked(first, 'list_reports', {}, limit=LIMIT))['results']
         by_kind = {row['kind']: row['name'] for row in listed}
         assert sorted(by_kind) == ['feedback', 'report']
-        assert texts(first.call('read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
-        assert texts(first.call('read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
-        broken = last_json(first.call('map_work', {'condition': 'broken'}, limit=LIMIT))['results']
+        assert texts(asked(first, 'read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
+        assert texts(asked(first, 'read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
+        broken = last_json(asked(first, 'map_work', {'condition': 'broken'}, limit=LIMIT))['results']
         assert [(row['address'], row['task']) for row in broken] == [('code.alarm.audible', 'release it after stop')]
-        said = last_json(first.call('feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
-        relisted = {row['name'] for row in last_json(first.call('list_reports', {}, limit=LIMIT))['results']}
+        said = last_json(asked(first, 'feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
+        relisted = {row['name'] for row in last_json(asked(first, 'list_reports', {}, limit=LIMIT))['results']}
         assert set(said['files']) <= relisted and len(relisted) == 3
 
         # 8: an agent writes a memory at the DE element and at one join.
-        joins = last_json(first.call('map_joins', {'element': 'code.timer.kitchen'}, limit=LIMIT))['results']
+        joins = last_json(asked(first, 'map_joins', {'element': 'code.timer.kitchen'}, limit=LIMIT))['results']
         join_id = joins[0]['join_id']
         assert joins[0]['receiver_address'] == 'code.timer.kitchen'
-        at_element = first.call('memory_add-observations', {'node': 'element:code.timer.kitchen',
+        at_element = asked(first, 'memory_add-observations', {'node': 'element:code.timer.kitchen',
                                                             'text': ['The countdown drifts under load.']}, limit=LIMIT)
-        at_join = first.call('memory_add-observations', {'node': f'join:{join_id}',
+        at_join = asked(first, 'memory_add-observations', {'node': f'join:{join_id}',
                                                          'text': ['The tone is too quiet in a loud kitchen.']},
                              limit=LIMIT)
         assert at_element.get('isError') is not True and at_join.get('isError') is not True
 
         # 9: a second agent, on its own connection, reads both back.
         second, _ = connect()
-        opened = last_json(second.call('memory_open-nodes', {'node': ['element:code.timer.kitchen',
+        opened = last_json(asked(second, 'memory_open-nodes', {'node': ['element:code.timer.kitchen',
                                                                         f'join:{join_id}']}, limit=LIMIT))
         assert [node['observations'] for node in opened['nodes']] == [
             ['The countdown drifts under load.'], ['The tone is too quiet in a loud kitchen.']]
 
         # 10: a mask of the memory layer at the element's address hides it there; clearing shows it again.
-        element_view = last_json(second.call('map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT))
+        element_view = last_json(asked(second, 'map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT))
         assert memory_values(element_view) == ['The countdown drifts under load.']
-        second.call('map_mask', {'address': 'code.timer.kitchen', 'layer': 'memory'}, limit=LIMIT)
-        masked = second.call('map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT)
+        asked(second, 'map_mask', {'address': 'code.timer.kitchen', 'layer': 'memory'}, limit=LIMIT)
+        masked = asked(second, 'map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT)
         assert memory_values(last_json(masked)) == []
-        join_masked = last_json(second.call('map_node', {'node': f'join:{join_id}'}, limit=LIMIT))
+        join_masked = last_json(asked(second, 'map_node', {'node': f'join:{join_id}'}, limit=LIMIT))
         assert memory_values(join_masked) == []
-        second.call('map_clear', {'address': 'code.timer.kitchen', 'layer': 'memory', 'kind': 'mask'}, limit=LIMIT)
-        cleared = last_json(second.call('map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT))
+        asked(second, 'map_clear', {'address': 'code.timer.kitchen', 'layer': 'memory', 'kind': 'mask'}, limit=LIMIT)
+        cleared = last_json(asked(second, 'map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT))
         assert memory_values(cleared) == ['The countdown drifts under load.']
-        join_view = last_json(second.call('map_node', {'node': f'join:{join_id}'}, limit=LIMIT))
+        join_view = last_json(asked(second, 'map_node', {'node': f'join:{join_id}'}, limit=LIMIT))
         assert memory_values(join_view) == ['The tone is too quiet in a loud kitchen.']
 
     finally:

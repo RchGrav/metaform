@@ -15,7 +15,7 @@ from typing import Any, cast
 
 from metaform import outline, settings
 from metaform.data import EF_WORDS, PLACE_KINDS, Node, Notice, Store
-from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
+from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -499,7 +499,7 @@ def work(ctx: Context) -> Any:
         if nouns.get('condition') == 'question':
             suggested = nouns.pop('suggestions', None)
             if isinstance(suggested, list) and suggested:
-                nouns['task'] = json.dumps([str(one) for one in suggested], ensure_ascii=False)
+                nouns['task'] = json.dumps([str(one) for one in cast(list[Any], suggested)], ensure_ascii=False)
             elif 'task' not in nouns:
                 notices.append(Notice('suggestions', 'This question has no suggestions. Ask with the answers you '
                                                      'suggest, the one you recommend first: suggestions=["...", "..."].'))
@@ -537,17 +537,31 @@ WORK_NOUNS = (
 
 RAW = ('raw',)
 
+NOTICE = ('This project has a map. Before you change a part, call the map tool with command where and the part\'s '
+          'address: it returns what the part is for, what relies on it and what it relies on. With no address, use '
+          'command roots. Give work to an agent through Metaform: record the task at each element it concerns with '
+          'command work, and hand the agent those addresses; the agent takes a task with op take and ends it with op '
+          'done. When you need an answer from the user, ask at the part it concerns with command work, condition '
+          'question, in plain words and with the answers you suggest; then carry on with what does not wait on it.')
+
+
+def status(ctx: Context) -> Status:
+    """The message for a project that has a map, MCP-029."""
+    return Status(notice=NOTICE) if ctx.store is not None and ctx.store.has_intake() else Status()
+
+
 MODULE = Module(
     id='map',
+    status=status,
     summary="Read and write this project's functional map and its layers.",
-    purpose="Reads and writes this project's functional map. Handed an address, start with map_where: one read of "
+    purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with the receiver and its '
             'purpose, what it relies on, every join it receives with the provider and its function, the subtype joins '
             'inside them, its open work records and what the layers in context hold at it; full=true keeps ids. With '
-            "no address, start with map_roots: the map's entry, the VE and the DE with their joins, and the root "
+            "no address, start with roots: the map's entry, the VE and the DE with their joins, and the root "
             'elements. The receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
-            'map_knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
+            'knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
             'time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(

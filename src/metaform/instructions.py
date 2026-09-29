@@ -1,9 +1,11 @@
-"""The instructions agents read, composed live, MCP-007 and MCP-009.
+"""The instructions agents read, composed live, MCP-029 and MCP-009.
 
-The chassis base text, then each surfaced module's `purpose` under `## <id>`,
-in module id order, then each surfaced module's status notice. With no project
-for the folder, the text ends with the way to register one. `metaform help
-agents` and the MCP server's instructions are this same text.
+A few messages, each an imperative that says what to do and how. The chassis's
+own come first. Then each surfaced module gives its message for the state the
+project is in, through its status hook, and gives none when that state does not
+hold or a setting turns it off. With no project for the folder, the text ends
+with the way to register one. `metaform help agents` and the MCP server's
+instructions are this same text.
 """
 from __future__ import annotations
 
@@ -13,14 +15,14 @@ from . import context, loader, settings
 from .module import Module, Status, call
 
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
-        'Read the map before you change the project, so you work from the purpose of each part. Each tool comes '
-        'from a module; the sections below say what each module is for. A tool named <module>_<verb> takes the '
-        "verb's nouns and switches as named arguments. A tool error ends with the one next step to take. For any "
-        "module's full help, run metaform help <module>.")
-STOP = ('If you cannot continue, stop and submit a trouble report with the feedback tool, attaching what you have in '
-        'its shape field; do not retry.')
-DEBUG = ('Submit feedback on the Metaform process with the feedback tool: bad semantics, a tool that did not match '
-         'its schema, where you got stuck.')
+        'Read the part you are about to change before you change it, so you work from its purpose. Each tool is a '
+        'module of Metaform. Call a tool with no command to see its commands and what each takes; then call it with '
+        "command, and the command's arguments in arguments. On the command line the same command is metaform "
+        '<module> <command>. An error ends with the one next step to take.')
+STOP = ('If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, '
+        'attaching what you have in its shape field. Do not retry.')
+DEBUG = ('Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match '
+         'what it said it takes, where you got stuck.')
 NO_PROJECT = 'This folder is not in a registered project. To register one: metaform add project <id> <path>'
 
 
@@ -53,8 +55,6 @@ def compose(folder: Path, project: str | None = None) -> str:
     parts = [BASE + '\n\n' + STOP]
     if settings.value('debug', folder):
         parts.append(DEBUG)
-    for module in surfaced(folder):
-        parts.append(f'## {module.id}\n{module.purpose}')
     if chosen is None:
         from . import home
         registered = [record.project_id for record in home.projects()]

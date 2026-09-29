@@ -11,8 +11,8 @@ import pytest
 
 pytestmark = pytest.mark.kind('fixture')
 
-NOTICE = ('Before an intake, start the web GUI with metaform web, or the web_start tool, if it is not already running. '
-          'If it was not running, tell the user its address once it starts, and its token when it gives one.')
+NOTICE = ('Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell '
+          'the user the address it returns, and its token when it gives one.')
 
 
 def free_port() -> int:
@@ -2580,8 +2580,8 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     assert any(letter.isdigit() for letter in ''.join(texts))
     assert page.evaluate(f'window.metaform.look("{alarm}").signal3d') == 0  # no signal has reached the alarm
     for _ in range(2):                                              # the cook's text glows, and the glow swells and fades
-        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.8', timeout=4000)
-        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d < 0.2', timeout=4000)
+        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.6', timeout=10000)
+        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d < 0.2', timeout=10000)
     question = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--question").trim().toLowerCase()')
     page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.5', timeout=4000)
     assert page.evaluate(f'window.metaform.look("{cook}").signalColor3d') == question

@@ -35,17 +35,17 @@ SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
 ALWAYS = ('Do not read past memories or any other details other than the material targeted for intake. Record each '
-          'element as you work through the process. Use intake_start first, then intake_element, intake_join and '
-          'intake_subtype, or metaform intake start, element, join and subtype on the command line. Read it back with '
-          'intake_show, correct it with intake_edit and intake_remove, anneal it with intake_absorb, and end with '
-          'intake_finish. If you cannot continue, stop and submit a trouble report with the feedback tool, attaching '
-          'what you have in its shape field; do not retry.')
-REPORT_LINE = ('Include your report on the project you examined in the report field of intake_finish: broken code, '
+          'element as you work through the process. Use the intake tool: its command start first, then element, join '
+          'and subtype, or metaform intake start, element, join and subtype on the command line. Read it back with '
+          'show, correct it with edit and remove, anneal it with absorb, and end with finish. If you cannot continue, '
+          'stop and submit a trouble report with the metaform tool, command feedback, attaching what you have in its '
+          'shape field; do not retry.')
+REPORT_LINE = ('Include your report on the project you examined in the report field of finish: broken code, '
                'things that need fixing, anything not working or partially working.')
-DEBUG_LINE = ('Include feedback on this process in the feedback field of intake_finish: bad semantics, a tool that '
+DEBUG_LINE = ('Include feedback on this process in the feedback field of finish: bad semantics, a tool that '
               'did not match its schema, where you got stuck.')
-NOTICE = ('This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions '
-          'with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.')
+NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
+          'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -110,7 +110,7 @@ NAMED = ("An element is its address, name_length and role and holds no name: the
          "goes on the join, with intake_join name. The name was kept in the element's extra.")
 UNMOVED = ("An element cannot be moved: its namespace_address is its identity, and another address is a different "
            "element, MAP-015. namespace_address was not applied; record the element at the new address with "
-           "intake_element and move its joins to it with intake_edit receiver= or provider=.")
+           "element and move its joins to it with edit receiver= or provider=.")
 
 
 class Recording:
@@ -646,7 +646,7 @@ MODULE = Module(
     id='intake',
     summary='Serve the Canonical Intake and record its result as it is reasoned.',
     purpose='Serves the Canonical Intake instructions, records the intake as it is reasoned, and tracks whether this '
-            'project has an intake. The intake is agent work: a subagent reads its instructions with intake_prompt '
+            'project has an intake. The intake is agent work: a subagent reads its instructions with the command prompt '
             'and follows them. Details: metaform help intake.',
     details='The intake text is served unchanged except for its filled target. The intake is recorded as it is '
             'reasoned, one element, join or subtype join per call, into one building intake layer, annealed with '

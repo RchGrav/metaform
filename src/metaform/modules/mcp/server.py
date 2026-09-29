@@ -189,6 +189,11 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
 
 
+# How an agent is told to clear a project: the chassis's own tool, its command, and the confirmation.
+CLEAR = 'call metaform with command clear_project and confirm true in its arguments'
+CLEAR_AGAIN = CLEAR + ' again'
+
+
 def _error(stop: Stop) -> Outcome:
     return True, [f'Error: {stop}\nNext: {stop.next_step}']
 
@@ -288,12 +293,12 @@ def _history(folder: Path, name: str, given: dict[str, Any]) -> Outcome:
         if home.project(project) is None:
             raise Stop(f'No project {project} is registered.', 'metaform list projects')
         if not given.get('confirm', False):
-            raise Stop(home.to_clear(project).caution, 'If you are sure: call clear_project with confirm true')
+            raise Stop(home.to_clear(project).caution, f'If you are sure: {CLEAR}')
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
             result['notices'] = [{'where': 'not_removed', 'message': f'{cleared.left} '
-                                  f'{cleared.remedy("call clear_project with confirm true again")}'}]
+                                  f'{cleared.remedy(CLEAR_AGAIN)}'}]
         return False, [result_json(result)]
     store = Store(project_for(folder, given.pop('project', None)) or _no_project())
     if name == 'add_origin':
@@ -337,9 +342,9 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
                                or not all(isinstance(item, str) for item in cast(list[Any], layers))):
         raise Stop('layers is a list of layer names or tags.', 'metaform map layers')
     if not isinstance(confirmed, bool):
-        raise Stop('confirm is true or false.', f'If you are sure: call {name} with confirm true')
+        raise Stop('confirm is true or false.', f'If you are sure: call {name} and confirm true in its arguments')
     if verb.caution and not confirmed:
-        raise Stop(verb.caution, f'If you are sure: call {name} with confirm true')
+        raise Stop(verb.caution, f'If you are sure: call {name} and confirm true in its arguments')
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     if layers is not None:
@@ -348,7 +353,78 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
                    surface='mcp')
 
 
-async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
+OWN = 'metaform'  # the tool that holds the chassis's own commands
+COMMAND = 'The command to run. Leave it out to list the commands of this tool and what each takes.'
+ARGUMENTS = "The command's arguments, by name, as the list of commands gives them."
+Commands = dict[str, tuple[str, dict[str, Any]]]
+
+
+def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
+    """The tools the server lists, CLI-037: one for each module on the surface, named for the module, and one for
+    the chassis's own commands. Each holds its commands, with the summary and the arguments of each; a command is
+    `<module>:<command>` on the command line, and over MCP the tool's name and its `command`, since a tool name holds
+    no colon."""
+    found: dict[str, tuple[str, Commands]] = {}
+    for module in surface(folder):
+        commands: Commands = {verb.name: (verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
+                                          verb_schema(verb, folder))
+                              for verb in module.verbs if _here(verb)}
+        if commands:
+            found[module.id] = (module.summary, commands)
+    own: Commands = {'set': ("Save settings for the server's folder, as metaform set does.", set_schema(folder)),
+                     **CHASSIS}
+    if on_surface('chassis', folder):
+        own.update(SURFACED)
+    found[OWN] = ("Metaform's own commands: settings, feedback and reports, and the project's history and prompts.",
+                  own)
+    return found
+
+
+def entry_schema(commands: Commands) -> dict[str, Any]:
+    return {'type': 'object', 'additionalProperties': False,
+            'properties': {'command': {'type': 'string', 'enum': list(commands), 'description': COMMAND},
+                           'arguments': {'type': 'object', 'description': ARGUMENTS}}}
+
+
+def entry_description(summary: str, commands: Commands) -> str:
+    return f'{summary} Commands: {", ".join(commands)}. Call it with no command for what each takes.'
+
+
+def inner(tool: str, command: str) -> str:
+    """The name a command runs under: the chassis's own by its name, a module's as `<module>_<command>`."""
+    return command if tool == OWN else f'{tool}_{command}'
+
+
+def said(tool: str, command: str) -> str:
+    """How an agent is told to call a command."""
+    return f'{tool} with command {command}'
+
+
+async def enter(folder: Path, tool: str, given: dict[str, Any]) -> Outcome:
+    """A call to one of the listed tools. With no command it enters the tool: it returns the tool's commands with
+    what each takes. With a command it runs it with its arguments."""
+    known = await anyio.to_thread.run_sync(entries, folder)
+    if tool not in known:
+        return True, [f'Error: No tool {tool} on this surface.\nNext: metaform help commands']
+    summary, commands = known[tool]
+    unread = sorted(key for key in given if key not in ('command', 'arguments'))
+    if unread:
+        return True, [f'Error: {tool} takes command and arguments, not {", ".join(unread)}.\n'
+                      f'Next: call {tool} with command and the command\'s own arguments inside arguments']
+    command, arguments = given.get('command'), given.get('arguments')
+    if command is None:
+        return False, [result_json({'tool': tool, 'summary': summary,
+                                    'commands': [{'command': name, 'summary': described, 'arguments': schema}
+                                                 for name, (described, schema) in commands.items()]})]
+    if not isinstance(command, str) or command not in commands:
+        return True, [f'Error: {tool} has no command {command}.\nNext: call {tool} with no command for its commands']
+    if arguments is not None and not isinstance(arguments, dict):
+        return True, [f'Error: arguments is an object of the command\'s arguments by name.\n'
+                      f'Next: call {tool} with no command for what {command} takes']
+    return await run_tool(folder, inner(tool, command), cast(dict[str, Any], arguments or {}), said(tool, command))
+
+
+async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: str | None = None) -> Outcome:
     if name == 'set':
         return await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
     if name in CHASSIS:
@@ -361,7 +437,7 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any]) -> Outcom
     module, verb = known[name]
     lines: list[str] = []
     try:
-        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines)
+        ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, called or name, dict(arguments), lines)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
@@ -384,25 +460,16 @@ def serve(folder: Path) -> None:
     from metaform import __version__
 
     def build() -> list[Any]:
-        found = [types.Tool(name=name, description=verb.summary + (f' Caution: {verb.caution}' if verb.caution
-                                                                    else ''),
-                            input_schema=verb_schema(verb, folder))
-                 for name, (_, verb) in tools(folder).items()]
-        found.append(types.Tool(name='set', description="Save settings for the server's folder, as metaform set "
-                                                        'does.', input_schema=set_schema(folder)))
-        found += [types.Tool(name=name, description=description, input_schema=schema)
-                  for name, (description, schema) in CHASSIS.items()]
-        if on_surface('chassis', folder):
-            found += [types.Tool(name=name, description=description, input_schema=schema)
-                      for name, (description, schema) in SURFACED.items()]
-        return found
+        return [types.Tool(name=name, description=entry_description(summary, commands),
+                           input_schema=entry_schema(commands))
+                for name, (summary, commands) in entries(folder).items()]
 
     async def list_tools(ctx: Any, params: Any) -> Any:
         return types.ListToolsResult(tools=await anyio.to_thread.run_sync(build))
 
     async def call_tool(ctx: Any, params: Any) -> Any:
         try:
-            error, blocks = await run_tool(folder, params.name, params.arguments or {})
+            error, blocks = await enter(folder, params.name, params.arguments or {})
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018
             await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
         return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],

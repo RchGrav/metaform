@@ -3,7 +3,7 @@
 A module is a folder with an `__init__.py` that sets the literals
 `SUPPORTED_OS`, and optionally `DEPENDENCIES` and `SHIPS_DISABLED`, and
 `MODULE = Module(...)`. Each verb runs as `metaform <module> <verb> <nouns>
-[switches]` on the CLI and as the tool `<module>_<verb>` over MCP, both built
+[switches]` on the CLI and as the command `<verb>` of the tool `<module>` over MCP, both built
 from this one declaration. A verb's switches are settings the module declares
 with `metaform.settings`.
 """
