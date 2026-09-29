@@ -29,6 +29,7 @@ from .records import (
     Provenance,
     Ref,
     Report,
+    Step,
     Subtype,
     Version,
     VersionRef,
@@ -230,9 +231,11 @@ def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecor
             receiver, provider = node_address(tx, 'join', thing), address_of(tx, str(held[0]))
     elif kind == 'element':
         address = node_address(tx, kind, thing)
+    said = tuple(Step(int(step['number']), step['said'], str(step['at'])) for step in tx.db.execute(
+        'SELECT number, said, at FROM work_steps WHERE work_id=? ORDER BY number, row', (str(row['work_id']),)))
     return WorkRecord(str(row['work_id']), kind, thing, address, receiver, provider, str(row['condition']), row['note'],
                       row['task'], bool(row['held']), bool(row['reviewed']), str(row['created']), row['done'],
-                      row['resolution'], notices)
+                      row['resolution'], notices, row['steps'], int(row['steps_done'] or 0), said)
 
 
 def report(tx: Tx, row: Row) -> Report:

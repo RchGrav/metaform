@@ -507,6 +507,14 @@ class Roots(Record):
 
 
 @dataclass(frozen=True)
+class Step(Record):
+    """One step of a task an agent finished, MAP-053: its number, what the agent said of it, and when."""
+    number: int
+    said: str | None
+    at: str
+
+
+@dataclass(frozen=True)
 class WorkRecord(Record):
     """The condition of one object, apart from the map, STORE-042: an element with its address, or a join with its
     two ends, a subtype join with its parent's receiver and the element it holds, when the object is current; open
@@ -526,6 +534,9 @@ class WorkRecord(Record):
     done: str | None
     resolution: str | None
     notices: tuple[Notice, ...] = ()
+    steps: int | None = None  # the steps the agent plans, MAP-053
+    steps_done: int = 0
+    said: tuple[Step, ...] = ()  # what the agent said of each step it finished, in order
 
 
 @dataclass(frozen=True)

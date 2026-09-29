@@ -733,3 +733,38 @@ def test_where_shows_the_properties_that_apply_at_the_address_and_those_visible_
     assert [(one['value'], one['address'], one['layer']) for one in in_context] \
         == [(one['value'], one['address'], one['layer']) for one in kitchen['applying']]
     assert 'properties' not in j(run, 'where', 'stakeholder.cook.home', cwd=mapped)  # none apply and none are visible
+
+
+@pytest.mark.req('MAP-053')
+@pytest.mark.req('MAP-049')
+def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_it(run, mapped):
+    """The map shows how far a part is by the share of its steps that are done, and a share needs the whole. The count
+    is a plan, and the agent changes it when the plan changes."""
+    store = Store('proj')
+    task = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
+    assert (task.steps, task.steps_done, task.said) == (None, 0, ())
+    taken = j(run, 'work', 'op=take', f'id={task.work_id}', 'steps=3', cwd=mapped)
+    assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('in-progress', 3, 0, [])
+    first = j(run, 'work', 'op=step', f'id={task.work_id}', 'said=The driver is written.', cwd=mapped)
+    assert (first['steps'], first['steps_done']) == (3, 1) and said(first) == []
+    assert [(one['number'], one['said']) for one in first['said']] == [(1, 'The driver is written.')]
+    assert first['said'][0]['at']
+    changed = j(run, 'work', 'op=plan', f'id={task.work_id}', 'steps=5', cwd=mapped)  # the plan changed
+    assert (changed['steps'], changed['steps_done']) == (5, 1)
+    for text in ('The tone is set.', 'The test passes.'):
+        j(run, 'work', 'op=step', f'id={task.work_id}', f'said={text}', cwd=mapped)
+    lowered = j(run, 'work', 'op=plan', f'id={task.work_id}', 'steps=3', cwd=mapped)
+    assert (lowered['steps'], lowered['steps_done']) == (3, 3)
+    beyond = j(run, 'work', 'op=step', f'id={task.work_id}', 'said=One more than planned.', cwd=mapped)
+    assert (beyond['steps'], beyond['steps_done']) == (4, 4)          # nothing is refused: the count follows
+    assert [where for where, _ in said(beyond)] == ['steps']
+    read = [row for row in j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']
+            if row['work_id'] == task.work_id][0]
+    assert [one['said'] for one in read['said']] == ['The driver is written.', 'The tone is set.', 'The test passes.',
+                                                     'One more than planned.']
+    plain = store.add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='no count')
+    took = j(run, 'work', 'op=take', f'id={plain.work_id}', cwd=mapped)
+    assert (took['steps'], took['steps_done'], took['said']) == (None, 0, [])  # a task with no count has no steps
+    untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='not taken')
+    early = j(run, 'work', 'op=step', f'id={untaken.work_id}', 'said=Done before it was taken.', cwd=mapped)
+    assert early['steps_done'] == 1 and [where for where, _ in said(early)] == ['condition']

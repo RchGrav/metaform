@@ -508,4 +508,4 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '5' and kinds == {'purpose', 'subtype'}
+    assert version == '6' and kinds == {'purpose', 'subtype'}  # layout 6: the steps of a work record, MAP-053

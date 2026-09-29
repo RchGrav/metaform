@@ -685,7 +685,55 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def take_work(tx: Tx, work_id: str) -> WorkRecord:
+def _count(value: Any, notices: list[Notice]) -> int | None:
+    """The steps an agent plans: a whole number from 0, or none, which means the task has no steps. Anything else is
+    named and read as none, BASE-044."""
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    notices.append(Notice('steps', f'{value!r} is not a count of steps; the task was left with no count.'))
+    return None
+
+
+def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
+    """The agent says how many steps it plans, or says it again when its plan changes, MAP-053. A count below the
+    steps already done is raised to them, since what is done is done."""
+    notices: list[Notice] = []
+    row = _work_row(tx, work_id)
+    count = _count(steps, notices)
+    done = int(row['steps_done'] or 0)
+    if count is not None and count < done:
+        notices.append(Notice('steps', f'{done} steps are done already; the count was set to {done}.'))
+        count = done
+    tx.db.execute('UPDATE work SET steps=? WHERE work_id=?', (count, work_id))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
+    """The agent finished a step, and says what it did, MAP-053. Nothing is refused: a step beyond the count raises
+    the count, and a step on a record never taken or already done is stored, each named in a notice."""
+    notices: list[Notice] = []
+    row = _work_row(tx, work_id)
+    if row['done'] is not None:
+        notices.append(Notice('done', f'This work record was done at {row["done"]}; the step was stored.'))
+    elif str(row['condition']) not in TAKEN.values():
+        notices.append(Notice('condition', 'This task was not taken when the step was reported; the step was stored. '
+                                           'Take a task before its first step.'))
+    done = int(row['steps_done'] or 0) + 1
+    planned = row['steps']
+    if planned is not None and done > int(planned):
+        notices.append(Notice('steps', f'Step {done} is beyond the {planned} planned; the count was raised to {done}.'))
+        planned = done
+    tx.db.execute('UPDATE work SET steps=?, steps_done=? WHERE work_id=?', (planned, done, work_id))
+    tx.db.execute('INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)',
+                  (work_id, done, _work_text(said, 'said', notices), home.now()))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def take_work(tx: Tx, work_id: str, steps: Any = None) -> WorkRecord:
     """An agent takes the record's task, MAP-049: a part to be built is in progress, a broken one is being fixed, and
     the record waits no longer. A record taken or done cannot be taken again, so two agents never hold one task."""
     row = _work_row(tx, work_id)
@@ -697,8 +745,10 @@ def take_work(tx: Tx, work_id: str) -> WorkRecord:
     if condition not in TAKEN:
         raise StoreError(f'A {condition or "record with no condition"} has no task to take.',
                          'metaform map work open=true')
-    tx.db.execute('UPDATE work SET condition=?, held=0 WHERE work_id=?', (TAKEN[condition], work_id))
-    return views.work_record(tx, _work_row(tx, work_id), ())
+    notices: list[Notice] = []
+    tx.db.execute('UPDATE work SET condition=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?',
+                  (TAKEN[condition], _count(steps, notices), work_id))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
 def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:

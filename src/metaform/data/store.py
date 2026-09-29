@@ -268,10 +268,21 @@ class Store:
         with self._write() as tx:
             return writes.edit_work(tx, work_id, changes)
 
-    def take_work(self, work_id: str) -> WorkRecord:
-        """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049."""
+    def take_work(self, work_id: str, steps: Any = None) -> WorkRecord:
+        """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049, with the steps it
+        plans when it says them, MAP-053."""
         with self._write() as tx:
-            return writes.take_work(tx, work_id)
+            return writes.take_work(tx, work_id, steps)
+
+    def plan_work(self, work_id: str, steps: Any) -> WorkRecord:
+        """The agent says how many steps it plans, or says it again when its plan changes, MAP-053."""
+        with self._write() as tx:
+            return writes.plan_work(tx, work_id, steps)
+
+    def step_work(self, work_id: str, said: Any = None) -> WorkRecord:
+        """The agent finished a step and says what it did, MAP-053."""
+        with self._write() as tx:
+            return writes.step_work(tx, work_id, said)
 
     def finish_work(self, work_id: str, resolution: Any = None) -> WorkRecord:
         """Mark a work record done, its resolution kept beside it, STORE-042."""

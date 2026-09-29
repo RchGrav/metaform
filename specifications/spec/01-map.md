@@ -454,6 +454,21 @@ These terms are used exactly as defined in the Canonical Intake.
 - Relates to: MAP-046, MAP-048, MAP-051, LAYER-018, MCP-003, VIEW-020.
 - Status: confirmed as design, 2026-09-26 and 2026-09-27. Its records are open, D92.
 
+### MAP-053 An agent says how many steps it plans, and reports each as it finishes it
+
+- Requirement: An agent that takes a task says how many steps it plans for it, and reports each step as it finishes it, with a sentence on what it did. The agent changes the count whenever its plan changes. The work record holds the steps planned, the steps done and what was said of each.
+- What this means:
+  - The count is the agent's own. It is given when the task is taken or at any time after, and given again it replaces the count before. A step reported beyond the count raises the count to it.
+  - A step is reported when it is finished, never when it is begun, so what the record says is done is done.
+  - The sentence of a step is kept with its number and the time, and the record's steps are read in order.
+  - A task with no count has no steps: it is taken and it is done, as before.
+- Why: The map shows how far a part is by the share of its steps that are done, VIEW-027, and a share needs the whole, so the agent says the whole at the start. The count is a plan and plans change: a plan of five steps that turns out to need seven is changed to seven, and an agent held to the first count would have to report falsely or stop reporting. A step is counted when finished because a map that shows begun work as done work is wrong each time an agent stops part way. The sentence is for the person who clicks the part to see what was done, and for the next agent when the first does not finish.
+- How it shows: `metaform map work op=take id=<id> steps=5`, then `metaform map work op=step id=<id> said="The driver is written."` four times leaves the record at four of five, with the four sentences in order.
+- Build: `work` has the columns `steps` and `steps_done`, and `work_steps` holds one row a step: the work record, the step's number, what was said and when. `map work` takes `op=plan id=<id> steps=<n>` and `op=step id=<id> said="..."`, and `op=take` takes `steps=<n>`. The store's `plan_work` and `step_work` write them. A work record is read with `steps`, `steps_done` and `said`, the sentences in order. It is layout 6 of the store.
+- Acceptance: A task taken with a count holds it, and a count given again replaces it. Each step reported adds one to the steps done and keeps its sentence in order. A step reported beyond the count raises the count, with a notice, and is stored. A step reported on a record that is done or was never taken is stored with a notice and nothing is refused. A record with no count reads with no steps.
+- Relates to: MAP-046, MAP-048, MAP-049, STORE-042, VIEW-027.
+- Status: Rich 2026-09-28, answered at `code.queue.work`: the agent says at the start how many steps it plans, then reports each one as it finishes. The agent has the control it needs, always, Rich 2026-09-29. The sentence with each step is recommended.
+
 ### MAP-050 An agent asks its question at the node it concerns
 
 - Requirement: An agent that needs an answer or a clarification adds a question at the node it concerns and carries on with what does not depend on the answer, and the user answers it in the web GUI. The question is in plain words and comes with the answers the agent suggests, the one it recommends first.

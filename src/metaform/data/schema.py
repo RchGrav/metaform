@@ -269,8 +269,18 @@ CREATE TABLE IF NOT EXISTS work(
   reviewed    INTEGER NOT NULL DEFAULT 0,
   created     TEXT NOT NULL,
   done        TEXT,
-  resolution  TEXT
+  resolution  TEXT,
+  steps       INTEGER,
+  steps_done  INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS work_steps(
+  row     INTEGER PRIMARY KEY,
+  work_id TEXT NOT NULL REFERENCES work(work_id),
+  number  INTEGER NOT NULL,
+  said    TEXT,
+  at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS work_steps_by_work ON work_steps(work_id, number);
 CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
 CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
 CREATE INDEX IF NOT EXISTS work_by_done ON work(done, row);

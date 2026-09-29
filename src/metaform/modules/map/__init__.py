@@ -463,12 +463,14 @@ WORK_READS: dict[str, frozenset[str]] = {
     'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'suggestions'}),
     'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'done': frozenset({'id', 'resolution'}),
-    'take': frozenset({'id'}),
+    'take': frozenset({'id', 'steps'}),
+    'plan': frozenset({'id', 'steps'}),
+    'step': frozenset({'id', 'said'}),
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
 WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
-                                          'take': ('id',)}
+                                          'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',)}
 
 
 def _work_node(value: Any) -> Node:
@@ -483,7 +485,8 @@ def work(ctx: Context) -> Any:
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
     op = str(ctx.nouns.get('op', 'list'))
     if op not in WORK_READS:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take or done.', 'metaform help map work')
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step or done.',
+                   'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
@@ -509,7 +512,11 @@ def work(ctx: Context) -> Any:
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
     work_id = nouns['id']
     if op == 'take':
-        return _with_notices(store.take_work(work_id), notices)
+        return _with_notices(store.take_work(work_id, nouns.get('steps')), notices)
+    if op == 'plan':
+        return _with_notices(store.plan_work(work_id, nouns['steps']), notices)
+    if op == 'step':
+        return _with_notices(store.step_work(work_id, nouns.get('said')), notices)
     if op == 'edit':
         return _with_notices(store.edit_work(work_id, {name: nouns[name] for name in WORK_FIELDS if name in nouns}),
                              notices)
@@ -517,7 +524,10 @@ def work(ctx: Context) -> Any:
 
 
 WORK_NOUNS = (
-    _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; or done.'),
+    _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
+                'how many steps the agent plans; step, which says it finished one; or done.'),
+    _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
+    _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
@@ -530,7 +540,7 @@ WORK_NOUNS = (
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
-    _noun('id', 'edit, take and done: the work record id.'),
+    _noun('id', 'edit, take, plan, step and done: the work record id.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true for records not done, false for those done.', 'bool'),
     *PAGING,
