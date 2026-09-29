@@ -168,7 +168,9 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 #task .acts button:disabled{color:var(--faint);cursor:default}
 #task .body{flex:1;display:grid;grid-template-columns:1fr 260px;gap:12px;padding:12px;min-height:0;overflow:hidden}
 #task .write{display:flex;flex-direction:column;gap:8px;min-height:0;font:13px var(--sans);color:var(--muted)}
-#task .chart{flex:1;min-height:120px;position:relative;overflow:hidden;background:var(--ground);border:1px solid var(--line);border-radius:var(--r);cursor:grab}
+#task .chartbox{flex:1;min-height:120px;position:relative;display:flex}
+#task .chartbox .whole{position:absolute;right:8px;top:8px;height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;cursor:pointer;font:12px var(--sans);color:var(--muted)}
+#task .chart{flex:1;position:relative;overflow:hidden;background:var(--ground);border:1px solid var(--line);border-radius:var(--r);cursor:grab}
 #task .chart svg{position:absolute;inset:0;width:100%;height:100%}
 #task .chart g[data-address]{cursor:pointer}
 #task .chart g.chosen rect,#task .chart g.chosen polygon{stroke:var(--signal)!important;stroke-width:2.5px!important}

@@ -425,7 +425,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - The text is written as a person writes. A node inserted inline shows as its name, the address read through name_length, MAP-012, set apart from the words around it; its address is seen on it and is kept with the task.
   - A node linked is one the work concerns that the text does not name. The node the editor was opened at is linked from the start.
   - The browser lists the elements by their addresses, trunk to leaf, and is narrowed by typing. One click chooses an element; Link and Insert act on the one chosen.
-  - The chart shows the parts and their joins. It is looked around by dragging and by the wheel, apart from the two maps of the page: it does not move them and they do not move it. A click on a part chooses it, as a click in the list does, and the part chosen is marked in both.
+  - The chart shows the parts and their joins. It is looked around by dragging and by the wheel, apart from the two maps of the page: it does not move them and they do not move it. A click on a part chooses it, as a click in the list does, and the part chosen is marked in both. It opens on the part the task is added at, at the size its names are written in, since the whole chart of a project in so small an area is boxes too small to read; its Fit button shows the whole.
   - Add task writes the task on every node listed, where agents find it and take it.
   - The task is kept as text. An inline node is written in it as `[[name|address]]`, so an agent reading the task has the name as the person wrote it and the address to read the part with.
   - The person says whether the work is to build something or to fix something, which is the condition of the work record, MAP-046.

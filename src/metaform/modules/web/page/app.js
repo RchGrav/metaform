@@ -1751,7 +1751,7 @@ function choose(address) {
 }
 /* The editor's own chart of the project, VIEW-032: the parts and their joins, looked around by dragging and by the
  * wheel, apart from the two maps of the page, which it does not move and which do not move it. */
-const C = {generation: 0, cam: null};
+const C = {generation: 0, cam: null, whole: null};
 function camera(cam) {
   C.cam = cam;
   $('#task .chart svg')?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
@@ -1780,9 +1780,18 @@ async function chart(parts) {
     group.addEventListener('click', event => { event.stopPropagation(); choose(part.address); });
   }
   const whole = svg.viewBox.baseVal;
-  camera({x: whole.x, y: whole.y, w: whole.width, h: whole.height});
+  C.whole = {x: whole.x, y: whole.y, w: whole.width, h: whole.height};
+  // It opens on the part the task is added at, at the size its names are written in, so they are read at once; the
+  // whole of a project's chart in so small an area is boxes too small to read.
+  const first = svg.querySelector(`g[data-address="${CSS.escape(K.nodes[0])}"]`), area = host.getBoundingClientRect();
+  if (first && area.width) {
+    const box = first.getBBox(), matrix = first.transform.baseVal.consolidate()?.matrix || new DOMMatrix();
+    const middle = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix);
+    camera({x: middle.x - area.width / 2, y: middle.y - area.height / 2, w: area.width, h: area.height});
+  } else camera(C.whole);
   if (K.chosen) choose(K.chosen);
 }
+$('#task .whole').onclick = () => { if (C.whole) camera(C.whole); };
 (() => {
   const host = $('#task .chart');
   let drag = null;
