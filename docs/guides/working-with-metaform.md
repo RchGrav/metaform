@@ -245,7 +245,7 @@ metaform map stack
 
 Replace the angle-bracket fields with the actual target and reasoning. A correction begins in the building state and is applied on finish. `op=peel layer=<top-correction>` takes the top correction off the stack and returns it to building. Use the stack order shown by the store; this is not arbitrary undo of an interior layer.
 
-An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=edit` or `op=correct` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, its purpose kept in its `extra`. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
+An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=edit` or `op=correct` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
 
 Corrections can mark dependent knowledge as requiring re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither finishing a correction nor marking a layer re-examined automatically performs the reasoning.
 

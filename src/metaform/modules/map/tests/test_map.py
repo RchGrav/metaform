@@ -567,8 +567,8 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
     parent = store.joins('stakeholder.cook.home').results[0].join_id
     k(run, mapped, 'op=edit', 'layer=notes', f'id={first["join_id"]}', f'parent={parent}')
     held = store.subtypes(parent, raw=True).results
-    assert [(sub.join_id, sub.address, sub.extra) for sub in held] == [
-        (first['join_id'], 'code.alarm.visual', {'purpose': 'See the end.'})]
+    assert [(sub.join_id, sub.address, sub.purpose, sub.extra) for sub in held] == [
+        (first['join_id'], 'code.alarm.visual', 'See the end.', None)]  # absorbed, it keeps its purpose as its own
     assert first['join_id'] not in [join.join_id for join in store.joins('stakeholder.cook.home', raw=True).results]
 
 

@@ -277,9 +277,11 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                                 s.element('code.k.d', raw=True) is None),
     'edit parent in a join of another receiver': (
         lambda s, w: None, lambda s, w: s.edit(w.k_join.join_id, {'parent': w.outer.join_id}), True,
-        lambda s, w, got, before: [(sub.join_id, sub.extra) for sub in s.subtypes(w.outer.join_id, raw=True).results
-                                   if sub.join_id == w.k_join.join_id] == [(w.k_join.join_id, {'purpose': 'p',
-                                                                                              'receiver': 'code.k.a'})]),
+        # its receiver, which the parent's receiver now holds, is kept aside; its purpose stays its own, STORE-011
+        lambda s, w, got, before: [(sub.join_id, sub.purpose, sub.extra)
+                                   for sub in s.subtypes(w.outer.join_id, raw=True).results
+                                   if sub.join_id == w.k_join.join_id] == [(w.k_join.join_id, 'p',
+                                                                           {'receiver': 'code.k.a'})]),
     'remove intake': (lambda s, w: None, lambda s, w: s.remove(w.outer.join_id), False, _unchanged),
     'remove memory': (lambda s, w: None, lambda s, w: s.remove(w.memo.item_id), False, _unchanged),
     'remove still used': (lambda s, w: None, lambda s, w: s.remove(s.element('code.k.a', raw=True).element_id), True,
@@ -389,10 +391,6 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'add_subtype malformed': (lambda s, w: None,
                               lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', function='f'), True,
                               lambda s, w, got, before: got.address == 'Code.Part'),
-    'add_subtype purpose': (lambda s, w: None,
-                            lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.part', function='f',
-                                                       purpose='p'), True,
-                            lambda s, w, got, before: got.extra == {'purpose': 'p'}),
     'add_subtype element another subtype join holds': (
         lambda s, w: None, lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', function='f'),
         True, lambda s, w, got, before: got.element_id == s.element('code.loop.tick').element_id),

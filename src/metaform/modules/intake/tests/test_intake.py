@@ -262,33 +262,26 @@ def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or
 
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('BASE-039')
-def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_the_verb_of_its_relation():
-    """The agent infers the relation's verb into its own field, a third-person singular present-tense active verb
-    ending in -s or -es, and the relation is a fragment that starts with it; the relation's subject follows the word,
-    the Providing Element for Function, and for Encounter the Vested Entity on a top-level join and the Receiving
-    Entity in a subtype join, since the Vested Entity is only ever at the top, Rich 2026-09-26 and 2026-09-27. The
-    verb is the agent's word. The tools' help carries the intake's own wording."""
+def test_the_tools_say_of_each_field_what_the_intake_says_of_it():
+    """The intake is the instruction, and a tool that words a field another way gives the agent two instructions for
+    one field. Each field of a join and of a subtype join is described by the tool in the words the Canonical Intake
+    gives it, so what the agent reads in the intake is what it meets at the tool. A subtype join has the fields a
+    join has, its purpose among them."""
     import xml.etree.ElementTree as ET
     root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
     join = root.find('.//schema//join')
     inner = join.find('join')
-    fragment = ('active-voice descriptive fragment starting directly with a third-person singular present-tense verb '
-                'ending in -s/-es')
-    for found in (join, inner):
-        assert found.get('verb') == '[third-person singular present-tense active verb ending in -s or -es]'
-        assert found.get('relation').startswith('[' + fragment)
-    assert 'the Providing Element when ef is Function, the Vested Entity when ef is Encounter' in join.get('relation')
-    assert 'the Providing Element when ef is Function, the Receiving Entity when ef is Encounter' in inner.get('relation')
-    same = lambda noun, placeholder: noun.help.rstrip('.').lower() == placeholder.strip('[]').lower()
-    assert same(nouns_of('join')['verb'], join.get('verb')) and same(nouns_of('subtype')['verb'], inner.get('verb'))
-    assert same(nouns_of('join')['relation'], join.get('relation'))
-    assert same(nouns_of('subtype')['relation'], inner.get('relation'))
+    fields = ('purpose', 'function', 'relation', 'verb', 'observation', 'non_goal')
+    same = lambda noun, placeholder: noun.help.rstrip('.').lower() == placeholder.strip('[]').rstrip('.').lower()
+    for name, found in (('join', join), ('subtype', inner)):
+        for field in fields:
+            assert found.get(field), (name, field)
+            assert same(nouns_of(name)[field], found.get(field)), (name, field, nouns_of(name)[field].help)
+        assert nouns_of(name)['verb'].kind == 'str'
     step = root.find(".//step[@n='4']").get('text')
     assert ('the relation as an active-voice descriptive fragment starting directly with a third-person singular '
             'present-tense verb ending in -s or -es, whose subject is the Providing Element when ef is Function and the '
             'Vested Entity when ef is Encounter, that verb as verb') in step
-    for name in ('join', 'subtype'):
-        assert nouns_of(name)['verb'].kind == 'str'
 
 
 @pytest.mark.req('MAP-020')
@@ -340,15 +333,17 @@ def test_a_join_missing_its_purpose_is_stored_whole_with_a_notice_naming_it(run,
 @pytest.mark.req('BASE-044')
 @pytest.mark.req('MAP-030')
 @pytest.mark.req('STORE-011')
-def test_a_subtype_carrying_a_purpose_is_stored_with_the_purpose_in_its_extra(run, project, tmp_path):
+def test_a_subtype_join_carries_its_own_purpose(run, project, tmp_path):
+    """The parent is accounting and the parts are payable and receivable: each serves a share of the parent's
+    purpose, and the share is its own. Kept in the extra it was set apart from the join it describes."""
     given = copy.deepcopy(FIXTURE)
     given['elements'][1]['joins'][0]['subtypes'][0]['purpose'] = 'Its own why.'
     report = submit(run, project, given, tmp_path)
-    assert 'elements[1].joins[0].subtypes[0].purpose' in notices(report)
+    assert 'elements[1].joins[0].subtypes[0].purpose' not in notices(report)
     store = Store('timer')
     join = store.joins('code.timer.kitchen').results[0]
     tick = store.subtypes(join.join_id).results[0]
-    assert tick.extra == {'purpose': 'Its own why.'}
+    assert tick.purpose == 'Its own why.' and not (tick.extra or {}).get('purpose')
 
 
 @pytest.mark.req('BASE-039')
@@ -762,10 +757,10 @@ def test_absorb_makes_a_recorded_join_a_subtype_join_inside_its_parents_join(run
     [held] = [row for row in shown['joins'] if row['join_id'] == parent['join_id']]
     [sub] = held['subtypes']
     assert (sub['join_id'], sub['parent'], sub['namespace_address'], sub['name'], sub['function'], sub['ef'],
-            sub['relation'], sub['verb'], sub['observation'], sub['non_goal'], sub['extra']) == (
+            sub['relation'], sub['verb'], sub['observation'], sub['non_goal'], sub['purpose'], sub['extra']) == (
         probe['join_id'], parent['join_id'], 'code.probe.echo', 'echo probe', 'Sends an echo each second.', 'Function',
         'The echo probe pings the gateway.', 'pings', 'ICMP echo.', 'Measure latency.',
-        {'purpose': 'Know the gateway answers.'})
+        'Know the gateway answers.', None)  # absorbed, it keeps its purpose as its own
     assert sub['refs'] == [{'key': 'path', 'value': 'src/echo.c'}]
     [element] = [row for row in shown['elements'] if row['namespace_address'] == 'code.probe.echo']
     assert sub['element_id'] == absorbed['element_id'] == element['element_id'] and element['role'] == 'SE'

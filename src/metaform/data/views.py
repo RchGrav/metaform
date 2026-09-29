@@ -123,7 +123,8 @@ def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:
     return Subtype(str(row['join_id']), str(row['parent']), str(row['layer_id']), layers[row['layer_id']].name,
                    str(row['type']), element_id, address, reading(address) if address else '',
                    short_name(address, length) if address else '', row['name'], length,
-                   None if held is None else held['role'], row['function'], row['ef'], row['relation'], row['verb'],
+                   None if held is None else held['role'], row['purpose'], row['function'], row['ef'], row['relation'],
+                   row['verb'],
                    row['observation'], row['non_goal'], read_refs(tx.db, 'join', row['row']),
                    decode_extra(row['extra']), join_orphaned(tx, row), open_work(tx, 'join', str(row['join_id'])))
 

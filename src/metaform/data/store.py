@@ -214,7 +214,7 @@ class Store:
                     name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
                     extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
         """Write a subtype join inside its parent join, holding the element at `address`, an ordinary element record;
-        it has no purpose, STORE-011 and MAP-030."""
+        it carries its own purpose, the share of its parent's it serves, STORE-011 and MAP-030."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_subtype(tx, named, join, address, function=function, ef=ef, relation=relation,

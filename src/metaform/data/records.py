@@ -163,7 +163,8 @@ class Join(Record):
 
 @dataclass(frozen=True)
 class Subtype(Record):
-    """A subtype join, STORE-011: a join of type subtype held in its parent join, with its own fields and no purpose,
+    """A subtype join, STORE-011: a join of type subtype held in its parent join, with its own fields, its own
+    purpose among them, the share of the parent's purpose it serves,
     and the element it holds, an ordinary element record, by its id, address, reading, short name, name_length and
     role, MAP-030."""
     join_id: str
@@ -178,6 +179,7 @@ class Subtype(Record):
     name: str | None  # the subtype join's name for the functionality, MAP-020
     name_length: int | None
     role: str | None
+    purpose: str | None
     function: str | None
     ef: str | None
     relation: str | None

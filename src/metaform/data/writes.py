@@ -190,7 +190,8 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
                 relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
                 name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
                 extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
-    """Write a subtype join inside its parent join, holding the element at `address`; it has no purpose, STORE-011.
+    """Write a subtype join inside its parent join, holding the element at `address`, with its own purpose, the
+    share of the parent's purpose it serves, STORE-011.
 
     The element is an ordinary element record, MAP-030: one is written in the layer with the name_length and role
     given when the address holds none; an element already there keeps its own, and each field given that differs is
@@ -208,13 +209,9 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     kept_extra, split = rows.extra_fields(extra, 'the subtype join', notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, 'the subtype join', notices)
     split += more
-    if purpose is not None:
-        kept_extra = {**(kept_extra or {}), 'purpose': purpose}
-        notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. The '
-                                         'purpose was kept in its extra.'))
     ef, kept_extra = _ef(ef, kept_extra, "the subtype join's", notices)
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('function', function), ('relation', relation), ('verb', verb), ('observation', observation),
+        ('purpose', purpose), ('function', function), ('relation', relation), ('verb', verb), ('observation', observation),
         ('non_goal', non_goal), ('name', name))}
     element_id = _held_element(tx, found, address, name_length, role, notices)
     for other in rows.holding(tx, element_id):
@@ -224,9 +221,10 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, function: Any = 
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, function, ef, relation, verb, "
-        "observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (join_id, found.layer_id, parent, element_id, texts['name'], texts['function'], ef, texts['relation'],
+        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, purpose, function, ef, relation, "
+        "verb, observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (join_id, found.layer_id, parent, element_id, texts['name'], texts['purpose'], texts['function'], ef,
+         texts['relation'],
          texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
     row = int(cursor.lastrowid or 0)
     if found.kind != 'correction':
@@ -486,17 +484,13 @@ def _naming(tx: Tx, element_id: str, thing: str) -> list[str]:
 def _absorbed(tx: Tx, base: Row, value: Any, changes: dict[str, Any], found: LayerRow, columns: dict[str, Any],
               aside: dict[str, Any], notices: list[Notice]) -> None:
     """A change of a join's parent: it becomes a subtype join inside that join, MAP-030, keeping every field but its
-    receiver, which the parent's receiver now holds, and its purpose, which goes to its extra, STORE-034."""
+    receiver, which the parent's receiver now holds. Its purpose stays its own: the share of the parent's purpose it
+    serves, STORE-034."""
     parent = _parent_of(tx, value, found)
     if parent == base['join_id']:
         raise StoreError(f'{parent} cannot be held inside itself; a subtype join sits inside another join held by a '
                          'receiver.', 'metaform map joins <receiver>')
     columns.update(parent=parent, type='subtype', receiver=None)
-    if base['purpose'] is not None and 'purpose' not in changes:
-        aside['purpose'] = base['purpose']
-        columns['purpose'] = None
-        notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. The '
-                                         'purpose was kept in its extra.'))
     held_by = _receiver_of(tx, parent)
     if base['receiver'] is not None and base['receiver'] != held_by:
         aside['receiver'] = rows.address_of(tx, str(base['receiver'])) or str(base['receiver'])
@@ -517,7 +511,6 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
     columns: dict[str, Any] = {}
     split: list[tuple[str, Any]] = []
     aside: dict[str, Any] = {}
-    held = kind == 'join' and (base['parent'] is not None or 'parent' in changes)
     for key, value in changes.items():
         if key == 'refs':
             placed, more = rows.odd_refs(refs_fit(value)[1], None, kind, notices)
@@ -535,11 +528,6 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             columns['element_id' if key == 'element' else key] = rows.element_at(tx, value, found, key, notices)
         elif key == 'parent':
             _absorbed(tx, base, value, changes, found, columns, aside, notices)
-        elif key == 'purpose' and held:
-            aside['purpose'] = value
-            columns['purpose'] = None
-            notices.append(Notice('purpose', 'A subtype join has no purpose of its own; its parent join carries it. '
-                                             'The purpose was kept in its extra.'))
         elif key == 'link':
             if value is None:
                 columns['link_kind'], columns['link_id'] = None, None

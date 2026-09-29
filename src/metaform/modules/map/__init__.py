@@ -433,7 +433,7 @@ KNOWLEDGE_NOUNS = (
     _noun('provider', 'add-join: the element whose function serves it; edit and correct: another provider, or on a '
                       'subtype join another element to hold.'),
     _noun('parent', 'edit and correct: the id of a join held by a receiver; the join becomes a subtype join inside '
-                    'it, its purpose kept in its extra.'),
+                    'it, keeping its purpose.'),
     _noun('purpose', 'add-join: the Operative Purpose.'),
     _noun('function', "add-join and add-subtype: the Encounter Function."),
     _noun('ef', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '

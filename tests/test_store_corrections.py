@@ -247,8 +247,8 @@ def test_a_correction_absorbs_a_join_into_its_parents_join_and_peeling_restores_
     store.finish(fix.name)
     assert [join.join_id for join in store.joins('stakeholder.cook').results] == [parent.join_id]
     held = store.subtypes(parent.join_id).results
-    assert [(sub.join_id, sub.address, sub.extra) for sub in held] == [
-        (part.join_id, 'code.alarm', {'purpose': 'Hear the end.'})]
+    assert [(sub.join_id, sub.address, sub.purpose, sub.extra) for sub in held] == [
+        (part.join_id, 'code.alarm', 'Hear the end.', None)]  # absorbed, it keeps its purpose as its own, STORE-011
     assert 'code.alarm' not in [root.address for root in store.roots().elements]
     store.peel(fix.name)
     assert sorted(join.join_id for join in store.joins('stakeholder.cook').results) == sorted(

@@ -341,8 +341,8 @@ def subtype(ctx: Context) -> Any:
 
 
 def absorb(ctx: Context) -> Any:
-    """Make a recorded join a subtype join inside its parent's purpose join, keeping every field; its purpose goes to
-    its extra, and any other join that still names the element is named and left as it is, MAP-030."""
+    """Make a recorded join a subtype join inside its parent's purpose join, keeping every field, its purpose among
+    them; any other join that still names the element is named and left as it is, MAP-030."""
     store = ctx.require_store()
     notices: Notices = []
     found = _building(store)
@@ -369,6 +369,7 @@ def _element_entry(found: Element) -> dict[str, Any]:
 def _subtype_entry(item: Subtype) -> dict[str, Any]:
     return {'join_id': item.join_id, 'parent': item.parent, 'element_id': item.element_id, ADDRESS: item.address,
             'short_name': item.short_name, 'role': item.role, 'name_length': item.name_length, 'name': item.name,
+            'purpose': item.purpose,
             **{name: getattr(item, name) for name in (*SUBTYPE_TEXT, 'non_goal')}, 'refs': _refs(item.refs),
             'extra': item.extra}
 
@@ -601,40 +602,34 @@ NOUNS = {noun.name: noun for noun in (
                  'references, such as key path and a relative path.', required=False, schema=REFS),
     Noun('extra', 'Any other field, as a JSON object, kept in the extra.', required=False, schema=EXTRA),
     Noun('type', 'The join type: purpose.', required=False),
-    Noun('purpose', 'State the intended goal, standard, or reason why this element or action is needed.',
-         required=False),
-    Noun('function', "Encounter Function of the Providing Element serving this VE's OP.", required=False),
+    Noun('purpose', 'State the objective or standard this element or action fulfills.', required=False),
+    Noun('function', 'Encounter Function of the PE within the RE context.', required=False),
     Noun('ef', 'Function if it is the encounter of a functionality, Encounter if it is the functionality of the '
                'encounter.', required=False, schema=EF),
-    Noun('relation', 'Active-voice descriptive fragment starting directly with a third-person singular present-tense '
-                     'verb ending in -s/-es; its subject is the Providing Element when ef is Function, the Vested '
-                     'Entity when ef is Encounter.', required=False),
-    Noun('verb', 'Third-person singular present-tense active verb ending in -s or -es.', required=False),
-    Noun('observation', 'State the actual real-world condition, format, layout, or limitations of what is there.',
+    Noun('relation', 'Active-voice descriptive fragment starting with a third-person singular present-tense verb '
+                     'ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is '
+                     'Encounter.', required=False),
+    Noun('verb', 'The single root verb extracted from the relation (e.g., provides, tracks, restricts).',
          required=False),
-    Noun('non_goal', 'State what this element or action is explicitly NOT trying to do, fix, or include.',
-         required=False),
+    Noun('observation', 'High-value observation consisting of long-lasting, stable state.', required=False),
+    Noun('non_goal', 'High-value non-goals consisting of structural constraints.', required=False),
 )}
 SUBTYPE_NOUNS = (
     Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
     Noun(ADDRESS, 'The namespace_address of the element the subtype join holds: the absorbed element, recorded as '
                   'intake element records one when there is none.'),
-    Noun('function', 'Encounter Function of the subtype within the parent.', required=False),
+    NOUNS['purpose'],
+    NOUNS['function'],
     NOUNS['ef'],
-    Noun('relation', 'Active-voice descriptive fragment starting directly with a third-person singular present-tense '
-                     'verb ending in -s/-es; its subject is the Providing Element when ef is Function, the Receiving '
-                     'Entity when ef is Encounter.', required=False),
+    NOUNS['relation'],
     NOUNS['verb'],
-    Noun('observation', 'State the actual real-world condition, format, layout, or limitations of the subtype.',
-         required=False),
+    NOUNS['observation'],
     NOUNS['non_goal'],
     Noun('role', 'The role of the element it holds: DE, SE or NE.', required=False, schema=SUBTYPE_ROLE),
     Noun('name', NOUNS['name'].help, required=False),
     Noun('name_length', 'proper_noun_lookback_segment_count of the element it holds: how many segments, read from the '
                         'leaf, name it.', required=False, schema=NAME_LENGTH),
     NOUNS['refs'],
-    Noun('purpose', "A subtype join has no purpose; its parent join carries it. Given, it is kept in the subtype "
-                    "join's extra.", required=False),
     NOUNS['extra'],
 )
 ABSORB_NOUNS = (

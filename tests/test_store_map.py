@@ -273,11 +273,15 @@ def test_a_subtype_join_is_read_only_through_its_join(store):
 
 @pytest.mark.req('STORE-011')
 @pytest.mark.req('MAP-030')
-def test_a_subtype_join_given_a_purpose_keeps_it_in_its_extra_with_a_notice(home, store):
+def test_a_subtype_join_holds_the_purpose_it_is_given_as_its_own(home, store):
     _, outer, _ = small_map(store)
     layer = knowledge(store, 'subs')
     stored = store.add_subtype(layer.name, outer.join_id, 'code.loop.other', function='f', purpose='its own why')
-    assert stored.extra == {'purpose': 'its own why'} and [notice.where for notice in stored.notices] == ['purpose']
+    assert stored.purpose == 'its own why' and stored.extra is None and stored.notices == ()
+    read = lambda: next(sub for sub in store.subtypes(outer.join_id, raw=True).results if sub.join_id == stored.join_id)
+    assert read().purpose == 'its own why'
+    changed = store.edit(stored.join_id, {'purpose': 'a better why'})
+    assert changed.notices == () and read().purpose == 'a better why'
     assert store.element('code.loop.other', raw=True).element_id == stored.element_id
 
 
@@ -420,7 +424,7 @@ def test_absorbing_a_join_makes_it_a_subtype_join_with_its_id_its_fields_and_wha
         parent.join_id, 'subtype', element.element_id, 'code.probe.echo', 'echo probe', 'Sends an echo each second.',
         'Function', 'The echo probe pings the gateway.', 'pings', 'ICMP echo.', 'Measure latency.')
     assert [(ref.key, ref.value) for ref in sub.refs] == [('path', 'src/echo.c')]
-    assert sub.extra == {'purpose': 'Know the gateway answers.'}
+    assert sub.purpose == 'Know the gateway answers.' and sub.extra is None  # absorbed, it keeps its purpose
     assert [join.join_id for join in store.joins('code.daemon', raw=True).results] == [parent.join_id]
     assert [join.join_id for join in store.joins('code.alarm', raw=True).results] == [other.join_id]
     assert store.element('code.probe.echo', raw=True) == element
