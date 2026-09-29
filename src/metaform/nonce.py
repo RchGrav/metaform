@@ -1,12 +1,14 @@
 """The nonce service, BASE-050: a module requests a nonce, and an agent reaches its work by running metaform <nonce>.
 
-A nonce's record holds the module that requested it, the function in that module to call, which is one of the
-module's verbs, and the value the chassis passes to it. The module updates the nonce as the work moves and closes it
-when the task is complete.
+A nonce is seven digits, the first never zero. Its record holds the module that requested it, the function in that
+module to call, which is one of the module's verbs, and the value the chassis passes to it. The module updates the
+nonce as the work moves and closes it when the task is complete. A closed nonce's record is kept, so its number is
+never issued again.
 """
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from . import home
 from .errors import Stop
 
 _CURRENT: ContextVar[Nonce | None] = ContextVar('metaform_nonce', default=None)
+FORM = re.compile(r'[1-9][0-9]{6}')  # the form of a nonce: seven digits, the first never zero
 
 
 @dataclass(frozen=True)
@@ -41,10 +44,15 @@ def _taken(word: str) -> bool:
     return word in VERBS or any(found.id == word for found in loader.discover())
 
 
+def _draw() -> str:
+    return str(1_000_000 + secrets.randbelow(9_000_000))
+
+
 def request(module: str, function: str, value: Any = None) -> str:
-    """A new nonce for the module: what `metaform <nonce>` runs is the module's function, sent the value."""
+    """A new nonce for the module: what `metaform <nonce>` runs is the module's function, sent the value. A number
+    already in the table, open or closed, is never issued again."""
     while True:
-        word = secrets.token_hex(4)
+        word = _draw()
         if _taken(word):
             continue
         with home.base(write=True) as db:
@@ -87,17 +95,26 @@ def update(nonce: str, *, value: Any = None, function: str | None = None) -> Non
 
 
 def close(nonce: str) -> Nonce:
-    """The task is complete: the nonce gives no menu and runs no command from now on."""
+    """The task is complete: the nonce gives no menu and runs no command from now on. Its record is kept."""
     held = _held(nonce)
     if held.open:
         with home.base(write=True) as db:
             db.execute('UPDATE nonces SET closed=? WHERE nonce=?', (home.now(), nonce))
-    return _held(nonce)
+    found = _held(nonce)
+    if (now := _CURRENT.get()) is not None and now.nonce == nonce:
+        _CURRENT.set(found)
+    return found
+
+
+def reached() -> Nonce | None:
+    """The nonce the running command came through, or None when it did not come through one. A verb can in this way
+    be both a module's entry and the function its nonce calls."""
+    return _CURRENT.get()
 
 
 def current() -> Nonce:
     """The nonce the running command was reached through."""
-    held = _CURRENT.get()
+    held = reached()
     if held is None:
         raise Stop('This command was not run through a nonce.', 'metaform help')
     return held

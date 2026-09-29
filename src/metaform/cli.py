@@ -766,9 +766,6 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
 def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
     """`metaform <nonce>`: the module's function for the nonce, its commands with help, or one of them, BASE-050."""
     said = f'metaform {held.nonce}'
-    if not held.open:
-        raise Stop(f'Nonce {held.nonce} is closed; its task is complete.', 'Ask the main agent for the nonce of '
-                                                                           'your next task')
     found = loader.get(held.module)
     if found is None or found.module is None:
         raise Stop(f'Nonce {held.nonce} belongs to module {held.module}, which is not loaded.',
@@ -1011,8 +1008,11 @@ def _command(args: list[str], folder: Path) -> int:
             out(f'metaform {__version__}')
             return 0
         if verb not in VERBS:
-            held = nonce.read(verb) if loader.get(verb) is None else None
-            if held is not None:
+            if loader.get(verb) is None and nonce.FORM.fullmatch(verb):
+                held = nonce.read(verb)
+                if held is None or not held.open:
+                    sys.stderr.write('Error: Invalid or Unknown Nonce\n')  # closed or never issued, BASE-050
+                    return 2
                 run_nonce(held, rest, folder)
                 return 0
             run_module(verb, rest, folder)
