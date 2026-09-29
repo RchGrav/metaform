@@ -666,12 +666,12 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
     alarm = look('code.alarm.audible')
     # A part not built yet keeps its own color and its full opacity. In 3D it is drawn in characters and has no
     # circles; in 2D a glow around it marks it.
-    assert alarm['bloom3d'] is False and alarm['material'] == 'ShaderMaterial'
+    assert alarm['around3d'] == 0 and alarm['material'] == 'ShaderMaterial'
     assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['animated2d']) == (['tbd'], ['work-tbd'], 1, False)
     assert alarm['opacity3d'] is None or alarm['opacity3d'] >= 0.95
     assert alarm['color3d'] == page.evaluate('window.metaform.own(' + json.dumps(ids['code.alarm.audible']) + ')')
     assert alarm['bloom2d'] is True and alarm['label3d'] == ['work-tbd']
-    assert look('exterior.cook')['bloom3d'] is False and look('exterior.cook')['bloom2d'] is False
+    assert look('exterior.cook')['around3d'] == 0 and look('exterior.cook')['bloom2d'] is False
     assert look('code.timer.kitchen')['label3d'] == ['work-broken']
     cook = look('exterior.cook')
     assert (cook['work'], cook['classes'], cook['red3d']) == (['cruft'], ['work-cruft'], False)
@@ -718,7 +718,7 @@ def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, 
     links = page.evaluate('window.metaform.linkColors()')
     assert not any(link['color'].startswith('rgba(') for link in links)  # its links keep their color and opacity
     page.wait_for_function(f'() => window.metaform.look("p:{joins[0].join_id}").text3d === true', timeout=5000)
-    assert page.evaluate(f'window.metaform.look("p:{joins[0].join_id}").bloom3d') is False
+    assert page.evaluate(f'window.metaform.look("p:{joins[0].join_id}").around3d') == 0
     built = [join['join_id'] for join in keys_of(web)[0]['joins'] if join['join_id'] != joins[0].join_id]
     assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").text3d') is False
     assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-tbd']
@@ -755,7 +755,7 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     assert len(set(samples['still'])) == 1  # a part waiting changes at one slow speed
     assert samples['moving'] == sorted(samples['moving'])  # a part in work never slows
     assert samples['moving'][-1] > samples['moving'][0] > samples['still'][0]  # it quickens, from above the waiting speed
-    assert all(page.evaluate(f'window.metaform.look("{ids[address]}").bloom3d') is False for address in ids)
+    assert all(page.evaluate(f'window.metaform.look("{ids[address]}").around3d') == 0 for address in ids)
     cook = page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}")')
     assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
     assert 'work: in-progress' in page.inner_text('#legend')
@@ -783,7 +783,7 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     page.wait_for_function('() => window.metaform.loaded()')
     _, at, _ = keys_of(web)
     names = {at[address]: address for address in at}
-    assert page.evaluate('window.metaform.bloom()') == {'pass': True, 'levels': 3}
+    assert {key: page.evaluate('window.metaform.bloom()')[key] for key in ('pass', 'levels')} == {'pass': True, 'levels': 3}
     assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
     page.evaluate('window.metaform.waveTimes({every: 2.4, cross: 0.5, hold: 0.3, gaussian: false})')
     key = 'r:' + written.property_id
@@ -802,7 +802,9 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     seen = page.evaluate("""async count => { const seen = [], lit = new Set();
         for (let at = 0; at < 240 && lit.size < count; at++) {
           await new Promise(done => setTimeout(done, 50));
-          const now = window.metaform.wave(); seen.push(now); now.lit.forEach(node => lit.add(node)); }
+          const now = window.metaform.wave(); seen.push(now); now.lit.forEach(node => lit.add(node));
+          now.light = now.lit.map(node => window.metaform.look(node).light3d);
+          now.around = now.lit.map(node => window.metaform.look(node).around3d); }
         return seen; }""", len(reached))
     first = {}
     for index, moment in enumerate(seen):
@@ -814,6 +816,10 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     assert first['code.timer.kitchen.dial'] < first['code.timer.kitchen.dial.pointer']  # a hop further, later
     assert max(len(moment['lit']) for moment in seen) < len(reached)  # lit while holding a dot, never all at once
     assert any(moment['dots'] for moment in seen)
+    # a node lit by the wave gives off its body's light, above full brightness at the pulse's height, which the bloom
+    # spreads; nothing is drawn around it, VIEW-029
+    assert max(light for moment in seen for light in moment['light']) > 1
+    assert all(count == 0 for moment in seen for count in moment['around'])
     assert any(at['code.timer.kitchen'] not in moment['lit'] and moment['lit'] for moment in seen)  # the wave moved on
     # an edge keeps its own look: the dots carry the property's color
     colors = {link['color'].lower() for link in page.evaluate('window.metaform.linkColors()') if link['k'] == 'tree'}
@@ -2451,7 +2457,7 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     for node in (kitchen, cook):
         seen = page.evaluate(f'window.metaform.look("{node}")')
         assert (seen['work'], seen['classes'], seen['animated2d']) == (['question'], ['work-question'], True)
-        page.wait_for_function(f'() => window.metaform.look("{node}").glow3d > 0', timeout=3000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").light3d > 1', timeout=3000)
     assert 'work: question' in page.inner_text('#legend')
     page.click('#messages')  # the oldest first
     page.wait_for_function(f'() => window.metaform.selected() === "{kitchen}"')
@@ -2462,7 +2468,7 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     page.click('#float button.answer')
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").work.length === 0 '
-                           f'&& window.metaform.look("{kitchen}").glow3d === 0')
+                           f'&& window.metaform.look("{kitchen}").light3d < 1')
     assert Store('proj').work(None, 'question', False).results[0].resolution == 'Yes, keep it.'
     assert Store('proj').work(None, 'question', False).results[0].work_id == first.work_id
     # the answer stays at the node; the panel is drawn again once the page has read the change
@@ -2522,7 +2528,9 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
 @pytest.mark.req('VIEW-029')
 def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_does(run, web, mapped, browser):
     """Rich, 2026-09-28: when the nodes light up and flash they give off some glow, and the chart flashes too. A
-    flash inside a node's outline is lost on a whole map; light that spreads past it is seen from across the map."""
+    flash inside a node's outline is lost on a whole map; light that spreads past it is seen from across the map.
+    Rich, 2026-09-29: the light is the material's own light emission, spread by the bloom, and no circles are drawn
+    around a node."""
     from metaform.data import Node, Store
     store = Store('proj')
     asked = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
@@ -2535,25 +2543,139 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     own = page.evaluate(f'window.metaform.look("{cook}").light3d')
     assert 0 < own < 1                                    # a node with no record: the glass's own little light
-    assert page.evaluate(f'window.metaform.look("{cook}").glow3d') == 0
+    assert page.evaluate(f'window.metaform.look("{cook}").around3d') == 0
     for node in (kitchen, alarm):
-        for _ in range(2):                                # it comes and goes
-            page.wait_for_function(f'() => window.metaform.look("{node}").light3d > 1 '
-                                   f'&& window.metaform.look("{node}").glow3d >= 1', timeout=4000)
+        for _ in range(2):                                # it comes and goes, and the bloom spreads it
+            page.wait_for_function(f'() => window.metaform.look("{node}").light3d > 1 && window.metaform.bloom().on',
+                                   timeout=4000)
+            assert page.evaluate(f'window.metaform.look("{node}").around3d') == 0  # nothing is drawn around it
             page.wait_for_function(f'() => window.metaform.look("{node}").light3d <= {own}', timeout=4000)
+            # between flashes the pass stays on, so the rest of the map does not blink with the node
+            assert page.evaluate('window.metaform.bloom().on') is True
         page.wait_for_function(f'() => window.metaform.look("{node}").glow2d', timeout=4000)
     assert page.evaluate(f'window.metaform.look("{cook}").glow2d') is False
+    # Closed from the command line and told to the page: the light goes back to the glass's own, and the pass goes off.
     for record in broken:
-        store.finish_work(record.work_id, 'fixed')
-    store.finish_work(asked.work_id, 'Yes.')
+        run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={asked.work_id}', 'resolution=Yes.', cwd=mapped)
     for record in store.work(None, None, True, limit=0).results:  # nothing on the map needs attention now
         if record.condition in ('broken', 'fixing', 'cruft', 'question'):
-            store.finish_work(record.work_id, 'done')
+            run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=done', cwd=mapped)
+    page.wait_for_function(f'() => ["{kitchen}", "{alarm}"].every(id => window.metaform.look(id).light3d === {own}) '
+                           '&& !window.metaform.bloom().on', timeout=5000)
+    page.wait_for_timeout(1200)
+    assert page.evaluate(f'["{kitchen}", "{alarm}"].map(id => window.metaform.look(id).light3d)') == [own, own]
+    assert page.evaluate(f'["{kitchen}", "{alarm}"].map(id => window.metaform.look(id).around3d)') == [0, 0]
+    assert page.evaluate('window.metaform.bloom().on') is False
+    assert problems == []
+
+
+def pixels(page, points):
+    """The colors a person sees at the given points of the page, each the mean of the 5 by 5 pixels around it, read
+    from a screenshot so that what is measured is what is shown."""
+    import base64
+    shot = base64.b64encode(page.screenshot()).decode()
+    return page.evaluate("""async ([shot, points]) => {
+        const image = new Image();
+        image.src = 'data:image/png;base64,' + shot;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width; canvas.height = image.height;
+        const pen = canvas.getContext('2d', {willReadFrequently: true});
+        pen.drawImage(image, 0, 0);
+        return points.map(([x, y]) => {
+          const data = pen.getImageData(Math.round(x) - 2, Math.round(y) - 2, 5, 5).data, sum = [0, 0, 0];
+          for (let at = 0; at < data.length; at += 4) for (let part = 0; part < 3; part++) sum[part] += data[at + part];
+          return sum.map(part => part / 25); }); }""", [shot, points])
+
+
+def staged(page, places, camera):
+    """Stop the layout, put the named nodes where given, point the camera, and hide the names drawn over the nodes,
+    so a picture of the 3D map can be read at known points. It waits first for the page's own fit of the whole map,
+    which comes 2.2 seconds after it has loaded."""
+    page.wait_for_timeout(2600)
+    page.click('#pauseBtn')
+    for node, (x, y, z) in places.items():
+        page.evaluate(f'window.metaform.pin3d("{node}", {x}, {y}, {z})')
+    page.evaluate(f'window.metaform.view3d({json.dumps(camera[0])}, {json.dumps(camera[1])})')
+    page.evaluate('document.querySelector("#labels3d").style.visibility = "hidden"')
+    page.wait_for_timeout(800)
+
+
+@pytest.mark.req('VIEW-029')
+def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_nearer_the_eye(run, web, mapped, browser):
+    """Rich, 2026-09-29: the glow was painted on top of everything when it should be behind. The broken kitchen timer
+    gives off its light; a join's purpose node is set nearer the eye, beside it, where its glow falls. The glow shows
+    over the background around the timer and not over the nearer node."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Still wanted?')  # the pass stays on
+    kitchen = store.element('code.timer.kitchen').element_id
+    broken = store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.emulate_media(reduced_motion='reduce')           # the light is steady
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    page.wait_for_timeout(1200)
-    assert page.evaluate(f'["{kitchen}", "{alarm}"].map(id => window.metaform.look(id).glow3d)') == [0, 0]
-    assert page.evaluate(f'[\"{kitchen}\", \"{alarm}\"].map(id => window.metaform.look(id).light3d)') == [own, own]
+    front = next(node['id'] for node in page.evaluate('window.metaform.graph().nodes') if node['id'].startswith('p:'))
+    staged(page, {kitchen: (2000, 0, 0), front: (2000, 7, 150)},
+           ({'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}))
+    page.wait_for_function(f'() => window.metaform.look("{kitchen}").light3d > 1 && window.metaform.bloom().on')
+    lit, near = (page.evaluate(f'window.metaform.screen3d("{node}")') for node in (kitchen, front))
+    across = ((lit['x'] - near['x']) ** 2 + (lit['y'] - near['y']) ** 2) ** 0.5
+    toward = ((lit['x'] - near['x']) / across, (lit['y'] - near['y']) / across)
+    # a point on the nearer node toward the lit one; the point as far from the lit node on its other side, over the
+    # background; and a point of background far from both
+    on_near = (near['x'] + toward[0] * near['r'] * 0.5, near['y'] + toward[1] * near['r'] * 0.5)
+    beyond = (2 * lit['x'] - on_near[0], 2 * lit['y'] - on_near[1])
+    ground = (lit['x'] + 300, lit['y'] + 100)
+    assert across - near['r'] * 0.5 > lit['r'] + 4       # both points lie past the lit node's outline
+    shown = pixels(page, [on_near, beyond, ground])
+    assert sum(shown[1]) > sum(shown[2]) + 20, shown     # the light spreads past the outline, over the background
+    for record in broken:
+        run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{kitchen}").light3d < 1 && window.metaform.bloom().on')
+    page.wait_for_timeout(800)
+    dark = pixels(page, [on_near, beyond, ground])
+    assert sum(dark[1]) < sum(dark[2]) + 6, dark          # with the light gone, that point is background again
+    # the nearer node is drawn the same whether the node behind it gives off light or not
+    assert all(abs(one - two) <= 3 for one, two in zip(shown[0], dark[0])), (shown[0], dark[0])
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-022')
+def test_with_the_bloom_pass_on_what_it_does_not_light_keeps_its_colors(run, web, mapped, browser):
+    """The pass spreads what is over full brightness, and the rest of the picture is the one drawn without it. It is
+    read on paper, a theme whose background is far from black, where a picture taken apart in the wrong space turned the
+    nodes dark while the pass was on."""
+    from metaform.data import Store
+    store = Store('proj')
+    for record in store.work(None, None, True, limit=0).results:  # nothing needs attention: the pass is off
+        store.finish_work(record.work_id, 'done')
+    cook, alarm = (store.element(address).element_id for address in ('exterior.cook', 'code.alarm.audible'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.emulate_media(reduced_motion='reduce')
+    page.select_option('#theme', 'paper')
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    staged(page, {cook: (2000, 0, 0)}, ({'x': 2000, 'y': 0, 'z': 80}, {'x': 2000, 'y': 0, 'z': 0}))
+    assert page.evaluate('window.metaform.bloom().on') is False
+    node = page.evaluate(f'window.metaform.screen3d("{cook}")')
+    # The glass's highlight, toward its upper left, is over full brightness and the pass spreads it as it spreads any
+    # light, so the points read on the node are on its lower half, clear of that glow, and one is on the background.
+    points = [(node['x'], node['y'] + node['r'] * 0.6), (node['x'] + node['r'] * 0.5, node['y'] + node['r'] * 0.5),
+              (node['x'] + node['r'] * 3, node['y'] + node['r'] * 1.5)]
+    before = pixels(page, points)
+    # a question on the alarm, far out of view, lights it, and the pass comes on
+    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=question', 'note=Still wanted?',
+        cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{alarm}").light3d > 1 && window.metaform.bloom().on',
+                           timeout=5000)
+    page.wait_for_timeout(800)
+    after = pixels(page, points)
+    for one, two in zip(before, after):
+        assert all(abs(a - b) <= 3 for a, b in zip(one, two)), (before, after)
     assert problems == []
 
 
