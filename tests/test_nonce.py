@@ -33,11 +33,26 @@ STEPS = '''
     def say(ctx):
         return str(ctx.nouns['word']) + ' at ' + str(nonce.current().value['at'])
 
+    def demo(ctx):
+        held = nonce.reached()
+        if held is None:
+            return 'Please run metaform ' + nonce.request('steps', 'demo', {'runs': 0})
+        nonce.update(held.nonce, value={'runs': held.value['runs'] + 1})
+        return held.nonce + ' run ' + str(nonce.reached().value['runs'])
+
+    def finish(ctx):
+        nonce.close(nonce.reached().nonce)
+        return 'open' if nonce.reached().open else 'closed'
+
     MODULE = Module(id='steps', summary='Two steps.', purpose='Two steps. Details: metaform help steps.',
                     verbs=(Verb('begin', begin, 'Begin.'), Verb('prompt', prompt, 'The prompt of the step.'),
                            Verb('next', next_, 'The next step.'), Verb('complete', complete, 'Hand the work on.'),
-                           Verb('say', say, 'Say a word.', nouns=(Noun('word', 'The word.'),))))
+                           Verb('say', say, 'Say a word.', nouns=(Noun('word', 'The word.'),)),
+                           Verb('demo', demo, 'Begin, or run through the nonce.'),
+                           Verb('finish', finish, 'Close the nonce.')))
 '''
+
+UNKNOWN = 'Error: Invalid or Unknown Nonce\n'
 
 
 @pytest.fixture
@@ -82,13 +97,58 @@ def test_a_command_run_through_a_nonce_reaches_the_module_with_what_the_chassis_
     assert run(nonce, 'say', 'hello', cwd=steps).stdout.strip() == 'hello at 1'
 
 
-def test_a_closed_nonce_runs_nothing_and_says_it_is_closed(run, steps):
+def test_a_nonce_is_seven_digits_and_never_begins_with_zero(run, steps):
+    import re
+
+    from metaform import nonce
+    drawn = [issued(run, steps)] + [nonce.request('steps', 'prompt') for _ in range(200)]
+    assert all(re.fullmatch(r'[1-9][0-9]{6}', word) for word in drawn), drawn
+
+
+def test_a_closed_nonce_runs_nothing_and_prints_exactly_invalid_or_unknown_nonce(run, steps):
     nonce = issued(run, steps)
     run(nonce, 'next', cwd=steps)
     assert run(nonce, 'next', cwd=steps).stdout.strip() == 'done'
     for rest in ((), ('next',), ('help',)):
         refused = run(nonce, *rest, cwd=steps, ok=False)
-        assert refused.returncode == 2 and 'closed' in refused.stderr and refused.stdout == ''
+        assert (refused.returncode, refused.stdout, refused.stderr) == (2, '', UNKNOWN)
+
+
+def test_a_nonce_that_was_never_issued_prints_exactly_invalid_or_unknown_nonce(run, steps):
+    from metaform import nonce
+    issued(run, steps)
+    never = next(word for word in map(str, range(1000000, 1000100)) if nonce.read(word) is None)
+    for rest in ((), ('next',), ('help',)):
+        refused = run(never, *rest, cwd=steps, ok=False)
+        assert (refused.returncode, refused.stdout, refused.stderr) == (2, '', UNKNOWN)
+
+
+def test_a_closed_nonce_is_kept_so_its_number_is_never_issued_again(run, steps, monkeypatch):
+    from metaform import nonce
+    closed, still_open = issued(run, steps), issued(run, steps)
+    nonce.close(closed)
+    assert nonce.read(closed) is not None and not nonce.read(closed).open
+    fresh = next(word for word in map(str, range(1000000, 1000100)) if nonce.read(word) is None)
+    monkeypatch.setattr(nonce, '_draw', iter([closed, still_open, fresh]).__next__)
+    assert nonce.request('steps', 'prompt') == fresh
+
+
+def test_reached_is_none_when_the_command_did_not_come_through_a_nonce(run, steps):
+    said = run('steps', 'demo', cwd=steps).stdout.split()
+    assert said[:3] == ['Please', 'run', 'metaform'] and len(said) == 4
+
+
+def test_reached_is_the_nonce_the_command_came_through_so_one_verb_is_also_its_function(run, steps):
+    word = run('steps', 'demo', cwd=steps).stdout.split()[-1]
+    assert run(word, cwd=steps).stdout.strip() == f'{word} run 1'
+    assert run(word, cwd=steps).stdout.strip() == f'{word} run 2'       # the chassis holds the update
+    assert run(word, 'demo', cwd=steps).stdout.strip() == f'{word} run 3'
+
+
+def test_reached_follows_a_close_in_the_same_command(run, steps):
+    word = run('steps', 'demo', cwd=steps).stdout.split()[-1]
+    assert run(word, 'finish', cwd=steps).stdout.strip() == 'closed'
+    assert run(word, cwd=steps, ok=False).stderr == UNKNOWN
 
 
 def test_a_module_closes_a_nonce_and_hands_on_a_new_one(run, steps):
@@ -120,6 +180,6 @@ def test_a_home_made_before_nonces_existed_is_given_the_table_on_the_first_reque
     db.execute('DROP TABLE nonces')
     db.commit()
     db.close()
-    assert nonce.read('0a1b2c3d') is None
-    assert run('0a1b2c3d', cwd=steps, ok=False).returncode == 2       # read as a module that is not there
+    assert nonce.read('1000000') is None
+    assert run('1000000', cwd=steps, ok=False).stderr == UNKNOWN
     assert run(issued(run, steps), cwd=steps).stdout.strip() == 'Write the plan.'
