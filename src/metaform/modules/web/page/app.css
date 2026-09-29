@@ -160,12 +160,16 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 #messages[hidden]{display:none}
 .item.work .asked{font-weight:600}
 .item.work textarea.answer{width:100%;min-height:64px;margin-top:6px;box-sizing:border-box;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:6px;font:13px var(--sans)}
-.item.work button.answer{margin-top:6px;height:var(--ctl-sm);background:var(--question);color:#140a12;border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
+.item.work button.answer{margin-top:6px;height:var(--ctl-sm);background:var(--question);color:var(--ground);border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
 .pill.work-tbd{color:var(--tbd);background:color-mix(in srgb,var(--tbd) 14%,transparent)}
 .pill.layer{display:inline-flex;align-items:center;gap:6px;background:none;padding:2px 0;color:var(--faint)}
 .pill.layer::before,.join .lay::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
 .pill.ef{color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);margin-right:6px}
-.map2d{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);background:var(--ground);overflow:hidden;flex:none}
+/* The small area above the panel and the large one change what they hold, VIEW-028. */
+.small{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);overflow:hidden;flex:none}
+#big3d{position:absolute;inset:0;background:var(--ground)}
+.map2d{position:absolute;inset:0;background:var(--ground);overflow:hidden}
+.small #big3d .legend,.small #big3d .count,.small #big3d .hint,.small #big3d .stagebtns{display:none}
 .map2d .viewport{position:absolute;left:0;right:0;bottom:0;top:34px}
 .map2d svg{position:absolute;inset:0;width:100%;height:100%;max-width:none!important;cursor:grab}
 .map2d:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}

@@ -48,14 +48,16 @@
   </header>
 
   <aside>
+    <div class="small" id="small">
     <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape out; F cycles the view.">
       <div class="bar2d">
         <div class="navbtns"><button id="backBtn" title="Back to the node selected before" disabled>&lsaquo; Back</button><button id="forwardBtn" title="Forward again" disabled>Forward &rsaquo;</button></div>
         <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-        <div class="mapbtns"><button id="fitBtn" title="Zoomed out, zoomed in, regular (F)">Fit</button></div>
+        <div class="mapbtns"><button id="fitBtn" title="Zoomed out, zoomed in, regular (F)">Fit</button><button id="swapBtn" title="Put this map in the large area, and the 3D map here">Swap</button></div>
       </div>
       <div class="viewport" id="viewport"></div>
       <span class="kbd">click again or Enter: in · Esc: out · arrows: walk · F: view</span>
+    </div>
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" id="t-object" aria-selected="true">Object</button>
@@ -80,6 +82,7 @@
   </aside>
 
   <main>
+    <div id="big3d">
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
     <div id="labels3d" aria-hidden="true"></div>
     <div class="tip3d" id="tip3d" hidden></div>
@@ -88,6 +91,7 @@
     <div class="stagebtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
+    </div>
   </main>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>

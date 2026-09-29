@@ -2461,3 +2461,44 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     page.wait_for_function('() => document.querySelector("#messages").hidden')
     assert problems == []
 
+
+@pytest.mark.req('VIEW-028')
+def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(run, web, mapped, browser):
+    """Rich, 2026-09-28: the chart in the big view and the graph in the other, on demand, since the chart is so small
+    it cannot be read."""
+    from metaform.data import Store
+    store = Store('proj')
+    kitchen, alarm = (store.element(address).element_id for address in ('code.timer.kitchen', 'code.alarm.audible'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    boxes = lambda: page.evaluate("""() => Object.fromEntries(['#map2d', '#stage', '#stage canvas'].map(name => {
+        const box = document.querySelector(name).getBoundingClientRect();
+        return [name, [Math.round(box.width), Math.round(box.height)]]; }))""")
+    area = lambda box: box[0] * box[1]
+    first = boxes()
+    assert area(first['#stage']) > 2 * area(first['#map2d']) and first['#stage canvas'] == first['#stage']
+    page.click('#swapBtn')
+    page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
+        return box('#map2d').width * box('#map2d').height > 2 * box('#stage').width * box('#stage').height; }""")
+    swapped = boxes()
+    assert swapped['#map2d'] == first['#stage'] and swapped['#stage canvas'] == swapped['#stage']
+    assert swapped['#stage'][0] == first['#map2d'][0]
+    assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('#fitBtn') and page.is_visible('#swapBtn')
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.evaluate(f'window.metaform.click3d("{alarm}")')  # the small 3D map takes a click
+    page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
+    page.evaluate('window.metaform.fit()')                # the whole map in view, so the kitchen's box is on screen
+    page.wait_for_timeout(700)
+    box = page.evaluate(f'window.metaform.box2d("{kitchen}")')
+    page.mouse.click(box['left'] + 6, box['top'] + 6)     # and so does the large 2D map
+    page.wait_for_function(f'() => window.metaform.selected() === "{kitchen}"')
+    chosen = page.evaluate('window.metaform.selected()')
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    assert boxes()['#map2d'] == swapped['#map2d']        # the choice is kept
+    page.click('#swapBtn')
+    page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
+        return box('#stage').width * box('#stage').height > 2 * box('#map2d').width * box('#map2d').height; }""")
+    assert boxes() == first and chosen
+    assert problems == []

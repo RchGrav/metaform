@@ -708,6 +708,22 @@ function setTheme(name) {
 $('#theme').value = document.documentElement.dataset.theme;
 if ($('#theme').selectedIndex < 0) $('#theme').value = document.documentElement.dataset.theme = 'space';  // a kept name that is no longer a theme
 $('#theme').onchange = () => setTheme($('#theme').value);
+/* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
+ * Each is then drawn for the area it has. The choice is the viewer's own, kept in this browser. */
+async function swap(on) {
+  $('.app').classList.toggle('swapped', on);
+  (on ? $('main') : $('#small')).append($('#map2d'));
+  (on ? $('#small') : $('main')).append($('#big3d'));
+  $('#swapBtn').title = on ? 'Put the 3D map back in the large area' : 'Put this map in the large area, and the 3D map here';
+  try { localStorage.setItem('metaform.swapped', on ? '1' : ''); } catch (error) { /* storage can be blocked; the swap still shows */ }
+  resize();
+  if (G) setTimeout(() => G.zoomToFit(reduced() ? 0 : 600, on ? 24 : 60), 50);  // the whole 3D map in its new area
+  if (S.loading || !S.elements.size) return;
+  await build2D();
+  if (S.selected) select(S.selected, false, true);
+}
+$('#swapBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
+try { if (localStorage.getItem('metaform.swapped')) swap(true); } catch (error) { /* storage can be blocked */ }
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
 addEventListener('resize', resize);
 

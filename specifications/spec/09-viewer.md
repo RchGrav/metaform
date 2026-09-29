@@ -388,6 +388,17 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-005, VIEW-016, VIEW-025, MAP-046, MAP-049.
 - Status: design, shown on the demonstration page 2026-09-28, where Rich judged the look. Open: whether it replaces the circles of VIEW-016 or stands beside them; how the agent's phases and its submitting reach the page from the work records; the values.
 
+### VIEW-028 The two views change places on demand
+
+- Requirement: A Swap button puts the 2D map in the large area of the page and the 3D map in the small one, and puts them back. Each view works the same in either place.
+- What this means: The page has a large area and a small one above the panel. It opens with the 3D map large and the 2D map small. After a swap the 2D map fills the large area, with its Back, Forward and Fit buttons, its crumbs and its keys, and the 3D map is drawn in the small area and still turns, zooms and takes clicks. What is selected stays selected through a swap. The choice is the viewer's own and is kept in the browser, as the theme is, VIEW-023.
+- Why: The 2D map is the one that is read: it has the names in boxes and the joins as labeled lines, and in the small area it is too small to read anything but the part around the selection. The 3D map shows the whole at once and where attention is needed, which it still does small. A person reading the chart needs it large for as long as they read, and then needs the whole again, so the two change places and neither is given up.
+- How it shows: Clicking Swap puts the chart across the large area; clicking it again puts the 3D map back.
+- Build: `#swapBtn` sits with the 2D map's buttons, so it is at hand in either place. The 3D map and what is drawn over it, its labels, tip, legend, count and buttons, are one block, `#big3d`; the swap moves that block and `#map2d` between `main` and the small slot of the `aside`, and the class `swapped` on `.app` sizes them. After the move the 3D map is resized to its area and the 2D map is fitted to its own. In the small area the 3D map's legend, count and hint are not shown, since they would cover it. The choice is kept in local storage as `metaform.swapped`.
+- Acceptance: The page opens with the 3D map's area larger than the 2D map's. After Swap the 2D map's area is the larger, the 3D canvas has the size of its new area, and both views still select a node on a click. A reload keeps the choice. A second Swap puts the two back at their first sizes.
+- Relates to: VIEW-005, VIEW-008, VIEW-009, VIEW-023.
+- Status: asked for by Rich 2026-09-28: the chart in the big view and the graph in the other on demand, since the chart is so small. Where the button sits and how the choice is kept are recommended.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
