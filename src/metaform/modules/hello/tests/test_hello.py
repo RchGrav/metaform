@@ -148,9 +148,9 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
     said = run('hello', 'todo', 'greet in every language', cwd=hello).stdout.strip()
     store = Store('proj')
     records = store.work(node=Node('element', 'code.module.hello')).results
-    assert [(row.condition, row.task, row.done) for row in records] == [('tbd', 'greet in every language', None)]
+    assert [(row.condition, row.task, row.done) for row in records] == [('missing', 'greet in every language', None)]
     assert said == f'To do: greet in every language ({records[0].work_id})'
-    assert store.element('code.module.hello', raw=True).open_work == ('tbd',)
+    assert store.element('code.module.hello', raw=True).open_work == ('missing',)
     assert 'Hello: 1 greeted, 1 to do' in run(cwd=hello).stdout.splitlines()
     run('hello', 'done', records[0].work_id, 'greets in Latin now', cwd=hello)
     finished = store.work(node=Node('element', 'code.module.hello')).results[0]

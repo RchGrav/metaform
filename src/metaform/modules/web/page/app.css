@@ -21,7 +21,7 @@
   --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#10151c; --node-sub:#191f25; --node-sel:#003833; --node-broken:#4e1211; --group:#080d13; --node-line:#67778d; --edge:#67778d;
   --mark:#00433d; --string:#00fd78; --add:#83d494; --add-bg:#0a2d15; --del:#ff9f9f; --del-bg:#441014; --shadow:#000000;
 }
@@ -33,7 +33,7 @@
   --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#0f1836; --node-sub:#182241; --node-sel:#003d48; --node-broken:#551918; --group:#070f2c; --node-line:#5d75bb; --edge:#5d75bb;
   --mark:#004855; --string:#00fd78; --add:#83d494; --add-bg:#11331b; --del:#ff9f9f; --del-bg:#4c171a; --shadow:#000000;
 }
@@ -45,7 +45,7 @@
   --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#242424; --node-sub:#2e2e2e; --node-sel:#553a0c; --node-broken:#612421; --group:#1b1b1b; --node-line:#777c85; --edge:#777c85;
   --mark:#604419; --string:#00fd78; --add:#87d999; --add-bg:#1c3e24; --del:#ffacab; --del-bg:#572124; --shadow:#000000;
 }
@@ -57,7 +57,7 @@
   --function:#00fdea; --encounter:#ff31e2;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#241029; --node-sub:#2e1933; --node-sel:#4e2439; --node-broken:#541716; --group:#1b071f; --node-line:#9565a0; --edge:#9565a0;
   --mark:#592e44; --string:#00fd78; --add:#83d494; --add-bg:#103219; --del:#ff9f9f; --del-bg:#4a1519; --shadow:#000000;
 }
@@ -69,7 +69,7 @@
   --function:#00fdea; --encounter:#ff41e3;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#061f13; --node-sub:#0f291c; --node-sel:#243c14; --node-broken:#541716; --group:#00160a; --node-line:#478364; --edge:#478364;
   --mark:#2e461f; --string:#00fd78; --add:#83d494; --add-bg:#103219; --del:#ff9f9f; --del-bg:#4a1519; --shadow:#000000;
 }
@@ -81,7 +81,7 @@
   --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#281309; --node-sub:#331c12; --node-sel:#4f290b; --node-broken:#541716; --group:#1e0a03; --node-line:#a06a51; --edge:#a06a51;
   --mark:#5a3316; --string:#00fd78; --add:#83d494; --add-bg:#103219; --del:#ff9f9f; --del-bg:#4a1519; --shadow:#000000;
 }
@@ -93,7 +93,7 @@
   --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#ff635f; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
   --node:#4d4433; --node-sub:#49402f; --node-sel:#74582d; --node-broken:#864540; --group:#433a29; --node-line:#868072; --edge:#868072;
   --mark:#7b5e34; --string:#00fd78; --add:#87d999; --add-bg:#3e6145; --del:#ffacab; --del-bg:#7e4445; --shadow:#110d04;
 }
@@ -105,7 +105,7 @@
   --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --correction:#fe711e;
   --k1:#fead00; --k2:#00fd49; --k3:#fc679e; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --tbd:#feca00; --broken:#fc6d68; --cruft:#beff3d; --question:#ff8ad8;
+  --missing:#feca00; --broken:#fc6d68; --exclude:#beff3d; --question:#ff8ad8;
   --node:#364854; --node-sub:#324450; --node-sel:#74582d; --node-broken:#864540; --group:#2d3e49; --node-line:#75838c; --edge:#75838c;
   --mark:#7b5e34; --string:#00fd78; --add:#87d999; --add-bg:#3e6145; --del:#ffacab; --del-bg:#7e4445; --shadow:#050f15;
 }
@@ -159,7 +159,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{font:500 12px var(--mono);padding:2px 8px;border-radius:var(--r);border:0;background:var(--panel-2);color:var(--muted)}
 .pill.work-broken{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
-.pill.work-cruft{color:var(--cruft);background:color-mix(in srgb,var(--cruft) 14%,transparent)}
+.pill.work-exclude{color:var(--exclude);background:color-mix(in srgb,var(--exclude) 14%,transparent)}
 .pill.work-question,.pill.work-message{color:var(--question);background:color-mix(in srgb,var(--question) 14%,transparent)}
 .map2d .node.work-message,.map2d .cluster.work-message,.map2d path.work-message{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
 .map2d .node.work-message rect,.map2d .cluster.work-message rect{stroke:var(--question)!important;stroke-width:2px}
@@ -251,7 +251,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .item.work .typed[hidden]{display:none}
 .item.work textarea.answer{width:100%;min-height:64px;margin-top:6px;box-sizing:border-box;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:6px;font:13px var(--sans)}
 .item.work button.answer{margin-top:6px;height:var(--ctl-sm);background:var(--question);color:var(--ground);border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
-.pill.work-tbd{color:var(--tbd);background:color-mix(in srgb,var(--tbd) 14%,transparent)}
+.pill.work-missing{color:var(--missing);background:color-mix(in srgb,var(--missing) 14%,transparent)}
 .pill.layer{display:inline-flex;align-items:center;gap:6px;background:none;padding:2px 0;color:var(--faint)}
 .pill.layer::before,.join .lay::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
 .pill.ef{color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);margin-right:6px}
@@ -268,11 +268,11 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node{cursor:pointer}
 .map2d .node.sel rect{fill:var(--node-sel)!important;stroke:var(--signal)!important;stroke-width:2px!important}
 .map2d .node.near rect{stroke:var(--intake)!important}
-/* The condition of a node, MAP-046: an open tbd record draws it ghostly, at 70% opacity; an open broken record flashes
- * its box red, steady red with reduced motion; cruft keeps its look. */
+/* The condition of a node, MAP-046: an open missing record draws it ghostly, at 70% opacity; an open broken record flashes
+ * its box red, steady red with reduced motion; exclude keeps its look. */
 /* Not built yet, VIEW-005: a bloom around the node or the edge, which keeps its color and opacity. */
-.map2d .node.work-tbd,.map2d .cluster.work-tbd{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--node-line)) drop-shadow(0 0 18px var(--node-line))}
-.map2d .edgePaths path.work-tbd,.map2d path.work-tbd{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 8px var(--edge))}
+.map2d .node.work-missing,.map2d .cluster.work-missing{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--node-line)) drop-shadow(0 0 18px var(--node-line))}
+.map2d .edgePaths path.work-missing,.map2d path.work-missing{filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 8px var(--edge))}
 /* Being worked on: the glow pulsates; a broken part being fixed is red. */
 @keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 1px var(--text)) drop-shadow(0 0 3px var(--c,var(--node-line)))}50%{filter:drop-shadow(0 0 4px var(--text)) drop-shadow(0 0 12px var(--c,var(--node-line))) drop-shadow(0 0 24px var(--c,var(--node-line)))}}
 .map2d .node.work-in-progress,.map2d .cluster.work-in-progress,.map2d path.work-in-progress{animation:glow-pulse 1.6s ease-in-out infinite}
@@ -286,10 +286,10 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
 .map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash 1s ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:var(--node-broken)!important}}
-@keyframes pulse-cruft{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--cruft);filter:drop-shadow(0 0 4px var(--cruft)) drop-shadow(0 0 12px var(--cruft)) drop-shadow(0 0 24px var(--cruft))}}
-.map2d .node.work-cruft rect,.map2d .cluster.work-cruft rect{stroke:var(--cruft)!important;stroke-width:2px;animation:pulse-cruft 1s ease-in-out infinite}
-.map2d .edgePaths path.work-cruft,.map2d path.work-cruft{stroke:var(--cruft)!important;stroke-width:2px}
-@media (prefers-reduced-motion: reduce){.map2d .node.work-cruft rect,.map2d .cluster.work-cruft rect{animation:none}}
+@keyframes pulse-exclude{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--exclude);filter:drop-shadow(0 0 4px var(--exclude)) drop-shadow(0 0 12px var(--exclude)) drop-shadow(0 0 24px var(--exclude))}}
+.map2d .node.work-exclude rect,.map2d .cluster.work-exclude rect{stroke:var(--exclude)!important;stroke-width:2px;animation:pulse-exclude 1s ease-in-out infinite}
+.map2d .edgePaths path.work-exclude,.map2d path.work-exclude{stroke:var(--exclude)!important;stroke-width:2px}
+@media (prefers-reduced-motion: reduce){.map2d .node.work-exclude rect,.map2d .cluster.work-exclude rect{animation:none}}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
 .map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:1.2px!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:1.8px!important}
@@ -374,7 +374,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #labels3d span.dim{color:var(--faint)}
 #labels3d span.reach{color:var(--text);font-weight:600;text-shadow:0 0 3px var(--ground),0 0 6px var(--ground),0 0 10px var(--ground)}
 #labels3d span.work-broken,#labels3d span.work-fixing{color:var(--broken)}
-#labels3d span.work-cruft{color:var(--cruft)}
+#labels3d span.work-exclude{color:var(--exclude)}
 #tip3d{position:absolute;pointer-events:none;z-index:2}
 #tip3d[hidden]{display:none}
 .tip3d{font:12px var(--sans);max-width:280px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);padding:6px 8px;border-radius:6px;color:var(--text)}

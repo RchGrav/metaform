@@ -656,7 +656,7 @@ It covers the base database, the per-project store, the correction stack, layers
   | `finish(layer)` | | `Layer` with `ready` set; a correction layer is applied on top of the stack, STORE-017 | layer unknown; already finished; a correction layer failing STORE-034 |
   | `edit(thing, changes)` | thing is an element, join, property or item written in a knowledge layer, or in an intake or correction layer still building, a subtype join being a join; `changes` per STORE-034, a join's `receiver`, `provider` and `parent` included, which move it, MAP-003 | the changed row, in place, with no new version | thing in a finished intake layer, a finished correction layer or memory; a key not allowed for the thing's kind; an element's `address`, which is its identity, MAP-015; a `parent` that is not a join held by a receiver, which cannot be read |
   | `remove(thing)` | thing is an element, join, property, item or ref written in a knowledge layer, or in an intake or correction layer still building, a subtype join being a join | nothing; the row and the refs and links attached to it are deleted, identity and `types` rows stay | thing in a finished intake layer, a finished correction layer or memory; the thing is still the receiver, provider or target of a current row in the layer |
-  | `add_work(node, condition, *, note=None, task=None, held=False, reviewed=False)` | a `Node` naming an element or a join, a subtype join included, by address or id; the condition, note and task of MAP-046 | `WorkRecord`, open, attached to the object and to no layer, STORE-042 | a condition outside tbd, broken and cruft, or a node that names no current object: stored as given with a notice; a missing condition: stored empty with a notice |
+  | `add_work(node, condition, *, note=None, task=None, held=False, reviewed=False)` | a `Node` naming an element or a join, a subtype join included, by address or id; the condition, note and task of MAP-046 | `WorkRecord`, open, attached to the object and to no layer, STORE-042 | a condition outside missing, broken and exclude, or a node that names no current object: stored as given with a notice; a missing condition: stored empty with a notice |
   | `edit_work(work_id, changes)` | changes among `condition`, `note`, `task`, `held`, `reviewed` | the `WorkRecord`, changed in place | a key that is not one of the five: named in a notice and not stored |
   | `finish_work(work_id, resolution=None)` | | the `WorkRecord`, done, with its resolution kept beside it | already done: the first resolution is kept and a notice says so |
   | `discard(layer)` | a knowledge layer, or a correction layer still building | a notice for each element kept because another layer holds something at it; the layer's content is deleted and its identity and type rows stay, STORE-032 | layer unknown; the intake layer; a correction layer on the stack; memory |
@@ -1060,9 +1060,9 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 
 ### STORE-042 Work records are their own rows, apart from the map
 - Requirement: The condition of an element or a join, a subtype join included, is a work record: its own row in `work`, attached to that one object, never a field of the object and never a layer. It is open until its task is done, and then it is kept with its resolution.
-- What this means: The metaform is the intended shape of the project, and the intake layer holds only functional shape, never the condition of its objects. A work record holds the condition, MAP-046: `tbd`, `broken` or `cruft`; a note saying what and where; a task saying what it needs; `held`, which keeps it waiting until agents are assigned or take it; and `reviewed`, set once it has been checked for correctness before it is fired off. Marking it done records the resolution beside it; nothing is erased. Any agent writes one at any time, after the intake has finished too; writing one never changes the map and is never a correction. A work record has no layer: it follows the object, so an element removed and recorded again at its address, STORE-009, keeps its records, and discarding a layer leaves them.
+- What this means: The metaform is the intended shape of the project, and the intake layer holds only functional shape, never the condition of its objects. A work record holds the condition, MAP-046: `missing`, `broken` or `exclude`; a note saying what and where; a task saying what it needs; `held`, which keeps it waiting until agents are assigned or take it; and `reviewed`, set once it has been checked for correctness before it is fired off. Marking it done records the resolution beside it; nothing is erased. Any agent writes one at any time, after the intake has finished too; writing one never changes the map and is never a correction. A work record has no layer: it follows the object, so an element removed and recorded again at its address, STORE-009, keeps its records, and discarding a layer leaves them.
 - Why: Agents must list what needs doing without scanning the map, the web GUI must show each node's condition, and the map must stay the intended shape while the work on it proceeds.
-- How it shows: `metaform map work condition=tbd` lists each open tbd record with its object's address, or its join's ends, its note and its task. `metaform map node element:code.old.probe` shows `open_work: ["cruft"]`.
+- How it shows: `metaform map work condition=missing` lists each open missing record with its object's address, or its join's ends, its note and its task. `metaform map node element:code.old.probe` shows `open_work: ["exclude"]`.
 - Build:
   ```sql
   CREATE TABLE work(
@@ -1089,12 +1089,12 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
   - Every read that returns an element or a join, a subtype join included, also returns `open_work`, the conditions of its open records in row order, empty when it has none; one lookup on `work_by_target`.
   - Export and import carry the table as `work`, STORE-027.
 - Acceptance:
-  - A `tbd` record added to an element and a `broken` one to a join write exactly two rows; `work condition=broken` returns the join with its receiver and provider; the element reads back with `open_work` `["tbd"]`.
+  - A `missing` record added to an element and a `broken` one to a join write exactly two rows; `work condition=broken` returns the join with its receiver and provider; the element reads back with `open_work` `["missing"]`.
   - `finish_work` with a resolution leaves the row, sets `done`, and the element's `open_work` is empty; `work open=false` returns it with the resolution.
-  - The plans of `work condition=tbd`, `work node=element:<id>` and `work open=true` use `work_by_condition`, `work_by_target` and `work_by_done`.
+  - The plans of `work condition=missing`, `work node=element:<id>` and `work open=true` use `work_by_condition`, `work_by_target` and `work_by_done`.
   - A condition `sideways` is stored as `sideways` and the call's notice names `condition`.
 - Relates to: MAP-046, STORE-007, STORE-009, STORE-024, STORE-025, STORE-027, BASE-038, BASE-044, VIEW-005.
-- Status: confirmed, 2026-09-27, for the condition apart from the map, `tbd` replacing `missing`, the note and task, the held and reviewed flags, done with a resolution kept, and writable by any agent at any time and never a correction. Open, and built so until answered: its own table rather than a layer, D84, and `tbd` as one condition whose task says build or decide, D85. The columns and operations are recommended.
+- Status: confirmed, 2026-09-27, for the condition apart from the map, `missing` replacing `missing`, the note and task, the held and reviewed flags, done with a resolution kept, and writable by any agent at any time and never a correction. Open, and built so until answered: its own table rather than a layer, D84, and `missing` as one condition whose task says build or decide, D85. The columns and operations are recommended.
 
 ### STORE-043 Reports are files with one row each
 - Requirement: Each report, feedback or shape file has one row in the `reports` table of the project's active metaform store, and a row with a layer id is that layer's provenance ref.
@@ -1169,7 +1169,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 
 ## Open questions
 
-1. NEW Does a work record live in a layer, D84, and is `tbd` one condition whose task says build or decide, D85? (STORE-042)
+1. NEW Does a work record live in a layer, D84, and is `missing` one condition whose task says build or decide, D85? (STORE-042)
 2. NEW Do correction layers stay at all, D86? (STORE-017, STORE-034, STORE-036)
 3. NEW Is a property a value on an element, a link between two elements, or a join of its own kind, D88? (STORE-039)
 4. NEW What does approving a blind-spot entry write into the metaform, and how is the user's veto recorded, D89? (STORE-040)

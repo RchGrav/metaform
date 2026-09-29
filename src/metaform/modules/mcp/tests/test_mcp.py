@@ -16,10 +16,14 @@ pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
-        'Read the part you are about to change before you change it, so you work from its purpose. Each tool is a '
-        'module of Metaform. Call a tool with no command to see its commands and what each takes; then call it with '
-        "command, and the command's arguments in arguments. On the command line the same command is metaform "
-        '<module> <command>. An error ends with the one next step to take.\n\n'
+        "Choose the operation from the user's request. Use the matching module's commands and instructions to "
+        'perform it through completion. Execute a supplied procedure or prompt, recording results as it directs. '
+        'The current project is the target of the operation. Platform-development guidance applies when the task '
+        "is to change Metaform's implementation. "
+        'Each tool is a module. Call it with no command to see its commands and arguments; then call it with '
+        "command and the command's arguments in arguments. On the CLI use metaform <module> <command>; read "
+        '`metaform help <module>` and `metaform help <module> <command>` for its procedure. '
+        'Read the map at a part before changing it. An error ends with the one next step to take.\n\n'
         'If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, '
         'attaching what you have in its shape field. Do not retry.')
 DEBUG = ('Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match '
@@ -141,6 +145,38 @@ def test_a_tool_returns_what_the_cli_returns(run, home, mapped):
     blocks = session(home, mapped, call)
     assert json.loads(blocks[-1]) == cli
     assert cli['results'][0]['layer'] == 'intake-1'
+
+
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-011')
+def test_a_knowledge_subtypes_own_purpose_survives_mcp_creation_and_readback(run, home, mapped):
+    """The Canonical Intake's internal joins keep their own OP alongside their EF, also in knowledge layers."""
+    async def check(client, init):
+        async def knowledge(**arguments):
+            result = await client.call_tool('map', {'command': 'knowledge',
+                                                    'arguments': {'layer': 'notes', **arguments}})
+            assert not result.is_error, text(result)
+            return json.loads(text(result)[-1])
+
+        await knowledge(op='create', variable='Alarm operation.', mutable=True, hideable=True)
+        parent = await knowledge(op='add-join', receiver='code.timer.kitchen', provider='code.alarm.audible',
+                                 purpose='Get attention.', function='Plays a tone.')
+        await knowledge(op='add-subtype', join=parent['join_id'], address='code.alarm.audible.piezo',
+                        purpose='Make the end audible.', function='Buzzes when driven.', ef='Function',
+                        relation='buzzes when driven', verb='buzzes', observation='A piezo disc.')
+        await knowledge(op='finish')
+        result = await client.call_tool('map', {'command': 'where',
+                                                'arguments': {'address': 'code.timer.kitchen'}})
+        assert not result.is_error, text(result)
+        return json.loads(text(result)[-1])
+
+    view = session(home, mapped, check)
+    parent = next(join for join in view['receives'] if join['layer'] == 'notes')
+    (subtype,) = parent['subtypes']
+    assert parent['purpose'] == 'Get attention.'
+    assert (subtype['purpose'], subtype['function']) == ('Make the end audible.', 'Buzzes when driven.')
+    assert 'purpose' not in subtype.get('extra', {})
 
 
 @pytest.mark.req('MCP-003')

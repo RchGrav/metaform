@@ -360,7 +360,7 @@ function look(id) {
     text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
     turns: writing.get(id)?.rate ?? 0,
     text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
-    glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question', 'message'].some(name => group.classList.contains('work-' + name))
+    glow2d: Boolean(box) && ['broken', 'fixing', 'exclude', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
     material: material ? (material instanceof MeshTransmissionMaterial ? 'MeshTransmissionMaterial' : material.type) : null,
@@ -379,20 +379,20 @@ function look(id) {
     color3d: material ? '#' + material.color.getHexString() : null,
     label3d: [...(tags.get(id)?.classList || [])].filter(name => name.startsWith('work-')),
     stroke2d: box ? toHex(getComputedStyle(box).stroke) : null,
-    cruft3d: material ? '#' + material.color.getHexString() === css('--cruft').toLowerCase() : false};
+    exclude3d: material ? '#' + material.color.getHexString() === css('--exclude').toLowerCase() : false};
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft', 'question', 'message'];
+const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'exclude', 'question', 'message'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
-  if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
+  if (node.t === 'el') return has(node, 'exclude') ? css('--exclude') : node.role === 'VE' ? css('--signal')
     : node.role === 'DE' ? css('--de') : layerColor(node.layer);
-  if (has(node, 'cruft')) return css('--cruft');
+  if (has(node, 'exclude')) return css('--exclude');
   if (node.t === 'purpose') return css('--text');
   return layerColor(node.layer);
 }
-/* The color an object has apart from any condition, which a cruft record pulses against. */
+/* The color an object has apart from any condition, which a exclude record pulses against. */
 const ownColor = node => colorOf({...node, work: []});
 /* A dimmed node keeps its own hue: its color with part of the background mixed in, the share set by the theme. */
 function dim(color) {
@@ -736,7 +736,7 @@ const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE
   screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
   rows: new Map()};
 const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
-const unbuilt = node => has(node, 'tbd') || has(node, 'in-progress');
+const unbuilt = node => has(node, 'missing') || has(node, 'in-progress');
 const asText = node => unbuilt(node) || writing.has(node.id);
 const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
 function weightOf(letter) {
@@ -898,7 +898,7 @@ function rows3d(data) {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
-const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['cruft', '--cruft'], ['question', '--question'],
+const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['exclude', '--exclude'], ['question', '--question'],
   ['message', '--question']];
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
@@ -963,8 +963,8 @@ function textOf(id) {
   return [...state.cells.image.data.slice(0, 64)].map(value => T.order[Math.min(61, Math.floor(value / 256 * 62))]).join('');
 }
 /* The condition of a node in 3D, MAP-046, VIEW-005 and VIEW-029: an open broken record flashes it red, steady red
- * with reduced motion; a broken part being fixed is steady red; an open cruft record pulses it between the cruft color
- * and its own, steady in the cruft color with reduced motion; an open question or message keeps its color. While it is
+ * with reduced motion; a broken part being fixed is steady red; an open exclude record pulses it between the exclude color
+ * and its own, steady in the exclude color with reduced motion; an open question or message keeps its color. While it is
  * lit the node gives off light in the color of what it signals, which the bloom spreads past its outline: a flash is
  * lit on its beat, a pulse swells for half its period and rests for the other half. The sphere takes its own material
  * first, so no other node of its color changes. Called every frame for the nodes that carry a record, and for a node
@@ -972,10 +972,10 @@ function textOf(id) {
 function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
-  const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
+  const broken = has(node, 'broken'), exclude = has(node, 'exclude'), fixing = has(node, 'fixing');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
-  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing && !asked)) {  // a wave shows on it, or nothing to signal
+  if (R.nodes.has(node.id) || (!broken && !exclude && !fixing && !asked)) {  // a wave shows on it, or nothing to signal
     if (object.material.userData.lit) { shine(object.material, null, 0); object.material.userData.lit = false; }
     return;
   }
@@ -985,12 +985,12 @@ function paint3d(node) {
     object.material.transparent = true;
   }
   const beat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
-  const shown = fixing || (broken && beat) ? css('--broken') : cruft ? (beat ? css('--cruft') : ownColor(node))
+  const shown = fixing || (broken && beat) ? css('--broken') : exclude ? (beat ? css('--exclude') : ownColor(node))
     : colorOf(node);
-  colored(object.material, dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
+  colored(object.material, dimmed(node) && !(broken || exclude || fixing) ? dim(shown) : shown);
   const swell = reduced() ? 1 : Math.max(0, Math.sin(performance.now() / 1600 * 2 * Math.PI));
-  const lit = broken || cruft ? (beat ? 1 : 0) : swell;
-  shine(object.material, broken || fixing ? css('--broken') : cruft ? css('--cruft') : css('--question'), lit);
+  const lit = broken || exclude ? (beat ? 1 : 0) : swell;
+  shine(object.material, broken || fixing ? css('--broken') : exclude ? css('--exclude') : css('--question'), lit);
   object.material.userData.lit = true;
 }
 
@@ -998,7 +998,7 @@ function paint3d(node) {
 const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
-  if ((link.work || []).includes('cruft')) return css('--cruft');
+  if ((link.work || []).includes('exclude')) return css('--exclude');
   if (EF[link.ef]) return css(EF[link.ef]);
   return layerColor(link.layer);
 }
@@ -1228,9 +1228,9 @@ function renderLegend() {
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
     .concat(S.joins.flatMap(join => (join.open_work || []).concat((join.subtypes || []).flatMap(subtype => subtype.open_work || [])))));
   for (const condition of CONDITIONS) if (open.has(condition))
-    legend.append(h('span', {style: {'--c': condition === 'tbd' || condition === 'in-progress' ? 'var(--text)'
+    legend.append(h('span', {style: {'--c': condition === 'missing' || condition === 'in-progress' ? 'var(--text)'
       : `var(--${condition === 'fixing' ? 'broken' : condition === 'message' ? 'question' : condition})`}},
-      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
+      h('i', {class: {missing: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
       `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'

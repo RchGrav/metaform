@@ -658,15 +658,15 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
 @pytest.mark.req('VIEW-009')
 @pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
-def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
+def test_a_node_with_open_missing_work_is_drawn_in_characters_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
         run, web, mapped, browser):
     """Rich, 2026-09-28: a part not built is drawn in characters, which is the one mark of it, and the circles are
-    removed, VIEW-027; the agent that completes its task makes it solid; a node with an open issue flashes red; cruft
+    removed, VIEW-027; the agent that completes its task makes it solid; a node with an open issue flashes red; exclude
     is drawn by the test below. The fixture's kitchen timer carries an open broken record."""
     from metaform.data import Node, Store
     store = Store('proj')
-    tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='in the spec', task='build the piezo driver')
-    store.add_work(Node('element', 'exterior.cook'), 'cruft', task='drop the cook')
+    missing = store.add_work(Node('element', 'code.alarm.audible'), 'missing', note='in the spec', task='build the piezo driver')
+    store.add_work(Node('element', 'exterior.cook'), 'exclude', task='review whether the cook belongs in the artifact scope')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -677,20 +677,20 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
     # A part not built yet keeps its own color and its full opacity. In 3D it is drawn in characters and has no
     # circles; in 2D a glow around it marks it.
     assert alarm['around3d'] == 0 and alarm['material'] == 'ShaderMaterial'
-    assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['animated2d']) == (['tbd'], ['work-tbd'], 1, False)
+    assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['animated2d']) == (['missing'], ['work-missing'], 1, False)
     assert alarm['opacity3d'] is None or alarm['opacity3d'] >= 0.95
     assert alarm['color3d'] == page.evaluate('window.metaform.own(' + json.dumps(ids['code.alarm.audible']) + ')')
-    assert alarm['bloom2d'] is True and alarm['label3d'] == ['work-tbd']
+    assert alarm['bloom2d'] is True and alarm['label3d'] == ['work-missing']
     assert look('exterior.cook')['around3d'] == 0 and look('exterior.cook')['bloom2d'] is False
     assert look('code.timer.kitchen')['label3d'] == ['work-broken']
     cook = look('exterior.cook')
-    assert (cook['work'], cook['classes'], cook['red3d']) == (['cruft'], ['work-cruft'], False)
+    assert (cook['work'], cook['classes'], cook['red3d']) == (['exclude'], ['work-exclude'], False)
     kitchen = look('code.timer.kitchen')
     assert (kitchen['work'], kitchen['classes'], kitchen['opacity2d'], kitchen['animated2d']) == (['broken'], ['work-broken'], 1, True)
     page.wait_for_function(f'() => window.metaform.look("{ids["code.timer.kitchen"]}").red3d === true', timeout=3000)
     page.wait_for_function(f'() => window.metaform.look("{ids["code.timer.kitchen"]}").red3d === false', timeout=3000)
     legend = page.inner_text('#legend')
-    assert 'work: tbd' in legend and 'work: broken' in legend and 'work: cruft' in legend
+    assert 'work: missing' in legend and 'work: broken' in legend and 'work: exclude' in legend
     # The panel lists the selected node's work records.
     page.evaluate(f'window.metaform.select("{ids["code.timer.kitchen"]}")')
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("hold the tick to one second")')
@@ -698,7 +698,7 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
     for shown in ('WORK', 'broken', 'drifts', 'hold the tick to one second', 'open'):
         assert shown in panel, shown
     # Its task done, pushed to the page, the alarm turns solid without a reload.
-    run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={missing.work_id}', 'resolution=driver written', cwd=mapped)
     # glass, as every built element, once the text has given way to it
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").material === "MeshTransmissionMaterial"',
                            timeout=12000)
@@ -716,12 +716,12 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
 @pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
 def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, browser):
-    """An open tbd record on a join shows on the join itself: its purpose node is drawn in characters in 3D,
+    """An open missing record on a join shows on the join itself: its purpose node is drawn in characters in 3D,
     VIEW-027, and its edge has a glow in 2D, with its color and opacity as they are."""
     from metaform.data import Node, Store
     store = Store('proj')
     joins = list(store.joins('code.timer.kitchen').results)
-    store.add_work(Node('join', joins[0].join_id), 'tbd', task='build it')
+    store.add_work(Node('join', joins[0].join_id), 'missing', task='build it')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -731,8 +731,8 @@ def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, 
     assert page.evaluate(f'window.metaform.look("p:{joins[0].join_id}").around3d') == 0
     built = [join['join_id'] for join in keys_of(web)[0]['joins'] if join['join_id'] != joins[0].join_id]
     assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").text3d') is False
-    assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-tbd']
-    glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-tbd');
+    assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-missing']
+    glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-missing');
         const style = getComputedStyle(path); return [Number(style.opacity), style.filter]; })()""")
     assert glow[0] == 1 and 'drop-shadow' in glow[1]
     assert problems == []
@@ -747,8 +747,8 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     done, VIEW-027."""
     from metaform.data import Node, Store
     store = Store('proj')
-    waiting = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
-    working = store.add_work(Node('element', 'exterior.cook'), 'tbd', task='build that')
+    waiting = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
+    working = store.add_work(Node('element', 'exterior.cook'), 'missing', task='build that')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -848,33 +848,33 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
 
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('MAP-046')
-def test_an_open_cruft_record_stands_out_on_an_element_and_on_a_join_in_both_views(run, web, mapped, browser):
-    """Cruft is the one condition that ends in removal, so it is the one a person most needs to see: the object
-    pulses in the cruft color, which nothing else on the map uses, whether it is an element or a join."""
+def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_views(run, web, mapped, browser):
+    """An exclusion finding remains visible for review: the object pulses in the exclude color,
+    which nothing else on the map uses, whether it is an element or a join."""
     from metaform.data import Node, Store
     store = Store('proj')
     join = next(iter(store.joins('code.timer.kitchen').results))
-    store.add_work(Node('element', 'exterior.cook'), 'cruft', task='drop the cook')
-    store.add_work(Node('join', join.join_id), 'cruft', task='drop the join')
+    store.add_work(Node('element', 'exterior.cook'), 'exclude', task='review whether the cook belongs in the artifact scope')
+    store.add_work(Node('join', join.join_id), 'exclude', task='review whether this relationship belongs in the artifact scope')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     cook, purpose = store.element('exterior.cook').element_id, 'p:' + join.join_id
-    cruft = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--cruft").trim().toLowerCase()')
+    exclude = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--exclude").trim().toLowerCase()')
     others = page.evaluate("""() => { const style = getComputedStyle(document.documentElement);
-        return ['--broken', '--tbd', '--function', '--encounter', '--signal', '--de', '--intake', '--memory',
+        return ['--broken', '--missing', '--function', '--encounter', '--signal', '--de', '--intake', '--memory',
                 '--correction', '--tree', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
             .map(name => style.getPropertyValue(name).trim().toLowerCase()); }""")
-    assert cruft and cruft not in others
+    assert exclude and exclude not in others
     for node in (cook, purpose):
-        page.wait_for_function(f'() => window.metaform.look("{node}").cruft3d === true', timeout=3000)
-        page.wait_for_function(f'() => window.metaform.look("{node}").cruft3d === false', timeout=3000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").exclude3d === true', timeout=3000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").exclude3d === false', timeout=3000)
     seen = page.evaluate(f'window.metaform.look("{cook}")')
-    assert (seen['classes'], seen['animated2d']) == (['work-cruft'], True)
+    assert (seen['classes'], seen['animated2d']) == (['work-exclude'], True)
     colors = {link['color'].lower() for link in page.evaluate('window.metaform.linkColors()')
               if link['join'] == join.join_id}
-    assert colors == {cruft}
-    assert page.evaluate(f'window.metaform.edge2d("{join.join_id}")') == ['work-cruft']
+    assert colors == {exclude}
+    assert page.evaluate(f'window.metaform.edge2d("{join.join_id}")') == ['work-exclude']
     assert problems == []
 
 
@@ -1919,7 +1919,7 @@ def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element
     assert held not in at.values()  # the element a subtype join holds is no node of the outer map
     run('memory', 'add-observations', f'join:{tick[2:]}', 'The tick is its own interrupt.', cwd=mapped)
     run('memory', 'add-observations', 'element:code.loop.tick', 'One loop serves every timer.', cwd=mapped)
-    Store('proj').add_work(Node('element', 'code.loop.tick'), 'tbd', task='count in milliseconds')
+    Store('proj').add_work(Node('element', 'code.loop.tick'), 'missing', task='count in milliseconds')
     page, problems, _ = opened(browser, web)
     set_layer(page, 'memory', True)
     page.keyboard.press('Escape')
@@ -2354,9 +2354,9 @@ def contrast(one, other):
 
 
 LAYER_COLORS = ['--intake', '--memory', '--correction', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
-NODE_COLORS = ['--de', '--signal', '--text', '--cruft', '--broken', *LAYER_COLORS]
+NODE_COLORS = ['--de', '--signal', '--text', '--exclude', '--broken', *LAYER_COLORS]
 LINK_COLORS = ['--tree', '--function', '--encounter', *LAYER_COLORS]
-LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--cruft',
+LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--exclude',
             *LAYER_COLORS]
 LABELS_3D = ['--text', '--muted', '--faint', '--signal']
 LABELS_2D = [('--text', '--node'), ('--text', '--node-sel'), ('--text', '--node-broken'), ('--text', '--group'),
@@ -2488,9 +2488,9 @@ def test_an_answer_written_from_the_page_is_kept_beside_the_question_and_closes_
     assert [(record.text, record.answer) for record in kept] == [('Is the 1 Hz tick still wanted?', 'Yes, keep it.')]
     assert Store('proj').messages(None, 'question', True).results == ()
     # only a question is answered from the page; any other record is left as it is
-    other = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='build it')
+    other = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='build it')
     status, body = answered(web, other.work_id, 'done')
-    assert status == 400 and Store('proj').work(None, 'tbd', True).results[0].done is None
+    assert status == 400 and Store('proj').work(None, 'missing', True).results[0].done is None
     assert answered(web, asked.message_id, '   ')[0] == 400  # an answer says something
 
 
@@ -2614,7 +2614,7 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
         run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
     run('map', 'reply', asked.message_id, 'answer=Yes.', cwd=mapped)
     for record in store.work(None, None, True, limit=0).results:  # nothing on the map needs attention now
-        if record.condition in ('broken', 'fixing', 'cruft'):
+        if record.condition in ('broken', 'fixing', 'exclude'):
             run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=done', cwd=mapped)
     page.wait_for_function(f'() => ["{kitchen}", "{alarm}"].every(id => window.metaform.look(id).light3d === {own}) '
                            '&& !window.metaform.bloom().on', timeout=5000)
@@ -2808,8 +2808,8 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     still drawn in characters is a pulsing bloom."""
     from metaform.data import Node, Store
     store = Store('proj')
-    store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
-    store.add_work(Node('element', 'exterior.cook'), 'tbd', task='build that')
+    store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
+    store.add_work(Node('element', 'exterior.cook'), 'missing', task='build that')
     asked = store.ask(Node('element', 'exterior.cook'), 'Is the cook still wanted?')
     alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
@@ -3027,17 +3027,17 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     page.click('#task .browser [data-address="exterior.cook"]')
     page.click('#task .link')
     assert linked() == ['code.alarm.audible', 'exterior.cook']
-    page.select_option('#task .condition', 'tbd')
+    page.select_option('#task .condition', 'missing')
     page.click('#task .put')
     page.wait_for_function('() => document.querySelector("#task").hidden')
-    written = [record for record in Store('proj').work(None, 'tbd', True, limit=0).results
+    written = [record for record in Store('proj').work(None, 'missing', True, limit=0).results
                if record.task and record.task.startswith('Make the tone louder')]
     text = f"Make the tone louder when [[{names['code.timer.kitchen']}|code.timer.kitchen]] runs out of time."
     assert sorted((record.address, record.task) for record in written) == [
         ('code.alarm.audible', text), ('exterior.cook', text)]
     assert {record.note for record in written} == {'With exterior.cook.', 'With code.alarm.audible.'}
     for node in (alarm, cook):                                        # the map shows each as having work
-        page.wait_for_function(f'() => window.metaform.look("{node}").work.includes("tbd")', timeout=6000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").work.includes("missing")', timeout=6000)
     assert kitchen and problems == []
 
 
@@ -3125,7 +3125,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     joined = [join for join in store.joins('code.alarm.audible').results if join.provider == made.element_id]
     assert [(join.receiver, join.layer, join.purpose, join.function) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
-    work = store.work(Node_of('code.alarm.visible'), 'tbd', True).results
+    work = store.work(Node_of('code.alarm.visible'), 'missing', True).results
     assert len(work) == 1 and work[0].task == f'{VALIDATE} The element is code.alarm.visible.'
     page.wait_for_function(f'() => window.metaform.look("{made.element_id}").text3d === true', timeout=8000)
     for _ in range(50):                                               # the agent is not waited for

@@ -346,13 +346,13 @@ class Handler(BaseHTTPRequestHandler):
     def give_work(self, given: dict[str, Any]) -> None:
         """Put a task a person wrote on the nodes it concerns, one work record at each, VIEW-032 and MAP-048. Each
         record's note names the other nodes of the task."""
-        text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition', 'tbd')
+        text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition', 'missing')
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'A task says what is to be done.'})
         if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
             return self.send(400, {'error': 'A task is given at one node or more.'})
-        if condition not in ('tbd', 'broken'):
-            return self.send(400, {'error': 'Work is to build something, tbd, or to fix something, broken.'})
+        if condition not in ('missing', 'broken'):
+            return self.send(400, {'error': 'Work is to build something, missing, or to fix something, broken.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
             with store.atomic():
@@ -393,7 +393,7 @@ class Handler(BaseHTTPRequestHandler):
                 receiver, provider = (held, made.element_id) if given['receives'] == 'node' else (made.element_id, held)
                 joined = store.add_join(ADDITIONS, receiver, provider, purpose=given.get('purpose') or None,
                                         function=given.get('function') or None)
-                work = store.add_work(Node('element', made.element_id), 'tbd', note='Added by hand in the web GUI.')
+                work = store.add_work(Node('element', made.element_id), 'missing', note='Added by hand in the web GUI.')
                 if given.get('validate') is True:
                     work = store.edit_work(work.work_id, {'task': validation(made.address)})
         except (Stop, StoreError) as error:

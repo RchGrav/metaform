@@ -632,7 +632,9 @@ MODULE = Module(
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
         Verb('prompt', prompt, 'The Canonical Intake instructions for this project.'),
-        Verb('start', start, 'Start recording an intake, or resume the one being recorded.',
+        Verb('start', start, 'Resume the intake being recorded, or start a fresh one. If the active metaform already '
+                            'has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier '
+                            'one untouched. Returns its name; the existing web GUI follows it live.',
              nouns=(Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False),
                     Noun('blinded', 'Whether the agent sees only the map.', kind='bool', required=False),
@@ -671,8 +673,9 @@ MODULE = Module(
         Verb('remove', remove, 'Remove one recorded element, join or subtype join.',
              nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
                                'included.'),)),
-        Verb('finish', finish, 'Finish the intake: every read sees it from now on, and it changes only through a '
-                               'correction layer.',
+        Verb('finish', finish, 'Finish and activate the recorded metaform, keeping the earlier one whole. Switch '
+                               'back with metaform map activate <previous-name>. The finished intake changes only '
+                               'through a correction layer.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),

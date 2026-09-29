@@ -156,10 +156,10 @@ def _own_element(store: Store) -> Layer:
 
 
 def todo(ctx: Context) -> str:
-    """A work record on this module's own element: tbd, with the task given, MAP-046 and STORE-042."""
+    """A work record on this module's own element: missing, with the task given, MAP-046 and STORE-042."""
     store = ctx.require_store()
     _own_element(store)
-    record = store.add_work(Node('element', HOLDER), 'tbd', note='hello has more to do', task=ctx.nouns['task'])
+    record = store.add_work(Node('element', HOLDER), 'missing', note='hello has more to do', task=ctx.nouns['task'])
     return f'To do: {ctx.nouns["task"]} ({record.work_id})\n'
 
 
@@ -313,7 +313,7 @@ MODULE = Module(
              supported_os=('windows',)),
         Verb('todo', todo, "Write a work record on this module's own element: something still to do.",
              nouns=(Noun('task', 'What it needs.'),),
-             examples=(('metaform hello todo "greet in every language"', 'Records a tbd work record.'),)),
+             examples=(('metaform hello todo "greet in every language"', 'Records a missing work record.'),)),
         Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
              nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
         Verb('noncedemo', noncedemo, 'Walk through a nonce: issue it, update it, close it and hand on a new one.',

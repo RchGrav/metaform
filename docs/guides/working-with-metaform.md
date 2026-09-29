@@ -219,7 +219,7 @@ Intake, knowledge, memory, and corrections have different lifecycles. In particu
 
 ## Record the condition of an object as work
 
-The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `tbd`, to be done or determined, `broken`, or `cruft`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a correction.
+The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `missing`, to be done or determined, `broken`, or `exclude`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a correction.
 
 ```sh
 metaform map work op=add node=element:code.alarm.audible condition=broken note="The alarm pin is unconnected on the second board revision." task="Wire the alarm pin on revision two."
@@ -227,7 +227,7 @@ metaform map work node=element:code.alarm.audible
 metaform map work op=done id=<work_id> resolution="Wired on revision two."
 ```
 
-`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `tbd` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
 
 ## Correct represented understanding
 
@@ -290,7 +290,7 @@ The header holds the project and Metaform selectors, **Clear project**, and a **
 
 The checklist selects what the view presents. **Apply to folder** persists the chosen layer context for that folder. A temporary visual selection and the folder's working context are different operations.
 
-The page shows each node's condition from its work records: a node with an open `tbd` record is drawn at 70% opacity and turns solid once its task is done, one with an open `broken` record flashes red, and `cruft` keeps its look. The Object panel lists the selected object's records with their note, task, held and reviewed flags, and the resolution once done.
+The page shows each node's condition from its work records: a node with an open `missing` record is drawn at 70% opacity and turns solid once its task is done, one with an open `broken` record flashes red, and `exclude` keeps its look. The Object panel lists the selected object's records with their note, task, held and reviewed flags, and the resolution once done.
 
 The page follows the map without polling. After any command that changes a project's map, on the command line or over MCP, and after the page's own writes, `map.changed` is announced and the server pushes it to every open page, which redraws without a reload. An intake being recorded is drawn as each object arrives.
 

@@ -15,10 +15,14 @@ from . import context, loader, settings
 from .module import Module, Status, call
 
 BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
-        'Read the part you are about to change before you change it, so you work from its purpose. Each tool is a '
-        'module of Metaform. Call a tool with no command to see its commands and what each takes; then call it with '
-        "command, and the command's arguments in arguments. On the command line the same command is metaform "
-        '<module> <command>. An error ends with the one next step to take.')
+        "Choose the operation from the user's request. Use the matching module's commands and instructions to "
+        'perform it through completion. Execute a supplied procedure or prompt, recording results as it directs. '
+        'The current project is the target of the operation. Platform-development guidance applies when the task '
+        "is to change Metaform's implementation. "
+        'Each tool is a module. Call it with no command to see its commands and arguments; then call it with '
+        "command and the command's arguments in arguments. On the CLI use metaform <module> <command>; read "
+        '`metaform help <module>` and `metaform help <module> <command>` for its procedure. '
+        'Read the map at a part before changing it. An error ends with the one next step to take.')
 STOP = ('If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, '
         'attaching what you have in its shape field. Do not retry.')
 DEBUG = ('Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match '

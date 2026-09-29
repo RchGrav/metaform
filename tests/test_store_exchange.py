@@ -61,26 +61,26 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
                                                                                          tmp_path):
     outer, inner = filled(store)
     tick = store.subtypes(outer.join_id).results[0]
-    tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='the pin is never released',
+    missing = store.add_work(Node('element', 'code.alarm.audible'), 'missing', note='the pin is never released',
                          task='release the pin', held=True)
     broken = store.add_work(Node('join', inner.join_id), 'broken', task='wire the tone', reviewed=True)
-    on_tick = store.add_work(Node('join', tick.join_id), 'cruft')
-    done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'tbd').work_id, 'built it')
+    on_tick = store.add_work(Node('join', tick.join_id), 'exclude')
+    done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'missing').work_id, 'built it')
     first = export_document(['proj'])
     assert len(first['projects'][0]['metaforms'][0]['work']) == 4
     move_home(monkeypatch, tmp_path, 'other-home')
     import_document(json.loads(json.dumps(first)))
     assert export_document(['proj']) == first
     moved = Store('proj')
-    assert moved.element('code.alarm.audible').open_work == ('tbd',)
+    assert moved.element('code.alarm.audible').open_work == ('missing',)
     assert moved.element('code.timer.kitchen').open_work == ()
     assert [join.open_work for join in moved.joins('code.timer.kitchen').results] == [('broken',)]
-    assert moved.subtypes(outer.join_id).results[0].open_work == ('cruft',)
+    assert moved.subtypes(outer.join_id).results[0].open_work == ('exclude',)
     records = {row.work_id: row for row in moved.work().results}
-    assert set(records) == {tbd.work_id, broken.work_id, on_tick.work_id, done.work_id}
-    assert (records[tbd.work_id].address, records[tbd.work_id].note, records[tbd.work_id].task,
-            records[tbd.work_id].held, records[tbd.work_id].created) == (
-        'code.alarm.audible', 'the pin is never released', 'release the pin', True, tbd.created)
+    assert set(records) == {missing.work_id, broken.work_id, on_tick.work_id, done.work_id}
+    assert (records[missing.work_id].address, records[missing.work_id].note, records[missing.work_id].task,
+            records[missing.work_id].held, records[missing.work_id].created) == (
+        'code.alarm.audible', 'the pin is never released', 'release the pin', True, missing.created)
     assert (records[broken.work_id].receiver_address, records[broken.work_id].provider_address,
             records[broken.work_id].reviewed) == ('code.timer.kitchen', 'code.alarm.audible', True)
     assert (records[on_tick.work_id].receiver_address, records[on_tick.work_id].provider_address) == (

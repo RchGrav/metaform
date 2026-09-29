@@ -18,7 +18,7 @@ def populated(store):
     store.add_element(notes.name, 'code.timer.kitchen.display')
     shown = store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
                           function='reports remaining time', relation='The timer feeds the display.', observation='LCD')
-    store.add_work(Node('element', 'code.timer.kitchen.display'), 'tbd', note='not wired yet', task='wire it')
+    store.add_work(Node('element', 'code.timer.kitchen.display'), 'missing', note='not wired yet', task='wire it')
     store.add_work(Node('join', shown.join_id), 'broken', task='fix the LCD')
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
@@ -131,7 +131,7 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
                                              'memory': (['drifts under load'], [])}
     display = store.where('code.timer.kitchen.display')
     assert [(record.condition, record.note, record.task) for record in display.work] == [
-        ('tbd', 'not wired yet', 'wire it')]
+        ('missing', 'not wired yet', 'wire it')]
     assert [join.provider_address for join in display.receives] == ['code.timer.kitchen']
     assert display.receives[0].open_work == ('broken',)
 
@@ -203,7 +203,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                             'link': {'kind': 'element', 'id': alarm},
                                             'refs': [{'key': 'path', 'value': 'src/timer.c'}]}]
     display = store.where('code.timer.kitchen.display').to_dict()
-    assert display['work'] == [{'condition': 'tbd', 'note': 'not wired yet', 'task': 'wire it'}]
+    assert display['work'] == [{'condition': 'missing', 'note': 'not wired yet', 'task': 'wire it'}]
     tick = store.where('code.loop.tick').to_dict()
     assert set(tick) == {'kind', 'element', 'held'} and set(tick['held']) == {'subtype', 'join'}
     assert tick['held']['join']['receiver'] == 'stakeholder.cook.home'

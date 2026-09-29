@@ -435,10 +435,11 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     # The record is written while the intake is being recorded, through the map tool, never through an intake field.
     run('intake', 'start', '--json', cwd=project)
     run('intake', 'element', 'code.alarm.audible', 'role=SE', '--json', cwd=project)
-    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft',
-                          'note=disabled since the 2.0 rewrite', 'task=remove the module and its tests', '--json',
+    made = json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=exclude',
+                          'note=alarm.c conflicts with specifications/alarm.md:12', 'task=review the code against the linked specification', '--json',
                           cwd=project).stdout)
-    assert made['condition'] == 'cruft'
+    assert made['condition'] == 'exclude'
+    assert made['notices'] == []
     report = submit(run, project, copy.deepcopy(FIXTURE), tmp_path,
                     extra=('report=The alarm pin is unconnected.', 'feedback=The subtype fields were clear.'))
     assert report['work'] == 1
@@ -453,10 +454,10 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     provenance = Store('timer').provenance(report['layer'])
     assert sorted((ref.key, ref.value) for ref in provenance.refs) == [
         ('feedback', f'{layer_id}-feedback.md'), ('report', f'{layer_id}-report.md')]
-    cruft = json.loads(run('map', 'work', 'condition=cruft', '--json', cwd=project).stdout)['results']
-    assert [(row['address'], row['condition'], row['note'], row['task']) for row in cruft] == [
-        ('code.alarm.audible', 'cruft', 'disabled since the 2.0 rewrite', 'remove the module and its tests')]
-    assert Store('timer').element('code.alarm.audible').open_work == ('cruft',)
+    exclude = json.loads(run('map', 'work', 'condition=exclude', '--json', cwd=project).stdout)['results']
+    assert [(row['address'], row['condition'], row['note'], row['task']) for row in exclude] == [
+        ('code.alarm.audible', 'exclude', 'alarm.c conflicts with specifications/alarm.md:12', 'review the code against the linked specification')]
+    assert Store('timer').element('code.alarm.audible').open_work == ('exclude',)
 
 
 @pytest.mark.req('MAP-046')

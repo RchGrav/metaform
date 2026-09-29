@@ -124,7 +124,7 @@ Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_
 
 Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` correct it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, joins, subtype joins, refs and open work records, and a notice naming any address recorded only as the end of a join and never described.
 
-The intake tools carry no condition field. What the agent finds in the specifications and not built, broken, or cruft it writes as a work record with `map_work`, apart from the map; the web GUI draws a node with an open `tbd` record at 70% opacity and flashes one with an open `broken` record red.
+The intake tools carry no condition field. What the agent finds in the specifications and not built, broken, or exclude it writes as a work record with `map_work`, apart from the map; the web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red.
 
 ### What stays available
 

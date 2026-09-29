@@ -255,7 +255,7 @@ READS: dict[str, frozenset[str]] = {
     'add-element': frozenset({'address', 'name_length', 'role', 'refs', 'extra'}),
     'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
                            'observation', 'non_goal', 'type', 'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
+    'add-subtype': frozenset({'join', 'address', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
                               'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
@@ -361,7 +361,7 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
                               **_optional(ctx, 'name', 'ef', 'verb', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         return store.add_subtype(name, nouns['join'], nouns['address'],
-                                 **_optional(ctx, 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
+                                 **_optional(ctx, 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal',
                                              'name', 'name_length', 'role', 'refs', 'extra'))
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
@@ -434,7 +434,7 @@ KNOWLEDGE_NOUNS = (
                       'subtype join another element to hold.'),
     _noun('parent', 'edit and correct: the id of a join held by a receiver; the join becomes a subtype join inside '
                     'it, keeping its purpose.'),
-    _noun('purpose', 'add-join: the Operative Purpose.'),
+    _noun('purpose', 'add-join and add-subtype: the Operative Purpose; a subtype join keeps its own purpose.'),
     _noun('function', "add-join and add-subtype: the Encounter Function."),
     _noun('ef', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '
                 'functionality of the encounter.', schema=EF),
@@ -543,8 +543,9 @@ WORK_NOUNS = (
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
-    _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
-                       'broken; or cruft, surpassed code left in the codebase, never a document, a note, an example or data.'),
+    _noun('condition', 'add, edit, and list as a filter: missing, in the specs and not built yet; broken; or exclude, '
+                       'material outside the intake scope or code conflicting with a superseding specification, '
+                       'with the reason and references recorded for review.'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
@@ -640,13 +641,17 @@ MODULE = Module(
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join, a subtype join included, and never changes '
                      'the map. Its '
-                     'condition is tbd, broken or cruft; its note says what and where, its task what it needs. cruft is '
-                     'code only: code that was surpassed and left in the codebase. A document, a note, a '
-                     'specification, an example or data is never cruft, and nothing is removed without the '
-                     "owner's word. It is "
+                     'condition is missing, broken or exclude; its note says what and where, its task what it needs. '
+                     'exclude records material outside the intake scope or code conflicting with a superseding '
+                     'specification. The note links the affected material and the specification or scope reason '
+                     'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
+                     'change is recorded for review. Documents, specifications, notes and working files are '
+                     'preserved. Marking a record does not remove files or change gitignore. Unneeded legacy '
+                     'migration code is marked for review; a needed migration tool belongs outside the main '
+                     'program as a separate tool. It is '
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
-             examples=(('metaform map work op=add node=element:code.alarm.audible condition=tbd task="build it"',
+             examples=(('metaform map work op=add node=element:code.alarm.audible condition=missing task="build it"',
                         'Record that the alarm is in the specs and not built yet.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
 )),

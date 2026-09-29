@@ -644,7 +644,7 @@ def _condition(value: Any, notices: list[Notice]) -> str:
         notices.append(Notice('condition', f'A {value} is not the condition of a part; it was stored as given. Ask the '
                                            'user with metaform map ask, and leave a message with metaform map tell.'))
         return str(value)
-    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress or fixing; it was stored '
+    notices.append(Notice('condition', f'{value!r} is not missing, broken, exclude, in-progress or fixing; it was stored '
                                        'as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 

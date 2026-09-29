@@ -218,11 +218,11 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 ### QUAL-017 Removing needs the same permission as building
 
 - Requirement: An agent removes nothing of the project without the same permission it needs to build. Removing means deleting, leaving behind when a branch or folder is rebuilt, overwriting, and rewriting so that what was there is gone. No task tells an agent to remove the project owner's material.
-- What this means: Cleanup has no exemption. Before anything is removed, the agent lists what would no longer be present and has the owner's word. A `cruft` record, MAP-046, is a finding that waits for that word; its task is never carried out on the finding alone. What is removed with permission is said in the commit that removes it, with the reason.
+- What this means: Cleanup has no exemption. Before anything is removed, the agent lists what would no longer be present and has the owner's word. What is removed with permission is said in the commit that removes it, with the reason.
 - Why: Removal is the act that cannot be taken back. What is built wrong can be changed the next day; a removed note takes with it the reasoning only its author can write again. An agent cannot judge what is waste, because it judges by the code it reads, and design that is not built yet fails that test. And two standards teach the wrong lesson: where building needs a yes and removing does not, removing is the easy path, so the rule has to make both equally deliberate.
 - How it shows: A branch started fresh carries every file of the specifications and the notes, or its first commit lists what it leaves behind and why.
-- Build: Nothing in code removes project material on a finding. `map work op=done` on a `cruft` record records its resolution and removes nothing.
-- Acceptance: Closing a `cruft` work record leaves every file of the project as it was.
+- Build: Nothing in code removes project material on a finding. `map work op=done` records a work record's resolution and removes nothing.
+- Acceptance: Closing a work record leaves every file of the project as it was.
 - Relates to: MAP-046, MAP-049, VIEW-005.
 - Status: confirmed, 2026-09-27.
 

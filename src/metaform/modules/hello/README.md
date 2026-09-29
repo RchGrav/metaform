@@ -25,7 +25,7 @@ Started from template 0.2.0.
 - `history`: returns the names greeted so far. The default verb. Tool `hello_history`.
 - `forget [--confirm]`: deletes the greeting layer. A caution verb. Tool `hello_forget`, with `confirm`.
 - `beep`: rings the terminal bell, on Windows only.
-- `todo <task>`: writes a `tbd` work record on the module's own element, `code.module.hello`, with the task; returns the record id. Tool `hello_todo`.
+- `todo <task>`: writes a `missing` work record on the module's own element, `code.module.hello`, with the task; returns the record id. Tool `hello_todo`.
 - `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `hello_done`.
 - `noncedemo`: walks an agent through a nonce, BASE-050. Run directly it requests a nonce whose function is `noncedemo` itself and prints `Please run metaform <nonce>`. Run through that nonce, `nonce.reached()` holds it, and `noncedemo` does the step the nonce's value in the chassis holds, or the step written after the nonce, `next` or `complete`. `next` updates the value, so the nonce run alone gives the same message again. `complete` closes the nonce and requests a new one, the nonce an agent would pass to the main agent. That one, run, closes itself and ends the demo; run again, it prints `Error: Invalid or Unknown Nonce`. Tool `hello_noncedemo`.
 - `count`: says `hello has greeted <n> names.` with `ctx.say` and returns `{"greeted": n}`. With `--json` the sentence goes to standard error and only the data to standard output; over MCP it is a line of the result. Tool `hello_count`.
@@ -54,7 +54,7 @@ Publishes `hello.greeted` with `{"name": ...}`, from `greet` with `ctx.publish` 
 
 ## Work records
 
-A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'tbd', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Hello: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a tbd record is open and solid once it is done. Every element and join read, a subtype join's included, carries `open_work`, the conditions of its open records.
+A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'missing', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Hello: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a missing record is open and solid once it is done. Every element and join read, a subtype join's included, carries `open_work`, the conditions of its open records.
 
 ## Layers
 

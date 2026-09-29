@@ -540,7 +540,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   - `edit` and `remove` change a building intake; after `finish`, `edit` and `absorb` write nothing and name the correction layer.
   - A record sent before `start` starts the intake with a notice, and a second `start` resumes the same layer.
   - A second intake into the same metaform is recorded in a new metaform, activated at the finish, and the first is kept whole.
-  - A `finish` with `report` and `feedback` writes both files and lists them in `list_reports`; a `cruft` work record written with `map_work` on one of its elements is counted in the finish's `work` and returned by `map_work condition=cruft`.
+  - A `finish` with `report` and `feedback` writes both files and lists them in `list_reports`; a `exclude` work record written with `map_work` on one of its elements is counted in the finish's `work` and returned by `map_work condition=exclude`.
   - An element recorded twice at one address is one element holding both calls' joins.
   - A real intake, such as a real project's map, recorded and finished, sets `has_intake()` true and reads back per MAP-040 acceptance 1.
 - Relates to: MCP-009, MAP-040, MAP-043, STORE-009, STORE-024, STORE-032, LAYER-001, LAYER-010, VIEW-005.

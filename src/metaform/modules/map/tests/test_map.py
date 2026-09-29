@@ -210,7 +210,7 @@ def test_a_map_verb_outside_a_project_names_the_way_to_register_one(run, tmp_pat
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-017')
 def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped):
-    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=tbd', 'note=no speaker yet',
+    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=missing', 'note=no speaker yet',
         'task=wire the piezo', cwd=mapped)
     kitchen = j(run, 'where', 'code.timer.kitchen', cwd=mapped)
     assert set(kitchen) == {'kind', 'element', 'provides', 'receives'}
@@ -220,7 +220,7 @@ def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped)
     assert [(join['provider'], join['function'], join['layer']) for join in kitchen['receives']] == [
         ('code.alarm.audible', 'Plays a tone.', 'intake-1')]
     alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)
-    assert alarm['work'] == [{'condition': 'tbd', 'note': 'no speaker yet', 'task': 'wire the piezo'}]
+    assert alarm['work'] == [{'condition': 'missing', 'note': 'no speaker yet', 'task': 'wire the piezo'}]
     assert 'element_id' not in alarm['element'] and 'join_id' not in alarm['provides'][0]
     full = j(run, 'where', 'code.alarm.audible', 'full=true', cwd=mapped)
     store = Store('proj')
@@ -466,8 +466,8 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
         ('id', ['knowledge', 'op=remove', 'layer=notes']),
         ('id', ['knowledge', 'op=correct', 'layer=notes', 'reason=r']),
         ('op', ['work', 'op=paint']),
-        ('node', ['work', 'op=add', 'condition=tbd']),
-        ('id', ['work', 'op=edit', 'condition=tbd']),
+        ('node', ['work', 'op=add', 'condition=missing']),
+        ('id', ['work', 'op=edit', 'condition=missing']),
         ('id', ['work', 'op=done']),
     ]
     for field, words in stops:
@@ -480,7 +480,8 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
 
 @pytest.mark.req('BASE-038')
 @pytest.mark.req('MAP-020')
-def test_add_join_and_add_subtype_keep_ef_and_verb_in_their_own_fields(run, mapped):
+@pytest.mark.req('STORE-011')
+def test_add_join_and_add_subtype_keep_purpose_ef_and_verb_in_their_own_fields(run, mapped):
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
                           'provider=code.alarm.audible', 'name=done alarm', 'purpose=Get attention.',
@@ -489,15 +490,17 @@ def test_add_join_and_add_subtype_keep_ef_and_verb_in_their_own_fields(run, mapp
     assert (joined['name'], joined['ef'], joined['verb'], joined['extra'], joined['notices']) == (
         'done alarm', 'Function', 'rings', None, [])
     inside = json.loads(k(run, mapped, 'op=add-subtype', 'layer=notes', f'join={joined["join_id"]}',
-                          'address=code.alarm.audible.piezo', 'name=buzzer', 'function=Buzzes.', 'ef=Encounter',
+                          'address=code.alarm.audible.piezo', 'name=buzzer', 'purpose=Make the end audible.',
+                          'function=Buzzes.', 'ef=Encounter',
                           'relation=buzzes when driven', 'verb=buzzes', 'observation=A disc.').stdout)
-    assert (inside['name'], inside['ef'], inside['verb'], inside['extra'], inside['notices']) == (
-        'buzzer', 'Encounter', 'buzzes', None, [])
+    assert (inside['name'], inside['purpose'], inside['ef'], inside['verb'], inside['extra'], inside['notices']) == (
+        'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None, [])
     store = Store('proj')
     stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
     assert (stored.name, stored.ef, stored.verb, stored.extra) == ('done alarm', 'Function', 'rings', None)
     (subtype,) = store.subtypes(joined['join_id'], raw=True).results
-    assert (subtype.name, subtype.ef, subtype.verb, subtype.extra) == ('buzzer', 'Encounter', 'buzzes', None)
+    assert (subtype.name, subtype.purpose, subtype.ef, subtype.verb, subtype.extra) == (
+        'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None)
 
 
 @pytest.mark.req('BASE-038')
@@ -518,16 +521,16 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
     before = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
-    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=tbd', 'note=in the spec, not built',
+    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'note=in the spec, not built',
               'task=build the piezo driver', 'held=true', cwd=mapped)
     assert (added['kind'], added['address'], added['condition'], added['held'], added['reviewed'], added['done']) == (
-        'element', 'code.alarm.audible', 'tbd', True, False, None)
+        'element', 'code.alarm.audible', 'missing', True, False, None)
     on_join = j(run, 'work', 'op=add', f'node=join:{join.join_id}', 'condition=broken', 'task=fix the tone', cwd=mapped)
     assert (on_join['kind'], on_join['receiver_address'], on_join['provider_address']) == (
         'join', 'code.timer.kitchen', 'code.alarm.audible')
     listed = j(run, 'work', cwd=mapped)['results']
-    assert [(row['condition'], row['held']) for row in listed] == [('tbd', True), ('broken', False)]
-    assert [row['work_id'] for row in j(run, 'work', 'open=true', 'condition=tbd', cwd=mapped)['results']] == [added['work_id']]
+    assert [(row['condition'], row['held']) for row in listed] == [('missing', True), ('broken', False)]
+    assert [row['work_id'] for row in j(run, 'work', 'open=true', 'condition=missing', cwd=mapped)['results']] == [added['work_id']]
     assert [row['work_id'] for row in j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']] == [added['work_id']]
     edited = j(run, 'work', 'op=edit', f'id={added["work_id"]}', 'reviewed=true', 'held=false', cwd=mapped)
     assert (edited['reviewed'], edited['held'], edited['task']) == (True, False, 'build the piezo driver')
@@ -540,13 +543,13 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     # Only open_work may differ between the two graphs: the conditions of the open records, on the join now.
     assert without_open_work(after) == without_open_work(before), 'a work record changed the map'
     assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
-    refused = run('map', 'work', 'op=add', 'condition=tbd', '--json', cwd=mapped, ok=False)
+    refused = run('map', 'work', 'op=add', 'condition=missing', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
-    unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=cruft', 'later=yes', '--json',
+    unknown = run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=exclude', 'later=yes', '--json',
                   cwd=mapped, ok=False)
     assert unknown.returncode == 2 and "does not take 'later=yes'" in unknown.stderr  # the chassis grammar, BASE-043
     assert j(run, 'work', 'op=done', f'id={on_join["work_id"]}', 'task=ignored here', cwd=mapped)['notices'][0]['where'] == 'task'
-    assert run('help', 'map', 'work', cwd=mapped).stdout.count('tbd') >= 1
+    assert run('help', 'map', 'work', cwd=mapped).stdout.count('missing') >= 1
 
 
 @pytest.mark.req('BASE-038')
@@ -684,7 +687,7 @@ def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_i
     """Taking a task says work has started on the part: a part to be built is in progress, a broken one is being
     fixed, and the record no longer waits to be taken. Done, the part is as any other."""
     store = Store('proj')
-    build = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it', held=True)
+    build = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it', held=True)
     fix = store.add_work(Node('element', 'code.timer.kitchen'), 'broken', task='fix it', held=True)
     taken = json.loads(run('map', 'work', 'op=take', f'id={build.work_id}', '--json', cwd=mapped).stdout)
     assert (taken['condition'], taken['held']) == ('in-progress', False)
@@ -763,7 +766,7 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     """The map shows how far a part is by the share of its steps that are done, and a share needs the whole. The count
     is a plan, and the agent changes it when the plan changes."""
     store = Store('proj')
-    task = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
+    task = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
     assert (task.steps, task.steps_done, task.said) == (None, 0, ())
     taken = j(run, 'work', 'op=take', f'id={task.work_id}', 'steps=3', cwd=mapped)
     assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('in-progress', 3, 0, [])
@@ -784,9 +787,9 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
             if row['work_id'] == task.work_id][0]
     assert [one['said'] for one in read['said']] == ['The driver is written.', 'The tone is set.', 'The test passes.',
                                                      'One more than planned.']
-    plain = store.add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='no count')
+    plain = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='no count')
     took = j(run, 'work', 'op=take', f'id={plain.work_id}', cwd=mapped)
     assert (took['steps'], took['steps_done'], took['said']) == (None, 0, [])  # a task with no count has no steps
-    untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='not taken')
+    untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='not taken')
     early = j(run, 'work', 'op=step', f'id={untaken.work_id}', 'said=Done before it was taken.', cwd=mapped)
     assert early['steps_done'] == 1 and [where for where, _ in said(early)] == ['condition']

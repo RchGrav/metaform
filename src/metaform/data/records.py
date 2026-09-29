@@ -25,9 +25,9 @@ SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join hol
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
 # taken its task, a part to be built being in progress and a broken one being fixed.
-CONDITIONS = ('tbd', 'broken', 'cruft', 'in-progress', 'fixing')
+CONDITIONS = ('missing', 'broken', 'exclude', 'in-progress', 'fixing')
 MESSAGES = ('question', 'message')  # what an agent says to the user at a node, MAP-050; never a condition
-TAKEN = {'tbd': 'in-progress', 'broken': 'fixing'}
+TAKEN = {'missing': 'in-progress', 'broken': 'fixing'}
 
 T = TypeVar('T')
 
