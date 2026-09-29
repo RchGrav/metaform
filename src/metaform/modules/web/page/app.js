@@ -6,6 +6,9 @@
 // three.js, for the glass the nodes are made of, VIEW-025. It is the release the graph library holds and does not
 // give out, carried in vendor/ so the page loads nothing from outside itself, VIEW-003.
 import * as THREE from '/vendor/three.module.min.js';
+// drei's transmission material in its vanilla form, the glass itself, VIEW-025. It imports three.js as `three`, which
+// the page's import map names as the same file, so both share one three.js.
+import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
 
 const $ = selector => document.querySelector(selector);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -245,9 +248,24 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     SEGMENTS = segments;
     shapes.clear();
     G.nodeThreeObject(node => asText(node) ? written(node) : on && isGlass(node) ? bead(node) : false);
-  }, bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
+  }, bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0, on: Boolean(BLOOM?.enabled)}),
   wave: () => ({dots: W.dots.length, shapes: G ? G.renderer().info.memory.geometries : 0,
-    lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.children.some(child => child.userData.pulse)).map(node => node.id) : []}),
+    lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.material?.userData.pulsed).map(node => node.id) : []}),
+  // A node put where given and held there, the camera pointed, and where a node is on the page with its radius, so a
+  // browser check can read a picture of the 3D map at known points.
+  pin3d: (id, x, y, z) => {
+    const node = G?.graphData().nodes.find(item => item.id === id);
+    if (node) { Object.assign(node, {x, y, z, fx: x, fy: y, fz: z}); G.d3ReheatSimulation(); }
+  },
+  view3d: (from, to) => { if (G) G.cameraPosition(from, to, 0); },
+  screen3d: id => {
+    const node = G?.graphData().nodes.find(item => item.id === id);
+    if (!node || node.x === undefined) return null;
+    const point = G.graph2ScreenCoords(node.x, node.y, node.z), camera = G.camera(), box = $('#stage').getBoundingClientRect();
+    const distance = Math.hypot(camera.position.x - node.x, camera.position.y - node.y, camera.position.z - node.z);
+    return {x: box.left + point.x, y: box.top + point.y,
+      r: Math.cbrt(nodeSize(node)) * 3 / (distance * Math.tan(camera.fov * Math.PI / 360)) * box.height / 2};
+  },
   waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; },
   reach: () => ({property: R.key, edges: R.edges,
     elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.element_id)).map(element => element.address)}),
@@ -278,10 +296,16 @@ function look(id) {
     glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
-    material: material ? material.type : null, transmission: material ? material.transmission || 0 : 0,
+    material: material ? (material instanceof MeshTransmissionMaterial ? 'MeshTransmissionMaterial' : material.type) : null,
+    // the light the glass lets through: drei's own amount, since three.js's `transmission` stays 0
+    transmission: material ? (material._transmission ?? material.transmission) || 0 : 0,
+    chromatic: material?.chromaticAberration ?? 0, distortion: material?.distortion ?? 0,
+    // the near wall reads the picture that holds the far walls, and its far wall is drawn into it
+    backside: Boolean(material?.userData.back && BEHIND.main && material.buffer === BEHIND.main.texture
+      && material.userData.back.side === THREE.BackSide),
     shape: node?.__threeObj?.geometry ? node.__threeObj.geometry.uuid : null,
-    bloom3d: Boolean(node?.__threeObj?.children.some(child => child.userData.bloom)) && !node.__threeObj.userData.light,
-    glow3d: node?.__threeObj?.userData.glow ?? 0,
+    // what is drawn around the node besides the node itself; the node that fades in over text is the node
+    around3d: node?.__threeObj ? node.__threeObj.children.filter(child => !child.userData.arriving).length : null,
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
 
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
@@ -310,10 +334,6 @@ function dim(color) {
   return '#' + channels(color).map((own, at) => Math.round(keep * own + (1 - keep) * back[at]).toString(16).padStart(2, '0')).join('');
 }
 const dimmed = node => S.selected && node.t === 'el' && node.id !== S.selected && !S.neighbors.has(node.id);
-/* Light drawn around a node: added to what is behind it, and seen from every side. It is plain light and never
- * glass, whatever the node it surrounds is made of. */
-const lightOf = opacity => new THREE.MeshBasicMaterial({transparent: true, opacity, blending: THREE.AdditiveBlending,
-  depthWrite: false, side: THREE.BackSide, toneMapped: false});
 /* A node's color, given to whatever it is made of: glass takes it as its tint, as the color light takes on inside
  * it, and as the light it gives off. */
 function colored(material, color) {
@@ -322,43 +342,93 @@ function colored(material, color) {
 }
 /* Glass, VIEW-025: in every theme an element is made of a material that obeys reality. Light passes through it and
  * is tinted by it, so the theme's background shows through the node. It gives off a little of its own color, since
- * clear glass on a dark background with nothing to reflect shows as black. One shape serves every node of a size. */
+ * clear glass on a dark background with nothing to reflect shows as black. It is drei's transmission material: the
+ * light behind it is read `samples` times, each color at its own index of refraction, which parts the colors at the
+ * edges, `chromaticAberration`; the surface bends it by a noise, `distortion` at `distortionScale`, drifting at
+ * `temporalDistortion`; the reads spread along the ray blur it, `anisotropicBlur`. What is behind the glass is drawn
+ * by `addBehind`, as drei's own component draws it, with the far wall of every node in it: a node shows its own far
+ * wall and the glass behind it, the backside. The drei values are a start and are not settled: with the frosting and
+ * the absorption above, what is behind a node is blurred and tinted almost to its own color, so they hardly show. One
+ * shape serves every node of a size. */
 const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1.35, attenuationDistance: 7, clearcoat: 0.6,
-  clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0};
+  clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0,
+  chromaticAberration: 0.06, distortion: 0.25, distortionScale: 0.35, temporalDistortion: 0.1, anisotropicBlur: 0.1,
+  samples: 6};
+const DRIFT = {value: 0};  // the one clock the distortion of every node drifts by; still with reduced motion
 const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
 const isGlass = node => node.t === 'el' || node.t === 'sub';
 function bead(node) {
   const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
   if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
-  const material = new THREE.MeshPhysicalMaterial(GLASS);
+  const {transmission, thickness, roughness, attenuationDistance, chromaticAberration, distortion, distortionScale,
+    temporalDistortion, anisotropicBlur, samples, ...physical} = GLASS;
+  // drei's amount of light let through is `_transmission`; three.js's own `transmission` stays 0, since the page
+  // draws what is behind the glass itself.
+  const made = side => Object.assign(new MeshTransmissionMaterial({samples, _transmission: transmission, thickness,
+    roughness, attenuationDistance, chromaticAberration, distortion, distortionScale, temporalDistortion,
+    anisotropicBlur}), physical, {side});
+  // The near wall reads the picture with every far wall in it. The far wall is a material of its own, since three.js
+  // keeps a material's program when only its side changes; it shares every setting of the near wall but the picture
+  // it reads, which is the scene with no glass in it.
+  const material = made(THREE.FrontSide), back = made(THREE.BackSide);
+  material.uniforms.time = DRIFT;
+  material.uniforms.buffer.value = BEHIND.main?.texture ?? null;
+  back.uniforms = {...material.uniforms, buffer: {value: BEHIND.back?.texture ?? null}};
+  material.userData.back = back;
+  back.userData.front = material;
   material.userData.own = true;
   colored(material, colorOf(node));
   return new THREE.Mesh(shapes.get(radius), material);
 }
-/* The circles around a part that needs building, VIEW-005: three shells around the sphere in its own color, each
- * larger and fainter, lit additively, so the node glows and keeps its color and opacity. They are steady while the
- * part waits and pulsate once an agent has taken its task. The shells are made from the sphere's own geometry and
- * material, since the graph library holds the 3D classes. */
-const SHELLS = [[1.8, 0.5], [2.8, 0.28], [4.2, 0.14]];
-const pulse = () => reduced() ? 1 : 0.95 + 0.6 * Math.sin(performance.now() / 1600 * 2 * Math.PI);
-function bloom3d(object, strength, color) {
-  const shells = object.children.filter(child => child.userData.bloom);
-  object.userData.glow = strength;
-  if (!strength) { for (const shell of shells) object.remove(shell); return; }
-  if (!shells.length) for (const [scale, opacity] of SHELLS) {
-    const shell = object.clone(false);
-    shell.material = lightOf(opacity);
-    shell.position.set(0, 0, 0);
-    shell.scale.setScalar(scale);
-    shell.userData.bloom = true;
-    shell.userData.opacity = opacity;
-    object.add(shell);
-  }
-  for (const shell of object.children) if (shell.userData.bloom) {
-    shell.material.color.set(color);
-    shell.material.opacity = shell.userData.opacity * strength;
-  }
+/* What is behind the glass, drawn each frame as drei's component draws it, once for every node, VIEW-025: the scene
+ * with the glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the
+ * near walls read `main` in the frame itself. Both are drawn at `scale` of the view's size, drei's `resolution` and
+ * `backsideResolution`. It runs before the frame in the graph's own render chain. */
+const BEHIND = {back: null, main: null, scale: 0.5};
+function addBehind() {
+  const composer = G.postProcessingComposer();
+  if (!composer?.insertPass) return;
+  const type = THREE.HalfFloatType;  // light over full brightness, seen through glass, is still spread by the bloom
+  BEHIND.back = new THREE.WebGLRenderTarget(1, 1, {type});
+  BEHIND.main = new THREE.WebGLRenderTarget(1, 1, {type});
+  composer.insertPass({isPass: true, enabled: true, needsSwap: false, clear: false, renderToScreen: false,
+    setSize(width, height) {
+      const size = [Math.max(1, Math.round(width * BEHIND.scale)), Math.max(1, Math.round(height * BEHIND.scale))];
+      BEHIND.back.setSize(...size);
+      BEHIND.main.setSize(...size);
+    },
+    render(renderer) {
+      const scene = G.scene(), camera = G.camera(), glass = [], was = renderer.getRenderTarget();
+      scene.traverseVisible(object => { if (object.material?.userData.back) glass.push(object); });
+      if (!glass.length) return;
+      for (const object of glass) object.visible = false;
+      renderer.setRenderTarget(BEHIND.back);
+      renderer.render(scene, camera);
+      // The far wall takes the node's tint and gives off no light toward the eye: a node's light leaves its glass
+      // outward, so the far wall's light goes away from the eye, and the node is as bright as its near wall makes it.
+      for (const object of glass) {
+        const near = object.material, far = near.userData.back;
+        far.color.copy(near.color);
+        Object.assign(far, {emissiveIntensity: 0, opacity: near.opacity, transparent: near.transparent});
+        Object.assign(object, {material: far, visible: true});
+      }
+      renderer.setRenderTarget(BEHIND.main);
+      renderer.render(scene, camera);
+      for (const object of glass) object.material = object.material.userData.front;
+      renderer.setRenderTarget(was);
+    },
+    dispose() { BEHIND.back.dispose(); BEHIND.main.dispose(); }}, 0);
+}
+/* The light a node gives off, VIEW-029: the glass's own little light, VIEW-025, raised toward LIGHT in the given
+ * color by `lit`, from 0 to 1. Above full brightness it is spread by the bloom pass past the node's outline, behind
+ * whatever is nearer the eye. A node the graph draws itself, a join's purpose node, gives off none of its own. */
+const LIGHT = 2.6;  // the light a node gives off when it is lit, chosen by eye; full brightness on a screen is 1
+function shine(material, color, lit) {
+  if (!material.emissive) return;
+  const own = material.isMeshPhysicalMaterial ? GLASS.emissiveIntensity : 0;
+  if (lit > 0 && color) material.emissive.set(color);
+  material.emissiveIntensity = own + (LIGHT - own) * lit;
 }
 
 /* A property's reach, VIEW-022 and VIEW-026. Clicking a property node sends a wave out from the element it is linked
@@ -388,7 +458,6 @@ function setReach(key) {
     .filter(({address}) => address === home.address || home.address.startsWith(address + '.') || address.startsWith(home.address + '.'))
     .map(element => element.element_id) : []);
   R.edges = G ? G.graphData().links.filter(inReach).length : 0;
-  if (BLOOM) BLOOM.enabled = Boolean(R.key) || T.signaled;
   for (const dot of W.dots) G.scene().remove(dot.mesh);
   if (G) for (const node of G.graphData().nodes) pulse3d(node, 0);  // no node is left lit
   Object.assign(W, {dots: [], held: [], next: W.clock, pulses: new Map()});
@@ -436,31 +505,25 @@ function send(data, id, from, outward) {
 }
 /* The pulse through a node, VIEW-026. Its depth is 0 as the dot enters, 1 at the node's center and 0 as it leaves.
  * The node tints the pulse as colored glass tints light; its body moves from its own color toward that tinted color
- * by the depth, and the glow is the body's own color and brightness, so the two are never apart. */
+ * by the depth, and the glow is the body's own color given off as light, brighter with the depth, so the two are
+ * never apart. */
 function pulse3d(node, depth) {
   const object = node.__threeObj;
   if (!object || !object.material || object.userData.written) return;  // text glows by itself, VIEW-027
-  let shell = object.children.find(child => child.userData.pulse);
   if (!depth) {
-    if (shell) { object.remove(shell); shell.material.dispose(); }
-    if (object.material.userData.pulsed) { colored(object.material, colorOf(node)); object.material.userData.pulsed = false; }
+    if (object.material.userData.pulsed) {
+      colored(object.material, colorOf(node));
+      shine(object.material, null, 0);
+      object.material.userData.pulsed = false;
+    }
     return;
   }
   const own = channels(ownColor(node)), light = channels(R.color);
-  const body = own.map((part, at) => part + (light[at] * (1 - TIMES.opacity + TIMES.opacity * part) - part) * depth);
+  const body = colorFrom(own.map((part, at) => part + (light[at] * (1 - TIMES.opacity + TIMES.opacity * part) - part) * depth));
   if (!object.material.userData.own) { object.material = object.material.clone(); object.material.userData.own = true; }
-  colored(object.material, colorFrom(body));
+  colored(object.material, body);
+  shine(object.material, body, depth);
   object.material.userData.pulsed = true;
-  if (!shell) {
-    shell = object.clone(false);
-    shell.material = lightOf(0);
-    shell.position.set(0, 0, 0);
-    shell.scale.setScalar(1.5);
-    shell.userData.pulse = true;
-    object.add(shell);
-  }
-  shell.material.color.set(colorFrom(body)).multiplyScalar(1 + 1.6 * depth);  // the body's own color, as light
-  shell.material.opacity = 0.6 * depth;
 }
 function wave3d(data) {
   const now = performance.now() / 1000;
@@ -493,38 +556,61 @@ function wave3d(data) {
   }
 }
 /* The bloom pass, added to the graph's own render chain: what is over full brightness is kept in its hue, blurred at
- * a half, a quarter and an eighth of the size, and added to the picture. It runs only while a property's reach is
- * lit, so the map with nothing lit is drawn exactly as it is without the pass. It is built from the classes of the objects
- * the chain already holds, since the graph library keeps its 3D classes to itself and the page loads nothing else. */
+ * a half, a quarter and an eighth of the size, and added to the picture. It runs while anything on the map is lit
+ * above full brightness: a property's reach, a signal on text, a node that needs attention. The glow is put behind
+ * whatever is nearer the eye, VIEW-029: the bright part of the picture carries its distance from the eye through the
+ * blur, and the glow is added to a point only where what is drawn there is no nearer than the light that reaches it.
+ * It is built from the classes of the objects the chain already holds, since the graph library keeps its 3D classes
+ * to itself; the depth of the scene is kept in a depth texture of the page's own copy of three.js. */
 let BLOOM = null;
+const SOFT = 12;  // over how many units nearer than a light its glow fades out
 function addBloom() {
   const composer = G.postProcessingComposer(), copy = composer?.copyPass;
   if (!copy || !composer.renderTarget1) return;
   const Target = composer.renderTarget1.constructor, Material = copy.material.constructor, Quad = copy.fsQuad.constructor;
+  // The scene's depth is kept beside its picture, in both of the chain's buffers, since they take turns.
+  for (const target of [composer.renderTarget1, composer.renderTarget2]) {
+    target.depthTexture = new THREE.DepthTexture(target.width, target.height);
+    target.dispose();
+  }
   const vertex = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
   const shader = (fragmentShader, uniforms) => new Material({uniforms, vertexShader: vertex, fragmentShader, depthTest: false, depthWrite: false});
-  const over = shader(`uniform sampler2D tDiffuse; varying vec2 vUv;
+  const eye = {sceneDepth: {value: null}, cameraNear: {value: 1}, cameraFar: {value: 1}};
+  // How far a point of the picture is from the eye, from the depth the scene was drawn with.
+  const away = `#include <packing>
+    uniform sampler2D sceneDepth; uniform float cameraNear; uniform float cameraFar;
+    float away(vec2 at) { return -perspectiveDepthToViewZ(texture2D(sceneDepth, at).x, cameraNear, cameraFar); }`;
+  // The part over full brightness, and in its fourth channel its distance from the eye weighted by its brightness, so
+  // the blur carries the distance with the light; divided by the far distance, so it fits the buffer.
+  const over = shader(`${away} uniform sampler2D tDiffuse; varying vec2 vUv;
     void main() { vec3 c = texture2D(tDiffuse, vUv).rgb; float top = max(c.r, max(c.g, c.b));
-      gl_FragColor = vec4(top > 1.0 ? c * (1.0 - 1.0 / top) : vec3(0.0), 1.0); }`, {tDiffuse: {value: null}});
+      vec3 bright = top > 1.0 ? c * (1.0 - 1.0 / top) : vec3(0.0);
+      gl_FragColor = vec4(bright, (bright.r + bright.g + bright.b) * away(vUv) / cameraFar); }`,
+  {tDiffuse: {value: null}, ...eye});
   const blur = shader(`uniform sampler2D tDiffuse; uniform vec2 along; varying vec2 vUv;
-    void main() { vec3 sum = texture2D(tDiffuse, vUv).rgb * 0.227027;
-      sum += (texture2D(tDiffuse, vUv + along * 1.0).rgb + texture2D(tDiffuse, vUv - along * 1.0).rgb) * 0.1945946;
-      sum += (texture2D(tDiffuse, vUv + along * 2.0).rgb + texture2D(tDiffuse, vUv - along * 2.0).rgb) * 0.1216216;
-      sum += (texture2D(tDiffuse, vUv + along * 3.0).rgb + texture2D(tDiffuse, vUv - along * 3.0).rgb) * 0.054054;
-      sum += (texture2D(tDiffuse, vUv + along * 4.0).rgb + texture2D(tDiffuse, vUv - along * 4.0).rgb) * 0.016216;
-      gl_FragColor = vec4(sum, 1.0); }`, {tDiffuse: {value: null}, along: {value: [0, 0]}});
-  // The background arrives as the color the screen shows; what is drawn over it arrives as light.
-  const mix = shader(`uniform sampler2D tDiffuse; uniform sampler2D near; uniform sampler2D mid; uniform sampler2D far;
-    uniform float strength; uniform vec3 ground; varying vec2 vUv;
-    void main() { vec4 base = texture2D(tDiffuse, vUv);
-      vec3 glow = texture2D(near, vUv).rgb + texture2D(mid, vUv).rgb * 1.2 + texture2D(far, vUv).rgb * 1.4;
-      // What is drawn over the background is taken apart from it before it is made ready for the screen, so a glow
-      // fades into the background itself and not into a grey.
-      vec3 light = clamp(base.rgb - ground, 0.0, 1.0);
-      vec3 shown = ground + linearToOutputTexel(vec4(light, 1.0)).rgb;
-      gl_FragColor = vec4(shown + strength * linearToOutputTexel(vec4(glow, 1.0)).rgb, base.a);
+    void main() { vec4 sum = texture2D(tDiffuse, vUv) * 0.227027;
+      sum += (texture2D(tDiffuse, vUv + along * 1.0) + texture2D(tDiffuse, vUv - along * 1.0)) * 0.1945946;
+      sum += (texture2D(tDiffuse, vUv + along * 2.0) + texture2D(tDiffuse, vUv - along * 2.0)) * 0.1216216;
+      sum += (texture2D(tDiffuse, vUv + along * 3.0) + texture2D(tDiffuse, vUv - along * 3.0)) * 0.054054;
+      sum += (texture2D(tDiffuse, vUv + along * 4.0) + texture2D(tDiffuse, vUv - along * 4.0)) * 0.016216;
+      gl_FragColor = sum; }`, {tDiffuse: {value: null}, along: {value: [0, 0]}});
+  const mix = shader(`${away} uniform sampler2D tDiffuse; uniform sampler2D near; uniform sampler2D mid; uniform sampler2D far;
+    uniform float strength; uniform float soft; varying vec2 vUv;
+    // The glow of one level at this point, kept where what is drawn here is no nearer the eye than the light that
+    // reaches it, and faded out over a short distance nearer than that, so a nearer node covers the glow.
+    vec3 behind(vec4 light, float here) {
+      float weight = light.r + light.g + light.b;
+      if (weight <= 0.0) return vec3(0.0);
+      return light.rgb * clamp((here - light.a / weight * cameraFar) / soft + 1.0, 0.0, 1.0);
+    }
+    void main() { vec4 base = texture2D(tDiffuse, vUv); float here = away(vUv);
+      vec3 glow = behind(texture2D(near, vUv), here) + behind(texture2D(mid, vUv), here) * 1.2
+        + behind(texture2D(far, vUv), here) * 1.4;
+      // The picture and the glow are added as light and then made ready for the screen, so whatever the pass does
+      // not light is drawn as it is without the pass.
+      gl_FragColor = linearToOutputTexel(vec4(base.rgb + strength * glow, base.a));
     }`, {tDiffuse: {value: null}, near: {value: null}, mid: {value: null}, far: {value: null}, strength: {value: 0.8},
-    ground: {value: [0, 0, 0]}});
+    soft: {value: SOFT}, ...eye});
   const quad = new Quad(over), type = composer.renderTarget1.texture.type;
   const levels = [2, 4, 8].map(() => ({across: new Target(1, 1, {type}), down: new Target(1, 1, {type})}));
   const draw = (renderer, material, target) => { quad.material = material; renderer.setRenderTarget(target); quad.render(renderer); };
@@ -536,6 +622,10 @@ function addBloom() {
       });
     },
     render(renderer, writeBuffer, readBuffer) {
+      const camera = G.camera();
+      eye.sceneDepth.value = readBuffer.depthTexture;
+      eye.cameraNear.value = camera.near;
+      eye.cameraFar.value = camera.far;
       let from = readBuffer.texture;
       levels.forEach((level, index) => {
         if (index === 0) { over.uniforms.tDiffuse.value = from; draw(renderer, over, level.down); from = level.down.texture; }
@@ -546,7 +636,6 @@ function addBloom() {
         from = level.down.texture;
       });
       mix.uniforms.tDiffuse.value = readBuffer.texture;
-      mix.uniforms.ground.value = [1, 3, 5].map(at => parseInt(css('--ground').slice(at, at + 2), 16) / 255);
       [mix.uniforms.near.value, mix.uniforms.mid.value, mix.uniforms.far.value] = levels.map(level => level.down.texture);
       draw(renderer, mix, this.renderToScreen ? null : writeBuffer);
     },
@@ -566,7 +655,7 @@ const TEXT = {size: 10, waiting: 1.5, first: 2.5, top: 10, fastest: 30, hold: 0.
   speedUp: 3, fadeIn: 2, fadeOut: 1.2, near: 1.6, far: 0.7};
 const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE.Vector2(6, 12)},
   screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
-  signaled: false, rows: new Map()};
+  rows: new Map()};
 const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
 const unbuilt = node => has(node, 'tbd') || has(node, 'in-progress');
 const asText = node => unbuilt(node) || writing.has(node.id);
@@ -735,14 +824,14 @@ const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['cruft', '--cr
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
   T.last = now;
-  if (!writing.size) { if (T.rows.size) rows3d(G.graphData()); T.signaled = false; return; }
+  if (!writing.size) { if (T.rows.size) rows3d(G.graphData()); return; }
   const ratio = G.renderer().getPixelRatio();
   G.renderer().getDrawingBufferSize(T.screen.value);
   T.cell.value.set(TEXT.size * 0.62 * ratio, TEXT.size * 1.25 * ratio);
   const away = G.camera().position.distanceTo(G.controls().target);
   if (!T.away) T.away = away;
   T.zoom.value = Math.min(TEXT.near, Math.max(TEXT.far, T.away / away));  // the characters follow the zoom a little
-  let finished = false, signaled = false;
+  let finished = false;
   const shown = new Set();
   for (const node of G.graphData().nodes) {
     const state = writing.get(node.id), object = node.__threeObj;
@@ -784,11 +873,8 @@ function text3d() {
     Object.assign(state, {reached, signalColor: reached > 0 && color ? color.toLowerCase() : null});
     state.glow.value = reached;
     if (reached > 0 && color) state.signal.value.set(color);
-    signaled = signaled || reached > 0;
   }
   for (const id of writing.keys()) if (!shown.has(id)) writing.delete(id);  // no longer on the map
-  T.signaled = signaled;
-  if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;  // the text's glow is spread by the bloom
   rows3d(G.graphData());
   if (finished) G.nodeThreeObject(G.nodeThreeObject());             // the parts built are drawn as every built part
 }
@@ -797,27 +883,23 @@ function textOf(id) {
   if (!state) return '';
   return [...state.cells.image.data.slice(0, 64)].map(value => T.order[Math.min(61, Math.floor(value / 256 * 62))]).join('');
 }
-/* The condition of a node in 3D, MAP-046 and VIEW-005: an open tbd record puts the circles around it, which pulsate
- * once its task is taken; a broken part being fixed is steady red with pulsating circles; an open
- * broken record flashes it red, steady red with reduced motion, and an open cruft record pulses it between the cruft
- * color and its own, steady in the cruft color with reduced motion. The sphere takes its own
- * material first, so no other node of its color changes. Called every frame for the nodes that carry a record. */
+/* The condition of a node in 3D, MAP-046, VIEW-005 and VIEW-029: an open broken record flashes it red, steady red
+ * with reduced motion; a broken part being fixed is steady red; an open cruft record pulses it between the cruft color
+ * and its own, steady in the cruft color with reduced motion; an open question or message keeps its color. While it is
+ * lit the node gives off light in the color of what it signals, which the bloom spreads past its outline: a flash is
+ * lit on its beat, a pulse swells for half its period and rests for the other half. The sphere takes its own material
+ * first, so no other node of its color changes. Called every frame for the nodes that carry a record, and for a node
+ * still lit when its record has closed, to put its light back. */
 function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
   const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
-  // A flash gives off its light on its beat and a trace of it between, so the circles are made once, VIEW-029.
-  const flashing = (has(node, 'broken') || has(node, 'cruft')) && !fixing;
-  const onBeat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
-  const strength = flashing ? (onBeat ? 1.4 : 0.02) : asked || has(node, 'in-progress') || fixing ? pulse()
-    : has(node, 'tbd') ? 1 : 0;
-  bloom3d(object, strength, has(node, 'broken') || fixing ? css('--broken') : has(node, 'cruft') ? css('--cruft')
-    : asked ? css('--question') : ownColor(node));
-  // The circles of a part not built yet or in work are a mark of their own; those of a flash are its light.
-  object.userData.light = flashing && !has(node, 'tbd') && !has(node, 'in-progress');  // at full strength when the node is dimmed too
-  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing && !asked)) return;
+  if (R.nodes.has(node.id) || (!broken && !cruft && !fixing && !asked)) {  // a wave shows on it, or nothing to signal
+    if (object.material.userData.lit) { shine(object.material, null, 0); object.material.userData.lit = false; }
+    return;
+  }
   if (!object.material.userData.own) {
     object.material = object.material.clone();
     object.material.userData.own = true;
@@ -827,15 +909,11 @@ function paint3d(node) {
   const shown = fixing || (broken && beat) ? css('--broken') : cruft ? (beat ? css('--cruft') : ownColor(node))
     : colorOf(node);
   colored(object.material, dimmed(node) && !(broken || cruft || fixing) ? dim(shown) : shown);
-  // While it is lit the node gives off light, which the bloom spreads past its outline, VIEW-029: a flash is lit
-  // on its beat, a pulse swells for half its period and rests for the other half.
   const swell = reduced() ? 1 : Math.max(0, Math.sin(performance.now() / 1600 * 2 * Math.PI));
   const lit = broken || cruft ? (beat ? 1 : 0) : swell;
-  if (!object.material.isMeshPhysicalMaterial) return;
-  if (asked && !broken && !cruft && !fixing && lit > 0) object.material.emissive.set(css('--question'));
-  object.material.emissiveIntensity = GLASS.emissiveIntensity + (LIGHT - GLASS.emissiveIntensity) * lit;
+  shine(object.material, broken || fixing ? css('--broken') : cruft ? css('--cruft') : css('--question'), lit);
+  object.material.userData.lit = true;
 }
-const LIGHT = 2.6;  // the light a node gives off when it is lit, chosen by eye; full brightness on a screen is 1
 
 /* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
 const EF = {Function: '--function', Encounter: '--encounter'};
@@ -848,6 +926,11 @@ function linkColor(link) {
 let G = null;
 const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9
   : node.t === 'item' ? 0.3 : 0.35;
+/* The background is part of the scene as well as the graph's clear color. The render chain clears its buffer before
+ * three.js draws into it, with the clear color last converted for the screen; three.js clears a scene's background
+ * itself in the color space of whatever it draws into, so with the bloom on the background is the one drawn without
+ * it, VIEW-022. */
+function grounded() { G.scene().background = new THREE.Color(css('--ground')); }
 function start3D() {
   if (typeof ForceGraph3D !== 'function') {
     fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
@@ -878,6 +961,8 @@ function start3D() {
     .linkDirectionalParticleColor(linkColor)
     .onNodeClick(clicked3d)
     .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
+  grounded();
+  addBehind();
   addBloom();
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
@@ -931,10 +1016,13 @@ function labels() {
     // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
     for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
       colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
+    DRIFT.value = reduced() ? 0 : performance.now() / 1000;  // the distortion of the glass drifts, VIEW-025
     wave3d(G.graphData());
     text3d();
+    let signaled = false;
     for (const node of G.graphData().nodes) {
-      if ((node.work && node.work.length) || node.__threeObj?.userData.glow) paint3d(node);
+      if ((node.work && node.work.length) || node.__threeObj?.material?.userData.lit) paint3d(node);
+      signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
       if (node.t !== 'el') continue;
       let tag = tags.get(node.id);
       if (!tag) { tag = h('span', {}, short(node.name, 26)); box.append(tag); tags.set(node.id, tag); }
@@ -948,6 +1036,10 @@ function labels() {
         node.__threeObj?.userData.written ? 'text' : '']
         .filter(Boolean).join(' ');
     }
+    // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
+    // as the record is open and not only at the moments of its flash: the glass's highlights and the dots are over full
+    // brightness too, and a pass switched with each flash would make them blink with it.
+    if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;
     placeTip();
   }
   requestAnimationFrame(labels);
@@ -973,6 +1065,7 @@ function setTheme(name) {
   try { localStorage.setItem('metaform.theme', name); } catch (error) { /* storage can be blocked; the theme still shows */ }
   if (G) G.backgroundColor(css('--ground')).linkOpacity(Number(css('--link-opacity'))).nodeColor(G.nodeColor())
     .linkColor(G.linkColor()).linkDirectionalParticleColor(G.linkDirectionalParticleColor());
+  if (G) grounded();
   mermaidReady = false;
   build2D();
 }
