@@ -16,7 +16,7 @@ The template changelog version this module started from: 0.2.0.
 
 ## Common base used
 
-Which of `metaform.module`, `metaform.settings`, `metaform.data` and `metaform.events` the module uses, and for what. Through `metaform.data` a module reads and writes the map's layers and the work records: the condition of an element or a join, a subtype join included, `tbd`, `broken` or `cruft`, kept apart from the map with a note and a task, `store.add_work`, `store.edit_work`, `store.finish_work` and `store.work`, MAP-046 and STORE-042; helloworld's `todo` shows it.
+Which of `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events` and `metaform.nonce` the module uses, and for what. Through `metaform.nonce` a module hands work to an agent by nonce and closes the nonce when the task is complete, BASE-050; helloworld's `task` shows it. Through `metaform.data` a module reads and writes the map's layers and the work records: the condition of an element or a join, a subtype join included, `tbd`, `broken` or `cruft`, kept apart from the map with a note and a task, `store.add_work`, `store.edit_work`, `store.finish_work` and `store.work`, MAP-046 and STORE-042; helloworld's `todo` shows it.
 
 ## Verbs
 

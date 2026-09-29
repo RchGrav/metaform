@@ -13,7 +13,7 @@ import pytest
 pytestmark = pytest.mark.kind('fixture')
 
 MODULES = Path(__file__).parents[1] / 'src' / 'metaform' / 'modules'
-PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events'}
+PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce'}
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 
 

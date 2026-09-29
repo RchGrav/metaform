@@ -28,7 +28,17 @@ from .errors import StoreError
 from .wording import counted, listed
 
 BASE_SCHEMA_VERSION = '1'  # the base database's own layout, apart from the store's, STORE-029
-BASE_SCHEMA = """
+# The nonce table, BASE-050. A home made before it existed is given it on the first write of a nonce.
+NONCES = """CREATE TABLE IF NOT EXISTS nonces(
+  nonce     TEXT PRIMARY KEY,
+  module_id TEXT NOT NULL,
+  function  TEXT NOT NULL,
+  value     TEXT NOT NULL,
+  created   TEXT NOT NULL,
+  closed    TEXT
+);
+"""
+BASE_SCHEMA = NONCES + """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects(
   project_id   TEXT PRIMARY KEY,

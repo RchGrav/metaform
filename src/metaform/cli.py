@@ -27,6 +27,7 @@ from . import (
     home,
     instructions,
     loader,
+    nonce,
     query,
     reports,
     results,
@@ -762,6 +763,28 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
             loop.close()
 
 
+def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
+    """`metaform <nonce>`: the module's function for the nonce, its commands with help, or one of them, BASE-050."""
+    said = f'metaform {held.nonce}'
+    if not held.open:
+        raise Stop(f'Nonce {held.nonce} is closed; its task is complete.', 'Ask the main agent for the nonce of '
+                                                                           'your next task')
+    found = loader.get(held.module)
+    if found is None or found.module is None:
+        raise Stop(f'Nonce {held.nonce} belongs to module {held.module}, which is not loaded.',
+                   'metaform list modules')
+    if rest[:1] in (['help'], ['-h'], ['--help']):
+        out('\n'.join(f'{said} {verb.name}  {verb.summary}' for verb in found.module.verbs))
+        return
+    if rest and _verb(found, rest[0]) is None:
+        raise Stop(f'{held.module} has no command {rest[0]}.', f'{said} help')
+    token = nonce.entered(held)
+    try:
+        run_module(held.module, rest or [held.function], folder)
+    finally:
+        nonce.left(token)
+
+
 def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     found = _module(identifier, folder, surface=False)
     module = found.module
@@ -988,6 +1011,10 @@ def _command(args: list[str], folder: Path) -> int:
             out(f'metaform {__version__}')
             return 0
         if verb not in VERBS:
+            held = nonce.read(verb) if loader.get(verb) is None else None
+            if held is not None:
+                run_nonce(held, rest, folder)
+                return 0
             run_module(verb, rest, folder)
             return 0
         if not always(verb, rest) and not shown('chassis', folder):

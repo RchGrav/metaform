@@ -11,6 +11,8 @@
   todo      writes a work record, the condition of this module's own element kept apart from the map, MAP-046;
             done resolves it, and the status line counts what is still to do
   beep      a verb that runs on one system only, BASE-016
+  task      hands a task out by nonce, BASE-050: the agent runs metaform <nonce> for what to do and
+            metaform <nonce> finish when it is done, which closes the nonce
   status    a status hook that adds one line to `metaform` status
 
 The greeting history is items in a layer this module declares, attached to an
@@ -21,7 +23,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from metaform import settings
+from metaform import nonce, settings
 from metaform.data import Node, Store
 from metaform.module import Context, Module, Noun, Status, Subscription, Verb
 
@@ -82,6 +84,23 @@ def forget(ctx: Context) -> str:
 
 def beep(ctx: Context) -> str:
     return '\a'
+
+
+def task(ctx: Context) -> str:
+    return 'Run: metaform ' + nonce.request('helloworld', 'brief', {'name': str(ctx.nouns['name'])})
+
+
+def brief(ctx: Context) -> str:
+    held = nonce.current()
+    return f'Greet {held.value["name"]}, then run: metaform {held.nonce} finish'
+
+
+def finish(ctx: Context) -> str:
+    held = nonce.current()
+    ctx.nouns['name'] = held.value['name']
+    greet(ctx)
+    nonce.close(held.nonce)
+    return f'{held.value["name"]} is greeted; the task is complete.'
 
 
 def _own_element(store: Store) -> None:
@@ -155,6 +174,9 @@ MODULE = Module(
              examples=(('metaform helloworld todo "greet in every language"', 'Records a tbd work record.'),)),
         Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
              nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
+        Verb('task', task, 'Hand out a greeting as a task, by nonce.', nouns=(Noun('name', 'The name to greet.'),)),
+        Verb('brief', brief, 'What the task reached through a nonce asks for.'),
+        Verb('finish', finish, 'Finish the task reached through a nonce, and close the nonce.'),
     ),
     subscriptions=(Subscription('helloworld.greeted', record),),
     status=status,

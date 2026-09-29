@@ -152,3 +152,16 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
     assert (finished.resolution, finished.done is not None) == ('greets in Latin now', True)
     assert store.element('code.module.helloworld', raw=True).open_work == ()
     assert 'Helloworld: 1 greeted' in run(cwd=hello).stdout.splitlines()
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('BASE-050')
+def test_a_task_is_handed_out_by_nonce_and_closed_when_it_is_finished(run, hello):
+    said = run('helloworld', 'task', 'ada', cwd=hello).stdout.split()
+    assert said[:2] == ['Run:', 'metaform'] and len(said) == 3
+    nonce = said[2]
+    assert run(nonce, cwd=hello).stdout.strip() == f'Greet ada, then run: metaform {nonce} finish'
+    assert 'finish' in run(nonce, 'help', cwd=hello).stdout
+    assert run(nonce, 'finish', cwd=hello).stdout.strip() == 'ada is greeted; the task is complete.'
+    assert run('helloworld', 'history', cwd=hello).stdout.split() == ['ada']
+    assert run(nonce, cwd=hello, ok=False).returncode == 2
