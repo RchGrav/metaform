@@ -37,6 +37,7 @@ from .records import (
     Item,
     Join,
     Layer,
+    Message,
     Node,
     NodeView,
     Notice,
@@ -267,6 +268,27 @@ class Store:
         """Change a work record's condition, note, task, held or reviewed in place, STORE-042."""
         with self._write() as tx:
             return writes.edit_work(tx, work_id, changes)
+
+    def ask(self, node: Node, text: Any, *, suggestions: Any = None, by: Any = None) -> Message:
+        """Ask the user a question at a node, with the answers suggested, the one recommended first, MAP-050."""
+        with self._write() as tx:
+            return writes.add_message(tx, node, 'question', text, suggestions=suggestions, by=by)
+
+    def tell(self, node: Node, text: Any, *, by: Any = None) -> Message:
+        """Leave the user a message at a node, which asks for nothing and waits to be read, MAP-050."""
+        with self._write() as tx:
+            return writes.add_message(tx, node, 'message', text, by=by)
+
+    def reply(self, message_id: str, answer: Any = None) -> Message:
+        """The user's answer to a question, or that a message was read; the first is kept, MAP-050."""
+        with self._write() as tx:
+            return writes.close_message(tx, message_id, answer)
+
+    def messages(self, node: Node | None = None, kind: str | None = None, open: bool | None = None, *,
+                 limit: int = LIMIT, after: str | None = None) -> Page[Message]:
+        """The questions and messages, oldest first, by node, kind or whether they still wait, MAP-050."""
+        with self._read() as tx:
+            return reads.messages(tx, node, kind, open, limit, after)
 
     def take_work(self, work_id: str, steps: Any = None) -> WorkRecord:
         """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049, with the steps it

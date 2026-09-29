@@ -701,15 +701,37 @@ def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_i
 
 
 @pytest.mark.req('MAP-050')
-def test_a_question_is_asked_with_the_answers_the_agent_suggests(run, mapped):
-    """A question comes with suggestions, the one recommended first, so the user can answer with one click."""
-    asked = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=question',
-              'note=Is the quiet tone still wanted?', 'suggestions=["Yes, keep it", "No, make it louder"]', cwd=mapped)
-    assert (asked['condition'], asked['note']) == ('question', 'Is the quiet tone still wanted?')
-    assert json.loads(asked['task']) == ['Yes, keep it', 'No, make it louder'] and said(asked) == []
-    bare = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Which one?', '--json',
-               cwd=mapped)
-    assert 'suggest' in ' '.join(message for _, message in said(json.loads(bare.stdout)))  # told to suggest, never refused
+def test_a_question_and_a_note_are_asked_told_answered_and_read_at_the_node(run, mapped):
+    """A question comes in plain words with the answers the agent suggests, the one it recommends first, so the user
+    answers with one click. A note asks for nothing and waits to be read. Neither is the condition of a part, so
+    neither is a work record."""
+    asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
+              'suggestions=["Yes, keep it", "No, make it louder"]', 'by=builder', cwd=mapped)
+    assert (asked['kind'], asked['address'], asked['text'], asked['suggestions'], asked['by'], asked['closed']) == (
+        'question', 'code.alarm.audible', 'Is the quiet tone still wanted?', ['Yes, keep it', 'No, make it louder'],
+        'builder', None)
+    assert said(asked) == []
+    bare = j(run, 'ask', 'code.alarm.audible', 'Which one?', cwd=mapped)  # told to suggest, never refused
+    assert bare['suggestions'] == [] and [where for where, _ in said(bare)] == ['suggestions']
+    told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
+    assert (told['kind'], told['text'], told['closed']) == ('message', 'The driver is written.', None)
+    waiting = j(run, 'messages', 'open=true', cwd=mapped)['results']
+    assert [one['message_id'] for one in waiting] == [asked['message_id'], bare['message_id'], told['message_id']]
+    assert [one['kind'] for one in j(run, 'messages', 'kind=question', cwd=mapped)['results']] == ['question', 'question']
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['question', 'question', 'message']
+    assert j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results'] == []  # no work record was made
+    replied = j(run, 'reply', asked['message_id'], 'answer=No, make it louder', cwd=mapped)
+    assert (replied['answer'], bool(replied['closed'])) == ('No, make it louder', True)
+    again = j(run, 'reply', asked['message_id'], 'answer=Yes, keep it', cwd=mapped)  # the first answer is kept
+    assert again['answer'] == 'No, make it louder' and [where for where, _ in said(again)] == ['message_id']
+    at_node = j(run, 'messages', 'node=element:code.alarm.audible', 'open=false', cwd=mapped)['results']
+    assert [(one['text'], one['answer']) for one in at_node] == [('Is the quiet tone still wanted?', 'No, make it louder')]
+    where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
+    assert [(one['kind'], one['text']) for one in where['messages']] == [('question', 'Which one?'),
+                                                                        ('message', 'The driver is written.')]
+    old = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Old form.', '--json',
+              cwd=mapped)  # a question is no condition of a part; the agent is told how to ask
+    assert 'metaform map ask' in ' '.join(message for _, message in said(json.loads(old.stdout)))
 
 
 @pytest.mark.req('STORE-025')

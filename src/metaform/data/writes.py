@@ -25,11 +25,13 @@ from .names import reading, short_name
 from .records import (
     CONDITIONS,
     EF_WORDS,
+    MESSAGES,
     ROLES,
     TAKEN,
     Element,
     Item,
     Join,
+    Message,
     Node,
     Notice,
     Outcome,
@@ -638,7 +640,11 @@ def _condition(value: Any, notices: list[Notice]) -> str:
     if value is None:
         notices.append(Notice('condition', 'condition is missing; stored empty.'))
         return ''
-    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress, fixing, question or message; it was stored '
+    if value in MESSAGES:
+        notices.append(Notice('condition', f'A {value} is not the condition of a part; it was stored as given. Ask the '
+                                           'user with metaform map ask, and leave a message with metaform map tell.'))
+        return str(value)
+    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress or fixing; it was stored '
                                        'as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
@@ -683,6 +689,50 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
             value = _work_text(value, key, notices)
         tx.db.execute(f'UPDATE work SET {key}=? WHERE work_id=?', (value, work_id))
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def _message_row(tx: Tx, message_id: str) -> Any:
+    row = tx.db.execute('SELECT * FROM messages WHERE message_id=?', (message_id,)).fetchone()
+    if row is None:
+        raise StoreError(f'No question or message has the id {message_id}.', 'metaform map messages')
+    return row
+
+
+def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = None, by: Any = None) -> Message:
+    """What an agent says to the user at a node, MAP-050: a question, with the answers it suggests, or a message.
+    Nothing is refused: a question with no suggestions is stored, and the agent is told to suggest."""
+    notices: list[Notice] = []
+    target_kind, thing = rows.work_target(tx, node, notices)
+    suggested: list[str] = []
+    if isinstance(suggestions, (list, tuple)):
+        suggested = [one if isinstance(one, str) else json.dumps(one, ensure_ascii=False)
+                     for one in cast('list[Any] | tuple[Any, ...]', suggestions)]
+    elif suggestions is not None:
+        notices.append(Notice('suggestions', 'suggestions is a list of answers; what was sent was kept as the one '
+                                             'suggestion.'))
+        suggested = [suggestions if isinstance(suggestions, str) else json.dumps(suggestions, ensure_ascii=False)]
+    if kind == 'question' and not suggested:
+        notices.append(Notice('suggestions', 'This question has no suggestions. Ask with the answers you suggest, the '
+                                             'one you recommend first: suggestions=["...", "..."].'))
+    message_id = new_id()
+    tx.db.execute('INSERT INTO messages(message_id, target_kind, target_id, kind, text, suggestions, by, created) '
+                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                  (message_id, target_kind, thing, kind, _work_text(text, 'text', notices),
+                   json.dumps(suggested, ensure_ascii=False) if suggested else None,
+                   _work_text(by, 'by', notices), home.now()))
+    return views.message(tx, _message_row(tx, message_id), tuple(notices))
+
+
+def close_message(tx: Tx, message_id: str, answer: Any = None) -> Message:
+    """The user answered a question or read a message. One already closed keeps its first answer."""
+    notices: list[Notice] = []
+    row = _message_row(tx, message_id)
+    if row['closed'] is not None:
+        notices.append(Notice('message_id', f'This was closed at {row["closed"]}; its answer was kept.'))
+        return views.message(tx, row, tuple(notices))
+    tx.db.execute('UPDATE messages SET closed=?, answer=? WHERE message_id=?',
+                  (home.now(), _work_text(answer, 'answer', notices), message_id))
+    return views.message(tx, _message_row(tx, message_id), tuple(notices))
 
 
 def _count(value: Any, notices: list[Notice]) -> int | None:

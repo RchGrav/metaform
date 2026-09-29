@@ -34,16 +34,6 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-ALWAYS = ('Do not read past memories or any other details other than the material targeted for intake. Record each '
-          'element as you work through the process. Use the intake tool: its command start first, then element, join '
-          'and subtype, or metaform intake start, element, join and subtype on the command line. Read it back with '
-          'show, correct it with edit and remove, anneal it with absorb, and end with finish. If you cannot continue, '
-          'stop and submit a trouble report with the metaform tool, command feedback, attaching what you have in its '
-          'shape field; do not retry.')
-REPORT_LINE = ('Include your report on the project you examined in the report field of finish: broken code, '
-               'things that need fixing, anything not working or partially working.')
-DEBUG_LINE = ('Include feedback on this process in the feedback field of finish: bad semantics, a tool that '
-              'did not match its schema, where you got stuck.')
 NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
           'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
@@ -65,18 +55,9 @@ def _fill(tag: str, name: str, value: str) -> str:
     return tag.replace('<target', f'<target {name}="{_escape(value)}"', 1)
 
 
-def footer(ctx: Context) -> str:
-    """The recording lines: always how to record and the stop rule, then the report and feedback requests, CLI-034."""
-    lines = [ALWAYS]
-    if ctx.setting('report'):
-        lines.append(REPORT_LINE)
-    if ctx.setting('debug'):
-        lines.append(DEBUG_LINE)
-    return '\n'.join(lines) + '\n'
-
-
 def served(ctx: Context) -> str:
-    """The intake text exactly as stored, with its target filled, then the recording lines, BASE-039."""
+    """The intake text exactly as stored, with its target filled, and nothing beside it, BASE-039: the intake is
+    the instruction, and what is added to it competes with it."""
     store = ctx.require_store()
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
@@ -90,7 +71,7 @@ def served(ctx: Context) -> str:
         tag = _fill(_fill(match.group(0), 'type', record.target_type), 'value', record.target_value)
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
-    return text + ('\n' if text.endswith('\n') else '\n\n') + footer(ctx)
+    return text
 
 
 def prompt(ctx: Context) -> str:
@@ -649,7 +630,7 @@ MODULE = Module(
             'other read sees it until finish; after finish it changes only through a correction layer. Nothing is '
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
-        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.', switches=('report', 'debug')),
+        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.'),
         Verb('start', start, 'Start recording an intake, or resume the one being recorded.',
              nouns=(Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False),

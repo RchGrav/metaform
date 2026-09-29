@@ -1763,15 +1763,14 @@ function workPill(condition) { return h('span', {class: `pill work-${condition}`
 /* A question at the node, MAP-050 and VIEW-021: open, it takes the answer here; answered, the answer stays beside it. */
 function asked(record) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Your answer'});
-  const written = text => wrote('/api/answer', {id: record.work_id, answer: text});
+  const written = text => wrote('/api/answer', {id: record.message_id, answer: text});
   const send = h('button', {class: 'answer', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
     if (!await written(answer.value)) send.disabled = false;
   }}, 'Answer');
   // The answers the agent suggests, the one it recommends first: one click answers. Other opens the box to type in.
-  let suggested = [];
-  try { const given = JSON.parse(record.task || '[]'); if (Array.isArray(given)) suggested = given.map(String); } catch (error) { /* a task that is not a list is no suggestion */ }
+  const suggested = record.closed ? [] : (record.suggestions || []).map(String);
   const typed = h('div', {class: 'typed', hidden: suggested.length > 0}, answer, send);
   const choices = suggested.length ? h('div', {class: 'choices'},
     suggested.map((text, index) => h('button', {class: index ? 'suggestion' : 'suggestion recommended', onclick: async event => {
@@ -1783,28 +1782,28 @@ function asked(record) {
   if (suggested.length) typed.replaceChildren();               // the box is put in only when Other is asked for
   if (choices) choices.lastChild.addEventListener('click', () => typed.replaceChildren(answer, send), {once: true});
   return h('div', {class: 'item work'},
-    h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.done ? 'answered' : 'open')),
-    h('p', {class: 'asked'}, record.note || ''),
-    record.done ? h('p', {class: 'obs'}, `Answer: ${record.resolution || ''}`) : [choices, typed]);
+    h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.closed ? 'answered' : 'open'),
+      record.by ? h('span', {class: 'pill'}, record.by) : null),
+    h('p', {class: 'asked'}, record.text || ''),
+    record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, typed]);
 }
 /* The messages of a node, VIEW-030: what agents say to the user there. A question waits for an answer and a note
  * waits to be read. */
-const MESSAGES = ['question', 'message'];
 const Q = {open: []};
-const nodeOf = record => record.kind === 'element' ? record.id : joinOf('p:' + record.id) ? 'p:' + record.id : 's:' + record.id;
+const nodeOf = record => record.node_kind === 'element' ? record.node_id
+  : joinOf('p:' + record.node_id) ? 'p:' + record.node_id : 's:' + record.node_id;
 const targetOf = id => id.startsWith('p:') || id.startsWith('s:') ? `join:${id.slice(2)}` : `element:${id}`;
 const calledOf = id => (G ? G.graphData().nodes.find(node => node.id === id) : null)?.name
   || S.elements.get(id)?.element.short_name || joinOf(id)?.name || 'this node';
 async function messagesOf(id) {
-  const found = (await read('work', {node: targetOf(id), limit: 0})).results.filter(record => MESSAGES.includes(record.condition));
-  return {unread: found.filter(record => !record.done), past: found.filter(record => record.done), all: found};
+  const found = (await read('messages', {node: targetOf(id), limit: 0})).results;
+  return {unread: found.filter(record => !record.closed), past: found.filter(record => record.closed), all: found};
 }
 /* The Messages button, VIEW-021: at the top of the page while anything waits for the user, with the count; a click
  * flies to the node of the oldest and opens its unread messages. */
 async function renderMessages() {
   try {
-    Q.open = noMetaform() ? [] : (await Promise.all(MESSAGES.map(condition => read('work', {condition, open: true, limit: 0}))))
-      .flatMap(page => page.results).sort((one, two) => one.created < two.created ? -1 : one.created > two.created ? 1 : 0);
+    Q.open = noMetaform() ? [] : (await read('messages', {open: true, limit: 0})).results;
   } catch (error) { Q.open = []; toast(error.message); }
   const button = $('#messages');
   button.hidden = !Q.open.length;
@@ -1848,21 +1847,22 @@ const F = {id: null, which: null, ids: new Set()};
 async function show(id, which, again = false) {
   let found;
   try { found = await messagesOf(id); } catch (error) { toast(error.message); return; }
-  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.work_id))});
+  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.message_id))});
   if (F.id !== id) return;
-  const shown = found.all.filter(record => F.ids.has(record.work_id));
+  const shown = found.all.filter(record => F.ids.has(record.message_id));
   $('#float .title').textContent = `${which === 'unread' ? 'Unread' : 'Past'} messages · ${calledOf(id)}`;
   fill($('#float .body'), shown.length ? shown.map(record => h('div', {},
     h('div', {class: 'when'}, record.created.replace('T', ' ').replace('Z', '')),
-    record.condition === 'question' ? asked(record) : noted(record)))
+    record.kind === 'question' ? asked(record) : noted(record)))
     : h('p', {class: 'empty'}, 'No messages here.'));
   $('#float').hidden = false;
-  for (const record of shown) if (record.condition === 'message' && !record.done) wrote('/api/read', {id: record.work_id});
+  for (const record of shown) if (record.kind === 'message' && !record.closed) wrote('/api/read', {id: record.message_id});
 }
 function noted(record) {
   return h('div', {class: 'item work'},
-    h('div', {class: 'pills'}, workPill('message'), h('span', {class: 'pill'}, record.done ? 'read' : 'unread')),
-    h('p', {}, record.note || ''));
+    h('div', {class: 'pills'}, workPill('message'), h('span', {class: 'pill'}, record.closed ? 'read' : 'unread'),
+      record.by ? h('span', {class: 'pill'}, record.by) : null),
+    h('p', {}, record.text || ''));
 }
 async function wrote(path, given) {
   const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2125,7 +2125,6 @@ async function renderWork(target, key, also = null) {
     records = (await read('work', {node: target, limit: 0})).results;
     if (also) records = [...records, ...(await read('work', {node: also, limit: 0})).results];
   } catch (error) { toast(error.message); }
-  records = records.filter(record => !MESSAGES.includes(record.condition));  // messages are read in the window, VIEW-030
   const box = $('#work');
   if (!box || S.selected !== key || !records.length) return;
   fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => h('div', {class: 'item work'},

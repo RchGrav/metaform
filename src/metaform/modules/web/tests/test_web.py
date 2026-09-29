@@ -2479,19 +2479,19 @@ def test_an_answer_written_from_the_page_is_kept_beside_the_question_and_closes_
     that asked, or the next one there, finds it at the node."""
     from metaform.data import Node, Store
     store = Store('proj')
-    asked = store.add_work(Node('element', 'code.timer.kitchen'), 'question', note='Is the 1 Hz tick still wanted?')
-    assert asked.notices == () and asked.condition == 'question'
+    asked = store.ask(Node('element', 'code.timer.kitchen'), 'Is the 1 Hz tick still wanted?')
+    assert [notice.where for notice in asked.notices] == ['suggestions'] and asked.kind == 'question'  # told to suggest
     started(run)
-    status, body = answered(web, asked.work_id, 'Yes, keep it.')
-    assert status == 200 and body['resolution'] == 'Yes, keep it.' and body['done']
-    kept = Store('proj').work(Node('element', 'code.timer.kitchen'), 'question', False).results
-    assert [(record.note, record.resolution) for record in kept] == [('Is the 1 Hz tick still wanted?', 'Yes, keep it.')]
-    assert Store('proj').work(None, 'question', True).results == ()
+    status, body = answered(web, asked.message_id, 'Yes, keep it.')
+    assert status == 200 and body['answer'] == 'Yes, keep it.' and body['closed']
+    kept = Store('proj').messages(Node('element', 'code.timer.kitchen'), 'question', False).results
+    assert [(record.text, record.answer) for record in kept] == [('Is the 1 Hz tick still wanted?', 'Yes, keep it.')]
+    assert Store('proj').messages(None, 'question', True).results == ()
     # only a question is answered from the page; any other record is left as it is
     other = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='build it')
     status, body = answered(web, other.work_id, 'done')
     assert status == 400 and Store('proj').work(None, 'tbd', True).results[0].done is None
-    assert answered(web, asked.work_id, '   ')[0] == 400  # an answer says something
+    assert answered(web, asked.message_id, '   ')[0] == 400  # an answer says something
 
 
 @pytest.mark.req('VIEW-021')
@@ -2501,8 +2501,8 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     from metaform.data import Node, Store
     store = Store('proj')
     # the alarm and the cook carry no record in the fixture; the kitchen carries a broken one
-    first = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
-    store.add_work(Node('element', 'exterior.cook'), 'question', note='Who is the cook?')
+    first = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
+    store.ask(Node('element', 'exterior.cook'), 'Who is the cook?')
     kitchen, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
@@ -2523,8 +2523,8 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").work.length === 0 '
                            f'&& window.metaform.look("{kitchen}").light3d < 1')
-    assert Store('proj').work(None, 'question', False).results[0].resolution == 'Yes, keep it.'
-    assert Store('proj').work(None, 'question', False).results[0].work_id == first.work_id
+    assert Store('proj').messages(None, 'question', False).results[0].answer == 'Yes, keep it.'
+    assert Store('proj').messages(None, 'question', False).results[0].message_id == first.message_id
     # the answer stays at the node; the panel is drawn again once the page has read the change
     page.wait_for_function('() => document.querySelector("#float").innerText.includes("Answer: Yes, keep it.")',
                            timeout=5000)
@@ -2547,7 +2547,7 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    boxes = lambda: page.evaluate("""() => Object.fromEntries(['#map2d', '#stage', '#stage canvas'].map(name => {
+    boxes = lambda: page.evaluate("""() => Object.fromEntries(['#map2d', '#big3d', '#stage', '#stage canvas'].map(name => {
         const box = document.querySelector(name).getBoundingClientRect();
         return [name, [Math.round(box.width), Math.round(box.height)]]; }))""")
     area = lambda box: box[0] * box[1]
@@ -2557,8 +2557,9 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
         return box('#map2d').width * box('#map2d').height > 2 * box('#stage').width * box('#stage').height; }""")
     swapped = boxes()
-    assert swapped['#map2d'] == first['#stage'] and swapped['#stage canvas'] == swapped['#stage']
-    assert swapped['#stage'][0] == first['#map2d'][0]
+    # each view is its bar and its map, and the two areas are what change hands
+    assert swapped['#map2d'] == first['#big3d'] and swapped['#stage canvas'] == swapped['#stage']
+    assert swapped['#big3d'][0] == first['#map2d'][0]
     assert page.locator('#map2d svg g.node').count() > 0 and page.is_visible('#fitBtn') and page.is_visible('#swapBtn')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.evaluate(f'window.metaform.click3d("{alarm}")')  # the small 3D map takes a click
@@ -2587,7 +2588,7 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     around a node."""
     from metaform.data import Node, Store
     store = Store('proj')
-    asked = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
+    asked = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
     kitchen, alarm, cook = (store.element(address).element_id
                             for address in ('code.timer.kitchen', 'code.alarm.audible', 'exterior.cook'))
     broken = [record for record in store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results]
@@ -2611,9 +2612,9 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     # Closed from the command line and told to the page: the light goes back to the glass's own, and the pass goes off.
     for record in broken:
         run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
-    run('map', 'work', 'op=done', f'id={asked.work_id}', 'resolution=Yes.', cwd=mapped)
+    run('map', 'reply', asked.message_id, 'answer=Yes.', cwd=mapped)
     for record in store.work(None, None, True, limit=0).results:  # nothing on the map needs attention now
-        if record.condition in ('broken', 'fixing', 'cruft', 'question'):
+        if record.condition in ('broken', 'fixing', 'cruft'):
             run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=done', cwd=mapped)
     page.wait_for_function(f'() => ["{kitchen}", "{alarm}"].every(id => window.metaform.look(id).light3d === {own}) '
                            '&& !window.metaform.bloom().on', timeout=5000)
@@ -2663,7 +2664,7 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     over the background around the timer and not over the nearer node."""
     from metaform.data import Node, Store
     store = Store('proj')
-    store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Still wanted?')  # the pass stays on
+    store.ask(Node('element', 'code.alarm.audible'), 'Still wanted?')  # the pass stays on
     kitchen = store.element('code.timer.kitchen').element_id
     broken = store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results
     started(run)
@@ -2722,8 +2723,7 @@ def test_with_the_bloom_pass_on_what_it_does_not_light_keeps_its_colors(run, web
               (node['x'] + node['r'] * 3, node['y'] + node['r'] * 1.5)]
     before = pixels(page, points)
     # a question on the alarm, far out of view, lights it, and the pass comes on
-    run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=question', 'note=Still wanted?',
-        cwd=mapped)
+    run('map', 'ask', 'element:code.alarm.audible', 'Still wanted?', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{alarm}").light3d > 1 && window.metaform.bloom().on',
                            timeout=5000)
     page.wait_for_timeout(800)
@@ -2741,7 +2741,7 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     store = Store('proj')
     store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
     store.add_work(Node('element', 'exterior.cook'), 'tbd', task='build that')
-    asked = store.add_work(Node('element', 'exterior.cook'), 'question', note='Is the cook still wanted?')
+    asked = store.ask(Node('element', 'exterior.cook'), 'Is the cook still wanted?')
     alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
@@ -2762,7 +2762,7 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     question = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--question").trim().toLowerCase()')
     page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.5', timeout=4000)
     assert page.evaluate(f'window.metaform.look("{cook}").signalColor3d') == question
-    store.finish_work(asked.work_id, 'Yes.')
+    store.reply(asked.message_id, 'Yes.')
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded()')
     page.wait_for_function(f'() => window.metaform.look("{cook}").text3d === true')
@@ -2777,10 +2777,8 @@ def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_unde
     """Rich, 2026-09-28: always make a suggestion when asking; a button for each suggestion, or Other and type."""
     from metaform.data import Node, Store
     store = Store('proj')
-    first = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?',
-                           task=json.dumps(['Yes, keep it', 'No, make it louder']))
-    second = store.add_work(Node('element', 'exterior.cook'), 'question', note='Who is the cook?',
-                            task=json.dumps(['Whoever sets the timer']))
+    first = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?', suggestions=['Yes, keep it', 'No, make it louder'])
+    second = store.ask(Node('element', 'exterior.cook'), 'Who is the cook?', suggestions=['Whoever sets the timer'])
     alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
@@ -2794,7 +2792,7 @@ def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_unde
     assert page.locator('#float textarea.answer').count() == 0       # the box for typing shows under Other only
     page.click('#float button.suggestion >> nth=1')
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
-    assert Store('proj').work(Node('element', 'code.alarm.audible'), 'question', False).results[0].resolution \
+    assert Store('proj').messages(Node('element', 'code.alarm.audible'), 'question', False).results[0].answer \
         == 'No, make it louder'
     page.evaluate(f'window.metaform.menu("{cook}")')
     page.click('#menu button.unread')
@@ -2803,9 +2801,9 @@ def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_unde
     page.fill('#float textarea.answer', 'The person who is cooking.')
     page.click('#float button.answer')
     page.wait_for_function('() => document.querySelector("#messages").hidden')
-    assert Store('proj').work(Node('element', 'exterior.cook'), 'question', False).results[0].resolution \
+    assert Store('proj').messages(Node('element', 'exterior.cook'), 'question', False).results[0].answer \
         == 'The person who is cooking.'
-    assert first.work_id != second.work_id and problems == []
+    assert first.message_id != second.message_id and problems == []
 
 
 @pytest.mark.req('VIEW-028')
@@ -2814,7 +2812,7 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
     """Rich, 2026-09-29: both views get a Fit button and a Swap button, and the messages box goes to the top of the
     screen."""
     from metaform.data import Node, Store
-    Store('proj').add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
+    Store('proj').ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -2861,10 +2859,10 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     from metaform.data import Node, Store
     store = Store('proj')
     alarm_node = Node('element', 'code.alarm.audible')
-    answered = store.add_work(alarm_node, 'question', note='Was the tone ever louder?', task=json.dumps(['Yes', 'No']))
-    store.finish_work(answered.work_id, 'No')
-    store.add_work(alarm_node, 'question', note='Is the quiet tone still wanted?', task=json.dumps(['Yes', 'No']))
-    note = store.add_work(alarm_node, 'message', note='The piezo driver is written and waits for a test on the board.')
+    answered = store.ask(alarm_node, 'Was the tone ever louder?', suggestions=['Yes', 'No'])
+    store.reply(answered.message_id, 'No')
+    store.ask(alarm_node, 'Is the quiet tone still wanted?', suggestions=['Yes', 'No'])
+    note = store.tell(alarm_node, 'The piezo driver is written and waits for a test on the board.')
     assert note.notices == ()
     alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
@@ -2897,8 +2895,8 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert 'Was the tone ever louder?' not in shown
     # the note shown is read; the question still waits
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
-    read = Store('proj').work(alarm_node, 'message', False).results
-    assert [record.work_id for record in read] == [note.work_id]
+    read = Store('proj').messages(alarm_node, 'message', False).results
+    assert [record.message_id for record in read] == [note.message_id]
     before = page.evaluate('(() => { const box = document.querySelector("#float").getBoundingClientRect(); return [box.left, box.top]; })()')
     page.mouse.move(before[0] + 40, before[1] + 12)                   # it is moved by its title
     page.mouse.down()

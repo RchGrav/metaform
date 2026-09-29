@@ -460,7 +460,7 @@ KNOWLEDGE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
-    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'suggestions'}),
+    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'done': frozenset({'id', 'resolution'}),
     'take': frozenset({'id', 'steps'}),
@@ -480,6 +480,29 @@ def _work_node(value: Any) -> Node:
     return Node('element', str(value))
 
 
+def ask(ctx: Context) -> Any:
+    """Ask the user a question at a node, in plain words, with the answers you suggest, MAP-050."""
+    return _store(ctx).ask(_work_node(ctx.nouns['node']), ctx.nouns['question'],
+                           suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by'))
+
+
+def tell(ctx: Context) -> Any:
+    """Leave the user a message at a node, which asks for nothing and waits to be read, MAP-050."""
+    return _store(ctx).tell(_work_node(ctx.nouns['node']), ctx.nouns['message'], by=ctx.nouns.get('by'))
+
+
+def reply(ctx: Context) -> Any:
+    """Answer a question, or mark a message read, MAP-050."""
+    return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'))
+
+
+def messages(ctx: Context) -> Any:
+    """The questions and messages left for the user, oldest first, MAP-050."""
+    nouns = ctx.nouns
+    node = _work_node(nouns['node']) if 'node' in nouns else None
+    return _store(ctx).messages(node, nouns.get('kind'), nouns.get('open'), **_paging(ctx))
+
+
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
@@ -497,16 +520,6 @@ def work(ctx: Context) -> Any:
         node = _work_node(nouns['node']) if 'node' in nouns else None
         return _with_notices(store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx)), notices)
     if op == 'add':
-        # A question carries the answers the agent suggests, the one it recommends first, as its task: what the
-        # question needs is one of them, MAP-050. One asked without any is stored, and the agent is told.
-        if nouns.get('condition') == 'question':
-            suggested = nouns.pop('suggestions', None)
-            if isinstance(suggested, list) and suggested:
-                nouns['task'] = json.dumps([str(one) for one in cast(list[Any], suggested)], ensure_ascii=False)
-            elif 'task' not in nouns:
-                notices.append(Notice('suggestions', 'This question has no suggestions. Ask with the answers you '
-                                                     'suggest, the one you recommend first: suggestions=["...", "..."].'))
-        nouns.pop('suggestions', None)
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
@@ -531,12 +544,8 @@ WORK_NOUNS = (
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
-                       'broken; cruft, surpassed code left in the codebase, never a document, a note, an example or data; '
-                       'question, a question for the user, asked in the note and answered in the web GUI; or message, '
-                       'a note for the user that asks for nothing and waits to be read.'),
-    _noun('note', 'add and edit: what and where; of a question, the question in plain words.'),
-    _noun('suggestions', 'add, of a question: the answers you suggest, the one you recommend first, as a JSON list. '
-                         'The user answers with one click on one of them, or types another.', 'json'),
+                       'broken; or cruft, surpassed code left in the codebase, never a document, a note, an example or data.'),
+    _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
@@ -552,8 +561,8 @@ NOTICE = ('This project has a map. Before you change a part, call the map tool w
           'address: it returns what the part is for, what relies on it and what it relies on. With no address, use '
           'command roots. Give work to an agent through Metaform: record the task at each element it concerns with '
           'command work, and hand the agent those addresses; the agent takes a task with op take and ends it with op '
-          'done. When you need an answer from the user, ask at the part it concerns with command work, condition '
-          'question, in plain words and with the answers you suggest; then carry on with what does not wait on it.')
+          'done. When you need an answer from the user, ask at the part it concerns with command ask, in plain words '
+          'and with the answers you suggest; then carry on with what does not wait on it.')
 
 
 def status(ctx: Context) -> Status:
@@ -640,9 +649,31 @@ MODULE = Module(
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=tbd task="build it"',
                         'Record that the alarm is in the specs and not built yet.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
-                       ('metaform map work op=add node=element:code.alarm.audible condition=question '
-                        'note="Is the quiet tone still wanted?" suggestions=\'["Yes, keep it", "No, make it louder"]\'',
-                        'Ask the user at the alarm, and carry on with what does not depend on the answer.'))),
+)),
+        Verb('ask', ask, 'Ask the user a question at the node it concerns, with the answers you suggest.',
+             nouns=(Noun('node', 'Where the question applies: element:<address or id> or join:<id>; a bare address '
+                                 'names an element.'),
+                    Noun('question', 'The question, in plain words a person who has not read your context can answer.'),
+                    _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
+                                         'user answers with one click on one of them, or types another.', 'json'),
+                    _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.')),
+             details='Ask, and carry on with what does not depend on the answer. The user answers in the web GUI, '
+                     'where the node glows until they do, and the answer is kept at the node for the agent that '
+                     'works there next. Read the answers with metaform map messages.',
+             examples=(('metaform map ask code.alarm.audible "Is the quiet tone still wanted?" '
+                        'suggestions=\'["Yes, keep it", "No, make it louder"]\'', 'Ask the user at the alarm.'),)),
+        Verb('tell', tell, 'Leave the user a message at a node, which asks for nothing and waits to be read.',
+             nouns=(Noun('node', 'Where the message applies: element:<address or id> or join:<id>.'),
+                    Noun('message', 'What the user should know, in plain words.'),
+                    _noun('by', 'Who says it: your role or your name.'))),
+        Verb('reply', reply, 'Answer a question, or mark a message read.',
+             nouns=(Noun('id', 'The id of the question or the message.'),
+                    _noun('answer', 'The answer to a question.')),
+             examples=(('metaform map reply <id> answer="No, make it louder"', 'Answer a question.'),)),
+        Verb('messages', messages, 'The questions and messages left for the user, oldest first.',
+             nouns=(_noun('node', 'Only those at this node.'), _noun('kind', 'question or message.'),
+                    _noun('open', 'true for those that still wait, false for those answered or read.', 'bool'),
+                    *PAGING)),
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '

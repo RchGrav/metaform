@@ -25,7 +25,8 @@ SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join hol
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
 # taken its task, a part to be built being in progress and a broken one being fixed.
-CONDITIONS = ('tbd', 'broken', 'cruft', 'in-progress', 'fixing', 'question', 'message')
+CONDITIONS = ('tbd', 'broken', 'cruft', 'in-progress', 'fixing')
+MESSAGES = ('question', 'message')  # what an agent says to the user at a node, MAP-050; never a condition
 TAKEN = {'tbd': 'in-progress', 'broken': 'fixing'}
 
 T = TypeVar('T')
@@ -367,6 +368,7 @@ class Where(Record):
     full: bool = False
     applying: tuple[Property, ...] = ()
     visible: tuple[Property, ...] = ()
+    messages: tuple[Message, ...] = ()  # the open questions and unread messages at it, MAP-050
 
     def to_dict(self) -> dict[str, Any]:
         held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
@@ -374,7 +376,8 @@ class Where(Record):
             return {'kind': self.kind, 'element': plain(self.element), 'provides': plain(self.provides),
                     'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
                     'layers': plain(self.layers),
-                    'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)}}
+                    'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
+                    'messages': plain(self.messages)}
         data: dict[str, Any] = {'kind': self.kind, 'element': small(plain(self.element))}
         if self.provides:
             data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
@@ -392,6 +395,9 @@ class Where(Record):
                     for name, found in (('applying', self.applying), ('visible', self.visible)) if found}
         if reaching:
             data['properties'] = reaching
+        if self.messages:
+            data['messages'] = [small({'kind': one.kind, 'text': one.text, 'suggestions': list(one.suggestions),
+                                       'by': one.by}) for one in self.messages]
         return data
 
     @staticmethod
@@ -504,6 +510,26 @@ class Roots(Record):
     entry: tuple[RootEntry, ...]
     elements: tuple[RootElement, ...]
     next: str | None = None
+
+
+@dataclass(frozen=True)
+class Message(Record):
+    """What an agent says to the user at a node, MAP-050: a question, which waits for an answer, or a message, which
+    waits to be read. It has its object's address, or its join's two ends, as a work record has."""
+    message_id: str
+    kind: str
+    node_kind: str
+    node_id: str
+    address: str | None
+    receiver_address: str | None
+    provider_address: str | None
+    text: str | None
+    suggestions: tuple[str, ...]
+    by: str | None
+    created: str
+    closed: str | None
+    answer: str | None
+    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)

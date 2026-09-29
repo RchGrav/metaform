@@ -22,6 +22,7 @@ from .records import (
                       Layer,
                       LayerGroup,
                       LayerKind,
+                      Message,
                       Node,
                       NodeKind,
                       NodeView,
@@ -52,5 +53,5 @@ __all__ = ['CONDITIONS', 'EF_WORDS', 'PLACE_KINDS', 'ROLES', 'SUBTYPE_ROLES', 'A
            'Element', 'GraphElement', 'GraphJoin', 'GraphPage', 'Item', 'Join', 'Layer',
            'LayerGroup', 'LayerKind', 'Node', 'NodeKind', 'NodeView', 'Notice', 'Op', 'Outcome', 'Page', 'PeelChange',
            'PeelPreview', 'Plan', 'Property', 'Provenance', 'Recording', 'Ref', 'Report', 'RootElement', 'RootEntry', 'Roots',
-           'Selection', 'Store', 'StoreError', 'Subtype', 'Version', 'Where', 'WorkRecord', 'export_document', 'history', 'import_document', 'prompts',
+           'Selection', 'Store', 'StoreError', 'Subtype', 'Version', 'Where', 'Message', 'WorkRecord', 'export_document', 'history', 'import_document', 'prompts',
            'pull_wheel', 'reading', 'roots', 'short_name']

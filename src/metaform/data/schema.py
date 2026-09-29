@@ -281,6 +281,21 @@ CREATE TABLE IF NOT EXISTS work_steps(
   at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS work_steps_by_work ON work_steps(work_id, number);
+CREATE TABLE IF NOT EXISTS messages(
+  row         INTEGER PRIMARY KEY,
+  message_id  TEXT NOT NULL UNIQUE,
+  target_kind TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  text        TEXT,
+  suggestions TEXT,
+  by          TEXT,
+  created     TEXT NOT NULL,
+  closed      TEXT,
+  answer      TEXT
+);
+CREATE INDEX IF NOT EXISTS messages_by_target ON messages(target_kind, target_id, row);
+CREATE INDEX IF NOT EXISTS messages_by_closed ON messages(closed, row);
 CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
 CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
 CREATE INDEX IF NOT EXISTS work_by_done ON work(done, row);

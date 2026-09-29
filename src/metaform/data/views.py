@@ -22,6 +22,7 @@ from .records import (
     Item,
     Join,
     Layer,
+    Message,
     Node,
     Notice,
     Op,
@@ -236,6 +237,28 @@ def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecor
     return WorkRecord(str(row['work_id']), kind, thing, address, receiver, provider, str(row['condition']), row['note'],
                       row['task'], bool(row['held']), bool(row['reviewed']), str(row['created']), row['done'],
                       row['resolution'], notices, row['steps'], int(row['steps_done'] or 0), said)
+
+
+def message(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> Message:
+    """One message row as a record, with its object's address or its join's two ends, as a work record has."""
+    kind, thing = str(row['target_kind']), str(row['target_id'])
+    address = receiver = provider = None
+    if kind == 'join':
+        ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (thing,)).fetchone()
+        held = tx.db.execute('SELECT provider FROM current_subtypes WHERE join_id=?', (thing,)).fetchone()
+        if ends is not None:
+            receiver, provider = address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
+        elif held is not None:
+            receiver, provider = node_address(tx, 'join', thing), address_of(tx, str(held[0]))
+    elif kind == 'element':
+        address = node_address(tx, kind, thing)
+    try:
+        read: Any = json.loads(row['suggestions']) if row['suggestions'] else []
+    except ValueError:
+        read = []
+    suggested = tuple(str(one) for one in cast(list[Any], read)) if isinstance(read, list) else ()
+    return Message(str(row['message_id']), str(row['kind']), kind, thing, address, receiver, provider, row['text'],
+                   suggested, row['by'], str(row['created']), row['closed'], row['answer'], notices)
 
 
 def report(tx: Tx, row: Row) -> Report:

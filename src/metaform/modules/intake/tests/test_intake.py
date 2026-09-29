@@ -17,16 +17,6 @@ ROOT = Path(__file__).parents[5]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 RESOURCE = Path(__file__).parents[1] / 'resources' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-ALWAYS = ('Do not read past memories or any other details other than the material targeted for intake. Record each '
-          'element as you work through the process. Use the intake tool: its command start first, then element, join '
-          'and subtype, or metaform intake start, element, join and subtype on the command line. Read it back with '
-          'show, correct it with edit and remove, anneal it with absorb, and end with finish. If you cannot continue, '
-          'stop and submit a trouble report with the metaform tool, command feedback, attaching what you have in its '
-          'shape field; do not retry.')
-REPORT_LINE = ('Include your report on the project you examined in the report field of finish: broken code, '
-               'things that need fixing, anything not working or partially working.')
-DEBUG_LINE = ('Include feedback on this process in the feedback field of finish: bad semantics, a tool that '
-              'did not match its schema, where you got stuck.')
 NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
           'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 
@@ -126,7 +116,7 @@ def test_prompt_serves_the_intake_with_only_its_target_filled(run, project):
     served, _, tail = out.partition('</process>\n')
     stored = SPEC.read_text(encoding='utf-8')
     assert without_target(served + '</process>\n') == without_target(stored)
-    assert tail.startswith('\n' + ALWAYS + '\n')
+    assert tail == ''  # the intake is the instruction, and nothing is served beside it
     target = re.search(r'<target [^>]*>', served).group(0)
     assert 'type="path"' in target and f'value="{str(project).replace("&", "&amp;")}"' in target
 
@@ -134,15 +124,15 @@ def test_prompt_serves_the_intake_with_only_its_target_filled(run, project):
 @pytest.mark.req('CLI-034')
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
-def test_the_footer_asks_for_the_report_and_the_feedback_by_their_settings(run, project):
-    default = footer(run('intake', 'prompt', cwd=project).stdout)
-    assert ALWAYS in default and REPORT_LINE in default and DEBUG_LINE not in default
+def test_no_setting_adds_an_instruction_to_the_intake(run, project):
+    """Rich, 2026-09-29: no instructions are side loaded into a workflow. What is added beside the intake competes
+    with it, and the agent cannot tell which of the two is the procedure."""
+    plain = run('intake', 'prompt', cwd=project).stdout
     run('set', '--debug', '--no-report', cwd=project)
-    flipped = footer(run('intake', 'prompt', cwd=project).stdout)
-    assert ALWAYS in flipped and DEBUG_LINE in flipped and REPORT_LINE not in flipped
-    once = footer(run('intake', 'prompt', '--report', '--no-debug', cwd=project).stdout)
-    assert REPORT_LINE in once and DEBUG_LINE not in once
-    assert DEBUG_LINE in footer(run('intake', 'prompt', cwd=project).stdout)
+    assert run('intake', 'prompt', cwd=project).stdout == plain
+    run('set', '--no-debug', '--report', cwd=project)
+    assert run('intake', 'prompt', cwd=project).stdout == plain
+    assert plain.endswith('</process>\n') and without_target(plain) == without_target(SPEC.read_text(encoding='utf-8'))
 
 
 @pytest.mark.req('CLI-034')

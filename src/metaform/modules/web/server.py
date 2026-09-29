@@ -319,11 +319,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
             with store.atomic():
-                asked = [found for found in store.work(None, 'question', True, limit=0).results
-                         if found.work_id == record]
+                asked = [found for found in store.messages(None, 'question', True, limit=0).results
+                         if found.message_id == record]
                 if not asked:
                     return self.send(400, {'error': 'This is not an open question.'})
-                done = store.finish_work(record, answer.strip())
+                done = store.reply(record, answer.strip())
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, plain(done))
@@ -334,11 +334,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
             with store.atomic():
-                unread = [found for found in store.work(None, 'message', True, limit=0).results
-                          if found.work_id == record]
+                unread = [found for found in store.messages(None, 'message', True, limit=0).results
+                          if found.message_id == record]
                 if not unread:
-                    return self.send(400, {'error': 'This is not an unread note.'})
-                done = store.finish_work(record, 'read')
+                    return self.send(400, {'error': 'This is not an unread message.'})
+                done = store.reply(record)
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, plain(done))

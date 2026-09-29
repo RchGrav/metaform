@@ -28,6 +28,7 @@ from .records import (
     Join,
     Layer,
     LayerGroup,
+    Message,
     Node,
     NodeView,
     Notice,
@@ -137,8 +138,11 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
         (found.element_id,)))
     at = node(tx, res, Node('element', found.element_id), raw)
     reaching = reaching_at(tx, res, address)
+    waiting = tuple(views.message(tx, row) for row in tx.db.execute(
+        "SELECT * FROM messages WHERE target_kind='element' AND target_id=? AND closed IS NULL ORDER BY row",
+        (found.element_id,)))
     return Where(kind, found, held, holding, with_subtypes('provider'), with_subtypes('receiver'), open_work,
-                 () if at is None else at.layers, full, reaching.applying, reaching.visible)
+                 () if at is None else at.layers, full, reaching.applying, reaching.visible, waiting)
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
@@ -485,6 +489,29 @@ def work(tx: Tx, node: Node | None, condition: str | None, open: bool | None, li
                              (*params, count)).fetchall()
 
     return paged(fetch, lambda row: views.work_record(tx, row), limit, after)
+
+
+def messages(tx: Tx, node: Node | None, kind: str | None, open: bool | None, limit: int,
+             after: str | None) -> Page[Message]:
+    """The questions and messages, oldest first, by node, kind or whether they still wait, MAP-050; not a context
+    read, since a message has no layer."""
+    target = rows.work_target(tx, node, []) if node is not None else None
+
+    def fetch(cursor: str | None, count: int) -> list[Row]:
+        where: list[str] = ['row > ?']
+        params: list[Any] = [int(cursor or 0)]
+        if target is not None:
+            where.append('target_kind=? AND target_id=?')
+            params.extend(target)
+        if kind is not None:
+            where.append('kind=?')
+            params.append(kind)
+        if open is not None:
+            where.append('closed IS NULL' if open else 'closed IS NOT NULL')
+        return tx.db.execute(f'SELECT row AS key, * FROM messages WHERE {" AND ".join(where)} ORDER BY row LIMIT ?',
+                             (*params, count)).fetchall()
+
+    return paged(fetch, lambda row: views.message(tx, row), limit, after)
 
 
 def reports(tx: Tx, kind: str | None, layer: str | None, limit: int, after: str | None) -> Page[Report]:

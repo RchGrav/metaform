@@ -345,8 +345,12 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
 
 def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
     """The conditions of an object's open work records, in row order, STORE-042; one lookup on `work_by_target`."""
-    return tuple(str(row[0]) for row in tx.db.execute(
+    conditions = tuple(str(row[0]) for row in tx.db.execute(
         'SELECT condition FROM work WHERE target_kind=? AND target_id=? AND done IS NULL ORDER BY row', (kind, thing_id)))
+    # What waits for the user at the object is open at it too: a question not answered, a message not read, MAP-050.
+    waiting = tuple(str(row[0]) for row in tx.db.execute(
+        'SELECT kind FROM messages WHERE target_kind=? AND target_id=? AND closed IS NULL ORDER BY row', (kind, thing_id)))
+    return conditions + waiting
 
 
 def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:

@@ -20,7 +20,6 @@
       <label for="mf">metaform</label>
       <select id="mf"></select>
     </div>
-    <button id="messages" hidden title="Go to the oldest open question"></button>
     <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
     <div class="clearpick">
       <button class="clearbtn" id="adminBtn" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration</button>
@@ -30,6 +29,7 @@
       </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
     </div>
+    <button id="messages" hidden title="Go to the oldest message that waits for you"></button>
     <div class="themepick">
       <label for="theme">colors</label>
       <select id="theme">
@@ -89,13 +89,17 @@
 
   <main>
     <div id="big3d">
+    <div class="bar3d">
+      <div class="navbtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button></div>
+      <div class="mapbtns"><button id="fit3dBtn" title="The whole map in view, or close on the selected node">Fit</button><button id="swap3dBtn" title="Put this map in the small area, and the 2D map here">Swap</button></div>
+    </div>
+    <div class="view3d">
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
     <div id="labels3d" aria-hidden="true"></div>
     <div class="tip3d" id="tip3d" hidden></div>
-    <div class="hint">drag to orbit · scroll to zoom · click a node</div>
-    <div class="stagebtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button><button id="fit3dBtn" title="The whole map in view">Fit</button><button id="swap3dBtn" title="Put this map in the small area, and the 2D map here">Swap</button></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
+    </div>
     </div>
   </main>
 </div>
