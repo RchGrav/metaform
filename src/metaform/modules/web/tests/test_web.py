@@ -646,12 +646,13 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
 
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('VIEW-009')
+@pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
-def test_a_node_with_open_tbd_work_has_a_bloom_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
+def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_red_until_resolved_and_the_panel_lists_the_records(
         run, web, mapped, browser):
-    """Rich, 2026-09-27: a TBD object is drawn ghostly, showing what it will be, and the agent that completes its task
-    makes it solid; a node with an open issue flashes red; cruft is drawn by the test below. The fixture's kitchen
-    timer carries an open broken record."""
+    """Rich, 2026-09-28: a part not built is drawn in characters, which is the one mark of it, and the circles are
+    removed, VIEW-027; the agent that completes its task makes it solid; a node with an open issue flashes red; cruft
+    is drawn by the test below. The fixture's kitchen timer carries an open broken record."""
     from metaform.data import Node, Store
     store = Store('proj')
     tbd = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', note='in the spec', task='build the piezo driver')
@@ -661,9 +662,11 @@ def test_a_node_with_open_tbd_work_has_a_bloom_a_broken_one_flashes_red_until_re
     page.wait_for_function('() => window.metaform.loaded()')
     ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
     look = lambda address: page.evaluate(f'window.metaform.look("{ids[address]}")')
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom3d === true', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === true', timeout=5000)
     alarm = look('code.alarm.audible')
-    # A part not built yet keeps its own color and its full opacity, and a bloom around it marks it, in both views.
+    # A part not built yet keeps its own color and its full opacity. In 3D it is drawn in characters and has no
+    # circles; in 2D a glow around it marks it.
+    assert alarm['bloom3d'] is False and alarm['material'] == 'ShaderMaterial'
     assert (alarm['work'], alarm['classes'], alarm['opacity2d'], alarm['animated2d']) == (['tbd'], ['work-tbd'], 1, False)
     assert alarm['opacity3d'] is None or alarm['opacity3d'] >= 0.95
     assert alarm['color3d'] == page.evaluate('window.metaform.own(' + json.dumps(ids['code.alarm.audible']) + ')')
@@ -686,7 +689,8 @@ def test_a_node_with_open_tbd_work_has_a_bloom_a_broken_one_flashes_red_until_re
         assert shown in panel, shown
     # Its task done, pushed to the page, the alarm turns solid without a reload.
     run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom3d === false', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === false', timeout=12000)
+    assert look('code.alarm.audible')['material'] == 'MeshPhysicalMaterial'  # glass, as every built element
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom2d === false', timeout=5000)
     solid = look('code.alarm.audible')
     assert (solid['work'], solid['classes'], solid['opacity2d']) == ([], [], 1)
@@ -697,10 +701,11 @@ def test_a_node_with_open_tbd_work_has_a_bloom_a_broken_one_flashes_red_until_re
 
 
 @pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
-def test_a_join_that_is_not_built_yet_has_a_bloom_in_both_views(run, web, mapped, browser):
-    """An open tbd record on a join shows on the join itself: a bloom around its purpose node in 3D and around its
-    edge in 2D, with its color and opacity as they are."""
+def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, browser):
+    """An open tbd record on a join shows on the join itself: its purpose node is drawn in characters in 3D,
+    VIEW-027, and its edge has a glow in 2D, with its color and opacity as they are."""
     from metaform.data import Node, Store
     store = Store('proj')
     joins = list(store.joins('code.timer.kitchen').results)
@@ -710,9 +715,10 @@ def test_a_join_that_is_not_built_yet_has_a_bloom_in_both_views(run, web, mapped
     page.wait_for_function('() => window.metaform.loaded()')
     links = page.evaluate('window.metaform.linkColors()')
     assert not any(link['color'].startswith('rgba(') for link in links)  # its links keep their color and opacity
-    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].join_id}").bloom3d === true', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].join_id}").text3d === true', timeout=5000)
+    assert page.evaluate(f'window.metaform.look("p:{joins[0].join_id}").bloom3d') is False
     built = [join['join_id'] for join in keys_of(web)[0]['joins'] if join['join_id'] != joins[0].join_id]
-    assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").bloom3d') is False
+    assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").text3d') is False
     assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-tbd']
     glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-tbd');
         const style = getComputedStyle(path); return [Number(style.opacity), style.filter]; })()""")
@@ -721,10 +727,12 @@ def test_a_join_that_is_not_built_yet_has_a_bloom_in_both_views(run, web, mapped
 
 
 @pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
-def test_a_part_being_worked_on_pulsates_a_part_waiting_is_steady_and_a_part_done_is_normal(run, web, mapped, browser):
-    """The circles around a part say it needs building; they pulsate once an agent has taken the task, so the map
-    shows where work is happening now; and they go when the work is done."""
+def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_slow_and_a_part_done_is_normal(run, web, mapped, browser):
+    """The text of a part says it needs building; it changes slowly while the part waits and quickens once an agent
+    has taken the task, so the map shows where work is happening now; and it gives way to the node when the work is
+    done, VIEW-027."""
     from metaform.data import Node, Store
     store = Store('proj')
     waiting = store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
@@ -735,20 +743,22 @@ def test_a_part_being_worked_on_pulsates_a_part_waiting_is_steady_and_a_part_don
     ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook')}
     run('map', 'work', 'op=take', f'id={working.work_id}', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").work[0] === "in-progress"', timeout=5000)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").glow3d === 1', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === true', timeout=5000)
     page.wait_for_timeout(600)  # the page redraws once for the change it was pushed
     samples = page.evaluate(f"""async () => {{ const seen = {{still: [], moving: []}};
         for (let at = 0; at < 24; at++) {{ await new Promise(done => setTimeout(done, 80));
-          seen.still.push(window.metaform.look("{ids['code.alarm.audible']}").glow3d);
-          seen.moving.push(window.metaform.look("{ids['exterior.cook']}").glow3d); }}
+          seen.still.push(window.metaform.look("{ids['code.alarm.audible']}").turns);
+          seen.moving.push(window.metaform.look("{ids['exterior.cook']}").turns); }}
         return seen; }}""")
-    assert set(samples['still']) == {1}  # steady
-    assert max(samples['moving']) - min(samples['moving']) > 0.5  # it pulsates
+    assert len(set(samples['still'])) == 1  # a part waiting changes at one slow speed
+    assert samples['moving'] == sorted(samples['moving'])  # a part in work never slows
+    assert samples['moving'][-1] > samples['moving'][0] > samples['still'][0]  # it quickens, from above the waiting speed
+    assert all(page.evaluate(f'window.metaform.look("{ids[address]}").bloom3d') is False for address in ids)
     cook = page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}")')
     assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
     assert 'work: in-progress' in page.inner_text('#legend')
     run('map', 'work', 'op=done', f'id={working.work_id}', 'resolution=built', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").bloom3d === false', timeout=5000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").text3d === false', timeout=12000)
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").classes.length === 0', timeout=5000)
     assert waiting.work_id and problems == []
 
@@ -2539,4 +2549,42 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     page.wait_for_timeout(1200)
     assert page.evaluate(f'["{kitchen}", "{alarm}"].map(id => window.metaform.look(id).glow3d)') == [0, 0]
     assert page.evaluate(f'[\"{kitchen}\", \"{alarm}\"].map(id => window.metaform.look(id).light3d)') == [own, own]
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-027')
+def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal_reaches_them(run, web, mapped, browser):
+    """Rich, 2026-09-28: numbers and letters in both cases, the strings moving all the time; a signal reaching a part
+    still drawn in characters is a pulsing bloom."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    store.add_work(Node('element', 'code.alarm.audible'), 'tbd', task='build it')
+    store.add_work(Node('element', 'exterior.cook'), 'tbd', task='build that')
+    asked = store.add_work(Node('element', 'exterior.cook'), 'question', note='Is the cook still wanted?')
+    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.wait_for_function(f'() => window.metaform.look("{alarm}").text3d && window.metaform.look("{cook}").text3d')
+    texts = []
+    for _ in range(4):
+        texts.append(page.evaluate(f'window.metaform.look("{alarm}").text'))
+        page.wait_for_timeout(900)
+    assert len(set(texts)) >= 3                                     # the strings move all the time
+    assert all(len(text) >= 32 and text.isalnum() and text.isascii() for text in texts)
+    assert any(letter.islower() for letter in ''.join(texts)) and any(letter.isupper() for letter in ''.join(texts))
+    assert any(letter.isdigit() for letter in ''.join(texts))
+    assert page.evaluate(f'window.metaform.look("{alarm}").signal3d') == 0  # no signal has reached the alarm
+    for _ in range(2):                                              # the cook's text glows, and the glow swells and fades
+        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.8', timeout=4000)
+        page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d < 0.2', timeout=4000)
+    question = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--question").trim().toLowerCase()')
+    page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.5', timeout=4000)
+    assert page.evaluate(f'window.metaform.look("{cook}").signalColor3d') == question
+    store.finish_work(asked.work_id, 'Yes.')
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded()')
+    page.wait_for_function(f'() => window.metaform.look("{cook}").text3d === true')
+    page.wait_for_timeout(1500)
+    assert page.evaluate(f'window.metaform.look("{cook}").signal3d') == 0
     assert problems == []

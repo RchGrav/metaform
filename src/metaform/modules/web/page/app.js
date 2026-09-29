@@ -242,7 +242,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     Object.assign(GLASS, options);
     SEGMENTS = segments;
     shapes.clear();
-    G.nodeThreeObject(node => on && isGlass(node) ? bead(node) : false);
+    G.nodeThreeObject(node => asText(node) ? written(node) : on && isGlass(node) ? bead(node) : false);
   }, bloom: () => ({pass: Boolean(BLOOM), levels: BLOOM ? BLOOM.levels : 0}),
   wave: () => ({dots: W.dots.length, shapes: G ? G.renderer().info.memory.geometries : 0,
     lit: G ? G.graphData().nodes.filter(node => node.__threeObj?.children.some(child => child.userData.pulse)).map(node => node.id) : []}),
@@ -270,6 +270,9 @@ function look(id) {
     animated2d: box ? getComputedStyle(box).animationName !== 'none' || getComputedStyle(group).animationName !== 'none' : false,
     opacity3d: material ? material.opacity : null,
     light3d: material ? material.emissiveIntensity ?? null : null,
+    text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
+    turns: writing.get(id)?.rate ?? 0,
+    text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
     glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
@@ -383,7 +386,7 @@ function setReach(key) {
     .filter(({address}) => address === home.address || home.address.startsWith(address + '.') || address.startsWith(home.address + '.'))
     .map(element => element.element_id) : []);
   R.edges = G ? G.graphData().links.filter(inReach).length : 0;
-  if (BLOOM) BLOOM.enabled = Boolean(R.key);
+  if (BLOOM) BLOOM.enabled = Boolean(R.key) || T.signaled;
   for (const dot of W.dots) G.scene().remove(dot.mesh);
   if (G) for (const node of G.graphData().nodes) pulse3d(node, 0);  // no node is left lit
   Object.assign(W, {dots: [], held: [], next: W.clock, pulses: new Map()});
@@ -434,7 +437,7 @@ function send(data, id, from, outward) {
  * by the depth, and the glow is the body's own color and brightness, so the two are never apart. */
 function pulse3d(node, depth) {
   const object = node.__threeObj;
-  if (!object || !object.material) return;
+  if (!object || !object.material || object.userData.written) return;  // text glows by itself, VIEW-027
   let shell = object.children.find(child => child.userData.pulse);
   if (!depth) {
     if (shell) { object.remove(shell); shell.material.dispose(); }
@@ -548,6 +551,249 @@ function addBloom() {
     dispose() { for (const level of levels) { level.across.dispose(); level.down.dispose(); } }};
   composer.addPass(BLOOM);
 }
+/* A part not built yet is drawn in characters, VIEW-027: text floating where its node will be, which is the one mark
+ * of it. The characters are the numbers and the letters in both cases, made at random and all made again at each
+ * turn. They give the ball its shape by their weight, which is how much ink a character puts down: the heavy ones
+ * where the ball is bright, the light ones where it is dark, toward the rim. Nothing is colored to make the shape.
+ * How fast the text changes says how far the work is: slow while the part waits, quickening once an agent has taken
+ * it. When the part is built the text speeds up to a blur, the node fades in over it and the text fades away. A
+ * signal reaching the text makes it glow in the signal's color, and the glow swells and fades. The values are
+ * chosen by eye and are not settled. */
+const LETTERS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const TEXT = {size: 10, waiting: 1.5, first: 2.5, top: 10, fastest: 30, hold: 0.85, climb: 60, light: 2.4,
+  speedUp: 3, fadeIn: 2, fadeOut: 1.2, near: 1.6, far: 0.7};
+const T = {letters: null, strokes: null, order: LETTERS, cell: {value: new THREE.Vector2(6, 12)},
+  screen: {value: new THREE.Vector2(1, 1)}, zoom: {value: 1}, light: {value: TEXT.light}, away: 0, last: 0,
+  signaled: false, rows: new Map()};
+const writing = new Map();  // what is being written, by node id, kept while the map is drawn again
+const unbuilt = node => has(node, 'tbd') || has(node, 'in-progress');
+const asText = node => unbuilt(node) || writing.has(node.id);
+const FACE = '500 48px "IBM Plex Mono", ui-monospace, monospace', WIDE = 30, HIGH = 60;
+function weightOf(letter) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 40; canvas.height = 64;
+  const pen = canvas.getContext('2d', {willReadFrequently: true});
+  pen.fillStyle = 'white'; pen.font = FACE; pen.textAlign = 'center'; pen.textBaseline = 'middle';
+  pen.fillText(letter, 20, 32);
+  const painted = pen.getImageData(0, 0, 40, 64).data;
+  let sum = 0;
+  for (let at = 3; at < painted.length; at += 4) sum += painted[at];
+  return sum;
+}
+/* A strip of characters, painted large so the graphics card scales them with smooth edges. */
+function strip(texture, text) {
+  const canvas = texture.image;
+  canvas.width = WIDE * text.length; canvas.height = HIGH;
+  const pen = canvas.getContext('2d');
+  // Black and white here are not colors of the page: the strip is a mask, read for how much a stroke covers.
+  pen.fillStyle = 'black'; pen.fillRect(0, 0, canvas.width, canvas.height);
+  pen.fillStyle = 'white'; pen.font = FACE; pen.textAlign = 'center'; pen.textBaseline = 'middle';
+  [...text].forEach((letter, index) => pen.fillText(letter, WIDE * (index + 0.5), HIGH / 2 + 1));
+  texture.needsUpdate = true;
+}
+function letters() {
+  const weights = new Map([...LETTERS].map(letter => [letter, weightOf(letter)]));
+  T.order = [...LETTERS].sort((one, two) => weights.get(one) - weights.get(two)).join('');  // lightest first
+  strip(T.letters, T.order);
+  strip(T.strokes, '-/|\\');
+}
+function ready() {
+  if (T.letters) return;
+  T.letters = new THREE.CanvasTexture(document.createElement('canvas'));
+  T.strokes = new THREE.CanvasTexture(document.createElement('canvas'));
+  letters();
+  document.fonts.load(FACE).then(letters, () => {});  // painted again once the face is there
+}
+const PLACED = `uniform float radius; uniform vec2 screen; uniform vec2 cell; uniform float zoom;
+  varying vec2 vMiddle; varying float vReach;
+  void main() {
+    vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    float reach = radius * length(modelViewMatrix[0].xyz);
+    vec4 middle = projectionMatrix * center, edge = projectionMatrix * (center + vec4(reach, 0.0, 0.0, 0.0));
+    vMiddle = middle.xy / middle.w;
+    vReach = edge.x / edge.w - vMiddle.x;
+    // Room for the whole of the last cells, and from far away for the few characters a part still holds.
+    float room = 1.6 * max(1.0, 5.0 * cell.x * zoom / screen.x / max(vReach, 0.0001));
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position * room, 1.0);
+  }`;
+const DRAWN = `uniform sampler2D letters; uniform sampler2D cells; uniform vec2 screen; uniform vec2 cell;
+  uniform float zoom; uniform vec3 ink; uniform vec3 signal; uniform float reached; uniform float seen;
+  uniform float light;
+  varying vec2 vMiddle; varying float vReach;
+  void main() {
+    vec2 size = cell * zoom;
+    vec2 which = floor(gl_FragCoord.xy / size), within = fract(gl_FragCoord.xy / size);
+    vec2 middle = (which + 0.5) * size / screen * 2.0 - 1.0;
+    float wide = max(vReach, 5.0 * size.x / screen.x);                 // from far away a part still holds a few characters
+    vec2 off = (middle - vMiddle) / vec2(wide, wide * screen.x / screen.y);
+    float out2 = dot(off, off);
+    if (out2 > 1.0) discard;
+    vec3 normal = vec3(off, sqrt(1.0 - out2));
+    float facing = clamp(dot(normal, normalize(vec3(0.45, 0.6, 0.66))) * 0.8 + 0.2, 0.0, 1.0);
+    // Each cell is handed a number made at random by the page, new at each turn, so every graphics card shows the
+    // same. The character is picked by weight around the ball's brightness there, and stays random within it.
+    float got = texture2D(cells, (mod(which, 32.0) + 0.5) / 32.0).r;
+    float weighed = clamp(facing + (got - 0.5) * 0.45, 0.0, 0.999);
+    float letter = min(61.0, floor(weighed * 62.0));
+    // The size of a character on the screen is given to the lookup; left to guess it, the graphics card reads a
+    // smeared copy at a cell's border.
+    vec2 stepX = vec2(1.0 / size.x, 0.0), stepY = vec2(0.0, 1.0 / size.y);
+    float mark = textureGrad(letters, vec2((letter + within.x) / 62.0, within.y), stepX / 62.0, stepY).r;
+    float cover = clamp(mark * 1.25, 0.0, 1.0);                        // smooth at any size
+    if (cover < 0.02) discard;                                         // the characters float: nothing is behind them
+    gl_FragColor = vec4(mix(ink, signal, reached * 0.85) * (1.15 + light * reached), seen * cover);
+  }`;
+function written(node) {
+  ready();
+  const radius = Math.cbrt(nodeSize(node)) * 3;
+  if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
+  let state = writing.get(node.id);
+  if (!state) {
+    const cells = new THREE.DataTexture(new Uint8Array(1024).map(() => Math.floor(Math.random() * 256)), 32, 32, THREE.RedFormat);
+    cells.needsUpdate = true;
+    state = {level: 0, tick: 0, wrote: 0, rate: TEXT.waiting, ending: null, cells, reached: 0, signalColor: null,
+      seen: {value: 1}, glow: {value: 0}, signal: {value: new THREE.Color(1, 1, 1)}};
+    writing.set(node.id, state);
+  }
+  const ink = new THREE.Color(ownColor(node));
+  const material = new THREE.ShaderMaterial({vertexShader: PLACED, fragmentShader: DRAWN, transparent: true, depthWrite: false,
+    uniforms: {letters: {value: T.letters}, cells: {value: state.cells}, screen: T.screen, cell: T.cell, zoom: T.zoom,
+      ink: {value: ink}, signal: state.signal, reached: state.glow, seen: state.seen, light: T.light, radius: {value: radius}}});
+  material.color = new THREE.Color(ownColor(node));  // the page colors a node through its material's color
+  material.userData.own = true;
+  const mesh = new THREE.Mesh(shapes.get(radius), material);
+  mesh.userData.written = true;
+  // The node itself, which fades in over the text when the part is built.
+  const arriving = isGlass(node) ? bead({...node, work: []})
+    : new THREE.Mesh(shapes.get(radius), new THREE.MeshLambertMaterial({color: ownColor(node)}));
+  Object.assign(arriving.material, {transparent: true, opacity: 0});
+  arriving.visible = false;
+  arriving.userData.arriving = true;
+  mesh.add(arriving);
+  return mesh;
+}
+/* An edge of a part not built is a row of characters floating along it, each the one that slopes as the edge does on
+ * the screen, as lines are drawn in text. */
+const DOTS = 40;
+function row() {
+  const shape = new THREE.BufferGeometry();
+  shape.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DOTS * 3), 3));
+  const made = new THREE.Points(shape, new THREE.ShaderMaterial({transparent: true, depthWrite: false,
+    uniforms: {strokes: {value: T.strokes}, which: {value: 0}, cell: T.cell, zoom: T.zoom, ink: {value: new THREE.Color()}},
+    vertexShader: `uniform vec2 cell; uniform float zoom;
+      void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = cell.y * zoom; }`,
+    // A point is square and a cell is taller than it is wide, so the character is drawn in the middle of the point.
+    fragmentShader: `uniform sampler2D strokes; uniform float which; uniform vec3 ink; uniform vec2 cell;
+      void main() { float across = (gl_PointCoord.x - 0.5) * cell.y / cell.x + 0.5;
+        if (across < 0.0 || across > 1.0) discard;
+        float cover = clamp(texture2D(strokes, vec2((which + across) / 4.0, 1.0 - gl_PointCoord.y)).r * 1.25, 0.0, 1.0);
+        if (cover < 0.02) discard;
+        gl_FragColor = vec4(ink * 1.15, cover); }`}));
+  made.frustumCulled = false;
+  return made;
+}
+function rows3d(data) {
+  const live = new Set();
+  const textOf = end => typeof end === 'object' && end.__threeObj?.userData.written && writing.get(end.id)?.ending === null;
+  for (const link of data.links) {
+    const from = link.source, to = link.target, line = link.__lineObj;
+    if (!line || from?.x === undefined || to?.x === undefined) continue;
+    // A join's links are drawn in characters. A namespace edge and a layer's links stay thin lines, since they are
+    // many and dim, and rows of characters along all of them cover the map.
+    const joined = link.k === 'purpose' || link.k === 'encounter';
+    if (!joined || (!textOf(from) && !textOf(to))) { if (link.rowed) { line.visible = true; link.rowed = false; } continue; }
+    live.add(link);
+    let made = T.rows.get(link);
+    if (!made) { made = row(); T.rows.set(link, made); G.scene().add(made); }
+    line.visible = false;
+    link.rowed = true;
+    made.material.uniforms.ink.value.set(linkColor(link));
+    const one = G.graph2ScreenCoords(from.x, from.y, from.z), two = G.graph2ScreenCoords(to.x, to.y, to.z);
+    const long = Math.hypot(two.x - one.x, two.y - one.y), size = TEXT.size * 1.1 * T.zoom.value;
+    const count = Math.max(2, Math.min(DOTS, Math.floor(long * 0.8 / size)));
+    const turn = ((Math.atan2(-(two.y - one.y), two.x - one.x) * 180 / Math.PI) % 180 + 180) % 180;  // 0 to 180 degrees
+    made.material.uniforms.which.value = turn < 22.5 || turn >= 157.5 ? 0 : turn < 67.5 ? 1 : turn < 112.5 ? 2 : 3;
+    // The row runs from the edge of one node to the edge of the other, so it never crosses a node's own characters.
+    const whole = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z));
+    const clear = end => Math.min(0.45, Math.cbrt(nodeSize(end)) * 3 * 1.2 / whole);
+    const begin = clear(from), end = 1 - clear(to), places = made.geometry.attributes.position;
+    for (let at = 0; at < DOTS; at++) {
+      const along = begin + (end - begin) * (Math.min(at, count - 1) + 0.5) / count;
+      places.setXYZ(at, from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along, from.z + (to.z - from.z) * along);
+    }
+    places.needsUpdate = true;
+  }
+  for (const [link, made] of T.rows) if (!live.has(link)) {
+    G.scene().remove(made); made.geometry.dispose(); made.material.dispose(); T.rows.delete(link);
+  }
+}
+const WHITE = new THREE.Color(1, 1, 1);
+const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['cruft', '--cruft'], ['question', '--question']];
+function text3d() {
+  const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
+  T.last = now;
+  if (!writing.size) { if (T.rows.size) rows3d(G.graphData()); T.signaled = false; return; }
+  const ratio = G.renderer().getPixelRatio();
+  G.renderer().getDrawingBufferSize(T.screen.value);
+  T.cell.value.set(TEXT.size * 0.62 * ratio, TEXT.size * 1.25 * ratio);
+  const away = G.camera().position.distanceTo(G.controls().target);
+  if (!T.away) T.away = away;
+  T.zoom.value = Math.min(TEXT.near, Math.max(TEXT.far, T.away / away));  // the characters follow the zoom a little
+  let finished = false, signaled = false;
+  const shown = new Set();
+  for (const node of G.graphData().nodes) {
+    const state = writing.get(node.id), object = node.__threeObj;
+    if (!state) continue;
+    shown.add(node.id);
+    if (!object?.userData.written) continue;
+    const working = has(node, 'in-progress'), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
+    if (!unbuilt(node) && state.ending === null) state.ending = 0;   // it is built: the ending starts from where it is
+    if (state.ending === null) {
+      // Work with no phases to report climbs by itself, slowly, to a point short of the fastest.
+      if (working) state.level = Math.min(TEXT.hold, state.level + TEXT.hold * passed / TEXT.climb);
+      state.rate = working ? climbed() : TEXT.waiting;
+    } else {
+      state.ending += passed;
+      const up = Math.min(1, state.ending / TEXT.speedUp);
+      const into = Math.min(1, Math.max(0, (state.ending - TEXT.speedUp) / TEXT.fadeIn));
+      const out = Math.min(1, Math.max(0, (state.ending - TEXT.speedUp - TEXT.fadeIn) / TEXT.fadeOut));
+      state.rate = climbed() + (TEXT.fastest - climbed()) * up;
+      state.seen.value = 1 - out;
+      const arriving = object.children.find(child => child.userData.arriving);
+      if (arriving) { arriving.visible = into > 0.01; arriving.material.opacity = 0.7 * into + 0.3 * out; }
+      if (out >= 1 || reduced()) { writing.delete(node.id); finished = true; continue; }
+    }
+    if (!reduced()) state.tick += passed * state.rate;
+    // The text is the color the page gives the part, lightened, since thin strokes show less of a color than a
+    // ball does.
+    object.material.uniforms.ink.value.copy(object.material.color).lerp(WHITE, 0.5);
+    if (Math.floor(state.tick) !== state.wrote) {                     // the whole of it is made again at once
+      state.wrote = Math.floor(state.tick);
+      const held = state.cells.image.data;
+      for (let at = 0; at < held.length; at++) held[at] = Math.floor(Math.random() * 256);
+      state.cells.needsUpdate = true;
+    }
+    // A signal reaching the text: a condition that needs attention, or the dot of a property's wave.
+    const found = SIGNALS.find(([condition]) => has(node, condition));
+    let reached = found ? (reduced() ? 1 : Math.max(0, Math.sin(now * 2 * Math.PI / 1.6))) : 0, color = found ? css(found[1]) : null;
+    const dot = W.pulses.get(node.id), gone = dot ? (W.clock - dot.start) / dot.length : 2;
+    if (gone >= 0 && gone <= 1 && Math.sin(Math.PI * gone) > reached) { reached = Math.sin(Math.PI * gone); color = R.color; }
+    Object.assign(state, {reached, signalColor: reached > 0 && color ? color.toLowerCase() : null});
+    state.glow.value = reached;
+    if (reached > 0 && color) state.signal.value.set(color);
+    signaled = signaled || reached > 0;
+  }
+  for (const id of writing.keys()) if (!shown.has(id)) writing.delete(id);  // no longer on the map
+  T.signaled = signaled;
+  if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;  // the text's glow is spread by the bloom
+  rows3d(G.graphData());
+  if (finished) G.nodeThreeObject(G.nodeThreeObject());             // the parts built are drawn as every built part
+}
+function textOf(id) {
+  const state = writing.get(id);
+  if (!state) return '';
+  return [...state.cells.image.data.slice(0, 64)].map(value => T.order[Math.min(61, Math.floor(value / 256 * 62))]).join('');
+}
 /* The condition of a node in 3D, MAP-046 and VIEW-005: an open tbd record puts the circles around it, which pulsate
  * once its task is taken; a broken part being fixed is steady red with pulsating circles; an open
  * broken record flashes it red, steady red with reduced motion, and an open cruft record pulses it between the cruft
@@ -555,7 +801,7 @@ function addBloom() {
  * material first, so no other node of its color changes. Called every frame for the nodes that carry a record. */
 function paint3d(node) {
   const object = node.__threeObj;
-  if (!object || !object.material) return;
+  if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
   const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question');
@@ -609,7 +855,7 @@ function start3D() {
     .showNavInfo(false)
     .nodeRelSize(3)
     .nodeVal(nodeSize)
-    .nodeThreeObject(node => isGlass(node) ? bead(node) : false)
+    .nodeThreeObject(node => asText(node) ? written(node) : isGlass(node) ? bead(node) : false)
     .nodeColor(node => dimmed(node) ? dim(colorOf(node)) : colorOf(node))
     .nodeOpacity(0.95)
     .nodeResolution(16)
@@ -682,6 +928,7 @@ function labels() {
     for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
       colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
     wave3d(G.graphData());
+    text3d();
     for (const node of G.graphData().nodes) {
       if ((node.work && node.work.length) || node.__threeObj?.userData.glow) paint3d(node);
       if (node.t !== 'el') continue;
