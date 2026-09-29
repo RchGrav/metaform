@@ -522,7 +522,8 @@ WORK_NOUNS = (
                   'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
                        'broken; cruft, surpassed code left in the codebase, never a document, a note, an example or data; '
-                       'or question, a question for the user, asked in the note and answered in the web GUI.'),
+                       'question, a question for the user, asked in the note and answered in the web GUI; or message, '
+                       'a note for the user that asks for nothing and waits to be read.'),
     _noun('note', 'add and edit: what and where; of a question, the question in plain words.'),
     _noun('suggestions', 'add, of a question: the answers you suggest, the one you recommend first, as a JSON list. '
                          'The user answers with one click on one of them, or types another.', 'json'),

@@ -2455,23 +2455,24 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     assert 'work: question' in page.inner_text('#legend')
     page.click('#messages')  # the oldest first
     page.wait_for_function(f'() => window.metaform.selected() === "{kitchen}"')
-    page.wait_for_selector('#work textarea.answer')
-    assert 'Is the quiet tone still wanted?' in page.inner_text('#work')
-    page.fill('#work textarea.answer', 'Yes, keep it.')
-    page.click('#work button.answer')
+    page.wait_for_selector('#float textarea.answer')
+    assert 'Is the quiet tone still wanted?' in page.inner_text('#float')
+    assert 'Is the quiet tone still wanted?' not in page.inner_text('#p-object')  # the panel holds no question
+    page.fill('#float textarea.answer', 'Yes, keep it.')
+    page.click('#float button.answer')
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").work.length === 0 '
                            f'&& window.metaform.look("{kitchen}").glow3d === 0')
     assert Store('proj').work(None, 'question', False).results[0].resolution == 'Yes, keep it.'
     assert Store('proj').work(None, 'question', False).results[0].work_id == first.work_id
     # the answer stays at the node; the panel is drawn again once the page has read the change
-    page.wait_for_function('() => document.querySelector("#work").innerText.includes("Answer: Yes, keep it.")',
+    page.wait_for_function('() => document.querySelector("#float").innerText.includes("Answer: Yes, keep it.")',
                            timeout=5000)
     page.click('#messages')
     page.wait_for_function(f'() => window.metaform.selected() === "{cook}"')
-    page.wait_for_selector('#work textarea.answer')
-    page.fill('#work textarea.answer', 'Whoever sets the timer.')
-    page.click('#work button.answer')
+    page.wait_for_selector('#float textarea.answer')
+    page.fill('#float textarea.answer', 'Whoever sets the timer.')
+    page.click('#float button.answer')
     page.wait_for_function('() => document.querySelector("#messages").hidden')
     assert problems == []
 
@@ -2608,21 +2609,23 @@ def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_unde
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.select("{alarm}")')
-    page.wait_for_selector('#work button.suggestion')
-    shown = page.eval_on_selector_all('#work button.suggestion, #work button.other', 'found => found.map(one => one.textContent)')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.unread')
+    page.wait_for_selector('#float button.suggestion')
+    shown = page.eval_on_selector_all('#float button.suggestion, #float button.other', 'found => found.map(one => one.textContent)')
     assert shown == ['Yes, keep it', 'No, make it louder', 'Other']
-    assert page.locator('#work button.suggestion').first.get_attribute('class').split() == ['suggestion', 'recommended']
-    assert page.locator('#work textarea.answer').count() == 0       # the box for typing shows under Other only
-    page.click('#work button.suggestion >> nth=1')
+    assert page.locator('#float button.suggestion').first.get_attribute('class').split() == ['suggestion', 'recommended']
+    assert page.locator('#float textarea.answer').count() == 0       # the box for typing shows under Other only
+    page.click('#float button.suggestion >> nth=1')
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
     assert Store('proj').work(Node('element', 'code.alarm.audible'), 'question', False).results[0].resolution \
         == 'No, make it louder'
-    page.evaluate(f'window.metaform.select("{cook}")')
-    page.wait_for_selector('#work button.other')
-    page.click('#work button.other')
-    page.fill('#work textarea.answer', 'The person who is cooking.')
-    page.click('#work button.answer')
+    page.evaluate(f'window.metaform.menu("{cook}")')
+    page.click('#menu button.unread')
+    page.wait_for_selector('#float button.other')
+    page.click('#float button.other')
+    page.fill('#float textarea.answer', 'The person who is cooking.')
+    page.click('#float button.answer')
     page.wait_for_function('() => document.querySelector("#messages").hidden')
     assert Store('proj').work(Node('element', 'exterior.cook'), 'question', False).results[0].resolution \
         == 'The person who is cooking.'
@@ -2657,4 +2660,67 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
     page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#stage') > area('#map2d'); }""")
     page.evaluate("try { localStorage.removeItem('metaform.swapped') } catch (error) {}")
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-030')
+@pytest.mark.req('MAP-050')
+def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_floating_window(run, web, mapped, browser):
+    """Rich, 2026-09-29: right-click a node to read its unread messages, past messages for review on the menu, in a
+    floating window, from the 2D map and from the 3D map."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm_node = Node('element', 'code.alarm.audible')
+    answered = store.add_work(alarm_node, 'question', note='Was the tone ever louder?', task=json.dumps(['Yes', 'No']))
+    store.finish_work(answered.work_id, 'No')
+    store.add_work(alarm_node, 'question', note='Is the quiet tone still wanted?', task=json.dumps(['Yes', 'No']))
+    note = store.add_work(alarm_node, 'message', note='The piezo driver is written and waits for a test on the board.')
+    assert note.notices == ()
+    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    assert page.is_hidden('#menu') and page.is_hidden('#float')
+    assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
+    entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
+    # the 2D map: a right-click on the node's own box
+    page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
+    page.wait_for_timeout(1200)
+    box = page.evaluate(f'window.metaform.box2d("{alarm}")')
+    page.mouse.click((box['left'] + box['right']) / 2, (box['top'] + box['bottom']) / 2, button='right')
+    page.wait_for_selector('#menu:not([hidden])')
+    assert entries() == [['unread', 'Unread messages 2', False], ['past', 'Past messages 1', False]]
+    page.keyboard.press('Escape')
+    assert page.is_hidden('#menu')
+    # the 3D map: the node's right-click, and a node with no messages
+    page.evaluate(f'window.metaform.menu("{cook}")')
+    assert entries() == [['unread', 'Unread messages 0', True], ['past', 'Past messages 0', True]]
+    page.keyboard.press('Escape')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.unread')
+    page.wait_for_selector('#float:not([hidden])')
+    assert page.is_hidden('#menu')
+    shown = page.inner_text('#float')
+    assert 'Is the quiet tone still wanted?' in shown and 'The piezo driver is written' in shown
+    assert 'Was the tone ever louder?' not in shown
+    # the note shown is read; the question still waits
+    page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
+    read = Store('proj').work(alarm_node, 'message', False).results
+    assert [record.work_id for record in read] == [note.work_id]
+    before = page.evaluate('(() => { const box = document.querySelector("#float").getBoundingClientRect(); return [box.left, box.top]; })()')
+    page.mouse.move(before[0] + 40, before[1] + 12)                   # it is moved by its title
+    page.mouse.down()
+    page.mouse.move(before[0] + 160, before[1] + 92, steps=4)
+    page.mouse.up()
+    after = page.evaluate('(() => { const box = document.querySelector("#float").getBoundingClientRect(); return [box.left, box.top]; })()')
+    assert abs(after[0] - before[0] - 120) <= 2 and abs(after[1] - before[1] - 80) <= 2
+    page.click('#float button.close')
+    assert page.is_hidden('#float')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert entries() == [['unread', 'Unread messages 1', False], ['past', 'Past messages 2', False]]
+    page.click('#menu button.past')
+    page.wait_for_selector('#float:not([hidden])')
+    past = page.inner_text('#float')
+    assert 'Was the tone ever louder?' in past and 'Answer: No' in past and 'The piezo driver is written' in past
+    assert 'Is the quiet tone still wanted?' not in past
     assert problems == []

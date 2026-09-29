@@ -152,7 +152,25 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .pill{font:500 12px var(--mono);padding:2px 8px;border-radius:var(--r);border:0;background:var(--panel-2);color:var(--muted)}
 .pill.work-broken{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
 .pill.work-cruft{color:var(--cruft);background:color-mix(in srgb,var(--cruft) 14%,transparent)}
-.pill.work-question{color:var(--question);background:color-mix(in srgb,var(--question) 14%,transparent)}
+.pill.work-question,.pill.work-message{color:var(--question);background:color-mix(in srgb,var(--question) 14%,transparent)}
+.map2d .node.work-message,.map2d .cluster.work-message,.map2d path.work-message{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
+.map2d .node.work-message rect,.map2d .cluster.work-message rect{stroke:var(--question)!important;stroke-width:2px}
+@media (prefers-reduced-motion: reduce){.map2d .work-message{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}
+/* The menu of a node and the window its messages are read in, VIEW-030. */
+#menu{position:fixed;z-index:30;min-width:190px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);padding:4px;box-shadow:0 8px 28px color-mix(in srgb,var(--ground) 70%,transparent);display:grid;gap:2px}
+#menu[hidden],#float[hidden]{display:none}
+#menu .name{padding:4px 8px;font:600 11px var(--sans);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+#menu button{display:flex;justify-content:space-between;gap:16px;background:transparent;border:0;border-radius:4px;padding:6px 8px;font:13px var(--sans);color:var(--text);cursor:pointer;text-align:left}
+#menu button:hover:not(:disabled){background:var(--panel-2)}
+#menu button:disabled{color:var(--faint);cursor:default}
+#menu button b{font-weight:600;color:var(--question)}
+#menu button:disabled b{color:var(--faint)}
+#float{position:fixed;z-index:25;left:470px;top:110px;width:380px;max-width:calc(100vw - 24px);max-height:70vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 12px 40px color-mix(in srgb,var(--ground) 75%,transparent)}
+#float .bar{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:move;user-select:none}
+#float .bar .title{flex:1;font:600 13px var(--sans);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#float .bar .close{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;cursor:pointer;font:12px var(--sans);color:var(--muted)}
+#float .body{padding:10px 12px;overflow:auto;display:grid;gap:12px}
+#float .body .when{font:11px var(--mono);color:var(--faint)}
 .map2d .node.work-question,.map2d .cluster.work-question,.map2d path.work-question{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
 .map2d .node.work-question rect,.map2d .cluster.work-question rect{stroke:var(--question)!important;stroke-width:2px}
 @media (prefers-reduced-motion: reduce){.map2d .work-question{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}

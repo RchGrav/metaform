@@ -236,7 +236,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), fit: () => fit2D(),
+  look: id => look(id), fit: () => fit2D(), menu: id => menu(id),
   away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
@@ -275,7 +275,7 @@ function look(id) {
     text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
     turns: writing.get(id)?.rate ?? 0,
     text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
-    glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question'].some(name => group.classList.contains('work-' + name))
+    glow2d: Boolean(box) && ['broken', 'fixing', 'cruft', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     red3d: material ? '#' + material.color.getHexString() === css('--broken').toLowerCase() : false,
     material: material ? material.type : null, transmission: material ? material.transmission || 0 : 0,
@@ -292,7 +292,7 @@ function look(id) {
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft', 'question'];
+const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft', 'question', 'message'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
   if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
@@ -730,7 +730,8 @@ function rows3d(data) {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
-const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['cruft', '--cruft'], ['question', '--question']];
+const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['cruft', '--cruft'], ['question', '--question'],
+  ['message', '--question']];
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
   T.last = now;
@@ -806,7 +807,7 @@ function paint3d(node) {
   if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
   const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
-  const asked = has(node, 'question');
+  const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
   // A flash gives off its light on its beat and a trace of it between, so the circles are made once, VIEW-029.
   const flashing = (has(node, 'broken') || has(node, 'cruft')) && !fixing;
   const onBeat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
@@ -875,7 +876,8 @@ function start3D() {
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
     .linkDirectionalParticleColor(linkColor)
-    .onNodeClick(clicked3d);
+    .onNodeClick(clicked3d)
+    .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
   addBloom();
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
   G.d3Force('link').distance(link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34);
@@ -1012,8 +1014,8 @@ function renderLegend() {
     .concat(S.joins.flatMap(join => (join.open_work || []).concat((join.subtypes || []).flatMap(subtype => subtype.open_work || [])))));
   for (const condition of CONDITIONS) if (open.has(condition))
     legend.append(h('span', {style: {'--c': condition === 'tbd' || condition === 'in-progress' ? 'var(--text)'
-      : `var(--${condition === 'fixing' ? 'broken' : condition})`}},
-      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse'}[condition] || 'dot'}),
+      : `var(--${condition === 'fixing' ? 'broken' : condition === 'message' ? 'question' : condition})`}},
+      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse', message: 'dot bloom pulse'}[condition] || 'dot'}),
       `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
@@ -1113,6 +1115,7 @@ function placeIn(nodes, id, group, title, work) {
   text.textContent = title;
   group.append(text);
   group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id); });
+  group.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); menu(id, event.clientX, event.clientY); });
 }
 /* Where the camera opens on a node's own graph, VIEW-016: the whole graph when its labels can be read at that size,
  * otherwise the node entered, at the size its labels are written in. Fit still shows the whole graph. */
@@ -1587,13 +1590,7 @@ function workPill(condition) { return h('span', {class: `pill work-${condition}`
 /* A question at the node, MAP-050 and VIEW-021: open, it takes the answer here; answered, the answer stays beside it. */
 function asked(record) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Your answer'});
-  const written = async text => {
-    const response = await fetch('/api/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project: S.project, metaform: S.metaform, id: record.work_id, answer: text})});
-    const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
-    if (!response.ok) toast(body.error || 'The answer was not written.');
-    return response.ok;
-  };
+  const written = text => wrote('/api/answer', {id: record.work_id, answer: text});
   const send = h('button', {class: 'answer', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
@@ -1617,28 +1614,109 @@ function asked(record) {
     h('p', {class: 'asked'}, record.note || ''),
     record.done ? h('p', {class: 'obs'}, `Answer: ${record.resolution || ''}`) : [choices, typed]);
 }
-/* The Messages button, VIEW-021: shown while any question is open, with their count; a click flies to the node of
- * the oldest and opens its panel. */
+/* The messages of a node, VIEW-030: what agents say to the user there. A question waits for an answer and a note
+ * waits to be read. */
+const MESSAGES = ['question', 'message'];
 const Q = {open: []};
 const nodeOf = record => record.kind === 'element' ? record.id : joinOf('p:' + record.id) ? 'p:' + record.id : 's:' + record.id;
+const targetOf = id => id.startsWith('p:') || id.startsWith('s:') ? `join:${id.slice(2)}` : `element:${id}`;
+const calledOf = id => (G ? G.graphData().nodes.find(node => node.id === id) : null)?.name
+  || S.elements.get(id)?.element.short_name || joinOf(id)?.name || 'this node';
+async function messagesOf(id) {
+  const found = (await read('work', {node: targetOf(id), limit: 0})).results.filter(record => MESSAGES.includes(record.condition));
+  return {unread: found.filter(record => !record.done), past: found.filter(record => record.done), all: found};
+}
+/* The Messages button, VIEW-021: at the top of the page while anything waits for the user, with the count; a click
+ * flies to the node of the oldest and opens its unread messages. */
 async function renderMessages() {
-  try { Q.open = noMetaform() ? [] : (await read('work', {condition: 'question', open: true, limit: 0})).results; }
-  catch (error) { Q.open = []; toast(error.message); }
+  try {
+    Q.open = noMetaform() ? [] : (await Promise.all(MESSAGES.map(condition => read('work', {condition, open: true, limit: 0}))))
+      .flatMap(page => page.results).sort((one, two) => one.created < two.created ? -1 : one.created > two.created ? 1 : 0);
+  } catch (error) { Q.open = []; toast(error.message); }
   const button = $('#messages');
   button.hidden = !Q.open.length;
   button.textContent = `Messages ${Q.open.length}`;
-  button.onclick = () => { if (Q.open.length) select(nodeOf(Q.open[0]), true); };
+  button.onclick = () => {
+    if (!Q.open.length) return;
+    const id = nodeOf(Q.open[0]);
+    select(id, true);
+    show(id, 'unread');
+  };
+  if (F.id) show(F.id, F.which, true);
 }
+/* The menu of a node, opened by a right-click in either view. Each entry says how many it holds, and one that holds
+ * none cannot be chosen. It is where further acts on a node are added. */
+async function menu(id, x = null, y = null) {
+  let found = {unread: [], past: []};
+  try { found = await messagesOf(id); } catch (error) { toast(error.message); }
+  const box = $('#menu');
+  const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
+    onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
+  fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length));
+  box.hidden = false;
+  if (x === null && G) {  // asked for with no pointer: beside the node in the 3D map
+    const node = G.graphData().nodes.find(item => item.id === id), stage = $('#stage').getBoundingClientRect();
+    const at = node && node.x !== undefined ? G.graph2ScreenCoords(node.x, node.y, node.z) : {x: 40, y: 40};
+    [x, y] = [stage.left + at.x + 12, stage.top + at.y + 12];
+  }
+  const size = box.getBoundingClientRect();
+  box.style.left = Math.max(4, Math.min(x ?? 40, innerWidth - size.width - 4)) + 'px';
+  box.style.top = Math.max(4, Math.min(y ?? 40, innerHeight - size.height - 4)) + 'px';
+}
+addEventListener('click', event => { if (!$('#menu').hidden && !$('#menu').contains(event.target)) $('#menu').hidden = true; });
+addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu').hidden) { $('#menu').hidden = true; event.stopPropagation(); } }, true);
+/* The floating window, VIEW-030. It shows the messages it was opened with, each as it is now, so a question answered
+ * in it shows its answer and a note read in it stays in sight until the window is closed. */
+const F = {id: null, which: null, ids: new Set()};
+async function show(id, which, again = false) {
+  let found;
+  try { found = await messagesOf(id); } catch (error) { toast(error.message); return; }
+  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.work_id))});
+  if (F.id !== id) return;
+  const shown = found.all.filter(record => F.ids.has(record.work_id));
+  $('#float .title').textContent = `${which === 'unread' ? 'Unread' : 'Past'} messages · ${calledOf(id)}`;
+  fill($('#float .body'), shown.length ? shown.map(record => h('div', {},
+    h('div', {class: 'when'}, record.created.replace('T', ' ').replace('Z', '')),
+    record.condition === 'question' ? asked(record) : noted(record)))
+    : h('p', {class: 'empty'}, 'No messages here.'));
+  $('#float').hidden = false;
+  for (const record of shown) if (record.condition === 'message' && !record.done) wrote('/api/read', {id: record.work_id});
+}
+function noted(record) {
+  return h('div', {class: 'item work'},
+    h('div', {class: 'pills'}, workPill('message'), h('span', {class: 'pill'}, record.done ? 'read' : 'unread')),
+    h('p', {}, record.note || ''));
+}
+async function wrote(path, given) {
+  const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})});
+  const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+  if (!response.ok) toast(body.error || 'It was not written.');
+  return response.ok;
+}
+$('#float .close').onclick = () => { $('#float').hidden = true; Object.assign(F, {id: null, which: null, ids: new Set()}); };
+$('#float .bar').addEventListener('pointerdown', event => {
+  if (event.target.closest('button')) return;
+  const box = $('#float'), from = box.getBoundingClientRect(), start = [event.clientX - from.left, event.clientY - from.top];
+  const move = moved => {
+    box.style.left = Math.max(0, Math.min(moved.clientX - start[0], innerWidth - 60)) + 'px';
+    box.style.top = Math.max(0, Math.min(moved.clientY - start[1], innerHeight - 40)) + 'px';
+  };
+  const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', end);
+  event.preventDefault();
+});
 async function renderWork(target, key, also = null) {
   let records = [];
   try {
     records = (await read('work', {node: target, limit: 0})).results;
     if (also) records = [...records, ...(await read('work', {node: also, limit: 0})).results];
   } catch (error) { toast(error.message); }
+  records = records.filter(record => !MESSAGES.includes(record.condition));  // messages are read in the window, VIEW-030
   const box = $('#work');
   if (!box || S.selected !== key || !records.length) return;
-  fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => record.condition === 'question' ? asked(record)
-    : h('div', {class: 'item work'},
+  fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => h('div', {class: 'item work'},
     h('div', {class: 'pills'}, workPill(record.condition), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
       record.held ? h('span', {class: 'pill'}, 'held') : null, record.reviewed ? h('span', {class: 'pill'}, 'reviewed') : null),
     record.note ? h('p', {}, record.note) : null,

@@ -139,12 +139,12 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: STORE-005, STORE-025, VIEW-005.
 - Status: confirmed that the viewer keeps up by rendering technique, not by hiding structure. The target of 100,000 elements and a million layer items that stood here was not Rich's and misquoted STORE-005, which speaks only of reads among a million items; it was removed, Rich 2026-09-26. The worker layout, instanced batches, label budget and layout cache built or planned for that target cut the drawing back from the approved prototype's and were removed with it, Rich 2026-09-26: the visuals had been cut back for the 100,000-element test. Q51 is withdrawn.
 
-### VIEW-011 The viewer writes exactly five things
-- Requirement: The viewer writes exactly five things: it applies its layer choice to the folder's `--layers`, it saves an edited prompt as a new prompt version, it removes the top correction layer after a warning, it clears the selected project after the person confirms, and it records the person's answer to an open question at a node; it writes nothing else.
-- What this means: Agents and people change the metaform through the tools and commands; the viewer shows it. The five writes each go through the same operation the CLI and tools use: the settings operation for `--layers`, VIEW-007; the prompt-version operation, VIEW-013 and STORE-044; peel followed by discard of the top correction layer, VIEW-014; the chassis's `clear_project`, which `metaform clear project --confirm` and the `clear_project` tool call, PROJ-025 and VIEW-019; and the operation that records an answer, MAP-050 and VIEW-021, which marks the question's work record done with the answer as its resolution. Writing memories, answering challenges, adding knowledge or correcting the map from the page is not part of this module. Whether a person can also submit work, a task, from the page is open, D92, MCP-027.
+### VIEW-011 The viewer writes exactly six things
+- Requirement: The viewer writes exactly six things: it applies its layer choice to the folder's `--layers`, it saves an edited prompt as a new prompt version, it removes the top correction layer after a warning, it clears the selected project after the person confirms, it records the person's answer to an open question at a node, and it marks a note read; it writes nothing else.
+- What this means: Agents and people change the metaform through the tools and commands; the viewer shows it. The six writes each go through the same operation the CLI and tools use: the settings operation for `--layers`, VIEW-007; the prompt-version operation, VIEW-013 and STORE-044; peel followed by discard of the top correction layer, VIEW-014; the chassis's `clear_project`, which `metaform clear project --confirm` and the `clear_project` tool call, PROJ-025 and VIEW-019; and the operation that records an answer, MAP-050 and VIEW-021, which marks the question's work record done with the answer as its resolution. Writing memories, answering challenges, adding knowledge or correcting the map from the page is not part of this module. Whether a person can also submit work, a task, from the page is open, D92, MCP-027.
 - Why: The viewer is for viewing. One path for each write keeps every change under the rules that record provenance and never block. A page that wrote on its own would need its own copy of those rules. A question an agent asks at a node is answered by the person, and the person answers where they see the question, on the map.
-- How it shows: Every API endpoint is a GET that changes nothing, except five POSTs: apply layers, save prompt version, remove the top correction layer, clear the project, and answer a question.
-- Build: The server routes GET for reads and exactly five POST endpoints. Each POST calls the chassis or store operation named above and returns its result and notices. The answer's endpoint is `/api/answer`, which takes the question's id and the answer; it answers only an open question, and an answer that says nothing is refused.
+- How it shows: Every API endpoint is a GET that changes nothing, except six POSTs: apply layers, save prompt version, remove the top correction layer, clear the project, answer a question, and mark a note read.
+- Build: The server routes GET for reads and exactly six POST endpoints. `/api/read` takes a note's id and marks it read, VIEW-030; it reads only an unread note. Each POST calls the chassis or store operation named above and returns its result and notices. The answer's endpoint is `/api/answer`, which takes the question's id and the answer; it answers only an open question, and an answer that says nothing is refused.
 - Acceptance: A store's contents and the folder's settings are byte-for-byte unchanged after a session of reads through every GET endpoint. The server exposes no other POST, PUT, PATCH or DELETE route.
 - Relates to: BASE-044, MAP-050, PROJ-025, STORE-017, STORE-044, VIEW-007, VIEW-013, VIEW-014, VIEW-019, VIEW-021.
 - Status: confirmed for the first three writes, 2026-09-25; for the clear, a clear from the page as well as from the command line, 2026-09-13, VIEW-019; for answering a question in the GUI, 2026-09-26 and 2026-09-27, built 2026-09-28.
@@ -401,6 +401,34 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-005, VIEW-008, VIEW-009, VIEW-023.
 - Status: asked for by Rich 2026-09-28: the chart in the big view and the graph in the other on demand, since the chart is so small. Where the button sits and how the choice is kept are recommended. A Fit and a Swap on both views, Rich 2026-09-29.
 
+### VIEW-030 A right-click on a node opens its menu, and messages are read in a floating window
+
+- Requirement: A right-click on a node, in the 2D map and in the 3D map, opens a menu of what can be done with it: read its unread messages, and review its past messages. What is chosen opens in a window that floats over the map. The questions an agent asks the user are answered in that window.
+- What this means:
+  - A message is what an agent says to the user at a node, MAP-050: a question, which waits for an answer, or a note, which waits to be read. An unread message is a question not yet answered or a note not yet read; a past message is one answered or read.
+  - Each entry of the menu shows how many it holds, and an entry that holds none cannot be chosen.
+  - The window shows the node's name and the messages, the oldest first. A question has a button for each answer the agent suggests and Other, VIEW-021. A note is marked read when the window shows it. The window is moved by its title and closed by its button, and it stays open while the person looks around the map.
+  - The Messages button of VIEW-021 opens the same window at the node of the oldest unread message.
+  - The panel beside the map shows what a part is and the condition of its work. It no longer holds questions.
+  - The menu is where further acts on a node are added, the memories of VIEW-031 first.
+- Why: A right-click puts what can be done with a part on the part itself, in either view, and adds no button to the screen. A question is a conversation with the user, and in the panel it pushed the description of the part out of view while it was answered; a window over the map leaves both in sight. Past messages stay at the node because the next agent there, and the user a month later, need what was asked and what was answered where it applies.
+- How it shows: A right-click on a node with two questions shows `Unread messages 2` and `Past messages 0`; choosing the first opens a window with both questions and their buttons.
+- Build: `#menu` is the menu and `#float` the window. In the 3D map the graph's own right-click on a node opens the menu; in the 2D map the box's `contextmenu` does. The messages are work records with the condition `question` or `message`, read from `/api/work` for the node. `POST /api/read` marks a note read, which ends its record; it is the sixth write of VIEW-011. `window.metaform.menu(id)` opens the menu at a node as a right-click does, so a browser check can open it in the 3D map.
+- Acceptance: A right-click on a node's box in the 2D map and the node's right-click in the 3D map each open the menu with the counts of that node. An entry with none is disabled. Choosing unread messages opens the window with the node's open questions and unread notes; a note shown is read, and is then under past messages. A question is answered in the window. The panel holds no question.
+- Relates to: MAP-050, VIEW-009, VIEW-011, VIEW-021, VIEW-031.
+- Status: asked for by Rich 2026-09-29: right-click on a node to read unread messages, past messages for review on the menu, a floating window, and the questions for the user moved to it. A note as a second kind of message, and marking it read when shown, are recommended.
+
+### VIEW-031 The memories of a node open as a graph of their own
+
+- Requirement: The menu of a node, VIEW-030, has an entry for its memories. Choosing it, in the 2D map or the 3D map, shows a new graph in both views: the memory network of that node. The view zooms into the node as the map gives way to it, and opens with the whole memory network in view.
+- What this means: The memories are those agents keep at the node, MEM-001. Their entities and the relations between them are the nodes and links of the new graph. Going back returns to the map.
+- Why: Memories at a node are a network of their own, with entities and relations, and drawn among the elements of the map they are lost in it and cover it. Shown alone, from the node they belong to, they are read as what is known about that part.
+- How it shows: A right-click on a node, then Memories, zooms into the node and shows its memories and their relations, all in view.
+- Build: Not built. It is for the next pass, with the memory system.
+- Acceptance: Open until it is built.
+- Relates to: VIEW-009, VIEW-030.
+- Status: design, Rich 2026-09-29. Not built.
+
 ### VIEW-029 A node that needs attention gives off light, in both views
 
 - Requirement: A node that flashes or pulses because it needs attention gives off light while it is lit, in the 3D map and in the 2D map: a broken part, a part being fixed, cruft, and an open question. The light is the color of what it signals.
@@ -415,7 +443,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
-2. Answered: the viewer writes exactly five things: applying layers, new prompt versions, removing the top correction layer with a warning, clearing the selected project, VIEW-019, and answering a question at a node, VIEW-021, VIEW-011.
+2. Answered: the viewer writes exactly six things: applying layers, new prompt versions, removing the top correction layer with a warning, clearing the selected project, VIEW-019, answering a question at a node, VIEW-021, and marking a note read, VIEW-030, VIEW-011.
 3. NEW How does a module add a view to the web GUI? Recommended: a module declares its views as a page folder and the read endpoints they need, and the web module serves them under the module's id; decided when a second module has a view. (VIEW-001)
 4. Answered: `metaform web` starts it and `metaform web stop` stops it; a setting, true by default, instructs agents, since 2026-09-26, to start it before an intake when it is not running and to tell the user its address, VIEW-002 and VIEW-015.
 5. NEW, D95. Which folder's settings does the GUI show and change, such as `--layers`, CLI-033, since a browser has no folder? Recommended: each project's registered folder, shown with its path at the top of the page, since one server serves every project and was started from whichever folder happened to run `metaform web`; built with it until answered. (VIEW-002, VIEW-004, VIEW-007)
