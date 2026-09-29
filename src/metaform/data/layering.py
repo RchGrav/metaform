@@ -10,6 +10,8 @@ be read and raises `StoreError`, STORE-026.
 """
 from __future__ import annotations
 
+import sqlite3
+
 import dataclasses
 from collections.abc import Sequence
 from typing import Any
@@ -178,10 +180,21 @@ def discard(tx: Tx, layer: str) -> Outcome:
                                         f'knowledge op=peel layer={found.name}. Nothing changed.'),))
     db = tx.db
     layer_id = found.layer_id
+    notices: list[Notice] = []
     for owner in corrections.ORDER:
         spec = corrections.KINDS[owner]
         for row in db.execute(f'SELECT row, {spec.id_column} FROM {spec.table} WHERE layer_id=?',
                               (layer_id,)).fetchall():
+            if owner == 'element':
+                heir = _heir(db, str(row[1]), layer_id)
+                if heir is not None:
+                    db.execute('UPDATE elements SET layer_id=? WHERE row=?', (heir, row[0]))
+                    address = db.execute('SELECT address FROM elements WHERE row=?', (row[0],)).fetchone()[0]
+                    notices.append(Notice('element', f'The element at {address} was made by {found.name}, and layer '
+                                                     f'{rows.layer(tx, heir).name} still holds something at it; '
+                                                     f'the element was kept and now belongs to '
+                                                     f'{rows.layer(tx, heir).name}.'))
+                    continue
             db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
             corrections.drop_current(db, owner, 'row', row[0])
             if owner == 'item':
@@ -198,7 +211,20 @@ def discard(tx: Tx, layer: str) -> Outcome:
     for other in all_layers(db):
         db.execute('DELETE FROM reexamine WHERE layer_id=? AND correction_layer_id=?', (other, layer_id))
     db.execute('DELETE FROM layers WHERE layer_id=?', (layer_id,))
-    return Outcome()
+    return Outcome(tuple(notices))
+
+
+def _heir(db: sqlite3.Connection, element_id: str, leaving: str) -> str | None:
+    """The first other layer that holds a property, an item or a join at the element, and no row of its own for it."""
+    found = db.execute(
+        'SELECT layer_id FROM ('
+        ' SELECT layer_id, 0 AS kind, row FROM properties WHERE element_id=:e'
+        " UNION ALL SELECT layer_id, 1, row FROM items WHERE (target_kind='element' AND target_id=:e)"
+        "  OR (link_kind='element' AND link_id=:e)"
+        ' UNION ALL SELECT layer_id, 2, row FROM joins WHERE receiver=:e OR provider=:e) '
+        'WHERE layer_id<>:l AND layer_id NOT IN (SELECT layer_id FROM elements WHERE element_id=:e) '
+        'ORDER BY kind, row LIMIT 1', {'e': element_id, 'l': leaving}).fetchone()
+    return None if found is None else str(found[0])
 
 
 def _held(found: LayerRow, what: str) -> Notice | None:

@@ -395,7 +395,7 @@ class Handler(BaseHTTPRequestHandler):
                                         function=given.get('function') or None)
                 work = store.add_work(Node('element', made.element_id), 'tbd', note='Added by hand in the web GUI.')
                 if given.get('validate') is True:
-                    work = store.edit_work(work.work_id, {'task': validation(made.address, work.work_id)})
+                    work = store.edit_work(work.work_id, {'task': validation(made.address)})
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         if given.get('validate') is True and project is not None and work.task:
@@ -520,17 +520,14 @@ MEMORY = 'What agents have noted at this node.'  # the memory layer's variable, 
 ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033
 ADDED = {'module': 'web', 'workflow': 'add element', 'prompt': 'Written by a person in the web GUI.', 'model': 'none',
          'role': 'user', 'blinded': False}
-# The prompt is the user's own, word for word. What follows it is what the agent cannot know without being told: the
-# element, and the two commands it answers with.
+# The prompt is the user's own, word for word, and the element it speaks of. How the agent answers is what the map
+# tool tells it.
 VALIDATE = ('Orient yourself only enough to validate the coherence of this element, approve addition or if element '
             'needs additional coherence submit questions w/ recommendations.')
 
 
-def validation(address: str, work_id: str) -> str:
-    return (f'{VALIDATE} The element is {address}. Read it with: metaform map where {address}. '
-            f'To approve: metaform map work op=done id={work_id} resolution=approved. '
-            f'To ask: metaform map work op=add node=element:{address} condition=question note="<the question>" '
-            'suggestions=\'["<the answer you recommend>", "<another>"]\'.')
+def validation(address: str) -> str:
+    return f'{VALIDATE} The element is {address}.'
 
 
 def started_agent(folder: Path, task: str) -> str | None:

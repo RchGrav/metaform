@@ -3056,7 +3056,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     assert [(join.receiver, join.layer, join.purpose, join.function) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
     work = store.work(Node_of('code.alarm.visible'), 'tbd', True).results
-    assert len(work) == 1 and work[0].task.startswith(VALIDATE) and 'code.alarm.visible' in work[0].task
+    assert len(work) == 1 and work[0].task == f'{VALIDATE} The element is code.alarm.visible.'
     page.wait_for_function(f'() => window.metaform.look("{made.element_id}").text3d === true', timeout=8000)
     for _ in range(50):                                               # the agent is not waited for
         if said.exists() and said.read_text(encoding='utf-8').strip():

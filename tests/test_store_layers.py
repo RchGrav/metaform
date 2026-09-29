@@ -413,3 +413,29 @@ def test_a_collection_in_a_value_or_an_extra_becomes_one_item_per_member(home, s
     values_now = [item.value for item in store.layer_items(notes.name, KITCHEN).results]
     assert values_now == ['x', {'members': {'a': 1}}, {'members': {'b': 2}}, 'one answer', 'another answer']
     assert diff(before, dump(store_file(home, store)))['items'] == (5, 0)
+
+
+@pytest.mark.req('STORE-032')
+def test_discarding_a_layer_keeps_an_element_another_layer_still_has_something_at(home, store):
+    """A layer made the element at `code` to hold its property, and a second layer then put its own property there.
+    Found 2026-09-29: discarding the first took the element with it, and the second layer's property was gone from
+    every read with nothing said. What another layer still holds at an element keeps the element."""
+    small_map(store)
+    first, second = knowledge(store, 'first'), knowledge(store, 'second')
+    made = store.add_property(first.name, 'code', 'Python')
+    kept = store.add_property(second.name, 'code', 'typed')
+    noted = store.add_item(second.name, Node('element', 'code'), 'a note at the trunk')
+    store.add_element(first.name, 'code.only.first')             # nothing else is at this one
+    store.finish(first.name)
+    store.finish(second.name)
+    assert [one.value for one in store.context('code.timer.kitchen').applying] == ['Python', 'typed']
+    done = store.discard(first.name)
+    assert [notice.where for notice in done.notices] == ['element'] and 'code' in done.notices[0].message
+    assert 'second' in done.notices[0].message
+    element = store.element('code', raw=True)
+    assert element is not None and (element.element_id, element.layer) == (made.element_id, 'second')
+    assert [one.value for one in store.context('code.timer.kitchen').applying] == ['typed']
+    assert [one.property_id for one in store.context('code').applying] == [kept.property_id]
+    assert [item.item_id for group in store.node(Node('element', 'code'), raw=True).layers for item in group.items] \
+        == [noted.item_id]
+    assert store.element('code.only.first', raw=True) is None    # what nothing else holds goes with its layer
