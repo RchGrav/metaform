@@ -408,7 +408,11 @@ async def enter(folder: Path, tool: str, given: dict[str, Any]) -> Outcome:
         return True, [f'Error: No tool {tool} on this surface.\nNext: metaform help commands']
     summary, commands = known[tool]
     unread = sorted(key for key in given if key not in ('command', 'arguments'))
-    if unread:
+    if unread and isinstance(given.get('command'), str) and isinstance(given.get('arguments') or {}, dict):
+        # The command's arguments sent beside the command are its arguments; what is inside arguments wins.
+        given = {'command': given['command'],
+                 'arguments': {**{key: given[key] for key in unread}, **(given.get('arguments') or {})}}
+    elif unread:
         return True, [f'Error: {tool} takes command and arguments, not {", ".join(unread)}.\n'
                       f'Next: call {tool} with command and the command\'s own arguments inside arguments']
     command, arguments = given.get('command'), given.get('arguments')

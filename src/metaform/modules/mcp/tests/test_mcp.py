@@ -733,3 +733,18 @@ def test_the_server_lists_one_tool_for_each_module_and_a_module_is_entered_for_i
         'Error: map has no command nothing.', 'Next: call map with no command for its commands']
     assert stray.is_error and 'takes command and arguments' in text(stray)[0]
     assert json.loads(text(ran)[-1]) == json.loads(run('map', 'joins', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
+
+
+@pytest.mark.req('CLI-037')
+def test_a_commands_arguments_sent_beside_the_command_are_taken_as_its_arguments(run, home, mapped):
+    """Found in the intake run of 2026-09-29: an agent sent a join's fields beside `command`, not inside `arguments`,
+    and the call was refused though every field it needed was there. What is sent is made to fit."""
+    async def check(client, init):
+        beside = await client.call_tool('map', {'command': 'joins', 'element': 'code.timer.kitchen'})
+        both = await client.call_tool('map', {'command': 'joins', 'arguments': {'element': 'code.timer.kitchen'},
+                                              'element': 'code.alarm.audible'})
+        return beside, both
+    beside, both = session(home, mapped, check)
+    wanted = json.loads(run('map', 'joins', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
+    assert not beside.is_error and json.loads(text(beside)[-1]) == wanted
+    assert not both.is_error and json.loads(text(both)[-1]) == wanted   # what is inside arguments is what was meant
