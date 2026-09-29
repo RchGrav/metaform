@@ -326,6 +326,20 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   box2d: id => { const box = M.nodes.get(id)?.g.getBoundingClientRect(); return box ? {left: box.left, right: box.right, top: box.top, bottom: box.bottom} : null; },
   edge2d: join => [...(M.base?.edges.find(edge => edge.join.join_id === join)?.path?.classList || [])]
     .filter(name => name.startsWith('work-')),
+  // The dots that travel the joins held still at a share of the way along each link, and where on the page each
+  // link's dots are, so a browser check can read a picture of a dot passing through a node.
+  dots3d: along => {
+    if (!G) return [];
+    G.linkDirectionalParticleSpeed(0);
+    const box = $('#stage').getBoundingClientRect();
+    return G.graphData().links.filter(link => link.__photonsObj?.children.length).map(link => {
+      for (const dot of link.__photonsObj.children) dot.__progressRatio = along;
+      const from = link.source, to = link.target;
+      const point = G.graph2ScreenCoords(from.x + (to.x - from.x) * along, from.y + (to.y - from.y) * along,
+        from.z + (to.z - from.z) * along);
+      return {source: from.id, target: to.id, x: box.left + point.x, y: box.top + point.y};
+    });
+  },
   ground: () => G ? G.backgroundColor() : null};
 
 /* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
@@ -996,6 +1010,16 @@ const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role =
  * itself in the color space of whatever it draws into, so with the bloom on the background is the one drawn without
  * it, VIEW-022. */
 function grounded() { G.scene().background = new THREE.Color(css('--ground')); }
+/* The dots that travel a join are drawn solid, VIEW-005, as the approved prototype draws them. The graph library gives
+ * a dot three times the opacity of the links, which a picture drawn on the screen holds at 1. The pictures this page
+ * draws for the glass, and for the bloom while it is on, keep light over full brightness and hold no such limit: with
+ * links at 0.8 a dot there was drawn as 2.4 times its color less 1.4 times what was behind it, so a dot passing through
+ * a white node, or in front of it, turned it dark, Rich 2026-09-29. The library makes the dots' materials again
+ * whenever the map or the theme changes, so each is held at 1 as the scene is drawn. */
+function solid() {
+  for (const link of G.graphData().links) for (const dot of link.__photonsObj?.children || [])
+    if (dot.material.opacity > 1) dot.material.opacity = 1;
+}
 function start3D() {
   if (typeof ForceGraph3D !== 'function') {
     fill($('#stage'), h('p', {class: 'empty', style: {padding: '24px'}}, 'The 3D view needs WebGL and could not start here.'));
@@ -1027,6 +1051,7 @@ function start3D() {
     .onNodeClick(clicked3d)
     .onNodeRightClick((node, event) => { if (node) menu(node.id, event.clientX, event.clientY); });
   grounded();
+  G.scene().onBeforeRender = solid;
   addBehind();
   addBloom();
   G.d3Force('charge').strength(node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18);
@@ -1102,8 +1127,8 @@ function labels() {
         .filter(Boolean).join(' ');
     }
     // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
-    // as the record is open and not only at the moments of its flash: the glass's highlights and the dots are over full
-    // brightness too, and a pass switched with each flash would make them blink with it.
+    // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
+    // too, and a pass switched with each flash would make them blink with it.
     if (BLOOM) BLOOM.enabled = Boolean(R.key) || signaled;
     placeTip();
   }
