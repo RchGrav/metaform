@@ -1654,7 +1654,7 @@ async function menu(id, x = null, y = null) {
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
   fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
-    h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Give work'));
+    h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'));
   box.hidden = false;
   if (x === null && G) {  // asked for with no pointer: beside the node in the 3D map
     const node = G.graphData().nodes.find(item => item.id === id), stage = $('#stage').getBoundingClientRect();
@@ -1728,21 +1728,87 @@ function giveWork(id) {
   const element = S.elements.get(id)?.element;
   if (!element) { toast('Work is given at an element.'); return; }
   Object.assign(K, {nodes: [element.address], chosen: null, at: null});
-  $('#task .title').textContent = `Give work · ${named(element)}`;
+  $('#task .title').textContent = `Add Task · ${named(element)}`;
   $('#task .text').replaceChildren();
   $('#task .browser input').value = '';
   linkedNodes();
   const parts = [...S.elements.values()].map(entry => entry.element).sort((one, two) => one.address < two.address ? -1 : 1);
-  fill($('#task .rows'), parts.map(part => h('button', {'data-address': part.address, onclick: event => {
-    for (const row of $('#task .rows').children) row.classList.remove('chosen');
-    event.currentTarget.classList.add('chosen');
-    K.chosen = part.address;
-    $('#task .insert').disabled = $('#task .link').disabled = false;
-  }}, named(part), h('small', {}, part.address))));
+  fill($('#task .rows'), parts.map(part => h('button', {'data-address': part.address, onclick: () => choose(part.address)},
+    named(part), h('small', {}, part.address))));
   $('#task .insert').disabled = $('#task .link').disabled = true;
   $('#task').hidden = false;
   $('#task .text').focus();
+  chart(parts);
 }
+/* A part is chosen in the list or in the chart, and is then chosen in both. */
+function choose(address) {
+  K.chosen = address;
+  for (const one of $('#task').querySelectorAll('.rows [data-address], .chart g[data-address]')) {
+    one.classList.toggle('chosen', one.dataset.address === address);
+    if (one.dataset.address === address && one.closest('.rows')) one.scrollIntoView({block: 'nearest'});
+  }
+  $('#task .insert').disabled = $('#task .link').disabled = false;
+}
+/* The editor's own chart of the project, VIEW-032: the parts and their joins, looked around by dragging and by the
+ * wheel, apart from the two maps of the page, which it does not move and which do not move it. */
+const C = {generation: 0, cam: null};
+function camera(cam) {
+  C.cam = cam;
+  $('#task .chart svg')?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
+}
+async function chart(parts) {
+  const host = $('#task .chart'), generation = ++C.generation;
+  const unable = text => fill(host, h('p', {class: 'empty', style: {padding: '12px'}}, text));
+  if (!window.mermaid || !mermaidReady) return unable('The chart could not load.');
+  if (parts.length > MAP2D) return unable(`The chart lays out at most ${MAP2D} parts.`);
+  const keys = new Map(parts.map((part, index) => [part.element_id, `c${index}`]));
+  const lines = ['flowchart TB', ...parts.map(part => `${keys.get(part.element_id)}["${plain2d(named(part))}"]`),
+    ...S.joins.filter(join => keys.has(join.receiver) && keys.has(join.provider))
+      .map(join => `${keys.get(join.receiver)} --> ${keys.get(join.provider)}`)];
+  let result;
+  try { result = await window.mermaid.render(`pick${generation}`, lines.join('\n'), $('#draw')); }
+  catch (error) { return unable('The chart could not be drawn.'); }
+  if (generation !== C.generation) return;
+  const svg = document.importNode(new DOMParser().parseFromString(result.svg, 'image/svg+xml').documentElement, true);
+  svg.removeAttribute('style'); svg.removeAttribute('width'); svg.removeAttribute('height');
+  host.replaceChildren(svg);
+  for (const part of parts) {
+    const group = svg.querySelector(`[id*="-flowchart-${keys.get(part.element_id)}-"]`);
+    if (!group) continue;
+    group.dataset.address = part.address;
+    group.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: part.address}));
+    group.addEventListener('click', event => { event.stopPropagation(); choose(part.address); });
+  }
+  const whole = svg.viewBox.baseVal;
+  camera({x: whole.x, y: whole.y, w: whole.width, h: whole.height});
+  if (K.chosen) choose(K.chosen);
+}
+(() => {
+  const host = $('#task .chart');
+  let drag = null;
+  host.addEventListener('pointerdown', event => { if (C.cam) drag = {x: event.clientX, y: event.clientY, cam: {...C.cam}, moving: false}; });
+  host.addEventListener('pointermove', event => {
+    if (!drag) return;
+    if (!drag.moving) {  // captured only once it is a drag, so a click still reaches the part under it
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+      drag.moving = true; host.setPointerCapture(event.pointerId);
+    }
+    const scale = C.cam.w / host.getBoundingClientRect().width;
+    camera({...drag.cam, x: drag.cam.x - (event.clientX - drag.x) * scale, y: drag.cam.y - (event.clientY - drag.y) * scale});
+  });
+  host.addEventListener('pointerup', () => { drag = null; });
+  host.addEventListener('wheel', event => {
+    if (!C.cam) return;
+    event.preventDefault();
+    const by = event.deltaY > 0 ? 1.15 : 0.87, box = host.getBoundingClientRect(), cam = C.cam;
+    const px = (event.clientX - box.left) / box.width, py = (event.clientY - box.top) / box.height;
+    camera({x: cam.x + (cam.w - cam.w * by) * px, y: cam.y + (cam.h - cam.h * by) * py, w: cam.w * by, h: cam.h * by});
+  }, {passive: false});
+})();
+$('#task .full').onclick = () => {
+  const full = $('#task').classList.toggle('full');
+  $('#task .full').textContent = full ? 'Window' : 'Full screen';
+};
 /* Where the cursor was in the text, kept as the text loses it to the browser's buttons. It is kept as a node and a
  * count into it and not as a range, since a range is moved to the start of a text the browser writes again, which
  * it does to a space typed at the end of a line. */

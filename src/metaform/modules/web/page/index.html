@@ -100,15 +100,16 @@
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
   <div class="body"></div>
 </div>
-<div id="task" hidden role="dialog" aria-label="Give work">
-  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+<div id="task" hidden role="dialog" aria-label="Add a task">
+  <div class="bar"><span class="title"></span><button class="full" title="Fill the screen, and back">Full screen</button><button class="close" title="Close">Close</button></div>
   <div class="body">
     <div class="write">
       <label>The work is <select class="condition"><option value="tbd">to build something</option><option value="broken">to fix something</option></select></label>
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
       <div class="eyebrow">Nodes of this task</div>
       <div class="linked"></div>
-      <button class="put">Put on the map</button>
+      <button class="put" title="Write this task on every node listed above, where agents find it and take it">Add task</button>
+      <div class="chart" aria-label="A chart of the project to look around and choose parts from"></div>
     </div>
     <div class="pick">
       <div class="browser"><input type="search" placeholder="Find a part" aria-label="Find a part"><div class="rows"></div></div>

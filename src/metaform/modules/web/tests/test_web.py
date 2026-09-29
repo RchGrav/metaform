@@ -2683,7 +2683,7 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.is_hidden('#menu') and page.is_hidden('#float')
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
-    GIVE = ['task', 'Give work', False]                               # work is given from the same menu, VIEW-032
+    GIVE = ['task', 'Add Task', False]                                # a task is added from the same menu, VIEW-032
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
     page.wait_for_timeout(1200)
@@ -2780,3 +2780,44 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     for node in (alarm, cook):                                        # the map shows each as having work
         page.wait_for_function(f'() => window.metaform.look("{node}").work.includes("tbd")', timeout=6000)
     assert kitchen and problems == []
+
+
+@pytest.mark.req('VIEW-032')
+def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_full_screen(run, web, mapped, browser):
+    """Rich, 2026-09-29: in the editor a 2D chart browser, independent from the other two, for seeing and browsing
+    the project; the window sized or made full screen; the entry named Add Task."""
+    from metaform.data import Store
+    store = Store('proj')
+    alarm, kitchen = (store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate(f'window.metaform.select("{alarm}")')
+    page.wait_for_timeout(1200)
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.inner_text('#menu button.task') == 'Add Task'
+    page.click('#menu button.task')
+    page.wait_for_selector('#task .chart svg g[data-address]')
+    assert page.inner_text('#task .title').startswith('Add Task') and page.inner_text('#task .put') == 'Add task'
+    drawn = page.eval_on_selector_all('#task .chart svg g[data-address]', 'found => found.map(one => one.dataset.address)')
+    assert {'code.alarm.audible', 'code.timer.kitchen', 'exterior.cook'} <= set(drawn)
+    view = lambda name: page.evaluate(f'document.querySelector("{name} svg").getAttribute("viewBox")')
+    before = view('#task .chart'), view('#map2d'), page.evaluate('window.metaform.selected()')
+    box = page.evaluate('(() => { const box = document.querySelector("#task .chart").getBoundingClientRect(); return [box.left + box.width / 2, box.top + box.height / 2]; })()')
+    page.mouse.move(*box)
+    page.mouse.wheel(0, -400)                                         # it is looked around by itself
+    page.wait_for_function(f'() => document.querySelector("#task .chart svg").getAttribute("viewBox") !== "{before[0]}"')
+    assert view('#map2d') == before[1]
+    page.evaluate('document.querySelector(\'#task .chart svg g[data-address="code.timer.kitchen"]\').dispatchEvent(new MouseEvent("click", {bubbles: true}))')
+    chosen = page.eval_on_selector_all('#task .rows .chosen, #task .chart g.chosen', 'found => found.map(one => one.dataset.address)')
+    assert chosen == ['code.timer.kitchen', 'code.timer.kitchen']    # chosen in the chart, and so in the list
+    assert page.is_enabled('#task .insert') and page.evaluate('window.metaform.selected()') == before[2] and kitchen
+    assert page.evaluate('getComputedStyle(document.querySelector("#task")).resize') == 'both'
+    small = page.evaluate('(() => { const box = document.querySelector("#task").getBoundingClientRect(); return [box.width, box.height]; })()')
+    page.click('#task .full')
+    whole = page.evaluate('(() => { const box = document.querySelector("#task").getBoundingClientRect(); return [box.left, box.top, box.width, box.height, innerWidth, innerHeight]; })()')
+    assert whole[:2] == [0, 0] and whole[2:4] == whole[4:]
+    page.click('#task .full')
+    again = page.evaluate('(() => { const box = document.querySelector("#task").getBoundingClientRect(); return [box.width, box.height]; })()')
+    assert again == small
+    assert problems == []
