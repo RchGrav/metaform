@@ -2733,6 +2733,75 @@ def test_with_the_bloom_pass_on_what_it_does_not_light_keeps_its_colors(run, web
     assert problems == []
 
 
+def drawn(page, frames=3):
+    """Wait for the page to draw the given number of frames, however long a loaded machine takes to draw one."""
+    page.evaluate("""frames => new Promise(done => { const next = () => --frames ? requestAnimationFrame(next) : done();
+        requestAnimationFrame(next); })""", frames)
+
+
+@pytest.mark.req('VIEW-005')
+@pytest.mark.req('VIEW-025')
+def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapped, browser):
+    """Rich, 2026-09-29: please fix the big white balls from flashing dark every time something goes through them. The
+    dots that travel a join are drawn solid, as the approved prototype draws them. A dot inside the DE's white glass
+    shows through it and takes no light from it; a dot in front of it, with the bloom pass on, has the color it has
+    farther along its link, never black. The dots are held still, so what is read does not hang on how fast the page
+    draws."""
+    from metaform.data import Store
+    store = Store('proj')
+    for record in store.work(None, None, True, limit=0).results:  # the kitchen timer is drawn in its own white
+        store.finish_work(record.work_id, 'done')
+    started(run)
+    _, at, _ = keys_of(web)
+    kitchen = at['code.timer.kitchen']
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    # The join the kitchen timer receives: its dots leave the timer's center for the purpose vertex, set in front of the
+    # timer, above it and nearer the eye.
+    purpose = next(link['target'] for link in page.evaluate('window.metaform.graph().links')
+                   if link['k'] == 'purpose' and link['source'] == kitchen)
+    camera = ({'x': 2000, 'y': 0, 'z': 40}, {'x': 2000, 'y': 0, 'z': 0})
+    staged(page, {kitchen: (2000, 0, 0), purpose: (2000, 12, 25), at['code.alarm.audible']: (2100, 40, 80)}, camera)
+    close = f'window.metaform.screen3d("{kitchen}").r > 100'
+    for _ in range(20):  # on a loaded machine the page's own fit of the whole map can still be moving the camera
+        page.evaluate(f'window.metaform.view3d({json.dumps(camera[0])}, {json.dumps(camera[1])})')
+        page.wait_for_timeout(500)
+        if page.evaluate(close):
+            page.wait_for_timeout(500)
+            if page.evaluate(close):
+                break
+    ball = page.evaluate(f'window.metaform.screen3d("{kitchen}")')
+    assert ball['r'] > 100, ball
+
+    def held(along):
+        dots = page.evaluate(f'window.metaform.dots3d({along})')
+        drawn(page)
+        return next(dot for dot in dots if dot['source'] == kitchen and dot['target'] == purpose)
+
+    # Inside the glass: every point of the node is as light as with the dot clear of it, at the purpose vertex.
+    grid = [(ball['x'] + ball['r'] * across, ball['y'] + ball['r'] * down)
+            for down in (-0.5, -0.25, 0, 0.25, 0.5) for across in (-0.5, -0.25, 0, 0.25, 0.5)]
+    held(0.9)
+    clear = pixels(page, grid)
+    dot = held(0.12)
+    assert (dot['x'] - ball['x']) ** 2 + (dot['y'] - ball['y']) ** 2 < (ball['r'] * 0.5) ** 2, (dot, ball)
+    inside = pixels(page, grid)
+    darker = [sum(one) - sum(two) for one, two in zip(clear, inside)]
+    assert max(darker) <= 12, list(zip(clear, inside))
+    # In front of the node, with the bloom pass on, the dot is drawn as it is farther along its link.
+    run('map', 'ask', 'element:code.alarm.audible', 'Still wanted?', cwd=mapped)  # the alarm, out of view, lights
+    page.wait_for_function('() => window.metaform.bloom().on', timeout=30000)
+    drawn(page)  # the map read again with the question is drawn, its dots made again, before they are held
+    front = held(0.3)
+    assert ball['r'] * 0.3 < ((front['x'] - ball['x']) ** 2 + (front['y'] - ball['y']) ** 2) ** 0.5 < ball['r'] * 0.8
+    over_node = pixels(page, [(front['x'], front['y'])])[0]
+    away = held(0.6)
+    assert ((away['x'] - ball['x']) ** 2 + (away['y'] - ball['y']) ** 2) ** 0.5 > ball['r'] * 1.5
+    over_ground = pixels(page, [(away['x'], away['y'])])[0]
+    assert all(abs(one - two) <= 12 for one, two in zip(over_node, over_ground)), (over_node, over_ground)
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-027')
 def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal_reaches_them(run, web, mapped, browser):
     """Rich, 2026-09-28: numbers and letters in both cases, the strings moving all the time; a signal reaching a part
