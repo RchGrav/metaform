@@ -15,7 +15,7 @@ The exercise ran the supplied source through `python -m metaform`, with `PYTHONP
 
 The principal input was the recorded [project export](project-metaform.json), imported into a local project named `reference-demo`. A second project used the supplied [kitchen-timer fixture](../../tests/fixtures/intake_timer.json). The fixture's outer object contains an `elements` array; the array, not that wrapper, is the input expected by `intake submit`.
 
-The [extension guide's `nodeview` example](../guides/extending-metaform.md) was copied verbatim from its Python code block into the isolated home's module directory. The bundled `helloworld` module supplied the other extension exercise.
+The [extension guide's `nodeview` example](../guides/extending-metaform.md) was copied verbatim from its Python code block into the isolated home's module directory. The bundled `hello` module supplied the other extension exercise.
 
 ## Invocations and observed results
 
@@ -28,7 +28,7 @@ There were **48 CLI invocations**. All returned process exit status zero. Result
 | 8-11 | Open and add observations at an element and the module-author join | Initially empty memory was readable; the new join-local observation was returned at that join's address. |
 | 12-16 | Create a knowledge layer, add a node item, add a property at `type:code`, finish, and read plugin context | The finished layer participated in context; the ancestor's property appeared as applying knowledge. |
 | 17-22 | Mask at `code.system`, select at `code.system.plugin`, clear each override, hide and unhide the layer | Parent masking removed participation, the child selection restored it locally, clearing restored inheritance, and hiding/restoring changed visibility without deleting the layer. |
-| 23-27 | Enable `helloworld`; greet normally and loudly; read history; wait zero seconds | The greetings were `hello, world` and `HELLO, WORLD!`; both invocations appeared in history; the zero-delay operation returned. |
+| 23-27 | Enable `hello`; greet normally and loudly; read history; wait zero seconds | The greetings were `hello, world` and `HELLO, WORLD!`; both invocations appeared in history; the zero-delay operation returned. |
 | 28-30 | Export, reimport into the same project, and inspect configuration | Reimport skipped existing record identities rather than duplicating them. Configuration remained in the isolated home. |
 | 31-33 | Enable the documented `nodeview` module and read an element and a join | The example loaded and returned the requested graph nodes through the supplied shared context/store. |
 | 34-35 | Create a memory relation and search memory | The memory relation was retained independently of the functional purpose joins; the search returned matching memory content. |

@@ -620,9 +620,9 @@ It covers the base database, the per-project store, the correction stack, layers
 - Requirement: Everything a module keeps is stored through the data access object as a layer, and no module writes files or databases of its own.
 - What this means: A module that needs to remember something declares a layer and writes items to it. Such data is exported, imported and queried with everything else.
 - Why: Data held outside the chassis cannot be exported, imported or queried as a whole, and cannot be selected alongside other layers. The current demo module writes its own `history.json` through `Context.data`, which this requirement replaces.
-- How it shows: The helloworld module's greeting history appears as a layer in `list layers` and in an export.
-- Build: `Context.data`, the per-module folder under the home, is removed from the common base. The helloworld module's history becomes items in a mutable layer it declares. Every template verb and handler that reads or writes that layer calls `ctx.require_store()`, so in a folder with no project it stops with `Next: metaform add project <id> <path>`. The template's event subscriber receives a Context built from the publisher's folder and project, BASE-028, and so writes to the same project's store. Its choices function receives a Context and returns no choices when the store is None, CLI-019.
-- Acceptance: After exercising every helloworld verb, the home contains no file outside the base database and project stores.
+- How it shows: The hello module's greeting history appears as a layer in `list layers` and in an export.
+- Build: `Context.data`, the per-module folder under the home, is removed from the common base. The hello module's history becomes items in a mutable layer it declares. Every template verb and handler that reads or writes that layer calls `ctx.require_store()`, so in a folder with no project it stops with `Next: metaform add project <id> <path>`. The template's event subscriber receives a Context built from the publisher's folder and project, BASE-028, and so writes to the same project's store. Its choices function receives a Context and returns no choices when the store is None, CLI-019.
+- Acceptance: After exercising every hello verb, the home contains no file outside the base database and project stores.
 - Relates to: STORE-023, STORE-024, BASE-005, BASE-019.
 - Status: recommended. An item about no map node attaches to an element the module's layer creates for it, D22.
 

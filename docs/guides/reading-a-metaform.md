@@ -143,7 +143,7 @@ metaform map where code.module.example
 
 This is the result of convergence: many implementation details are absorbed into load-bearing parent functionalities while their atomic contributions remain available in the matching relationships. Convergence is not loss of the useful detail; it is the decision about where that detail belongs.
 
-The runtime can also create a memory holder named `code.module.helloworld` when the helloworld demo runs. That holder is not the same address as the element `code.module.example` that the intake's subtype join holds. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
+The runtime can also create a memory holder named `code.module.hello` when the hello demo runs. That holder is not the same address as the element `code.module.example` that the intake's subtype join holds. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
 
 ## Follow Encounters through the applicable structure
 

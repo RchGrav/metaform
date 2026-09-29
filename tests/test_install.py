@@ -146,7 +146,7 @@ def test_the_probe_passes_a_server_that_answers(tmp_path):
 def test_enabling_a_module_changes_no_skill_file(run, machine, home):
     run('install', 'claude', cwd=machine['folder'], env=machine['env'])
     before = tree(machine['user'])
-    run('enable', 'helloworld', cwd=machine['folder'], env=machine['env'])
+    run('enable', 'hello', cwd=machine['folder'], env=machine['env'])
     assert tree(machine['user']) == before
     assert not any(path.name == 'SKILL.md' for path in machine['folder'].glob('*'))
 

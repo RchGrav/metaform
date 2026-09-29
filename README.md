@@ -198,7 +198,7 @@ The earlier map of this repository, recorded on September 26, 2026 and kept as a
 
 > Add a capability to Metaform as a module, declared once in its own folder, that runs as a metaform command and an MCP tool with its own settings, events, status line and lifecycle, without changing the chassis.
 
-The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. Inside that relationship, two subtype joins hold **template** and **helloworld**. They are internal subtypes of the relationship, not extra top-level subsystems inferred from their filenames.
+The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. Inside that relationship, two subtype joins hold **template** and **hello**. They are internal subtypes of the relationship, not extra top-level subsystems inferred from their filenames.
 
 An agent asked to add a module can receive the provider's project name, this receiving purpose, the template and example, and the source references for the declaration and loader. It can then implement against the existing shared facilities rather than invent separate command registration, settings storage, or an event mechanism. The same provider also has relationships to the command line, MCP server, package builder, chassis, and agent instructions. Those relationships make the consequences of a change available from the receivers' perspectives, and `metaform map where` on the provider's address returns all of them in one read.
 
@@ -259,7 +259,7 @@ The implementation is a Python chassis with discoverable modules. A module decla
 
 Modules receive a per-call context with the selected project, store, folder, settings, and output facilities. Shared facilities include graph and knowledge storage, addressed memory operations, work records for the condition of an element or a join, event delivery, owned asynchronous work, reports, and packaging. Modules are discovered from the bundled module directory, the user's Metaform home, and installed entry points.
 
-The current modules provide intake, map operations, memory, MCP service, and a web interface. The disabled-by-default **helloworld** module exercises the contract; **template** supplies its empty starting shape. The existence of a shared facility is distinct from how many modules currently use it. A new inference producer can use the existing chassis without rebuilding those facilities.
+The current modules provide intake, map operations, memory, MCP service, and a web interface. The disabled-by-default **hello** module exercises the contract; **template** supplies its empty starting shape. The existence of a shared facility is distinct from how many modules currently use it. A new inference producer can use the existing chassis without rebuilding those facilities.
 
 [Extend Metaform](docs/guides/extending-metaform.md) explains the actual contract, scheduling, lifecycle, and packaging behavior.
 

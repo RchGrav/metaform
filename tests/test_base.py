@@ -53,7 +53,7 @@ def test_the_chassis_imports_with_every_module_package_unimportable(tmp_path):
 @pytest.mark.req('BASE-004')
 @pytest.mark.req('STORE-023')
 def test_the_example_modules_import_only_the_public_base(tmp_path):
-    for name in ('helloworld', 'template'):
+    for name in ('hello', 'template'):
         for source in (MODULES / name).rglob('*.py'):
             if 'tests' in source.parts:
                 continue
@@ -369,7 +369,7 @@ def test_a_module_that_ships_disabled_is_off_until_enabled(run, home, module_row
 @pytest.mark.req('BASE-017')
 @pytest.mark.req('BASE-019')
 def test_the_example_modules_ship_disabled(module_row):
-    assert module_row('helloworld')[1] == 'off'
+    assert module_row('hello')[1] == 'off'
     assert module_row('template')[1] == 'off'
 
 
@@ -511,7 +511,7 @@ def test_every_shipped_module_has_a_readme_with_the_template_headings():
 
 @pytest.mark.req('BASE-019')
 def test_both_example_modules_have_the_same_files():
-    for name in ('helloworld', 'template'):
+    for name in ('hello', 'template'):
         folder = MODULES / name
         assert {'__init__.py', 'README.md', 'CHANGELOG.md', 'tests'} <= {path.name for path in folder.iterdir()}
 

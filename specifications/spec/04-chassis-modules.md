@@ -47,9 +47,9 @@ Current code referenced below is the `chassis` branch: `src/metaform/module.py`,
 - Requirement: Modules reach every Metaform resource through one public base, and a module may use everything that base offers.
 - What this means: The public base is a small set of stable imports: `metaform.module` for the declaration types and the verb context, `metaform.settings` for declaring settings, `metaform.data` for the data access object, `metaform.events` for publishing and subscribing, and `metaform.nonce` for handing work to an agent by nonce, BASE-050. A module may use all of it. There is no prohibition on what a module does beyond that. If modules need a Metaform resource that the base lacks, the resource is added to the chassis base, not built inside a module.
 - Why: One implementation of each resource means every module behaves the same way and no module rebuilds what another has. Shared resources in the chassis are what let modules compose.
-- How it shows: The helloworld and template modules import only from these public names. A resource that two modules need appears in the base, and both use it.
+- How it shows: The hello and template modules import only from these public names. A resource that two modules need appears in the base, and both use it.
 - Build: Public names are `metaform.module` (Module, Verb, Subscription, Stop, Context, call), `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.nonce` (request, read, update, close, current). Everything else in the package is private. Importing a public name creates no database, process or project state; services resolve the active context when called.
-- Acceptance: A test lists the imports of helloworld and template and fails if any is outside the public names. Importing each public name into a fresh interpreter with a missing home creates no files.
+- Acceptance: A test lists the imports of hello and template and fails if any is outside the public names. Importing each public name into a fresh interpreter with a missing home creates no files.
 - Relates to: BASE-006, BASE-009, BASE-010, STORE-023, CLI-010.
 - Status: confirmed.
 
@@ -76,7 +76,7 @@ Specified in CLI-010, CLI-019 and CLI-020: a module declares its settings in its
 - Requirement: A verb or a subscriber may be a plain function or a coroutine, and the chassis runs both the same way.
 - What this means: The chassis awaits a coroutine and calls a function; the author does not manage an event loop. Long work can be async without blocking other work the chassis runs in the same loop.
 - Why: Module work includes waiting on processes, networks and agents. Authors should not choose between blocking the chassis and writing loop code.
-- How it shows: The helloworld module's `wait` verb is async and behaves like any other verb on the CLI and over MCP.
+- How it shows: The hello module's `wait` verb is async and behaves like any other verb on the CLI and over MCP.
 - Build: `module.call(function, *args)` calls the function; when the result is awaitable and no event loop is running in the current thread, it runs it with `asyncio.run`. The MCP module does not use `call` for coroutine verbs: it awaits a coroutine verb in the server's own loop, so the host's cancellation reaches it, and it runs a plain function in a worker thread, MCP-002. Nothing ever calls `asyncio.run` inside a running loop: when a loop is running in the current thread, `call` refuses an awaitable with a `RuntimeError` saying to await it, so no caller blocks the loop without knowing. The settings screen runs discovery, enable and disable in a worker thread, so a module's async `start` and `stop` run there on a loop of their own. Cancellation is BASE-018 and BASE-031.
 - Acceptance: An async verb called from the CLI and through the MCP module both complete and return the same result.
 - Relates to: BASE-018, MCP.
@@ -86,7 +86,7 @@ Specified in CLI-010, CLI-019 and CLI-020: a module declares its settings in its
 - Requirement: A module publishes a topic and every enabled module subscribed to it receives the payload, and one subscriber's failure never hides the others.
 - What this means: Modules cooperate through events without importing each other. Each delivery reports completed or failed for each subscriber.
 - Why: Modules must compose without knowing each other's code; an event names what happened, not who handles it.
-- How it shows: The helloworld module's `greet` publishes `helloworld.greeted`, and its subscriber records the name.
+- How it shows: The hello module's `greet` publishes `hello.greeted`, and its subscriber records the name.
 - Build: `ctx.publish(topic, payload)` calls `events.publish(topic, payload, ctx)`. For each loaded module in discovery order, BASE-037, and each of its subscriptions whose topic equals the topic exactly, the chassis builds a new `Context` for the subscriber's module with the publisher's folder and project, BASE-028, and calls `handler(copy of payload, context)` through `call`. It returns a list with one entry per delivery: `{"module": id, "status": "completed", "result": value}` or `{"module": id, "status": "failed", "error": message}`, and `cancelled` per BASE-032. A subscriber's exception is caught and reported, never raised to the publisher. Subscribers write through the data access object per STORE-022. From an async verb a module publishes with `await ctx.publish_async(topic, payload)`, which awaits an async subscriber in the running loop and runs a plain one in a worker thread, with the same deliveries, BASE-009; `ctx.publish` called while a loop is running raises a `RuntimeError` naming `publish_async`.
   - The chassis itself fires `map.changed` after any command that changed a project's map, VIEW-018, and the web GUI's server fires it the same way after each of the page's writes that changed the map: a topic every module can subscribe to, with no module announcing its own writes. A subscriber's `Context.surface` is `cli`, `mcp` or `web`, where the change was made.
 - Acceptance: Two subscribers, one raising; publish returns one completed and one failed delivery, and the completed one's effect is stored.
@@ -103,7 +103,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: A verb declared with a caution does nothing until called with `--confirm`, and without it prints the caution and the exact confirming command.
 - What this means: The caution text says what will be lost. The confirming command is the same command plus `--confirm`.
 - Why: The main agent that holds the confirming command acts with confidence; a subagent meeting only the caution hesitates. The wording steers, and nothing gates inference.
-- How it shows: `metaform helloworld forget` prints the caution and `Next: If you are sure: metaform helloworld forget --confirm`.
+- How it shows: `metaform hello forget` prints the caution and `Next: If you are sure: metaform hello forget --confirm`.
 - Build: `Verb.caution`, BASE-035, checked by the dispatcher as in CLI-018 and by the MCP module as in MCP-006.
 - Acceptance: Without `--confirm` the data is unchanged; with it, the data is removed.
 - Relates to: CLI-018, CLI.
@@ -143,13 +143,13 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-015, CLI, MCP.
 - Status: per-verb compatibility is confirmed as acceptable; the mechanism is recommended.
 
-### BASE-017 Modules are enabled and disabled by name, and helloworld and template ship disabled
-- Requirement: Modules are the only thing Metaform enables or disables, by name, and a module's declaration states whether it ships disabled; helloworld and template ship disabled.
+### BASE-017 Modules are enabled and disabled by name, and hello and template ship disabled
+- Requirement: Modules are the only thing Metaform enables or disables, by name, and a module's declaration states whether it ships disabled; hello and template ship disabled.
 - What this means: `metaform enable <module>` and `metaform disable <module>` take the module's name directly, because nothing else in the design is enabled or disabled. A module's state is its declared shipping state until the user enables or disables it. The user's choice is stored and wins. A copy of the template starts disabled, and its author enables it.
 - Why: Every module adds commands, so many modules clutter help and the menus; enabling and disabling keeps the surface to the modules in use. A fresh install runs only real work, so the two example modules ship disabled. Declaring the shipping state in the module means the chassis keeps no list of names.
-- How it shows: On a fresh home, `metaform list modules` shows `helloworld` and `template` off. `metaform enable helloworld` turns it on.
+- How it shows: On a fresh home, `metaform list modules` shows `hello` and `template` off. `metaform enable hello` turns it on.
 - Build: A literal `SHIPS_DISABLED = True` in the module source, read per BASE-015. The base db stores explicit choices in the `module_state` table of STORE-002. The current `disabled_modules` table records only disables, so every module loads on by default, including the current demo; that changes.
-- Acceptance: Fresh home: helloworld off, template off, map on. Enable helloworld, restart: on. Disable map, restart: off.
+- Acceptance: Fresh home: hello off, template off, map on. Enable hello, restart: on. Disable map, restart: off.
 - Relates to: BASE-014, BASE-019, STORE-002.
 - Status: confirmed; declaring the shipping state in the module is recommended.
 
@@ -157,7 +157,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: Loading a module registers its contributions as one owned unit, and unloading, reloading, shutdown and async cancellation withdraw them completely while durable data stays.
 - What this means: A failed load withdraws whatever it registered. Unload removes its verbs, settings from the schema, help, subscriptions and running tasks. Reload does not accumulate duplicates. Shutdown ends the module's running tasks cleanly. Cancelling an async verb stops it and leaves stored data consistent. Stored settings values, layers and history are never removed by unload.
 - Why: The quality standard requires explicit lifecycle and no resource leakage or state corruption across load, unload, reload and shutdown. Without owned contributions, disabling a module leaves behind ghost commands and subscribers.
-- How it shows: `metaform disable helloworld` removes its verbs and settings from help at once; enabling it again shows them once.
+- How it shows: `metaform disable hello` removes its verbs and settings from help at once; enabling it again shows them once.
 - Build: The loader records every contribution by owner. Existing: failed import restores the settings schema; `loader.reset()` removes settings by owner. Added:
   - `Module(start=None, stop=None)`. Each is a function or coroutine taking one argument, the module's `Context` with no nouns. `start` runs once per process, after the module's verbs, settings and subscriptions are registered and before its first verb, subscriber or tool call runs. `stop` runs once, at process exit or unload, after its running tasks are cancelled. A `start` that raises unloads the module and reports the error as its load problem. A `stop` that raises is reported as the module's problem in `list modules`, and its withdrawal completes all the same: settings, verbs and code are removed whatever `stop` did.
   - `ctx.spawn(coroutine)` starts a task owned by the context's module and returns it. The chassis keeps each module's tasks. Unload, reload and shutdown cancel them, wait for them to finish, then call `stop`.
@@ -170,13 +170,13 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ## Template
 
-### BASE-019 Two example modules: helloworld shows the features, template is the empty start of every module
-- Requirement: Metaform ships exactly two example modules: `helloworld`, a demo that shows each chassis feature working, and `template`, the same module completely empty but scaffolded; every module and every non-chassis feature starts from `template`, which is kept current with its changelog.
-- What this means: `helloworld` is hello-world style code that exercises the current contract once each: verbs with nouns and switches, sync and async, events, settings declared in code including a select from its own data, data kept as a layer through the data access object, instructions for agents, the status hook, MCP tools, per-verb compatibility and a caution verb with `--confirm`. `template` has every file and declaration `helloworld` has, in the same places, with nothing in them, ready to copy. Its changelog records each contract change so forks can follow. The chassis is developed against both. Other modules are added only when a need exists.
+### BASE-019 Two example modules: hello shows the features, template is the empty start of every module
+- Requirement: Metaform ships exactly two example modules: `hello`, a demo that shows each chassis feature working, and `template`, the same module completely empty but scaffolded; every module and every non-chassis feature starts from `template`, which is kept current with its changelog.
+- What this means: `hello` is hello-world style code that exercises the current contract once each: verbs with nouns and switches, sync and async, events, settings declared in code including a select from its own data, data kept as a layer through the data access object, instructions for agents, the status hook, MCP tools, per-verb compatibility and a caution verb with `--confirm`. `template` has every file and declaration `hello` has, in the same places, with nothing in them, ready to copy. Its changelog records each contract change so forks can follow. The chassis is developed against both. Other modules are added only when a need exists.
 - Why: Authors need two things: to see each feature work, and a clean start that carries nothing to delete. One demo and one empty scaffold of the same shape give both. Building many speculative modules is what repeatedly buried the chassis.
-- How it shows: `src/metaform/modules/helloworld/` and `src/metaform/modules/template/` each hold `__init__.py`, `README.md`, `CHANGELOG.md` and `tests/`. Copying `template` and enabling the copy gives a module that loads with no verbs.
-- Build: The current `template` module becomes `helloworld`, with its verbs greet, wait, history and forget, its settings and its event. A new `template` holds the same files and the same declaration fields, empty. Added to both: `CHANGELOG.md`, tests inside the module folder, which pytest collects because the chassis's `testpaths` lists both `tests` and `src/metaform/modules`, QUAL-006, and the demonstrations of STORE-022, MCP-008, BASE-016 and BASE-017 in `helloworld`. Both modules' CI runs on Linux, macOS and Windows.
-- Acceptance: Each contract feature listed above is exercised by one `helloworld` test that fails if the chassis drops the feature. `template` loads and declares every field `helloworld` declares, with none filled. A contract change without a changelog entry fails review.
+- How it shows: `src/metaform/modules/hello/` and `src/metaform/modules/template/` each hold `__init__.py`, `README.md`, `CHANGELOG.md` and `tests/`. Copying `template` and enabling the copy gives a module that loads with no verbs.
+- Build: The current `template` module becomes `hello`, with its verbs greet, wait, history and forget, its settings and its event. A new `template` holds the same files and the same declaration fields, empty. Added to both: `CHANGELOG.md`, tests inside the module folder, which pytest collects because the chassis's `testpaths` lists both `tests` and `src/metaform/modules`, QUAL-006, and the demonstrations of STORE-022, MCP-008, BASE-016 and BASE-017 in `hello`. Both modules' CI runs on Linux, macOS and Windows.
+- Acceptance: Each contract feature listed above is exercised by one `hello` test that fails if the chassis drops the feature. `template` loads and declares every field `hello` declares, with none filled. A contract change without a changelog entry fails review.
 - Relates to: BASE-017, QUAL-001.
 - Status: confirmed; the name `template` for the empty module is recommended.
 
@@ -326,7 +326,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: Every event delivery ends as completed, failed or cancelled, reported back through the same publish call.
 - What this means: When a module publishes an event, each enabled subscriber's outcome comes back to the publisher. One subscriber failing never hides the others. An async subscriber that is cancelled reports cancelled. No delivery is left without an outcome.
 - Why: Modules cooperate through events. A publisher that cannot tell whether its event was handled cannot act correctly on the result.
-- How it shows: The helloworld module's greet verb publishes an event and receives each subscriber's outcome.
+- How it shows: The hello module's greet verb publishes an event and receives each subscriber's outcome.
 - Build: `events.publish` returns one entry per subscriber with its module and status: completed with its result, failed with its error, or cancelled. This is the current behavior for completed and failed; cancelled is added for async subscribers.
 - Acceptance:
   1. With one subscriber that raises and one that succeeds, publish returns one failed and one completed entry.
@@ -363,7 +363,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Requirement: A module is declared with fixed records, `Module`, `Verb`, `Noun` and `Subscription`, and a verb receives a fixed `Context`, all from `metaform.module`.
 - What this means: These records are the whole contract between a module and the chassis. Everything the CLI, help, MCP and the settings screen show about a module comes from them.
 - Why: A builder with only this spec must be able to write the chassis and a module against the same contract without reading earlier code.
-- How it shows: The helloworld module's declaration uses every field below.
+- How it shows: The hello module's declaration uses every field below.
 - Build:
   - `Stop(message: str, next_step: str)`: an exception for a user error. `next_step` is required and is one command, CLI-009. The CLI prints `Error: <message>` and `Next: <next_step>` to standard error and exits 2; MCP returns the same two lines with `is_error` true.
   - `Noun(name: str, help: str, kind: str = 'str', required: bool = True, many: bool = False, schema: dict | None = None)`. `kind` is `str`, `int`, `bool` or `json`. Only the last noun of a verb may have `many`.
@@ -582,7 +582,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
   - Carried dependencies: the build writes those requirements to a temporary file, pins them with `uv pip compile <file> -o <pinned> --no-header`, and installs the pinned set with `uv pip install --target <temporary folder> --no-deps -r <pinned>`. Each installed distribution whose `RECORD` lists no `.so`, `.pyd` or `.dylib` file is pure Python and is copied into the wheel under `metaform/_vendor/`. A compiled distribution is not carried: it stays in `Requires-Dist` only, the build still succeeds, and it prints one line per compiled distribution naming it and the enabled module that needs it, with the note that a direct run of this wheel needs it installed. An installed or uvx run gets it through `Requires-Dist`.
   - The build needs `uv` and network or a warm uv cache. Running the wheel directly does not, when every carried dependency is pure Python.
 - Acceptance:
-  - With `map` enabled and `helloworld` and `template` disabled, the wheel holds `metaform/modules/map/` and neither `metaform/modules/helloworld/` nor `metaform/modules/template/`, lists only `CHASSIS_DEPENDENCIES` and map's `DEPENDENCIES`, with no `mcp`, and runs `python <wheel> query layers` in a container with no network.
+  - With `map` enabled and `hello` and `template` disabled, the wheel holds `metaform/modules/map/` and neither `metaform/modules/hello/` nor `metaform/modules/template/`, lists only `CHASSIS_DEPENDENCIES` and map's `DEPENDENCIES`, with no `mcp`, and runs `python <wheel> query layers` in a container with no network.
   - `uvx --from <wheel> metaform --version` runs, which checks `entry_points.txt`.
   - With `mcp` enabled, the build succeeds, the wheel is tagged `py3-none-any`, `pydantic_core` is absent from `metaform/_vendor/` and present in `Requires-Dist` through `mcp`, and the build output names it with the `mcp` module.
   - `pip install <wheel>` into a fresh environment succeeds, which checks the `RECORD` and `METADATA` format.
@@ -655,7 +655,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ### BASE-046 The chassis is fixed, and everything that plugs into it is a module
 - Requirement: The chassis is the fixed part of Metaform, and everything that plugs into it is a module: authored by Metaform or by anyone, as small as one command, and never a workflow.
-- What this means: A module can be anything that plugs into the chassis. The modules Metaform ships, `map`, `intake`, `memory`, `mcp`, `web`, `helloworld` and `template`, are modules exactly as a community author's are. A module is not a workflow; running workflows is the job of a workflow module, BASE-003. A module declares itself in its own code, BASE-035.
+- What this means: A module can be anything that plugs into the chassis. The modules Metaform ships, `map`, `intake`, `memory`, `mcp`, `web`, `hello` and `template`, are modules exactly as a community author's are. A module is not a workflow; running workflows is the job of a workflow module, BASE-003. A module declares itself in its own code, BASE-035.
 - Why: With one fixed part, every module relies on the same base, and any feature, shipped or not, is added, removed or replaced the same way, BASE-001. A shipped module given a special place would make the chassis depend on it and every other module second to it.
 - How it shows: `metaform list modules` lists the shipped modules beside a user's own, each with its place and state, and disabling any of them leaves the chassis working.
 - Build: Nothing beyond BASE-035 and BASE-037: the loader treats every module alike, shipped or not, and the chassis names no module, BASE-001.

@@ -1,8 +1,8 @@
-"""helloworld: each chassis feature working once, BASE-019.
+"""hello: each chassis feature working once, BASE-019.
 
   settings  `greeting` and `loud`, declared in code; `loud` is also greet's switch,
             CLI-012; `favorite` is a select whose choices come from this module's data
-  greet     a sync verb with a noun and a switch; it publishes helloworld.greeted
+  greet     a sync verb with a noun and a switch; it publishes hello.greeted
   wait      an async verb
   history   reads what the event subscriber recorded, a layer in the project store
   live      the chassis announces the subscriber's write as map.changed, so an open web GUI shows the greeting at once,
@@ -31,9 +31,9 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
 
-LAYER = 'helloworld.greetings'
-HOLDER = 'code.module.helloworld'
-PROVENANCE = {'module': 'helloworld', 'workflow': 'greet', 'role': 'module'}
+LAYER = 'hello.greetings'
+HOLDER = 'code.module.hello'
+PROVENANCE = {'module': 'hello', 'workflow': 'greet', 'role': 'module'}
 
 
 def _names(store: Store) -> list[str]:
@@ -48,10 +48,10 @@ def _favorite_choices(ctx: Context) -> list[str]:
     return sorted(set(_names(ctx.store))) if ctx.store is not None else []
 
 
-settings.text('greeting', 'hello', help='The word helloworld greets with.')
+settings.text('greeting', 'hello', help='The word hello greets with.')
 settings.boolean('loud', False, help='Shout the greeting.')
 settings.choice('favorite', choices=_favorite_choices,
-                help="A name helloworld has greeted. Its choices come from the module's own data.")
+                help="A name hello has greeted. Its choices come from the module's own data.")
 
 
 def greet(ctx: Context) -> str:
@@ -60,7 +60,7 @@ def greet(ctx: Context) -> str:
     text = f"{ctx.setting('greeting')}, {name}"
     if ctx.setting('loud'):
         text = text.upper() + '!'
-    ctx.publish('helloworld.greeted', {'name': name})
+    ctx.publish('hello.greeted', {'name': name})
     return text + '\n'
 
 
@@ -72,7 +72,7 @@ async def wait(ctx: Context) -> str:
 
 def history(ctx: Context) -> list[str] | str:
     names = _names(ctx.require_store())
-    return '\n'.join(names) + '\n' if names else 'No greetings yet. Try: metaform helloworld greet <name>\n'
+    return '\n'.join(names) + '\n' if names else 'No greetings yet. Try: metaform hello greet <name>\n'
 
 
 def forget(ctx: Context) -> str:
@@ -87,7 +87,7 @@ def beep(ctx: Context) -> str:
 
 
 def task(ctx: Context) -> str:
-    return 'Run: metaform ' + nonce.request('helloworld', 'brief', {'name': str(ctx.nouns['name'])})
+    return 'Run: metaform ' + nonce.request('hello', 'brief', {'name': str(ctx.nouns['name'])})
 
 
 def brief(ctx: Context) -> str:
@@ -106,7 +106,7 @@ def finish(ctx: Context) -> str:
 def _own_element(store: Store) -> None:
     """The element the greetings hang from, made when no greeting has made it yet."""
     with store.atomic():
-        store.layer(LAYER, 'helloworld', 'Who helloworld has greeted.', mutable=True, hideable=True,
+        store.layer(LAYER, 'hello', 'Who hello has greeted.', mutable=True, hideable=True,
                     provenance=PROVENANCE)
         store.add_element(LAYER, HOLDER)
 
@@ -115,7 +115,7 @@ def todo(ctx: Context) -> str:
     """A work record on this module's own element: tbd, with the task given, MAP-046 and STORE-042."""
     store = ctx.require_store()
     _own_element(store)
-    record = store.add_work(Node('element', HOLDER), 'tbd', note='helloworld has more to do', task=ctx.nouns['task'])
+    record = store.add_work(Node('element', HOLDER), 'tbd', note='hello has more to do', task=ctx.nouns['task'])
     return f'To do: {ctx.nouns["task"]} ({record.work_id})\n'
 
 
@@ -130,10 +130,10 @@ def _to_do(store: Store) -> int:
 
 
 def record(payload: dict[str, Any], ctx: Context) -> None:
-    """helloworld.greeted: remember the name as one item of this module's layer."""
+    """hello.greeted: remember the name as one item of this module's layer."""
     store = ctx.require_store()
     with store.atomic():
-        layer = store.layer(LAYER, 'helloworld', 'Who helloworld has greeted.', mutable=True, hideable=True,
+        layer = store.layer(LAYER, 'hello', 'Who hello has greeted.', mutable=True, hideable=True,
                             provenance=PROVENANCE)
         store.add_element(LAYER, HOLDER)
         store.add_item(LAYER, Node('element', HOLDER), payload['name'])
@@ -147,22 +147,22 @@ def status(ctx: Context) -> Status:
     count, open_work = len(_names(ctx.store)), _to_do(ctx.store)
     if not count and not open_work:
         return Status()
-    return Status(lines=(f'Helloworld: {count} greeted' + (f', {open_work} to do' if open_work else ''),))
+    return Status(lines=(f'Hello: {count} greeted' + (f', {open_work} to do' if open_work else ''),))
 
 
 MODULE = Module(
-    id='helloworld',
-    summary='A demonstration of every module feature.',
+    id='hello',
+    summary='Hello World: a demonstration of every module feature.',
     purpose='Shows each Metaform module feature working once: it greets names, keeps them as a layer, '
             'publishes an event for each greeting, and keeps what it still has to do as work records. Use it to see '
-            'how a module behaves. Details: metaform help helloworld.',
+            'how a module behaves. Details: metaform help hello.',
     details='Settings are declared in code and appear in set, unset and the settings screen. '
             'The favorite setting takes its choices from the names this module has greeted.',
     verbs=(
-        Verb('greet', greet, 'Greet a name and publish helloworld.greeted.',
+        Verb('greet', greet, 'Greet a name and publish hello.greeted.',
              nouns=(Noun('name', 'The name to greet.'),), switches=('loud',),
-             examples=(('metaform helloworld greet world', 'Prints hello, world.'),
-                       ('metaform helloworld greet world --loud', 'Prints HELLO, WORLD!'))),
+             examples=(('metaform hello greet world', 'Prints hello, world.'),
+                       ('metaform hello greet world --loud', 'Prints HELLO, WORLD!'))),
         Verb('wait', wait, 'Wait a number of seconds. Shows an async verb.',
              nouns=(Noun('seconds', 'How long to wait.', kind='int'),)),
         Verb('history', history, 'List the names greeted so far.'),
@@ -171,13 +171,13 @@ MODULE = Module(
              supported_os=('windows',)),
         Verb('todo', todo, "Write a work record on this module's own element: something still to do.",
              nouns=(Noun('task', 'What it needs.'),),
-             examples=(('metaform helloworld todo "greet in every language"', 'Records a tbd work record.'),)),
+             examples=(('metaform hello todo "greet in every language"', 'Records a tbd work record.'),)),
         Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
              nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
         Verb('task', task, 'Hand out a greeting as a task, by nonce.', nouns=(Noun('name', 'The name to greet.'),)),
         Verb('brief', brief, 'What the task reached through a nonce asks for.'),
         Verb('finish', finish, 'Finish the task reached through a nonce, and close the nonce.'),
     ),
-    subscriptions=(Subscription('helloworld.greeted', record),),
+    subscriptions=(Subscription('hello.greeted', record),),
     status=status,
 )

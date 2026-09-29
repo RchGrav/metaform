@@ -141,7 +141,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         tools = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
         assert tools == {'intake', 'map', 'memory', 'web', 'metaform'}
         listed = commands(host)
-        assert TOOLS <= listed and not any(name.startswith(('helloworld_', 'template_')) for name in listed)
+        assert TOOLS <= listed and not any(name.startswith(('hello_', 'template_')) for name in listed)
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]

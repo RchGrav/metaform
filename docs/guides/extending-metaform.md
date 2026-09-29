@@ -11,19 +11,19 @@ The project's own map records this as the module author's receiving purpose: add
 In a registered project:
 
 ```sh
-metaform enable helloworld
-metaform helloworld greet world
-metaform helloworld greet world --loud
-metaform helloworld history
-metaform helloworld wait 0
+metaform enable hello
+metaform hello greet world
+metaform hello greet world --loud
+metaform hello history
+metaform hello wait 0
 metaform
 ```
 
-The first greeting prints `hello, world`; the second prints `HELLO, WORLD!`. Each publishes `helloworld.greeted`. The example's subscriber records the greeted name in the project's store, so `history` returns the names and the status hook can show the count.
+The first greeting prints `hello, world`; the second prints `HELLO, WORLD!`. Each publishes `hello.greeted`. The example's subscriber records the greeted name in the project's store, so `history` returns the names and the status hook can show the count.
 
-The implementation is [helloworld/__init__.py](../../src/metaform/modules/helloworld/__init__.py). It demonstrates a synchronous verb, an asynchronous verb, declared settings, a data-backed select setting, an event subscriber, module-owned data, a status hook, a Windows-specific verb, and a destructive operation with the contract's existing confirmation behavior. `helloworld forget --confirm` deletes the example's greeting history; it is not needed to follow this guide.
+The implementation is [hello/__init__.py](../../src/metaform/modules/hello/__init__.py). It demonstrates a synchronous verb, an asynchronous verb, declared settings, a data-backed select setting, an event subscriber, module-owned data, a status hook, a Windows-specific verb, and a destructive operation with the contract's existing confirmation behavior. `hello forget --confirm` deletes the example's greeting history; it is not needed to follow this guide.
 
-The demonstration layer is `helloworld.greetings`, with holder element `code.module.helloworld`. In contrast, the earlier map of this repository, the September 26 export in [docs/examples](../examples/project-metaform.json), holds helloworld's contribution to the module author's purpose at `code.module.example`, in a subtype join. Those are different records for different purposes.
+The demonstration layer is `hello.greetings`, with holder element `code.module.hello`. In contrast, the earlier map of this repository, the September 26 export in [docs/examples](../examples/project-metaform.json), holds helloworld's contribution to the module author's purpose at `code.module.example`, in a subtype join. Those are different records for different purposes.
 
 ## Start a module from the template
 
@@ -120,10 +120,10 @@ Source: [context.py](../../src/metaform/context.py), [module.py](../../src/metaf
 The example module declares:
 
 ```python
-settings.text('greeting', 'hello', help='The word helloworld greets with.')
+settings.text('greeting', 'hello', help='The word hello greets with.')
 settings.boolean('loud', False, help='Shout the greeting.')
 settings.choice('favorite', choices=_favorite_choices,
-                help="A name helloworld has greeted.")
+                help="A name hello has greeted.")
 ```
 
 `_favorite_choices(ctx)` reads names from the selected project's store. The chassis supplies its context when it needs the available options. The helper families are `text`, `number`, `boolean`, `items`, and `choice`.
@@ -131,9 +131,9 @@ settings.choice('favorite', choices=_favorite_choices,
 Declared settings appear in help, `set`, `unset`, `config --show`, and the settings screen. A setting named with underscores is exposed through a hyphenated long switch. Boolean settings have positive and negative forms. A setting listed in a verb's switches can be overridden for one call:
 
 ```sh
-metaform helloworld greet world --loud
+metaform hello greet world --loud
 metaform set --greeting welcome
-metaform helloworld greet world
+metaform hello greet world
 metaform unset --greeting
 ```
 
@@ -145,18 +145,18 @@ The setting named `confirm` is not a persistent setting. It is the contract's on
 
 The `Store` façade exposes the existing data operations to a module: functional records, node reads, scoped context, layer construction, items, properties, references, work records, corrections, challenges, plans, and history. A module does not need to call another module's CLI to access those facilities.
 
-Helloworld's subscriber demonstrates a persistent contribution:
+Hello's subscriber demonstrates a persistent contribution:
 
 ```python
 with store.atomic():
     store.layer(
-        'helloworld.greetings', 'helloworld', 'Who helloworld has greeted.',
+        'hello.greetings', 'hello', 'Who hello has greeted.',
         mutable=True, hideable=True,
-        provenance={'module': 'helloworld', 'workflow': 'greet', 'role': 'module'},
+        provenance={'module': 'hello', 'workflow': 'greet', 'role': 'module'},
     )
-    store.add_element('helloworld.greetings', 'code.module.helloworld')
+    store.add_element('hello.greetings', 'code.module.hello')
     store.add_item(
-        'helloworld.greetings', Node('element', 'code.module.helloworld'),
+        'hello.greetings', Node('element', 'code.module.hello'),
         payload['name'],
     )
 ```
@@ -167,7 +167,7 @@ A module that records functional structure writes the same records the intake do
 
 `Store.edit` and `Store.correct` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `op=correct` do not read them. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
 
-The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module that finds something in the specs and not built, broken, or cruft writes `store.add_work(Node('element', address), 'tbd', note='what and where', task='what it needs')`, changes it with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element and join read, a subtype join's included, carries `open_work`. The web GUI draws a node ghostly while a `tbd` record is open and flashes it red while a `broken` one is. Helloworld's `todo` and `done` verbs show it.
+The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module that finds something in the specs and not built, broken, or cruft writes `store.add_work(Node('element', address), 'tbd', note='what and where', task='what it needs')`, changes it with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element and join read, a subtype join's included, carries `open_work`. The web GUI draws a node ghostly while a `tbd` record is open and flashes it red while a `broken` one is. Hello's `todo` and `done` verbs show it.
 
 The memory module is one consumer of node-addressed storage. Other modules can contribute their own layers without converting every finding into mutable memory. Conversely, memory's lack of revision history does not imply that corrections or prompt versions lack their own histories.
 
@@ -198,13 +198,13 @@ def changed(payload, ctx):
 MODULE = Module(..., subscriptions=(Subscription('map.changed', changed),))
 ```
 
-The web module subscribes and hands each event to its running server, which pushes it to every open page over a server-sent events stream, so the page redraws at once; with no server running, nothing happens. Work a module does outside a command, in a task it spawned, is announced only when the module publishes `map.changed` itself. The web GUI's server fires it the same way after each of the page's own writes that changed the map, so a subscriber hears a clear made on the page as it hears one from the command line. helloworld's greeting shows it: with the page open, each greeting appears in the 3D view as it is recorded, and helloworld has no code for it. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
+The web module subscribes and hands each event to its running server, which pushes it to every open page over a server-sent events stream, so the page redraws at once; with no server running, nothing happens. Work a module does outside a command, in a task it spawned, is announced only when the module publishes `map.changed` itself. The web GUI's server fires it the same way after each of the page's own writes that changed the map, so a subscriber hears a clear made on the page as it hears one from the command line. hello's greeting shows it: with the page open, each greeting appears in the 3D view as it is recorded, and hello has no code for it. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
 
 Separate owned asynchronous work uses `ctx.spawn(coroutine)` inside an active event loop. The loader tracks the task as belonging to the module and cancels it during unload/reset/shutdown. That facility is distinct from publication. A one-shot asynchronous CLI verb owns a transient loop; its spawned work is cleaned up when the invocation ends, not converted into an independent daemon.
 
 An async verb exposed through MCP runs on the server loop; a synchronous verb runs in a worker thread. Cancellation reaches the supported async execution path. The source contains lifecycle tests for cleanup and cancellation; this guide does not substitute a different scheduler.
 
-Source: [events.py](../../src/metaform/events.py), [loader.py](../../src/metaform/loader.py), [MCP server](../../src/metaform/modules/mcp/server.py), [the web module's subscriber](../../src/metaform/modules/web/__init__.py), [helloworld](../../src/metaform/modules/helloworld/__init__.py), and [lifecycle tests](../../tests/test_lifecycle.py).
+Source: [events.py](../../src/metaform/events.py), [loader.py](../../src/metaform/loader.py), [MCP server](../../src/metaform/modules/mcp/server.py), [the web module's subscriber](../../src/metaform/modules/web/__init__.py), [hello](../../src/metaform/modules/hello/__init__.py), and [lifecycle tests](../../tests/test_lifecycle.py).
 
 ## Discovery, enablement, and lifecycle
 

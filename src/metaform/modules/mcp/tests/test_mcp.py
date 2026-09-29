@@ -212,19 +212,19 @@ def test_a_boolean_false_on_one_call_overrides_a_glued_true(run, home, mapped, u
 @pytest.mark.req('MCP-006')
 @pytest.mark.req('BASE-013')
 def test_tool_errors_end_with_the_one_next_step_the_cli_gives(run, home, mapped):
-    run('enable', 'helloworld')
-    run('helloworld', 'greet', 'ada', cwd=mapped)
+    run('enable', 'hello')
+    run('hello', 'greet', 'ada', cwd=mapped)
     cli = run('map', 'element', 'code.nothing', cwd=mapped, ok=False).stderr.splitlines()
 
     async def call(client, init):
         missing = await called(client, 'map_element', {'element': 'code.nothing'})
-        caution = await called(client, 'helloworld_forget', {})
+        caution = await called(client, 'hello_forget', {})
         return missing.is_error, text(missing), caution.is_error, text(caution)
     error, missing, caution_error, caution = session(home, mapped, call)
     assert error and missing[0].splitlines() == cli
     assert caution_error and caution[0].splitlines() == [
-        'Error: This deletes the greeting history.', 'Next: If you are sure: call helloworld with command forget and confirm true in its arguments']
-    assert run('helloworld', 'history', cwd=mapped).stdout.split() == ['ada']
+        'Error: This deletes the greeting history.', 'Next: If you are sure: call hello with command forget and confirm true in its arguments']
+    assert run('hello', 'history', cwd=mapped).stdout.split() == ['ada']
 
 
 @pytest.mark.req('MCP-007')
@@ -283,10 +283,10 @@ def test_a_server_started_outside_every_project_selects_one_with_set(run, home, 
 @pytest.mark.req('BASE-009')
 @pytest.mark.req('BASE-036')
 def test_an_async_verb_and_a_string_result_over_mcp(run, home, mapped):
-    run('enable', 'helloworld')
+    run('enable', 'hello')
 
     async def call(client, init):
-        return text(await called(client, 'helloworld_wait', {'seconds': 0}))
+        return text(await called(client, 'hello_wait', {'seconds': 0}))
     assert session(home, mapped, call) == ['waited 0 s\n']
 
 
@@ -412,13 +412,13 @@ def test_the_server_starts_on_any_surface_and_keeps_the_chassis_tools(run, home,
 @pytest.mark.req('BASE-035')
 @pytest.mark.req('CLI-027')
 def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, mapped):
-    run('enable', 'helloworld')
-    missing_cli = run('helloworld', 'greet', cwd=mapped, ok=False).stderr.splitlines()[-1]
+    run('enable', 'hello')
+    missing_cli = run('hello', 'greet', cwd=mapped, ok=False).stderr.splitlines()[-1]
 
     async def call(client, init):
-        missing = await called(client, 'helloworld_greet', {})
-        as_text = await called(client, 'helloworld_greet', {'name': 'x', 'loud': 'no'})
-        not_number = await called(client, 'helloworld_wait', {'seconds': 'abc'})
+        missing = await called(client, 'hello_greet', {})
+        as_text = await called(client, 'hello_greet', {'name': 'x', 'loud': 'no'})
+        not_number = await called(client, 'hello_wait', {'seconds': 'abc'})
         bad_set = await called(client, 'set', {'loud': 'no'})
         return [(result.is_error, text(result)) for result in (missing, as_text, not_number, bad_set)]
     results = session(home, mapped, call)
@@ -426,7 +426,7 @@ def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, m
     assert all(len([line for line in blocks[0].splitlines() if line.startswith('Next: ')]) == 1
                for _, blocks in results)
     assert results[0][1][0].splitlines()[-1] == missing_cli
-    assert run('helloworld', 'history', cwd=mapped).stdout.startswith('No greetings')
+    assert run('hello', 'history', cwd=mapped).stdout.startswith('No greetings')
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
     assert shown['loud']['state'] == 'default'
 
@@ -439,7 +439,7 @@ def test_a_text_switch_sent_another_json_value_is_kept_as_its_json_text_with_a_n
     a whole number and true or false cannot be read from another kind and stop the call as the command line does."""
     from metaform import grammar
     from metaform.module import Noun, Verb
-    run('enable', 'helloworld')
+    run('enable', 'hello')
 
     async def call(client, init):
         stored = await called(client, 'set', {'greeting': 5})
@@ -453,11 +453,11 @@ def test_a_text_switch_sent_another_json_value_is_kept_as_its_json_text_with_a_n
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
     assert (shown['greeting']['value'], shown['greeting']['state']) == ('5', 'set')
     verb = Verb('greet', lambda ctx: None, 'x', nouns=(Noun('name', 'x'),), switches=('modules', 'loud'))
-    parsed = grammar.from_json('helloworld', verb, {'name': 'x', 'modules': ['map', 7]}, folder=mapped)
+    parsed = grammar.from_json('hello', verb, {'name': 'x', 'modules': ['map', 7]}, folder=mapped)
     assert parsed.switches['modules'] == ['map', '7']
     assert parsed.notices == [('modules', 'modules is text; what was sent was kept as its JSON text.')]
     with pytest.raises(Exception) as stopped:
-        grammar.from_json('helloworld', verb, {'name': 'x', 'modules': 'map'}, folder=mapped)
+        grammar.from_json('hello', verb, {'name': 'x', 'modules': 'map'}, folder=mapped)
     assert 'modules is a list' in str(stopped.value)
 
 
@@ -680,10 +680,10 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
 @pytest.mark.req('BASE-044')
 @pytest.mark.req('MCP-005')
 def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_with_a_notice(run, home, mapped):
-    run('enable', 'helloworld')
+    run('enable', 'hello')
 
     async def call(client, init):
-        greeted = await called(client, 'helloworld_greet', {'name': {'a': 1}})
+        greeted = await called(client, 'hello_greet', {'name': {'a': 1}})
         joined = await called(client, 'map_knowledge', {
             'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
             'purpose': 12, 'function': 'f', 'relation': ['r'], 'observation': 'o'})

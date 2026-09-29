@@ -11,7 +11,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: every metaform command line reads as a verb, the nouns it acts on, and switches that change how it runs.
 - What this means: the first word after `metaform` is a chassis verb (`help`, `add`, `list`, `set`, `unset`, `config`, `enable`, `disable`, `activate`, `install`, `uninstall`, `build`, `import`, `export`, `query`, `feedback`, `read`, `extract`, `prompts`, `prompt`, `clear`) or a module id followed by that module's verb. `mcp` is not a chassis verb; the MCP server is `metaform mcp serve`, MCP-001. Words that name what the verb acts on are arguments. Words starting with a dash change how the verb runs and never name what it acts on.
 - Why: one consistent grammar makes every command predictable for people and agents, so a user who knows one command can guess the next, and an agent does not have to read source to find out how to call something.
-- How it shows: `metaform add project notes ~/notes` (verb add, nouns project, notes, path). `metaform helloworld greet world --loud` (module template, verb greet, noun world, adverb --loud).
+- How it shows: `metaform add project notes ~/notes` (verb add, nouns project, notes, path). `metaform hello greet world --loud` (module template, verb greet, noun world, adverb --loud).
 - Build: the parser takes `argv[0]` as the verb; if it is not a chassis verb it is looked up as a module id and `argv[1]` as that module's verb. Remaining words are split into arguments and switches by CLI-004, optional nouns are read by BASE-043, and `--` ends switch parsing, CLI-003. Module verbs declare their nouns and switches in `Verb`, BASE-035; the parser rejects an unknown switch, a missing required noun, or an extra word with one Next line naming `metaform <module> <verb> --help`.
 - Acceptance: a module verb given a noun and a declared switch receives the noun in `nouns` and the switch in its switches; an undeclared switch fails with exit code 2 and a Next line naming `metaform <module> <verb> --help`.
 - Relates to: CLI-004, CLI-005, BASE-002, BASE-006, MCP-003.
@@ -118,7 +118,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: `metaform help <thing>` prints the full page for a command, module, verb or switch, and `<thing> --help` or `-h` prints only its syntax.
 - What this means: the page has the summary, description, usage lines, switches, details, examples and related topics. The syntax form has the usage lines and switch names only.
 - Why: understanding and typing are two needs; the page serves understanding and the syntax serves typing, and merging them fails both.
-- How it shows: `metaform help set` prints the page; `metaform set --help` prints `metaform set --<setting> <value> [--glue] [--quiet]` and the switch list. `metaform help helloworld greet` prints the verb page; `metaform helloworld greet -h` prints its syntax.
+- How it shows: `metaform help set` prints the page; `metaform set --help` prints `metaform set --<setting> <value> [--glue] [--quiet]` and the switch list. `metaform help hello greet` prints the verb page; `metaform hello greet -h` prints its syntax.
 - Build: the page and syntax layouts are CLI-029. All pages are generated from the live declarations of the chassis and the loaded modules, never from static text.
 - Acceptance: `help set` includes the examples block and `set --help` does not; a newly declared module verb appears in `help <module>` with no help text written anywhere else.
 - Relates to: CLI-008, BASE-006, CLI-010.
@@ -130,7 +130,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: an index lets a user or agent find any command or switch in one read without guessing names.
 - How it shows: `metaform help commands` shows `chassis` then each module group; hidden groups do not appear.
 - Build: the commands index prints `Commands` and one row per chassis verb on the surface, then for each surfaced module a heading `<id>: <summary>` and one row per verb, `<id> <verb>` and its summary, then `Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.` The switches index prints `Switches` and one row per setting switch and per verb control switch, sorted, then `Use 'metaform help <switch>' for details.` Both are generated from the declarations, CLI-029.
-- Acceptance: after `metaform set --modules helloworld`, `help commands` lists no chassis-only verbs except the ones always shown; a module declared setting appears in `help switches`.
+- Acceptance: after `metaform set --modules hello`, `help commands` lists no chassis-only verbs except the ones always shown; a module declared setting appears in `help switches`.
 - Relates to: CLI-010, CLI-022.
 - Status: confirmed.
 
@@ -172,7 +172,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: every long switch that changes how commands run is a setting, so it can be passed on one call, stored with `set`, cleared with `unset`, and protected with `--glue`.
 - What this means: passing a switch on a command affects that call only. `set` stores the value for the folder. `unset` clears the stored value. `--glue` protects the stored value from `unset all`. `unset all --unglue` returns every setting, glued ones included, to its safe default.
 - Why: any behavior a user can ask for once, they can also make their standing choice, with no second mechanism for configuration.
-- How it shows: `metaform helloworld greet world --loud` shouts once. `metaform set --loud` makes every later greet shout. `metaform unset --loud` returns to the default.
+- How it shows: `metaform hello greet world --loud` shouts once. `metaform set --loud` makes every later greet shout. `metaform unset --loud` returns to the default.
 - Build: when a command runs, each setting's effective value resolves in this order: the switch on this call, then the stored value at the nearest folder at or above the current folder, then the declared default. Verb control switches that only steer a chassis command (`--glue`, `--unglue`, `--show`, `--json`, `--quiet`, `--help`) are listed in the open questions. The change: module switches become settings (CLI-012), and per-call values join the resolution order.
 - Acceptance: with a stored value of off and `--loud` passed on one call, that call shouts and `config --show` still shows off afterward; with no stored value, the declared default applies.
 - Relates to: CLI-012, CLI-013, CLI-014, CLI-016.
@@ -182,7 +182,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: a module declares each of its switches once, and that declaration is both the verb's switch and a setting.
 - What this means: a module switch such as `--loud` is a setting owned by the module. The verb lists which settings it reads, and the parser accepts those settings as switches on that verb.
 - Why: one declaration keeps a module's switches, settings and help in step, and makes every module switch storable with `set` the same way chassis switches are.
-- How it shows: the helloworld module declares `--loud` once; `metaform helloworld greet world --loud` and `metaform set --loud` both work, and `help --loud` names the template as owner.
+- How it shows: the hello module declares `--loud` once; `metaform hello greet world --loud` and `metaform set --loud` both work, and `help --loud` names the template as owner.
 - Build: `Adverb` in `module.py` is replaced by a reference from `Verb` to setting keys declared through `metaform.settings`. The verb's context gives effective values by key, which already exists as `Context.setting(key)`. The current demo module declares `--loud` as an `Adverb`, separate from settings; that changes.
 - Acceptance: `metaform set --loud` succeeds for a module that declares `loud`, and the verb then behaves as if `--loud` were passed.
 - Relates to: CLI-010, CLI-011, BASE-006, BASE-007, MCP-005.
@@ -245,7 +245,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - How it shows:
   ```
   Error: This deletes the greeting history.
-  Next: If you are sure: metaform helloworld forget --confirm
+  Next: If you are sure: metaform hello forget --confirm
   ```
   `metaform set --confirm` fails with `Error: --confirm is not a setting.` and a Next line naming `metaform help --confirm`.
 - Build: the dispatcher checks `Verb.caution`, BASE-035; without `--confirm` on the call it raises `Stop(caution, 'If you are sure: <the same command> --confirm')` before the verb runs. The settings schema rejects the key `confirm` at declaration.
@@ -271,7 +271,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Why: low-friction start for users and agents; nothing blocks the first command.
 - How it shows: a fresh home with no saved settings runs `metaform`, `metaform help`, and every enabled module verb.
 - Build: every declared setting has a working default or a `default_from`. A module whose setting cannot have a working default is refused at load with a Next line.
-- Acceptance: with an empty home, every chassis verb runs with exit 0 given valid nouns, and every helloworld verb that needs no project store runs with exit 0. A module verb that needs a project store, such as the template's greeting and history verbs, stops in an empty home with exit 2 and `Next: metaform add project <id> <path>`, STORE-023; no configuration is involved, since registering a project is data, not a setting. After `metaform add project <id> <path>` and nothing else, every helloworld verb runs with exit 0.
+- Acceptance: with an empty home, every chassis verb runs with exit 0 given valid nouns, and every hello verb that needs no project store runs with exit 0. A module verb that needs a project store, such as the template's greeting and history verbs, stops in an empty home with exit 2 and `Next: metaform add project <id> <path>`, STORE-023; no configuration is involved, since registering a project is data, not a setting. After `metaform add project <id> <path>` and nothing else, every hello verb runs with exit 0.
 - Relates to: CLI-010, CLI-017, STORE-022, STORE-023.
 - Status: confirmed.
 
@@ -429,7 +429,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - Requirement: Every help page and syntax screen follows one layout generated from the declarations.
 - What this means: A reader finds the same sections in the same order for every command, module, verb and switch.
 - Why: A predictable layout is what lets agents read help instead of source.
-- How it shows: `metaform help set` and `metaform help helloworld greet` have the same section order.
+- How it shows: `metaform help set` and `metaform help hello greet` have the same section order.
 - Build:
   - Page: `<name>: <summary>`, blank line, description when present, `Usage` and each usage line indented two spaces, `Switches` and one row per switch with its one-line help, `Caution` for a caution verb, `Details` when present, `Examples` with each example and its meaning on the next line indented four spaces, then `See also: <names>`. Empty sections are left out.
   - Syntax: `Usage: <first usage line>`, further usage lines aligned under it, a blank line, then one row per switch including `-h, --help  Show this syntax.`

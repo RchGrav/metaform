@@ -31,7 +31,7 @@ Two internal subtypes belong to this join:
 | `code.template.module` | template | The empty module declaration from which a new capability can start. |
 | `code.module.example` | helloworld | Working demonstration of verbs, settings, events, storage, async execution, and status. |
 
-Read their operative code at [template](../../src/metaform/modules/template/__init__.py) and [helloworld](../../src/metaform/modules/helloworld/__init__.py). The [module contract](../../src/metaform/module.py), [loader](../../src/metaform/loader.py), and [store](../../src/metaform/data/store.py) supply the shared facilities.
+Read their operative code at [template](../../src/metaform/modules/template/__init__.py) and [hello](../../src/metaform/modules/hello/__init__.py). The [module contract](../../src/metaform/module.py), [loader](../../src/metaform/loader.py), and [store](../../src/metaform/data/store.py) supply the shared facilities.
 
 The project export also contains observations about documentation and planned mechanisms. Those observations remain part of the recorded graph, but the extension instructions here are grounded in the included code. A record referring to an omitted document is not a substitute for its contents.
 

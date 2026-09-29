@@ -1653,22 +1653,22 @@ def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_ea
 @pytest.mark.req('VIEW-018')
 @pytest.mark.req('QUAL-016')
 @pytest.mark.req('BASE-019')
-def test_a_module_that_writes_to_the_map_is_seen_live_as_helloworld_greetings_appear_in_3d(run, web, mapped, browser):
-    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in helloworld; here a greeting,
+def test_a_module_that_writes_to_the_map_is_seen_live_as_hello_greetings_appear_in_3d(run, web, mapped, browser):
+    """Rich, 2026-09-26: a capability added for a feature gets a demonstration in hello; here a greeting,
     written by a module that is not built into the map, reaches the open page through map.changed."""
-    run('enable', 'helloworld')
+    run('enable', 'hello')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     texts = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item").map(node => node.text)')
     assert 'world' not in texts()
-    run('helloworld', 'greet', 'world', cwd=mapped)
+    run('hello', 'greet', 'world', cwd=mapped)
     page.click('#layersBtn')
-    page.wait_for_selector('#layerlist input[data-layer="helloworld.greetings"]', timeout=3000)  # pushed to the page;
-    set_layer(page, 'helloworld.greetings', True)  # the folder's layers leave the new layer off
+    page.wait_for_selector('#layerlist input[data-layer="hello.greetings"]', timeout=3000)  # pushed to the page;
+    set_layer(page, 'hello.greetings', True)  # the folder's layers leave the new layer off
     page.wait_for_function('() => window.metaform.graph().nodes.some(node => node.t === "item" && node.text === "world")',
                            timeout=3000)
-    run('helloworld', 'greet', 'moon', cwd=mapped)
+    run('hello', 'greet', 'moon', cwd=mapped)
     page.wait_for_function('() => window.metaform.graph().nodes.some(node => node.t === "item" && node.text === "moon")',
                            timeout=3000)
     assert problems == []

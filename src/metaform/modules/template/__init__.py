@@ -2,7 +2,7 @@
 
 Copy this folder, rename it, set MODULE.id to the folder's name, write the
 module's purpose, and enable it with `metaform enable <id>`. Every field
-helloworld declares is here, empty. CHANGELOG.md records each change to the
+hello declares is here, empty. CHANGELOG.md records each change to the
 module contract, so a copy can follow it.
 """
 from __future__ import annotations

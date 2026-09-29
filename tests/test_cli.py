@@ -552,8 +552,8 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
 @pytest.mark.req('STORE-027')
 @pytest.mark.req('BASE-002')
 def test_export_then_import_into_an_empty_home_reproduces_the_project(run, project, tmp_path, home):
-    run('enable', 'helloworld')
-    run('helloworld', 'greet', 'ada', cwd=project)
+    run('enable', 'hello')
+    run('hello', 'greet', 'ada', cwd=project)
     document = tmp_path / 'backup.json'
     run('export', 'proj', f'file={document}', cwd=project)
     first = json.loads(document.read_text())
@@ -571,23 +571,23 @@ def test_export_then_import_into_an_empty_home_reproduces_the_project(run, proje
 def test_query_answers_through_the_reads_and_lists_them(run, project):
     listed = run('query').stdout
     assert 'element' in listed and 'layer-items' in listed and 'search' in listed
-    run('enable', 'helloworld')
-    run('helloworld', 'greet', 'ada', cwd=project)
+    run('enable', 'hello')
+    run('hello', 'greet', 'ada', cwd=project)
     layers = json.loads(run('query', 'layers', '--json', cwd=project).stdout)
-    assert [layer['name'] for layer in layers['results']] == ['helloworld.greetings']
-    items = json.loads(run('query', 'layer-items', 'helloworld.greetings', '--json', cwd=project).stdout)
+    assert [layer['name'] for layer in layers['results']] == ['hello.greetings']
+    items = json.loads(run('query', 'layer-items', 'hello.greetings', '--json', cwd=project).stdout)
     assert [item['value'] for item in items['results']] == ['ada']
-    node = json.loads(run('query', 'node', 'element:code.module.helloworld', 'raw=true', '--json', cwd=project).stdout)
-    assert node['layers'][0]['layer'] == 'helloworld.greetings'
-    run('map', 'knowledge', 'op=finish', 'layer=helloworld.greetings', cwd=project)
+    node = json.loads(run('query', 'node', 'element:code.module.hello', 'raw=true', '--json', cwd=project).stdout)
+    assert node['layers'][0]['layer'] == 'hello.greetings'
+    run('map', 'knowledge', 'op=finish', 'layer=hello.greetings', cwd=project)
 
     def layers_at(*command):
-        result = run(*command, 'element:code.module.helloworld', '--json', cwd=project, ok=False)
+        result = run(*command, 'element:code.module.hello', '--json', cwd=project, ok=False)
         view = json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else None
         return {group['layer'] for group in view['layers']} if view else set()
-    assert 'helloworld.greetings' in layers_at('query', 'node') & layers_at('map', 'node')
-    run('map', 'mask', 'code.module', 'helloworld.greetings', cwd=project)
-    assert 'helloworld.greetings' not in layers_at('query', 'node') | layers_at('map', 'node')
+    assert 'hello.greetings' in layers_at('query', 'node') & layers_at('map', 'node')
+    run('map', 'mask', 'code.module', 'hello.greetings', cwd=project)
+    assert 'hello.greetings' not in layers_at('query', 'node') | layers_at('map', 'node')
 
 
 @pytest.mark.req('CLI-033')
@@ -697,9 +697,9 @@ def test_an_off_module_lists_with_the_summary_it_shows_when_on(run):
         line = next(line for line in lines(run('list', 'modules')) if line.split()[0] == module_id)
         parts = line.split(None, 3)
         return parts[3] if len(parts) == 4 else ''
-    off = text('helloworld')
-    run('enable', 'helloworld')
-    assert off and off == text('helloworld')
+    off = text('hello')
+    run('enable', 'hello')
+    assert off and off == text('hello')
 
 
 @pytest.mark.req('CLI-015')

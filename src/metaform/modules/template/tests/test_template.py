@@ -1,4 +1,4 @@
-"""template is helloworld's shape with nothing in it, BASE-019."""
+"""template is hello's shape with nothing in it, BASE-019."""
 from __future__ import annotations
 
 import ast
@@ -25,14 +25,14 @@ def literals(name):
 
 
 @pytest.mark.req('BASE-019')
-def test_template_declares_every_field_helloworld_declares_with_nothing_in_it(home):
-    assert literals('helloworld') <= literals('template')
+def test_template_declares_every_field_hello_declares_with_nothing_in_it(home):
+    assert literals('hello') <= literals('template')
     template = declaration('template').MODULE
     assert template.id == 'template'
     assert template.verbs == () and template.subscriptions == ()
     assert template.start is None and template.stop is None and template.status is None
     assert {field.name for field in dataclasses.fields(template)} == \
-        {field.name for field in dataclasses.fields(declaration('helloworld').MODULE)}
+        {field.name for field in dataclasses.fields(declaration('hello').MODULE)}
 
 
 @pytest.mark.req('BASE-019')

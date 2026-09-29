@@ -23,7 +23,7 @@ In Windows PowerShell, replace the activation line with:
 
 The base package declares `prompt_toolkit`; the MCP module separately declares `mcp>=2.2`. Installing only the base package can therefore leave the MCP module reported as an error because its dependency is absent. `uv` supplies the build and wheel-backed host-launch path. These requirements come from the supplied [package metadata](../../pyproject.toml), [MCP module](../../src/metaform/modules/mcp/__init__.py), and [builder](../../src/metaform/build.py).
 
-`list modules` reports where each module was found and whether it is on, off, or failed to load. Intake, map, memory, MCP, and web are the operating modules in this edition. Template and helloworld ship disabled. A dependency or import error is a reported module condition, not evidence that all of Metaform failed to start.
+`list modules` reports where each module was found and whether it is on, off, or failed to load. Intake, map, memory, MCP, and web are the operating modules in this edition. Template and hello ship disabled. A dependency or import error is a reported module condition, not evidence that all of Metaform failed to start.
 
 ### Running an existing build instead
 
