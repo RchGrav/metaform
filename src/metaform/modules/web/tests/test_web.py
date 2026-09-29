@@ -2379,3 +2379,15 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
     assert page.evaluate('document.documentElement.dataset.theme') == name == page.input_value('#theme')
     assert page.evaluate('window.metaform.ground()') == themes()[name]['--ground']
     assert problems == [] and remote == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_every_link_of_the_3d_map_is_a_straight_line(run, web, mapped, browser):
+    """Rich, 2026-09-28: no curved edges. A link runs straight between the two nodes it joins."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    curves = page.evaluate('window.metaform.curves()')
+    assert curves and {link['k'] for link in curves} >= {'purpose', 'encounter', 'tree'}
+    assert [link for link in curves if link['curve'] != 0] == []
+    assert problems == []

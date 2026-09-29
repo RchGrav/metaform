@@ -226,10 +226,12 @@ function indexSubtypes() {
     if (!heldBy.has(subtype.element_id)) heldBy.set(subtype.element_id, 's:' + subtype.join_id);
   }
 }
+const accessed = (value, item) => typeof value === 'function' ? value(item) : value;
 const joinOf = key => S.joins.find(join => 'p:' + join.join_id === key);
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
   click3d: id => clicked3d(G?.graphData().nodes.find(node => node.id === id)),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
+  curves: () => G ? G.graphData().links.map(link => ({k: link.k, curve: accessed(G.linkCurvature(), link)})) : [],
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
@@ -599,7 +601,7 @@ function start3D() {
     .linkColor(linkColor)
     .linkOpacity(Number(css('--link-opacity')))
     .linkWidth(link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25 : link.k === 'relation' ? 0.5 : 0.9)
-    .linkCurvature(link => link.k === 'layer' || link.k === 'item' ? 0 : 0.18)
+    .linkCurvature(0)
     .linkDirectionalParticles(link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 2 : 0)
     .linkDirectionalParticleSpeed(0.006)
     .linkDirectionalParticleWidth(1.6)
