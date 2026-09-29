@@ -136,8 +136,9 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
         "SELECT * FROM work WHERE target_kind='element' AND target_id=? AND done IS NULL ORDER BY row",
         (found.element_id,)))
     at = node(tx, res, Node('element', found.element_id), raw)
+    reaching = reaching_at(tx, res, address)
     return Where(kind, found, held, holding, with_subtypes('provider'), with_subtypes('receiver'), open_work,
-                 () if at is None else at.layers, full)
+                 () if at is None else at.layers, full, reaching.applying, reaching.visible)
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
@@ -289,6 +290,11 @@ def context(tx: Tx, res: Resolver, address: str, limit: int, after: str | None) 
         if next_cursor is not None or (limit and len(visible) >= limit):
             break
     return ContextView(address, tuple(applying), tuple(visible), next_cursor)
+
+
+def reaching_at(tx: Tx, res: Resolver, address: str) -> ContextView:
+    """Every property that reaches an address, for `where`, which holds a name of its own called context."""
+    return context(tx, res, address, 0, None)
 
 
 def links_to(tx: Tx, res: Resolver, target: Node, layer: str | None, raw: bool, limit: int,

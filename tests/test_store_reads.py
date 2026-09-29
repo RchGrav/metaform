@@ -182,7 +182,8 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
         elif isinstance(data, list):
             for value in data:
                 yield from keys(value)
-    assert set(small) == {'kind', 'element', 'provides', 'receives', 'layers'}
+    # the properties that reach the address are part of the one read, STORE-025
+    assert set(small) == {'kind', 'element', 'provides', 'receives', 'layers', 'properties'}
     assert not [key for key, _ in keys(small) if key.endswith('_id') or key in ('parent', 'target')]
     assert not [key for key, value in keys(small) if value in (None, '', [], {}, False)]
     cook = next(join for join in small['provides'] if join['receiver'] == 'stakeholder.cook.home')

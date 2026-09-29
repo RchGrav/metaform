@@ -710,3 +710,26 @@ def test_a_question_is_asked_with_the_answers_the_agent_suggests(run, mapped):
     bare = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Which one?', '--json',
                cwd=mapped)
     assert 'suggest' in ' '.join(message for _, message in said(json.loads(bare.stdout)))  # told to suggest, never refused
+
+
+@pytest.mark.req('STORE-025')
+@pytest.mark.req('LAYER-005')
+def test_where_shows_the_properties_that_apply_at_the_address_and_those_visible_there(run, mapped):
+    """An agent is told to read a part with where before it changes it. A property linked toward the trunk applies at
+    the part, so where shows it; an agent that read only where would otherwise never learn of it."""
+    k(run, mapped, 'op=create', 'layer=media', 'variable=Which language is each part written in?', 'mutable=true',
+      'hideable=true', *PROVENANCE)
+    k(run, mapped, 'op=add-property', 'layer=media', 'element=type:code', 'value="C"')
+    k(run, mapped, 'op=add-property', 'layer=media', 'element=code.timer.kitchen', 'value="assembly"')
+    k(run, mapped, 'op=finish', 'layer=media')
+    kitchen = j(run, 'where', 'code.timer.kitchen', cwd=mapped)['properties']
+    assert [(one['value'], one['address']) for one in kitchen['applying']] == [('C', 'code'), ('assembly', 'code.timer.kitchen')]
+    assert 'visible' not in kitchen                                  # nothing is linked toward the leaves from it
+    alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)['properties']
+    assert [(one['value'], one['address']) for one in alarm['applying']] == [('C', 'code')]
+    trunk = j(run, 'where', 'code', cwd=mapped)['properties']
+    assert [(one['value'], one['address']) for one in trunk['visible']] == [('assembly', 'code.timer.kitchen')]
+    in_context = j(run, 'context', 'code.timer.kitchen', cwd=mapped)['applying']  # the same, as context reads them
+    assert [(one['value'], one['address'], one['layer']) for one in in_context] \
+        == [(one['value'], one['address'], one['layer']) for one in kitchen['applying']]
+    assert 'properties' not in j(run, 'where', 'stakeholder.cook.home', cwd=mapped)  # none apply and none are visible

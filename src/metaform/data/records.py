@@ -351,7 +351,9 @@ class Where(Record):
     relies on it, every join where it is the provider with the subtype joins each holds; `receives`, what it relies on,
     every join it receives with the subtype joins each holds; the subtype join holding it and the join that sits in,
     MAP-031, kind `subtype` when it is held only; its open work records, STORE-042; and what the layers in context hold
-    at it, as `node` gives them. `to_dict()` leaves ids and empty fields out unless `full`."""
+    at it, as `node` gives them; and the properties that apply at its address and those visible there, as `context`
+    gives them, LAYER-005, so one read holds what reaches the part. `to_dict()` leaves ids and empty fields out unless
+    `full`."""
     kind: str
     element: Element | None = None
     subtype: Subtype | None = None
@@ -361,13 +363,16 @@ class Where(Record):
     work: tuple[WorkRecord, ...] = ()
     layers: tuple[LayerGroup, ...] = ()
     full: bool = False
+    applying: tuple[Property, ...] = ()
+    visible: tuple[Property, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
         if self.full:
             return {'kind': self.kind, 'element': plain(self.element), 'provides': plain(self.provides),
                     'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
-                    'layers': plain(self.layers)}
+                    'layers': plain(self.layers),
+                    'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)}}
         data: dict[str, Any] = {'kind': self.kind, 'element': small(plain(self.element))}
         if self.provides:
             data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
@@ -381,6 +386,10 @@ class Where(Record):
                                   for record in self.work])
         if self.layers:
             data['layers'] = small(plain(self.layers))
+        reaching = {name: [{'value': one.value, 'address': one.address, 'layer': one.layer} for one in found]
+                    for name, found in (('applying', self.applying), ('visible', self.visible)) if found}
+        if reaching:
+            data['properties'] = reaching
         return data
 
     @staticmethod
