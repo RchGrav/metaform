@@ -156,7 +156,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.work-question,.map2d .cluster.work-question,.map2d path.work-question{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
 .map2d .node.work-question rect,.map2d .cluster.work-question rect{stroke:var(--question)!important;stroke-width:2px}
 @media (prefers-reduced-motion: reduce){.map2d .work-question{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}
-#messages{position:absolute;left:14px;top:12px;height:var(--ctl-sm);background:color-mix(in srgb,var(--question) 18%,var(--panel-2));border:1px solid var(--question);border-radius:var(--r);padding:0 10px;cursor:pointer;font:600 12px var(--sans);color:var(--text);box-shadow:0 0 14px color-mix(in srgb,var(--question) 55%,transparent)}
+#messages{height:var(--ctl-sm);background:color-mix(in srgb,var(--question) 18%,var(--panel-2));border:1px solid var(--question);border-radius:var(--r);padding:0 10px;cursor:pointer;font:600 12px var(--sans);color:var(--text);box-shadow:0 0 14px color-mix(in srgb,var(--question) 55%,transparent)}
 #messages[hidden]{display:none}
 .item.work .asked{font-weight:600}
 .item.work .choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -174,7 +174,8 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .small{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);overflow:hidden;flex:none}
 #big3d{position:absolute;inset:0;background:var(--ground)}
 .map2d{position:absolute;inset:0;background:var(--ground);overflow:hidden}
-.small #big3d .legend,.small #big3d .count,.small #big3d .hint,.small #big3d .stagebtns{display:none}
+.small #big3d .legend,.small #big3d .count,.small #big3d .hint,.small #big3d #pauseBtn,.small #big3d #relayoutBtn{display:none}
+.small #big3d .stagebtns{top:8px;right:8px}
 .map2d .viewport{position:absolute;left:0;right:0;bottom:0;top:34px}
 .map2d svg{position:absolute;inset:0;width:100%;height:100%;max-width:none!important;cursor:grab}
 .map2d:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}

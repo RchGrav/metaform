@@ -237,6 +237,8 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   look: id => look(id), fit: () => fit2D(),
+  away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
+  zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
     if (!G) return;
     Object.assign(GLASS, options);
@@ -982,6 +984,7 @@ async function swap(on) {
   (on ? $('main') : $('#small')).append($('#map2d'));
   (on ? $('#small') : $('main')).append($('#big3d'));
   $('#swapBtn').title = on ? 'Put the 3D map back in the large area' : 'Put this map in the large area, and the 3D map here';
+  $('#swap3dBtn').title = on ? 'Put this map back in the large area' : 'Put this map in the small area, and the 2D map here';
   try { localStorage.setItem('metaform.swapped', on ? '1' : ''); } catch (error) { /* storage can be blocked; the swap still shows */ }
   resize();
   if (G) setTimeout(() => G.zoomToFit(reduced() ? 0 : 600, on ? 24 : 60), 50);  // the whole 3D map in its new area
@@ -989,7 +992,8 @@ async function swap(on) {
   await build2D();
   if (S.selected) select(S.selected, false, true);
 }
-$('#swapBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
+$('#swapBtn').onclick = $('#swap3dBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
+$('#fit3dBtn').onclick = () => { if (G) G.zoomToFit(reduced() ? 0 : 700, 60); };
 try { if (localStorage.getItem('metaform.swapped')) swap(true); } catch (error) { /* storage can be blocked */ }
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
 addEventListener('resize', resize);

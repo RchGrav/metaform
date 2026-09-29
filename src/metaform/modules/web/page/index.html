@@ -19,6 +19,7 @@
       <label for="mf">metaform</label>
       <select id="mf"></select>
     </div>
+    <button id="messages" hidden title="Go to the oldest open question"></button>
     <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
     <div class="clearpick">
       <button class="clearbtn" id="clearBtn" aria-expanded="false" aria-controls="clearbox" title="Remove this project's metaforms and reports; it says what goes and what stays, and asks first">Clear project</button>
@@ -86,9 +87,8 @@
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
     <div id="labels3d" aria-hidden="true"></div>
     <div class="tip3d" id="tip3d" hidden></div>
-    <button id="messages" hidden title="Go to the oldest open question"></button>
     <div class="hint">drag to orbit · scroll to zoom · click a node</div>
-    <div class="stagebtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button></div>
+    <div class="stagebtns"><button id="pauseBtn" data-paused="false">Pause layout</button><button id="relayoutBtn">Re-run layout</button><button id="fit3dBtn" title="The whole map in view">Fit</button><button id="swap3dBtn" title="Put this map in the small area, and the 2D map here">Swap</button></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
     </div>

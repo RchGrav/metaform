@@ -2627,3 +2627,34 @@ def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_unde
     assert Store('proj').work(Node('element', 'exterior.cook'), 'question', False).results[0].resolution \
         == 'The person who is cooking.'
     assert first.work_id != second.work_id and problems == []
+
+
+@pytest.mark.req('VIEW-028')
+@pytest.mark.req('VIEW-021')
+def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_top(run, web, mapped, browser):
+    """Rich, 2026-09-29: both views get a Fit button and a Swap button, and the messages box goes to the top of the
+    screen."""
+    from metaform.data import Node, Store
+    Store('proj').add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    seen = lambda: [page.is_visible(name) for name in ('#fitBtn', '#swapBtn', '#fit3dBtn', '#swap3dBtn')]
+    larger = lambda: page.evaluate("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
+        return box.width * box.height; }; return area('#map2d') > area('#stage') ? '2d' : '3d'; }""")
+    assert seen() == [True] * 4 and larger() == '3d'
+    assert page.evaluate('Boolean(document.querySelector("#messages").closest("header"))') and page.is_visible('#messages')
+    page.click('#swap3dBtn')                                          # the 3D view's own Swap
+    page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
+        return box.width * box.height; }; return area('#map2d') > area('#stage'); }""")
+    assert seen() == [True] * 4 and larger() == '2d'                  # each still has both, in either place
+    page.evaluate('window.metaform.zoom3d(0.2)')                      # far in, so the whole map is no longer in view
+    page.wait_for_timeout(300)
+    near = page.evaluate('window.metaform.away3d()')
+    page.click('#fit3dBtn')
+    page.wait_for_function(f'() => window.metaform.away3d() > {near} * 1.5', timeout=5000)
+    page.click('#swapBtn')                                            # and the 2D view's own
+    page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
+        return box.width * box.height; }; return area('#stage') > area('#map2d'); }""")
+    page.evaluate("try { localStorage.removeItem('metaform.swapped') } catch (error) {}")
+    assert problems == []
