@@ -2053,6 +2053,7 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
               'files': sorted(path.name for path in mapped.iterdir())}
     heard, first = events_on(web)
     status, answer = clear(web, confirm=True)
+    assert answer.pop('backup') and answer.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert status == 200 and answer == {
         'project': 'proj', 'metaforms': ['main', 'fresh'], 'reports': 1,
         'said': ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
@@ -2089,7 +2090,9 @@ def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_
     assert answer['notices'] == [{'where': 'not_removed', 'message': LEFT}]
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
     assert not (home / 'projects' / 'proj' / 'metaforms').exists()
-    assert clear(web, confirm=True) == (200, {
+    status, again = clear(web, confirm=True)
+    assert again.pop('backup') and again.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    assert (status, again) == (200, {
         'project': 'proj', 'metaforms': [], 'reports': 1,
         'said': ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins and '
                  'variants stay.')})
@@ -2138,19 +2141,26 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
     other, other_problems, _ = opened(browser, web)
     for shown in (page, other):
         shown.wait_for_function('() => window.metaform.loaded()')
-    assert page.inner_text('header #clearBtn') == 'Clear project'
+    assert page.inner_text('header #adminBtn') == 'Administration' and page.is_hidden('#clearBtn')  # VIEW-019
+    page.click('#adminBtn')
+    assert page.inner_text('#adminbox #clearBtn') == 'Clear project'
+    page.keyboard.press('Escape')
+    assert page.is_hidden('#adminbox')
     other.click('#t-corr')  # a tab left open is redrawn by the push, not only when clicked again
     other.wait_for_selector('#p-corr .lyr.top')
     before = kept(home)
+    page.click('#adminBtn')
     page.click('#clearBtn')
     page.wait_for_selector('#clearbox .warn')
     assert caution in page.inner_text('#clearbox')
     page.keyboard.press('Escape')
     assert page.is_hidden('#clearbox')
+    page.click('#adminBtn')
     page.click('#clearBtn')
     page.click('#clearbox button.keep')
     assert page.is_hidden('#clearbox')
     assert kept(home) == before and metaform_names(run, mapped) == ['main']
+    page.click('#adminBtn')
     page.click('#clearBtn')
     page.click('#clearbox button.confirm')
     page.wait_for_selector('#clearbox .said')
@@ -2189,6 +2199,7 @@ def test_the_page_names_what_the_clear_could_not_remove_with_its_reason_and_what
     (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
     started(run)
     page, problems, _ = opened(browser, web)
+    page.click('#adminBtn')
     page.click('#clearBtn')
     page.wait_for_selector('#clearbox button.confirm')
     with unremovable(stuck):
@@ -3060,3 +3071,43 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
 def Node_of(address):
     from metaform.data import Node
     return Node('element', address)
+
+
+@pytest.mark.req('VIEW-019')
+@pytest.mark.req('PROJ-030')
+def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backup_is_restored_from_the_page(
+        run, home, web, mapped, browser):
+    """Rich, 2026-09-29: the clear is in an administration menu, says are you sure, backs the project up, allows
+    restoration easily and tells the user."""
+    from metaform.data import Store
+    started(run)
+    before = sorted(entry['element']['address'] for entry in keys_of(web)[0]['elements'])
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#adminBtn')
+    page.wait_for_timeout(500)
+    assert page.is_disabled('#restoreBtn')                            # there is no backup yet
+    page.click('#clearBtn')
+    page.wait_for_selector('#clearbox .warn')
+    asked = page.inner_text('#clearbox')
+    assert asked.startswith('Are you sure?') and 'It is backed up first' in asked
+    page.click('#clearbox button.confirm')
+    page.wait_for_selector('#clearbox .said')
+    told = page.inner_text('#clearbox')
+    (kept,) = [path.name for path in (home / 'backups' / 'clear' / 'proj').iterdir()]
+    assert f'Backed up as {kept}.' in told
+    page.wait_for_function('() => document.querySelector("#count").textContent.includes("no metaform yet")')
+    page.click('#clearbox button.restore')                            # it is brought back from where it was cleared
+    page.wait_for_selector('#clearbox .restored')
+    assert page.inner_text('#clearbox .restored').startswith(f'Restored proj from {kept}: ')
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.graph().nodes.length > 0')
+    assert sorted(entry['element']['address'] for entry in keys_of(web)[0]['elements']) == before
+    assert Store('proj').element('code.timer.kitchen') is not None
+    page.click('#clearbox button.keep')
+    page.click('#adminBtn')                                           # and from the menu, where the backups are listed
+    page.wait_for_selector('#restoreBtn:not([disabled])')            # the page has looked for backups
+    page.click('#restoreBtn')
+    page.wait_for_selector('#clearbox .backups button')
+    listed = page.locator('#clearbox .backups li').all_inner_texts()
+    assert len(listed) == 1 and listed[0].startswith(kept)
+    assert problems == []

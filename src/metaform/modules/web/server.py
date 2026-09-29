@@ -153,6 +153,8 @@ class Handler(BaseHTTPRequestHandler):
                                                 for found in home.projects()]})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
+        if url.path == '/api/backups':
+            return self.backups(query.get('project', [''])[-1])
         if url.path == '/api/markdown':
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/'):
@@ -235,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the eight writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the nine writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -244,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
-                  '/api/element': self.add_part}
+                  '/api/element': self.add_part, '/api/restore': self.restore}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -400,6 +402,23 @@ class Handler(BaseHTTPRequestHandler):
             if told:
                 notices.append({'where': 'agent', 'message': told})
         self.send(200, {'element': plain(made), 'join': plain(joined), 'work': plain(work), 'notices': notices})
+
+    def backups(self, project: str) -> None:
+        """The project's backups, the newest first, PROJ-030."""
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        self.send(200, {'results': [kept.to_dict() for kept in home.backups(project)]})
+
+    def restore(self, given: dict[str, Any]) -> None:
+        """Bring a backup back through the chassis's `restore_project`, as `metaform restore project` does."""
+        project, backup = str(given.get('project', '')), given.get('backup')
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        try:
+            restored = home.restore_project(project, backup if isinstance(backup, str) and backup else None)
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, restored.to_dict())
 
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and

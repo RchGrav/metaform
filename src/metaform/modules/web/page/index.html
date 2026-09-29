@@ -23,7 +23,11 @@
     <button id="messages" hidden title="Go to the oldest open question"></button>
     <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
     <div class="clearpick">
-      <button class="clearbtn" id="clearBtn" aria-expanded="false" aria-controls="clearbox" title="Remove this project's metaforms and reports; it says what goes and what stays, and asks first">Clear project</button>
+      <button class="clearbtn" id="adminBtn" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration</button>
+      <div class="adminbox" id="adminbox" hidden role="menu">
+        <button id="clearBtn" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
+        <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
+      </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
     </div>
     <div class="themepick">

@@ -114,11 +114,47 @@ $('#layersBtn').onclick = event => { event.stopPropagation(); showLayers($('#lay
 document.addEventListener('click', event => {
   if (!$('#layerlist').hidden && !event.target.closest('.layerpick')) showLayers(false);
   if (!$('#clearbox').hidden && !event.target.closest('.clearpick')) showClear(false);
+  if (!$('#adminbox').hidden && !event.target.closest('.clearpick')) showAdmin(false);
 });
 
 /* ---------- clearing the project: what goes and what stays, asked on the page, VIEW-019 ----------
  * The warning is the command's own caution and the clear is the command's own operation, PROJ-025; every open page,
  * this one among them, follows it by the push, VIEW-018. */
+/* The Administration menu, VIEW-019: acts on the project as a whole, reached on purpose. */
+function showAdmin(open) {
+  $('#adminbox').hidden = !open;
+  $('#adminBtn').setAttribute('aria-expanded', String(open));
+}
+$('#adminBtn').onclick = async event => {
+  event.stopPropagation();
+  showClear(false);
+  if (!$('#adminbox').hidden) return showAdmin(false);
+  showAdmin(true);
+  try { $('#restoreBtn').disabled = !(await getJson(`/api/backups?project=${encodeURIComponent(S.project)}`)).results.length; }
+  catch (error) { $('#restoreBtn').disabled = true; }
+};
+async function restoreFrom(project, backup) {
+  const response = await fetch('/api/restore', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project, backup})});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) return toast(body.error || 'The backup was not restored.');
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'restored'}, body.said),
+    body.held_before ? h('span', {class: 'next'}, `What the project held was backed up as ${body.held_before}.`) : null,
+    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+}
+$('#restoreBtn').onclick = async event => {
+  event.stopPropagation();
+  showAdmin(false);
+  let found;
+  try { found = (await getJson(`/api/backups?project=${encodeURIComponent(S.project)}`)).results; }
+  catch (error) { return toast(error.message); }
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, `Restore ${S.project} from a backup`),
+    h('span', {}, 'What the project holds now is backed up first, so nothing is lost.'),
+    h('ul', {class: 'backups'}, found.map(kept => h('li', {}, h('span', {}, kept.name), ` ${kept.held} `,
+      h('button', {class: 'btn', onclick: () => restoreFrom(S.project, kept.name)}, 'Restore')))),
+    h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
+  showClear(true);
+};
 function showClear(open) {
   $('#clearbox').hidden = !open;
   $('#clearBtn').setAttribute('aria-expanded', String(open));
@@ -137,11 +173,12 @@ $('#exportBtn').onclick = async () => {
 };
 $('#clearBtn').onclick = async event => {
   event.stopPropagation();
-  if (!$('#clearbox').hidden) return showClear(false);
+  showAdmin(false);
   let found;
   try { found = await getJson(`/api/clear-preview?project=${encodeURIComponent(S.project)}`); }
   catch (error) { return toast(error.message); }
-  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, `Clear ${found.project}?`), h('span', {}, found.caution),
+  fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
+    h('span', {class: 'backed'}, 'It is backed up first, and you can bring it back from here or from this menu.'),
     h('div', {class: 'toolbar'},
       h('button', {class: 'btn danger confirm', onclick: () => clearProject(found.project)}, 'Clear it'),
       h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
@@ -154,6 +191,8 @@ async function clearProject(project) {
   if (!response.ok) { showClear(false); return toast(body.error || 'The project was not cleared.'); }
   const left = body.not_removed || [];
   fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'said'}, body.said),
+    body.backup ? [h('span', {class: 'backed'}, `Backed up as ${body.backup}.`),
+      h('button', {class: 'btn restore', onclick: () => restoreFrom(project, body.backup)}, 'Restore it')] : null,
     left.length ? [h('b', {}, 'Not removed, still on disk:'),
       h('ul', {class: 'left'}, left.map(item => h('li', {}, `${item.path}: ${item.reason}`)))] : null,
     (body.notices || []).map(notice => h('span', {class: 'next'}, notice.message)),
@@ -1609,7 +1648,8 @@ function backOut() {
 }
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !$('#layerlist').hidden) { event.preventDefault(); showLayers(false); $('#layersBtn').focus(); return; }
-  if (event.key === 'Escape' && !$('#clearbox').hidden) { event.preventDefault(); showClear(false); $('#clearBtn').focus(); return; }
+  if (event.key === 'Escape' && !$('#adminbox').hidden) { event.preventDefault(); showAdmin(false); $('#adminBtn').focus(); return; }
+  if (event.key === 'Escape' && !$('#clearbox').hidden) { event.preventDefault(); showClear(false); $('#adminBtn').focus(); return; }
   // A key typed into a text is a letter of it and never a shortcut.
   if (event.target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]')) return;
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
