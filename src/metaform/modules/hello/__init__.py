@@ -11,8 +11,9 @@
   todo      writes a work record, the condition of this module's own element kept apart from the map, MAP-046;
             done resolves it, and the status line counts what is still to do
   beep      a verb that runs on one system only, BASE-016
-  task      hands a task out by nonce, BASE-050: the agent runs metaform <nonce> for what to do and
-            metaform <nonce> finish when it is done, which closes the nonce
+  noncedemo walks an agent through a nonce, BASE-050: run directly it issues one, run through it as
+            metaform <nonce> it does the step the nonce's value holds, or next or complete when named after it;
+            complete closes the nonce and hands on a new one
   status    a status hook that adds one line to `metaform` status
 
 The greeting history is items in a layer this module declares, attached to an
@@ -25,7 +26,7 @@ from typing import Any
 
 from metaform import nonce, settings
 from metaform.data import Node, Store
-from metaform.module import Context, Module, Noun, Status, Subscription, Verb
+from metaform.module import Context, Module, Noun, Status, Stop, Subscription, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -86,21 +87,34 @@ def beep(ctx: Context) -> str:
     return '\a'
 
 
-def task(ctx: Context) -> str:
-    return 'Run: metaform ' + nonce.request('hello', 'brief', {'name': str(ctx.nouns['name'])})
-
-
-def brief(ctx: Context) -> str:
-    held = nonce.current()
-    return f'Greet {held.value["name"]}, then run: metaform {held.nonce} finish'
-
-
-def finish(ctx: Context) -> str:
-    held = nonce.current()
-    ctx.nouns['name'] = held.value['name']
-    greet(ctx)
+def noncedemo(ctx: Context) -> str:
+    """Rich's nonce demonstration, BASE-050. Run directly, it issues a nonce whose function is this same verb. Run
+    through that nonce, it does the step named after the nonce, `next` or `complete`, or with none named the step
+    the nonce's value in the chassis holds."""
+    held = nonce.reached()
+    if held is None:
+        return f"Please run metaform {nonce.request('hello', 'noncedemo', {'step': 'hello'})}\n"
+    said = f'metaform {held.nonce}'
+    given = ctx.nouns.get('step', ())  # the words after the nonce, or one text written step=<word>
+    word = given if isinstance(given, str) else ' '.join(given)
+    if word not in ('', 'next', 'complete'):
+        raise Stop(f'The nonce demo has no step {word}.', said)
+    step = word or held.value['step']
+    if step == 'hello':
+        return f'Hello World! Now type the command again, but this time with {said} next\n'
+    if step == 'next':
+        nonce.update(held.nonce, value={'step': 'next'})
+        return (f'This is a next message for the agent. Try running {said}. You will notice you get this same '
+                f'message, because {said} is updating the db in the chassis for this nonce and using it to control '
+                f'the module. After you did the step, run {said} complete\n')
     nonce.close(held.nonce)
-    return f'{held.value["name"]} is greeted; the task is complete.'
+    if step == 'complete':
+        handed = nonce.request('hello', 'noncedemo', {'step': 'over'})
+        return ('Congratulations, now you know how nonces work. The dev can recall the nonce, update the existing '
+                'nonce, and generate new ones. So imagine it was time to pass to the main agent. The plugin could '
+                f"say: tell the main agent to run metaform {handed}. But don't really, just do it to see what will "
+                'happen.\n')
+    return 'Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.\n'
 
 
 def _own_element(store: Store) -> None:
@@ -174,9 +188,9 @@ MODULE = Module(
              examples=(('metaform hello todo "greet in every language"', 'Records a tbd work record.'),)),
         Verb('done', done, 'Mark one of those work records done, keeping its resolution.',
              nouns=(Noun('id', 'The work record id todo returned.'), Noun('resolution', 'How it was resolved.'))),
-        Verb('task', task, 'Hand out a greeting as a task, by nonce.', nouns=(Noun('name', 'The name to greet.'),)),
-        Verb('brief', brief, 'What the task reached through a nonce asks for.'),
-        Verb('finish', finish, 'Finish the task reached through a nonce, and close the nonce.'),
+        Verb('noncedemo', noncedemo, 'Walk through a nonce: issue it, update it, close it and hand on a new one.',
+             nouns=(Noun('step', 'next or complete, after the nonce.', required=False, many=True),),
+             examples=(('metaform hello noncedemo', 'Prints the nonce to run.'),)),
     ),
     subscriptions=(Subscription('hello.greeted', record),),
     status=status,

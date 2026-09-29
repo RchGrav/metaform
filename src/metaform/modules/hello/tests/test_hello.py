@@ -156,12 +156,40 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
 
 @pytest.mark.req('BASE-019')
 @pytest.mark.req('BASE-050')
-def test_a_task_is_handed_out_by_nonce_and_closed_when_it_is_finished(run, hello):
-    said = run('hello', 'task', 'ada', cwd=hello).stdout.split()
-    assert said[:2] == ['Run:', 'metaform'] and len(said) == 3
-    nonce = said[2]
-    assert run(nonce, cwd=hello).stdout.strip() == f'Greet ada, then run: metaform {nonce} finish'
-    assert 'finish' in run(nonce, 'help', cwd=hello).stdout
-    assert run(nonce, 'finish', cwd=hello).stdout.strip() == 'ada is greeted; the task is complete.'
-    assert run('hello', 'history', cwd=hello).stdout.split() == ['ada']
-    assert run(nonce, cwd=hello, ok=False).returncode == 2
+def test_noncedemo_walks_an_agent_through_a_nonce_recalled_updated_closed_and_handed_on(run, hello):
+    """Rich's flow, 2026-09-29, every message as he wrote it. noncedemo run directly issues the first nonce; run
+    through a nonce it does the step the nonce's value in the chassis says, or the step named after the nonce."""
+    import re
+
+    from metaform import nonce
+    unknown = (2, '', 'Error: Invalid or Unknown Nonce\n')
+    said = run('hello', 'noncedemo', cwd=hello).stdout
+    first = said.split()[-1]
+    assert re.fullmatch(r'[1-9][0-9]{6}', first)
+    assert said == f'Please run metaform {first}\n'
+    held = nonce.read(first)
+    assert (held.module, held.function, held.open) == ('hello', 'noncedemo', True)
+
+    assert run(first, cwd=hello).stdout == \
+        f'Hello World! Now type the command again, but this time with metaform {first} next\n'
+    step = (f'This is a next message for the agent. Try running metaform {first}. You will notice you get this same '
+            f'message, because metaform {first} is updating the db in the chassis for this nonce and using it to '
+            f'control the module. After you did the step, run metaform {first} complete\n')
+    assert run(first, 'next', cwd=hello).stdout == step
+    assert nonce.read(first).value != held.value                # the step is kept in the nonce's value
+    assert run(first, cwd=hello).stdout == step
+
+    completed = run(first, 'complete', cwd=hello).stdout
+    second = re.search(r'run metaform ([1-9][0-9]{6})\.', completed).group(1)
+    assert second != first
+    assert completed == ("Congratulations, now you know how nonces work. The dev can recall the nonce, update the "
+                         "existing nonce, and generate new ones. So imagine it was time to pass to the main agent. The "
+                         f"plugin could say: tell the main agent to run metaform {second}. But don't really, just do "
+                         "it to see what will happen.\n")
+    refused = run(first, cwd=hello, ok=False)
+    assert (refused.returncode, refused.stdout, refused.stderr) == unknown
+
+    assert run(second, cwd=hello).stdout == \
+        'Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.\n'
+    refused = run(second, cwd=hello, ok=False)
+    assert (refused.returncode, refused.stdout, refused.stderr) == unknown

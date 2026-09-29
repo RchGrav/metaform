@@ -12,11 +12,11 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable hello`. `MODULE` declares seven verbs, one subscription and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = True`, so it is off until `metaform enable hello`. `MODULE` declares eight verbs, one subscription and a status hook.
 
 ## Common base used
 
-`metaform.module` for the declaration and `Context`, `metaform.settings` for its three settings, `metaform.data` for its layer.
+`metaform.module` for the declaration and `Context`, `metaform.settings` for its three settings, `metaform.data` for its layer, `metaform.nonce` for `noncedemo`.
 
 ## Verbs
 
@@ -27,6 +27,7 @@ Started from template 0.2.0.
 - `beep`: rings the terminal bell, on Windows only.
 - `todo <task>`: writes a `tbd` work record on the module's own element, `code.module.hello`, with the task; returns the record id. Tool `hello_todo`.
 - `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `hello_done`.
+- `noncedemo`: walks an agent through a nonce, BASE-050. Run directly it requests a nonce whose function is `noncedemo` itself and prints `Please run metaform <nonce>`. Run through that nonce, `nonce.reached()` holds it, and `noncedemo` does the step the nonce's value in the chassis holds, or the step written after the nonce, `next` or `complete`. `next` updates the value, so the nonce run alone gives the same message again. `complete` closes the nonce and requests a new one, the nonce an agent would pass to the main agent. That one, run, closes itself and ends the demo; run again, it prints `Error: Invalid or Unknown Nonce`. Tool `hello_noncedemo`.
 
 ## Settings
 
@@ -78,4 +79,24 @@ metaform hello history
 metaform hello todo "greet in every language"
 metaform hello done <id> "greets in Latin now"
 metaform hello forget --confirm
+metaform hello noncedemo
+```
+
+The nonce demo, with the nonces the service issued in one run:
+
+```
+$ metaform hello noncedemo
+Please run metaform 6984268
+$ metaform 6984268
+Hello World! Now type the command again, but this time with metaform 6984268 next
+$ metaform 6984268 next
+This is a next message for the agent. Try running metaform 6984268. You will notice you get this same message, because metaform 6984268 is updating the db in the chassis for this nonce and using it to control the module. After you did the step, run metaform 6984268 complete
+$ metaform 6984268
+This is a next message for the agent. Try running metaform 6984268. You will notice you get this same message, because metaform 6984268 is updating the db in the chassis for this nonce and using it to control the module. After you did the step, run metaform 6984268 complete
+$ metaform 6984268 complete
+Congratulations, now you know how nonces work. The dev can recall the nonce, update the existing nonce, and generate new ones. So imagine it was time to pass to the main agent. The plugin could say: tell the main agent to run metaform 9772227. But don't really, just do it to see what will happen.
+$ metaform 9772227
+Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.
+$ metaform 9772227
+Error: Invalid or Unknown Nonce
 ```
