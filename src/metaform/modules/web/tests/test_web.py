@@ -689,8 +689,10 @@ def test_a_node_with_open_tbd_work_is_drawn_in_characters_a_broken_one_flashes_r
         assert shown in panel, shown
     # Its task done, pushed to the page, the alarm turns solid without a reload.
     run('map', 'work', 'op=done', f'id={tbd.work_id}', 'resolution=driver written', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === false', timeout=12000)
-    assert look('code.alarm.audible')['material'] == 'MeshPhysicalMaterial'  # glass, as every built element
+    # glass, as every built element, once the text has given way to it
+    page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").material === "MeshPhysicalMaterial"',
+                           timeout=12000)
+    assert look('code.alarm.audible')['text3d'] is False
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").bloom2d === false', timeout=5000)
     solid = look('code.alarm.audible')
     assert (solid['work'], solid['classes'], solid['opacity2d']) == ([], [], 1)
@@ -758,7 +760,9 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
     assert 'work: in-progress' in page.inner_text('#legend')
     run('map', 'work', 'op=done', f'id={working.work_id}', 'resolution=built', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").text3d === false', timeout=12000)
+    page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").material === "MeshPhysicalMaterial"',
+                           timeout=12000)
+    assert page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}").text3d') is False
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").classes.length === 0', timeout=5000)
     assert waiting.work_id and problems == []
 

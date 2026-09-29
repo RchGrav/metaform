@@ -940,7 +940,8 @@ function labels() {
       tag.style.left = point.x + 'px';
       tag.style.top = point.y + 'px';
       tag.className = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
-        ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '']
+        ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '',
+        node.__threeObj?.userData.written ? 'text' : '']
         .filter(Boolean).join(' ');
     }
     placeTip();
