@@ -218,14 +218,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the four writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the five writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
-                  '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project}
+                  '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
+                  '/api/answer': self.answer_question}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -287,6 +288,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
         found = home.to_clear(project)
         self.send(200, {**found.to_dict(), 'caution': found.caution})
+
+    def answer_question(self, given: dict[str, Any]) -> None:
+        """Write the user's answer beside the question, which closes it, MAP-050 and VIEW-021. Only a question is
+        answered from the page; any other work record is left as it is."""
+        record, answer = str(given.get('id', '')), given.get('answer')
+        if not isinstance(answer, str) or not answer.strip():
+            return self.send(400, {'error': 'An answer says something.'})
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                asked = [found for found in store.work(None, 'question', True, limit=0).results
+                         if found.work_id == record]
+                if not asked:
+                    return self.send(400, {'error': 'This is not an open question.'})
+                done = store.finish_work(record, answer.strip())
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, plain(done))
 
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and

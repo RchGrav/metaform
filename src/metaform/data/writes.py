@@ -650,7 +650,7 @@ def _condition(value: Any, notices: list[Notice]) -> str:
     if value is None:
         notices.append(Notice('condition', 'condition is missing; stored empty.'))
         return ''
-    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress or fixing; it was stored '
+    notices.append(Notice('condition', f'{value!r} is not tbd, broken, cruft, in-progress, fixing or question; it was stored '
                                        'as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 

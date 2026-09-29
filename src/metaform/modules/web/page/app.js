@@ -284,7 +284,7 @@ function look(id) {
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft'];
+const CONDITIONS = ['tbd', 'in-progress', 'broken', 'fixing', 'cruft', 'question'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
   if (node.t === 'el') return has(node, 'cruft') ? css('--cruft') : node.role === 'VE' ? css('--signal')
@@ -554,8 +554,10 @@ function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material) return;
   const broken = has(node, 'broken'), cruft = has(node, 'cruft'), fixing = has(node, 'fixing');
-  const strength = has(node, 'in-progress') || fixing ? pulse() : has(node, 'tbd') ? 1 : 0;
-  bloom3d(object, strength, fixing ? css('--broken') : ownColor(node));  // at full strength when the node is dimmed too
+  // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
+  const asked = has(node, 'question');
+  const strength = asked || has(node, 'in-progress') || fixing ? pulse() : has(node, 'tbd') ? 1 : 0;
+  bloom3d(object, strength, asked ? css('--question') : fixing ? css('--broken') : ownColor(node));  // at full strength when the node is dimmed too
   if (R.nodes.has(node.id) || (!broken && !cruft && !fixing)) return;
   if (!object.material.userData.own) {
     object.material = object.material.clone();
@@ -724,7 +726,7 @@ function renderLegend() {
   for (const condition of CONDITIONS) if (open.has(condition))
     legend.append(h('span', {style: {'--c': condition === 'tbd' || condition === 'in-progress' ? 'var(--text)'
       : `var(--${condition === 'fixing' ? 'broken' : condition})`}},
-      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse'}[condition] || 'dot'}),
+      h('i', {class: {tbd: 'dot bloom', 'in-progress': 'dot bloom pulse', fixing: 'dot bloom pulse', question: 'dot bloom pulse'}[condition] || 'dot'}),
       `work: ${condition}`));
   const shown = G ? G.graphData().nodes.length : 0;
   $('#count').textContent = noMetaform() ? 'no metaform yet'
@@ -1295,6 +1297,34 @@ function refsOf(refs) {
 /* The work records of the selected object, MAP-046: each with its condition, note and task, held and reviewed,
  * and its resolution once done; read from /api/work for the node and written into the panel's work box. */
 function workPill(condition) { return h('span', {class: `pill work-${condition}`}, condition); }
+/* A question at the node, MAP-050 and VIEW-021: open, it takes the answer here; answered, the answer stays beside it. */
+function asked(record) {
+  const answer = h('textarea', {class: 'answer', placeholder: 'Your answer'});
+  const send = h('button', {class: 'answer', onclick: async () => {
+    if (!answer.value.trim()) return;
+    send.disabled = true;
+    const response = await fetch('/api/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project: S.project, metaform: S.metaform, id: record.work_id, answer: answer.value})});
+    const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+    if (!response.ok) { send.disabled = false; toast(body.error || 'The answer was not written.'); }
+  }}, 'Answer');
+  return h('div', {class: 'item work'},
+    h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.done ? 'answered' : 'open')),
+    h('p', {class: 'asked'}, record.note || ''),
+    record.done ? h('p', {class: 'obs'}, `Answer: ${record.resolution || ''}`) : [answer, send]);
+}
+/* The Messages button, VIEW-021: shown while any question is open, with their count; a click flies to the node of
+ * the oldest and opens its panel. */
+const Q = {open: []};
+const nodeOf = record => record.kind === 'element' ? record.id : joinOf('p:' + record.id) ? 'p:' + record.id : 's:' + record.id;
+async function renderMessages() {
+  try { Q.open = noMetaform() ? [] : (await read('work', {condition: 'question', open: true, limit: 0})).results; }
+  catch (error) { Q.open = []; toast(error.message); }
+  const button = $('#messages');
+  button.hidden = !Q.open.length;
+  button.textContent = `Messages ${Q.open.length}`;
+  button.onclick = () => { if (Q.open.length) select(nodeOf(Q.open[0]), true); };
+}
 async function renderWork(target, key, also = null) {
   let records = [];
   try {
@@ -1303,7 +1333,8 @@ async function renderWork(target, key, also = null) {
   } catch (error) { toast(error.message); }
   const box = $('#work');
   if (!box || S.selected !== key || !records.length) return;
-  fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => h('div', {class: 'item work'},
+  fill(box, h('div', {class: 'eyebrow'}, 'Work'), records.map(record => record.condition === 'question' ? asked(record)
+    : h('div', {class: 'item work'},
     h('div', {class: 'pills'}, workPill(record.condition), h('span', {class: 'pill'}, record.done ? 'done' : 'open'),
       record.held ? h('span', {class: 'pill'}, 'held') : null, record.reviewed ? h('span', {class: 'pill'}, 'reviewed') : null),
     record.note ? h('p', {}, record.note) : null,
@@ -1700,6 +1731,7 @@ async function loadGraph() {
   S.loading = 0;
   draw3D();
   renderLegend();
+  renderMessages();
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id

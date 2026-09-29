@@ -460,10 +460,10 @@ These terms are used exactly as defined in the Canonical Intake.
 - What this means: The question is attached where it applies, as a work record is. It stays open until the user answers it, and the answer is kept beside it. The web GUI shows every open question on the map, VIEW-021, and answering is one of its writes, VIEW-011. A critic's questions to the user show the same way.
 - Why: The agent does not stop the work for an answer it does not need yet, and the question sits where a person looking at the map sees what it concerns; the answer stays at the node for the next agent that works there.
 - How it shows: An agent asks at an element whether a function is still wanted and goes on with its other work; the element glows on the map until the user answers.
-- Build: Open, D92: what holds a question and its answer.
-- Acceptance: Open with D92.
+- Build: A question is a work record with the condition `question`, MAP-046 and STORE-042: its note is the question, its resolution is the answer, and it is open until it is answered. So a question needs no table of its own and is asked, listed and read with the commands an agent already has: `metaform map work op=add node=element:<address> condition=question note="..."` asks, and `metaform map work condition=question open=true` lists what waits. The web GUI writes the answer, VIEW-011. The rest of D92, tasks, the queue and past work, is still open.
+- Acceptance: A work record added with the condition `question` is stored with no notice. An answer written from the page is kept as the record's resolution and closes it, and the question is no longer among the open ones. A record of another condition is not answered from the page.
 - Relates to: MAP-046, VIEW-011, VIEW-021.
-- Status: confirmed as design, 2026-09-26 and 2026-09-27. Its records are open, D92.
+- Status: confirmed as design, 2026-09-26 and 2026-09-27. Built 2026-09-28 as a work record, which is recommended and built so until D92 is answered; the question is asked of Rich at `code.channel.question` on this project's map.
 
 ### MAP-051 A completed task is kept as past work at its node
 

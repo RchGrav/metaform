@@ -511,7 +511,8 @@ WORK_NOUNS = (
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
-                       'broken; or cruft, surpassed code left in the codebase, never a document, a note, an example or data.'),
+                       'broken; cruft, surpassed code left in the codebase, never a document, a note, an example or data; '
+                       'or question, a question for the user, asked in the note and answered in the web GUI.'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
@@ -601,7 +602,10 @@ MODULE = Module(
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=tbd task="build it"',
                         'Record that the alarm is in the specs and not built yet.'),
-                       ('metaform map work condition=broken open=true', 'List the open broken records.'))),
+                       ('metaform map work condition=broken open=true', 'List the open broken records.'),
+                       ('metaform map work op=add node=element:code.alarm.audible condition=question '
+                        'note="Is the quiet tone still wanted?"',
+                        'Ask the user at the alarm, and carry on with what does not depend on the answer.'))),
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '

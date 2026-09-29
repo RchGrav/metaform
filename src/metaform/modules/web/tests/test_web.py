@@ -2391,3 +2391,73 @@ def test_every_link_of_the_3d_map_is_a_straight_line(run, web, mapped, browser):
     assert curves and {link['k'] for link in curves} >= {'purpose', 'encounter', 'tree'}
     assert [link for link in curves if link['curve'] != 0] == []
     assert problems == []
+
+
+def answered(port, record, answer, project='proj'):
+    return api(port, '/api/answer', method='POST', body=json.dumps({'project': project, 'id': record, 'answer': answer}),
+               headers=own_write(port))
+
+
+@pytest.mark.req('MAP-050')
+@pytest.mark.req('VIEW-011')
+def test_an_answer_written_from_the_page_is_kept_beside_the_question_and_closes_it(run, web, mapped):
+    """The question sits at the node it concerns, as a work record does; the answer is kept beside it, so the agent
+    that asked, or the next one there, finds it at the node."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    asked = store.add_work(Node('element', 'code.timer.kitchen'), 'question', note='Is the 1 Hz tick still wanted?')
+    assert asked.notices == () and asked.condition == 'question'
+    started(run)
+    status, body = answered(web, asked.work_id, 'Yes, keep it.')
+    assert status == 200 and body['resolution'] == 'Yes, keep it.' and body['done']
+    kept = Store('proj').work(Node('element', 'code.timer.kitchen'), 'question', False).results
+    assert [(record.note, record.resolution) for record in kept] == [('Is the 1 Hz tick still wanted?', 'Yes, keep it.')]
+    assert Store('proj').work(None, 'question', True).results == ()
+    # only a question is answered from the page; any other record is left as it is
+    other = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'tbd', task='build it')
+    status, body = answered(web, other.work_id, 'done')
+    assert status == 400 and Store('proj').work(None, 'tbd', True).results[0].done is None
+    assert answered(web, asked.work_id, '   ')[0] == 400  # an answer says something
+
+
+@pytest.mark.req('VIEW-021')
+@pytest.mark.req('MAP-050')
+def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_where_it_is_answered(
+        run, web, mapped, browser):
+    from metaform.data import Node, Store
+    store = Store('proj')
+    # the alarm and the cook carry no record in the fixture; the kitchen carries a broken one
+    first = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?')
+    store.add_work(Node('element', 'exterior.cook'), 'question', note='Who is the cook?')
+    kitchen, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    assert page.is_hidden('#messages') is False and page.inner_text('#messages').strip() == 'Messages 2'
+    for node in (kitchen, cook):
+        seen = page.evaluate(f'window.metaform.look("{node}")')
+        assert (seen['work'], seen['classes'], seen['animated2d']) == (['question'], ['work-question'], True)
+        page.wait_for_function(f'() => window.metaform.look("{node}").glow3d > 0', timeout=3000)
+    assert 'work: question' in page.inner_text('#legend')
+    page.click('#messages')  # the oldest first
+    page.wait_for_function(f'() => window.metaform.selected() === "{kitchen}"')
+    page.wait_for_selector('#work textarea.answer')
+    assert 'Is the quiet tone still wanted?' in page.inner_text('#work')
+    page.fill('#work textarea.answer', 'Yes, keep it.')
+    page.click('#work button.answer')
+    page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
+    page.wait_for_function(f'() => window.metaform.look("{kitchen}").work.length === 0 '
+                           f'&& window.metaform.look("{kitchen}").glow3d === 0')
+    assert Store('proj').work(None, 'question', False).results[0].resolution == 'Yes, keep it.'
+    assert Store('proj').work(None, 'question', False).results[0].work_id == first.work_id
+    # the answer stays at the node; the panel is drawn again once the page has read the change
+    page.wait_for_function('() => document.querySelector("#work").innerText.includes("Answer: Yes, keep it.")',
+                           timeout=5000)
+    page.click('#messages')
+    page.wait_for_function(f'() => window.metaform.selected() === "{cook}"')
+    page.wait_for_selector('#work textarea.answer')
+    page.fill('#work textarea.answer', 'Whoever sets the timer.')
+    page.click('#work button.answer')
+    page.wait_for_function('() => document.querySelector("#messages").hidden')
+    assert problems == []
+
