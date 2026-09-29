@@ -34,14 +34,6 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-# What follows the intake when it is served: how its tools are used, and nothing about the work. The intake is the
-# procedure. Which tool records it, how it is called and which command comes first are facts of this program, which
-# the intake cannot know and the agent cannot guess.
-USING = ('The intake is recorded with the intake tool. Over MCP, call the tool intake with command and arguments; called '
-         'with no command it lists its commands and what each takes. On the command line the same commands are '
-         'metaform intake <command>. Begin with start. Record each element with element, each join with join, and each '
-         'subtype join with subtype. Read back what is recorded with show, change it with edit and remove, place a '
-         'join inside its parent with absorb, and end with finish.\n')
 NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
           'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
@@ -64,8 +56,8 @@ def _fill(tag: str, name: str, value: str) -> str:
 
 
 def served(ctx: Context) -> str:
-    """The intake text exactly as stored, with its target filled, then how its tools are used, BASE-039. The intake
-    is the procedure, and nothing about the work is added to it."""
+    """The intake text exactly as stored, with its target filled, and nothing beside it, BASE-039: the intake is
+    the instruction, and what is added to it competes with it."""
     store = ctx.require_store()
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
@@ -79,7 +71,7 @@ def served(ctx: Context) -> str:
         tag = _fill(_fill(match.group(0), 'type', record.target_type), 'value', record.target_value)
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
-    return text + ('\n' if text.endswith('\n') else '\n\n') + USING
+    return text
 
 
 def prompt(ctx: Context) -> str:

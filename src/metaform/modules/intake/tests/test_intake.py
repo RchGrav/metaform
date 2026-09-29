@@ -17,11 +17,6 @@ ROOT = Path(__file__).parents[5]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 RESOURCE = Path(__file__).parents[1] / 'resources' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-USING = ('The intake is recorded with the intake tool. Over MCP, call the tool intake with command and arguments; called '
-         'with no command it lists its commands and what each takes. On the command line the same commands are '
-         'metaform intake <command>. Begin with start. Record each element with element, each join with join, and each '
-         'subtype join with subtype. Read back what is recorded with show, change it with edit and remove, place a '
-         'join inside its parent with absorb, and end with finish.\n')
 NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
           'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 
@@ -121,7 +116,7 @@ def test_prompt_serves_the_intake_with_only_its_target_filled(run, project):
     served, _, tail = out.partition('</process>\n')
     stored = SPEC.read_text(encoding='utf-8')
     assert without_target(served + '</process>\n') == without_target(stored)
-    assert tail == '\n' + USING  # after the intake, how its tools are used, and no word about the work itself
+    assert tail == ''  # the intake is the instruction, and nothing is served beside it
     target = re.search(r'<target [^>]*>', served).group(0)
     assert 'type="path"' in target and f'value="{str(project).replace("&", "&amp;")}"' in target
 
@@ -137,22 +132,7 @@ def test_no_setting_adds_an_instruction_to_the_intake(run, project):
     assert run('intake', 'prompt', cwd=project).stdout == plain
     run('set', '--no-debug', '--report', cwd=project)
     assert run('intake', 'prompt', cwd=project).stdout == plain
-    body, _, tail = plain.partition('</process>\n')
-    assert without_target(body + '</process>\n') == without_target(SPEC.read_text(encoding='utf-8'))
-    assert tail == '\n' + USING
-    # it says how the tools are used, and gives no rule for the work, asks for no report and sets no stop rule
-    for word in ('memories', 'report', 'feedback', 'retry', 'Do not'):
-        assert word not in tail, word
-
-
-@pytest.mark.req('BASE-039')
-def test_the_intake_tool_names_every_command_the_served_text_tells_the_agent_to_use():
-    """What the served text says of the tools is true of the tools: each command it names is one the intake tool
-    has, so the agent is never sent to a command that is not there."""
-    from metaform.modules.intake import MODULE
-    have = {verb.name for verb in MODULE.verbs}
-    named = set(re.findall(r'\b(start|element|join|subtype|show|edit|remove|absorb|finish)\b', USING))
-    assert named == {'start', 'element', 'join', 'subtype', 'show', 'edit', 'remove', 'absorb', 'finish'} <= have
+    assert plain.endswith('</process>\n') and without_target(plain) == without_target(SPEC.read_text(encoding='utf-8'))
 
 
 @pytest.mark.req('CLI-034')

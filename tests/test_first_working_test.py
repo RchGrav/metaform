@@ -147,7 +147,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
-        assert footer.startswith('\nThe intake is recorded with the intake tool.')  # how its tools are used, no more
+        assert footer == ''  # nothing is served beside the intake
         stored = SPEC.read_text(encoding='utf-8')
         assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
             re.sub(r'<target [^>]*>', '<target>', stored, count=1)
