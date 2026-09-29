@@ -712,3 +712,35 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 13. NEW Which CalVer format do versions take during development? D94. (BASE-020)
 14. NEW What is the command of the install stage's front door, and what do the stage and the backstage check? D100. (BASE-047)
 15. NEW Where does Metaform's own metaform live, and how does it reach a user's home? D102. (BASE-048)
+
+### BASE-050 The chassis issues nonces, and a nonce is how an agent reaches its work
+
+- Requirement: The chassis provides a nonce service that modules import. A module requests a nonce, and the nonce's record holds the identity of the module and the function in that module to call. An agent that runs `metaform <nonce>` is given its prompt and its menu. The module updates the nonce as the work moves and closes it when the task is complete.
+- What this means:
+  - A nonce is requested by a module, never by the chassis for itself. The record is kept in the nonce table of the base store: the nonce, the module's id, the function to call, the value the chassis passes to that function, and whether the nonce is open or closed.
+  - `metaform <nonce>` prints what the module's function returns for the nonce: the agent's prompt and the commands it has. `metaform <nonce> help` lists the commands the module exposes for that nonce. `metaform <nonce> <command>` runs that command: `next`, `back`, `complete`, or whatever the module's developer made.
+  - When a command is run, the module updates the nonce through the nonce service, and the chassis holds the next command or value to send to the function.
+  - A module closes a nonce when its task is complete. A closed nonce gives no menu and runs no command, and says it is closed.
+  - A module that hands the work on requests a new nonce and gives it to the agent to pass to the main agent, which has the next agent run `metaform <nonce>`.
+- Why: An agent handed one word reaches exactly its own work: its prompt, its commands and its place in them, with no menu of anything else to read or choose wrongly from. The chassis keeps the record, so a module's developer writes the work and none of the tracking, and the work survives the end of a session because where it stands is in the store and not in a process.
+- How it shows: A module requests a nonce and prints `metaform 7f3a9c`. The agent runs it and reads its prompt. `metaform 7f3a9c help` lists `next` and `complete`. After `complete` the module closes the nonce, and `metaform 7f3a9c` says the nonce is closed.
+- Build: Open in its details. The service is `metaform.nonce`, imported by modules: request, read, update and close. The table is in the base store, BASE-004. The entry `metaform <nonce>` is taken by the command line before any command name is looked for. The form of a nonce, and what is printed for a nonce that was never issued, are not decided.
+- Acceptance: a module requests a nonce and the record names the module and its function; `metaform <nonce>` prints what that function returns; `metaform <nonce> help` lists only that module's commands for the nonce; a command run through the nonce reaches the module's function with the value the chassis holds; an update changes what the next run is sent; a closed nonce runs nothing and says so; a nonce that was never issued runs nothing and says so.
+- Relates to: BASE-003, BASE-004, BASE-046, BASE-051, CLI-037, MCP-030.
+- Status: confirmed by Rich, 2026-09-29. Records of 2026-09-25 that said nonces were dropped were wrong.
+
+### BASE-051 The workflow module orchestrates agents deterministically
+
+- Requirement: The workflow module ingests a workflow, which can be any prompt, and runs it as a chain of prompts handed from agent to agent. An ingested prompt is saved as `<prompt name>.metaform`, tagged to show each handoff and what data is passed back and accepted by the module, so the next step can be handed to the next agent.
+- What this means:
+  - An agent analyzes the prompt and splits it up. `metaform workflow import` gives that agent the instructions for tagging and importing a workflow.
+  - The tags mark the prompt where it stands. The words of the prompt are its author's and are not reworded.
+  - Each step is handed to an agent by a nonce, BASE-050. When the work of a step comes back, the module closes that nonce, requests a new one for the next step, and gives it to the agent to pass to the main agent, which has the next agent run it.
+  - The chassis starts no agent and runs no workflow, BASE-003. The host's agents do the work, and the module keeps the order.
+- Why: A prompt that names several roles and an order of work is followed loosely when one agent holds all of it, and differently on each run. Handing each step to its own agent, in the order the tags fix, makes the run the same each time, and each agent reads only its own step. Keeping the author's words keeps the prompt the thing that was written, and the tags say only where it divides.
+- How it shows: An agent runs `metaform workflow import` and reads how to tag. It tags `metaprompt.md`, and the module saves `metaprompt.metaform`. The main agent chooses the workflow and is given `metaform <nonce>` for the first agent.
+- Build: Open. The module is made from a copy of the template module, BASE-019. The tags, the form of the `.metaform` file, where it is kept, the commands of a step, and how a prompt that returns to an earlier step is tagged are not decided. What an agent sends back is stored as sent and never refused for its content, BASE-044.
+- Acceptance: Open. With the tags removed, a `.metaform` file is its prompt byte for byte.
+- Relates to: BASE-003, BASE-019, BASE-044, BASE-046, BASE-050, LAYER-017, MCP-030.
+- Status: confirmed by Rich, 2026-09-29, in its requirement; the build is open. The workflow module of the earlier runtime was removed on 2026-09-21 in error and is kept at the tag `before-dead-code-removal`; this module is made again and does not restore it.
+

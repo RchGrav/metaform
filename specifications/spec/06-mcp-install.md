@@ -142,13 +142,13 @@ It also defines the first working test, which exercises all three end to end.
 ### MCP-012 Remote hosting comes later
 
 - Requirement: The MVP serves MCP locally over stdio, with data in `~/.metaform`.
-- What this means: Remote hosting, where a server holds the data for several users over HTTP, is a later goal. Metaform has no nonces and no assignment handles: agents are given permission through the tools they have, or are prompted, and the orchestrator hands work by name, MCP-009.
-- Why: The first test and the MVP need a working local server, and remote hosting changes where the data lives. Nonces are dropped because an agent that cannot be trusted to follow its directions here cannot be trusted with the source code either; permission is the tools an agent has.
-- How it shows: `metaform mcp serve` has no transport options, and no command or tool takes a nonce.
-- Build: Nothing is built for remote hosting now. Nothing is built for nonces, ever.
+- What this means: Remote hosting, where a server holds the data for several users over HTTP, is a later goal. Work is handed to an agent by nonce, BASE-050, over the command line and over MCP alike, MCP-030.
+- Why: The first test and the MVP need a working local server, and remote hosting changes where the data lives.
+- How it shows: `metaform mcp serve` has no transport options.
+- Build: Nothing is built for remote hosting now.
 - Acceptance: None needed.
-- Relates to: MCP-009.
-- Status: confirmed.
+- Relates to: MCP-009, BASE-050, MCP-030.
+- Status: confirmed. The statement that nonces are dropped, recorded here on 2026-09-25, was wrong and was removed on 2026-09-29.
 
 ## Installer
 
@@ -414,3 +414,14 @@ It also defines the first working test, which exercises all three end to end.
 11. NEW Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? D96. (MCP-028)
 12. NEW Can a person submit work directly in the web GUI, as the explanation offered with an intake says? D92. (MCP-027)
 13. NEW What do the instructions say, word for word? (MCP-029)
+
+### MCP-030 A nonce routes an MCP call to the module that serves it
+
+- Requirement: A nonce is taken over MCP as it is on the command line, and the MCP server routes a call that carries one to the module that registered it. A module can in this way be an MCP server of its own services.
+- What this means: The agent holding a nonce gets, over MCP, the interface of the module and the step the nonce stands for, and nothing else. The module provides the JSON-RPC interface for its services, and the `mcp` module passes the call to it by the nonce's record, BASE-050.
+- Why: An agent works over whichever of the two it has, and the work it was handed is the same work. Routing by the nonce means the `mcp` module needs to know nothing of a module's services to serve them, so a module written by anyone is served like one of Metaform's own.
+- How it shows: An agent calls the `metaform` tool with its nonce and is returned what `metaform <nonce>` prints. With the nonce and a command, the command runs in the module that registered the nonce.
+- Build: Open. How a module provides its interface, by importing the chassis's data access or by another way, is not decided.
+- Acceptance: Open.
+- Relates to: BASE-050, BASE-051, CLI-037, MCP-012.
+- Status: open. The requirement is confirmed by Rich, 2026-09-29; the build is not designed.

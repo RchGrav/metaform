@@ -29,7 +29,7 @@ Every design decision goes into this spec when it is decided, in the record that
 | 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records and how it is judged, work records, tasks, the work queue, questions and past work |
 | 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge, knowledge layers built node by node, item flags, reading from the roots |
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
-| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging |
+| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, the nonce service, the workflow module |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the top menu and entering a module, the working folder, aliases, the settings screen |
 | 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
@@ -59,9 +59,8 @@ A record whose status is recommended is built as written. A record whose status 
 
 ## Out of scope for this spec
 
-- Nonces are dropped. Agents act through the tools they are given and what they are prompted to do; the orchestrator hands work by name.
 - Remote hosting of the MCP server.
-- Module specs for the rulebook, workflows and the browser terminal module, pending D44. The viewer, section 9, is in scope.
+- Module specs for the rulebook and the browser terminal module, pending D44. The workflow module is BASE-051. The viewer, section 9, is in scope.
 - Maintaining users' forks, CI and wheels at release, pending D30.
 
 ## Build order for the first working test
