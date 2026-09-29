@@ -1583,18 +1583,35 @@ function workPill(condition) { return h('span', {class: `pill work-${condition}`
 /* A question at the node, MAP-050 and VIEW-021: open, it takes the answer here; answered, the answer stays beside it. */
 function asked(record) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Your answer'});
+  const written = async text => {
+    const response = await fetch('/api/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project: S.project, metaform: S.metaform, id: record.work_id, answer: text})});
+    const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+    if (!response.ok) toast(body.error || 'The answer was not written.');
+    return response.ok;
+  };
   const send = h('button', {class: 'answer', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
-    const response = await fetch('/api/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project: S.project, metaform: S.metaform, id: record.work_id, answer: answer.value})});
-    const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
-    if (!response.ok) { send.disabled = false; toast(body.error || 'The answer was not written.'); }
+    if (!await written(answer.value)) send.disabled = false;
   }}, 'Answer');
+  // The answers the agent suggests, the one it recommends first: one click answers. Other opens the box to type in.
+  let suggested = [];
+  try { const given = JSON.parse(record.task || '[]'); if (Array.isArray(given)) suggested = given.map(String); } catch (error) { /* a task that is not a list is no suggestion */ }
+  const typed = h('div', {class: 'typed', hidden: suggested.length > 0}, answer, send);
+  const choices = suggested.length ? h('div', {class: 'choices'},
+    suggested.map((text, index) => h('button', {class: index ? 'suggestion' : 'suggestion recommended', onclick: async event => {
+      const buttons = [...event.target.parentNode.children];
+      for (const button of buttons) button.disabled = true;
+      if (!await written(text)) for (const button of buttons) button.disabled = false;
+    }}, text)),
+    h('button', {class: 'other', onclick: () => { typed.hidden = false; answer.focus(); }}, 'Other')) : null;
+  if (suggested.length) typed.replaceChildren();               // the box is put in only when Other is asked for
+  if (choices) choices.lastChild.addEventListener('click', () => typed.replaceChildren(answer, send), {once: true});
   return h('div', {class: 'item work'},
     h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.done ? 'answered' : 'open')),
     h('p', {class: 'asked'}, record.note || ''),
-    record.done ? h('p', {class: 'obs'}, `Answer: ${record.resolution || ''}`) : [answer, send]);
+    record.done ? h('p', {class: 'obs'}, `Answer: ${record.resolution || ''}`) : [choices, typed]);
 }
 /* The Messages button, VIEW-021: shown while any question is open, with their count; a click flies to the node of
  * the oldest and opens its panel. */

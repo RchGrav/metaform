@@ -159,6 +159,11 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 #messages{position:absolute;left:14px;top:12px;height:var(--ctl-sm);background:color-mix(in srgb,var(--question) 18%,var(--panel-2));border:1px solid var(--question);border-radius:var(--r);padding:0 10px;cursor:pointer;font:600 12px var(--sans);color:var(--text);box-shadow:0 0 14px color-mix(in srgb,var(--question) 55%,transparent)}
 #messages[hidden]{display:none}
 .item.work .asked{font-weight:600}
+.item.work .choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.item.work .choices button{min-height:var(--ctl-sm);background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;cursor:pointer;font:13px var(--sans);text-align:left}
+.item.work .choices button.recommended{border-color:var(--question);box-shadow:0 0 8px color-mix(in srgb,var(--question) 45%,transparent)}
+.item.work .choices button.other{color:var(--muted)}
+.item.work .typed[hidden]{display:none}
 .item.work textarea.answer{width:100%;min-height:64px;margin-top:6px;box-sizing:border-box;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:6px;font:13px var(--sans)}
 .item.work button.answer{margin-top:6px;height:var(--ctl-sm);background:var(--question);color:var(--ground);border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
 .pill.work-tbd{color:var(--tbd);background:color-mix(in srgb,var(--tbd) 14%,transparent)}

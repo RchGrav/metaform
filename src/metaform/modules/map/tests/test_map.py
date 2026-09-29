@@ -698,3 +698,15 @@ def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_i
     run('map', 'work', 'op=done', f'id={build.work_id}', 'resolution=built', cwd=mapped)
     assert j(run, 'element', 'code.alarm.audible', cwd=mapped).get('open_work', []) == []
 
+
+
+@pytest.mark.req('MAP-050')
+def test_a_question_is_asked_with_the_answers_the_agent_suggests(run, mapped):
+    """A question comes with suggestions, the one recommended first, so the user can answer with one click."""
+    asked = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=question',
+              'note=Is the quiet tone still wanted?', 'suggestions=["Yes, keep it", "No, make it louder"]', cwd=mapped)
+    assert (asked['condition'], asked['note']) == ('question', 'Is the quiet tone still wanted?')
+    assert json.loads(asked['task']) == ['Yes, keep it', 'No, make it louder'] and said(asked) == []
+    bare = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Which one?', '--json',
+               cwd=mapped)
+    assert 'suggest' in ' '.join(message for _, message in said(json.loads(bare.stdout)))  # told to suggest, never refused

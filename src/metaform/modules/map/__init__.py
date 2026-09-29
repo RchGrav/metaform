@@ -460,7 +460,7 @@ KNOWLEDGE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
-    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed'}),
+    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'suggestions'}),
     'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
     'done': frozenset({'id', 'resolution'}),
     'take': frozenset({'id'}),
@@ -494,6 +494,16 @@ def work(ctx: Context) -> Any:
         node = _work_node(nouns['node']) if 'node' in nouns else None
         return _with_notices(store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx)), notices)
     if op == 'add':
+        # A question carries the answers the agent suggests, the one it recommends first, as its task: what the
+        # question needs is one of them, MAP-050. One asked without any is stored, and the agent is told.
+        if nouns.get('condition') == 'question':
+            suggested = nouns.pop('suggestions', None)
+            if isinstance(suggested, list) and suggested:
+                nouns['task'] = json.dumps([str(one) for one in suggested], ensure_ascii=False)
+            elif 'task' not in nouns:
+                notices.append(Notice('suggestions', 'This question has no suggestions. Ask with the answers you '
+                                                     'suggest, the one you recommend first: suggestions=["...", "..."].'))
+        nouns.pop('suggestions', None)
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
@@ -513,7 +523,9 @@ WORK_NOUNS = (
     _noun('condition', 'add, edit, and list as a filter: tbd, to be done or determined, in the specs and not built yet; '
                        'broken; cruft, surpassed code left in the codebase, never a document, a note, an example or data; '
                        'or question, a question for the user, asked in the note and answered in the web GUI.'),
-    _noun('note', 'add and edit: what and where.'),
+    _noun('note', 'add and edit: what and where; of a question, the question in plain words.'),
+    _noun('suggestions', 'add, of a question: the answers you suggest, the one you recommend first, as a JSON list. '
+                         'The user answers with one click on one of them, or types another.', 'json'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
@@ -604,7 +616,7 @@ MODULE = Module(
                         'Record that the alarm is in the specs and not built yet.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
                        ('metaform map work op=add node=element:code.alarm.audible condition=question '
-                        'note="Is the quiet tone still wanted?"',
+                        'note="Is the quiet tone still wanted?" suggestions=\'["Yes, keep it", "No, make it louder"]\'',
                         'Ask the user at the alarm, and carry on with what does not depend on the answer.'))),
         Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
              nouns=KNOWLEDGE_NOUNS,

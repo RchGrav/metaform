@@ -2592,3 +2592,38 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     page.wait_for_timeout(1500)
     assert page.evaluate(f'window.metaform.look("{cook}").signal3d') == 0
     assert problems == []
+
+
+@pytest.mark.req('VIEW-021')
+@pytest.mark.req('MAP-050')
+def test_a_question_is_answered_with_one_click_on_a_suggestion_or_by_typing_under_other(run, web, mapped, browser):
+    """Rich, 2026-09-28: always make a suggestion when asking; a button for each suggestion, or Other and type."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    first = store.add_work(Node('element', 'code.alarm.audible'), 'question', note='Is the quiet tone still wanted?',
+                           task=json.dumps(['Yes, keep it', 'No, make it louder']))
+    second = store.add_work(Node('element', 'exterior.cook'), 'question', note='Who is the cook?',
+                            task=json.dumps(['Whoever sets the timer']))
+    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.evaluate(f'window.metaform.select("{alarm}")')
+    page.wait_for_selector('#work button.suggestion')
+    shown = page.eval_on_selector_all('#work button.suggestion, #work button.other', 'found => found.map(one => one.textContent)')
+    assert shown == ['Yes, keep it', 'No, make it louder', 'Other']
+    assert page.locator('#work button.suggestion').first.get_attribute('class').split() == ['suggestion', 'recommended']
+    assert page.locator('#work textarea.answer').count() == 0       # the box for typing shows under Other only
+    page.click('#work button.suggestion >> nth=1')
+    page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
+    assert Store('proj').work(Node('element', 'code.alarm.audible'), 'question', False).results[0].resolution \
+        == 'No, make it louder'
+    page.evaluate(f'window.metaform.select("{cook}")')
+    page.wait_for_selector('#work button.other')
+    page.click('#work button.other')
+    page.fill('#work textarea.answer', 'The person who is cooking.')
+    page.click('#work button.answer')
+    page.wait_for_function('() => document.querySelector("#messages").hidden')
+    assert Store('proj').work(Node('element', 'exterior.cook'), 'question', False).results[0].resolution \
+        == 'The person who is cooking.'
+    assert first.work_id != second.work_id and problems == []

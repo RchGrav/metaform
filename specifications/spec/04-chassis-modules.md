@@ -188,7 +188,7 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Build: From 1.0: `metaform.CHASSIS_VERSION`, `metaform.capabilities` with `has(name)`, a literal `REQUIRES_CHASSIS` in the module source. Before 1.0 none of this is required.
 - Acceptance: From 1.0 only: the frozen suite loads and runs on each release.
 - Relates to: BASE-015, BASE-047.
-- Status: confirmed. CalVer during development, 2026-09-19, its format open, D94. Compatibility within a major version at the official release, running one way toward newer chassis, 2026-09-19.
+- Status: confirmed. CalVer during development, 2026-09-19. Its format, Rich 2026-09-28 at `code.builder.package`: the date and the count of updates made that day, `YYYY.M.D.N`, where N counts the commits of that day, from 1. Compatibility within a major version at the official release, running one way toward newer chassis, 2026-09-19.
 
 ---
 
