@@ -251,10 +251,19 @@ class Assigned(NamedTuple):
     notices: tuple[str, ...] = ()
 
 
+EMPTY_IS_ALL = ('modules', 'layers')  # shown as all when empty, CLI-031, and cleared when set to the word all
+
+
 def assign(key: str, raw: Any, folder: Path, *, glue: bool = False) -> Assigned:
     """Store one setting from its CLI form, or a typed boolean."""
     setting = SCHEMA[key]
     new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
+    if key in EMPTY_IS_ALL and new == ['all']:
+        # The word the setting is shown as when it is empty means the same when it is set: the setting is cleared.
+        # Stored as the word, it named no module and no layer, and turned every one off.
+        old = value(key, folder)
+        home.clear(scope_of(setting, folder), setting.owner, key)
+        return Assigned(old, [], ())
     notices = (setting.check(new, folder) or []) if setting.check is not None else []
     old = value(key, folder)
     scope = own_scope_of(setting, folder)
@@ -284,6 +293,8 @@ def checked(key: str, value: Any, folder: Path, *, typed: bool = False) -> None:
     setting = SCHEMA[key]
     raw = _raw(setting, value) if typed else value
     new = raw if setting.kind == 'bool' else parse(setting, raw, folder)
+    if key in EMPTY_IS_ALL and new == ['all']:  # it clears the setting, so there is no name to check
+        return
     if setting.check is not None:
         setting.check(new, folder)
 

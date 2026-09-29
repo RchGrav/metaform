@@ -456,7 +456,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
 - What this means: The chassis runs completely on its own as a CLI. These verbs are that CLI. Module verbs follow BASE-035; these are the chassis's own.
 - Why: The spec is the contract. Behavior that exists only in earlier code cannot be rebuilt from the spec, and a rebuild would drift.
 - How it shows: The examples in each row.
-- Build: Every error below is a `Stop` with its one Next line, CLI-009. `-q` and `--quiet` suppress success output on `set` and `unset`. `--json` prints the result as JSON, BASE-036, on `list`, `config --show` and `query`.
+- Build: Every error below is a `Stop` with its one Next line, CLI-009. `-q` and `--quiet` suppress success output on `set` and `unset`. An empty `modules` or `layers` is shown as `all`, and set to the word `all` it is cleared, so what is shown and what is typed mean the same: stored as the word, it named no module and no layer and turned every one off, with nothing on the screen to say why, found 2026-09-28. `--json` prints the result as JSON, BASE-036, on `list`, `config --show` and `query`.
 
   | Verb | Nouns and switches | Output and errors |
   |---|---|---|

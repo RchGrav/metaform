@@ -796,3 +796,16 @@ def test_chassis_settings_stay_the_chassiss_when_a_module_is_what_first_imports_
     result = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8',
                             env={**os.environ, 'METAFORM_HOME': str(home)})
     assert result.stdout.split() == ['chassis', 'web'], result.stderr
+
+
+@pytest.mark.req('CLI-031')
+@pytest.mark.req('CLI-022')
+def test_all_is_what_an_empty_list_setting_is_shown_as_and_setting_it_clears_the_setting(run, toggles):
+    """An unset `modules` or `layers` is shown as all. Set to the word all, it is the same: every module, every
+    finished layer. Stored as the word, it named nothing and turned everything off."""
+    run('set', '--modules', 'toggles')
+    out = lines(run('set', '--modules', 'all'))
+    assert out[:2] == ['Success: updated one key', '  modules: toggles → all']
+    run('list', 'projects')                                           # nothing is narrowed
+    shown = lines(run('config', '--show'))
+    assert '  modules: all' in shown and not any('modules: all  (set)' in line for line in shown)

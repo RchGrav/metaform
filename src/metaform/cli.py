@@ -38,7 +38,7 @@ from .errors import Stop
 from .module import Verb, call, on_this_system
 from .wording import count, counted
 
-EMPTY_IS_ALL = ('modules', 'layers')
+EMPTY_IS_ALL = settings.EMPTY_IS_ALL
 
 
 def out(text: str = '') -> None:
