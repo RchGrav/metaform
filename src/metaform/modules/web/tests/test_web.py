@@ -1299,6 +1299,36 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
     assert problems == []
 
 
+@pytest.mark.req('VIEW-025')
+def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_draws(run, web, mapped, browser):
+    """What is behind the glass reaches it through the pictures the page draws each frame, as drei's component does.
+    It is read with the frosting and the absorption off, since with them what is behind is blurred into the node's
+    own color: a join's purpose node set behind the cook shows through the cook, and moving it away changes the cook."""
+    from metaform.data import Store
+    store = Store('proj')
+    for record in store.work(None, None, True, limit=0).results:  # nothing lit, nothing drawn in characters
+        store.finish_work(record.work_id, 'done')
+    cook = store.element('exterior.cook').element_id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.emulate_media(reduced_motion='reduce')           # the distortion is still
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate('window.metaform.glass(true, {roughness: 0, attenuationDistance: 1e9, transmission: 1})')
+    behind = next(node['id'] for node in page.evaluate('window.metaform.graph().nodes') if node['id'].startswith('p:'))
+    staged(page, {cook: (2000, 0, 0), behind: (2000, 0, -40)},
+           ({'x': 2000, 'y': 0, 'z': 80}, {'x': 2000, 'y': 0, 'z': 0}))
+    node = page.evaluate(f'window.metaform.screen3d("{cook}")')
+    points = [(node['x'] + dx * node['r'], node['y'] + dy * node['r'])
+              for dx, dy in ((0, 0), (0.2, 0), (-0.2, 0), (0, 0.2), (0, -0.2))]
+    seen = pixels(page, points)
+    page.evaluate(f'window.metaform.pin3d("{behind}", 2000, 400, -40)')  # out of view
+    page.wait_for_timeout(800)
+    gone = pixels(page, points)
+    assert sum(abs(one - two) for before, after in zip(seen, gone) for one, two in zip(before, after)) > 60, (seen, gone)
+    assert problems == []
+
+
 @pytest.mark.req('MAP-052')
 @pytest.mark.req('VIEW-024')
 def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writes(run, web, mapped, browser):
