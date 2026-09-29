@@ -16,17 +16,44 @@
             complete closes the nonce and hands on a new one
   status    a status hook that adds one line to `metaform` status
 
+Each public import a module can use, shown once:
+  count           ctx.say, a message for a person beside the data the verb returns
+  welcome         ctx.publish_async, publishing from an async verb
+  later           ctx.spawn, a task hello owns that the chassis cancels when the process ends or hello unloads
+  greet-favorite  Stop, a user error with the one command to run next
+  uptime          start and stop, the hooks that run when hello loads and unloads
+  history         Module.default, what `metaform hello` runs with no verb
+  repeat          settings.number, `times`
+  greet-friends   settings.items, `friends`
+  report          save_report, a report file on hello's layer
+  feedback        feedback, on the Metaform process
+  reports         list_reports
+  read-report     read_report
+
 The greeting history is items in a layer this module declares, attached to an
 element the layer creates for them, STORE-022 and D22.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from metaform import nonce, settings
-from metaform.data import Node, Store
-from metaform.module import Context, Module, Noun, Status, Stop, Subscription, Verb
+from metaform.data import Layer, Node, Store
+from metaform.module import (
+    Context,
+    Module,
+    Noun,
+    Status,
+    Stop,
+    Subscription,
+    Verb,
+    feedback,
+    list_reports,
+    read_report,
+    save_report,
+)
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -53,6 +80,8 @@ settings.text('greeting', 'hello', help='The word hello greets with.')
 settings.boolean('loud', False, help='Shout the greeting.')
 settings.choice('favorite', choices=_favorite_choices,
                 help="A name hello has greeted. Its choices come from the module's own data.")
+settings.number('times', 1, min=1, max=10, help='How many times repeat says the greeting.')
+settings.items('friends', help='The names greet-friends greets.')
 
 
 def greet(ctx: Context) -> str:
@@ -117,12 +146,13 @@ def noncedemo(ctx: Context) -> str:
     return 'Congrats, the nonce demo is over. We already cleaned up the nonce you just used. Try it again to see.\n'
 
 
-def _own_element(store: Store) -> None:
-    """The element the greetings hang from, made when no greeting has made it yet."""
+def _own_element(store: Store) -> Layer:
+    """The element the greetings hang from, made when no greeting has made it yet, and its layer."""
     with store.atomic():
-        store.layer(LAYER, 'hello', 'Who hello has greeted.', mutable=True, hideable=True,
-                    provenance=PROVENANCE)
+        layer = store.layer(LAYER, 'hello', 'Who hello has greeted.', mutable=True, hideable=True,
+                            provenance=PROVENANCE)
         store.add_element(LAYER, HOLDER)
+    return layer
 
 
 def todo(ctx: Context) -> str:
@@ -155,6 +185,103 @@ def record(payload: dict[str, Any], ctx: Context) -> None:
         store.finish(LAYER)
 
 
+def count(ctx: Context) -> dict[str, int]:
+    """ctx.say writes a message for a person; the data an agent needs back is the return value, BASE-036."""
+    greeted = len(_names(ctx.require_store()))
+    ctx.say(f'hello has greeted {greeted} {"name" if greeted == 1 else "names"}.')
+    return {'greeted': greeted}
+
+
+async def welcome(ctx: Context) -> str:
+    """An async verb publishes with ctx.publish_async; ctx.publish would block its loop, BASE-009 and BASE-010."""
+    ctx.require_store()
+    name = ctx.nouns['name']
+    await ctx.publish_async('hello.greeted', {'name': name})
+    return f'welcome, {name}\n'
+
+
+async def _greet_after(ctx: Context, name: str, seconds: int) -> None:
+    await asyncio.sleep(seconds)
+    await ctx.publish_async('hello.greeted', {'name': name})
+
+
+async def later(ctx: Context) -> str:
+    """ctx.spawn starts a task hello owns: it runs on after the verb returns, as in the MCP server, and the chassis
+    cancels it when the process ends or hello unloads, BASE-018. From the command line the process ends at once."""
+    ctx.require_store()
+    name, seconds = ctx.nouns['name'], ctx.nouns['seconds']
+    ctx.spawn(_greet_after(ctx, name, seconds))
+    return f'Greeting {name} in {seconds} s from a task hello owns; the chassis cancels the task if the process ends ' \
+           'first.\n'
+
+
+def greet_favorite(ctx: Context) -> str:
+    """A verb raises Stop for a user error: what happened and the one command to run next, CLI-009."""
+    favorite = ctx.setting('favorite')
+    if not favorite:
+        raise Stop('No favorite is set.', 'metaform set --favorite <name>')
+    ctx.nouns['name'] = favorite
+    return greet(ctx)
+
+
+_loaded: dict[str, float] = {}  # what start sets up for this process and stop takes down
+
+
+def start(ctx: Context) -> None:
+    """Runs once when hello loads, before its first verb, subscriber or tool call, BASE-018."""
+    _loaded['at'] = time.monotonic()
+
+
+def stop(ctx: Context) -> None:
+    """Runs once when hello unloads or the process ends, after its spawned tasks are cancelled, BASE-018."""
+    _loaded.clear()
+
+
+def uptime(ctx: Context) -> str:
+    return f'hello started {time.monotonic() - _loaded["at"]:.1f} s ago in this process.\n'
+
+
+def repeat(ctx: Context) -> str:
+    """Reads `times`, a number setting."""
+    return f"{ctx.setting('greeting')}, {ctx.nouns['name']}\n" * ctx.setting('times')
+
+
+def greet_friends(ctx: Context) -> str:
+    """Reads `friends`, an items setting, and greets each name."""
+    friends = ctx.setting('friends')
+    if not friends:
+        return 'No friends set. Try: metaform set --friends ada,bob\n'
+    greetings: list[str] = []
+    for friend in friends:
+        ctx.nouns['name'] = friend
+        greetings.append(greet(ctx))
+    return ''.join(greetings)
+
+
+def report(ctx: Context) -> str:
+    """save_report writes a report file in the home, on hello's layer, whose provenance then carries it, BASE-045."""
+    store = ctx.require_store()
+    layer = _own_element(store)
+    return save_report(store.project_id, layer.layer_id, 'report', ctx.nouns['text'], store=store,
+                       layer=layer.layer_id) + '\n'
+
+
+def send_feedback(ctx: Context) -> dict[str, Any]:
+    """feedback saves feedback on the Metaform process, never refused for what it says, BASE-045."""
+    return feedback(ctx.folder, ctx.nouns['text'], project=ctx.project)
+
+
+def reports(ctx: Context) -> str:
+    """list_reports lists the report, feedback and shape files of the folder's project, BASE-045."""
+    names = [row.name for row in list_reports(ctx.folder, project=ctx.project, limit=0).results]
+    return '\n'.join(names) + '\n' if names else 'No reports yet.\n'
+
+
+def read_one_report(ctx: Context) -> str:
+    """read_report returns one listed file's text exactly, BASE-045."""
+    return read_report(ctx.folder, ctx.nouns['name'], project=ctx.project)
+
+
 def status(ctx: Context) -> Status:
     if ctx.store is None:
         return Status()
@@ -171,7 +298,8 @@ MODULE = Module(
             'publishes an event for each greeting, and keeps what it still has to do as work records. Use it to see '
             'how a module behaves. Details: metaform help hello.',
     details='Settings are declared in code and appear in set, unset and the settings screen. '
-            'The favorite setting takes its choices from the names this module has greeted.',
+            'The favorite setting takes its choices from the names this module has greeted. '
+            'metaform hello with no verb runs history, its default verb.',
     verbs=(
         Verb('greet', greet, 'Greet a name and publish hello.greeted.',
              nouns=(Noun('name', 'The name to greet.'),), switches=('loud',),
@@ -191,7 +319,33 @@ MODULE = Module(
         Verb('noncedemo', noncedemo, 'Walk through a nonce: issue it, update it, close it and hand on a new one.',
              nouns=(Noun('step', 'next or complete, after the nonce.', required=False, many=True),),
              examples=(('metaform hello noncedemo', 'Prints the nonce to run.'),)),
+        Verb('count', count, 'Count the names greeted. Shows ctx.say beside the data a verb returns.'),
+        Verb('welcome', welcome, 'Greet a name from an async verb. Shows ctx.publish_async.',
+             nouns=(Noun('name', 'The name to greet.'),)),
+        Verb('later', later, 'Greet a name after some seconds, from a task hello owns. Shows ctx.spawn.',
+             nouns=(Noun('name', 'The name to greet.'), Noun('seconds', 'How long to wait.', kind='int')),
+             details='The task runs on after the verb returns for as long as the process runs, as the MCP server '
+                     'does. The chassis cancels it when the process ends or hello unloads, so from the command line '
+                     'the name is not greeted.'),
+        Verb('greet-favorite', greet_favorite, 'Greet the favorite name. Shows Stop when none is set.'),
+        Verb('uptime', uptime, 'How long ago hello started in this process. Shows the start and stop hooks.'),
+        Verb('repeat', repeat, 'Say the greeting --times times. Shows a number setting.',
+             nouns=(Noun('name', 'The name to greet.'),), switches=('times',),
+             examples=(('metaform hello repeat world --times 3', 'Prints hello, world three times.'),)),
+        Verb('greet-friends', greet_friends, 'Greet each name in --friends. Shows an items setting.',
+             switches=('friends',),
+             examples=(('metaform hello greet-friends --friends ada,bob', 'Greets ada and bob.'),)),
+        Verb('report', report, "Save a report on hello's layer. Shows save_report.",
+             nouns=(Noun('text', 'The report.'),)),
+        Verb('feedback', send_feedback, 'Save feedback on the Metaform process. Shows feedback.',
+             nouns=(Noun('text', 'The feedback.'),)),
+        Verb('reports', reports, "List this project's report, feedback and shape files. Shows list_reports."),
+        Verb('read-report', read_one_report, 'Print one report file exactly. Shows read_report.',
+             nouns=(Noun('name', 'The file name reports lists.'),)),
     ),
     subscriptions=(Subscription('hello.greeted', record),),
+    start=start,
+    stop=stop,
     status=status,
+    default='history',
 )
