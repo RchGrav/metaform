@@ -236,7 +236,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id),
+  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id),
   away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
@@ -1654,7 +1654,8 @@ async function menu(id, x = null, y = null) {
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
   fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
-    h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'));
+    h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
+    h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'));
   box.hidden = false;
   if (x === null && G) {  // asked for with no pointer: beside the node in the 3D map
     const node = G.graphData().nodes.find(item => item.id === id), stage = $('#stage').getBoundingClientRect();
@@ -1869,6 +1870,50 @@ $('#task .put').onclick = async () => {
   if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value})) $('#task').hidden = true;
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; };
+/* Adding an element, VIEW-033: a person gives it its address and joins it to the node the window was opened at. */
+const E = {node: null, from: ''};
+function addElement(id) {
+  const element = S.elements.get(id)?.element;
+  if (!element) { toast('An element is added at an element.'); return; }
+  E.node = id;
+  $('#element .title').textContent = `Add Element · joined to ${named(element)}`;
+  $('#element .receives option[value="node"]').textContent = `${named(element)}, and the new element serves it`;
+  $('#element .receives option[value="new"]').textContent = `the new element, and ${named(element)} serves it`;
+  for (const name of ['.purpose', '.function']) $('#element ' + name).value = '';
+  // It is written on from the address of the node: a part added beside a part mostly shares its trunk.
+  E.from = element.address.includes('.') ? element.address.slice(0, element.address.lastIndexOf('.') + 1) : '';
+  $('#element .address').value = E.from;
+  fill($('#addresses'), [...S.elements.values()].map(entry => h('option', {value: entry.element.address + '.'})));
+  $('#element').hidden = false;
+  $('#element .address').focus();
+}
+$('#element .add').onclick = async () => {
+  const written = $('#element .address').value.trim();
+  const address = written === E.from || written.endsWith('.') ? '' : written;  // what it was started from is no address
+  if (!address || S.elements.size && [...S.elements.values()].some(entry => entry.element.address === address)) {
+    toast(address ? `There is an element at ${address} already.` : 'An element has an address.');
+    return;
+  }
+  const given = {address, node: `element:${E.node}`, receives: $('#element .receives').value,
+    name_length: Number($('#element .length').value) || 1, role: $('#element .role').value,
+    purpose: $('#element .purpose').value.trim(), function: $('#element .function').value.trim(),
+    validate: $('#element .validate').checked};
+  const response = await fetch('/api/element', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})});
+  const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+  if (!response.ok) { toast(body.error || 'The element was not written.'); return; }
+  for (const notice of body.notices || []) toast(notice.message);
+  $('#element').hidden = true;
+  // What a person adds is shown: where the layers in view are chosen by name, the layer of what is added by hand
+  // is put among them.
+  S.layers = (await read('layers', {limit: 0})).results;
+  const on = new Set(shownOn());
+  if (!on.has(body.element.layer)) { on.add(body.element.layer); S.view = on; }
+  renderChips();
+  await loadGraph();
+};
+$('#element .close').onclick = () => { $('#element').hidden = true; };
+movable($('#element'));
 movable($('#task'));
 movable($('#float'));
 $('#float .close').onclick = () => { $('#float').hidden = true; Object.assign(F, {id: null, which: null, ids: new Set()}); };

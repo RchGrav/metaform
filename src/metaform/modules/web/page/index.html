@@ -117,6 +117,20 @@
     </div>
   </div>
 </div>
+<div id="element" hidden role="dialog" aria-label="Add an element">
+  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+  <div class="body">
+    <label>Address <input class="address" list="addresses" placeholder="code.alarm.visible" autocomplete="off"></label>
+    <datalist id="addresses"></datalist>
+    <div class="row"><label>Words of its name <input class="length" type="number" min="1" max="9" value="1" title="How many segments of the address, read from the leaf, name it"></label>
+      <label>Role <select class="role"><option value="">none given</option><option>SE</option><option>NE</option><option>DE</option><option>VE</option><option>AUE</option></select></label></div>
+    <label>The purpose is held by <select class="receives"><option value="node"></option><option value="new">the new element, and this node serves it</option></select></label>
+    <label>Purpose <textarea class="purpose" placeholder="What the one that holds the purpose needs this for"></textarea></label>
+    <label>Function <textarea class="function" placeholder="What the one that serves does"></textarea></label>
+    <label class="check"><input type="checkbox" class="validate" checked> Have an agent validate it</label>
+    <button class="add">Add element</button>
+  </div>
+</div>
 <div id="draw" aria-hidden="true"></div>
 <script src="/vendor/3d-force-graph.min.js"></script>
 <script src="/vendor/mermaid.min.js"></script>

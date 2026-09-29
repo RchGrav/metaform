@@ -2683,19 +2683,19 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.is_hidden('#menu') and page.is_hidden('#float')
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
-    GIVE = ['task', 'Add Task', False]                                # a task is added from the same menu, VIEW-032
+    GIVE = ['task', 'Add Task', False], ['element', 'Add Element', False]  # from the same menu, VIEW-032 and VIEW-033
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
     page.wait_for_timeout(1200)
     box = page.evaluate(f'window.metaform.box2d("{alarm}")')
     page.mouse.click((box['left'] + box['right']) / 2, (box['top'] + box['bottom']) / 2, button='right')
     page.wait_for_selector('#menu:not([hidden])')
-    assert entries() == [['unread', 'Unread messages 2', False], ['past', 'Past messages 1', False], GIVE]
+    assert entries() == [['unread', 'Unread messages 2', False], ['past', 'Past messages 1', False], *GIVE]
     page.keyboard.press('Escape')
     assert page.is_hidden('#menu')
     # the 3D map: the node's right-click, and a node with no messages
     page.evaluate(f'window.metaform.menu("{cook}")')
-    assert entries() == [['unread', 'Unread messages 0', True], ['past', 'Past messages 0', True], GIVE]
+    assert entries() == [['unread', 'Unread messages 0', True], ['past', 'Past messages 0', True], *GIVE]
     page.keyboard.press('Escape')
     page.evaluate(f'window.metaform.menu("{alarm}")')
     page.click('#menu button.unread')
@@ -2718,7 +2718,7 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     page.click('#float button.close')
     assert page.is_hidden('#float')
     page.evaluate(f'window.metaform.menu("{alarm}")')
-    assert entries() == [['unread', 'Unread messages 1', False], ['past', 'Past messages 2', False], GIVE]
+    assert entries() == [['unread', 'Unread messages 1', False], ['past', 'Past messages 2', False], *GIVE]
     page.click('#menu button.past')
     page.wait_for_selector('#float:not([hidden])')
     past = page.inner_text('#float')
@@ -2821,3 +2821,77 @@ def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_f
     again = page.evaluate('(() => { const box = document.querySelector("#task").getBoundingClientRect(); return [box.width, box.height]; })()')
     assert again == small
     assert problems == []
+
+
+VALIDATE = ('Orient yourself only enough to validate the coherence of this element, approve addition or if element '
+            'needs additional coherence submit questions w/ recommendations.')
+
+
+@pytest.mark.req('VIEW-033')
+def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_validate_it(run, web, mapped, browser,
+                                                                                          tmp_path):
+    """Rich, 2026-09-29: a new element tool so the user can add and join something into the map, with an option to
+    kick off an agent to pre-validate the new element, prompted in his words."""
+    import sys
+    from metaform.data import Store
+    alarm = Store('proj').element('code.alarm.audible').element_id
+    said = tmp_path / 'said.json'
+    agent = tmp_path / 'agent.py'
+    agent.write_text('import json, os, sys\n'
+                     f'json.dump({{"args": sys.argv[1:], "cwd": os.getcwd()}}, open({str(said)!r}, "a"))\n'
+                     f'open({str(said)!r}, "a").write("\\n")\n', encoding='utf-8')
+    run('set', '--agent-command', f'{sys.executable} {agent} -p', cwd=mapped)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.inner_text('#menu button.element') == 'Add Element'
+    page.click('#menu button.element')
+    page.wait_for_selector('#element:not([hidden])')
+    assert 'audible alarm' in page.inner_text('#element .title') or 'alarm' in page.inner_text('#element .title')
+    page.click('#element .add')                                       # an address that is not given is not written
+    page.wait_for_timeout(400)
+    assert page.is_visible('#element') and Store('proj').element('code.alarm.visible') is None
+    page.fill('#element .address', 'code.alarm.visible')
+    page.fill('#element .length', '2')
+    page.select_option('#element .receives', 'node')                  # the alarm holds the purpose; the new part serves it
+    page.fill('#element .purpose', 'Tell a cook who cannot hear that the time is up.')
+    page.fill('#element .function', 'Flashes a lamp when the timer runs out.')
+    page.check('#element .validate')
+    page.click('#element .add')
+    page.wait_for_function('() => document.querySelector("#element").hidden')
+    store = Store('proj')
+    made = store.element('code.alarm.visible')
+    assert made is not None and (made.layer, made.name_length, made.short_name) == ('additions', 2, 'visible alarm')
+    joined = [join for join in store.joins('code.alarm.audible').results if join.provider == made.element_id]
+    assert [(join.receiver, join.layer, join.purpose, join.function) for join in joined] == [
+        (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
+    work = store.work(Node_of('code.alarm.visible'), 'tbd', True).results
+    assert len(work) == 1 and work[0].task.startswith(VALIDATE) and 'code.alarm.visible' in work[0].task
+    page.wait_for_function(f'() => window.metaform.look("{made.element_id}").text3d === true', timeout=8000)
+    for _ in range(50):                                               # the agent is not waited for
+        if said.exists() and said.read_text(encoding='utf-8').strip():
+            break
+        page.wait_for_timeout(100)
+    calls = [json.loads(line) for line in said.read_text(encoding='utf-8').splitlines() if line.strip()]
+    assert len(calls) == 1 and calls[0]['args'] == ['-p', work[0].task]
+    assert Path(calls[0]['cwd']).resolve() == Path(mapped).resolve()
+    # without the option nothing is run
+    page.evaluate(f'window.metaform.element("{alarm}")')
+    page.fill('#element .address', 'code.alarm.silent')
+    page.select_option('#element .receives', 'new')                   # here the new part holds the purpose
+    page.fill('#element .purpose', 'Stay quiet at night.')
+    page.fill('#element .function', 'Sounds only when asked to.')
+    page.uncheck('#element .validate')
+    page.click('#element .add')
+    page.wait_for_function('() => document.querySelector("#element").hidden')
+    silent = Store('proj').element('code.alarm.silent')
+    assert [join.provider for join in Store('proj').joins('code.alarm.silent').results] == [alarm] and silent is not None
+    page.wait_for_timeout(1200)
+    assert len([line for line in said.read_text(encoding='utf-8').splitlines() if line.strip()]) == 1
+    assert problems == []
+
+
+def Node_of(address):
+    from metaform.data import Node
+    return Node('element', address)

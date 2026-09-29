@@ -18,8 +18,10 @@ import ipaddress
 import json
 import os
 import queue
+import shlex
 import socket
 import socketserver
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
@@ -218,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the seven writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the eight writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -226,7 +228,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
-                  '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work}
+                  '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
+                  '/api/element': self.add_part}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -348,6 +351,41 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, {'results': plain(written)})
 
+    def add_part(self, given: dict[str, Any]) -> None:
+        """Add an element a person describes and join it to a node, in the layer of what people add by hand, and
+        start an agent to validate it when asked to, VIEW-033. The element is on the map at once, as a part not
+        built, with the validation as its open task."""
+        address, anchor = given.get('address'), given.get('node')
+        if not isinstance(address, str) or not address.strip():
+            return self.send(400, {'error': 'An element has an address.'})
+        if not isinstance(anchor, str) or given.get('receives') not in ('node', 'new'):
+            return self.send(400, {'error': 'An element is joined to a node, and one of the two holds the purpose.'})
+        project = home.project(str(given.get('project', '')))
+        notices: list[dict[str, str]] = []
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                store.layer(ADDITIONS, 'web', 'What people added to the map by hand.', mutable=True, hideable=True,
+                            provenance=ADDED, ready=True)
+                made = store.add_element(ADDITIONS, address.strip(), name_length=given.get('name_length') or None,
+                                         role=given.get('role') or None)
+                if isinstance(made, Outcome):
+                    return self.send(400, {'error': 'The element was not written.', 'notices': plain(made.notices)})
+                held = Node.parse(anchor).id
+                receiver, provider = (held, made.element_id) if given['receives'] == 'node' else (made.element_id, held)
+                joined = store.add_join(ADDITIONS, receiver, provider, purpose=given.get('purpose') or None,
+                                        function=given.get('function') or None)
+                work = store.add_work(Node('element', made.element_id), 'tbd', note='Added by hand in the web GUI.')
+                if given.get('validate') is True:
+                    work = store.edit_work(work.work_id, {'task': validation(made.address, work.work_id)})
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        if given.get('validate') is True and project is not None and work.task:
+            told = started_agent(Path(project.path), work.task)
+            if told:
+                notices.append({'where': 'agent', 'message': told})
+        self.send(200, {'element': plain(made), 'join': plain(joined), 'work': plain(work), 'notices': notices})
+
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and
         only with `confirm` true, as the command only with `--confirm`, PROJ-025 and VIEW-019."""
@@ -422,6 +460,40 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
                                                    if given.get('number', '').isdigit() else None),
     'prompt-versions': _versions,
 }
+
+
+ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033
+ADDED = {'module': 'web', 'workflow': 'add element', 'prompt': 'Written by a person in the web GUI.', 'model': 'none',
+         'role': 'user', 'blinded': False}
+# The prompt is the user's own, word for word. What follows it is what the agent cannot know without being told: the
+# element, and the two commands it answers with.
+VALIDATE = ('Orient yourself only enough to validate the coherence of this element, approve addition or if element '
+            'needs additional coherence submit questions w/ recommendations.')
+
+
+def validation(address: str, work_id: str) -> str:
+    return (f'{VALIDATE} The element is {address}. Read it with: metaform map where {address}. '
+            f'To approve: metaform map work op=done id={work_id} resolution=approved. '
+            f'To ask: metaform map work op=add node=element:{address} condition=question note="<the question>" '
+            'suggestions=\'["<the answer you recommend>", "<another>"]\'.')
+
+
+def started_agent(folder: Path, task: str) -> str | None:
+    """Start the agent the `agent_command` setting names, in the project's folder, with the task as its last
+    argument, and do not wait for it. Returns what to tell the person when it could not be started."""
+    command = str(settings.value('agent_command', folder) or '').strip()
+    waits = 'The task waits on the element for an agent to take it.'
+    if not command:
+        return f'No agent command is set. {waits}'
+    parts = shlex.split(command, posix=os.name != 'nt')
+    apart: dict[str, Any] = ({'creationflags': getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)} if os.name == 'nt'
+                             else {'start_new_session': True})
+    try:
+        subprocess.Popen([*parts, task], cwd=folder, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **apart)
+    except OSError as error:
+        return f'{parts[0]} could not be started: {error.strerror or error}. {waits}'
+    return None
 
 
 def opened(given: dict[str, str]) -> Store:

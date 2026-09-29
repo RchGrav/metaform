@@ -45,6 +45,11 @@ settings.text('web_bind', '127.0.0.1', scope='global',
                       'network, and then every request needs the token that metaform web prints.')
 settings.boolean('web_autostart', True,
                  help='Have agents start the web GUI before an intake and tell you its address.')
+settings.text('agent_command', 'claude -p',
+              help='The command the web GUI starts an agent with, the task given as its last argument.',
+              details='It is run in the project\'s folder when a person asks for an agent from the web GUI, as when '
+                      'an element added by hand is to be validated. Where it cannot be run the task waits on the '
+                      'map for an agent to take it.')
 
 
 def run_dir() -> Path:
