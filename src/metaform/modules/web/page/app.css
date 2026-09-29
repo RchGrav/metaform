@@ -317,6 +317,10 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.in-stub rect{stroke-dasharray:4 3!important}
 .map2d .node.in-item .nodeLabel,.map2d .node.in-item text,.map2d .node.in-more text,.map2d .node.in-more .nodeLabel{font:500 11px var(--sans)!important}
 .map2d .node.in-more rect{stroke-dasharray:2 3!important}
+/* The memory network of a node, VIEW-031: its relations in memory's color, each with its relation type on it. */
+.map2d .edgePaths path.relation{stroke:var(--memory)!important}
+.map2d .edgeLabel text{fill:var(--muted)!important;font:500 11px var(--sans)!important}
+.map2d .edgeLabel rect.background{fill:var(--ground)!important;opacity:1!important}
 .map2d .navbtns button,.bar3d .navbtns button{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;cursor:pointer;font:12px var(--sans);color:var(--muted)}
 .map2d .navbtns button:disabled{opacity:.35;cursor:default}
 .map2d .mapbtns button,.bar3d .mapbtns button{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;cursor:pointer;font:12px var(--sans);color:var(--muted)}
