@@ -158,7 +158,31 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 @media (prefers-reduced-motion: reduce){.map2d .work-message{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}
 /* The menu of a node and the window its messages are read in, VIEW-030. */
 #menu{position:fixed;z-index:30;min-width:190px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);padding:4px;box-shadow:0 8px 28px color-mix(in srgb,var(--ground) 70%,transparent);display:grid;gap:2px}
-#menu[hidden],#float[hidden]{display:none}
+#menu[hidden],#float[hidden],#task[hidden]{display:none}
+/* The editor work is given in, VIEW-032. */
+#task{position:fixed;z-index:26;left:460px;top:90px;width:720px;max-width:calc(100vw - 24px);max-height:80vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 12px 40px color-mix(in srgb,var(--ground) 75%,transparent)}
+#task .bar{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:move;user-select:none}
+#task .bar .title{flex:1;font:600 13px var(--sans);color:var(--text)}
+#task .bar .close,#task .acts button{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans);color:var(--text)}
+#task .acts button:disabled{color:var(--faint);cursor:default}
+#task .body{display:grid;grid-template-columns:1fr 260px;gap:12px;padding:12px;min-height:0;overflow:auto}
+#task .write{display:grid;gap:8px;align-content:start;font:13px var(--sans);color:var(--muted)}
+#task select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);height:var(--ctl-sm)}
+#task .text{min-height:150px;background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:8px;font:14px/1.5 var(--sans);white-space:pre-wrap;outline:none}
+#task .text:focus{border-color:var(--signal)}
+#task span[data-address]{display:inline-block;padding:0 6px;border-radius:4px;background:color-mix(in srgb,var(--signal) 16%,transparent);color:var(--signal);font-weight:600}
+#task .linked{display:flex;flex-wrap:wrap;gap:6px}
+#task .linked span[data-address] button{margin-left:6px;background:transparent;border:0;color:var(--muted);cursor:pointer;font:12px var(--sans);padding:0}
+#task .put{justify-self:start;height:var(--ctl);background:var(--signal);color:var(--ground);border:0;border-radius:var(--r);padding:0 14px;cursor:pointer;font:600 13px var(--sans)}
+#task .pick{display:grid;grid-template-rows:1fr auto;gap:8px;min-height:0}
+#task .browser{display:grid;grid-template-rows:auto 1fr;gap:6px;min-height:0}
+#task .browser input{height:var(--ctl-sm);background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;font:13px var(--sans)}
+#task .rows{overflow:auto;max-height:46vh;border:1px solid var(--line);border-radius:var(--r)}
+#task .rows [data-address]{display:block;width:100%;text-align:left;background:transparent;border:0;padding:3px 8px;cursor:pointer;color:var(--text);font:13px var(--sans)}
+#task .rows [data-address][hidden]{display:none}
+#task .rows [data-address] small{display:block;font:11px var(--mono);color:var(--faint)}
+#task .rows [data-address].chosen{background:color-mix(in srgb,var(--signal) 18%,transparent)}
+#task .acts{display:flex;gap:6px}
 #menu .name{padding:4px 8px;font:600 11px var(--sans);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
 #menu button{display:flex;justify-content:space-between;gap:16px;background:transparent;border:0;border-radius:4px;padding:6px 8px;font:13px var(--sans);color:var(--text);cursor:pointer;text-align:left}
 #menu button:hover:not(:disabled){background:var(--panel-2)}

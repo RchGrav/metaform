@@ -100,6 +100,22 @@
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
   <div class="body"></div>
 </div>
+<div id="task" hidden role="dialog" aria-label="Give work">
+  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+  <div class="body">
+    <div class="write">
+      <label>The work is <select class="condition"><option value="tbd">to build something</option><option value="broken">to fix something</option></select></label>
+      <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
+      <div class="eyebrow">Nodes of this task</div>
+      <div class="linked"></div>
+      <button class="put">Put on the map</button>
+    </div>
+    <div class="pick">
+      <div class="browser"><input type="search" placeholder="Find a part" aria-label="Find a part"><div class="rows"></div></div>
+      <div class="acts"><button class="insert" disabled title="Put its name into the text, at the cursor">Insert</button><button class="link" disabled title="Add it to the nodes of this task">Link</button></div>
+    </div>
+  </div>
+</div>
 <div id="draw" aria-hidden="true"></div>
 <script src="/vendor/3d-force-graph.min.js"></script>
 <script src="/vendor/mermaid.min.js"></script>

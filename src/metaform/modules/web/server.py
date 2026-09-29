@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from metaform import changes, home, outline, query, results, settings
 from metaform.context import toggled_for
-from metaform.data import Outcome, Store, prompts
+from metaform.data import Node, Outcome, Store, prompts
 from metaform.data.records import plain
 from metaform.errors import Stop, StoreError
 
@@ -218,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the six writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the seven writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -226,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
-                  '/api/answer': self.answer_question, '/api/read': self.read_note}
+                  '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -321,6 +321,32 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, plain(done))
+
+    def give_work(self, given: dict[str, Any]) -> None:
+        """Put a task a person wrote on the nodes it concerns, one work record at each, VIEW-032 and MAP-048. Each
+        record's note names the other nodes of the task."""
+        text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition', 'tbd')
+        if not isinstance(text, str) or not text.strip():
+            return self.send(400, {'error': 'A task says what is to be done.'})
+        if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
+            return self.send(400, {'error': 'A task is given at one node or more.'})
+        if condition not in ('tbd', 'broken'):
+            return self.send(400, {'error': 'Work is to build something, tbd, or to fix something, broken.'})
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                targets = [Node.parse(node) for node in cast(list[str], nodes)]
+                places: list[str] = []
+                for target in targets:
+                    found = store.element(target.id) if target.kind == 'element' else None
+                    places.append(found.address if found is not None else f'{target.kind} {target.id}')
+                written = [store.add_work(target, condition, task=text.strip(),
+                                          note='With ' + ', '.join(other for other in places if other != place) + '.'
+                                          if len(places) > 1 else None)
+                           for target, place in zip(targets, places)]
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, {'results': plain(written)})
 
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and

@@ -2683,18 +2683,19 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.is_hidden('#menu') and page.is_hidden('#float')
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
+    GIVE = ['task', 'Give work', False]                               # work is given from the same menu, VIEW-032
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
     page.wait_for_timeout(1200)
     box = page.evaluate(f'window.metaform.box2d("{alarm}")')
     page.mouse.click((box['left'] + box['right']) / 2, (box['top'] + box['bottom']) / 2, button='right')
     page.wait_for_selector('#menu:not([hidden])')
-    assert entries() == [['unread', 'Unread messages 2', False], ['past', 'Past messages 1', False]]
+    assert entries() == [['unread', 'Unread messages 2', False], ['past', 'Past messages 1', False], GIVE]
     page.keyboard.press('Escape')
     assert page.is_hidden('#menu')
     # the 3D map: the node's right-click, and a node with no messages
     page.evaluate(f'window.metaform.menu("{cook}")')
-    assert entries() == [['unread', 'Unread messages 0', True], ['past', 'Past messages 0', True]]
+    assert entries() == [['unread', 'Unread messages 0', True], ['past', 'Past messages 0', True], GIVE]
     page.keyboard.press('Escape')
     page.evaluate(f'window.metaform.menu("{alarm}")')
     page.click('#menu button.unread')
@@ -2717,10 +2718,65 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     page.click('#float button.close')
     assert page.is_hidden('#float')
     page.evaluate(f'window.metaform.menu("{alarm}")')
-    assert entries() == [['unread', 'Unread messages 1', False], ['past', 'Past messages 2', False]]
+    assert entries() == [['unread', 'Unread messages 1', False], ['past', 'Past messages 2', False], GIVE]
     page.click('#menu button.past')
     page.wait_for_selector('#float:not([hidden])')
     past = page.inner_text('#float')
     assert 'Was the tone ever louder?' in past and 'Answer: No' in past and 'The piezo driver is written' in past
     assert 'Is the quiet tone still wanted?' not in past
     assert problems == []
+
+
+@pytest.mark.req('VIEW-032')
+@pytest.mark.req('MAP-048')
+def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inline(run, web, mapped, browser):
+    """Rich, 2026-09-29: a text editor window and a node selector on the right-click menu, where nodes are linked to
+    the prompt or inserted inline by their proper noun, from a clickable browser of the namespace."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm, kitchen, cook = (store.element(address).element_id
+                            for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook'))
+    names = {address: store.element(address).short_name for address in ('code.timer.kitchen', 'exterior.cook')}
+    before = len(store.work(None, None, None, limit=0).results)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.task')
+    page.wait_for_selector('#task:not([hidden])')
+    linked = lambda: page.eval_on_selector_all('#task .linked [data-address]', 'found => found.map(one => one.dataset.address)')
+    assert linked() == ['code.alarm.audible']                        # the node it was opened at
+    listed = page.eval_on_selector_all('#task .browser [data-address]', 'found => found.map(one => one.dataset.address)')
+    assert listed == sorted(listed) and {'code.alarm.audible', 'code.timer.kitchen', 'exterior.cook'} <= set(listed)
+    page.click('#task .put')                                          # a task with no text is not written
+    page.wait_for_timeout(400)
+    assert len(Store('proj').work(None, None, None, limit=0).results) == before and page.is_visible('#task')
+    page.click('#task .text')
+    page.keyboard.type('Make the tone louder when ')
+    page.fill('#task .browser input', 'kitchen')                      # the browser is narrowed by typing
+    shown = page.eval_on_selector_all('#task .browser [data-address]:not([hidden])', 'found => found.map(one => one.dataset.address)')
+    assert shown == [address for address in listed if 'kitchen' in address] and 'code.timer.kitchen' in shown
+    assert len(shown) < len(listed)
+    page.click('#task .browser [data-address="code.timer.kitchen"]')
+    page.click('#task .insert')
+    page.click('#task .text')
+    page.keyboard.press('End')
+    page.keyboard.type(' runs out of time.')                        # an f is a letter here and not the key for Fit
+    inline = page.eval_on_selector_all('#task .text span[data-address]', 'found => found.map(one => [one.textContent, one.dataset.address, one.title])')
+    assert inline == [[names['code.timer.kitchen'], 'code.timer.kitchen', 'code.timer.kitchen']]
+    page.fill('#task .browser input', '')
+    page.click('#task .browser [data-address="exterior.cook"]')
+    page.click('#task .link')
+    assert linked() == ['code.alarm.audible', 'exterior.cook']
+    page.select_option('#task .condition', 'tbd')
+    page.click('#task .put')
+    page.wait_for_function('() => document.querySelector("#task").hidden')
+    written = [record for record in Store('proj').work(None, 'tbd', True, limit=0).results
+               if record.task and record.task.startswith('Make the tone louder')]
+    text = f"Make the tone louder when [[{names['code.timer.kitchen']}|code.timer.kitchen]] runs out of time."
+    assert sorted((record.address, record.task) for record in written) == [
+        ('code.alarm.audible', text), ('exterior.cook', text)]
+    assert {record.note for record in written} == {'With exterior.cook.', 'With code.alarm.audible.'}
+    for node in (alarm, cook):                                        # the map shows each as having work
+        page.wait_for_function(f'() => window.metaform.look("{node}").work.includes("tbd")', timeout=6000)
+    assert kitchen and problems == []

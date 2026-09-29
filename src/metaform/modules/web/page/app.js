@@ -236,7 +236,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), fit: () => fit2D(), menu: id => menu(id),
+  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id),
   away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
@@ -1517,7 +1517,8 @@ function backOut() {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !$('#layerlist').hidden) { event.preventDefault(); showLayers(false); $('#layersBtn').focus(); return; }
   if (event.key === 'Escape' && !$('#clearbox').hidden) { event.preventDefault(); showClear(false); $('#clearBtn').focus(); return; }
-  if (event.target.closest('select, input, textarea, .CodeMirror')) return;
+  // A key typed into a text is a letter of it and never a shortcut.
+  if (event.target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]')) return;
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
   if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
   if (!S.selected) return;
@@ -1652,7 +1653,8 @@ async function menu(id, x = null, y = null) {
   const box = $('#menu');
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
-  fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length));
+  fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
+    h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Give work'));
   box.hidden = false;
   if (x === null && G) {  // asked for with no pointer: beside the node in the 3D map
     const node = G.graphData().nodes.find(item => item.id === id), stage = $('#stage').getBoundingClientRect();
@@ -1694,19 +1696,107 @@ async function wrote(path, given) {
   if (!response.ok) toast(body.error || 'It was not written.');
   return response.ok;
 }
+/* A floating window is moved by its title. */
+function movable(box) {
+  box.querySelector('.bar').addEventListener('pointerdown', event => {
+    if (event.target.closest('button')) return;
+    const from = box.getBoundingClientRect(), start = [event.clientX - from.left, event.clientY - from.top];
+    const move = moved => {
+      box.style.left = Math.max(0, Math.min(moved.clientX - start[0], innerWidth - 60)) + 'px';
+      box.style.top = Math.max(0, Math.min(moved.clientY - start[1], innerHeight - 40)) + 'px';
+    };
+    const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', end);
+    event.preventDefault();
+  });
+}
+/* Giving work, VIEW-032: the task is written as a person writes, the nodes it concerns are linked to it, and a node
+ * inserted into the text reads there as its proper noun and carries its address. */
+const K = {nodes: [], chosen: null, at: null};
+const partOf = address => [...S.elements.values()].map(entry => entry.element).find(element => element.address === address);
+const named = element => element.short_name || element.address;
+function chip(element, remove = null) {
+  return h('span', {'data-address': element.address, title: element.address, contenteditable: 'false'}, named(element),
+    remove ? h('button', {title: 'Take it off this task', onclick: remove}, 'x') : null);
+}
+function linkedNodes() {
+  fill($('#task .linked'), K.nodes.map((address, index) => chip(partOf(address),
+    index ? () => { K.nodes = K.nodes.filter(one => one !== address); linkedNodes(); } : null)));
+}
+function giveWork(id) {
+  const element = S.elements.get(id)?.element;
+  if (!element) { toast('Work is given at an element.'); return; }
+  Object.assign(K, {nodes: [element.address], chosen: null, at: null});
+  $('#task .title').textContent = `Give work · ${named(element)}`;
+  $('#task .text').replaceChildren();
+  $('#task .browser input').value = '';
+  linkedNodes();
+  const parts = [...S.elements.values()].map(entry => entry.element).sort((one, two) => one.address < two.address ? -1 : 1);
+  fill($('#task .rows'), parts.map(part => h('button', {'data-address': part.address, onclick: event => {
+    for (const row of $('#task .rows').children) row.classList.remove('chosen');
+    event.currentTarget.classList.add('chosen');
+    K.chosen = part.address;
+    $('#task .insert').disabled = $('#task .link').disabled = false;
+  }}, named(part), h('small', {}, part.address))));
+  $('#task .insert').disabled = $('#task .link').disabled = true;
+  $('#task').hidden = false;
+  $('#task .text').focus();
+}
+/* Where the cursor was in the text, kept as the text loses it to the browser's buttons. It is kept as a node and a
+ * count into it and not as a range, since a range is moved to the start of a text the browser writes again, which
+ * it does to a space typed at the end of a line. */
+function keepCursor() {
+  const chosen = getSelection();
+  if (chosen.rangeCount && $('#task .text').contains(chosen.anchorNode)) {
+    const range = chosen.getRangeAt(0);
+    K.at = {node: range.endContainer, count: range.endOffset};
+  }
+}
+// It is read at each change of the text and as the text is left: the browser tells of a moved cursor a moment after
+// it moved, which can be after the person has gone on to the browser of the namespace.
+document.addEventListener('selectionchange', keepCursor);
+for (const kind of ['input', 'keyup', 'mouseup', 'blur']) $('#task .text').addEventListener(kind, keepCursor);
+$('#task .browser input').oninput = event => {
+  const wanted = event.target.value.trim().toLowerCase();
+  for (const row of $('#task .rows').children) row.hidden = Boolean(wanted) && !row.textContent.toLowerCase().includes(wanted);
+};
+$('#task .insert').onclick = () => {
+  const text = $('#task .text'), made = chip(partOf(K.chosen));
+  if (K.at && text.contains(K.at.node)) {
+    const at = document.createRange(), most = K.at.node.nodeType === Node.TEXT_NODE ? K.at.node.length : K.at.node.childNodes.length;
+    at.setStart(K.at.node, Math.min(K.at.count, most));
+    at.collapse(true);
+    at.insertNode(made);
+  } else text.append(made);
+  // A text of no width after the name, for the cursor to stand in: the browser cannot put a cursor after a part
+  // of the text that is not typed into when nothing follows it, and what is typed there is lost.
+  const hold = document.createTextNode('\u200b');
+  made.after(hold);
+  const after = document.createRange();
+  after.setStart(hold, 1);
+  after.collapse(true);
+  getSelection().removeAllRanges();
+  getSelection().addRange(after);
+  text.focus();
+};
+$('#task .link').onclick = () => { if (!K.nodes.includes(K.chosen)) { K.nodes.push(K.chosen); linkedNodes(); } };
+/* The task as text: an inline node is written `[[name|address]]`, so an agent has the name and the address. */
+const taskText = () => [...$('#task .text').childNodes].map(function told(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.dataset?.address) return `[[${node.textContent}|${node.dataset.address}]]`;
+  return (node.tagName === 'DIV' || node.tagName === 'BR' ? '\n' : '') + [...node.childNodes].map(told).join('');
+}).join('').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
+$('#task .put').onclick = async () => {
+  const task = taskText();
+  if (!task) { toast('A task says what is to be done.'); return; }
+  const nodes = K.nodes.map(address => `element:${partOf(address).element_id}`);
+  if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value})) $('#task').hidden = true;
+};
+$('#task .close').onclick = () => { $('#task').hidden = true; };
+movable($('#task'));
+movable($('#float'));
 $('#float .close').onclick = () => { $('#float').hidden = true; Object.assign(F, {id: null, which: null, ids: new Set()}); };
-$('#float .bar').addEventListener('pointerdown', event => {
-  if (event.target.closest('button')) return;
-  const box = $('#float'), from = box.getBoundingClientRect(), start = [event.clientX - from.left, event.clientY - from.top];
-  const move = moved => {
-    box.style.left = Math.max(0, Math.min(moved.clientX - start[0], innerWidth - 60)) + 'px';
-    box.style.top = Math.max(0, Math.min(moved.clientY - start[1], innerHeight - 40)) + 'px';
-  };
-  const end = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', end); };
-  addEventListener('pointermove', move);
-  addEventListener('pointerup', end);
-  event.preventDefault();
-});
 async function renderWork(target, key, also = null) {
   let records = [];
   try {
