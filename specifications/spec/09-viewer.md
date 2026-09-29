@@ -370,6 +370,24 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-005, VIEW-022, VIEW-025, LAYER-005, LAYER-020.
 - Status: confirmed as design, 2026-09-28. The values are open.
 
+### VIEW-027 A part not built yet is drawn in characters
+
+- Requirement: In the 3D map an element that is in the design and not yet built is drawn as text floating where its node will be, and so are its edges. The text is drawn the way an ASCII shader draws: the characters give the ball its shape by their weight, the heavy ones where the ball is bright and the light ones where it is dark, toward the rim. The characters are the numbers and the letters in both cases, picked at random, and they change all the time. Nothing is colored or lit to make the shape. When the element is built the text gives way to the node.
+- What this means:
+  - The weight of a character is how much ink it puts down. The page measures it by painting the character, so the order holds for any font and no list is kept by hand.
+  - Every character is one size on every node, so a larger node holds more of them. The size follows the zoom a little.
+  - The characters of a node are all made again together at each turn. Within its weight each cell's character is random, so the text keeps changing while the shape holds.
+  - How fast the text changes says how far the work is. An element nobody has taken changes slowly. When an agent accepts the work the speed starts to climb. Each phase the agent reports starts a climb of about 20 seconds to a steady speed, which holds until the next phase. The phases share the way up to a point short of the fastest, so the ending always has the last part left.
+  - Work with no phases to report, only acceptance and completion, climbs that whole way by itself, slowly.
+  - When the agent is done the ending takes 5 seconds from wherever the speed is: 3 seconds speeding up to a blur, then 2 for the node to fade in to 70 percent. The text then fades out as the node goes from 70 to 100 percent.
+  - An edge of such an element is a row of characters, each the one of `-/|\` that slopes as the edge does on the screen.
+- Why: The map holds the full intended shape of the project, so it shows elements that do not exist yet, and a person has to tell those from the built ones at a glance. Text reads as something still being written, which is what an unbuilt element is. Text that moves faster as the work goes on shows where work is happening and how far along it is, on the map itself, with no list to read. The shape is made by the weight of the characters because that is what makes it read as a ball drawn in text; colored or lit letters read as a label. The climbs are gradual because an agent works for a long time inside a phase, so there is time for them, and a jump in speed reads as a fault. The ending starts from wherever the speed is because an agent may finish before a climb does.
+- How it shows: An element with a work record of `tbd` is a ball of slowly changing letters and numbers. When an agent takes it the text quickens, and quickens again at each phase. When the agent submits, the text blurs, the glass node fades in over it, and the text fades away.
+- Build: Not built in the product. It runs on the demonstration page, group 7, where a timer stands in for the agent's reports. The values there are chosen by eye and are not settled: characters of 10 pixels, growing from 0.7 to 1.6 of that with the zoom; 1.5 turns a second for an element nobody has taken; a climb from 1.5 to 10 turns a second, held at 85 percent of the way by the last phase; 30 turns a second at the end of the speed-up; 60 seconds for the climb of work with no phases. The random numbers are made by the page and handed to the shader as a grid of 32 by 32, two numbers a cell, because a formula for random numbers in the shader gave the same value in every cell on some graphics cards. The characters are painted large and scaled by the graphics card, and a pixel is as strong as the stroke covers it, so their edges are smooth.
+- Acceptance: An element not built is drawn with no node and with characters. Over the bright half of the ball the characters are heavier on average than over the dark half. The characters differ from one turn to the next. The turns a second never fall while the work goes on. After the ending the element is drawn as the node of VIEW-025 and no characters are left.
+- Relates to: VIEW-005, VIEW-016, VIEW-025, MAP-046, MAP-049.
+- Status: design, shown on the demonstration page 2026-09-28, where Rich judged the look. Open: whether it replaces the circles of VIEW-016 or stands beside them; how the agent's phases and its submitting reach the page from the work records; the values.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.
