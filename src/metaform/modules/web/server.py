@@ -237,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the nine writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the ten writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -246,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
-                  '/api/element': self.add_part, '/api/restore': self.restore}
+                  '/api/element': self.add_part, '/api/restore': self.restore,
+                  '/api/note': self.add_note}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -420,6 +421,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, restored.to_dict())
 
+    def add_note(self, given: dict[str, Any]) -> None:
+        """Write a note at a node, VIEW-034: one observation of the memory layer, where agents keep theirs, marked
+        as the user's. The layer is made on the first write, as the memory module makes it."""
+        node, text = given.get('node'), given.get('text')
+        if not isinstance(text, str) or not text.strip():
+            return self.send(400, {'error': 'A note says something.'})
+        if not isinstance(node, str):
+            return self.send(400, {'error': 'A note is written at a node.'})
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                kept = store.layers(kind='memory', limit=0).results
+                layer = kept[0].name if kept else store.layer(
+                    'memory', 'memory', MEMORY, kind='memory', mutable=True, hideable=True, ready=True).name
+                written = store.add_item(layer, Node.parse(node), text.strip(), extra={'by': 'user'})
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, plain(written))
+
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and
         only with `confirm` true, as the command only with `--confirm`, PROJ-025 and VIEW-019."""
@@ -496,6 +516,7 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
 }
 
 
+MEMORY = 'What agents have noted at this node.'  # the memory layer's variable, as the memory module declares it
 ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033
 ADDED = {'module': 'web', 'workflow': 'add element', 'prompt': 'Written by a person in the web GUI.', 'model': 'none',
          'role': 'user', 'blinded': False}

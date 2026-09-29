@@ -278,8 +278,13 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
-  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id),
+  look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
   away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
+  samples3d: () => G ? G.postProcessingComposer().renderTarget1.samples : 0,
+  samplesFor: name => samplesFor(name), drawnBy: () => G ? drawnBy() : '',
+  // The samples a pixel are set, so a browser check can compare the picture with the smoothing and without it.
+  smooth3d: samples => { if (!G) return; const chain = G.postProcessingComposer();
+    for (const target of [chain.renderTarget1, chain.renderTarget2]) { target.samples = samples; target.dispose(); } },
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
     if (!G) return;
@@ -603,13 +608,25 @@ function wave3d(data) {
  * to itself; the depth of the scene is kept in a depth texture of the page's own copy of three.js. */
 let BLOOM = null;
 const SOFT = 12;  // over how many units nearer than a light its glow fades out
+const SAMPLES = 4;
+const samplesFor = name => /swiftshader|llvmpipe|software|basic render/i.test(name) ? 0 : SAMPLES;
+function drawnBy() {
+  const gl = G.renderer().getContext(), told = gl.getExtension('WEBGL_debug_renderer_info');
+  return String(told ? gl.getParameter(told.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+}
 function addBloom() {
   const composer = G.postProcessingComposer(), copy = composer?.copyPass;
   if (!copy || !composer.renderTarget1) return;
   const Target = composer.renderTarget1.constructor, Material = copy.material.constructor, Quad = copy.fsQuad.constructor;
   // The scene's depth is kept beside its picture, in both of the chain's buffers, since they take turns.
+  // The scene is drawn into these buffers and not onto the screen, so the smoothing of edges the screen has does
+  // not reach it: each buffer takes four samples a pixel of its own. Without them a link thinner than a pixel,
+  // as every link is with the whole map in view, breaks into dots. Where the drawing is done by the processor and
+  // not by a graphics card the samples are left out: measured 2026-09-29 they took the page from 10 frames a
+  // second to 6 there, and changed nothing that could be seen.
   for (const target of [composer.renderTarget1, composer.renderTarget2]) {
     target.depthTexture = new THREE.DepthTexture(target.width, target.height);
+    target.samples = samplesFor(drawnBy());
     target.dispose();
   }
   const vertex = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
@@ -1121,13 +1138,38 @@ async function swap(on) {
   $('#swap3dBtn').title = on ? 'Put this map back in the large area' : 'Put this map in the small area, and the 2D map here';
   try { localStorage.setItem('metaform.swapped', on ? '1' : ''); } catch (error) { /* storage can be blocked; the swap still shows */ }
   resize();
-  if (G) setTimeout(() => G.zoomToFit(reduced() ? 0 : 600, on ? 24 : 60), 50);  // the whole 3D map in its new area
+  if (G) setTimeout(() => fit3d(600, on ? 24 : 60), 50);  // the whole 3D map in its new area
   if (S.loading || !S.elements.size) return;
   await build2D();
   if (S.selected) select(S.selected, false, true);
 }
 $('#swapBtn').onclick = $('#swap3dBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
-$('#fit3dBtn').onclick = () => { if (G) G.zoomToFit(reduced() ? 0 : 700, 60); };
+/* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
+ * only, as the 2D map's Fit moves the 2D map only. */
+const V3 = {whole: 0};  // how far the camera stands when the whole map is in view
+const away3d = () => G.camera().position.distanceTo(G.controls().target);
+function fit3d(time = 700, room = 60) {
+  if (!G) return;
+  const took = reduced() ? 0 : time;
+  G.zoomToFit(took, room);
+  setTimeout(() => { if (G) V3.whole = away3d(); }, took + 60);
+}
+function fly3d(id) {
+  const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
+  if (!node || node.x === undefined) return false;
+  const ratio = 1 + 90 / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+  G.cameraPosition({x: node.x * ratio, y: node.y * ratio, z: node.z * ratio}, node, reduced() ? 0 : 900);
+  return true;
+}
+// Where the camera stands decides it, and not which button was clicked last, since the person also moves the camera
+// by hand: standing back with the whole map in view it goes in on the selected node, and from anywhere nearer it
+// goes out to the whole map.
+$('#fit3dBtn').onclick = () => {
+  if (!G) return;
+  const back = V3.whole && away3d() >= V3.whole * 0.8;
+  if (back && S.selected && fly3d(S.selected)) return;
+  fit3d();
+};
 try { if (localStorage.getItem('metaform.swapped')) swap(true); } catch (error) { /* storage can be blocked */ }
 function resize() { if (G) { const box = $('#stage').getBoundingClientRect(); G.width(box.width).height(box.height); } }
 addEventListener('resize', resize);
@@ -1573,13 +1615,13 @@ function clicked2d(id) { if (id === S.selected || id.startsWith('m:')) goInside(
     setCam({x: c.x + (c.w - c.w * f) * px, y: c.y + (c.h - c.h * f) * py, w: c.w * f, h: c.h * f});
   }, {passive: false});
 })();
-function fitAll() { fit2D(); if (G) G.zoomToFit(reduced() ? 0 : 700, 60); }
+function fitAll() { fit2D(); fit3d(); }
 /* Fit and F go through three views, Rich 2026-09-26: zoomed out to the whole map, zoomed in on the selected node,
  * with the nodes inside it when it holds any, and regular, the node with its joined nodes. */
 function cycleView() {
   const here = S.selected;
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
-  if (!here || next === 'out') return fitAll();
+  if (!here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
   if (next === 'in') return focus2D(here, true, !IN.length && insideOf(here).length ? 'inside' : 'close', true);
   focus2D(here, true, 'around', true);
 }
@@ -1705,10 +1747,7 @@ function select(id, fly, keepTrail = false, stepping = false) {
   if (G) {
     G.nodeColor(G.nodeColor());
     const node = G.graphData().nodes.find(item => item.id === id);
-    if (fly && node && node.x !== undefined) {
-      const ratio = 1 + 90 / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-      G.cameraPosition({x: node.x * ratio, y: node.y * ratio, z: node.z * ratio}, node, reduced() ? 0 : 900);
-    }
+    if (fly && node) fly3d(id);
   }
   focus2D(id, fly);
   showTab('object');
@@ -1781,12 +1820,14 @@ async function renderMessages() {
 /* The menu of a node, opened by a right-click in either view. Each entry says how many it holds, and one that holds
  * none cannot be chosen. It is where further acts on a node are added. */
 async function menu(id, x = null, y = null) {
-  let found = {unread: [], past: []};
-  try { found = await messagesOf(id); } catch (error) { toast(error.message); }
+  let found = {unread: [], past: []}, notes = [];
+  try { found = await messagesOf(id); notes = await notesOf(id); } catch (error) { toast(error.message); }
   const box = $('#menu');
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
   fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
+    h('button', {class: 'notes', role: 'menuitem', onclick: () => { box.hidden = true; notesAt(id); }}, 'Notes ',
+      h('b', {}, String(notes.length))),
     h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
     h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'));
   box.hidden = false;
@@ -2003,6 +2044,34 @@ $('#task .put').onclick = async () => {
   if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value})) $('#task').hidden = true;
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; };
+/* Notes, VIEW-034: what a person and what an agent know about a part, kept in one place at the node, the memory
+ * layer. A note asks for nothing: it is not a message, it does not glow, and it stays. */
+const N = {node: null};
+async function notesOf(id) {
+  // Every note kept at the node, whatever layers are in view: a note a person wrote is not hidden from them by a
+  // choice of layers made for reading the map.
+  const view = await read('node', {target: targetOf(id), raw: true});
+  return (view.layers || []).filter(group => group.kind === 'memory').flatMap(group => group.items || [])
+    .filter(item => !item.link && typeof item.value === 'string');
+}
+async function notesAt(id) {
+  N.node = id;
+  $('#notes .title').textContent = `Notes · ${calledOf(id)}`;
+  let kept = [];
+  try { kept = await notesOf(id); } catch (error) { toast(error.message); }
+  if (N.node !== id) return;
+  fill($('#notes .kept'), kept.map(item => h('li', {}, item.value, item.extra?.by === 'user' ? h('small', {}, 'you') : null)));
+  $('#notes').hidden = false;
+}
+$('#notes .add').onclick = async () => {
+  const text = $('#notes textarea').value.trim();
+  if (!text) { toast('A note says something.'); return; }
+  if (!await wrote('/api/note', {node: targetOf(N.node), text})) return;
+  $('#notes textarea').value = '';
+  await notesAt(N.node);
+};
+$('#notes .close').onclick = () => { $('#notes').hidden = true; N.node = null; };
+movable($('#notes'));
 /* Adding an element, VIEW-033: a person gives it its address and joins it to the node the window was opened at. */
 const E = {node: null, from: ''};
 function addElement(id) {
@@ -2464,7 +2533,7 @@ async function loadGraph() {
   if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
   else {
     select(start, false);
-    if (!keep) setTimeout(() => { if (G) G.zoomToFit(reduced() ? 0 : 800, 60); }, 2200);
+    if (!keep) setTimeout(() => { if (G) fit3d(800, 60); }, 2200);
   }
 }
 async function loadMetaform() {

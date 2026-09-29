@@ -2832,6 +2832,20 @@ def test_each_view_has_its_own_fit_and_swap_and_the_messages_button_is_at_the_to
     near = page.evaluate('window.metaform.away3d()')
     page.click('#fit3dBtn')
     page.wait_for_function(f'() => window.metaform.away3d() > {near} * 1.5', timeout=5000)
+    # Rich, 2026-09-29: the Fit on the right reacted to the one on the left, and only zoomed out. Each Fit moves its
+    # own map, and the 3D map's goes between the whole map and close on the selected node.
+    page.wait_for_timeout(900)
+    whole, chart = page.evaluate('window.metaform.away3d()'), page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
+    page.click('#fitBtn')                                             # the 2D map's Fit
+    page.wait_for_timeout(900)
+    assert abs(page.evaluate('window.metaform.away3d()') - whole) < 1  # the 3D map did not move
+    assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') != chart
+    chart = page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")')
+    page.click('#fit3dBtn')                                           # the 3D map's Fit: in on the selected node
+    page.wait_for_function(f'() => window.metaform.away3d() < {whole} * 0.7', timeout=5000)
+    assert page.evaluate('document.querySelector("#map2d svg").getAttribute("viewBox")') == chart  # the 2D map did not move
+    page.click('#fit3dBtn')                                           # and out again
+    page.wait_for_function(f'() => window.metaform.away3d() > {whole} * 0.9', timeout=5000)
     page.click('#swapBtn')                                            # and the 2D view's own
     page.wait_for_function("""() => { const area = name => { const box = document.querySelector(name).getBoundingClientRect();
         return box.width * box.height; }; return area('#stage') > area('#map2d'); }""")
@@ -2859,7 +2873,8 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.is_hidden('#menu') and page.is_hidden('#float')
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
-    GIVE = ['task', 'Add Task', False], ['element', 'Add Element', False]  # from the same menu, VIEW-032 and VIEW-033
+    GIVE = (['notes', 'Notes 0', False], ['task', 'Add Task', False],     # from the same menu, VIEW-034, VIEW-032
+            ['element', 'Add Element', False])                          # and VIEW-033
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
     page.wait_for_timeout(1200)
@@ -3110,4 +3125,58 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
     page.wait_for_selector('#clearbox .backups button')
     listed = page.locator('#clearbox .backups li').all_inner_texts()
     assert len(listed) == 1 and listed[0].startswith(kept)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-034')
+def test_a_person_and_an_agent_keep_their_notes_at_a_node_in_one_place(run, web, mapped, browser):
+    """Rich, 2026-09-29: notes where both he and an agent put notes in place."""
+    from metaform.data import Store
+    alarm = Store('proj').element('code.alarm.audible').element_id
+    run('memory', 'add-observations', 'element:code.alarm.audible', 'The tone is 2 kHz.', cwd=mapped)  # an agent's
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.text_content('#menu button.notes') == 'Notes 1'
+    page.click('#menu button.notes')
+    page.wait_for_selector('#notes:not([hidden]) .kept li')
+    assert page.locator('#notes .kept li').all_inner_texts() == ['The tone is 2 kHz.']
+    page.click('#notes .add')                                          # a note with no text is not written
+    page.wait_for_timeout(400)
+    assert page.locator('#notes .kept li').count() == 1
+    page.fill('#notes textarea', 'Too quiet in a loud kitchen. Ask before changing the pitch.')
+    page.click('#notes .add')
+    page.wait_for_function('() => document.querySelectorAll("#notes .kept li").length === 2')
+    assert page.locator('#notes .kept li').all_inner_texts() == [
+        'The tone is 2 kHz.', 'Too quiet in a loud kitchen. Ask before changing the pitch.\nyou']
+    assert page.input_value('#notes textarea') == ''
+    # read raw, since the fixture's folder names its layers and memory is not among them
+    read = json.loads(run('map', 'node', 'element:code.alarm.audible', '--raw', '--json', cwd=mapped).stdout)
+    kept = [item for group in read['layers'] if group['kind'] == 'memory' for item in group['items']]
+    assert [(item['value'], (item['extra'] or {}).get('by')) for item in kept] == [
+        ('The tone is 2 kHz.', None), ('Too quiet in a loud kitchen. Ask before changing the pitch.', 'user')]
+    page.click('#notes .close')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.text_content('#menu button.notes') == 'Notes 2'
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_edges_of_the_3d_map_are_smoothed_where_a_graphics_card_draws_them(run, web, mapped, browser):
+    """Rich, 2026-09-29: the 3D graph needs antialiasing, the joins break apart when zoomed out. The picture itself
+    is judged by eye on a graphics card: the renderer these tests run on draws with the processor, where the samples
+    changed nothing that could be measured and cost four frames in ten."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    for name in ('ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 Direct3D11 vs_5_0 ps_5_0, D3D11)', 'Apple M3',
+                 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 630, OpenGL 4.6)'):
+        assert page.evaluate('name => window.metaform.samplesFor(name)', name) == 4, name
+    for name in ('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)',
+                 'llvmpipe (LLVM 17.0.6, 256 bits)', 'Microsoft Basic Render Driver'):
+        assert page.evaluate('name => window.metaform.samplesFor(name)', name) == 0, name
+    drawn_by = page.evaluate('window.metaform.drawnBy()')
+    assert drawn_by and page.evaluate('window.metaform.samples3d()') == page.evaluate(
+        'name => window.metaform.samplesFor(name)', drawn_by)  # the buffers take what the rule gives for this machine
     assert problems == []

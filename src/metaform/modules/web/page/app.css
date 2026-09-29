@@ -166,7 +166,19 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 @media (prefers-reduced-motion: reduce){.map2d .work-message{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}
 /* The menu of a node and the window its messages are read in, VIEW-030. */
 #menu{position:fixed;z-index:30;min-width:190px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);padding:4px;box-shadow:0 8px 28px color-mix(in srgb,var(--ground) 70%,transparent);display:grid;gap:2px}
-#menu[hidden],#float[hidden],#task[hidden],#element[hidden]{display:none}
+#menu[hidden],#float[hidden],#task[hidden],#element[hidden],#notes[hidden]{display:none}
+/* The window notes are kept in, VIEW-034. */
+#notes{position:fixed;z-index:26;left:480px;top:120px;width:400px;max-width:calc(100vw - 24px);max-height:80vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 12px 40px color-mix(in srgb,var(--ground) 75%,transparent)}
+#notes .bar{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:move;user-select:none}
+#notes .bar .title{flex:1;font:600 13px var(--sans);color:var(--text)}
+#notes .bar .close{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans);color:var(--text)}
+#notes .body{display:grid;gap:10px;padding:12px;overflow:auto}
+#notes .kept{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+#notes .kept li{padding:8px 10px;border-left:2px solid var(--memory);background:var(--panel-2);border-radius:0 var(--r) var(--r) 0;font:13px/1.45 var(--sans);color:var(--text);white-space:pre-wrap}
+#notes .kept li small{display:block;margin-top:4px;font:11px var(--sans);color:var(--faint)}
+#notes .kept:empty::after{content:'No notes here yet.';font:13px var(--sans);color:var(--faint)}
+#notes textarea{min-height:70px;resize:vertical;background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:8px;font:13px var(--sans)}
+#notes .add{justify-self:start;height:var(--ctl);background:var(--signal);color:var(--ground);border:0;border-radius:var(--r);padding:0 14px;cursor:pointer;font:600 13px var(--sans)}
 /* The window an element is added in, VIEW-033. */
 #element{position:fixed;z-index:26;left:470px;top:100px;width:440px;max-width:calc(100vw - 24px);max-height:86vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 12px 40px color-mix(in srgb,var(--ground) 75%,transparent)}
 #element .bar{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:move;user-select:none}
