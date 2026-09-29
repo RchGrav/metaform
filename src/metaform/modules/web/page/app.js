@@ -41,6 +41,9 @@ const S = {
   projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
   elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0,
 };
+/* The memory network open in both views, VIEW-031: the node it belongs to, what is drawn of it, and what the map was
+ * when it gave way, to go back to: the levels entered in 2D and where each node of the 3D map stood. */
+const MEM = {key: null, network: null, drawn: false, levels: [], positions: null, generation: 0};
 
 async function read(name, params = {}) {
   const query = new URLSearchParams({project: S.project, ...(S.metaform ? {metaform: S.metaform} : {}), ...params});
@@ -279,6 +282,12 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
+  // The memory network of a node, VIEW-031: opened as the menu's entry opens it, and what both views draw of it, or
+  // null on the map.
+  memories: id => memories(id),
+  memory: () => MEM.key && MEM.drawn ? {key: MEM.key, nodes: G ? G.graphData().nodes.map(node => node.id) : [],
+    links: G ? G.graphData().links.map(link => ({source: endOf(link.source), target: endOf(link.target), relation: link.relation})) : [],
+    nodes2d: [...M.nodes.keys()]} : null,
   away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
   samples3d: () => G ? G.postProcessingComposer().renderTarget1.samples : 0,
   samplesFor: name => samplesFor(name), drawnBy: () => G ? drawnBy() : '',
@@ -1100,18 +1109,25 @@ function labels() {
   }
   requestAnimationFrame(labels);
 }
-function draw3D() {
+/* The 3D view draws the map, or the memory network of a node while one is open, VIEW-031. `previous` holds where
+ * each node stood, the positions of what is drawn now unless given. */
+function draw3D(previous = null) {
   if (!G) return;
-  const previous = new Map(G.graphData().nodes.map(node => [node.id, node]));
-  const data = graphData();
+  if (MEM.key && S.loading) return;  // a memory network is drawn once the map and its items are read again
+  previous = previous || new Map(G.graphData().nodes.map(node => [node.id, node]));
+  const data = MEM.key ? memoryData() : graphData();
   for (const node of data.nodes) {  // keep drawn positions, so the picture does not jump as pages arrive
     const known = previous.get(node.id);
     if (known) Object.assign(node, {x: known.x, y: known.y, z: known.z, vx: known.vx, vy: known.vy, vz: known.vz,
       fx: known.fx, fy: known.fy, fz: known.fz});
   }
-  for (const [id, tag] of tags) if (!S.elements.has(id)) { tag.remove(); tags.delete(id); }
+  const named = new Set(data.nodes.filter(node => node.t === 'el').map(node => node.id));
+  for (const [id, tag] of tags) if (!named.has(id)) { tag.remove(); tags.delete(id); }
   if (hovered) hovered = data.nodes.find(node => node.id === hovered.id) || null;
   $('#tip3d').hidden = !hovered;
+  // A memory network is laid out before it is shown, so it opens settled and whole in view; the map keeps its own
+  // layout running from where each node stands.
+  G.warmupTicks(MEM.key ? 120 : 0);
   G.graphData(data);
 }
 /* A theme recolors both views in place, VIEW-023: the 3D view rereads its colors, the 2D map is drawn again. The
@@ -1247,7 +1263,7 @@ async function build2D() {
   try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   if (generation !== M.generation) return;
-  const inside = IN.length > 0;
+  const inside = IN.length > 0 || Boolean(MEM.key);
   const svg = mountSvg(result, host, inside);
   const nodes = new Map();
   for (const [id, key] of keys) {
@@ -1266,6 +1282,7 @@ async function build2D() {
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
   M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
+  if (MEM.key) { svg.remove(); svg.style.visibility = ''; await drawMemory2d(); return; }
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
   showBase();
   if (S.selected) focus2D(S.selected, false);
@@ -1462,7 +1479,12 @@ async function drawInside(arriving = false) {
 }
 function renderCrumbs() {
   const bar = $('#crumbs');
-  bar.hidden = !IN.length;
+  bar.hidden = !IN.length && !MEM.key;
+  if (MEM.key) {  // a memory network, VIEW-031: each part goes back to the map, at that level of it
+    const back = (depth, text) => h('a', {href: '#', onclick: event => { event.preventDefault(); leaveMemories(depth); }}, text);
+    return fill(bar, back(0, 'map'), MEM.levels.map((level, index) => [h('span', {class: 'sep'}, ' › '), back(index + 1, level.label)]),
+      h('span', {class: 'sep'}, ' › '), h('b', {}, `memories of ${nameOf(MEM.key)}`));
+  }
   const to = (depth, text) => h('a', {href: '#', onclick: event => { event.preventDefault(); goTo(depth); }}, text);
   fill(bar, ...(IN.length ? [to(0, 'map'), ...IN.flatMap((level, index) => [h('span', {class: 'sep'}, ' › '),
     index === IN.length - 1 ? h('b', {}, level.label) : to(index + 1, level.label)])] : []));
@@ -1511,6 +1533,173 @@ function renderThing(thing) {
   }
   fill(pane, h('div', {class: 'eyebrow'}, thing.kind === 'more' ? 'More' : 'Node'), h('h2', {}, thing.label),
     h('p', {class: 'meta'}, thing.kind === 'more' ? 'Enter shows the next ones.' : 'Enter goes inside it.'));
+}
+
+/* ---------- the memories of a node, a graph of their own in both views, VIEW-031 ----------
+ * The memories kept at a node are those the memory module reads for it: its observations, the relations it holds and
+ * the relations held toward it, STORE-020. Their entities, the node and the nodes those relations name, and the
+ * relations between those entities are the nodes and links of the graph. They are the memory layer's items as the page
+ * holds them, read in context with the layers in view as the 3D map draws them, VIEW-004 and VIEW-017. */
+function networkOf(key) {
+  const memories = [...S.items.values()].filter(thing => thing.layerKind === 'memory' && thing.kind === 'item');
+  const from = thing => keyOf(thing.item.target), to = thing => keyOf(thing.item.link);
+  const kept = memories.filter(thing => from(thing) === key || (thing.item.link && to(thing) === key));
+  const entities = new Set([key]);
+  for (const thing of kept) if (thing.item.link) for (const end of [from(thing), to(thing)]) if (end) entities.add(end);
+  const relations = memories.filter(thing => thing.item.link && entities.has(from(thing)) && entities.has(to(thing)))
+    .map(thing => ({key: thing.key, from: from(thing), to: to(thing), type: itemText(thing.value), layer: thing.layer}));
+  return {key, memories, kept, entities: [...entities], relations};
+}
+/* Each entity is drawn as the map draws that node: an element as its glass, a join as its purpose, a subtype as a
+ * subtype. */
+function entityNode(key) {
+  const element = S.elements.get(key)?.element;
+  if (element) return {id: key, t: 'el', name: element.short_name || element.address, address: element.address,
+    role: element.role, work: element.open_work || [], layer: element.layer};
+  const join = joinOf(key);
+  if (join) return {id: key, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []};
+  const found = subtypeOf.get(key);
+  if (found) return {id: key, t: 'sub', join: found.join.join_id, layer: found.subtype.layer,
+    name: found.subtype.short_name || found.subtype.address, joinName: found.subtype.name, work: found.subtype.open_work || []};
+  return {id: key, t: 'el', name: key, address: key, work: []};  // a node the layers in view do not draw
+}
+function memoryData() {
+  const network = MEM.network = networkOf(MEM.key);
+  return {nodes: network.entities.map(entityNode), links: network.relations.map(relation => ({source: relation.from,
+    target: relation.to, k: 'relation', layer: relation.layer, relation: relation.type, item: relation.key}))};
+}
+/* The view zooms into the node as the map gives way to it: each camera goes up to the node while its view fades
+ * toward the background. With reduced motion the views change at once. */
+function into3d(key) {
+  if (!G || reduced()) return Promise.resolve();
+  const node = G.graphData().nodes.find(item => item.id === key);
+  if (node && node.x !== undefined) {
+    const eye = G.camera().position, away = Math.hypot(eye.x - node.x, eye.y - node.y, eye.z - node.z) || 1;
+    const share = Math.min(1, Math.cbrt(nodeSize(node)) * 3 * 2.5 / away);  // near enough that the node fills the view
+    G.cameraPosition({x: node.x + (eye.x - node.x) * share, y: node.y + (eye.y - node.y) * share,
+      z: node.z + (eye.z - node.z) * share}, {x: node.x, y: node.y, z: node.z}, 480);
+  }
+  return shown3d(0);
+}
+function into2d(key) {
+  if (!M.svg || reduced()) return Promise.resolve();
+  const node = M.nodes.get(key);
+  if (node) moveCam(into(node));
+  return fade(M.svg, 0);
+}
+const shown3d = to => Promise.all([fade($('#stage'), to), fade($('#labels3d'), to)]);
+/* The whole memory network in the 3D view, once the graph has taken its nodes. */
+async function whole3d() {
+  if (!G) return;
+  for (let frames = 0; frames < 2; frames++) await new Promise(resolve => requestAnimationFrame(resolve));
+  G.zoomToFit(0, 60);
+  V3.whole = away3d();
+}
+/* Open the memory network of a node in both views. From the map, what the map was is kept to go back to: the levels
+ * entered in 2D and where each node of the 3D map stood. From a memory network, the network of another of its nodes
+ * takes its place. */
+async function memories(key) {
+  if (!key) return;
+  const generation = ++MEM.generation;
+  if (!MEM.key) {
+    if (!IN.length && M.base) M.base.cam = {...M.cam};
+    MEM.levels = IN.splice(0);
+    MEM.positions = G ? new Map(G.graphData().nodes.map(node => [node.id, node])) : null;
+  }
+  await Promise.all([into2d(key), into3d(key)]);
+  if (generation !== MEM.generation) return;
+  Object.assign(MEM, {key, drawn: false, network: networkOf(key)});
+  draw3D();
+  renderLegend();
+  await drawMemory2d(true);
+  if (generation !== MEM.generation) return;
+  MEM.drawn = true;
+  select(key, false, true);
+  if (M.fit && M.drawn === MEM) setCam(frame(M.fit));  // it opens with the whole memory network in view
+  await whole3d();
+  if (generation !== MEM.generation) return;
+  renderCrumbs();
+  if (!reduced()) { if (M.drawn === MEM) fade(M.svg, 1); shown3d(1); }
+}
+/* Going back returns to the map: to the level of the 2D map the network was opened from, or to `depth` of it, with
+ * each node of the 3D map where it stood, and the node the network belongs to selected. */
+async function leaveMemories(depth = null) {
+  if (!MEM.key) return;
+  const key = MEM.key, generation = ++MEM.generation;
+  const levels = MEM.levels.slice(0, depth ?? MEM.levels.length);
+  if (!reduced()) await Promise.all([M.svg ? fade(M.svg, 0) : null, shown3d(0)]);
+  if (generation !== MEM.generation) return;
+  const positions = MEM.positions;
+  Object.assign(MEM, {key: null, network: null, drawn: false, levels: [], positions: null});
+  draw3D(positions);
+  renderLegend();
+  IN.push(...levels);
+  if (IN.length) await drawInside(true); else showBase(key);
+  select(key, true, true);
+  if (!reduced()) shown3d(1);
+}
+/* Another metaform or project is shown: its map, at once. */
+function dropMemories() {
+  MEM.generation++;
+  Object.assign(MEM, {key: null, network: null, drawn: false, levels: [], positions: null});
+  for (const part of [$('#stage'), $('#labels3d')]) Object.assign(part.style, {transition: '', opacity: ''});
+}
+/* The memory network in 2D: each entity by its name, each relation a line from the node that holds it to the node it
+ * names, with its relation type on it. `hidden` puts it in place unseen, to fade in with the 3D view. */
+async function drawMemory2d(hidden = false) {
+  const network = MEM.network = networkOf(MEM.key);
+  const generation = ++insideGen;  // a render still running for a level left is dropped
+  const vertical = M.base ? M.base.vertical : true;
+  const ids = new Map(network.entities.map((key, index) => [key, `v${index}`]));
+  const lines = [vertical ? 'flowchart TB' : 'flowchart LR',
+    ...network.entities.map(key => `${ids.get(key)}["${label2d(nameOf(key))}"]:::${key === network.key ? 'center' : 'entity'}`),
+    ...network.relations.map((relation, index) =>
+      `${ids.get(relation.from)} e${index}@-->|"${label2d(relation.type)}"| ${ids.get(relation.to)}`),
+    ...['center', 'entity'].map(kind => `classDef ${kind} font-size:11px`)];
+  let result;
+  try { result = await window.mermaid.render(`memory${generation}`, lines.join('\n'), $('#draw')); }
+  catch (error) { fill($('#viewport'), h('p', {class: 'empty', style: {padding: '16px'}}, 'These memories could not be drawn.')); return; }
+  if (generation !== insideGen || !MEM.key) return;
+  const svg = mountSvg(result, $('#viewport'), false);
+  if (hidden && !reduced()) Object.assign(svg.style, {transition: '', opacity: '0'});
+  const nodes = new Map();
+  for (const [key, id] of ids) {
+    const group = svg.querySelector(`[id*="-flowchart-${id}-"]`);
+    if (!group) continue;
+    placeIn(nodes, key, group, S.elements.get(key)?.element.address || nameOf(key), entityNode(key).work);
+    group.classList.add(key === network.key ? 'in-center' : 'in-entity');
+  }
+  network.relations.forEach((relation, index) => svg.querySelector(`path[data-id="e${index}"]`)?.classList.add('relation'));
+  cancelAnimationFrame(M.frame);  // a camera still easing on the view left must not move this one
+  Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: MEM});
+  setCam(frame(M.fit));
+  $('#map2d').classList.add('focused');
+  for (const [key, value] of nodes) {
+    value.g.classList.toggle('sel', key === S.selected);
+    value.g.classList.toggle('near', key !== S.selected && S.neighbors.has(key));
+  }
+  renderCrumbs();
+}
+/* In a memory network the panel shows the selected node as the memory module reads it: its observations, and the
+ * relations it holds and those held toward it, each with the node it names, VIEW-009 and STORE-020. */
+function renderMemories(id) {
+  const network = MEM.network || networkOf(MEM.key);
+  const from = thing => keyOf(thing.item.target), to = thing => keyOf(thing.item.link);
+  const observed = network.memories.filter(thing => !thing.item.link && from(thing) === id);
+  const related = network.memories.filter(thing => thing.item.link && (from(thing) === id || to(thing) === id));
+  const called = key => network.entities.includes(key) && key !== id
+    ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(key, true); }}, nameOf(key))
+    : h('b', {}, nameOf(key));
+  const kept = thing => ({class: 'item', style: {'--c': `var(${colorVar(thing.layer)})`}});
+  fill($('#p-object'),
+    h('div', {class: 'eyebrow'}, 'Memories'),
+    h('h2', {}, nameOf(id)),
+    S.elements.has(id) ? h('div', {class: 'addr'}, S.elements.get(id).element.address) : null,
+    observed.length ? [h('div', {class: 'eyebrow'}, 'Observations'),
+      observed.map(thing => h('div', kept(thing), itemText(thing.value), refsOf(thing.item.refs)))] : null,
+    related.length ? [h('div', {class: 'eyebrow'}, 'Relations'),
+      related.map(thing => h('div', kept(thing), called(from(thing)), ` ${itemText(thing.value)} `, called(to(thing))))] : null,
+    observed.length || related.length ? null : h('p', {class: 'empty'}, 'No memories are kept here in the layers in view.'));
 }
 function aspect() { const box = $('#viewport').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
@@ -1586,7 +1775,7 @@ function focus2D(id, animate = true, framing = 'around', zoom = false) {
   moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height}, animate);
 }
 /* One click selects; a click on the selected node goes inside it; a group's "more" node shows the next ones. */
-function clicked2d(id) { if (id === S.selected || id.startsWith('m:')) goInside(id); else select(id, true); }
+function clicked2d(id) { if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true); }
 (function wire2D() {
   const host = $('#map2d');
   $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
@@ -1622,11 +1811,12 @@ function cycleView() {
   const here = S.selected;
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
   if (!here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
-  if (next === 'in') return focus2D(here, true, !IN.length && insideOf(here).length ? 'inside' : 'close', true);
+  if (next === 'in') return focus2D(here, true, !IN.length && !MEM.key && insideOf(here).length ? 'inside' : 'close', true);
   focus2D(here, true, 'around', true);
 }
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
 async function step(by) {
+  if (MEM.key) { if (by < 0) leaveMemories(); return; }  // back from a memory network is back to the map, VIEW-031
   const to = S.at + by;
   if (to < 0 || to >= S.history.length) return;
   S.at = to;
@@ -1640,8 +1830,8 @@ async function step(by) {
   select(entry.id, true, false, true);
 }
 function showSteps() {
-  $('#backBtn').disabled = S.at <= 0;
-  $('#forwardBtn').disabled = S.at >= S.history.length - 1;
+  $('#backBtn').disabled = !MEM.key && S.at <= 0;
+  $('#forwardBtn').disabled = Boolean(MEM.key) || S.at >= S.history.length - 1;
 }
 
 /* The keys walk the join tree, Rich 2026-09-26: Down goes deeper, to the providers of the node's joins and then to
@@ -1678,8 +1868,9 @@ function roots() {  // the nodes nothing receives from, vested entities first; t
   }
   return ordered;
 }
-function goInside(key) { enter(key); }
+function goInside(key) { if (!MEM.key) enter(key); }  // a memory network has no inside of its own
 function backOut() {
+  if (MEM.key) return leaveMemories();
   if (IN.length) return goTo(IN.length - 1);
   const here = S.selected;
   if (!here) return;
@@ -1700,7 +1891,7 @@ document.addEventListener('keydown', event => {
   const here = S.selected;
   if (event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey)) { event.preventDefault(); backOut(); return; }
   if (event.key === 'Enter') { event.preventDefault(); goInside(here); return; }
-  if (IN.length && event.key.startsWith('Arrow')) {  // inside a node the arrows go through its graph in order
+  if ((IN.length || MEM.key) && event.key.startsWith('Arrow')) {  // inside a node or a memory network the arrows go through its graph in order
     event.preventDefault();
     const order = across(M.nodes.keys()), at = order.indexOf(here);
     const by = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
@@ -1729,18 +1920,21 @@ document.addEventListener('keydown', event => {
 function select(id, fly, keepTrail = false, stepping = false) {
   if (!id) return;
   const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
-  const known = subtype || join || S.elements.has(id), thing = IN.at(-1)?.things?.get(id) || S.items.get(id);
+  const entity = Boolean(MEM.network?.entities.includes(id));  // a node of the memory network open, VIEW-031
+  const known = subtype || join || S.elements.has(id) || entity, thing = IN.at(-1)?.things?.get(id) || S.items.get(id);
   if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
   const path = IN.map(({key, label}) => ({key, label})), last = S.history[S.at];
-  if (!stepping && !(last && last.id === id && samePath(last.path, path))) {
+  if (!stepping && !MEM.key && !(last && last.id === id && samePath(last.path, path))) {
     S.history = [...S.history.slice(0, S.at + 1), {id, path}]; S.at = S.history.length - 1;
   }
   showSteps();
   S.selected = id;
   setReach(id);
   if (!known) { S.neighbors = new Set(); focus2D(id, fly); showTab('object'); renderThing(thing); return; }
-  S.neighbors = subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
+  S.neighbors = MEM.key ? new Set([id, ...(MEM.network?.relations || []).flatMap(relation =>
+      relation.from === id ? [relation.to] : relation.to === id ? [relation.from] : [])])
+    : subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
     : join ? new Set([join.receiver, join.provider])
     : new Set([id, ...S.joins.filter(item => item.receiver === id).map(item => item.provider),
       ...S.joins.filter(item => item.provider === id).map(item => item.receiver)]);
@@ -1751,7 +1945,7 @@ function select(id, fly, keepTrail = false, stepping = false) {
   }
   focus2D(id, fly);
   showTab('object');
-  if (subtype) renderSubtype(subtype); else if (join) renderJoin(join); else renderObject(id);
+  if (MEM.key) renderMemories(id); else if (subtype) renderSubtype(subtype); else if (join) renderJoin(join); else renderObject(id);
 }
 
 function refsOf(refs) {
@@ -1824,7 +2018,10 @@ async function menu(id, x = null, y = null) {
   const box = $('#menu');
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
+  const kept = networkOf(id).kept.length;  // the memories at the node, VIEW-031
   fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
+    h('button', {class: 'memories', disabled: !kept, role: 'menuitem', onclick: () => { box.hidden = true; memories(id); }},
+      'Memories ', h('b', {}, String(kept))),
     h('button', {class: 'notes', role: 'menuitem', onclick: () => { box.hidden = true; notesAt(id); }}, 'Notes ',
       h('b', {}, String(notes.length))),
     h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
@@ -2526,8 +2723,9 @@ async function loadGraph() {
   renderLegend();
   renderMessages();
   await build2D();
-  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
-  const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
+  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)
+    || MEM.network?.entities.includes(S.selected)) ? S.selected : null;
+  const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
   else {
@@ -2536,7 +2734,7 @@ async function loadGraph() {
   }
 }
 async function loadMetaform() {
-  S.view = null; S.selected = null; IN.length = 0; M.base = null; renderCrumbs();
+  S.view = null; S.selected = null; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();
   if ($('#p-prov').hidden === false) renderProv();

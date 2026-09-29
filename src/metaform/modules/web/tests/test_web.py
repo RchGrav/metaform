@@ -2871,7 +2871,8 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.is_hidden('#menu') and page.is_hidden('#float')
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
-    GIVE = (['notes', 'Notes 0', False], ['task', 'Add Task', False],     # from the same menu, VIEW-034, VIEW-032
+    GIVE = (['memories', 'Memories 0', True],                           # the first of the further acts, VIEW-031
+            ['notes', 'Notes 0', False], ['task', 'Add Task', False],     # from the same menu, VIEW-034, VIEW-032
             ['element', 'Add Element', False])                          # and VIEW-033
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
@@ -3157,6 +3158,151 @@ def test_a_person_and_an_agent_keep_their_notes_at_a_node_in_one_place(run, web,
     page.click('#notes .close')
     page.evaluate(f'window.metaform.menu("{alarm}")')
     assert page.text_content('#menu button.notes') == 'Notes 2'
+    assert problems == []
+
+
+SAMPLE_BOTH = '''key => { window.samples = []; window.sampling = true;
+    const tick = () => { const svg = document.querySelector("#map2d svg"), box = svg ? svg.viewBox.baseVal : null;
+        const seen = window.metaform.screen3d(key);
+        window.samples.push({base: svg ? svg.dataset.base === "yes" : false, o: svg ? Number(getComputedStyle(svg).opacity) : 1,
+            w: box ? box.width : 0, o3: Number(getComputedStyle(document.querySelector("#stage")).opacity),
+            r: seen ? seen.r : 0, memory: Boolean(window.metaform.memory())});
+        if (window.sampling) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); }'''
+
+
+def within(inner, outer):
+    return (outer['left'] - 1 <= inner['left'] and inner['right'] <= outer['right'] + 1
+            and outer['top'] - 1 <= inner['top'] and inner['bottom'] <= outer['bottom'] + 1)
+
+
+def rect_of(page, selector):
+    return page.evaluate(f'''(() => {{ const box = document.querySelector("{selector}").getBoundingClientRect();
+        return {{left: box.left, right: box.right, top: box.top, bottom: box.bottom}}; }})()''')
+
+
+@pytest.mark.req('VIEW-031')
+@pytest.mark.req('VIEW-030')
+def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_both_views(run, web, mapped, browser):
+    """Rich, 2026-09-29: the menu of a node has an entry for its memories; choosing it, in the 2D map or the 3D map,
+    shows the memory network of that node in both views; the view zooms into the node as the map gives way to it and
+    opens with the whole memory network in view; going back returns to the map."""
+    remember = lambda *given: run('memory', *given, cwd=mapped)
+    remember('add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.')
+    remember('create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible')     # it holds
+    remember('create-relations', 'element:exterior.cook', 'waits on', 'element:code.timer.kitchen')        # held toward it
+    remember('create-relations', 'element:code.alarm.audible', 'wakes', 'element:exterior.cook')           # between two of
+    # its entities; and one of the alarm's own, to a node the kitchen timer's memories do not name
+    remember('create-relations', 'element:code.alarm.audible', 'shown on', 'element:code.timer.kitchen.display')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    expected, at, _ = keys_of(web)
+    kitchen, alarm, cook = at['code.timer.kitchen'], at['code.alarm.audible'], at['exterior.cook']
+    outer = next(join['join_id'] for join in expected['joins'] if join['receiver'] == cook)
+    page.wait_for_timeout(2400)  # the page fits the whole 3D map into view once, a moment after it opens
+    set_layer(page, 'memory', True)  # the fixture's folder leaves memory out; it is turned on in this view
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 5 && '
+                           'document.querySelector("#p-object").textContent.includes("The countdown drifts")')
+    entries = lambda: page.eval_on_selector_all(
+        '#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
+    selected = lambda: page.evaluate('window.metaform.selected()')
+    network = lambda: page.evaluate('window.metaform.memory()')
+    base = page.evaluate('() => { const svg = document.querySelector("#map2d svg"); svg.dataset.base = "yes"; '
+                         'return document.querySelectorAll("#map2d svg g.node").length; }')
+
+    # from the 2D map: a right-click on the node's own box
+    page.evaluate(f'window.metaform.select("{kitchen}")')
+    page.wait_for_timeout(1200)  # both cameras settle on it
+    box = page.evaluate(f'window.metaform.box2d("{kitchen}")')
+    page.mouse.click(box['left'] + 6, box['top'] + 6, button='right')  # its own box, clear of the tick loop inside it
+    page.wait_for_selector('#menu:not([hidden])')
+    assert entries()[2] == ['memories', 'Memories 3', False]  # its observation, the relation it holds, one held toward it
+    page.evaluate(SAMPLE_BOTH, kitchen)
+    page.click('#menu button.memories')
+    page.wait_for_function(f'() => window.metaform.memory() && window.metaform.memory().key === "{kitchen}"')
+    page.wait_for_timeout(1500)  # the network fades in
+    samples = page.evaluate('() => { window.sampling = false; return window.samples; }')
+    going, shown = [one for one in samples if not one['memory']], [one for one in samples if one['memory']]
+    assert going and shown
+    assert max(one['r'] for one in going) > going[0]['r'] * 2  # the 3D view zooms into the node
+    assert min(one['o3'] for one in going) < 0.5                 # as the map gives way to it
+    assert shown[0]['o3'] < 0.5 and shown[-1]['o3'] == 1         # and the memory network comes in
+    was = [one for one in going if one['base']]
+    # the 2D view the same; the kitchen timer is a large box, holding its tick loop, so the view narrows less onto it
+    assert min(one['o'] for one in was) < 0.5 and was[-1]['w'] < was[0]['w'] * 0.9
+    own = [one for one in shown if not one['base']]
+    assert own and own[0]['o'] < 0.5 and own[-1]['o'] == 1
+
+    # the memory network: the node's entities and the relations between them, and nothing else, in both views
+    drawn = network()
+    assert sorted(drawn['nodes']) == sorted([kitchen, alarm, cook]) == sorted(drawn['nodes2d'])
+    assert sorted((link['source'], link['relation'], link['target']) for link in drawn['links']) == sorted(
+        [(kitchen, 'drives', alarm), (cook, 'waits on', kitchen), (alarm, 'wakes', cook)])
+    words = page.evaluate('document.querySelector("#map2d svg").textContent')
+    assert all(word in words for word in ('drives', 'waits on', 'wakes')) and 'shown on' not in words
+    assert '3 nodes shown' in page.inner_text('#count')
+    assert not page.query_selector('#map2d svg[data-base]')  # the map gave way to it
+    # it opens with the whole of it in view, in both views
+    stage, view = rect_of(page, '#stage'), rect_of(page, '#viewport')
+    for key in drawn['nodes']:
+        seen = page.evaluate(f'window.metaform.screen3d("{key}")')
+        assert within({'left': seen['x'], 'right': seen['x'], 'top': seen['y'], 'bottom': seen['y']}, stage), key
+        assert within(page.evaluate(f'window.metaform.box2d("{key}")'), view), key
+    assert 'kitchen timer' in inside(page)[1]
+    # the node is selected and the panel shows what is known about it
+    assert selected() == kitchen
+    panel = page.inner_text('#p-object')
+    assert 'The countdown drifts under load.' in panel and 'drives' in panel and 'waits on' in panel
+    page.evaluate(f'window.metaform.click3d("{alarm}")')
+    assert selected() == alarm and 'wakes' in page.inner_text('#p-object')
+    box = page.evaluate(f'window.metaform.box2d("{cook}")')
+    page.mouse.click((box['left'] + box['right']) / 2, (box['top'] + box['bottom']) / 2)
+    assert selected() == cook and network()['key'] == kitchen  # a click in it selects, and stays in it
+
+    # going back returns to the map, the same 2D map, never laid out again, and the whole 3D map
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
+    page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
+    assert page.evaluate('document.querySelectorAll("#map2d svg g.node").length') == base
+    assert selected() == kitchen and not page.is_visible('#crumbs')
+
+    # from the 3D map: the node's right-click; back by the breadcrumb, and by the Back button
+    page.evaluate(f'window.metaform.menu("{kitchen}")')
+    page.click('#menu button.memories')
+    page.wait_for_function(f'() => window.metaform.memory() && window.metaform.memory().key === "{kitchen}"')
+    assert sorted(network()['nodes']) == sorted([kitchen, alarm, cook])
+    page.click('#crumbs a')
+    page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
+    page.evaluate(f'window.metaform.memories("{kitchen}")')
+    page.wait_for_function('() => window.metaform.memory()')
+    page.click('#backBtn')
+    page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
+
+    # a node with no memories cannot open them
+    page.evaluate(f'window.metaform.menu("p:{outer}")')
+    assert entries()[2] == ['memories', 'Memories 0', True]
+    page.keyboard.press('Escape')
+
+    # with reduced motion the views change at once
+    page.emulate_media(reduced_motion='reduce')
+    page.evaluate(SAMPLE_BOTH, kitchen)
+    page.evaluate(f'window.metaform.memories("{kitchen}")')
+    page.wait_for_function('() => window.metaform.memory()')
+    page.wait_for_timeout(400)
+    still = page.evaluate('() => { window.sampling = false; return window.samples; }')
+    assert still and all(one['o'] == 1 and one['o3'] == 1 for one in still)
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => !window.metaform.memory()')
+
+    # the memories are read as every read of the page is, with the layers in view, VIEW-004
+    set_layer(page, 'memory', False)
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           '!window.metaform.graph().nodes.some(node => node.layer === "memory")')
+    page.evaluate(f'window.metaform.menu("{kitchen}")')
+    assert entries()[2] == ['memories', 'Memories 0', True]
     assert problems == []
 
 
