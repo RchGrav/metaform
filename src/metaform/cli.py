@@ -764,7 +764,11 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
 
 
 def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
-    """`metaform <nonce>`: the module's function for the nonce, its commands with help, or one of them, BASE-050."""
+    """`metaform <nonce>`: the module's function for the nonce, its commands with help, or one of them, BASE-050.
+
+    Words after the nonce that do not name one of the module's commands are the words of the nonce's function, so
+    `metaform <nonce> next` runs the function with `next` as `metaform <module> <function> next` would.
+    """
     said = f'metaform {held.nonce}'
     found = loader.get(held.module)
     if found is None or found.module is None:
@@ -774,7 +778,10 @@ def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
         out('\n'.join(f'{said} {verb.name}  {verb.summary}' for verb in found.module.verbs))
         return
     if rest and _verb(found, rest[0]) is None:
-        raise Stop(f'{held.module} has no command {rest[0]}.', f'{said} help')
+        function = _verb(found, held.function)
+        if function is None or not function.nouns:
+            raise Stop(f'{held.module} has no command {rest[0]}.', f'{said} help')
+        rest = [held.function, *rest]
     token = nonce.entered(held)
     try:
         run_module(held.module, rest or [held.function], folder)

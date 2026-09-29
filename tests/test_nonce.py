@@ -164,6 +164,40 @@ def test_a_command_the_module_does_not_have_is_named_with_the_way_to_list_them(r
     assert refused.returncode == 2 and 'fly' in refused.stderr and f'metaform {nonce} help' in refused.stderr
 
 
+WORDS = '''
+    from metaform import nonce
+    from metaform.module import Module, Noun, Verb
+    SUPPORTED_OS = ('linux', 'macos', 'windows')
+
+    def hear(ctx):
+        held = nonce.reached()
+        if held is None:
+            return 'metaform ' + nonce.request('words', 'hear')
+        return held.nonce + ' heard ' + ' '.join(ctx.nouns.get('word', ()))
+
+    def other(ctx):
+        return 'other ran'
+
+    MODULE = Module(id='words', summary='Words.', purpose='Hears words. Details: metaform help words.',
+                    verbs=(Verb('hear', hear, 'Begin, or hear the words after the nonce.',
+                                nouns=(Noun('word', 'A word after the nonce.', required=False, many=True),)),
+                           Verb('other', other, 'Another command.')))
+'''
+
+
+def test_the_words_after_a_nonce_that_name_none_of_its_modules_commands_reach_its_function(run, tmp_path,
+                                                                                          user_module):
+    user_module('words', WORDS)
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    word = run('words', 'hear', cwd=folder).stdout.split()[-1]
+    assert run(word, 'next', cwd=folder).stdout == f'{word} heard next'
+    assert run(word, 'next', 'step', cwd=folder).stdout == f'{word} heard next step'
+    assert run(word, cwd=folder).stdout == f'{word} heard '
+    assert run(word, 'other', cwd=folder).stdout == 'other ran'   # a word that names one of its commands runs it
+
+
 def test_a_nonce_never_has_the_name_of_a_command_or_a_module(run, steps):
     from metaform import loader, nonce
     from metaform.cli import VERBS
