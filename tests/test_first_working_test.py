@@ -24,7 +24,7 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 ROOT = Path(__file__).parents[1]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
+TOOLS = {'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
@@ -134,8 +134,8 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         listed = commands(host)
         assert TOOLS <= listed and not any(name.startswith(('hello_', 'template_')) for name in listed)
 
-        # 5 and 6: the subagent reads its instructions by name, unaltered.
-        served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
+        # 5 and 6: the subagent starts the intake and is handed its instructions, unaltered.
+        served = texts(asked(host, 'intake_start', {'model': 'fixture', 'role': 'intake subagent'}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
         assert footer == ''  # nothing is served beside the intake
@@ -157,7 +157,6 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
             noticed.extend(notice['where'] for notice in out.get('notices', []))
             return out
 
-        record('intake_start', {'model': 'fixture', 'role': 'intake subagent'})
         for element in submission['elements']:
             record('intake_element', {'namespace_address': element['namespace_address'],
                                       **{key: value for key, value in element.items()

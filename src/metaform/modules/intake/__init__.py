@@ -1,8 +1,8 @@
-"""intake: the Canonical Intake served by name, recorded one object at a time as it is reasoned, BASE-039.
+"""intake: the Canonical Intake handed over at the start, recorded one object at a time as it is reasoned, BASE-039.
 
-A subagent reads `intake prompt` and records the map as it works: it starts the
-intake, then records each element, join and subtype join in its own call,
-anneals with `intake absorb`, reads the recorded map back with `intake show`,
+The agent starts the intake with `intake start`, which hands it the Canonical
+Intake, and records the map as it works: each element, join and subtype join
+in its own call. It anneals with `intake absorb`, reads the recorded map back with `intake show`,
 whole or one receiver at a time, corrects it with `intake edit` and
 `intake remove`, and ends with `intake finish`. The intake layer is building
 until then: context reads do not see it, and the web GUI follows it live.
@@ -70,10 +70,6 @@ def served(ctx: Context) -> str:
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
     return text
-
-
-def prompt(ctx: Context) -> str:
-    return served(ctx)
 
 
 
@@ -204,9 +200,13 @@ def _recording(ctx: Context, notices: Notices) -> Recording:
     return made
 
 
-def start(ctx: Context) -> Any:
-    """Open the intake layer the records go into, or resume the one already being recorded."""
+def start(ctx: Context) -> str:
+    """Open the intake layer the records go into, or resume the one already being recorded, and hand the agent the
+    Canonical Intake to follow, BASE-039: the instructions tell it to run intake start, so start is what gives it the
+    procedure. The layer, the project and the metaform are said as lines first; the intake is the result, as stored
+    with its target filled. The text is read before the layer is opened, so an unreadable intake file writes nothing."""
     store = ctx.require_store()
+    text = served(ctx)
     notices: Notices = []
     found = _building(store)
     if found is not None:
@@ -219,7 +219,11 @@ def start(ctx: Context) -> Any:
             _text(ctx, 'id', notices)))
     else:
         found = _open(ctx, store, notices)
-    return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, 'notices': notices}
+    for key, value in (('layer', found.layer.name), ('project', store.project_id), ('metaform', found.metaform)):
+        ctx.say(f'{key}: {value}')
+    for notice in notices:
+        ctx.say(f"Notice: {notice['where']}: {notice['message']}")
+    return text
 
 
 def _own(element: Element | None, layer: Layer) -> bool:
@@ -551,7 +555,7 @@ def status_verb(ctx: Context) -> str:
     if found is not None:
         lines.append(f'An intake is being recorded in layer {found.layer.name} of metaform {found.metaform}.')
     if not lines:
-        lines.append('No intake yet. Read the instructions with metaform intake prompt.')
+        lines.append('No intake yet. Start one with metaform intake start.')
     return '\n'.join(lines) + '\n'
 
 
@@ -621,18 +625,18 @@ MODULE = Module(
     id='intake',
     summary='Serve the Canonical Intake and record its result as it is reasoned.',
     purpose='Serves the Canonical Intake instructions, records the intake as it is reasoned, and tracks whether this '
-            'project has an intake. The intake is agent work: a subagent reads its instructions with the command prompt '
-            'and follows them. Details: metaform help intake.',
+            'project has an intake. The intake is agent work: the agent starts it with the command start, which hands it '
+            'the Canonical Intake to follow. Details: metaform help intake.',
     details='The intake text is served unchanged except for its filled target. The intake is recorded as it is '
             'reasoned, one element, join or subtype join per call, into one building intake layer, annealed with '
             'absorb, read back with show, whole or one receiver at a time, and corrected with edit and remove. No '
             'other read sees it until finish; after finish it changes only through a correction layer. Nothing is '
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
-        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.'),
         Verb('start', start, 'Resume the intake being recorded, or start a fresh one. If the active metaform already '
                             'has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier '
-                            'one untouched. Returns its name; the existing web GUI follows it live.',
+                            'one untouched. Says its name, and hands you the Canonical Intake to follow; the existing web GUI '
+                            'follows it live.',
              nouns=(Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False),
                     Noun('blinded', 'Whether the agent sees only the map.', kind='bool', required=False),
