@@ -261,8 +261,6 @@ def test_the_projects_name_for_a_functionality_is_recorded_on_its_join_and_an_el
     assert held.name == 'end-of-countdown alarm'
     assert store.subtypes(held.join_id).results[0].name == 'one-second tick'
     assert store.element('code.timer.kitchen').extra == {'name': 'kitchen timer daemon'}
-    assert nouns_of('join')['name'].help == nouns_of('subtype')['name'].help
-    assert 'join' in nouns_of('element')['name'].help and 'extra' in nouns_of('element')['name'].help
 
 
 @pytest.mark.req('MAP-020')

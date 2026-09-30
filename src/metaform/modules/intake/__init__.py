@@ -38,6 +38,42 @@ VARIABLE = ('The functional map of the artifact: its elements, and each receiver
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
 
+def _schema_words() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """What the Canonical Intake's response schema says of each field, in its own words: an attribute's placeholder,
+    and the comment on a name or inside refs; for the element, the join and the element a subtype join holds. The
+    tools describe a field with these words and nothing else, BASE-039: the intake is the instruction, so tuning it
+    tunes what the agent meets at the tools, and a field the schema does not describe has no description."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'),
+                             ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
+    except (OSError, ET.ParseError):
+        return {}, {}, {}
+
+    def words(node: Any) -> dict[str, str]:
+        if node is None:
+            return {}
+        found = {key: value.strip('[]') for key, value in node.attrib.items() if value.startswith('[')}
+        children = list(node)
+        for before, after in zip(children, children[1:]):
+            if before.tag is ET.Comment and isinstance(after.tag, str):
+                found[after.tag] = (before.text or '').strip()
+        refs = node.find('refs')
+        said = next((child.text for child in (refs if refs is not None else ()) if child.tag is ET.Comment), None)
+        if said:
+            found['refs'] = said.strip()
+        return found
+    element = root.find('.//schema//elements/element')
+    join = element.find('joins/join') if element is not None else None
+    held = join.find('join/element') if join is not None else None
+    element_words, join_words, held_words = words(element), words(join), words(held)
+    if 'name' in element_words:
+        held_words.setdefault('name', element_words['name'])
+    return element_words, join_words, held_words
+
+
+ELEMENT_WORDS, JOIN_WORDS, HELD_WORDS = _schema_words()
+
 settings.text('intake_file', '', help='An intake file to serve instead of the Canonical Intake. Empty means the '
                                       'Canonical Intake.')
 
@@ -576,45 +612,25 @@ def _nouns(*names: str) -> tuple[Noun, ...]:
     return tuple(NOUNS[name] for name in names)
 
 
+E, J, H = ELEMENT_WORDS.get, JOIN_WORDS.get, HELD_WORDS.get
 NOUNS = {noun.name: noun for noun in (
-    Noun('role', 'AUE, VE, DE, SE or NE.', required=False, schema=ROLE),
-    Noun('name', 'The Canonical Name, the project\'s official terminology, or an informal name.', required=False),
-    Noun('name_length', 'proper_noun_lookback_segment_count: how many segments, read from the leaf, name it.',
-         required=False, schema=NAME_LENGTH),
-    Noun('refs', 'Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific '
-                 'references, such as key path and a relative path.', required=False, schema=REFS),
-    Noun('extra', 'Any other field, as a JSON object, kept in the extra.', required=False, schema=EXTRA),
-    Noun('type', 'The join type: purpose.', required=False),
-    Noun('purpose', 'State the objective or standard this element or action fulfills.', required=False),
-    Noun('function', 'Encounter Function of the PE within the RE context.', required=False),
-    Noun('ef', 'Function if it is the encounter of a functionality, Encounter if it is the functionality of the '
-               'encounter.', required=False, schema=EF),
-    Noun('relation', 'Active-voice descriptive fragment starting with a third-person singular present-tense verb '
-                     'ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is '
-                     'Encounter.', required=False),
-    Noun('verb', 'The single root verb extracted from the relation (e.g., provides, tracks, restricts).',
-         required=False),
-    Noun('observation', 'Only high-value observations consisting of long-lasting, stable state for agent orientation.',
-         required=False),
-    Noun('non_goal', 'High-value non-goals consisting of structural constraints.', required=False),
+    Noun('role', E('role', ''), required=False, schema=ROLE),
+    Noun('name', '', required=False),
+    Noun('name_length', E('name_length', ''), required=False, schema=NAME_LENGTH),
+    Noun('refs', J('refs', ''), required=False, schema=REFS),
+    Noun('extra', '', required=False, schema=EXTRA),
+    Noun('type', '', required=False),
+    *(Noun(field, J(field, ''), required=False, schema=EF if field == 'ef' else None)
+      for field in ('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal')),
 )}
 SUBTYPE_NOUNS = (
     Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
-    Noun(ADDRESS, 'The namespace_address of the element the subtype join holds: the absorbed element, recorded as '
-                  'intake element records one when there is none.'),
-    NOUNS['type'],
-    NOUNS['purpose'],
-    NOUNS['function'],
-    NOUNS['ef'],
-    NOUNS['relation'],
-    NOUNS['verb'],
-    NOUNS['observation'],
-    NOUNS['non_goal'],
-    Noun('role', 'The role of the element it holds: DE, SE or NE.', required=False, schema=SUBTYPE_ROLE),
-    Noun('name', NOUNS['name'].help, required=False),
-    Noun('name_length', 'proper_noun_lookback_segment_count of the element it holds: how many segments, read from the '
-                        'leaf, name it.', required=False, schema=NAME_LENGTH),
-    NOUNS['refs'],
+    Noun(ADDRESS, H(ADDRESS, '')),
+    *_nouns('type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal'),
+    Noun('role', H('role', ''), required=False, schema=SUBTYPE_ROLE),
+    Noun('name', H('name', ''), required=False),
+    Noun('name_length', H('name_length', ''), required=False, schema=NAME_LENGTH),
+    Noun('refs', H('refs', ''), required=False, schema=REFS),
     NOUNS['extra'],
 )
 ABSORB_NOUNS = (
@@ -643,15 +659,14 @@ MODULE = Module(
                     Noun('blinded', 'Whether the agent sees only the map.', kind='bool', required=False),
                     Noun('id', "The result's generated id.", required=False))),
         Verb('element', element, 'Record one element, or describe again one already recorded.',
-             nouns=(Noun(ADDRESS, "The element's namespace_address, its identity."),
-                    *_nouns('role', 'name_length', 'refs', 'extra'),
-                    Noun('name', "An element holds no name: it is its address, name_length and role. The project's "
-                                 'name for a functionality goes on the join, with intake_join name. Given here, it is '
-                                 "kept in the element's extra.", required=False))),
+             nouns=(Noun(ADDRESS, E(ADDRESS, '')),
+                    *_nouns('role', 'name_length'),
+                    Noun('refs', E('refs', ''), required=False, schema=REFS),
+                    NOUNS['extra'],
+                    Noun('name', E('name', ''), required=False))),
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
-             nouns=(Noun('receiver', 'The namespace address of the Vested Entity whose Operative Purpose this join '
-                                     'states.'),
-                    Noun('provider', 'The namespace address of the Providing Element.'),
+             nouns=(Noun('receiver', ''),
+                    Noun('provider', J('provider', '')),
                     *_nouns('name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type',
                             'refs', 'extra'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join, holding an element.',
