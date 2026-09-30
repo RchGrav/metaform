@@ -148,9 +148,10 @@ def test_over_mcp_start_says_its_lines_then_hands_over_the_intake_unmodified(hom
     from metaform.modules.mcp import server
     monkeypatch.setenv('METAFORM_HOME', str(home))
     error, blocks = anyio.run(server.run_tool, project, 'intake_start', {'model': 'opus'})
-    assert not error and len(blocks) == 2
-    assert blocks[0].splitlines()[0].startswith('layer: intake-')
-    assert without_target(blocks[1]) == without_target(SPEC.read_text(encoding='utf-8'))
+    assert not error and len(blocks) == 1
+    head, _, served = blocks[0].partition('<')
+    assert head.splitlines()[0].startswith('layer: intake-') and head.endswith('\n') and not head.endswith('\n\n')
+    assert without_target('<' + served) == without_target(SPEC.read_text(encoding='utf-8'))
 
 
 @pytest.mark.req('CLI-034')
