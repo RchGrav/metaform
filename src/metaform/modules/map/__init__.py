@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import outline, settings
+from metaform import outline, prompt_files, settings
 from metaform.data import EF_WORDS, PLACE_KINDS, Node, Notice, Store
 from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb
 
@@ -558,12 +559,7 @@ WORK_NOUNS = (
 
 RAW = ('raw',)
 
-NOTICE = ('This project has a map. Before you change a part, call the map tool with command where and the part\'s '
-          'address: it returns what the part is for, what relies on it and what it relies on. With no address, use '
-          'command roots. Give work to an agent through Metaform: record the task at each element it concerns with '
-          'command work, and hand the agent those addresses; the agent takes a task with op take and ends it with op '
-          'done. When you need an answer from the user, ask at the part it concerns with command ask, in plain words '
-          'and with the answers you suggest; then carry on with what does not wait on it.')
+NOTICE = prompt_files.text(resources.files(__name__), 'notice')
 
 
 def status(ctx: Context) -> Status:

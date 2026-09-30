@@ -1,4 +1,4 @@
-"""The mcp module: every surfaced module verb as a tool, live instructions, MCP-001 to MCP-008 and MCP-025."""
+"""The mcp module: surfaced tools, calls and project selection."""
 from __future__ import annotations
 
 import asyncio
@@ -15,20 +15,6 @@ from metaform.data import Store
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
-BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
-        "Choose the operation from the user's request. Use the matching module's commands and instructions to "
-        'perform it through completion. Execute a supplied procedure or prompt, recording results as it directs. '
-        'The current project is the target of the operation. Platform-development guidance applies when the task '
-        "is to change Metaform's implementation. "
-        'Each tool is a module. Call it with no command to see its commands and arguments; then call it with '
-        "command and the command's arguments in arguments. On the CLI use metaform <module> <command>; read "
-        '`metaform help <module>` and `metaform help <module> <command>` for its procedure. '
-        'Read the map at a part before changing it. An error ends with the one next step to take.\n\n'
-        'If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, '
-        'attaching what you have in its shape field. Do not retry.')
-DEBUG = ('Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match '
-         'what it said it takes, where you got stuck.')
-MAP_NOTICE = 'This project has a map. Before you change a part, call the map tool with command where and the part\'s '
 CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report'}
 
 
@@ -105,18 +91,10 @@ def test_mcp_is_a_module_and_off_means_no_server(run, module_row, tmp_path):
 
 @pytest.mark.req('MCP-002')
 @pytest.mark.req('MCP-003')
-@pytest.mark.req('MCP-007')
-@pytest.mark.req('MCP-008')
-def test_the_server_lists_each_surfaced_verb_as_a_tool_and_composes_its_instructions(run, home, mapped):
+def test_the_server_lists_each_surfaced_verb_as_a_tool(run, home, mapped):
     async def check(client, init):
-        return init.instructions, await tool_names(client)
-    instructions, tools = session(home, mapped, check)
-    # The instructions are messages that say what to do, MCP-029: the chassis's own, then each module's for the
-    # state the project is in. The project has a map, so the map's message is there and the intake's is not. No
-    # module is described, and the whole is short enough that a host shows all of it.
-    assert instructions.startswith(BASE + '\n\n' + MAP_NOTICE) and '## ' not in instructions
-    assert 'no map yet' not in instructions and 'start the web GUI' not in instructions
-    assert len(instructions) < 2000
+        return await tool_names(client)
+    tools = session(home, mapped, check)
     assert 'mcp_serve' not in tools and 'map_approve' not in tools
     schema = tools['map_joins'].input_schema
     element, raw = schema['properties']['element'], schema['properties']['raw']
@@ -263,17 +241,6 @@ def test_tool_errors_end_with_the_one_next_step_the_cli_gives(run, home, mapped)
     assert run('hello', 'history', cwd=mapped).stdout.split() == ['ada']
 
 
-@pytest.mark.req('MCP-007')
-def test_instructions_change_with_the_modules_on_the_next_connection(run, home, mapped):
-    """A module's message is there while the module is on the surface, and gone on the next connection once it is
-    not."""
-    async def instructions(client, init):
-        return init.instructions
-    assert MAP_NOTICE in session(home, mapped, instructions)
-    run('set', '--modules', 'memory,mcp', cwd=mapped)
-    assert MAP_NOTICE not in session(home, mapped, instructions)
-
-
 @pytest.mark.req('MCP-025')
 @pytest.mark.req('BASE-028')
 def test_every_tool_takes_a_project_and_concurrent_calls_stay_apart(run, home, mapped, tmp_path):
@@ -401,20 +368,6 @@ def test_a_value_set_through_the_set_tool_reads_back_as_the_cli_writes_it(run, h
         rows = json.loads(run('config', '--show', '--json', cwd=folder).stdout)
         return {row['key']: (row['value'], row['state']) for row in rows if row['key'] in ('modules', 'layers')}
     assert values(mapped) == values(other)
-
-
-@pytest.mark.req('MCP-007')
-@pytest.mark.req('CLI-034')
-@pytest.mark.req('BASE-044')
-def test_the_instructions_always_carry_the_stop_rule_and_ask_for_feedback_only_under_debug(run, home, mapped):
-    async def instructions(client, init):
-        return init.instructions
-    plain = session(home, mapped, instructions)
-    assert plain.startswith(BASE + '\n\n') and DEBUG not in plain
-    run('set', '--debug', cwd=mapped)
-    debugging = session(home, mapped, instructions)
-    assert debugging.startswith(BASE + '\n\n' + DEBUG + '\n\n' + MAP_NOTICE)
-    assert run('help', 'agents', cwd=mapped).stdout == debugging
 
 
 @pytest.mark.req('MCP-004')
@@ -667,14 +620,22 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
         tools = await tool_names(client)
         refused = await called(client, 'clear_project', {})
         still = await called(client, 'map_where', {'address': 'code.timer.kitchen'})
-        cleared = await called(client, 'clear_project', {'confirm': True})
+        for extra in ({}, {'confirmation': 'yes', 'model': 'test-model-full', 'date': '2026-09-29'},
+                      {'confirmation': 'I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT'},
+                      {'confirmation': 'I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT',
+                       'model': 'test-model-full', 'date': 'invalid'}):
+            rejected = await called(client, 'clear_project', {'confirm': True, **extra})
+            assert rejected.is_error
+            assert 'always ask the user' in '\n'.join(text(rejected))
+            assert not (await called(client, 'map_where', {'address': 'code.timer.kitchen'})).is_error
+        cleared = await called(client, 'clear_project', {
+            'confirm': True, 'confirmation': 'I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT',
+            'model': 'test-model-full', 'date': '2026-09-29'})
         return tools, refused, still, cleared
     tools, refused, still, cleared = session(home, mapped, check)
-    assert tools['clear_project'].input_schema['properties'].keys() == {'confirm', 'project'}
+    assert tools['clear_project'].input_schema['properties'].keys() == {'confirm', 'confirmation', 'model', 'date', 'project'}
     assert refused.is_error is True
-    assert text(refused) == [('Error: Clearing proj removes one metaform, main, with its store, and one report '
-                              'file. Its registration, folder, settings, origins and variants stay.\n'
-                              'Next: If you are sure: call metaform with command clear_project and confirm true in its arguments')]
+    assert 'always ask the user if they are sure, no matter what you think you heard' in '\n'.join(text(refused))
     assert still.is_error is False  # the caution alone changed nothing
     assert cleared.is_error is False
     told = json.loads(text(cleared)[-1])
@@ -696,7 +657,9 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
     (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
 
     async def check(client, init):
-        return await called(client, 'clear_project', {'confirm': True})
+        return await called(client, 'clear_project', {
+            'confirm': True, 'confirmation': 'I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT',
+            'model': 'test-model-full', 'date': '2026-09-29'})
     with unremovable(stuck):
         cleared = session(home, mapped, check)
         assert stuck.is_file()
@@ -705,10 +668,7 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
     assert (result['project'], result['metaforms'], result['reports']) == ('proj', ['main'], 1)
     assert [entry['path'] for entry in result['not_removed']] == [str(stuck)] and result['not_removed'][0]['reason']
     assert [notice['where'] for notice in result['notices']] == ['not_removed']
-    assert result['notices'][0]['message'] == (
-        'It could not be removed and is still on disk. Close any program that has it open, such as a running web '
-        'GUI, or fix its permissions, then call metaform with command clear_project and confirm true in its '
-        'arguments again.')
+    assert 'always ask the user if they are sure' in result['notices'][0]['message']
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
 
 

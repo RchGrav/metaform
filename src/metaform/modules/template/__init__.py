@@ -13,6 +13,10 @@ again. `reached()` is the nonce the running command came through, or None
 when it did not come through one, and `current()` is that nonce, stopping
 the command when there is none. `metaform <nonce>` runs the module's
 function for it. hello's `noncedemo` shows it.
+
+Every prompt an agent reads is in `resources/prompts.xml`, an element named
+for the prompt, never in Python, MCP-031. `instructions` is listed in the
+instructions agents read; a copy writes its own name in place of `template`.
 """
 from __future__ import annotations
 

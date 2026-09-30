@@ -205,7 +205,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - With the setting at its default, the composed instructions hold the notice; after `set --no-web-autostart` they do not.
   - `web_start` with no server running returns `started` and the address; called again, it returns `running` and the same address.
 - Relates to: BASE-035, CLI-011, MCP-007, VIEW-002.
-- Status: confirmed for a setting, true by default, that instructs agents to start the GUI when it is not running and to tell the user its address when they started it, with the token when the server needs one, Rich 2026-09-25; before the intake rather than after, Rich 2026-09-26. The setting name, the delivery through the status notice and the notice's wording are recommended.
+- Status: confirmed for a setting, true by default, that instructs agents to start the GUI when it is not running and to tell the user its address when they started it, with the token when the server needs one, Rich 2026-09-25; before the intake rather than after, Rich 2026-09-26. The setting name, the delivery through the status notice and the notice's wording are recommended. Open against MCP-031, 2026-09-30: no notice is added to the instructions, so the web GUI message is not served; whether the instructions prompt carries it is not decided.
 
 ### VIEW-016 Going inside a node replaces the 2D map with the node's own graph
 

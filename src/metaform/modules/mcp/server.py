@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import inspect
 import json
+from datetime import date
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
 import anyio
 
-from metaform import changes, home, settings
+from metaform import changes, home, prompt_files, settings
 from metaform.context import project_for
 from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
@@ -141,6 +143,9 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                      'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
+# The clear_project prompts, MCP-031; clear_project checks its confirmation against the statement.
+PROMPTS = resources.files('metaform.modules.mcp')
+CLEAR_STATEMENT = prompt_files.required(PROMPTS, 'clear_statement')
 SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
     'add_origin': ("Establish an origin from the project's current state, as metaform add origin does, PROJ-014.",
                    {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
@@ -170,12 +175,14 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                 'properties': {'name': _text('The prompt, by name.'),
                                'number': {'type': 'integer', 'description': 'The version number; without it, the '
                                                                             'newest.'}}}),
-    'clear_project': (("Remove a project's metaforms and reports, as metaform clear project does, PROJ-025. Its "
-                       'registration, folder, settings, origins and variants stay. Caution: without confirm it only '
-                       'says what it would remove.'),
+    'clear_project': (prompt_files.required(PROMPTS, 'clear_project'),
                       {'type': 'object', 'additionalProperties': False,
                        'properties': {'confirm': {'type': 'boolean',
-                                                  'description': 'Run it. Without it the tool only explains.'},
+                                                  'description': prompt_files.required(PROMPTS, 'clear_confirm')},
+                                      'confirmation': _text(prompt_files.required(PROMPTS, 'clear_confirmation',
+                                                                                  statement=CLEAR_STATEMENT)),
+                                      'model': _text('Your full model designation.'),
+                                      'date': _text('Date of confirmation, YYYY-MM-DD.'),
                                       'project': PROJECT}}),
     'extract': ('Write variants out to folders with Python alone, as metaform extract does, PROJ-018.',
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
@@ -189,9 +196,8 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
 JSON_TYPES: dict[str, type] = {'string': str, 'integer': int, 'boolean': bool, 'array': list}
 
 
-# How an agent is told to clear a project: the chassis's own tool, its command, and the confirmation.
-CLEAR = 'call metaform with command clear_project and confirm true in its arguments'
-CLEAR_AGAIN = CLEAR + ' again'
+CLEAR = prompt_files.required(PROMPTS, 'clear', statement=CLEAR_STATEMENT)
+CLEAR_AGAIN = CLEAR
 
 
 def _error(stop: Stop) -> Outcome:
@@ -292,8 +298,14 @@ def _history(folder: Path, name: str, given: dict[str, Any]) -> Outcome:
         project = project_for(folder, given.pop('project', None)) or _no_project()
         if home.project(project) is None:
             raise Stop(f'No project {project} is registered.', 'metaform list projects')
-        if not given.get('confirm', False):
-            raise Stop(home.to_clear(project).caution, f'If you are sure: {CLEAR}')
+        confirmation_date = given.get('date', '')
+        try:
+            valid_date = date.fromisoformat(confirmation_date).isoformat() == confirmation_date
+        except ValueError:
+            valid_date = False
+        if (not given.get('confirm', False) or given.get('confirmation') != CLEAR_STATEMENT
+                or not given.get('model', '').strip() or not valid_date):
+            raise Stop(home.to_clear(project).caution, CLEAR)
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044

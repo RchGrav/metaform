@@ -23,7 +23,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import settings
+from metaform import prompt_files, settings
 from metaform.data import Element, GraphPage, Join, Layer, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
@@ -34,8 +34,8 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
-NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
-          'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
+NOTICE = prompt_files.text(resources.files(__name__), 'notice')
+COMPLETE = prompt_files.required(resources.files(__name__), 'complete')
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -564,7 +564,7 @@ def status(ctx: Context) -> Status:
     recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',) \
         if found is not None else ()
     if ctx.store.has_intake():
-        return Status(lines=('Intake: complete', *recording, 'Start with: metaform map roots'))
+        return Status(lines=('Intake: complete', *recording, COMPLETE))
     if found is not None:
         return Status(lines=recording)
     return Status(lines=('Intake: none yet',), notice=NOTICE)

@@ -1,33 +1,17 @@
-"""The instructions agents read, composed live, MCP-029 and MCP-009.
+"""The instructions agents read, composed live, MCP-031.
 
-A few messages, each an imperative that says what to do and how. The chassis's
-own come first. Then each surfaced module gives its message for the state the
-project is in, through its status hook, and gives none when that state does not
-hold or a setting turns it off. With no project for the folder, the text ends
-with the way to register one. `metaform help agents` and the MCP server's
-instructions are this same text.
+The chassis's instructions prompt, with each surfaced module's instructions
+prompt listed in module id order where it marks. With no project for the
+folder, the registered projects and the way to register one follow. Every word
+is from the prompt files, never from here. `metaform help agents` and the MCP
+server's instructions are this same text.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from . import context, loader, settings
-from .module import Module, Status, call
-
-BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how. "
-        "Choose the operation from the user's request. Use the matching module's commands and instructions to "
-        'perform it through completion. Execute a supplied procedure or prompt, recording results as it directs. '
-        'The current project is the target of the operation. Platform-development guidance applies when the task '
-        "is to change Metaform's implementation. "
-        'Each tool is a module. Call it with no command to see its commands and arguments; then call it with '
-        "command and the command's arguments in arguments. On the CLI use metaform <module> <command>; read "
-        '`metaform help <module>` and `metaform help <module> <command>` for its procedure. '
-        'Read the map at a part before changing it. An error ends with the one next step to take.')
-STOP = ('If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, '
-        'attaching what you have in its shape field. Do not retry.')
-DEBUG = ('Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match '
-         'what it said it takes, where you got stuck.')
-NO_PROJECT = 'This folder is not in a registered project. To register one: metaform add project <id> <path>'
+from . import context, loader, prompt_files, settings
+from .module import Module
 
 
 def on_surface(group: str, folder: Path) -> bool:
@@ -40,31 +24,14 @@ def surfaced(folder: Path) -> list[Module]:
     return [module for module in sorted(loader.enabled(), key=lambda item: item.id) if on_surface(module.id, folder)]
 
 
-def notices(folder: Path, project: str | None) -> list[str]:
-    found: list[str] = []
-    for module in surfaced(folder):
-        if module.status is None:
-            continue
-        try:
-            got = call(module.status, context.build(module.id, folder, project=project, resolve=False))
-        except Exception:  # A failing hook contributes nothing to the instructions.
-            continue
-        if isinstance(got, Status) and got.notice:
-            found.append(got.notice)
-    return found
-
-
 def compose(folder: Path, project: str | None = None) -> str:
     chosen = project if project is not None else context.project_for(folder)
-    parts = [BASE + '\n\n' + STOP]
-    if settings.value('debug', folder):
-        parts.append(DEBUG)
+    listed = [line for line in (prompt_files.module(module.id, 'instructions') for module in surfaced(folder)) if line]
+    parts = [prompt_files.chassis('instructions', modules='\n'.join(listed))]
     if chosen is None:
         from . import home
         registered = [record.project_id for record in home.projects()]
         if registered:
-            parts.append('Registered projects: ' + ', '.join(registered) + '.')
-        parts.append(NO_PROJECT)
-    else:
-        parts.extend(notices(folder, chosen))
+            parts.append(prompt_files.chassis('registered', projects=', '.join(registered)))
+        parts.append(prompt_files.chassis('no_project'))
     return '\n\n'.join(parts) + '\n'

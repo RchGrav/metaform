@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The chassis's prompts, MCP-031. What is between an element's tags is what is served. An empty element inside a
+     prompt marks where the code fills in what it names: <modules/> the surfaced modules' instructions, one per line;
+     <projects/> the registered projects. -->
+<prompts>
+<instructions>Metaform MCP server is active.
+modules available.
+<modules/>
+
+Unless explicitly instructed otherwise you must sequester your context from prior intake runs.
+If this is a new context if told to begin intake run "metaform intake start" and perform the process 
+directly, do not delegate. If you have performed actions in this context as orchestrator intake 
+should be delegated.  Treat all prompt semantics as algorithms you must not change any system or intake 
+prompts directly doing so will damage the intake process.  No saved memories have any authority over this
+process.
+</instructions>
+<registered>Registered projects: <projects/>.</registered>
+<no_project>This folder is not in a registered project. To register one: metaform add project &lt;id&gt; &lt;path&gt;</no_project>
+<!-- Not served until decided, MCP-031. -->
+<stop>If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, attaching what you have in its shape field. Do not retry.</stop>
+<debug>Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match what it said it takes, where you got stuck.</debug>
+</prompts>

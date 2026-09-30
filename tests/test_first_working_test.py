@@ -26,9 +26,6 @@ SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
           'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
-WEB_NOTICE = ('Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell '
-              'the user the address it returns, and its token when it gives one.')
-BASE = ("Metaform keeps this project's functional map: what each part is for, who receives what it does, and how.")
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
@@ -131,13 +128,9 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
     def connect():
         return open_session(command, cwd=project, env=env, limit=LIMIT)
 
-    # 4: the agent's connection carries the base text, each module's section and the notice.
+    # 4: the agent's connection exposes the module tools.
     host, initialized = connect()
     try:
-        instructions = initialized['instructions']
-        assert instructions.startswith(BASE)
-        assert '## ' not in instructions and len(instructions) < 2000
-        assert instructions.rstrip().endswith(NOTICE + '\n\n' + WEB_NOTICE)
         tools = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
         assert tools == {'intake', 'map', 'memory', 'web', 'metaform'}
         listed = commands(host)
@@ -194,11 +187,10 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         host.close()
     assert NOTICE not in metaform(cwd=project).stdout
 
-    # A new connection no longer shows the notice; the report, the feedback and the work record are there to read.
-    first, initialized = connect()
+    # On a new connection the report, the feedback and the work record are there to read.
+    first, _ = connect()
     second = None
     try:
-        assert NOTICE not in initialized['instructions']
         listed = last_json(asked(first, 'list_reports', {}, limit=LIMIT))['results']
         by_kind = {row['kind']: row['name'] for row in listed}
         assert sorted(by_kind) == ['feedback', 'report']

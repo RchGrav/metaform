@@ -20,18 +20,18 @@ import socket
 import subprocess
 import sys
 import threading
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import home, settings
+from metaform import home, prompt_files, settings
 from metaform.module import Context, Module, Status, Stop, Subscription, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-NOTICE = ('Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell '
-          'the user the address it returns, and its token when it gives one.')
+NOTICE = prompt_files.text(resources.files(__name__), 'notice')
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied

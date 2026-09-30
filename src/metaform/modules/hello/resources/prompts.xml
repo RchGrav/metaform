@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hello's prompts, MCP-031. What is between an element's tags is what is served. -->
+<prompts>
+<instructions>hello is active.</instructions>
+</prompts>
