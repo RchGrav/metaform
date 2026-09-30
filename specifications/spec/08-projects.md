@@ -151,13 +151,13 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - How it shows: `metaform list origins` shows each origin's `mform_id`, its project, its kind and its commit or source path.
 - Build:
   - The manifest lists every file in the boundary, sorted by path. Each line is `<path>\t<sha256 of the bytes>\t<mode>`, where mode is `755` for an executable file and `644` otherwise. Lines are separated by `\n` with a trailing `\n`, and the whole is encoded as UTF-8.
-  - The first instance of a digest gets suffix `0000`, and each new instance takes the next unused value in hex.
+  - The first instance of a digest in a project gets suffix `0000`, and each new instance in that project takes the next unused value in hex. Two projects are two folders, PROJ-026, so the same content in each is `0000` in each.
   - The older forms `<digest>_0000` and a 12-hex prefix plus `_FFFF` are never written.
 - Acceptance:
   - Two origins captured from identical content on two machines have the same `origin_sha256`.
   - `mform_sha_id` is 64 hex characters, and `mform_id` is 16 hex characters with the same last four characters.
 - Relates to: PROJ-012, PROJ-014, PROJ-021, PROJ-023.
-- Status: confirmed for the two forms and the suffix. The manifest format and the first suffix value are recommended, open question 7.
+- Status: confirmed for the two forms and the suffix. The manifest format and the first suffix value are recommended, open question 7. Rich, 2026-09-30: the suffix counts within a project; two projects are two paths, so their origins cannot conflict.
 
 ### PROJ-014 An origin is never overwritten, and a new baseline starts a new origin unit
 - Requirement: A retained origin never changes. Moving the baseline to a new commit or new content, called re-anchoring, creates a new origin unit, and the earlier unit and its variants stay exactly as they were.
@@ -277,7 +277,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Requirement: Origins and variants are rows in the project's store, and their file payloads live in the project's folder in the home under the origin unit's long id, PROJ-026.
 - What this means: Records follow the one-row-per-thing rule, STORE-004. Payload files are too large for rows and live on disk, referenced from the rows.
 - Why: Rows give direct reads of which origins and variants exist and how each was made. Files on disk keep large payloads out of SQLite and copy cleanly into an export.
-- How it shows: `origins/<mform_sha_id>/` in the project's folder, PROJ-026, holds `origin/` for a folder origin, and `variants/<variant id>/` for each variant. A suffix is taken when any project's folder holds a unit of that long id, PROJ-013.
+- How it shows: `origins/<mform_sha_id>/` in the project's folder, PROJ-026, holds `origin/` for a folder origin, and `variants/<variant id>/` for each variant. Each project's units are its own, so the same content in two projects is `0000` in each, and the next suffix is taken only on a conflict inside one project, PROJ-013 and PROJ-021.
 - Build:
 
   ```sql

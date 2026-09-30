@@ -184,11 +184,6 @@ def _unit(project_id: str, mform_sha_id: str) -> Path:
     return origins_folder(project_id) / mform_sha_id
 
 
-def _suffix_taken(mform_sha_id: str) -> bool:
-    """An instance of the same content in any project holds this suffix, PROJ-013; read from the folders alone."""
-    return any((folder / 'origins' / mform_sha_id).exists() for folder in home.projects_dir().glob('*/'))
-
-
 # ---------------------------------------------------------------- the history database, Q53
 
 @contextmanager
@@ -307,12 +302,12 @@ def add_origin(project_id: str) -> Origin:
             for number in range(0x10000):
                 suffix = f'{number:04x}'
                 unit = _unit(project_id, digest[:60] + suffix)
-                if _suffix_taken(digest[:60] + suffix):
+                if unit.exists():
                     continue
                 try:
                     os.replace(staging, unit)
                 except OSError:
-                    if unit.exists():  # another project's origin of the same content took this suffix meanwhile
+                    if unit.exists():  # another origin of the same content in this project took it meanwhile
                         continue
                     raise
                 made = Origin(digest[:12] + suffix, digest[:60] + suffix, digest, suffix,

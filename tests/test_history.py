@@ -120,15 +120,19 @@ def test_a_folder_origin_copies_the_folder_and_later_changes_leave_the_copy(phot
 
 
 @pytest.mark.req('PROJ-013')
-def test_the_same_content_in_another_project_is_a_new_instance_with_the_next_suffix(photos, home, tmp_path):
+@pytest.mark.req('PROJ-026')
+def test_the_same_content_in_another_project_is_its_own_first_instance_in_its_own_folder(photos, home, tmp_path):
+    """Rich, 2026-09-30: two projects are two paths, so two folders, and their origins cannot conflict. The next
+    suffix is taken only on a conflict inside one project."""
     import shutil
     twin = tmp_path / 'twin'
     shutil.copytree(photos, twin)
     metaform_home.add_project('twin', twin)
     first, second = Store('photos').add_origin(), Store('twin').add_origin()
     assert first.origin_sha256 == second.origin_sha256
-    assert (first.suffix, second.suffix) == ('0000', '0001')
-    assert second.mform_id[:12] == first.mform_id[:12] and second.mform_id != first.mform_id
+    assert (first.suffix, second.suffix) == ('0000', '0000')
+    assert (units('photos') / first.mform_sha_id).is_dir() and (units('twin') / second.mform_sha_id).is_dir()
+    assert [path.name for path in units('photos').iterdir()] == [first.mform_sha_id]
 
 
 @pytest.mark.req('PROJ-014')
