@@ -67,6 +67,11 @@ def _schema_words() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     join = element.find('joins/join') if element is not None else None
     held = join.find('join/element') if join is not None else None
     element_words, join_words, held_words = words(element), words(join), words(held)
+    for step in root.iter('step'):  # the method's own SET clause for ef says what each of the two words means
+        said = re.search(r'\bSET ef = ([^;]+)', step.get('text') or '')
+        if said:
+            join_words['ef'] = said.group(1).strip()
+            break
     if 'name' in element_words:
         held_words.setdefault('name', element_words['name'])
     return element_words, join_words, held_words
