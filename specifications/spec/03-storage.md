@@ -19,9 +19,9 @@ It covers the base database, the per-project store, the correction stack, layers
 - Why: Every agent, in any folder or worktree, reaches the same data. A project never carries copies that go stale, get committed by accident, or get picked up by build tooling as if they were source.
 - How it shows: After any sequence of commands in a project folder, `git status` in that folder shows nothing new. Deleting `~/.metaform` removes every trace of Metaform's data.
 - Build: The chassis resolves the home once per process as `Path(os.environ.get('METAFORM_HOME') or Path.home() / '.metaform').expanduser()`. Every path the chassis writes is built from that value with `pathlib`, never with string joins or `/` literals. Layout under the home:
-  - `metaform.sqlite3`: the base database, STORE-002.
-  - `projects/<project id>/metaforms/<metaform id>/store.sqlite3`: one store per metaform, STORE-003 and STORE-041.
-  - `projects/<project id>/reports/`: intake reports, process feedback and saved shapes, BASE-045; `reports/` under the home when no project is known.
+  - `metaform.sqlite3`: the chassis database, STORE-002, holding nothing of any project.
+  - `projects/<project folder>/`: everything of one project, named and laid out as PROJ-026 says: `source.txt`, `project.sqlite3`, one `<metaform name>.metaform.sqlite3` per metaform, `history.sqlite3`, `reports/`, `.metaform/`, `origin/` and the diffs of work.
+  - `reports/` under the home: reports when no project is known, BASE-045.
   - `modules/`: the user place for modules, owned by the chassis loader, not by storage.
   - `skills/`: the installer's source copy of the skill, owned by the installer.
 - Acceptance:
@@ -30,12 +30,12 @@ It covers the base database, the per-project store, the correction stack, layers
 - Relates to: STORE-002, STORE-003, STORE-030, CLI-014.
 - Status: confirmed.
 
-### STORE-002 The base database holds projects, folders, settings and module state
-- Requirement: The base database `metaform.sqlite3` holds the registered projects, the working-folder table, settings with their glue, and module enable state.
+### STORE-002 The chassis database holds what belongs to no project
+- Requirement: The chassis database `metaform.sqlite3` holds what belongs to no project: settings with their glue for the global scope and for folders outside every project, the working-folder table for those folders, module enable state, what the installer set up, and nonces. It holds no project, no metaform and nothing a project needs in order to be read, PROJ-026.
 - What this means: These are the records that exist before and apart from any project's map. A folder's context is its settings, and the base database is where the home knows every folder without writing into it.
 - Why: Settings and folder context must work in folders that belong to no project, and they must survive deleting or re-running a project's store. Keeping them apart from project stores means a project store holds only that project's map and layers.
 - How it shows: `metaform` run in any folder reports that folder's project and settings from the base database alone.
-- Build:
+- Build: Rich, 2026-09-30, PROJ-026: the `projects`, `metaforms` and `active_metaforms` tables below, and the settings and glue of folders inside a project's source, are the project's own and live in its `project.sqlite3`, in the same form; the chassis database keeps the rest.
   ```sql
   CREATE TABLE projects(
     project_id   TEXT PRIMARY KEY,       -- STORE-031 id rules
@@ -87,7 +87,7 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- holds schema_version
   ```
   - A folder row is written the first time a folder-scoped setting is stored for it. Reads never write.
-  - A folder's project is its `project` setting when set, otherwise the registered project whose path contains the folder, the deepest match, compared through `path_key`.
+  - A folder's project is its `project` setting when set, otherwise the project found for it by PROJ-026: the folder under `projects/` named for its path or its nearest parent's, whose `source.txt` names that path.
   - A list-valued setting, such as `--modules` or `--layers`, is stored one row per member, in order, never as one list in one row, STORE-004. Reading a setting is one primary-key range read on scope, owner and key.
   - A stored setting is keyed by scope, owner and key, so a module can never read or overwrite another owner's stored value by declaring the same key, CLI-024. The current chassis keys settings by scope and key only; that changes.
   - `module_state` has a row only when a user has enabled or disabled a module. With no row, the module's own declaration decides, so a module that ships disabled stays disabled until enabled, the same three-case pattern as settings.
@@ -99,7 +99,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - Status: confirmed for projects, folders, settings and glue. The target columns follow MAP-041, which is confirmed. The owner column follows CLI-024, which is confirmed. `module_state` replacing the current `disabled_modules` table is recommended.
 
 ### STORE-003 Each metaform has one store
-- Requirement: Each metaform of a registered project has one SQLite store at `projects/<project id>/metaforms/<metaform id>/store.sqlite3` under the home, holding its whole map and every layer attached to it.
+- Requirement: Each metaform of a registered project has one SQLite store, `<metaform name>.metaform.sqlite3` in the project's folder, PROJ-026, holding its whole map and every layer attached to it.
 - What this means: Types, elements, joins, subtypes, refs, layers, provenance, layer items, the correction stack, selection and hidden state for one metaform live in one file. A project with two metaforms has two stores, and nothing of one is in the other. Nothing about a map lives in the base database.
 - Why: One file per metaform can be exported, copied, backed up or kept aside as a unit, which is what lets a project start over with a new metaform and keep the old one whole, MAP-045. Writers on different projects or metaforms never contend for the same file.
 - How it shows: Starting a new metaform creates no rows in the old store. Other projects and all settings are unaffected by anything done in one metaform's store.
@@ -799,7 +799,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 
 ### STORE-031 Project records, ids and targets
 - Requirement: A project is registered with an id, a folder and a target, under fixed rules for ids and duplicates.
-- What this means: The id names the project everywhere: in settings, in `projects/<id>/` under the home, and in every command. The folder is where the project's work happens and how a working folder finds its project. The target is the artifact the map describes, MAP-041.
+- What this means: The id names the project in settings and in every command; the project's folder in the home is named by its source's path, PROJ-026, and its `project.sqlite3` holds the id. The folder is where the project's work happens and how a working folder finds its project. The target is the artifact the map describes, MAP-041.
 - Why: The id becomes a folder name on three systems, so its form must be safe everywhere. Two projects claiming one id or one folder would send an agent's writes to the wrong map with no error.
 - How it shows: `metaform add project notes ~/notes` registers `notes` with target type path and target value the resolved folder. `metaform add project photos ~/pics artifact kitchen_photos` registers a project whose target is the artifact named `kitchen_photos` in that folder.
 - Build:
@@ -1038,7 +1038,7 @@ Specified in BASE-023 and BASE-025: a directly run wheel keeps its data in `~/.m
 - Status: recommended. An approved entry becoming a permanent record of the metaform, and the user's final veto over green or yellow, are confirmed, 2026-09-27; what they write is open, D89.
 
 ### STORE-041 Metaforms and the active metaform
-- Requirement: The base database records each project's metaforms and its one active metaform, each metaform has its own store, and every layer records the metaform it belongs to.
+- Requirement: The project's own `project.sqlite3`, PROJ-026, records its metaforms and its one active metaform, each metaform has its own store, and every layer records the metaform it belongs to.
 - What this means: A project can have more than one metaform, MAP-045. The base database lists them and records which one is active, so every surface finds the active one without opening any store. Each metaform's layers live in that metaform's store, STORE-003, and each layer row carries its metaform id so the layer names its container in exports and reads.
 - Why: The active metaform decides what every agent reads for the project, so it must be one stored choice per project that every folder and every surface sees the same way. A separate store per metaform keeps an old metaform whole and untouched while a new one is built.
 - How it shows: `metaform list metaforms` prints one line per metaform, `<name>  <created>`, with `(active)` after the active one. `metaform add metaform fresh` prints `Added metaform fresh to <project>; it is now active. The previous metaform main is kept. To switch back: metaform activate metaform main`. `metaform activate metaform main` prints `Active metaform for <project>: main`.
