@@ -335,6 +335,27 @@ def clear(args: list[str], folder: Path) -> None:
         out(f'Next: {cleared.remedy(f"run metaform clear project {project_id} --confirm again")}')
 
 
+def remove(args: list[str], folder: Path) -> None:
+    """`remove project [<project>] --confirm`: the project leaves Metaform, its folder untouched, PROJ-031."""
+    confirm = '--confirm' in args
+    words = [arg for arg in args if arg != '--confirm']
+    if words[:1] != ['project'] or len(words) not in (1, 2):
+        raise Stop('remove needs: project [<project>].', 'metaform remove project')
+    project_id = _project_arg(folder, words[1] if len(words) == 2 else None)
+    if home.project(project_id) is None:
+        raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
+    if not confirm:
+        raise Stop(home.removal_caution(project_id), f'If you are sure: metaform remove project {project_id} --confirm')
+    left = home.remove_project(project_id)
+    if not left:
+        out(f'Removed {project_id}. Its folder and files were not touched.')
+        return
+    out('Not removed, still on disk:')
+    for path, reason in left:
+        out(f'  {path}: {reason}')
+    out(f'Next: {home.Cleared(project_id, (), 0, left).remedy(f"run metaform remove project {project_id} --confirm again")}')
+
+
 def restore(args: list[str], folder: Path) -> None:
     """`restore project [<project>] [<backup>]`: a backup is brought back, the newest when none is named, PROJ-030."""
     if args[:1] != ['project'] or len(args) > 3:
@@ -681,7 +702,7 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
-    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore}
+    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -967,6 +988,18 @@ docs.command(Command('restore', 'Bring back what a clear removed, from the backu
                              'metaform list backups lists them, the newest first.',
                      examples=(('metaform restore project', "Bring back this folder's project from its newest backup."),
                                ('metaform list backups', 'List the backups of this folder\'s project.')),
+                     see_also=('clear', 'list')))
+docs.command(Command('remove', 'Take a project out of Metaform; its folder and files are not touched.',
+                     ('metaform remove project [<project>] --confirm',),
+                     description='Removes the project\'s registration, so it is no longer listed, the folder settings '
+                                 'that select it, and everything Metaform keeps for it: its metaforms, reports, origins, '
+                                 'variants and the backups its clears made.',
+                     details='Without --confirm it says what it would remove and removes nothing. A file it cannot '
+                             'remove stays on disk and is named with the reason, and the project stays registered '
+                             'until everything is gone, so the command can run again. To empty a project and keep it, '
+                             'use metaform clear project.',
+                     examples=(('metaform remove project old', 'Say what removing the project old would remove.'),
+                               ('metaform remove project old --confirm', 'Remove the project old.')),
                      see_also=('clear', 'list')))
 docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
                      details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',

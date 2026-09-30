@@ -519,6 +519,46 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
 
 
+@pytest.mark.req('PROJ-031')
+def test_remove_project_takes_the_project_out_of_metaform_and_leaves_its_folder(run, project, home, tmp_path):
+    (project / 'notes.txt').write_text('first\n', encoding='utf-8')
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    run('feedback', 'The subtype fields did not match.', cwd=project)
+    run('add', 'origin', cwd=project)
+    run('clear', 'project', '--confirm', cwd=project)
+    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    elsewhere = tmp_path / 'elsewhere'
+    run('set', '--project', 'proj', cwd=elsewhere)
+    files = sorted(path.name for path in project.rglob('*'))
+    assert (home / 'backups' / 'clear' / 'proj').is_dir()
+
+    refused = run('remove', 'project', 'proj', cwd=elsewhere, ok=False)
+    assert refused.returncode == 2
+    assert refused.stderr.splitlines() == [
+        ('Error: Removing proj takes it out of Metaform: its registration, the folder settings that select it, one '
+         'metaform, main, no report files, and its origins, variants and backups. Its folder and files are not '
+         'touched.'),
+        'Next: If you are sure: metaform remove project proj --confirm']
+    assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
+    assert (home / 'projects' / 'proj').is_dir()
+
+    assert lines(run('remove', 'project', 'proj', '--confirm', cwd=elsewhere)) == [
+        'Removed proj. Its folder and files were not touched.']
+    assert 'proj' not in [line.split()[0] for line in lines(run('list', 'projects'))]
+    assert not (home / 'projects' / 'proj').exists() and not (home / 'backups' / 'clear' / 'proj').exists()
+    assert sorted(path.name for path in project.rglob('*')) == files
+    assert 'Project: none' in run(cwd=elsewhere).stdout
+    run('add', 'project', 'proj', str(project))
+    assert run('list', 'metaforms', cwd=project).stdout == ''
+
+
+@pytest.mark.req('PROJ-031')
+def test_remove_project_of_an_unregistered_id_changes_nothing(run, project):
+    stopped = run('remove', 'project', 'ghost', ok=False)
+    assert stopped.returncode == 2 and stopped.stderr.splitlines()[-1] == 'Next: metaform list projects'
+    assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
+
+
 @pytest.mark.req('PROJ-025')
 def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what_to_do(run, project, home,
                                                                                        unremovable):

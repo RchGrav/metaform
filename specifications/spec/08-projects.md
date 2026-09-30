@@ -377,6 +377,17 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Relates to: PROJ-025, STORE-041, MAP-045, VIEW-019, BASE-044.
 - Status: asked for by Rich 2026-09-29: the clear backs it up and allows restoration easily, telling the user. The names, the place and restoring over a project that holds data are recommended.
 
+### PROJ-031 A project is removed from Metaform by one command, its folder untouched
+
+- Requirement: `metaform remove project [<project>] --confirm` removes a project from Metaform: its registration, so it is no longer listed, the folder settings that select it, and everything Metaform keeps for it in the home, its metaforms, reports, history with its origins and variants, and the backups its clears made. The project's own folder and files are never touched. Without `--confirm` it removes nothing and says what it would remove.
+- What this means: A clear, PROJ-025, empties a project and keeps its name so an intake can start again; a remove takes the name away as well. The two are separate commands because clearing to re-intake is done again and again, and removing is done once, to a project no longer wanted.
+- Why: Projects registered for trial runs and tests stay listed after they are cleared, in `metaform list projects`, in status and on the web GUI's project list, and nothing takes them away, so the list only grows. A project no longer wanted is removed whole, so nothing of it is left to list or to read.
+- How it shows: `metaform remove project old` stops with the caution and `Next: If you are sure: metaform remove project old --confirm`. With `--confirm` it prints `Removed old. Its folder and files were not touched.`, and `metaform list projects` no longer lists it.
+- Build: `home.remove_project` removes `<home>/projects/<project>/` and `<home>/backups/clear/<project>/`, then the project's rows of the projects, metaforms and active_metaforms tables and the folder settings whose `project` is it. A file or folder that cannot be removed is named with the system's reason, and the registration stays until everything is gone, so the command can be run again. It is a command of the chassis on the command line; it is not served as a tool.
+- Acceptance: After the remove, the project is not listed, its folder in the home and its backups are gone, a folder that selected it selects no project, its own folder holds the files it held, and the same id can be registered again. Without `--confirm` nothing changes. An unregistered id stops with `Next: metaform list projects`.
+- Relates to: PROJ-025, PROJ-030, VIEW-019.
+- Status: asked for by Rich 2026-09-30: clearing never removes the names, and the list grows. The command's name, its wording and not serving it as a tool are recommended.
+
 ### PROJ-026 A project's folder in the home holds everything of the project
 
 - Requirement: Each project has one folder in the home, and everything Metaform keeps for that project is inside it: its metaforms, its reports, its history with every origin and variant, its registration and target, which of its metaforms is active, the settings stored for its folders, and the prompt versions its layers were made from. The home's base database holds the list of projects and nothing a project needs in order to be read.
