@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- intake's prompts, MCP-031. What is between an element's tags is what is served. The notice is shown by
-     `metaform status` when the project has no map, and complete by `metaform status` when it has one. -->
+<!-- intake's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
 <instructions>intake is active.</instructions>
-<notice>This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with command prompt, or to run `metaform intake prompt`, and to follow what it returns.</notice>
-<complete>To use the existing map: metaform map roots. To perform an intake: have a fresh subagent read metaform intake prompt and execute that procedure against the project target.</complete>
 </prompts>

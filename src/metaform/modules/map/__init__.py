@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import outline, prompt_files, settings
+from metaform import outline, settings
 from metaform.data import EF_WORDS, PLACE_KINDS, Node, Notice, Store
-from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb
+from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -559,17 +558,10 @@ WORK_NOUNS = (
 
 RAW = ('raw',)
 
-NOTICE = prompt_files.text(resources.files(__name__), 'notice')
-
-
-def status(ctx: Context) -> Status:
-    """The message for a project that has a map, MCP-029."""
-    return Status(notice=NOTICE) if ctx.store is not None and ctx.store.has_intake() else Status()
-
 
 MODULE = Module(
     id='map',
-    status=status,
+    status=None,
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with the receiver and its '

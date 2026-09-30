@@ -17,8 +17,6 @@ ROOT = Path(__file__).parents[5]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 RESOURCE = Path(__file__).parents[1] / 'resources' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
-          'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 
 
 @pytest.fixture
@@ -316,7 +314,6 @@ def test_a_join_missing_its_purpose_is_stored_whole_with_a_notice_naming_it(run,
     assert store.has_intake()
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert cook_join.purpose in (None, '') and cook_join.function.startswith('The timer counts down')
-    assert not any(NOTICE in line for line in run(cwd=project).stdout.splitlines())
 
 
 @pytest.mark.req('BASE-039')
@@ -488,17 +485,17 @@ def test_two_elements_with_one_address_are_one_element_holding_both_joins(run, p
     assert sorted(join.provider_address for join in joins) == ['code.alarm.audible', 'code.timer.kitchen']
 
 
-@pytest.mark.req('BASE-039')
 @pytest.mark.req('CLI-028')
-@pytest.mark.req('MCP-009')
-def test_status_carries_the_notice_until_an_intake_is_stored_then_names_the_entry(run, project, tmp_path):
+@pytest.mark.req('MCP-031')
+def test_status_says_whether_there_is_an_intake_and_gives_no_intake_or_map_directions(run, project, tmp_path):
     out = run(cwd=project).stdout.splitlines()
-    assert 'Intake: none yet' in out and '  ' + NOTICE in out
+    at = out.index('Intake: none yet')
+    assert not out[at + 1].startswith('  This project')
     assert run('intake', 'status', cwd=project).stdout.startswith('No intake')
     report = submit(run, project, FIXTURE, tmp_path)
     out = run(cwd=project).stdout.splitlines()
-    assert 'Intake: complete' in out and 'Start with: metaform map roots' in out
-    assert not any(NOTICE in line for line in out)
+    at = out.index('Intake: complete')
+    assert not any('subagent' in line or 'This project has a map' in line for line in out[at:])
     assert report['layer'] in run('intake', 'status', cwd=project).stdout
 
 
@@ -584,7 +581,6 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     assert (len(shown['elements']), len(shown['joins']), len(shown['joins'][0]['subtypes'])) == (2, 1, 0)
     assert shown['undescribed'] == ['code.timer.kitchen']
     assert 'Intake: being recorded' in run(cwd=project).stdout
-    assert NOTICE not in run(cwd=project).stdout
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name=kitchen timer', cwd=project)
     assert json.loads(run('intake', 'show', '--json', cwd=project).stdout)['undescribed'] == []
     finished = json.loads(run('intake', 'finish', '--json', cwd=project).stdout)

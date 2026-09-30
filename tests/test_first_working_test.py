@@ -24,8 +24,6 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 ROOT = Path(__file__).parents[1]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-NOTICE = ('This project has no map yet. Have a subagent perform the intake: tell it to call the intake tool with '
-          'command prompt, or to run `metaform intake prompt`, and to follow what it returns.')
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
@@ -129,7 +127,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         return open_session(command, cwd=project, env=env, limit=LIMIT)
 
     # 4: the agent's connection exposes the module tools.
-    host, initialized = connect()
+    host, _ = connect()
     try:
         tools = {tool['name'] for tool in host.request('tools/list', {}, deadline=_deadline())['tools']}
         assert tools == {'intake', 'map', 'memory', 'web', 'metaform'}
@@ -185,7 +183,6 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         assert noticed == ['name', 'name', 'name', 'purpose']
     finally:
         host.close()
-    assert NOTICE not in metaform(cwd=project).stdout
 
     # On a new connection the report, the feedback and the work record are there to read.
     first, _ = connect()

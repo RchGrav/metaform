@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `instructions`, `map is active.`, listed in the instructions agents read under "modules available.", and `notice`, which `metaform status` shows when the project has a map, MCP-031.
+`resources/prompts.xml` holds `instructions`, `map is active.`, listed in the instructions agents read under "modules available.", MCP-031.
 
 ## Verbs
 

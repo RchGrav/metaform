@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- map's prompts, MCP-031. What is between an element's tags is what is served. The notice is shown by
-     `metaform status` when the project has a map. -->
+<!-- map's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
 <instructions>map is active.</instructions>
-<notice>This project has a map. Before you change a part, call the map tool with command where and the part's address: it returns what the part is for, what relies on it and what it relies on. With no address, use command roots. Give work to an agent through Metaform: record the task at each element it concerns with command work, and hand the agent those addresses; the agent takes a task with op take and ends it with op done. When you need an answer from the user, ask at the part it concerns with command ask, in plain words and with the answers you suggest; then carry on with what does not wait on it.</notice>
 </prompts>

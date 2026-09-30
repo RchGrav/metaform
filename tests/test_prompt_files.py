@@ -69,16 +69,6 @@ def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_
 
 
 @pytest.mark.req('MCP-031')
-def test_module_notices_are_not_added_to_the_instructions(run, home, tmp_path):
-    folder = tmp_path / 'proj'
-    folder.mkdir()
-    run('add', 'project', 'proj', str(folder))
-    served = run('help', 'agents', cwd=folder).stdout
-    for module in ('intake',):
-        assert prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'notice').text.strip() not in served
-
-
-@pytest.mark.req('MCP-031')
 def test_the_trouble_report_and_debug_prompts_are_served_only_while_debug_is_on(run, home, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()

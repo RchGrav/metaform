@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `instructions`, `intake is active.`, listed in the instructions agents read under "modules available."; `notice`, which `metaform status` shows when the project has no map; and `complete`, the line status shows when it has one, MCP-031.
+`resources/prompts.xml` holds `instructions`, `intake is active.`, listed in the instructions agents read under "modules available.", MCP-031.
 
 ## Verbs
 
