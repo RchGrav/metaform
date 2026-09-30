@@ -13,7 +13,9 @@ from metaform.data import SUBTYPE_ROLES as SUBTYPE_ROLE_NAMES
 
 Schema = dict[str, Any]
 
-EF: Schema = {'type': 'string', 'enum': list(EF_WORDS)}
+EF: Schema = {'type': 'string', 'enum': list(EF_WORDS),
+              'description': 'Function if it is the encounter of a functionality, Encounter if it is the functionality '
+                             'of the encounter.'}
 ROLE: Schema = {'type': 'string', 'enum': list(ROLE_NAMES)}
 SUBTYPE_ROLE: Schema = {'type': 'string', 'enum': list(SUBTYPE_ROLE_NAMES)}
 NAME_LENGTH: Schema = {'type': 'integer', 'minimum': 1}
