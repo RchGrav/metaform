@@ -2,7 +2,8 @@
 
 The chassis's instructions prompt, with each surfaced module's instructions
 prompt listed in module id order where it marks. With no project for the
-folder, the registered projects and the way to register one follow. Every word
+folder, the registered projects and the way to register one follow; with debug
+on, the trouble report and debug prompts end it. Every word
 is from the prompt files, never from here. `metaform help agents` and the MCP
 server's instructions are this same text.
 """
@@ -48,4 +49,6 @@ def compose(folder: Path, project: str | None = None) -> str:
         if registered:
             parts.append(prompt_files.chassis('registered', projects=', '.join(registered)))
         parts.append(prompt_files.chassis('no_project'))
+    if settings.value('debug', folder):
+        parts.extend((prompt_files.chassis('stop'), prompt_files.chassis('debug')))
     return '\n\n'.join(parts) + '\n'

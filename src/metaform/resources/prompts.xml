@@ -16,7 +16,7 @@ process.
 </instructions>
 <registered>Registered projects: <projects/>.</registered>
 <no_project>This folder is not in a registered project. To register one: metaform add project &lt;id&gt; &lt;path&gt;</no_project>
-<!-- Not served until decided, MCP-031. -->
+<!-- Served, in this order, only while the debug setting is on, MCP-031. -->
 <stop>If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, attaching what you have in its shape field. Do not retry.</stop>
 <debug>Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match what it said it takes, where you got stuck.</debug>
 </prompts>

@@ -76,3 +76,16 @@ def test_module_notices_are_not_added_to_the_instructions(run, home, tmp_path):
     served = run('help', 'agents', cwd=folder).stdout
     for module in ('intake',):
         assert prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'notice').text.strip() not in served
+
+
+@pytest.mark.req('MCP-031')
+def test_the_trouble_report_and_debug_prompts_are_served_only_while_debug_is_on(run, home, tmp_path):
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    chassis = SOURCE / 'resources' / 'prompts.xml'
+    lines = [prompt(chassis, name).text.strip() for name in ('stop', 'debug')]
+    served = run('help', 'agents', cwd=folder).stdout
+    assert not any(line in served for line in lines)
+    run('set', '--debug', cwd=folder)
+    assert run('help', 'agents', cwd=folder).stdout.rstrip().endswith('\n\n'.join(lines))
