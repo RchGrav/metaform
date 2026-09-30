@@ -336,7 +336,7 @@ def clear(args: list[str], folder: Path) -> None:
 
 
 def remove(args: list[str], folder: Path) -> None:
-    """`remove project [<project>] --confirm`: the project leaves Metaform, its folder untouched, PROJ-031."""
+    """`remove project [<project>] --confirm`: an empty project leaves the list, its folder untouched, PROJ-031."""
     confirm = '--confirm' in args
     words = [arg for arg in args if arg != '--confirm']
     if words[:1] != ['project'] or len(words) not in (1, 2):
@@ -344,16 +344,13 @@ def remove(args: list[str], folder: Path) -> None:
     project_id = _project_arg(folder, words[1] if len(words) == 2 else None)
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
+    held = home.not_empty(project_id)
+    if held:
+        raise Stop(held, f'metaform clear project {project_id} --confirm')
     if not confirm:
         raise Stop(home.removal_caution(project_id), f'If you are sure: metaform remove project {project_id} --confirm')
-    left = home.remove_project(project_id)
-    if not left:
-        out(f'Removed {project_id}. Its folder and files were not touched.')
-        return
-    out('Not removed, still on disk:')
-    for path, reason in left:
-        out(f'  {path}: {reason}')
-    out(f'Next: {home.Cleared(project_id, (), 0, left).remedy(f"run metaform remove project {project_id} --confirm again")}')
+    home.remove_project(project_id)
+    out(f'Removed {project_id}. Its folder and files were not touched.')
 
 
 def restore(args: list[str], folder: Path) -> None:
@@ -989,18 +986,17 @@ docs.command(Command('restore', 'Bring back what a clear removed, from the backu
                      examples=(('metaform restore project', "Bring back this folder's project from its newest backup."),
                                ('metaform list backups', 'List the backups of this folder\'s project.')),
                      see_also=('clear', 'list')))
-docs.command(Command('remove', 'Take a project out of Metaform; its folder and files are not touched.',
+docs.command(Command('remove', 'Take an empty project off the list of projects; its folder and files are not touched.',
                      ('metaform remove project [<project>] --confirm',),
-                     description='Removes the project\'s registration, so it is no longer listed, the folder settings '
-                                 'that select it, and everything Metaform keeps for it: its metaforms, reports, origins, '
-                                 'variants and the backups its clears made.',
-                     details='Without --confirm it says what it would remove and removes nothing. A file it cannot '
-                             'remove stays on disk and is named with the reason, and the project stays registered '
-                             'until everything is gone, so the command can run again. To empty a project and keep it, '
-                             'use metaform clear project.',
-                     examples=(('metaform remove project old', 'Say what removing the project old would remove.'),
-                               ('metaform remove project old --confirm', 'Remove the project old.')),
-                     see_also=('clear', 'list')))
+                     description='Removes the project\'s registration, so it is no longer listed, and the folder '
+                                 'settings that select it. Only an empty project is removed: clear it first, which '
+                                 'backs it up.',
+                     details='Without --confirm it says what it would do and does nothing. Nothing in the home is '
+                             'deleted: the backups its clears made and its history stay, and registering the same id '
+                             'again brings them back into reach, so metaform restore project can restore a backup.',
+                     examples=(('metaform clear project old --confirm', 'Empty the project old, backing it up.'),
+                               ('metaform remove project old --confirm', 'Then take it off the list.')),
+                     see_also=('clear', 'restore', 'list')))
 docs.command(Command('build', 'Build one wheel of the chassis and the enabled modules.', ('metaform build',),
                      details='The wheel carries its pure-Python dependencies and runs directly with python <wheel>.',
                      see_also=('install',)))

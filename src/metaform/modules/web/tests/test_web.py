@@ -3401,3 +3401,72 @@ def test_the_edges_of_the_3d_map_are_smoothed_where_a_graphics_card_draws_them(r
     assert drawn_by and page.evaluate('window.metaform.samples3d()') == page.evaluate(
         'name => window.metaform.samplesFor(name)', drawn_by)  # the buffers take what the rule gives for this machine
     assert problems == []
+
+
+def remove_project(port, project='proj', **given):
+    return api(port, '/api/remove-project', method='POST', body=json.dumps({'project': project, **given}),
+               headers=own_write(port))
+
+
+HELD = ('proj holds one metaform, main, and no report files. Only an empty project is removed; clearing it backs it '
+        'up first.')
+
+
+@pytest.mark.req('PROJ-031')
+@pytest.mark.req('VIEW-019')
+def test_the_page_removes_only_an_empty_project_as_the_command_does_and_only_with_confirm(run, home, web, mapped):
+    started(run)
+    assert api(web, '/api/remove-preview?project=proj') == (200, {'project': 'proj', 'held': HELD})
+    before = kept(home)
+    assert remove_project(web, confirm=True) == (400, {'error': HELD, 'next': 'Use Clear project first.'})
+    assert kept(home) == before
+    run('clear', 'project', '--confirm', cwd=mapped)
+    caution = run('remove', 'project', cwd=mapped, ok=False).stderr.splitlines()[0].removeprefix('Error: ')
+    assert api(web, '/api/remove-preview?project=proj') == (200, {'project': 'proj', 'caution': caution})
+    for given in ({}, {'confirm': False}):
+        assert remove_project(web, **given) == (400, {'error': caution, 'next': 'If you are sure: send confirm true'})
+    status, answer = remove_project(web, 'nobody', confirm=True)
+    assert status == 404 and answer['next'] == 'metaform list projects'
+    files = sorted(path.name for path in mapped.rglob('*'))
+    assert remove_project(web, confirm=True) == (200, {'project': 'proj',
+                                               'said': 'Removed proj. Its folder and files were not touched.'})
+    assert 'proj' not in [line.split()[0] for line in run('list', 'projects').stdout.splitlines()]
+    assert sorted(path.name for path in mapped.rglob('*')) == files
+    assert (home / 'backups' / 'clear' / 'proj').is_dir()
+
+
+@pytest.mark.req('PROJ-031')
+@pytest.mark.req('VIEW-019')
+def test_remove_project_in_the_administration_menu_names_what_a_project_holds_then_removes_it_once_empty(
+        run, home, web, mapped, browser, tmp_path):
+    other_folder = tmp_path / 'other'
+    other_folder.mkdir()
+    run('add', 'project', 'other', str(other_folder))
+    started(run)
+    page, problems, remote = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.select_option('#proj', 'proj')
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#adminBtn')
+    assert page.inner_text('#adminbox #removeBtn') == 'Remove project'
+    page.click('#removeBtn')
+    page.wait_for_selector('#clearbox .held')
+    assert page.inner_text('#clearbox .held') == HELD and page.query_selector('#clearbox button.confirm') is None
+    page.click('#clearbox button.keep')
+    run('clear', 'project', '--confirm', cwd=mapped)
+    caution = run('remove', 'project', cwd=mapped, ok=False).stderr.splitlines()[0].removeprefix('Error: ')
+    page.click('#adminBtn')
+    page.click('#removeBtn')
+    page.wait_for_selector('#clearbox button.confirm')
+    assert caution in page.inner_text('#clearbox')
+    page.click('#clearbox button.keep')
+    assert page.is_hidden('#clearbox')
+    assert 'proj' in [line.split()[0] for line in run('list', 'projects').stdout.splitlines()]
+    page.click('#adminBtn')
+    page.click('#removeBtn')
+    page.click('#clearbox button.confirm')
+    page.wait_for_function('() => ![...document.querySelectorAll("#proj option")].some(o => o.value === "proj")',
+                           timeout=5000)
+    assert page.input_value('#proj') == 'other'
+    assert 'proj' not in [line.split()[0] for line in run('list', 'projects').stdout.splitlines()]
+    assert problems == [] and remote == []

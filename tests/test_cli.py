@@ -520,36 +520,41 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
 
 
 @pytest.mark.req('PROJ-031')
-def test_remove_project_takes_the_project_out_of_metaform_and_leaves_its_folder(run, project, home, tmp_path):
+def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(run, project, home, tmp_path):
     (project / 'notes.txt').write_text('first\n', encoding='utf-8')
     run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
-    run('add', 'origin', cwd=project)
-    run('clear', 'project', '--confirm', cwd=project)
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
     elsewhere = tmp_path / 'elsewhere'
     run('set', '--project', 'proj', cwd=elsewhere)
     files = sorted(path.name for path in project.rglob('*'))
-    assert (home / 'backups' / 'clear' / 'proj').is_dir()
 
+    held = run('remove', 'project', 'proj', '--confirm', cwd=elsewhere, ok=False)
+    assert held.returncode == 2 and held.stderr.splitlines() == [
+        ('Error: proj holds one metaform, main, and one report file. Only an empty project is removed; clearing it '
+         'backs it up first.'),
+        'Next: metaform clear project proj --confirm']
+    assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
+    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main']
+
+    run('clear', 'project', 'proj', '--confirm', cwd=elsewhere)
+    backups = run('list', 'backups', 'proj').stdout
     refused = run('remove', 'project', 'proj', cwd=elsewhere, ok=False)
-    assert refused.returncode == 2
-    assert refused.stderr.splitlines() == [
-        ('Error: Removing proj takes it out of Metaform: its registration, the folder settings that select it, one '
-         'metaform, main, no report files, and its origins, variants and backups. Its folder and files are not '
-         'touched.'),
+    assert refused.returncode == 2 and refused.stderr.splitlines() == [
+        ('Error: Removing proj takes it off the list of projects and forgets the folder settings that select it. Its '
+         'backups and history stay in the home, and its folder and files are not touched.'),
         'Next: If you are sure: metaform remove project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
-    assert (home / 'projects' / 'proj').is_dir()
 
     assert lines(run('remove', 'project', 'proj', '--confirm', cwd=elsewhere)) == [
         'Removed proj. Its folder and files were not touched.']
     assert 'proj' not in [line.split()[0] for line in lines(run('list', 'projects'))]
-    assert not (home / 'projects' / 'proj').exists() and not (home / 'backups' / 'clear' / 'proj').exists()
+    assert (home / 'projects' / 'proj').is_dir() and (home / 'backups' / 'clear' / 'proj').is_dir()
     assert sorted(path.name for path in project.rglob('*')) == files
     assert 'Project: none' in run(cwd=elsewhere).stdout
     run('add', 'project', 'proj', str(project))
-    assert run('list', 'metaforms', cwd=project).stdout == ''
+    assert run('list', 'backups', 'proj').stdout == backups
+    run('restore', 'project', 'proj', cwd=project)
+    assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main']
 
 
 @pytest.mark.req('PROJ-031')

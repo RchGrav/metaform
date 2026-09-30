@@ -677,31 +677,31 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
 
 
 def removal_caution(project_id: str) -> str:
-    """What `remove project` removes, said before it does, PROJ-031."""
+    """What `remove project` does, said before it does, PROJ-031."""
+    return (f'Removing {project_id} takes it off the list of projects and forgets the folder settings that select it. '
+            'Its backups and history stay in the home, and its folder and files are not touched.')
+
+
+def not_empty(project_id: str) -> str | None:
+    """Why the project cannot be removed yet: it holds what a clear removes and backs up, PROJ-031. None when empty."""
     found = to_clear(project_id)
+    if not found.metaforms and not found.reports:
+        return None
     forms = counted(len(found.metaforms), 'metaform', 'metaforms') + (
-        f', {listed(found.metaforms)}' if found.metaforms else '')
-    return (f'Removing {project_id} takes it out of Metaform: its registration, the folder settings that select it, '
-            f'{forms}, {counted(found.reports, "report file", "report files")}, and its origins, variants and '
-            'backups. Its folder and files are not touched.')
+        f', {listed(found.metaforms)},' if found.metaforms else '')
+    return (f'{project_id} holds {forms} and {counted(found.reports, "report file", "report files")}. Only an empty '
+            'project is removed; clearing it backs it up first.')
 
 
-def remove_project(project_id: str) -> tuple[tuple[str, str], ...]:
-    """Take a project out of Metaform, PROJ-031: everything the home keeps for it, then its registration and the
-    folder settings that select it. The project's own folder is never touched. What could not be removed is returned
-    with the system's reason, and the registration stays until nothing is left, so the command can run again."""
-    failed: list[tuple[str, str]] = []
-    for folder in (home() / 'projects' / project_id, _backups(project_id)):
-        _remove_tree(folder, failed)
-    if failed:
-        return _innermost(failed)
+def remove_project(project_id: str) -> None:
+    """Take an empty project off the list, PROJ-031: its registration and the folder settings that select it. Nothing
+    in the home is deleted, so its backups can be restored if it is registered again."""
     with base(write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
         db.execute("DELETE FROM settings WHERE key='project' AND value=?", (json.dumps(project_id),))
         db.execute('DELETE FROM projects WHERE project_id=?', (project_id,))
     changes.note(project_id)
-    return ()
 
 
 def _remove_tree(path: Path, failed: list[tuple[str, str]]) -> None:

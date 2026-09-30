@@ -201,6 +201,38 @@ async function clearProject(project) {
     (body.notices || []).map(notice => h('span', {class: 'next'}, notice.message)),
     h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close'))));
 }
+/* Remove project takes an empty project off the list, PROJ-031: one that still holds metaforms or reports is named
+   with what it holds, since a clear backs it up first. */
+$('#removeBtn').onclick = async event => {
+  event.stopPropagation();
+  showAdmin(false);
+  let found;
+  try { found = await getJson(`/api/remove-preview?project=${encodeURIComponent(S.project)}`); }
+  catch (error) { return toast(error.message); }
+  fill($('#clearbox'), found.held
+    ? h('div', {class: 'warn'}, h('span', {class: 'held'}, found.held), h('span', {class: 'next'}, 'Use Clear project first.'),
+      h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close')))
+    : h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
+      h('div', {class: 'toolbar'},
+        h('button', {class: 'btn danger confirm', onclick: () => removeProject(found.project)}, 'Remove it'),
+        h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
+  showClear(true);
+};
+async function removeProject(project) {
+  const response = await fetch('/api/remove-project', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project, confirm: true})});
+  const body = await response.json().catch(() => ({}));
+  showClear(false);
+  if (!response.ok) return toast(body.error || 'The project was not removed.');
+  toast(body.said);
+  S.projects = ((await getJson('/api/projects')).projects || []);
+  if (!S.projects.length) return location.reload();
+  S.project = S.projects[0].id;
+  location.hash = 'p=' + encodeURIComponent(S.project);
+  fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
+  Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+  await loadProject();
+}
 /* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
 const noMetaform = () => !S.metaforms.length;
 const noneYet = () => `${S.project} has no metaform yet. The next intake creates one.`;

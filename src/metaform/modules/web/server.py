@@ -153,6 +153,8 @@ class Handler(BaseHTTPRequestHandler):
                                                 for found in home.projects()]})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
+        if url.path == '/api/remove-preview':
+            return self.remove_preview(query.get('project', [''])[-1])
         if url.path == '/api/backups':
             return self.backups(query.get('project', [''])[-1])
         if url.path == '/api/markdown':
@@ -244,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
-                  '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project,
+                  '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
                   '/api/element': self.add_part, '/api/restore': self.restore,
                   '/api/note': self.add_note}
@@ -309,6 +311,29 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
         found = home.to_clear(project)
         self.send(200, {**found.to_dict(), 'caution': found.caution})
+
+    def remove_preview(self, project: str) -> None:
+        """What removing the project does, in the command's own words, or why it cannot be removed yet: it holds what
+        a clear removes and backs up. It changes nothing, PROJ-031 and VIEW-019."""
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        held = home.not_empty(project)
+        self.send(200, {'project': project, 'held': held} if held else
+                  {'project': project, 'caution': home.removal_caution(project)})
+
+    def remove_project(self, given: dict[str, Any]) -> None:
+        """Take an empty project off the list through the chassis's `remove_project`, as `metaform remove project
+        --confirm` does, and only with `confirm` true, PROJ-031 and VIEW-019."""
+        project = str(given.get('project', ''))
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        held = home.not_empty(project)
+        if held:
+            return self.send(400, {'error': held, 'next': 'Use Clear project first.'})
+        if given.get('confirm') is not True:
+            return self.send(400, {'error': home.removal_caution(project), 'next': 'If you are sure: send confirm true'})
+        home.remove_project(project)
+        self.send(200, {'project': project, 'said': f'Removed {project}. Its folder and files were not touched.'})
 
     def answer_question(self, given: dict[str, Any]) -> None:
         """Write the user's answer beside the question, which closes it, MAP-050 and VIEW-021. Only a question is
