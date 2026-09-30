@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration, `Context`, `Noun`, `Verb` and `Stop`; `metaform.settings` for the `packet_evidence` setting.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `packet is active.`, listed in the instructions agents read under "modules available." while packet is on, MCP-031.
+
 ## Verbs
 
 `seal work=<folder> data=<folder> file=<zip> [origin=<path>] [parent=<zip>]` writes a packet. The work is the folder's files, leaving out git's files and what is built from the source. `origin` names the work file the packet is grounded in, `origin.zip` when the work has one. `parent` is the packet this one was made from: the new packet takes the next place in its lineage and carries the hash of its parent's manifest.

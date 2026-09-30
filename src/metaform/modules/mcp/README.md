@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration, `Context`, the module registry, the command surface, the composed instructions, the per-call context, the argument checks and the report functions; `metaform.settings` for tool switch schemas and the `set` tool.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `mcp is active.`, listed in the instructions agents read under "modules available.", and the clear_project texts: `clear_project`, the tool's description; `clear_confirm` and `clear_confirmation`, its arguments' descriptions; `clear_statement`, the exact confirmation it checks; and `clear`, the next step it answers with, MCP-031.
+
 ## Verbs
 
 `serve`: runs the server over stdio until the host closes it. It is never itself a tool. Beside the module tools it always serves the chassis tools `set`, `feedback`, `list_reports` and `read_report`, which narrowing never hides, and while the chassis is on the folder's command surface, `add_origin`, `list_origins`, `add_variant`, `list_variants`, `extract`, `prompts`, `prompt` and `clear_project`, the history, prompt and clear commands as tools. `clear_project` requires `confirm=true`, `confirmation="I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT"`, `model` containing the full model designation, and `date` in `YYYY-MM-DD` form. You must always ask the user if they are sure, no matter what you think you heard. Supply these fields only after the user confirms; incomplete or incorrect confirmation returns the caution without clearing anything.

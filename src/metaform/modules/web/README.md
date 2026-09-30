@@ -24,6 +24,10 @@ Started from template 0.3.0.
 
 `metaform.module` for the declaration, `Context`, `Status`, `Stop` and `Subscription`; `metaform.settings` for its three settings; `metaform.home` for the home's folder and the registered projects.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `web is active.`, listed in the instructions agents read under "modules available.", and `autostart`, which follows it on web's line while `web_autostart` is on and which `metaform status` shows before the intake, VIEW-015 and MCP-031.
+
 ## Verbs
 
 - `start`, the default, so `metaform web` runs it: when this home's server answers at the address in `run/web.json`, returns `state: running` with its address; otherwise checks the port and bind address are free, starts `server.py` as a process detached from the terminal with a pipe as its standard output, waits on the pipe for the server's one line saying it listens, then asks it once, and returns `state: started` with its address. The wait is one wait for a message, limited to 15 seconds so the command never hangs on a server that neither answers nor ends, QUAL-015. On a bind address other than loopback the address ends with `?t=<token>`, and `token` is returned too. A port held by another program stops with `Next: metaform set --web-port <port>`; an address it cannot bind stops with `Next: metaform set --web-bind <address>`. Tool `web_start`.

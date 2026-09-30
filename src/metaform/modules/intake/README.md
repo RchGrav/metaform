@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration, `Context`, `Status` and `save_report`; `metaform.settings` for `--intake-file`; `metaform.data` for the store writes and the reads `intake_recording` and `layer_graph`.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `intake is active.`, listed in the instructions agents read under "modules available."; `notice`, which `metaform status` shows when the project has no map; and `complete`, the line status shows when it has one, MCP-031.
+
 ## Verbs
 
 - `prompt`: the stored intake text with the project's target filled, then the recording lines: always how to record with the intake tools and the rule to stop and submit a trouble report with `feedback` instead of retrying; the report request when `--report` is on; the feedback request when `--debug` is on. Takes `--report` and `--debug` for one call. Tool `intake_prompt`.

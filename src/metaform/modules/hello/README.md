@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer and work records. `metaform.nonce` for `noncedemo`.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `hello is active.`, listed in the instructions agents read under "modules available." while hello is on, MCP-031.
+
 ## Verbs
 
 - `greet <name> [--loud]`: returns the greeting and publishes `hello.greeted`. Tool `hello_greet`.

@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration and `Context`, `metaform.data` for the memory layer's items.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `memory is active.`, listed in the instructions agents read under "modules available.", MCP-031.
+
 ## Verbs
 
 `create-entities`, `create-relations`, `add-observations`, `delete-entities`, `delete-observations`, `delete-relations`, `read-graph`, `search-nodes`, `open-nodes`. Nodes are written `element:<address or id>` or `join:<id>`; a subtype join is a join, and the element it holds an element. Tools are `memory_<verb>`.

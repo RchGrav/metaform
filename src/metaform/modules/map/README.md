@@ -18,6 +18,10 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration and `Context`, `metaform.settings` for `--raw`, `metaform.data` for every read and write.
 
+## Prompts
+
+`resources/prompts.xml` holds `instructions`, `map is active.`, listed in the instructions agents read under "modules available.", and `notice`, which `metaform status` shows when the project has a map, MCP-031.
+
 ## Verbs
 
 `markdown` writes the map, or with `address=` the part around one address, as a short Markdown document: each element's name, address, role and paths, and each join's receiver, provider, relation, purpose and non_goal, MAP-052. It leaves the function and the observation out, and `file=` writes the document to a file. It is a command only and never a tool.
