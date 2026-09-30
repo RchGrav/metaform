@@ -377,6 +377,15 @@ def test_the_indexes_group_commands_by_owner(run, toggles):
     assert shown(run)['tmux']['owner'] == 'toggles'
 
 
+@pytest.mark.req('CLI-037')
+def test_a_modules_command_is_written_module_colon_command(run, toggles):
+    assert run('toggles:show', '--tmux').stdout == run('toggles', 'show', '--tmux').stdout == 'tmux=True'
+    assert run('toggles:show', '--help').stdout == run('toggles', 'show', '--help').stdout
+    assert run('help', 'toggles:show').stdout == run('help', 'toggles', 'show').stdout
+    refused = run('toggles:nope', ok=False)
+    assert refused.returncode == 2 and 'Error: toggles has no verb nope.' in refused.stderr
+
+
 @pytest.mark.req('CLI-009')
 def test_every_error_names_exactly_one_next_command(run):
     for args in (['frobnicate'], ['add'], ['list', 'things'], ['set', '--nope', 'x'], ['unset', 'banana'],

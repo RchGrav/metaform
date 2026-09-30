@@ -548,6 +548,7 @@ def config(args: list[str], folder: Path) -> None:
 # Help -------------------------------------------------------------------------------------
 
 def help_(args: list[str], folder: Path) -> None:
+    args = written(args)
     if not args:
         out(docs.overview())
     elif args == ['intro']:
@@ -728,6 +729,12 @@ def _module(identifier: str, folder: Path, quiet: bool = False, surface: bool = 
             return None
         raise off_surface(identifier)
     return found
+
+
+def written(args: list[str]) -> list[str]:
+    """A module's command written `<module>:<command>` is the same words as `<module> <command>`, CLI-037."""
+    module, colon, command = args[0].partition(':') if args else ('', '', '')
+    return [module, command, *args[1:]] if colon and command and loader.get(module) else args
 
 
 def off_surface(identifier: str) -> Stop:
@@ -1036,7 +1043,7 @@ def _command(args: list[str], folder: Path) -> int:
         if not args:
             status(args, folder)
             return 0
-        verb, rest = args[0], args[1:]
+        verb, *rest = written(args)
         if verb in ('-h', '--help'):
             out(docs.overview())
             return 0
