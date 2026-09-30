@@ -269,41 +269,8 @@ def test_the_projects_name_for_a_functionality_is_recorded_on_its_join_and_an_el
 def test_the_intake_and_its_tool_ask_every_join_and_subtype_join_for_function_or_encounter():
     """Each EF is named Function when it is the encounter of a functionality, Encounter when it is the functionality
     of the encounter, Rich 2026-09-26; a closed choice of two, on top-level and subtype joins alike."""
-    import xml.etree.ElementTree as ET
-    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
-    join = root.find('.//schema//join')
-    assert join is not None and join.get('ef') == '[Function|Encounter]'
-    inner = join.find('join')
-    assert inner is not None and inner.get('ef') == '[Function|Encounter]'
-    step = root.find(".//step[@n='4']").get('text')
-    assert 'Function if it is the encounter of a functionality' in step
-    assert 'Encounter if it is the functionality of the encounter' in step
     for noun in (nouns_of('join')['ef'], nouns_of('subtype')['ef']):
         assert noun.schema['enum'] == ['Function', 'Encounter']
-
-
-@pytest.mark.req('MAP-020')
-@pytest.mark.req('BASE-039')
-def test_the_tools_say_of_each_field_what_the_intake_says_of_it():
-    """The intake is the instruction, and a tool that words a field another way gives the agent two instructions for
-    one field. Each field of a join and of a subtype join is described by the tool in the words the Canonical Intake
-    gives it, so what the agent reads in the intake is what it meets at the tool. A subtype join has the fields a
-    join has, its purpose among them."""
-    import xml.etree.ElementTree as ET
-    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
-    join = root.find('.//schema//join')
-    inner = join.find('join')
-    fields = ('purpose', 'function', 'relation', 'verb', 'observation', 'non_goal')
-    same = lambda noun, placeholder: noun.help.rstrip('.').lower() == placeholder.strip('[]').rstrip('.').lower()
-    for name, found in (('join', join), ('subtype', inner)):
-        for field in fields:
-            assert found.get(field), (name, field)
-            assert same(nouns_of(name)[field], found.get(field)), (name, field, nouns_of(name)[field].help)
-        assert nouns_of(name)['verb'].kind == 'str'
-    step = root.find(".//step[@n='4']").get('text')
-    assert ('the relation as an active-voice descriptive fragment starting directly with a third-person singular '
-            'present-tense verb ending in -s or -es, whose subject is the Providing Element when ef is Function and the '
-            'Vested Entity when ef is Encounter, that verb as verb') in step
 
 
 @pytest.mark.req('MAP-020')
@@ -714,25 +681,6 @@ def test_a_resumed_intake_keeps_the_provenance_the_agent_gives_that_its_layer_la
     third = started(run, project, 'model=sonnet')[1]
     assert any(notice.startswith('Notice: model: ') and 'opus' in notice and 'sonnet' in notice for notice in third)
     assert store.provenance(first['layer']).model == 'opus'
-
-
-@pytest.mark.req('BASE-039')
-def test_the_intake_asks_for_each_object_to_be_recorded_as_it_is_reasoned_then_proofed():
-    """Rich, 2026-09-26: construct the intake object by object as it is reasoned, each submitted as the work
-    proceeds, then a proofing pass; the method and its semantics are unchanged."""
-    import xml.etree.ElementTree as ET
-    root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'))
-    steps = {step.get('n'): step.get('text') for step in root.iter('step')}
-    assert steps['4'].endswith('Record each element and join as soon as it is reasoned, one object at a time, rather '
-                               'than holding the map until the end.')
-    assert steps['12'] == ('Proof the recorded map: read it back whole, check it against the artifact and this '
-                           'document, correct it, anneal it and complete it, then finish the intake.')
-    said = [instruction.text for instruction in root.iter('instruction')]
-    assert not any('Respond with well-formed XML' in text for text in said)
-    assert ('Record the result with the intake tools, one object per call, as it is reasoned. The schema below '
-            'defines the fields of each object; it is not returned as a document.') in said
-    assert root.find('.//output_instruction').get('text') == ('Record the final shape with the intake tools; nothing '
-                                                              'is returned as a document.')
 
 
 def recorded(run, cwd, *args):

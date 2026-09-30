@@ -462,7 +462,7 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: s
         return _error(stop)
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
         return True, [f'Error: {type(error).__name__}: {error}\nNext: metaform list modules']
-    blocks = ['\n'.join(lines)] if lines else []
+    blocks = ['\n'.join(lines) + '\n'] if lines else []  # a host that joins the blocks keeps the result's first line apart
     if result is not None:
         blocks.append(result if isinstance(result, str) else result_json(result))
     return False, blocks

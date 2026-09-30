@@ -690,7 +690,9 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
         'module=test', cwd=mapped)
     (greet_error, greeted), (join_error, joined), (observe_error, observed) = session(home, mapped, call)
     assert not greet_error and not join_error and not observe_error
-    assert greeted == ['Notice: name: name is text; what was sent was kept as its JSON text.', 'hello, {"a": 1}\n']
+    assert greeted == ['Notice: name: name is text; what was sent was kept as its JSON text.\n', 'hello, {"a": 1}\n']
+    assert ''.join(greeted).splitlines() == ['Notice: name: name is text; what was sent was kept as its JSON text.',
+                                             'hello, {"a": 1}']  # a host that joins the blocks keeps the lines apart
     assert joined[0].splitlines() == ['Notice: purpose: purpose is text; what was sent was kept as its JSON text.',
                                       'Notice: relation: relation is text; what was sent was kept as its JSON text.']
     join = json.loads(joined[1])

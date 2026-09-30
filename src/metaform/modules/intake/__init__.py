@@ -594,7 +594,8 @@ NOUNS = {noun.name: noun for noun in (
                      'Encounter.', required=False),
     Noun('verb', 'The single root verb extracted from the relation (e.g., provides, tracks, restricts).',
          required=False),
-    Noun('observation', 'High-value observation consisting of long-lasting, stable state.', required=False),
+    Noun('observation', 'Only high-value observations consisting of long-lasting, stable state for agent orientation.',
+         required=False),
     Noun('non_goal', 'High-value non-goals consisting of structural constraints.', required=False),
 )}
 SUBTYPE_NOUNS = (
