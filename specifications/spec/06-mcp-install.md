@@ -244,7 +244,7 @@ It also defines the first working test, which exercises all three end to end.
 - What this means: Registration is idempotent. An existing `metaform` entry is shown, and replaced only when the user chooses to update it.
 - Why: Users rerun setup after upgrades and when something breaks. A duplicate or silently overwritten entry is exactly the surprise setup must avoid.
 - How it shows: The checklist marks tools already set up.
-- Build: The installer keeps a record in the base database of what it set up, `installs(tool TEXT PRIMARY KEY, source TEXT NOT NULL, skill_path TEXT, installed TEXT NOT NULL)`. A re-run reads that record to mark tools already set up. For a tool configured by merging a JSON file, it also reads that file and treats an existing `metaform` entry as set up. Updating replaces the one entry; adding writes a new one only when none exists.
+- Build: The installer keeps a record in the base database of what it set up, `installs(tool TEXT PRIMARY KEY, source TEXT NOT NULL, skill_path TEXT, installed TEXT NOT NULL)`. A re-run reads that record to mark tools already set up. For a tool configured by merging a JSON file, it also reads that file and treats an existing `metaform` entry as set up. Updating replaces the one entry; adding writes a new one only when none exists. For a tool registered by its own command, an add refused because an entry the record does not know of is already there, left by an earlier home, runs the tool's remove command and adds again, so the install goes on with the one entry replaced.
 - Acceptance: Two runs of `install claude` leave exactly one `metaform` entry.
 - Relates to: MCP-014, MCP-016.
 - Status: recommended. Whether it belongs in the first test is open.

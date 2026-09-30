@@ -312,6 +312,10 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
                     removed = f' Removing the earlier entry also failed: {_said(result)}'
             assert tool.add is not None
             result = _run(tool.name, tool.add(command))
+            # An entry the record does not know of, left by an earlier home, is replaced as the one entry, MCP-019.
+            if (result.returncode != 0 and tool.remove and tool.name not in recorded
+                    and _run(tool.name, tool.remove).returncode == 0):
+                result = _run(tool.name, tool.add(command))
             if result.returncode != 0:
                 raise Failed(f'{tool.name} registration failed: {_said(result)}{removed}',
                              f'metaform install {tool.name}')
