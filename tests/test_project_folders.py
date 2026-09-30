@@ -103,3 +103,23 @@ def test_two_sources_whose_paths_read_the_same_get_folders_of_their_own(run, hom
     assert folder_for(home, joined).is_dir() and folder_for(home, nested, 2).is_dir()
     assert 'Project: one' in run(cwd=joined).stdout
     assert 'Project: two' in run(cwd=nested).stdout
+
+
+@pytest.mark.req('PROJ-026')
+@pytest.mark.req('PROJ-023')
+@pytest.mark.req('PROJ-025')
+def test_origins_and_variants_are_kept_in_the_project_folder_and_nowhere_shared(run, home, source, tmp_path):
+    (source / 'timer.txt').write_text('ten minutes\n', encoding='utf-8')
+    run('add', 'project', 'timer', str(source))
+    run('add', 'origin', cwd=source)
+    work = tmp_path / 'work'
+    shutil.copytree(source, work)
+    (work / 'timer.txt').write_text('five minutes\n', encoding='utf-8')
+    run('add', 'variant', str(work), cwd=source)
+    assert not (home / 'origins').exists()
+    [unit] = (folder_for(home, source) / 'origins').iterdir()
+    assert (unit / 'origin' / 'timer.txt').read_text(encoding='utf-8') == 'ten minutes\n'
+    assert [path.name for path in (unit / 'variants').iterdir()] == ['v000001']
+    before = {str(path.relative_to(unit)): path.read_bytes() for path in unit.rglob('*') if path.is_file()}
+    run('clear', 'project', 'timer', '--confirm', cwd=tmp_path)
+    assert {str(path.relative_to(unit)): path.read_bytes() for path in unit.rglob('*') if path.is_file()} == before

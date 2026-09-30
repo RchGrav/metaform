@@ -7,7 +7,7 @@ the variant's changed text is small, as a diff against the origin's file when
 it is large, binaries always whole. Every variant is stored against its
 origin, never against another variant, so each reconstructs on its own with
 Python alone. The rows live in the project's history database and the
-payloads under the home's `origins/<mform_sha_id>/`, Q53 and PROJ-023.
+payloads under the project's folder in `origins/<mform_sha_id>/`, Q53, PROJ-023 and PROJ-026.
 """
 from __future__ import annotations
 
@@ -172,12 +172,21 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def origins_folder() -> Path:
-    return home.home() / 'origins'
+def origins_folder(project_id: str) -> Path:
+    """The project's origin units, in its own folder, PROJ-026."""
+    folder = home.project_folder(project_id)
+    if folder is None:
+        raise StoreError(f'No project {project_id} is registered.', 'metaform list projects')
+    return folder / 'origins'
 
 
-def _unit(mform_sha_id: str) -> Path:
-    return origins_folder() / mform_sha_id
+def _unit(project_id: str, mform_sha_id: str) -> Path:
+    return origins_folder(project_id) / mform_sha_id
+
+
+def _suffix_taken(mform_sha_id: str) -> bool:
+    """An instance of the same content in any project holds this suffix, PROJ-013; read from the folders alone."""
+    return any((folder / 'origins' / mform_sha_id).exists() for folder in home.projects_dir().glob('*/'))
 
 
 # ---------------------------------------------------------------- the history database, Q53
@@ -248,13 +257,13 @@ def _read(entries: Iterable[Entry]) -> dict[str, tuple[bytes, str]]:
     return {entry.path: (entry.file.read_bytes(), entry.mode) for entry in entries}
 
 
-def origin_files(item: Origin) -> dict[str, tuple[bytes, str]]:
+def origin_files(project_id: str, item: Origin) -> dict[str, tuple[bytes, str]]:
     """The origin's files: from git for a repository origin, from the unit's copy for a folder origin."""
     if item.kind == 'repo':
         assert item.commit_id is not None
         return _committed(Path(item.source_path), item.commit_id)
-    copy = _unit(item.mform_sha_id) / 'origin'
-    modes = _modes(_unit(item.mform_sha_id) / 'manifest.txt')
+    copy = _unit(project_id, item.mform_sha_id) / 'origin'
+    modes = _modes(_unit(project_id, item.mform_sha_id) / 'manifest.txt')
     return {path: ((copy / path).read_bytes(), modes.get(path, '644')) for path in modes}
 
 
@@ -281,7 +290,7 @@ def add_origin(project_id: str) -> Origin:
         files = _read(boundary(folder))
     listing = manifest(files)
     digest = _sha(listing)
-    staging = origins_folder() / f'.staging-{secrets.token_hex(8)}'
+    staging = origins_folder(project_id) / f'.staging-{secrets.token_hex(8)}'
     staging.mkdir(parents=True)
     made: Origin | None = None
     try:
@@ -297,8 +306,8 @@ def add_origin(project_id: str) -> Origin:
                 return _origin(same)
             for number in range(0x10000):
                 suffix = f'{number:04x}'
-                unit = _unit(digest[:60] + suffix)
-                if unit.exists():
+                unit = _unit(project_id, digest[:60] + suffix)
+                if _suffix_taken(digest[:60] + suffix):
                     continue
                 try:
                     os.replace(staging, unit)
@@ -381,13 +390,13 @@ def add_variant(project_id: str, folder: Path, mform_id: str | None = None, *, r
     item = origin(project_id, mform_id)
     if remove:
         _removable(folder)  # a refusal collects nothing
-    base = origin_files(item)
+    base = origin_files(project_id, item)
     entries = boundary(folder)
     current = _read(entries)
     changed = _changes(base, current)
     text_size = sum(len(current[path][0]) for path, change in changed
                     if change != 'removed' and _text(current[path][0]))
-    unit = _unit(item.mform_sha_id)
+    unit = _unit(project_id, item.mform_sha_id)
     given = {key: (provenance or {}).get(key) for key in PROVENANCE}
     staging = unit / 'variants' / f'.staging-{secrets.token_hex(4)}'
     staging.mkdir(parents=True)
@@ -531,8 +540,8 @@ def reconstruct(project_id: str, made: Variant, base: dict[str, tuple[bytes, str
                 ) -> dict[str, tuple[bytes, str]]:
     """A variant's files: the origin's, with its changes applied and each checked against its recorded hash."""
     item = origin(project_id, made.mform_id)
-    files = dict(base if base is not None else origin_files(item))
-    payload = _unit(item.mform_sha_id) / 'variants' / made.variant_id
+    files = dict(base if base is not None else origin_files(project_id, item))
+    payload = _unit(project_id, item.mform_sha_id) / 'variants' / made.variant_id
     pending = payload.with_name(f'.pending-{made.variant_id}')
     if not payload.exists() and pending.exists():
         os.replace(pending, payload)  # a crash came between committing the rows and moving the payload in
@@ -561,7 +570,7 @@ def extract(project_id: str, ids: Sequence[str], target: Path, mform_id: str | N
     """Write each variant's files into its own folder under the target, or into the target for exactly one."""
     item = origin(project_id, mform_id)
     chosen = variants(project_id, item.mform_id, None if list(ids) == ['all'] else ids)
-    base = origin_files(item)
+    base = origin_files(project_id, item)
     single = len(chosen) == 1 and list(ids) != ['all']
     written: list[Path] = []
     for made in chosen:

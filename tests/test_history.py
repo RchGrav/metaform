@@ -17,6 +17,11 @@ pytestmark = pytest.mark.kind('fixture')
 POSIX = os.name != 'nt'
 
 
+def units(project_id):
+    """Where a project's origin units are: its own folder in the home, PROJ-026."""
+    return metaform_home.project_folder(project_id) / 'origins'
+
+
 def git(folder, *args):
     return subprocess.run(['git', '-C', str(folder), *args], check=True, capture_output=True, text=True).stdout
 
@@ -97,7 +102,7 @@ def test_a_repository_origin_records_its_commit_and_a_digest_of_the_committed_fi
     assert re.fullmatch(r'[0-9a-f]{64}', origin.mform_sha_id) and origin.mform_sha_id == digest[:60] + '0000'
     assert re.fullmatch(r'[0-9a-f]{16}', origin.mform_id) and origin.mform_id == digest[:12] + '0000'
     assert origin.suffix == '0000' and origin.source_path == str(repo)
-    assert not (home / 'origins' / origin.mform_sha_id / 'origin').exists()
+    assert not (units('app') / origin.mform_sha_id / 'origin').exists()
 
 
 @pytest.mark.req('PROJ-012')
@@ -105,7 +110,7 @@ def test_a_repository_origin_records_its_commit_and_a_digest_of_the_committed_fi
 def test_a_folder_origin_copies_the_folder_and_later_changes_leave_the_copy(photos, home):
     origin = Store('photos').add_origin()
     assert origin.kind == 'folder' and origin.commit_id is None
-    copy = home / 'origins' / origin.mform_sha_id / 'origin'
+    copy = units('photos') / origin.mform_sha_id / 'origin'
     assert sorted(str(path.relative_to(copy).as_posix()) for path in copy.rglob('*') if path.is_file()) == [
         'kitchen/one.jpg', 'notes.txt']
     (photos / 'notes.txt').write_text('changed\n', encoding='utf-8')
@@ -135,7 +140,7 @@ def test_an_origin_is_never_rewritten_and_a_new_baseline_is_a_new_unit(repo, hom
     git(repo, 'worktree', 'add', '-q', str(worker))
     (worker / 'logo.png').write_bytes(b'a variant of the first origin')
     early = store.add_variant(worker)
-    unit = home / 'origins' / first.mform_sha_id
+    unit = units('app') / first.mform_sha_id
     kept = {path.relative_to(unit).as_posix(): path.read_bytes() for path in unit.rglob('*') if path.is_file()}
     again = store.add_origin()
     assert again.mform_sha_id == first.mform_sha_id and [origin.mform_id for origin in store.origins()] == [
@@ -225,7 +230,7 @@ def test_small_changed_text_is_kept_whole_and_large_as_a_diff_and_both_reconstru
     first, second = store.add_variant(small), store.add_variant(large)
     assert [(change.path, change.storage) for change in first.files] == [('src/main.py', 'whole')]
     assert [(change.path, change.storage) for change in second.files] == [('data.txt', 'diff')]
-    payload = home / 'origins' / origin.mform_sha_id / 'variants' / second.variant_id
+    payload = units('app') / origin.mform_sha_id / 'variants' / second.variant_id
     stored = (payload / 'diffs' / 'data.txt.diff').read_bytes()
     assert stored.startswith(f'base_sha256 {hashlib.sha256(big).hexdigest()}\n'.encode())
     assert len(stored) < 10000 and not (payload / 'files').exists()
@@ -241,7 +246,7 @@ def test_a_file_whose_stored_bytes_do_not_match_their_hash_fails_naming_it(repo,
     origin = store.add_origin()
     (worktree / 'logo.png').write_bytes(b'new logo')
     made = store.add_variant(worktree)
-    stored = home / 'origins' / origin.mform_sha_id / 'variants' / made.variant_id / 'files' / 'logo.png'
+    stored = units('app') / origin.mform_sha_id / 'variants' / made.variant_id / 'files' / 'logo.png'
     stored.write_bytes(b'tampered')
     from metaform.data import StoreError
     with pytest.raises(StoreError, match='logo.png'):
@@ -260,7 +265,7 @@ def test_each_sibling_variant_extracts_alone_without_the_others_payload(repo, tm
         git(repo, 'worktree', 'add', '-q', str(folder))
         (folder / 'src' / 'main.py').write_text(f'print({number})\n', encoding='utf-8')
         made.append(store.add_variant(folder))
-    variants = home / 'origins' / origin.mform_sha_id / 'variants'
+    variants = units('app') / origin.mform_sha_id / 'variants'
     for other in (made[0], made[2]):
         shutil.rmtree(variants / other.variant_id)
     store.extract([made[1].variant_id], tmp_path / 'out')
@@ -302,7 +307,7 @@ def test_a_collection_that_fails_partway_leaves_no_rows_and_no_folder(repo, work
         patched.setattr(history.os, 'replace', broken)
         store.add_variant(worktree)
     assert store.variants() == ()
-    variants = home / 'origins' / origin.mform_sha_id / 'variants'
+    variants = units('app') / origin.mform_sha_id / 'variants'
     assert not variants.exists() or list(variants.iterdir()) == []
 
 
@@ -368,7 +373,7 @@ def test_a_variant_whose_rows_committed_before_its_folder_moved_is_completed_whe
     [made] = store.variants()
     store.extract([made.variant_id], tmp_path / 'out')
     assert (tmp_path / 'out' / 'logo.png').read_bytes() == b'changed'
-    assert sorted(path.name for path in (home / 'origins' / origin.mform_sha_id / 'variants').iterdir()) == [
+    assert sorted(path.name for path in (units('app') / origin.mform_sha_id / 'variants').iterdir()) == [
         made.variant_id]
 
 
@@ -376,7 +381,7 @@ def test_a_variant_whose_rows_committed_before_its_folder_moved_is_completed_whe
 def test_a_leftover_folder_for_the_next_variant_id_does_not_block_collecting(repo, worktree, home):
     store = Store('app')
     origin = store.add_origin()
-    stale = home / 'origins' / origin.mform_sha_id / 'variants' / 'v000001'
+    stale = units('app') / origin.mform_sha_id / 'variants' / 'v000001'
     stale.mkdir(parents=True)
     (stale / 'left.txt').write_text('from an interrupted write', encoding='utf-8')
     (worktree / 'logo.png').write_bytes(b'changed')
