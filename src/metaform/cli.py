@@ -111,7 +111,7 @@ def status(args: list[str], folder: Path) -> None:
 
 
 def _folder_of(scope: str) -> str:
-    with home.base() as db:
+    with home.settings_db(scope) as db:
         row = db.execute('SELECT path FROM folders WHERE path_key=?', (scope,)).fetchone()
     return str(row[0]) if row else scope
 

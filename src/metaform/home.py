@@ -1,10 +1,11 @@
-"""The Metaform home and its base database, STORE-001 and STORE-002.
+"""The Metaform home: the chassis database and one folder per project, STORE-001, STORE-002 and PROJ-026.
 
-All Metaform data is global. The home holds the base database, with the
-registered projects and their metaforms, per-folder context, settings with
-their glue state, module state and what the installer set up, and one store
-per metaform under `projects/<project id>/metaforms/<metaform id>/`. Nothing
-is ever written into a project's folder.
+The chassis database, `metaform.sqlite3`, holds what belongs to no project: module state, what the installer set up,
+nonces, and the settings of the global scope and of folders outside every project. No database lists the projects.
+Each project is one folder under `projects/`, named by its source's path, holding `source.txt`, its own
+`project.sqlite3` with its registration, metaforms and the settings of folders inside its source, one store per
+metaform, and everything else of the project. A project is found by looking where its name says. Nothing is ever
+written into a project's own source folder.
 """
 from __future__ import annotations
 
@@ -27,7 +28,8 @@ from . import changes, sqlite
 from .errors import StoreError
 from .wording import counted, listed
 
-BASE_SCHEMA_VERSION = '1'  # the base database's own layout, apart from the store's, STORE-029
+BASE_SCHEMA_VERSION = '2'  # the chassis database's own layout; 2 holds no project, PROJ-026, STORE-029
+PROJECT_SCHEMA_VERSION = '1'  # a project's own project.sqlite3, PROJ-026
 # The nonce table, BASE-050. A home made before it existed is given it on the first write of a nonce.
 NONCES = """CREATE TABLE IF NOT EXISTS nonces(
   nonce     TEXT PRIMARY KEY,
@@ -38,16 +40,7 @@ NONCES = """CREATE TABLE IF NOT EXISTS nonces(
   closed    TEXT
 );
 """
-BASE_SCHEMA = NONCES + """
-CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS projects(
-  project_id   TEXT PRIMARY KEY,
-  path         TEXT NOT NULL,
-  path_key     TEXT NOT NULL UNIQUE,
-  target_type  TEXT NOT NULL DEFAULT 'path'
-               CHECK(target_type IN ('path','url','artifact','inline','inferred')),
-  target_value TEXT NOT NULL
-);
+SETTINGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS folders(
   path_key TEXT PRIMARY KEY,
   path     TEXT NOT NULL
@@ -66,6 +59,10 @@ CREATE TABLE IF NOT EXISTS glue(
   key   TEXT NOT NULL,
   PRIMARY KEY(scope, owner, key)
 );
+"""
+BASE_SCHEMA = NONCES + """
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+""" + SETTINGS_SCHEMA + """
 CREATE TABLE IF NOT EXISTS module_state(
   module_id TEXT PRIMARY KEY,
   enabled   INTEGER NOT NULL CHECK(enabled IN (0, 1))
@@ -76,6 +73,21 @@ CREATE TABLE IF NOT EXISTS installs(
   skill_path TEXT,
   installed  TEXT NOT NULL
 );
+"""
+# A project's own database: its registration, one row; its metaforms and the active one; and the settings of the
+# folders inside its source, PROJ-026. The tables keep the chassis database's earlier form, STORE-002 and STORE-041.
+PROJECT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS projects(
+  project_id   TEXT PRIMARY KEY,
+  path         TEXT NOT NULL,
+  path_key     TEXT NOT NULL UNIQUE,
+  target_type  TEXT NOT NULL DEFAULT 'path'
+               CHECK(target_type IN ('path','url','artifact','inline','inferred')),
+  target_value TEXT NOT NULL,
+  registered   TEXT NOT NULL
+);
+""" + SETTINGS_SCHEMA + """
 CREATE TABLE IF NOT EXISTS metaforms(
   metaform_id TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL REFERENCES projects(project_id),
@@ -93,6 +105,9 @@ PROJECT_ID = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
 NAME = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
 ID = re.compile(r'^[0-9a-f]{32}$')
 TARGET_TYPES = ('path', 'url', 'artifact', 'inline', 'inferred')
+SOURCE = 'source.txt'  # the source's resolved path, the truth behind a project folder's name, PROJ-026
+PROJECT_DB = 'project.sqlite3'
+STORE_SUFFIX = '.metaform.sqlite3'  # a metaform's store is <metaform name>.metaform.sqlite3, STORE-003
 
 
 _AT: ContextVar[Path | None] = ContextVar('metaform_home_at', default=None)
@@ -131,9 +146,8 @@ def path_key(path: Path | str) -> str:
 
 
 @contextmanager
-def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
-    """One transaction on the base database. A read of a home with no base database creates nothing."""
-    with sqlite.opened(base_path(), BASE_SCHEMA, write=write, version=BASE_SCHEMA_VERSION) as db:
+def _transaction(path: Path, schema: str, version: str, write: bool) -> Generator[sqlite3.Connection, None, None]:
+    with sqlite.opened(path, schema, write=write, version=version) as db:
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db
@@ -141,6 +155,47 @@ def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
             db.execute('ROLLBACK')
             raise
         db.execute('COMMIT')
+
+
+@contextmanager
+def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
+    """One transaction on the chassis database. A read of a home with no chassis database creates nothing."""
+    with _transaction(base_path(), BASE_SCHEMA, BASE_SCHEMA_VERSION, write) as db:
+        yield db
+
+
+# Project folders, PROJ-026 ------------------------------------------------------------------------------------
+
+def projects_dir() -> Path:
+    return home() / 'projects'
+
+
+def folder_name(path: Path | str) -> str:
+    """A source's folder name without its number: its path as the system compares it, every character that is not
+    a letter or a digit replaced by `-`, PROJ-026."""
+    return re.sub(r'[^A-Za-z0-9]', '-', path_key(path))
+
+
+def _numbered(path: Path | str) -> list[Path]:
+    """The folders under `projects/` named for this path, in number order."""
+    root = projects_dir()
+    if not root.is_dir():
+        return []
+    return sorted(found for found in root.glob(f'{folder_name(path)}-[0-9][0-9][0-9]') if found.is_dir())
+
+
+def _source_of(folder: Path) -> str | None:
+    try:
+        return (folder / SOURCE).read_text(encoding='utf-8').strip() or None
+    except OSError:
+        return None
+
+
+@contextmanager
+def project_db(folder: Path, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
+    """One transaction on a project folder's own database, PROJ-026."""
+    with _transaction(folder / PROJECT_DB, PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION, write) as db:
+        yield db
 
 
 # Projects ---------------------------------------------------------------------
@@ -160,22 +215,59 @@ def _project(row: tuple[Any, ...]) -> Project:
     return Project(row[0], row[1], row[2], row[3])
 
 
+def _record_in(folder: Path) -> Project | None:
+    """The registration a project folder holds, or None when it holds none."""
+    if not (folder / PROJECT_DB).is_file():
+        return None
+    with project_db(folder) as db:
+        row = db.execute('SELECT project_id, path, target_type, target_value FROM projects').fetchone()
+    return None if row is None else _project(row)
+
+
+def _registered() -> list[tuple[Path, Project]]:
+    """Every project folder of the home with its registration, in folder order: the list of projects is the folders."""
+    root = projects_dir()
+    found: list[tuple[Path, Project]] = []
+    for folder in sorted(root.iterdir()) if root.is_dir() else ():
+        record = _record_in(folder) if folder.is_dir() else None
+        if record is not None:
+            found.append((folder, record))
+    return found
+
+
+def _folder_at(path: Path | str) -> Path | None:
+    """The project folder registered for exactly this source path: named for it, and its `source.txt` names it."""
+    key = path_key(path)
+    for folder in _numbered(path):
+        source = _source_of(folder)
+        if source is not None and path_key(source) == key and _record_in(folder) is not None:
+            return folder
+    return None
+
+
+def project_folder(project_id: str) -> Path | None:
+    """The folder of a registered project, PROJ-026."""
+    return next((folder for folder, record in _registered() if record.project_id == project_id), None)
+
+
+def _folder_of_project(project_id: str) -> Path:
+    folder = project_folder(project_id)
+    if folder is None:
+        raise StoreError(f'No project {project_id} is registered.', 'metaform list projects')
+    return folder
+
+
 def projects() -> tuple[Project, ...]:
-    with base() as db:
-        rows = db.execute('SELECT project_id, path, target_type, target_value FROM projects ORDER BY project_id')
-        return tuple(_project(row) for row in rows)
+    return tuple(sorted((record for _, record in _registered()), key=lambda record: record.project_id))
 
 
 def project(project_id: str) -> Project | None:
-    with base() as db:
-        row = db.execute('SELECT project_id, path, target_type, target_value FROM projects WHERE project_id=?',
-                         (project_id,)).fetchone()
-    return None if row is None else _project(row)
+    return next((record for _, record in _registered() if record.project_id == project_id), None)
 
 
 def add_project(project_id: str, path: Path | str, target_type: str | None = None,
                 target_value: str | None = None) -> str:
-    """Register a project, STORE-031. Returns the line to report."""
+    """Register a project, STORE-031, in a folder of its own named by its source's path, PROJ-026."""
     if not PROJECT_ID.fullmatch(project_id):
         raise StoreError(f'{project_id!r} is not a project id: use lowercase letters, digits, - and _.',
                          'metaform add project <id> <path>')
@@ -193,64 +285,97 @@ def add_project(project_id: str, path: Path | str, target_type: str | None = Non
         raise StoreError(f'Target type {target_type} needs a value.',
                          f'metaform add project {project_id} {folder} {target_type} <value>')
     record = Project(project_id, str(folder), target_type, target_value)
-    with base(write=True) as db:
-        existing = db.execute('SELECT project_id, path, target_type, target_value FROM projects WHERE project_id=?',
-                              (project_id,)).fetchone()
-        if existing is not None:
-            if _project(existing) == record:
-                return f'Project {project_id} is already registered.'
-            raise StoreError(f'Project {project_id} is registered with another folder or target.',
-                             'metaform list projects')
-        holder = db.execute('SELECT project_id FROM projects WHERE path_key=?', (path_key(folder),)).fetchone()
-        if holder is not None:
-            raise StoreError(f'{folder} is already registered as project {holder[0]}.', 'metaform list projects')
-        db.execute('INSERT INTO projects(project_id, path, path_key, target_type, target_value) VALUES (?, ?, ?, ?, ?)',
-                   (project_id, str(folder), path_key(folder), target_type, target_value))
+    existing = project(project_id)
+    if existing is not None:
+        if existing == record:
+            return f'Project {project_id} is already registered.'
+        raise StoreError(f'Project {project_id} is registered with another folder or target.',
+                         'metaform list projects')
+    register(record)
     return f'Added project {project_id}: {folder} (target {target_type} {target_value})'
 
 
-def register(record: Project) -> None:
-    """Register a project from an exchange document's record, STORE-027. The folder need not exist here."""
-    with base(write=True) as db:
-        register_in(db, record)
-
-
-def register_in(db: sqlite3.Connection, record: Project) -> None:
-    """Register a project inside an open base transaction; a folder another project holds is refused by name."""
+def register(record: Project) -> Path:
+    """Write a project's folder: `source.txt`, its registration and, once, its provenance, PROJ-026. A folder
+    named for the source that holds no registration, one whose project was removed, is taken again, so what it
+    kept is the project's again. The source folder itself need not exist here, as when an export is imported."""
+    holder = _folder_at(record.path)
+    if holder is not None:
+        held = _record_in(holder)
+        if held is not None and held.project_id != record.project_id:
+            raise StoreError(f'{record.path} is already registered as project {held.project_id}.',
+                             'metaform list projects')
+        return holder
+    if project(record.project_id) is not None:
+        raise StoreError(f'Project {record.project_id} is registered with another folder.', 'metaform list projects')
     key = path_key(record.path)
-    holder = db.execute('SELECT project_id FROM projects WHERE path_key=?', (key,)).fetchone()
-    if holder is not None and holder[0] != record.project_id:
-        raise StoreError(f'{record.path} is already registered as project {holder[0]}.', 'metaform list projects')
-    if db.execute('SELECT 1 FROM projects WHERE project_id=?', (record.project_id,)).fetchone() is not None:
-        return
-    db.execute('INSERT INTO projects(project_id, path, path_key, target_type, target_value) VALUES (?, ?, ?, ?, ?)',
-               (record.project_id, record.path, key, record.target_type, record.target_value))
+    taken = _numbered(record.path)
+    folder = next((one for one in taken if (_source_of(one) or '') and path_key(_source_of(one) or '') == key), None)
+    if folder is None:
+        numbers = [int(one.name.rsplit('-', 1)[1]) for one in taken]
+        folder = projects_dir() / f'{folder_name(record.path)}-{(max(numbers) if numbers else 0) + 1:03d}'
+        folder.mkdir(parents=True)
+        (folder / SOURCE).write_text(record.path + '\n', encoding='utf-8')
+    registered = now()
+    with project_db(folder, write=True) as db:
+        db.execute('INSERT INTO projects(project_id, path, path_key, target_type, target_value, registered) '
+                   'VALUES (?, ?, ?, ?, ?, ?)',
+                   (record.project_id, record.path, key, record.target_type, record.target_value, registered))
+    provenance = folder / '.metaform' / 'provenance.json'
+    if not provenance.exists():  # written once and never changed, PROJ-026
+        from . import __version__
+        provenance.parent.mkdir(exist_ok=True)
+        provenance.write_text(json.dumps({'source': record.path, 'registered': registered,
+                                          'metaform': __version__}, indent=2) + '\n', encoding='utf-8')
+    changes.note(record.project_id)
+    return folder
 
 
 def project_at(path: str) -> str | None:
-    """The project registered with this folder, compared through its path key."""
-    with base() as db:
-        row = db.execute('SELECT project_id FROM projects WHERE path_key=?', (path_key(path),)).fetchone()
-    return None if row is None else str(row[0])
+    """The project registered with this folder."""
+    folder = _folder_at(path)
+    record = _record_in(folder) if folder is not None else None
+    return None if record is None else record.project_id
 
 
 def folder_project(folder: Path) -> str | None:
-    """The registered project whose folder contains this one, the deepest match, STORE-002."""
-    key = path_key(folder)
-    best: tuple[int, str] | None = None
-    for record in projects():
-        root = os.path.normcase(record.path)
-        if key == root or key.startswith(root.rstrip(os.sep) + os.sep):
-            if best is None or len(root) > best[0]:
-                best = (len(root), record.project_id)
-    return None if best is None else best[1]
+    """The project whose source holds this folder: the folder's own project folder, else its nearest parent's,
+    found on the file system alone, PROJ-026."""
+    start = Path(folder).expanduser().resolve()
+    for candidate in (start, *start.parents):
+        found = project_at(str(candidate))
+        if found is not None:
+            return found
+    return None
 
 
 # Settings ---------------------------------------------------------------------
+# A setting of a folder inside a project's source is the project's own, kept in its project.sqlite3; the global
+# scope and folders outside every project are the chassis's, PROJ-026.
+
+def _project_holding(scope: str) -> Path | None:
+    if scope == 'global':
+        return None
+    found = folder_project(Path(scope))
+    return project_folder(found) if found is not None else None
+
+
+@contextmanager
+def settings_db(scope: str, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
+    """The database that holds a scope's settings: the project's own for a folder inside its source, else the
+    chassis's."""
+    folder = _project_holding(scope)
+    if folder is None:
+        with base(write=write) as db:
+            yield db
+    else:
+        with project_db(folder, write=write) as db:
+            yield db
+
 
 def stored(scope: str, owner: str, key: str) -> list[Any] | None:
     """The stored member values of a setting at one scope, in order, or None when nothing is stored."""
-    with base() as db:
+    with settings_db(scope) as db:
         rows = db.execute('SELECT value FROM settings WHERE scope=? AND owner=? AND key=? ORDER BY position',
                           (scope, owner, key)).fetchall()
     return [json.loads(row[0]) for row in rows] if rows else None
@@ -258,7 +383,7 @@ def stored(scope: str, owner: str, key: str) -> list[Any] | None:
 
 def save(scope: str, owner: str, key: str, members: list[Any], *, folder: Path | None = None) -> None:
     """Store a setting as one row per member, replacing what was stored. A folder row is written with it."""
-    with base(write=True) as db:
+    with settings_db(scope, write=True) as db:
         if folder is not None:
             db.execute('INSERT OR IGNORE INTO folders(path_key, path) VALUES (?, ?)', (scope, str(folder)))
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
@@ -267,18 +392,18 @@ def save(scope: str, owner: str, key: str, members: list[Any], *, folder: Path |
 
 
 def clear(scope: str, owner: str, key: str) -> None:
-    with base(write=True) as db:
+    with settings_db(scope, write=True) as db:
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
 
 
 def glued(scope: str, owner: str, key: str) -> bool:
-    with base() as db:
+    with settings_db(scope) as db:
         return db.execute('SELECT 1 FROM glue WHERE scope=? AND owner=? AND key=?',
                           (scope, owner, key)).fetchone() is not None
 
 
 def set_glue(scope: str, owner: str, key: str, on: bool, *, folder: Path | None = None) -> None:
-    with base(write=True) as db:
+    with settings_db(scope, write=True) as db:
         if on:
             if folder is not None:
                 db.execute('INSERT OR IGNORE INTO folders(path_key, path) VALUES (?, ?)', (scope, str(folder)))
@@ -319,7 +444,7 @@ def set_meta(key: str, value: str) -> None:
                    (key, value))
 
 
-# Metaforms --------------------------------------------------------------------
+# Metaforms, in each project's own database, STORE-041 and PROJ-026 ----------------------------------------------
 
 @dataclass(frozen=True)
 class Metaform:
@@ -338,8 +463,16 @@ _ACTIVE = ('SELECT m.metaform_id, m.name, m.created FROM active_metaforms a '
            'JOIN metaforms m ON m.metaform_id = a.metaform_id WHERE a.project_id=?')
 
 
+@contextmanager
+def _metaforms_db(project_id: str, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
+    with project_db(_folder_of_project(project_id), write=write) as db:
+        yield db
+
+
 def metaforms(project_id: str) -> tuple[Metaform, ...]:
-    with base() as db:
+    if project_folder(project_id) is None:
+        return ()
+    with _metaforms_db(project_id) as db:
         active = db.execute('SELECT metaform_id FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
         rows = db.execute('SELECT metaform_id, name, created FROM metaforms WHERE project_id=? ORDER BY rowid',
                           (project_id,)).fetchall()
@@ -348,7 +481,9 @@ def metaforms(project_id: str) -> tuple[Metaform, ...]:
 
 
 def active_metaform(project_id: str) -> Metaform | None:
-    with base() as db:
+    if project_folder(project_id) is None:
+        return None
+    with _metaforms_db(project_id) as db:
         row = db.execute(_ACTIVE, (project_id,)).fetchone()
     return None if row is None else Metaform(row[0], project_id, row[1], row[2], True)
 
@@ -358,7 +493,7 @@ def ensure_metaform(project_id: str) -> Metaform:
     current = active_metaform(project_id)
     if current is not None:
         return current
-    with base(write=True) as db:
+    with _metaforms_db(project_id, write=True) as db:
         row = db.execute(_ACTIVE, (project_id,)).fetchone()
         if row is not None:
             return Metaform(row[0], project_id, row[1], row[2], True)
@@ -387,7 +522,7 @@ def add_metaform(project_id: str, name: str, *, activate: bool = True) -> Metafo
     if not NAME.fullmatch(name) or ID.fullmatch(name):
         raise StoreError(f'{name!r} is not a metaform name: use letters, digits, ., _ and -.',
                          'metaform add metaform <name>')
-    with base(write=True) as db:
+    with _metaforms_db(project_id, write=True) as db:
         chosen, number = name, 1
         while db.execute('SELECT 1 FROM metaforms WHERE project_id=? AND name=?', (project_id, chosen)).fetchone():
             number += 1
@@ -398,7 +533,9 @@ def add_metaform(project_id: str, name: str, *, activate: bool = True) -> Metafo
 
 
 def metaform_by_id(project_id: str, metaform_id: str) -> Metaform | None:
-    with base() as db:
+    if project_folder(project_id) is None:
+        return None
+    with _metaforms_db(project_id) as db:
         row = db.execute('SELECT metaform_id, name, created FROM metaforms WHERE metaform_id=? AND project_id=?',
                          (metaform_id, project_id)).fetchone()
         active = db.execute('SELECT metaform_id FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
@@ -409,15 +546,16 @@ def metaform_by_id(project_id: str, metaform_id: str) -> Metaform | None:
 
 def withdraw_metaform(project_id: str, metaform_id: str) -> None:
     """Undo a metaform created in this operation whose first write failed: its row and its store file go."""
-    with base(write=True) as db:
+    path = store_path(project_id, metaform_id)
+    with _metaforms_db(project_id, write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=? AND metaform_id=?', (project_id, metaform_id))
         db.execute('DELETE FROM metaforms WHERE metaform_id=? AND project_id=?', (metaform_id, project_id))
-    remove_store(store_path(project_id, metaform_id))
+    remove_store(path)
     changes.note(project_id)
 
 
 def activate_metaform(project_id: str, name: str) -> Metaform:
-    with base(write=True) as db:
+    with _metaforms_db(project_id, write=True) as db:
         row = db.execute('SELECT metaform_id, created FROM metaforms WHERE project_id=? AND name=?',
                          (project_id, name)).fetchone()
         if row is None:
@@ -430,14 +568,15 @@ def activate_metaform(project_id: str, name: str) -> Metaform:
 
 def import_metaform(project_id: str, metaform_id: str, name: str, created: str, *, activate: bool) -> bool:
     """Record an imported metaform unless its id exists. Returns whether it was added, STORE-027."""
-    with base(write=True) as db:
+    with _metaforms_db(project_id, write=True) as db:
         return import_metaform_in(db, project_id, metaform_id, name, created, activate=activate)
 
 
 def import_metaform_in(db: sqlite3.Connection, project_id: str, metaform_id: str, name: str, created: str, *,
                        activate: bool, never_active: bool = False) -> bool:
-    """Record an imported metaform inside an open base transaction, unless its id exists. It becomes active when
-    asked, or when its project has no active metaform, unless it must never be made active, BASE-025."""
+    """Record an imported metaform inside an open transaction on its project's database, unless its id exists. It
+    becomes active when asked, or when its project has no active metaform, unless it must never be made active,
+    BASE-025."""
     if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
         return False
     has_active = db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
@@ -458,9 +597,11 @@ def free_name(db: sqlite3.Connection, project_id: str, name: str, taken: set[str
 
 def metaform_owner(metaform_id: str) -> str | None:
     """The project a metaform id belongs to in this home, if any."""
-    with base() as db:
-        row = db.execute('SELECT project_id FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone()
-    return None if row is None else str(row[0])
+    for folder, record in _registered():
+        with project_db(folder) as db:
+            if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
+                return record.project_id
+    return None
 
 
 @dataclass(frozen=True)
@@ -530,15 +671,16 @@ class Cleared:
 def to_clear(project_id: str) -> Cleared:
     """What `clear project` would remove: the project's metaforms by name, in creation order, and its report files."""
     names = tuple(form.name for form in metaforms(project_id))
-    reports = home() / 'projects' / project_id / 'reports'
-    count = sum(1 for path in reports.iterdir() if path.is_file()) if reports.is_dir() else 0
+    folder = project_folder(project_id)
+    reports = folder / 'reports' if folder is not None else None
+    count = sum(1 for path in reports.iterdir() if path.is_file()) if reports is not None and reports.is_dir() else 0
     return Cleared(project_id, names, count)
 
 
 def clear_project(project_id: str) -> Cleared:
     """Remove every metaform of the project with its store, and its report files, PROJ-025.
 
-    The registration, the folder rows and settings, and the history under `history.sqlite3` and `origins/` stay. The
+    The registration, the settings, the history and everything else in the project's folder stay, PROJ-026. The
     rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
     """
     found = to_clear(project_id)
@@ -549,12 +691,15 @@ def clear_project(project_id: str) -> Cleared:
     except OSError as error:
         raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: '
                          f'{error.strerror or error}.', 'metaform list backups') from error
-    with base(write=True) as db:
+    folder = _folder_of_project(project_id)
+    stores = _stores(folder)
+    with project_db(folder, write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
     failed: list[tuple[str, str]] = []
-    for name in ('metaforms', 'reports'):
-        _remove_tree(home() / 'projects' / project_id / name, failed)
+    for store in stores:
+        _remove_files(store, failed)
+    _remove_tree(folder / 'reports', failed)
     changes.note(project_id)
     return Cleared(found.project_id, found.metaforms, found.reports, _innermost(failed),
                    saved.name if saved is not None else None)
@@ -616,11 +761,14 @@ def backup_project(project_id: str) -> Backup | None:
     rows = {'metaforms': [{'metaform_id': form.metaform_id, 'name': form.name, 'created': form.created}
                           for form in forms],
             'active': next((form.metaform_id for form in forms if form.active), None), 'reports': found.reports}
-    for part in ('metaforms', 'reports'):
-        if (home() / 'projects' / project_id / part).is_dir():
-            _copied(home() / 'projects' / project_id / part, kept / part)
-        else:
-            (kept / part).mkdir()
+    folder = _folder_of_project(project_id)
+    (kept / 'stores').mkdir()
+    for store in _stores(folder):
+        _copied_store(store, kept / 'stores' / store.name)
+    if (folder / 'reports').is_dir():
+        _copied(folder / 'reports', kept / 'reports')
+    else:
+        (kept / 'reports').mkdir()
     (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
     return Backup(project_id, name, found.metaforms, found.reports)
 
@@ -662,10 +810,12 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
     before = clear_project(project_id).backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
-    for part in ('metaforms', 'reports'):
-        if any((kept / part).iterdir()):
-            _copied(kept / part, home() / 'projects' / project_id / part)
-    with base(write=True) as db:
+    folder = _folder_of_project(project_id)
+    for store in sorted((kept / 'stores').glob('*' + STORE_SUFFIX)) if (kept / 'stores').is_dir() else ():
+        _copied_store(store, folder / store.name)
+    if (kept / 'reports').is_dir() and any((kept / 'reports').iterdir()):
+        _copied(kept / 'reports', folder / 'reports')
+    with project_db(folder, write=True) as db:
         for row in rows['metaforms']:
             db.execute('INSERT INTO metaforms(metaform_id, project_id, name, created) VALUES (?, ?, ?, ?)',
                        (row['metaform_id'], project_id, row['name'], row['created']))
@@ -679,7 +829,7 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
 def removal_caution(project_id: str) -> str:
     """What `remove project` does, said before it does, PROJ-031."""
     return (f'Removing {project_id} takes it off the list of projects and forgets the folder settings that select it. '
-            'Its backups and history stay in the home, and its folder and files are not touched.')
+            "Its folder, history and backups stay in the home, and its source's folder and files are not touched.")
 
 
 def not_empty(project_id: str) -> str | None:
@@ -695,11 +845,17 @@ def not_empty(project_id: str) -> str | None:
 
 def remove_project(project_id: str) -> None:
     """Take an empty project off the list, PROJ-031: its registration and the folder settings that select it. Nothing
-    in the home is deleted, so its backups can be restored if it is registered again."""
+    in its folder is deleted, so registering its source again takes the folder back with what it kept, PROJ-026."""
+    folder = _folder_of_project(project_id)
+    selecting = json.dumps(project_id)
     with base(write=True) as db:
+        db.execute("DELETE FROM settings WHERE key='project' AND value=?", (selecting,))
+    for other, _ in _registered():
+        with project_db(other, write=True) as db:
+            db.execute("DELETE FROM settings WHERE key='project' AND value=?", (selecting,))
+    with project_db(folder, write=True) as db:
         db.execute('DELETE FROM active_metaforms WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM metaforms WHERE project_id=?', (project_id,))
-        db.execute("DELETE FROM settings WHERE key='project' AND value=?", (json.dumps(project_id),))
         db.execute('DELETE FROM projects WHERE project_id=?', (project_id,))
     changes.note(project_id)
 
@@ -728,13 +884,45 @@ def _innermost(failed: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
 
 
 def remove_store(path: Path) -> None:
-    """Remove a store file, its WAL files and its folder when empty: only for a store this operation created."""
+    """Remove a store file and its WAL files: only for a store this operation created."""
     for part in sorted(path.parent.glob(path.name + '*')):
         part.unlink(missing_ok=True)
-    if path.parent.is_dir() and not any(path.parent.iterdir()):
-        path.parent.rmdir()
+
+
+def _stores(folder: Path) -> list[Path]:
+    """A project folder's metaform stores."""
+    return sorted(folder.glob('*' + STORE_SUFFIX))
+
+
+def _remove_files(store: Path, failed: list[tuple[str, str]]) -> None:
+    """A store and its WAL files, noting each that could not be removed with the system's reason."""
+    for part in sorted(store.parent.glob(store.name + '*')):
+        try:
+            part.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            failed.append((str(part), error.strerror or str(error)))
+
+
+def _copied_store(source: Path, target: Path) -> None:
+    """A store copied through SQLite's own backup, so one another program holds open is copied as it stands."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(f'file:{source.as_posix()}?mode=ro', uri=True) as read, sqlite3.connect(target) as write:
+        read.backup(write)
+    read.close()
+    write.close()
+
+
+def store_file(project_id: str, name: str) -> Path:
+    """Where the store of the project's metaform with this name lives: `<name>.metaform.sqlite3` in its folder,
+    STORE-003 and PROJ-026."""
+    return _folder_of_project(project_id) / f'{name}{STORE_SUFFIX}'
 
 
 def store_path(project_id: str, metaform_id: str) -> Path:
-    """Where one metaform's store lives, STORE-003."""
-    return home() / 'projects' / project_id / 'metaforms' / metaform_id / 'store.sqlite3'
+    """Where one metaform's store lives, found by its id, STORE-003."""
+    found = metaform_by_id(project_id, metaform_id)
+    if found is None:
+        raise StoreError(f'No metaform {metaform_id} in {project_id}.', 'metaform list metaforms')
+    return store_file(project_id, found.name)

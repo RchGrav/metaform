@@ -18,7 +18,8 @@ PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixt
 def store_file(home: Path, store) -> Path:
     active = store.active_metaform()
     assert active is not None, 'the project has no metaform yet'
-    return home / 'projects' / store.project().project_id / 'metaforms' / active.metaform_id / 'store.sqlite3'
+    from metaform import home as metaform_home
+    return metaform_home.store_path(store.project().project_id, active.metaform_id)
 
 
 def dump(path: Path) -> dict[str, frozenset]:
@@ -58,7 +59,7 @@ def record_intake(run, folder, elements, env=None, finish=()):
     """Record an intake through the command line one object per call, as an intake agent does, then finish it."""
     def call(*args):
         return json.loads(run('intake', *args, '--json', cwd=folder, env=env).stdout)
-    call('start')
+    run('intake', 'start', cwd=folder, env=env)  # start hands over the Canonical Intake, not JSON, BASE-039
     for element in elements:
         call('element', element['namespace_address'],
              *_named(element, ('role', 'name', 'name_length', 'refs')))
@@ -130,7 +131,9 @@ def plans(home, store, statements):
     prompt_store = home / 'prompts.sqlite3'
     if not prompt_store.exists():
         prompt_store = ':memory:prompts'
-    paths = (store_file(home, store), base, prompt_store)
+    from metaform import home as metaform_home
+    own = metaform_home.project_folder(store.project().project_id)
+    paths = (store_file(home, store), base, prompt_store, *((own / 'project.sqlite3',) if own is not None else ()))
     found = []
     for statement in issued:
         if not statement.lstrip().upper().startswith(PLANNED):

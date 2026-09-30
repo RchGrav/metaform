@@ -8,6 +8,12 @@ import sys
 
 import pytest
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 
@@ -115,7 +121,9 @@ def test_every_verb_keeps_its_data_in_the_store(run, hello, home):
     run('hello', 'forget', '--confirm', cwd=hello)
     files = {path.relative_to(home).parts for path in home.rglob('*') if path.is_file()}
     allowed = [lambda parts: parts[0].startswith('metaform.sqlite3'),
-               lambda parts: parts[0] == 'projects' and parts[-1].startswith('store.sqlite3')]
+               lambda parts: parts[0] == 'projects' and (parts[-1].startswith(('project.sqlite3', 'source.txt'))
+                                                          or '.metaform.sqlite3' in parts[-1]
+                                                          or parts[-2:] == ('.metaform', 'provenance.json'))]
     assert [parts for parts in files if not any(rule(parts) for rule in allowed)] == []
 
 
@@ -335,7 +343,7 @@ def test_report_saves_a_report_that_hellos_layer_carries_in_its_provenance(run, 
     name = run('hello', 'report', 'Greets in English only.', cwd=hello).stdout.strip()
     layer = Store('proj').layer_ref('hello.greetings')
     assert name == f'{layer.layer_id}-report.md'
-    assert (home / 'projects' / 'proj' / 'reports' / name).read_text(encoding='utf-8') == 'Greets in English only.'
+    assert (own('proj') / 'reports' / name).read_text(encoding='utf-8') == 'Greets in English only.'
     assert [(ref.key, ref.value) for ref in Store('proj').provenance('hello.greetings').refs
             if ref.key == 'report'] == [('report', name)]
     assert list(hello.iterdir()) == []
@@ -349,7 +357,7 @@ def test_feedback_saves_feedback_on_the_metaform_process_from_a_module(run, hell
     assert said['project'] == 'proj' and said['notices'] == []
     (name,) = said['files']
     assert name == f'{said["run"]}-feedback.md'
-    assert (home / 'projects' / 'proj' / 'reports' / name).read_text(encoding='utf-8') == 'The greet help was clear.'
+    assert (own('proj') / 'reports' / name).read_text(encoding='utf-8') == 'The greet help was clear.'
 
 
 @pytest.mark.req('BASE-019')

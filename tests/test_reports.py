@@ -8,6 +8,12 @@ import pytest
 
 from metaform.data import Store
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
@@ -37,7 +43,7 @@ def test_feedback_with_a_shape_and_no_layer_writes_two_files_with_one_run_id(run
     run_id = names[0].rsplit('-', 1)[0]
     assert re.fullmatch(r'\d{8}T\d{6}Z-[0-9a-f]{6}', run_id)
     assert names == [f'{run_id}-feedback.md', f'{run_id}-shape.txt']
-    folder = home / 'projects' / 'proj' / 'reports'
+    folder = own('proj') / 'reports'
     assert (folder / f'{run_id}-feedback.md').read_text(encoding='utf-8') == 'The tool schema named flag twice.'
     assert (folder / f'{run_id}-shape.txt').read_text(encoding='utf-8') == '<result id="x"><elements/></result>\n'
     rows = listed(run, project)

@@ -10,6 +10,12 @@ import pytest
 from metaform import home as metaform_home
 from metaform.data import Node, Store, StoreError
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 
@@ -54,7 +60,7 @@ def test_every_file_created_is_under_the_home(home, tmp_path, run, monkeypatch):
                                   provenance={'module': 'test'}).name, 'code.engine')
     assert outside() == before
     assert not any(user_home.iterdir())
-    assert (home / 'metaform.sqlite3').is_file()
+    assert (own('work') / 'project.sqlite3').is_file()
 
 
 @pytest.mark.req('STORE-002')
@@ -83,16 +89,18 @@ def test_a_base_database_of_an_unknown_schema_version_is_refused_and_not_written
     folder = tmp_path / 'p'
     folder.mkdir()
     metaform_home.add_project('p', folder)
-    path = home / 'metaform.sqlite3'
-    db = sqlite3.connect(path)
-    db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
-    db.commit()
-    db.close()
-    before = path.read_bytes()
-    with pytest.raises(StoreError) as refused:
-        metaform_home.add_project('q', folder.parent)
-    assert '999' in str(refused.value)
-    assert path.read_bytes() == before
+    metaform_home.set_module_state('hello', True)
+    for path, act in ((own('p') / 'project.sqlite3', lambda: metaform_home.add_project('q', folder.parent)),
+                      (home / 'metaform.sqlite3', lambda: metaform_home.set_module_state('hello', False))):
+        db = sqlite3.connect(path)
+        db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+        db.commit()
+        db.close()
+        before = path.read_bytes()
+        with pytest.raises(StoreError) as refused:
+            act()
+        assert '999' in str(refused.value)
+        assert path.read_bytes() == before
 
 
 @pytest.mark.req('STORE-029')
@@ -105,7 +113,7 @@ def test_a_home_written_before_the_stores_layout_changed_still_opens(home, tmp_p
     metaform_home.add_project('p', folder)
     history.add_origin('p')
     prompts.prompts()
-    for path in (home / 'metaform.sqlite3', home / 'projects' / 'p' / 'history.sqlite3'):
+    for path in (own('p') / 'project.sqlite3', own('p') / 'history.sqlite3'):
         db = sqlite3.connect(path)
         db.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
         db.commit()
@@ -121,7 +129,7 @@ def test_a_store_of_an_unknown_schema_version_is_refused_and_not_written(home, s
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
     store.add_element(layer.name, 'code.engine')
-    path = home / 'projects' / 'proj' / 'metaforms' / store.active_metaform().metaform_id / 'store.sqlite3'
+    path = metaform_home.store_path('proj', store.active_metaform().metaform_id)
     db = sqlite3.connect(path)
     db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
     db.commit()
@@ -192,7 +200,7 @@ def test_reading_a_metaform_that_was_never_written_leaves_no_store(home, store):
     assert store.element('code.engine') is None
     assert store.layers().results == ()
     assert store.has_intake() is False
-    assert not list(home.rglob('store.sqlite3'))
+    assert not list(home.rglob('*.metaform.sqlite3'))
 
 
 @pytest.mark.req('STORE-041')
@@ -203,7 +211,7 @@ def test_a_new_metaform_starts_empty_and_the_old_one_is_kept_whole(home, store):
         element = store.add_element(layer.name, 'code.engine', name_length=1, role='DE')
     main = store.active_metaform()
     assert main.name == 'main'
-    main_file = home / 'projects' / 'proj' / 'metaforms' / main.metaform_id / 'store.sqlite3'
+    main_file = metaform_home.store_path('proj', main.metaform_id)
     before = main_file.read_bytes()
     before_read = store.element(element.element_id).to_dict()
     fresh = store.add_metaform('fresh')

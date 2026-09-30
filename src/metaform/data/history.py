@@ -184,7 +184,10 @@ def _unit(mform_sha_id: str) -> Path:
 
 @contextmanager
 def _db(project_id: str, *, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
-    path = home.home() / 'projects' / project_id / 'history.sqlite3'
+    folder = home.project_folder(project_id)
+    if folder is None:
+        raise StoreError(f'No project {project_id} is registered.', 'metaform list projects')
+    path = folder / 'history.sqlite3'
     with sqlite.opened(path, HISTORY_SCHEMA, write=write, version=HISTORY_SCHEMA_VERSION) as db:
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')

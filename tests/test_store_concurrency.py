@@ -287,15 +287,18 @@ def _openers(home, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()
     metaform_home.add_project('proj', folder)
+    own = metaform_home.project_folder('proj')
+    assert own is not None
     return {
-        'store.sqlite3': (lambda: Session('proj').write(), lambda: Session('proj').read()),
+        'main.metaform.sqlite3': (lambda: Session('proj').write(), lambda: Session('proj').read()),
+        'project.sqlite3': (lambda: metaform_home.project_db(own, write=True), lambda: metaform_home.project_db(own)),
         'history.sqlite3': (lambda: history._db('proj', write=True), lambda: history._db('proj')),
         'prompts.sqlite3': (lambda: prompts._db(write=True), lambda: prompts._db()),
         'metaform.sqlite3': (lambda: metaform_home.base(write=True), lambda: metaform_home.base()),
     }
 
 
-FILES = ['store.sqlite3', 'history.sqlite3', 'prompts.sqlite3', 'metaform.sqlite3']
+FILES = ['main.metaform.sqlite3', 'project.sqlite3', 'history.sqlite3', 'prompts.sqlite3', 'metaform.sqlite3']
 
 
 @pytest.mark.req('STORE-006')

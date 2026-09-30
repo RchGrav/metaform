@@ -96,9 +96,7 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
         done = subprocess.run([sys.executable, '-I', str(wheel), *args], cwd=folder, env=env, capture_output=True,
                               text=True, encoding='utf-8')
         assert done.returncode == 0, (args, done.stderr)
-    import sqlite3
-    main = sqlite3.connect(home / 'metaform.sqlite3')
-    assert main.execute('SELECT COUNT(*) FROM projects').fetchone() == (0,)
+    assert not (home / 'projects').exists() or not any((home / 'projects').iterdir())  # nothing reached this home
 
 
 @pytest.mark.req('BASE-041')

@@ -9,6 +9,12 @@ from pathlib import Path
 
 import pytest
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 PROMPTS = Path(__file__).resolve().parents[1] / 'resources' / 'prompts.xml'
@@ -90,7 +96,7 @@ def test_web_ships_on_and_with_it_off_the_rest_of_metaform_works(run, module_row
     stopped = run('web', ok=False)
     assert stopped.returncode != 0 and 'Next: metaform enable web' in stopped.stderr
     assert 'Intake: none yet' in run(cwd=folder).stdout
-    assert run('intake', 'prompt', cwd=folder).stdout.startswith('<')
+    assert '<process' in run('intake', 'start', cwd=folder).stdout
     assert run('map', 'roots', cwd=folder).returncode == 0
     assert not any(line.startswith('web') for line in run('help', 'commands').stdout.splitlines())
 
@@ -2067,8 +2073,8 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
         'said': ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
                  'settings, origins and variants stay.')}
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
-    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
-    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    assert not list(own('proj').glob('*.metaform.sqlite3'))
+    assert not (own('proj') / 'reports').exists()
     assert run(cwd=mapped).stdout.count('Metaform: none yet') == 1
     assert run('list', 'origins', cwd=mapped).stdout == before['origins']
     assert run('list', 'variants', cwd=mapped).stdout == before['variants']
@@ -2087,7 +2093,7 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
 def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_and_what_to_do(run, home, web, mapped,
                                                                                             unremovable):
     run('feedback', 'The subtype fields did not match.', cwd=mapped)
-    reports = home / 'projects' / 'proj' / 'reports'
+    reports = own('proj') / 'reports'
     (stuck,) = reports.iterdir()
     started(run)
     with unremovable(stuck):
@@ -2097,7 +2103,7 @@ def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_
     assert [entry['path'] for entry in answer['not_removed']] == [str(stuck)] and answer['not_removed'][0]['reason']
     assert answer['notices'] == [{'where': 'not_removed', 'message': LEFT}]
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
-    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+    assert not list(own('proj').glob('*.metaform.sqlite3'))
     status, again = clear(web, confirm=True)
     assert again.pop('backup') and again.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert (status, again) == (200, {
@@ -2204,7 +2210,7 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
 def test_the_page_names_what_the_clear_could_not_remove_with_its_reason_and_what_to_do(run, home, web, mapped, browser,
                                                                                       unremovable):
     run('feedback', 'The subtype fields did not match.', cwd=mapped)
-    (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
+    (stuck,) = (own('proj') / 'reports').iterdir()
     started(run)
     page, problems, _ = opened(browser, web)
     page.click('#adminBtn')

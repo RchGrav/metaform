@@ -14,6 +14,12 @@ import pytest
 
 from metaform import __version__
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
@@ -202,8 +208,10 @@ def test_reads_never_write_a_folder_row(run, home, tmp_path, project):
     for _ in range(3):
         run(cwd=tmp_path)
         run('config', '--show', cwd=tmp_path)
-    db = sqlite3.connect(home / 'metaform.sqlite3')
-    assert db.execute('SELECT COUNT(*) FROM folders').fetchone() == (0,)
+    chassis = home / 'metaform.sqlite3'
+    if chassis.exists():
+        db = sqlite3.connect(chassis)
+        assert db.execute('SELECT COUNT(*) FROM folders').fetchone() == (0,)
 
 
 # Context ----------------------------------------------------------------------
@@ -490,8 +498,8 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     run('add', 'variant', str(work), cwd=project)
     elsewhere = tmp_path / 'elsewhere'
     run('set', '--project', 'proj', cwd=elsewhere)
-    before = {'metaforms': sorted(path.name for path in (home / 'projects' / 'proj' / 'metaforms').iterdir()),
-              'reports': sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()),
+    before = {'metaforms': sorted(path.name for path in own('proj').glob('*.metaform.sqlite3')),
+              'reports': sorted(path.name for path in (own('proj') / 'reports').iterdir()),
               'origins': run('list', 'origins', cwd=project).stdout,
               'variants': run('list', 'variants', cwd=project).stdout,
               'files': sorted(path.name for path in project.iterdir())}
@@ -504,7 +512,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
          'Its registration, folder, settings, origins and variants stay.'),
         'Next: If you are sure: metaform clear project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'metaforms', cwd=project))] == ['main', 'fresh']
-    assert sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()) == before['reports']
+    assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
     said = lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere))
     assert said[0] == ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
@@ -512,8 +520,8 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     assert len(said) == 3 and said[1].startswith('Backed up as ') and said[2] == \
         'To bring it back: metaform restore project proj'  # PROJ-030
     assert run('list', 'metaforms', cwd=project).stdout == ''
-    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
-    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    assert not list(own('proj').glob('*.metaform.sqlite3'))
+    assert not (own('proj') / 'reports').exists()
     assert run(cwd=project).stdout.count('Metaform: none yet') == 1
     assert run('list', 'origins', cwd=project).stdout == before['origins']
     assert run('list', 'variants', cwd=project).stdout == before['variants']
@@ -550,14 +558,16 @@ def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(
     refused = run('remove', 'project', 'proj', cwd=elsewhere, ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines() == [
         ('Error: Removing proj takes it off the list of projects and forgets the folder settings that select it. Its '
-         'backups and history stay in the home, and its folder and files are not touched.'),
+         "folder, history and backups stay in the home, and its source's folder and files are not touched."),
         'Next: If you are sure: metaform remove project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'projects'))] == ['proj']
 
     assert lines(run('remove', 'project', 'proj', '--confirm', cwd=elsewhere)) == [
         'Removed proj. Its folder and files were not touched.']
     assert 'proj' not in [line.split()[0] for line in lines(run('list', 'projects'))]
-    assert (home / 'projects' / 'proj').is_dir() and (home / 'backups' / 'clear' / 'proj').is_dir()
+    from metaform import home as metaform_home
+    assert any((home / 'projects').glob(metaform_home.folder_name(project) + '-*'))  # its folder stays, PROJ-026
+    assert (home / 'backups' / 'clear' / 'proj').is_dir()
     assert sorted(path.name for path in project.rglob('*')) == files
     assert 'Project: none' in run(cwd=elsewhere).stdout
     run('add', 'project', 'proj', str(project))
@@ -578,7 +588,7 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
                                                                                        unremovable):
     run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
-    reports = home / 'projects' / 'proj' / 'reports'
+    reports = own('proj') / 'reports'
     (stuck,) = reports.iterdir()
     with unremovable(stuck):
         cleared = run('clear', 'project', '--confirm', cwd=project)
@@ -592,7 +602,7 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
     assert said[5:] == [('Next: Close any program that has it open, such as a running web GUI, or fix its '
                          'permissions, then run metaform clear project proj --confirm again.')]
     assert run('list', 'metaforms', cwd=project).stdout == ''
-    assert not (home / 'projects' / 'proj' / 'metaforms').exists()
+    assert not list(own('proj').glob('*.metaform.sqlite3'))
 
     again = lines(run('clear', 'project', '--confirm', cwd=project))
     assert again[0] == ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins '
@@ -880,16 +890,15 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     run('feedback', 'The subtype fields did not match.', cwd=project)
     before = {'metaforms': lines(run('list', 'metaforms', cwd=project)),
               'memory': run('memory', 'read-graph', '--json', cwd=project).stdout,
-              'reports': sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()),
-              'stores': sorted(path.relative_to(home / 'projects' / 'proj').as_posix()
-                               for path in (home / 'projects' / 'proj').rglob('*.sqlite3'))}
+              'reports': sorted(path.name for path in (own('proj') / 'reports').iterdir()),
+              'stores': sorted(path.name for path in own('proj').glob('*.metaform.sqlite3'))}
     assert before['stores'] and lines(run('list', 'backups', cwd=project)) == []
     said = lines(run('clear', 'project', '--confirm', cwd=project))
     name = re.fullmatch(r'Backed up as (\d{8}T\d{6}Z(?:-\d+)?)\.', said[1]).group(1)
     kept = home / 'backups' / 'clear' / 'proj' / name
-    assert sorted(path.name for path in kept.iterdir()) == ['metaforms', 'reports', 'rows.json']
+    assert sorted(path.name for path in kept.iterdir()) == ['reports', 'rows.json', 'stores']
     assert sorted(path.name for path in (kept / 'reports').iterdir()) == before['reports']
-    assert sorted(path.relative_to(kept).as_posix() for path in kept.rglob('*.sqlite3')) == before['stores']
+    assert sorted(path.name for path in (kept / 'stores').glob('*.metaform.sqlite3')) == before['stores']
     listed = lines(run('list', 'backups', cwd=project))
     assert len(listed) == 1 and listed[0].split()[0] == name and 'two metaforms' in listed[0]
     assert run('list', 'metaforms', cwd=project).stdout == ''
@@ -898,7 +907,7 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
         f'Restored proj from {name}: two metaforms, main and fresh, and one report file.']
     assert lines(run('list', 'metaforms', cwd=project)) == before['metaforms']
     assert run('memory', 'read-graph', '--json', cwd=project).stdout == before['memory']
-    assert sorted(path.name for path in (home / 'projects' / 'proj' / 'reports').iterdir()) == before['reports']
+    assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
     # restoring over a project that holds data backs that up first, so a restore loses nothing either
     run('memory', 'add-observations', 'element:code.timer', 'Added after the restore.', cwd=project)

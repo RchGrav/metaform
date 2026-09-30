@@ -441,7 +441,7 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
                     extra=('report=The alarm pin is unconnected.', 'feedback=The subtype fields were clear.'))
     assert report['work'] == 1
     layer_id = Store('timer').layers(kind='intake').results[0].layer_id
-    folder = home / 'projects' / 'timer' / 'reports'
+    folder = metaform_home.project_folder('timer') / 'reports'
     assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == 'The alarm pin is unconnected.'
     assert (folder / f'{layer_id}-feedback.md').read_text(encoding='utf-8') == 'The subtype fields were clear.'
     assert sorted(path.name for path in project.iterdir()) == []
@@ -640,7 +640,7 @@ def test_the_finish_reads_a_long_report_from_a_file_or_from_standard_input_on_th
     run('intake', 'finish', f'report={tmp_path / "report.md"}', 'feedback=-', '--json', cwd=project,
         input='Said on standard input.\n')
     layer_id = Store('timer').layers(kind='intake').results[0].layer_id
-    folder = home / 'projects' / 'timer' / 'reports'
+    folder = metaform_home.project_folder('timer') / 'reports'
     assert (folder / f'{layer_id}-report.md').read_text(encoding='utf-8') == text
     assert (folder / f'{layer_id}-feedback.md').read_text(encoding='utf-8') == 'Said on standard input.\n'
 
@@ -659,7 +659,7 @@ def test_over_mcp_a_report_is_the_text_given_and_no_file_is_read(home, project, 
     anyio.run(server.run_tool, project, 'intake_element', {'namespace_address': 'code.alarm.audible', 'role': 'SE'})
     anyio.run(server.run_tool, project, 'intake_finish', {'report': str(secret)})
     layer_id = Store('timer').layers(kind='intake').results[0].layer_id
-    kept = (home / 'projects' / 'timer' / 'reports' / f'{layer_id}-report.md').read_text(encoding='utf-8')
+    kept = (metaform_home.project_folder('timer') / 'reports' / f'{layer_id}-report.md').read_text(encoding='utf-8')
     assert kept == str(secret)
 
 

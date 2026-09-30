@@ -60,7 +60,11 @@ def _locked(stream: BinaryIO) -> Generator[None, None, None]:
 def folder(project_id: str | None) -> Path:
     """Where a project's report files live, or the home's own reports folder when there is no project."""
     root = home.home()
-    return root / 'projects' / project_id / 'reports' if project_id else root / 'reports'
+    if project_id:
+        folder = home.project_folder(project_id)
+        if folder is not None:
+            return folder / 'reports'
+    return root / 'reports'
 
 
 def run_id() -> str:

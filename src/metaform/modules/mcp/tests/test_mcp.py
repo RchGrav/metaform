@@ -12,6 +12,12 @@ from mcp.client.stdio import stdio_client
 
 from metaform.data import Store
 
+
+def own(project_id):
+    """A project's folder in the home, PROJ-026."""
+    from metaform import home as metaform_home
+    return metaform_home.project_folder(project_id)
+
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
@@ -642,7 +648,7 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert told == {'project': 'proj', 'metaforms': ['main'], 'reports': 1}
     assert run('list', 'metaforms', cwd=mapped).stdout == ''
-    assert not (home / 'projects' / 'proj' / 'reports').exists()
+    assert not (own('proj') / 'reports').exists()
     run('set', '--modules', 'map', cwd=mapped)
 
     async def narrowed(client, init):
@@ -654,7 +660,7 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
 @pytest.mark.req('MCP-006')
 def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_error(run, home, mapped, unremovable):
     run('feedback', 'A note.', cwd=mapped)
-    (stuck,) = (home / 'projects' / 'proj' / 'reports').iterdir()
+    (stuck,) = (own('proj') / 'reports').iterdir()
 
     async def check(client, init):
         return await called(client, 'clear_project', {

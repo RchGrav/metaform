@@ -271,8 +271,16 @@ def _pulled(metaform: dict[str, Any], project_id: str, label: str, taken: set[st
     folder again finds it, and its name followed by `-from-<wheel>`, numbered when taken, BASE-025."""
     head = metaform['metaform']
     derived = hashlib.sha256(f'{label}/{head["metaform_id"]}'.encode()).hexdigest()[:32]
-    with home.base() as db:
-        name = home.free_name(db, project_id, f'{head["name"]}-from-{label}', taken)
+    folder = home.project_folder(project_id)
+    wanted = f'{head["name"]}-from-{label}'
+    if folder is None:
+        name, number = wanted, 1
+        while name in taken:
+            number += 1
+            name = f'{wanted}-{number}'
+    else:
+        with home.project_db(folder) as db:
+            name = home.free_name(db, project_id, wanted, taken)
     taken.add(name)
     return {**metaform, 'metaform': {**head, 'metaform_id': derived, 'name': name}}
 
@@ -323,10 +331,11 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
                     pulled: str | None = None) -> dict[str, Any]:
     """Add what the target does not hold, by unique id, as one unit, STORE-027 and STORE-006.
 
-    The document is checked whole and every metaform's place decided before anything is written. Each store's
-    rows are written in an open transaction; the base database's rows are then written and committed, and only
-    then each store. When anything fails, every store transaction rolls back, and every store file this import
-    created is removed. Returns what was added and skipped, and a notice for each identity the document needs
+    The document is checked whole and every metaform's place decided before anything is written. A project the
+    home does not hold is registered first, in a folder of its own, PROJ-026. Each store's rows are written in an
+    open transaction; each project's metaform rows are then written and committed, and only then each store. When
+    anything fails, every store transaction rolls back, every store file this import created is removed, and a
+    project it registered is taken off the list again. Returns what was added and skipped, and a notice for each identity the document needs
     that this home does not hold, BASE-044.
     """
     _validate(document)
@@ -336,25 +345,33 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
                               'layers_skipped': 0, 'things_added': 0, 'things_skipped': 0, 'notices': notices}
     opened: list[sqlite3.Connection] = []
     created: list[Path] = []
+    registered: list[str] = []
     with ExitStack() as stores:
         try:
             for item in planned:
-                path = home.store_path(item.project_id, item.metaform['metaform']['metaform_id'])
+                if not item.registered and item.project_id not in registered and home.project(item.project_id) is None:
+                    home.register(item.record)
+                    registered.append(item.project_id)
+            for item in planned:
+                head = item.metaform['metaform']
+                known = home.metaform_by_id(item.project_id, head['metaform_id'])
+                path = (home.store_path(item.project_id, head['metaform_id']) if known is not None
+                        else home.store_file(item.project_id, head['name']))
                 if not path.exists():
                     created.append(path)
                 db = stores.enter_context(open_store(path, write=True))
                 opened.append(db)
                 db.execute('BEGIN IMMEDIATE')
                 _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
-            with home.base(write=True) as base:
-                for item in planned:
-                    if not item.registered:
-                        home.register_in(base, item.record)
-                    head = item.metaform['metaform']
-                    added = home.import_metaform_in(base, item.project_id, head['metaform_id'], head['name'],
+            for item in planned:
+                head = item.metaform['metaform']
+                folder = home.project_folder(item.project_id)
+                assert folder is not None
+                with home.project_db(folder, write=True) as own:
+                    added = home.import_metaform_in(own, item.project_id, head['metaform_id'], head['name'],
                                                     head['created'], activate=item.activate,
                                                     never_active=item.never_active)
-                    report['metaforms_added' if added else 'metaforms_skipped'] += 1
+                report['metaforms_added' if added else 'metaforms_skipped'] += 1
             for db in opened:
                 db.execute('COMMIT')
         except BaseException as error:
@@ -364,6 +381,8 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
             stores.close()
             for path in created:
                 home.remove_store(path)
+            for project_id in registered:
+                home.remove_project(project_id)
             if isinstance(error, sqlite3.IntegrityError):
                 raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
             raise
@@ -506,7 +525,7 @@ def pull_wheel(label: str) -> dict[str, Any]:
     never merged into one that is here; pulling again adds nothing; the wheel's folder is left in place, BASE-025."""
     wheels = home.home() / 'wheels'
     folder = wheels / label
-    if not (folder / 'metaform.sqlite3').is_file():
+    if not (folder / 'projects').is_dir() and not (folder / 'metaform.sqlite3').is_file():
         found = sorted(path.name for path in wheels.iterdir() if path.is_dir()) if wheels.is_dir() else []
         raise StoreError(f'No data of a wheel {label} at {folder}.',
                          f'metaform import wheel={found[0]}' if found else 'metaform list projects')
