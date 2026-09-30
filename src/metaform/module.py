@@ -131,9 +131,11 @@ class Subscription:
 
 @dataclass(frozen=True)
 class Status:
-    """What a module's status hook adds to status, `help agents` and the MCP instructions, BASE-035."""
+    """What a module's status hook adds: lines and a notice to status, BASE-035, and an instruction to the
+    instructions agents read, after the module's own instructions prompt, MCP-031."""
     lines: tuple[str, ...] = ()
     notice: str | None = None
+    instruction: str | None = None
 
 
 @dataclass(frozen=True)

@@ -11,8 +11,14 @@ import pytest
 
 pytestmark = pytest.mark.kind('fixture')
 
-NOTICE = ('Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell '
-          'the user the address it returns, and its token when it gives one.')
+PROMPTS = Path(__file__).resolve().parents[1] / 'resources' / 'prompts.xml'
+
+
+def prompt(name: str) -> str:
+    import xml.etree.ElementTree as ET
+    found = ET.parse(PROMPTS).getroot().find(name)
+    assert found is not None and found.text
+    return found.text.strip()
 
 
 def free_port() -> int:
@@ -156,13 +162,15 @@ def test_the_default_bind_takes_no_other_address_and_another_bind_needs_the_toke
 
 
 @pytest.mark.req('VIEW-015')
-def test_the_autostart_setting_puts_the_notice_in_what_agents_read(run, tmp_path):
+def test_the_autostart_setting_puts_the_web_message_in_what_agents_read_only_while_it_is_on(run, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
-    assert NOTICE in run('help', 'agents', cwd=folder).stdout
+    line = prompt('instructions') + ' ' + prompt('autostart')
+    assert line in run('help', 'agents', cwd=folder).stdout.splitlines()
     run('set', '--no-web-autostart', cwd=folder)
-    assert NOTICE not in run('help', 'agents', cwd=folder).stdout
+    served = run('help', 'agents', cwd=folder).stdout
+    assert prompt('instructions') in served.splitlines() and prompt('autostart') not in served
 
 
 PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixture.', 'model': 'none',

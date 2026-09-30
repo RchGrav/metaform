@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- web's prompts, MCP-031. What is between an element's tags is what is served. The notice is shown by
-     `metaform status` before the intake while web_autostart is on. -->
+<!-- web's prompts, MCP-031. What is between an element's tags is what is served. With web_autostart on, autostart
+     follows web's instructions in the instructions agents read, VIEW-015, and is shown by `metaform status` before
+     the intake. -->
 <prompts>
 <instructions>web is active.</instructions>
-<notice>Before the intake, start the web GUI: call the web tool with command start, or run `metaform web`. Tell the user the address it returns, and its token when it gives one.</notice>
+<autostart>Before an intake, start the web GUI with web start if it is not running.</autostart>
 </prompts>

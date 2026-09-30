@@ -31,7 +31,7 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-NOTICE = prompt_files.text(resources.files(__name__), 'notice')
+AUTOSTART = prompt_files.required(resources.files(__name__), 'autostart')
 WAIT = 15.0  # the limit on `start`'s one wait for the server's ready line, and on `stop`'s for its stream to end
 WILDCARDS = ('0.0.0.0', '::', '')
 IN_USE = {errno.EADDRINUSE, errno.EACCES, 10048, 10013}  # 10048 and 10013 are Windows's in use and access denied
@@ -281,10 +281,12 @@ def pushed(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
 
 
 def status(ctx: Context) -> Status:
-    """The message is for a project with no map yet, where an intake comes next, and `web_autostart` off turns it
-    off, MCP-029."""
+    """With `web_autostart` on, the autostart message is in the instructions agents read, VIEW-015, and in status
+    for a project with no map yet, where an intake comes next. Off, it is in neither."""
+    if not ctx.setting('web_autostart'):
+        return Status()
     mapped = ctx.store is not None and ctx.store.has_intake()
-    return Status(notice=NOTICE) if ctx.setting('web_autostart') and not mapped else Status()
+    return Status(notice=None if mapped else AUTOSTART, instruction=AUTOSTART)
 
 
 MODULE = Module(

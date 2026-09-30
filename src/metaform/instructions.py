@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import context, loader, prompt_files, settings
-from .module import Module
+from .module import Module, Status, call
 
 
 def on_surface(group: str, folder: Path) -> bool:
@@ -24,9 +24,23 @@ def surfaced(folder: Path) -> list[Module]:
     return [module for module in sorted(loader.enabled(), key=lambda item: item.id) if on_surface(module.id, folder)]
 
 
+def _listed(module: Module, folder: Path, project: str | None) -> str | None:
+    """A module's line under "modules available.": its instructions prompt, then the instruction its status hook
+    gives for the state the folder is in, VIEW-015."""
+    own = prompt_files.module(module.id, 'instructions')
+    if module.status is None:
+        return own
+    try:
+        got = call(module.status, context.build(module.id, folder, project=project, resolve=False))
+    except Exception:  # noqa: BLE001  a failing hook adds nothing to the instructions
+        return own
+    added = got.instruction if isinstance(got, Status) else None
+    return ' '.join(part for part in (own, added) if part) or None
+
+
 def compose(folder: Path, project: str | None = None) -> str:
     chosen = project if project is not None else context.project_for(folder)
-    listed = [line for line in (prompt_files.module(module.id, 'instructions') for module in surfaced(folder)) if line]
+    listed = [line for line in (_listed(module, folder, chosen) for module in surfaced(folder)) if line]
     parts = [prompt_files.chassis('instructions', modules='\n'.join(listed))]
     if chosen is None:
         from . import home

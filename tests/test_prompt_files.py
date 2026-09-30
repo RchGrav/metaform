@@ -58,6 +58,7 @@ def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
+    run('set', '--no-web-autostart', cwd=folder)  # the web message, VIEW-015, is tested with the web module
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
     listed = '\n'.join(prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text
@@ -73,5 +74,5 @@ def test_module_notices_are_not_added_to_the_instructions(run, home, tmp_path):
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
     served = run('help', 'agents', cwd=folder).stdout
-    for module in ('intake', 'web'):
+    for module in ('intake',):
         assert prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'notice').text.strip() not in served
