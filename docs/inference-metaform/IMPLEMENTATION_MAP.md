@@ -138,7 +138,7 @@ The store and intake support `ef` and `verb`, and the map knowledge interface wr
 
 | Resource range | Content |
 |---|---|
-| [8-23](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L8-L23) | AUE, Entity, Element, VE, PE, OP, EF, DE, SE, NE, Parametric, and namespace concepts. SE is the Substantial Element. |
+| [8-23](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L8-L23) | AUE, Entity, Element, CQU, PE, OP, EF, DE, SE, NE, Parametric, and namespace concepts. SE is the Substantial Element. |
 | [24-49](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L24-L49) | Vested-entity rules and photo examples. |
 | [50-97](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L50-L97) | The purpose join type, namespace meaning, reversible readings, valid prefixes, `name_length`, roots, and validity examples. |
 | [98-117](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L98-L117) | Survey, receiving-purpose recursion, closure, annealing, convergence, internal subtypes, recording each object as it is reasoned, and the proofing pass. |
@@ -428,7 +428,7 @@ The author's broader account attaches language Encounters such as `code.c` and a
 <a id="c09"></a>
 ### C09. The resource's role prose and schema differ on `AUE`
 
-**Literal resource and the September 26 export.** The response prose says an inside element has one role among `DE`, `SE`, and `NE`, while an outside VE has `VE`. The illustrative outer element schema at [line 152](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L152) also includes `AUE`. The September 26 map uses `AUE` for `code.graph.knowledge` and `DE` for `code.chassis`.
+**Literal resource and the September 26 export.** The response prose says an inside element has one role among `DE`, `SE`, and `NE`, while an outside CQU has `CQU`. The illustrative outer element schema at [line 152](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L152) also includes `AUE`. The September 26 map uses `AUE` for `code.graph.knowledge` and `DE` for `code.chassis`.
 
 **Correspondence:** this is recorded as a local role-schema distinction requiring alignment, rather than silently expanding the role prose or rewriting the export. It does not change the Entity/Element or receiver/provider semantics.
 

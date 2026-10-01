@@ -46,7 +46,7 @@ PAGING = {'limit': _int, 'after': str}
 CONTEXT = {'selection': _list, 'raw': _bool}
 
 READS: dict[str, Read] = {
-    'roots': Read('roots', (), {**CONTEXT, **PAGING}, "The map's entry: the VE and the DE with their joins, and every "
+    'roots': Read('roots', (), {**CONTEXT, **PAGING}, "The map's entry: the CQU and the DE with their joins, and every "
                                                     'root element.'),
     'graph': Read('graph', (), {**CONTEXT, **PAGING}, 'A page of the outer map in address order, with parents, '
                                                       'joins and subtype joins.'),

@@ -235,7 +235,7 @@ def test_a_correction_moves_a_join_to_another_receiver_and_peeling_moves_it_back
 def test_a_correction_absorbs_a_join_into_its_parents_join_and_peeling_restores_it(store):
     with store.atomic():
         base = intake(store)
-        store.add_element(base.name, 'stakeholder.cook', role='VE')
+        store.add_element(base.name, 'stakeholder.cook', role='CQU')
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
@@ -440,7 +440,7 @@ def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_correct
 def test_a_correction_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_the_new_parent(store):
     with store.atomic():
         base = intake(store)
-        store.add_element(base.name, 'stakeholder.cook', role='VE')
+        store.add_element(base.name, 'stakeholder.cook', role='CQU')
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',

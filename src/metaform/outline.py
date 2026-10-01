@@ -13,7 +13,7 @@ from typing import Any, cast
 from .data import Store
 from .errors import Stop
 
-FIRST = {'VE': 0, 'AUE': 1, 'DE': 2}
+FIRST = {'CQU': 0, 'AUE': 1, 'DE': 2}
 
 
 def _sentence(join: dict[str, Any], receiver: str, provider: str) -> str:
@@ -66,7 +66,7 @@ def _element_lines(store: Store, address: str, names: dict[str, str], reading: d
 
 def markdown(store: Store, address: str | None = None, *, selection: Sequence[str] | None = None,
              raw: bool = False) -> str:
-    """The whole map, the VE, the AUE and the DE first, or with an address that element and all around it."""
+    """The whole map, the CQU, the AUE and the DE first, or with an address that element and all around it."""
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
     found = store.roots(limit=0, **reading)
     names = {element.address: element.short_name for element in found.elements}

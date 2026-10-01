@@ -2,7 +2,7 @@
   "id": "kitchen-timer-typology",
   "elements": [
     {
-      "namespace_address": "stakeholder.cook.home", "name_length": 2, "role": "VE", "name": "Home cook",
+      "namespace_address": "stakeholder.cook.home", "name_length": 2, "role": "CQU", "name": "Home cook",
       "joins": [
         {
           "type": "purpose", "provider": "code.timer.kitchen",

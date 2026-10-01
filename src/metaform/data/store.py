@@ -476,7 +476,7 @@ class Store:
 
     def roots(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
               after: str | None = None) -> Roots:
-        """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025."""
+        """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025."""
         with self._read() as tx:
             return reads.roots(tx, None if raw else self._resolver(tx, selection), limit, after)
 

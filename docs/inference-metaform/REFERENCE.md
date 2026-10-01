@@ -134,17 +134,17 @@ graph TB
 
 The method uses functionality in this cross-artifact sense. A function can be an interface, a mechanism, a representation, or an experienced effect. It need not be a callable in a programming language.
 
-### Receiving Entity, Vested Entity, and Providing Element
+### Receiving Entity, Cestui Que Use, and Providing Element
 
 A **Receiving Entity** holds the **Operative Purpose**: the active reason why the relationship is needed. The **Providing Element** supplies the **Encounter Function** through which that purpose is served.
 
-The Canonical Intake uses **Vested Entity**, or **VE**, for the purpose-bearing party relevant to the type of artifact. Its external vested perspective concerns the type of party whose purpose drives improvement in that kind of artifact. Inside the receiving-purpose trace, an encountered component with requirements is also examined as the receiving entity for what it needs.
+The Canonical Intake uses **Cestui Que Use**, or **CQU**, for the purpose-bearing party relevant to the type of artifact. Its external vested perspective concerns the type of party whose purpose drives improvement in that kind of artifact. Inside the receiving-purpose trace, an encountered component with requirements is also examined as the receiving entity for what it needs.
 
 The roles in one join are:
 
 ```mermaid
 graph TB
-    receiver["Receiving Entity / VE"] -- owns the why --> purpose["Operative Purpose"]
+    receiver["Receiving Entity / CQU"] -- owns the why --> purpose["Operative Purpose"]
     provider["Encounter Function of<br/>a Providing Element"] -- served through the how --> purpose
 ```
 
@@ -163,7 +163,7 @@ A join carries the receiving relationship's meaning, not merely two connected na
 | `purpose` | The receiver's active Operative Purpose. |
 | `function` | The descriptive EF supplied for this encounter. |
 | `ef` | `Function` or `Encounter`, identifying which reading is in use. |
-| `relation` | The artifact-specific relationship, an active-voice fragment that starts with its third-person verb; its subject is the Providing Element when `ef` is Function and the Vested Entity when `ef` is Encounter. |
+| `relation` | The artifact-specific relationship, an active-voice fragment that starts with its third-person verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use when `ef` is Encounter. |
 | `verb` | The third-person verb `relation` starts with. |
 | `observation` | What is actually there: its condition, implementation, format, arrangement, or limitations. |
 | `non_goal` | An optional pertinent outcome the receiver is not seeking. |
@@ -179,14 +179,14 @@ The current intake distinguishes:
 
 | Role | Functional significance |
 |---|---|
-| Defining Element, DE | Its loss would prevent the AUE from remaining the same type. It supplies the defining function that serves the relevant outside VE. |
-| Substantial Element, SE | Its EF helps the DE serve the VE's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. |
+| Defining Element, DE | Its loss would prevent the AUE from remaining the same type. It supplies the defining function that serves the relevant outside CQU. |
+| Substantial Element, SE | Its EF helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. |
 | Notable Element, NE | It expresses an essential demand, interface, specification, or requirement needed to understand what the system expects or depends on. |
 | Parametric | A tunable quality or quantity without its own functional name at this scope. It is not given a namespace node by this intake. |
 
 DE, SE, and NE classify contributions to this artifact. They do not classify what a depicted object independently does in the outside world. A tower in a photograph can establish setting; it does not become a communications-system provider because the real tower supports antennas.
 
-An outside VE is represented with the role `VE`. Being a provider is a join role, not an additional `PE` role attribute. The current resource's separate treatment of `AUE` in its illustrative schema is recorded in the [source correspondence](IMPLEMENTATION_MAP.md#correspondence).
+An outside CQU is represented with the role `CQU`. Being a provider is a join role, not an additional `PE` role attribute. The current resource's separate treatment of `AUE` in its illustrative schema is recorded in the [source correspondence](IMPLEMENTATION_MAP.md#correspondence).
 
 ### External and exterior
 
@@ -282,7 +282,7 @@ Its photo examples include a seller who improves the presentation of a sale phot
 
 ### Receiving-purpose recursion
 
-After the initial survey and grouping, the intake traces what the defining functionality needs in order to supply its EF. The DE remains a provider to the outside VE while becoming a receiver for its own requirements.
+After the initial survey and grouping, the intake traces what the defining functionality needs in order to supply its EF. The DE remains a provider to the outside CQU while becoming a receiver for its own requirements.
 
 For each such requirement, the procedure identifies a provider and records a purpose join. When that provider has requirements of its own, the examination continues from its receiving perspective. Every OP traces back through receiving relationships to the purpose served outside the artifact.
 
@@ -325,7 +325,7 @@ The following is a **derived XML illustration using the September 26 map's names
 <result id="illustration-intake-relationship">
   <elements>
     <element namespace_address="stakeholder.orchestrator.agent"
-             name_length="2" role="VE">
+             name_length="2" role="CQU">
       <name>agent orchestrator</name>
       <joins>
         <join type="purpose" provider="code.intake"
@@ -1032,7 +1032,7 @@ These commitments express what the described mechanisms mean and what must remai
 | Select / mask / incoming selection | [9](#layers) |
 | Substantial Element / SE | [3](#semantic-structure) |
 | Unloaded Definition | [5](#intake) |
-| Vested Entity / VE | [3](#semantic-structure), [5](#intake) |
+| Cestui Que Use / CQU | [3](#semantic-structure), [5](#intake) |
 | Work record | [5](#intake), [9](#layers), [11](#criticism) |
 
 ---

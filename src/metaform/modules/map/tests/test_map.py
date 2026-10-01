@@ -23,7 +23,7 @@ def mapped(run, tmp_path):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                             hideable=False, provenance={'module': 'intake'}, ready=True)
-        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
@@ -609,7 +609,7 @@ def described(run, tmp_path):
     with store.atomic():
         layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                             hideable=False, provenance={'module': 'intake'}, ready=True)
-        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_element(layer.name, 'code.display.digit', name_length=2, role='SE',
@@ -638,7 +638,7 @@ def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, d
         assert f'`{address}`' in text
     for name in ('home cook', 'kitchen timer', 'audible alarm', 'digit display'):
         assert name in text
-    assert 'DE' in text and 'VE' in text
+    assert 'DE' in text and 'CQU' in text
     assert 'Paths: src/display.py' in text and 'DISP-001' not in text
     assert 'kitchen timer receives from digit display' in text
     assert 'digit display shows the time left to the timer' in text

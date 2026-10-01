@@ -435,7 +435,7 @@ def search(tx: Tx, res: Resolver, text: str, layer: str | None, raw: bool, limit
 
 
 def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
-    """The map's entry: the VE and DE with the joins they receive, and every root element, one page, STORE-025.
+    """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025.
 
     The role is on the element, STORE-009, and its current row's role is indexed, so the entry is one read on
     `current_elements_by_role`; a root element is one with a role that is not held only by subtype joins, MAP-031.
@@ -445,7 +445,7 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
         return Roots((), (), None)
     entry: list[RootEntry] = []
     if after is None:
-        for element_id, _role in tx.db.execute("SELECT element_id, role FROM current_elements WHERE role IN ('VE', 'DE') "
+        for element_id, _role in tx.db.execute("SELECT element_id, role FROM current_elements WHERE role IN ('CQU', 'DE') "
                                                'ORDER BY role DESC, element_id').fetchall():
             found = views.element(tx, str(element_id), res)
             if found is None or rows.held_only(tx, found.element_id):

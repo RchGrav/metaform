@@ -21,7 +21,7 @@ The exported project's Artifact Under Examination, or **AUE**, is `code.graph.kn
 | `stakeholder.orchestrator.agent` | agent orchestrator | Receives a functional map and the facilities through which agents use it. |
 | `stakeholder.author.module` | module author | Receives an extension mechanism for adding a capability without changing the chassis. |
 
-These are types of parties vested in this kind of artifact, not identifiers for the particular people reading this guide. The intake identifies vested parties through the purposes that drive improvement in the artifact. It does not simply label whoever requested the intake as the VE.
+These are types of parties vested in this kind of artifact, not identifiers for the particular people reading this guide. The intake identifies vested parties through the purposes that drive improvement in the artifact. It does not simply label whoever requested the intake as the CQU.
 
 The map names `code.chassis`, **chassis**, as its Defining Element. The represented supporting capabilities include the store, command line, plugin system, intake, map API, memory, MCP, GUI, variants, installer, builder, reports, agent instructions, and tests. This is the functional organization recorded by this intake, not a claim that every implementation component must appear as a separate global node.
 
@@ -43,7 +43,7 @@ The intake's roles distinguish contributions:
 | Role | Meaning in the examined artifact |
 |---|---|
 | AUE | The artifact or collection under examination. |
-| VE | A vested party outside the AUE whose purpose is being served. |
+| CQU | A vested party outside the AUE whose purpose is being served. |
 | DE | The defining element whose loss would prevent the AUE from remaining the same type. |
 | SE | A substantial element whose Encounter Function helps the defining element serve the vested purpose. It counts as substantial because of what it is meant to contribute to the AUE, even when that contribution is weak or replaceable. |
 | NE | A notable element expressing an essential demand or requirement on the external environment. |
@@ -109,7 +109,7 @@ metaform map where code.system.plugin
 metaform map node join:d14bd3498b614dfbaf0754c99b28dba3
 ```
 
-The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the provider for that relationship. `relation` states the connection as an active-voice fragment that starts with its third-person verb, and `verb` holds that verb; its subject is the Providing Element when `ef` is Function and the Vested Entity, the join's receiver, when `ef` is Encounter. The export's relations predate that form and are whole sentences. `observation` records the actual condition, form, arrangement, or limitations. References connect the record to relevant evidence or artifact-specific logic. An optional `non_goal` records a pertinent outcome the receiver does not seek; its absence is not a request to invent exclusions.
+The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the provider for that relationship. `relation` states the connection as an active-voice fragment that starts with its third-person verb, and `verb` holds that verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use, the join's receiver, when `ef` is Encounter. The export's relations predate that form and are whole sentences. `observation` records the actual condition, form, arrangement, or limitations. References connect the record to relevant evidence or artifact-specific logic. An optional `non_goal` records a pertinent outcome the receiver does not seek; its absence is not a request to invent exclusions.
 
 A provider can serve different purposes through different Encounter Functions. The module contract serves the command line by supplying verb declarations, the builder by identifying loaded modules and dependencies, and the module author through the declaration-and-loading encounter. Those distinctions belong in the joins, not in a single flattened element-level function description.
 

@@ -476,7 +476,7 @@ def test_the_intake_tools_carry_no_condition_field_and_a_flag_sent_anyway_is_kep
 @pytest.mark.req('MAP-016')
 def test_two_elements_with_one_address_are_one_element_holding_both_joins(run, project, tmp_path):
     doubled = copy.deepcopy(FIXTURE)
-    doubled['elements'].append({'namespace_address': 'stakeholder.cook.home', 'role': 'VE', 'joins': [
+    doubled['elements'].append({'namespace_address': 'stakeholder.cook.home', 'role': 'CQU', 'joins': [
         {'provider': 'code.alarm.audible', 'purpose': 'Hear it from the next room.', 'function': 'Rings loudly.',
          'ef': 'Encounter', 'relation': 'The alarm reaches the cook.', 'verb': 'reaches', 'observation': 'Loud.'}]})
     report = submit(run, project, doubled, tmp_path)
@@ -508,7 +508,7 @@ def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):
     run('add', 'project', 'photos', str(photos), 'artifact', 'kitchen_photos')
     document = {'elements': [
         {'namespace_address': 'media.photo.product', 'role': 'AUE', 'name': 'kitchen photos'},
-        {'namespace_address': 'stakeholder.seller', 'role': 'VE', 'joins': [
+        {'namespace_address': 'stakeholder.seller', 'role': 'CQU', 'joins': [
             {'provider': 'media.photo.subject', 'purpose': 'Show the object at its best.', 'function': 'Frames it.',
              'ef': 'Encounter', 'relation': 'The subject carries the sale.', 'observation': 'One mixer, centred.'}]},
         {'namespace_address': 'media.photo.subject', 'role': 'DE'}]}
@@ -568,7 +568,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     """Rich, 2026-09-26: the intake is recorded object by object as it is reasoned; agents read it back while it is
     built, and only a finished intake reaches every other read."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', 'name=Home cook', cwd=project)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name=Home cook', cwd=project)
     made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen',
                           'purpose=Know when each dish is done.', 'function=Counts down and rings.', 'ef=Function',
                           'relation=The kitchen timer tells the cook.', 'verb=tells',
@@ -690,7 +690,7 @@ def failsafe_intake(run, project):
     """A building intake where an operator receives from a gateway failsafe and from an echo probe the failsafe can
     absorb, and an alarm receives from the probe too."""
     run('intake', 'start', cwd=project)
-    for address, role in (('stakeholder.operator', 'VE'), ('code.failsafe.gateway', 'DE'), ('code.probe.echo', 'SE'),
+    for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE'), ('code.probe.echo', 'SE'),
                           ('code.alarm', 'SE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
     parent = recorded(run, project, 'join', 'stakeholder.operator', 'code.failsafe.gateway',
@@ -815,7 +815,7 @@ def test_a_subtype_join_takes_the_type_the_intake_writes_on_it(run, project):
     """The intake writes `type="purpose"` on the join it nests inside another, so the tool takes it there. It is where
     the join sits that makes it a subtype join, and the type is no fault to name or to set aside."""
     run('intake', 'start', cwd=project)
-    for address, role in (('stakeholder.operator', 'VE'), ('code.failsafe.gateway', 'DE')):
+    for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
     parent = recorded(run, project, 'join', 'stakeholder.operator', 'code.failsafe.gateway', 'purpose=Stay connected.',
                       'function=Holds the link up.', 'ef=Function', 'relation=Holds the link.', 'verb=holds',
@@ -827,3 +827,22 @@ def test_a_subtype_join_takes_the_type_the_intake_writes_on_it(run, project):
     [held] = [row for row in recorded(run, project, 'show')['joins'] if row['join_id'] == parent['join_id']]
     [sub] = held['subtypes']
     assert (sub['purpose'], sub['extra']) == ('Know the link answers.', None)
+
+
+@pytest.mark.req('MAP-017')
+@pytest.mark.req('STORE-025')
+def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, project):
+    """Rich, 2026-10-01: VE is changed to CQU, Cestui Que Use, throughout. The Canonical Intake names the roles
+    AUE, CQU, DE, SE and NE; an element given CQU is stored without a notice and is the map's entry beside the DE."""
+    run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
+    kept = json.loads(run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name_length=2', '--json',
+                          cwd=project).stdout)
+    assert not [notice for notice in kept.get('notices', []) if notice['where'] == 'role']
+    old = json.loads(run('intake', 'element', 'stakeholder.diner', 'role=VE', 'name_length=1', '--json',
+                         cwd=project).stdout)
+    [said] = [notice['message'] for notice in old['notices'] if notice['where'] == 'role']
+    assert said == "'VE' is not AUE, CQU, DE, SE or NE; it was stored as given."
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name_length=2', cwd=project)
+    run('intake', 'finish', cwd=project)
+    roots = json.loads(run('map', 'roots', '--json', cwd=project).stdout)
+    assert {item['element']['address'] for item in roots['entry']} == {'stakeholder.cook.home', 'code.timer.kitchen'}

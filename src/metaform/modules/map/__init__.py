@@ -70,7 +70,7 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
 
 
 def roots(ctx: Context) -> Any:
-    """The map's entry: the VE and the DE with their joins, and every root element, STORE-025."""
+    """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025."""
     return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
 
 
@@ -416,7 +416,7 @@ KNOWLEDGE_NOUNS = (
     _noun('workflow', 'create: the workflow within that module.'),
     _noun('prompt', 'create: the prompt the layer is made from.'),
     _noun('model', 'create: the model that makes it.'),
-    _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, VE or AUE, the role of '
+    _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, CQU or AUE, the role of '
                   'the element, the one a subtype join holds included.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
@@ -567,14 +567,14 @@ MODULE = Module(
             'the address returns the element, what relies on it, every join it provides with the receiver and its '
             'purpose, what it relies on, every join it receives with the provider and its function, the subtype joins '
             'inside them, its open work records and what the layers in context hold at it; full=true keeps ids. With '
-            "no address, start with roots: the map's entry, the VE and the DE with their joins, and the root "
+            "no address, start with roots: the map's entry, the CQU and the DE with their joins, and the root "
             'elements. The receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
             'knowledge, naming the layer on every call: create it, add, edit and remove its objects one at a '
             'time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
-        Verb('roots', roots, "The map's entry: the VE and the DE with their joins, and every root element.",
+        Verb('roots', roots, "The map's entry: the CQU and the DE with their joins, and every root element.",
              nouns=PAGING, switches=RAW),
         Verb('where', where, 'One read of an address: the element, what relies on it, what it relies on, the subtype '
                              'joins inside those joins and the one holding it, its open work records and the layers '

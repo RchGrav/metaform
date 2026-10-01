@@ -418,7 +418,7 @@ function look(id) {
 const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'exclude', 'question', 'message'];
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
-  if (node.t === 'el') return has(node, 'exclude') ? css('--exclude') : node.role === 'VE' ? css('--signal')
+  if (node.t === 'el') return has(node, 'exclude') ? css('--exclude') : node.role === 'CQU' ? css('--signal')
     : node.role === 'DE' ? css('--de') : layerColor(node.layer);
   if (has(node, 'exclude')) return css('--exclude');
   if (node.t === 'purpose') return css('--text');
@@ -1035,7 +1035,7 @@ function linkColor(link) {
   return layerColor(link.layer);
 }
 let G = null;
-const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'VE' ? 7 : 4) : node.t === 'purpose' ? 0.9
+const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4) : node.t === 'purpose' ? 0.9
   : node.t === 'item' ? 0.3 : 0.35;
 /* The background is part of the scene as well as the graph's clear color. The render chain clears its buffer before
  * three.js draws into it, with the clear color last converted for the screen; three.js clears a scene's background
@@ -1914,7 +1914,7 @@ function parentOf(key) {
 }
 function roots() {  // the nodes nothing receives from, vested entities first; then any part of the map they do not reach
   const top = [...S.elements.keys()].filter(key => !parentOf(key));
-  const ordered = [...across(top.filter(key => S.elements.get(key).element.role === 'VE')), ...across(top.filter(key => S.elements.get(key).element.role !== 'VE'))];
+  const ordered = [...across(top.filter(key => S.elements.get(key).element.role === 'CQU')), ...across(top.filter(key => S.elements.get(key).element.role !== 'CQU'))];
   const reached = new Set(ordered), queue = [...ordered];
   while (queue.length) for (const next of childrenOf(queue.shift())) if (!reached.has(next)) { reached.add(next); queue.push(next); }
   for (const key of across([...S.elements.keys()].filter(key => !reached.has(key)))) {

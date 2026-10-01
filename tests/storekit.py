@@ -92,12 +92,12 @@ def memory(store):
 
 
 def small_map(store):
-    """An intake with a VE receiving from a DE, and the DE receiving from an SE through a join with one subtype.
+    """An intake with a CQU receiving from a DE, and the DE receiving from an SE through a join with one subtype.
 
     Each element is its address, name_length and role; the project's name for each functionality is on its join."""
     with store.atomic():
         layer = intake(store)
-        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='VE')
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',

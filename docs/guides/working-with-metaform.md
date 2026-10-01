@@ -49,7 +49,7 @@ metaform map where code.timer.kitchen
 metaform map element code.timer.kitchen
 ```
 
-`roots` is the map's entry: the VE and the DE with the joins they receive, and every root element. `where` is one read of an address: the element with its address read through `name_length` and its role; `provides`, what relies on it, each join it provides with the receiver and the receiver's purpose; `receives`, what it relies on, each join it receives with the provider; the subtype joins inside those joins; the subtype join holding it, when it has one; its open work records; and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. `element` returns the element alone: its address, `name_length`, role, short name and references.
+`roots` is the map's entry: the CQU and the DE with the joins they receive, and every root element. `where` is one read of an address: the element with its address read through `name_length` and its role; `provides`, what relies on it, each join it provides with the receiver and the receiver's purpose; `receives`, what it relies on, each join it receives with the provider; the subtype joins inside those joins; the subtype join holding it, when it has one; its open work records; and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. `element` returns the element alone: its address, `name_length`, role, short name and references.
 
 The project's own name for a functionality is on its joins, as `name`. Here the address `code.timer.kitchen` reads as kitchen timer, and the join through which it serves the cook calls it the **dish clock**.
 

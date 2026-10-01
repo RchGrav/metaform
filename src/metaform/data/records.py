@@ -20,7 +20,7 @@ NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')  # a subtype join is a jo
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
 LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
-ROLES = ('AUE', 'VE', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
+ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
 EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
@@ -491,7 +491,7 @@ class Plan(Record):
 
 @dataclass(frozen=True)
 class RootEntry(Record):
-    """A VE or DE element of the intake with the joins it receives, the map's entry, STORE-025."""
+    """A CQU or DE element of the intake with the joins it receives, the map's entry, STORE-025."""
     element: Element
     joins: tuple[Join, ...]
 
@@ -506,7 +506,7 @@ class RootElement(Record):
 
 @dataclass(frozen=True)
 class Roots(Record):
-    """Where an agent starts: the VE and DE with their joins, and every root element, one page, STORE-025."""
+    """Where an agent starts: the CQU and DE with their joins, and every root element, one page, STORE-025."""
     entry: tuple[RootEntry, ...]
     elements: tuple[RootElement, ...]
     next: str | None = None

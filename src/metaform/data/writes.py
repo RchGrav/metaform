@@ -86,7 +86,7 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
     elif role is not None:
         stored_role = rows.text(role, 'role', notices)
         if stored_role not in ROLES:
-            notices.append(Notice('role', f'{role!r} is not AUE, VE, DE, SE or NE; it was stored as given.'))
+            notices.append(Notice('role', f'{role!r} is not AUE, CQU, DE, SE or NE; it was stored as given.'))
     return length, stored_role, kept
 
 

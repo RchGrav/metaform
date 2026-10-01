@@ -23,7 +23,7 @@ def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home
     tables = dump(store_file(home, store))
     assert 'element_roles' not in tables
     # The tick loop a subtype join holds is an element too, MAP-030, and the entry leaves it out, MAP-031.
-    assert sorted(row[3] for row in tables['current_elements']) == ['DE', 'SE', 'SE', 'VE']
+    assert sorted(row[3] for row in tables['current_elements']) == ['CQU', 'DE', 'SE', 'SE']
     traced.clear()
     roots = store.roots()
     lines = [line for _, plan in plans(home, store, traced) for line in plan]
@@ -32,7 +32,7 @@ def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home
     assert entry == {'stakeholder.cook.home': ['code.timer.kitchen'], 'code.timer.kitchen': ['code.alarm.audible']}
     assert sorted((element.address, element.role, element.short_name) for element in roots.elements) == [
         ('code.alarm.audible', 'SE', 'audible alarm'), ('code.timer.kitchen', 'DE', 'kitchen timer'),
-        ('stakeholder.cook.home', 'VE', 'home cook')]
+        ('stakeholder.cook.home', 'CQU', 'home cook')]
 
 
 @pytest.mark.req('STORE-025')

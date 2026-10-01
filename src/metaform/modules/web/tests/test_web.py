@@ -192,7 +192,7 @@ def build(store):
     with store.atomic():
         intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                              hideable=False, provenance=PROVENANCE, ready=True)
-        store.add_element(intake.name, 'exterior.cook', name_length=1, role='VE')
+        store.add_element(intake.name, 'exterior.cook', name_length=1, role='CQU')
         store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE')
         store.add_element(intake.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_element(intake.name, 'code.gone', name_length=1, role='SE')
@@ -1600,7 +1600,7 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     folder.mkdir()
     run('add', 'project', 'live', str(folder))
     run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     problems, asked = [], []
     page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
@@ -2304,7 +2304,7 @@ def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_
     folder.mkdir()
     run('add', 'project', 'live', str(folder))
     run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     problems = []
     page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
@@ -2320,7 +2320,7 @@ def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_
     assert [text for text in said if text.startswith('The intake intake-') and text.endswith(' stopped: live was cleared.')]
     assert not [text for text in said if 'finished' in text]
     run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=VE', cwd=folder)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
     page.wait_for_function('() => window.metaform.live() !== null && window.metaform.drawn().nodes === 1', timeout=15000)
     page.evaluate('window.toasts = []')
     run('intake', 'finish', cwd=folder)

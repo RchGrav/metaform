@@ -112,13 +112,13 @@ The served procedure's XML schema defines the fields of each object. The agent r
 
 ```sh
 metaform intake start model=opus role="intake agent" id=example-intake-1
-metaform intake element stakeholder.cook.home role=VE name_length=2
+metaform intake element stakeholder.cook.home role=CQU name_length=2
 metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish."
 metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-An element is its address, `name_length` and role; its name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. The project's own name for a functionality goes on the join, as `name`: this project calls its kitchen timer the dish clock. `relation` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb; its subject is the Providing Element when `ef` is Function and the Vested Entity, the join's receiver, when `ef` is Encounter. A `name` sent to `intake element` is kept in the element's `extra`, with a notice saying the name goes on the join.
+An element is its address, `name_length` and role; its name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. The project's own name for a functionality goes on the join, as `name`: this project calls its kitchen timer the dish clock. `relation` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use, the join's receiver, when `ef` is Encounter. A `name` sent to `intake element` is kept in the element's `extra`, with a notice saying the name goes on the join.
 
 Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. `intake_join` returns the `join_id` that `intake_subtype` takes as `into` for a subtype join inside it, and `intake_absorb` makes a recorded join a subtype join inside its parent's join, keeping its `join_id`; the element it holds stays one element. An element's address is `namespace_address` in every intake tool, as in the Canonical Intake. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
 
@@ -186,7 +186,7 @@ The examples in [Working with Metaform](working-with-metaform.md) and [Extending
 ```sh
 metaform add project kitchen .
 metaform intake start model=none role="by hand" id=kitchen-1
-metaform intake element stakeholder.cook.home role=VE name_length=2
+metaform intake element stakeholder.cook.home role=CQU name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2 refs='[{"key": "path", "value": "src/main.c"}]'
 metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done without watching the clock." function="Counts down each named dish and rings when one reaches zero." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish, set from the front panel."
 metaform intake element code.alarm.audible role=SE name_length=2 refs='[{"key": "path", "value": "src/alarm.c"}]'
