@@ -381,7 +381,7 @@ function look(id) {
     opacity3d: material ? material.opacity : null,
     light3d: material ? material.emissiveIntensity ?? null : null,
     text3d: Boolean(node?.__threeObj?.userData.written),  // until the node itself is drawn in its place
-    turns: writing.get(id)?.rate ?? 0,
+    turns: writing.get(id)?.rate ?? 0, pace: node ? paceOf(node) : null,
     text: textOf(id), signal3d: writing.get(id)?.reached ?? 0, signalColor3d: writing.get(id)?.signalColor ?? null,
     glow2d: Boolean(box) && ['broken', 'fixing', 'exclude', 'question', 'message'].some(name => group.classList.contains('work-' + name))
       && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
@@ -406,7 +406,19 @@ function look(id) {
 }
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
-const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'exclude', 'question', 'message'];
+const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'flawed', 'enhancement', 'exclude', 'question', 'message'];
+/* A ticket's light, VIEW-035: broken flashes red, flawed yellow and enhancement green. Flashing lets the node's own
+ * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
+ * FLASH.fast as the steps planned are filed, or a little faster with each step when none were planned. */
+const LIGHTS = [['broken', '--broken'], ['fixing', '--broken'], ['flawed', '--flawed'], ['enhancement', '--enhancement']];
+const FLASH = {slow: 1.2, fast: 0.24, step: 0.35};
+function paceOf(node) {
+  const done = S.progress?.get(node.id);
+  if (!done || !done.filed) return FLASH.slow;
+  const share = done.planned ? Math.min(1, done.filed / done.planned) : 1 - 1 / (1 + FLASH.step * done.filed);
+  return FLASH.slow + (FLASH.fast - FLASH.slow) * share;
+}
+const lightOf = node => LIGHTS.find(([condition]) => has(node, condition));
 const has = (node, condition) => (node.work || []).includes(condition);
 function colorOf(node) {
   if (node.t === 'el') return has(node, 'exclude') ? css('--exclude') : node.role === 'CQU' ? css('--signal')
@@ -921,8 +933,8 @@ function rows3d(data) {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
-const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['exclude', '--exclude'], ['question', '--question'],
-  ['message', '--question']];
+const SIGNALS = [['broken', '--broken'], ['fixing', '--broken'], ['flawed', '--flawed'], ['enhancement', '--enhancement'],
+  ['exclude', '--exclude'], ['question', '--question'], ['message', '--question']];
 function text3d() {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (T.last || now)));
   T.last = now;
@@ -943,8 +955,12 @@ function text3d() {
     const working = has(node, 'in-progress'), climbed = () => TEXT.first + (TEXT.top - TEXT.first) * Math.pow(state.level, 1.4);
     if (!unbuilt(node) && state.ending === null) state.ending = 0;   // it is built: the ending starts from where it is
     if (state.ending === null) {
-      // Work with no phases to report climbs by itself, slowly, to a point short of the fastest.
+      // Work with no phases to report climbs by itself, slowly, to a point short of the fastest; each step filed
+      // lifts it, VIEW-035.
       if (working) state.level = Math.min(TEXT.hold, state.level + TEXT.hold * passed / TEXT.climb);
+      const done = S.progress?.get(node.id);
+      if (done?.filed) state.level = Math.max(state.level, Math.min(1, done.planned ? done.filed / done.planned
+        : 1 - 1 / (1 + FLASH.step * done.filed)));
       state.rate = working ? climbed() : TEXT.waiting;
     } else {
       state.ending += passed;
@@ -969,7 +985,7 @@ function text3d() {
     }
     // A signal reaching the text: a condition that needs attention, or the dot of a property's wave.
     const found = SIGNALS.find(([condition]) => has(node, condition));
-    let reached = found ? (reduced() ? 1 : Math.max(0, Math.sin(now * 2 * Math.PI / 1.6))) : 0, color = found ? css(found[1]) : null;
+    let reached = found ? (reduced() ? 1 : Math.max(0, Math.sin(now * 2 * Math.PI / paceOf(node)))) : 0, color = found ? css(found[1]) : null;
     const dot = W.pulses.get(node.id), gone = dot ? (W.clock - dot.start) / dot.length : 2;
     if (gone >= 0 && gone <= 1 && Math.sin(Math.PI * gone) > reached) { reached = Math.sin(Math.PI * gone); color = R.color; }
     Object.assign(state, {reached, signalColor: reached > 0 && color ? color.toLowerCase() : null});
@@ -995,10 +1011,10 @@ function textOf(id) {
 function paint3d(node) {
   const object = node.__threeObj;
   if (!object || !object.material || object.userData.written) return;  // text shows its own condition, VIEW-027
-  const broken = has(node, 'broken'), exclude = has(node, 'exclude'), fixing = has(node, 'fixing');
+  const light = lightOf(node), exclude = has(node, 'exclude');
   // An open question glows in the question's color, pulsating, so it is seen with the whole map zoomed out, VIEW-021.
   const asked = has(node, 'question') || has(node, 'message');  // a message waits for the user, VIEW-030
-  if (R.nodes.has(node.id) || (!broken && !exclude && !fixing && !asked)) {  // a wave shows on it, or nothing to signal
+  if (R.nodes.has(node.id) || (!light && !exclude && !asked)) {  // a wave shows on it, or nothing to signal
     if (object.material.userData.lit) { shine(object.material, null, 0); object.material.userData.lit = false; }
     return;
   }
@@ -1007,13 +1023,14 @@ function paint3d(node) {
     object.material.userData.own = true;
     object.material.transparent = true;
   }
-  const beat = reduced() || Math.floor(performance.now() / 500) % 2 === 0;
-  const shown = fixing || (broken && beat) ? css('--broken') : exclude ? (beat ? css('--exclude') : ownColor(node))
+  const period = light ? paceOf(node) : 1;
+  const beat = reduced() || (performance.now() / 1000) % period < period / 2;
+  const shown = light ? (beat ? css(light[1]) : ownColor(node)) : exclude ? (beat ? css('--exclude') : ownColor(node))
     : colorOf(node);
-  colored(object.material, dimmed(node) && !(broken || exclude || fixing) ? dim(shown) : shown);
+  colored(object.material, dimmed(node) && !(light || exclude) ? dim(shown) : shown);
   const swell = reduced() ? 1 : Math.max(0, Math.sin(performance.now() / 1600 * 2 * Math.PI));
-  const lit = broken || exclude ? (beat ? 1 : 0) : swell;
-  shine(object.material, broken || fixing ? css('--broken') : exclude ? css('--exclude') : css('--question'), lit);
+  const lit = light || exclude ? (beat ? 1 : 0) : swell;
+  shine(object.material, light ? css(light[1]) : exclude ? css('--exclude') : css('--question'), lit);
   object.material.userData.lit = true;
 }
 
@@ -1350,6 +1367,8 @@ function placeIn(nodes, id, group, title, work) {
   const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
   nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height});
   for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
+  const paced = S.progress?.get(id);
+  if (paced) group.style.setProperty('--pace', `${paceOf({id})}s`);
   const text = document.createElementNS(SVG, 'title');
   text.textContent = title;
   group.append(text);
@@ -2824,6 +2843,21 @@ async function itemsOf(generation) {
 }
 
 /* ---------- loading: projects, metaforms, layers, then the graph page by page ---------- */
+/* The steps filed and planned of each node's open tickets, the most advanced first, VIEW-035: an element's by its
+ * id, a join's on its purpose vertex and as a subtype. */
+async function progressOf() {
+  const found = new Map();
+  let tickets = [];
+  try { tickets = (await read('work', {open: true, limit: 0})).results || []; } catch (error) { return found; }
+  for (const ticket of tickets) {
+    if (!ticket.taken) continue;
+    const keys = ticket.kind === 'join' ? ['p:' + ticket.id, 's:' + ticket.id] : [ticket.id];
+    const done = {filed: ticket.steps_done || 0, planned: ticket.steps || 0};
+    const share = one => one.planned ? one.filed / one.planned : one.filed;
+    for (const key of keys) if (!found.has(key) || share(done) > share(found.get(key))) found.set(key, done);
+  }
+  return found;
+}
 async function loadGraph() {
   if (following()) { LIVE.seen = ''; S.loading = 0; return loadLive(); }
   const generation = ++S.loading;
@@ -2842,6 +2876,7 @@ async function loadGraph() {
     const items = await itemsOf(generation);
     if (generation !== S.loading) return;
     S.items = items;
+    S.progress = await progressOf();
   } catch (error) { toast(error.message); }
   if (generation !== S.loading) return;
   S.loading = 0;

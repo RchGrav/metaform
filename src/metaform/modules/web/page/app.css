@@ -10,6 +10,7 @@
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --flawed:var(--k5); --enhancement:var(--k2);  /* a ticket's light, VIEW-035, in each theme's yellow and green */
 }
 /* The themes, VIEW-023: each block defines the same colors. A role keeps its hue in every theme; its lightness is the
  * one at which it holds its contrast on that theme's background, a link as it is seen at --link-opacity. */
@@ -284,7 +285,12 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.reach,.map2d .cluster.reach{filter:drop-shadow(0 0 4px var(--reach)) drop-shadow(0 0 12px var(--reach))}
 /* The box gives off light in the lit half of its flash, VIEW-029. The light is on the box and not on its group, since the group's own animation is the fade of going inside a node. */
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
-.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash 1s ease-in-out infinite}
+.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
+/* Not broken but not right, and an enhancement, VIEW-035: the same flash in their own light, faster with each step. */
+@keyframes flash-kind{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--c);filter:drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 12px var(--c)) drop-shadow(0 0 24px var(--c))}}
+.map2d .node.work-flawed rect,.map2d .cluster.work-flawed rect{--c:var(--flawed);stroke:var(--flawed)!important;animation:flash-kind var(--pace,1.2s) ease-in-out infinite}
+.map2d .node.work-enhancement rect,.map2d .cluster.work-enhancement rect{--c:var(--enhancement);stroke:var(--enhancement)!important;animation:flash-kind var(--pace,1.2s) ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.map2d .work-flawed rect,.map2d .work-enhancement rect{animation:none}}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect{animation:none;fill:var(--node-broken)!important}}
 @keyframes pulse-exclude{0%,100%{stroke:var(--node-line);filter:none}50%{stroke:var(--exclude);filter:drop-shadow(0 0 4px var(--exclude)) drop-shadow(0 0 12px var(--exclude)) drop-shadow(0 0 24px var(--exclude))}}
 .map2d .node.work-exclude rect,.map2d .cluster.work-exclude rect{stroke:var(--exclude)!important;stroke-width:2px;animation:pulse-exclude 1s ease-in-out infinite}

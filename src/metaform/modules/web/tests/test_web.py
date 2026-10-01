@@ -3549,3 +3549,30 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     page.click('#board .add')
     page.wait_for_selector('#task:not([hidden])')
     assert problems == []
+
+
+@pytest.mark.req('VIEW-035')
+def test_a_ticket_flashes_its_node_in_its_kinds_light_faster_with_each_step_filed(run, web, mapped, browser):
+    """Rich, 2026-10-01: broken flashes red, not broken but not right flashes yellow, an enhancement green; flashing
+    lets you see the real node color and sense how far along it is by the flashing speed."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    kitchen = store.element('exterior.cook').element_id  # the timer itself has a broken ticket in the fixture
+    flawed = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
+    store.take_work(flawed.work_id, steps=4, by='codex')
+    store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='a second recipe')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    color = lambda name: page.evaluate(f'getComputedStyle(document.documentElement).getPropertyValue("{name}").trim().toLowerCase()')
+    for node, light in ((alarm, color('--flawed')), (kitchen, color('--enhancement'))):
+        page.wait_for_function(f'() => window.metaform.look("{node}").color3d === "{light}"', timeout=4000)
+        page.wait_for_function(f'() => window.metaform.look("{node}").color3d !== "{light}"', timeout=4000)  # its own between
+    slow = page.evaluate(f'window.metaform.look("{alarm}").pace')
+    for said in ('Found the gain.', 'Lowered it.'):
+        run('map', 'work', 'op=step', f'id={flawed.work_id}', f'said={said}', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{alarm}").pace < {slow}', timeout=6000)
+    faster = page.evaluate(f'window.metaform.look("{alarm}").pace')
+    assert faster < slow and page.evaluate(f'window.metaform.look("{kitchen}").pace') == slow
+    assert problems == []
