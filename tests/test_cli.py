@@ -386,12 +386,15 @@ def test_the_indexes_group_commands_by_owner(run, toggles):
 
 
 @pytest.mark.req('CLI-037')
-def test_a_modules_command_is_written_module_colon_command(run, toggles):
-    assert run('toggles:show', '--tmux').stdout == run('toggles', 'show', '--tmux').stdout == 'tmux=True'
-    assert run('toggles:show', '--help').stdout == run('toggles', 'show', '--help').stdout
-    assert run('help', 'toggles:show').stdout == run('help', 'toggles', 'show').stdout
-    refused = run('toggles:nope', ok=False)
-    assert refused.returncode == 2 and 'Error: toggles has no verb nope.' in refused.stderr
+def test_a_modules_command_is_never_written_with_a_colon(run, toggles):
+    """Rich, 2026-10-01: `<server>:<prompt>` is how a person runs an MCP prompt in Claude Code, and only there. The
+    command line reads `toggles:show` as no command of its own, the same as any unknown name."""
+    assert run('toggles', 'show', '--tmux').stdout == 'tmux=True'
+    for args in (('toggles:show', '--tmux'), ('help', 'toggles:show')):
+        refused = run(*args, ok=False)
+        assert refused.returncode != 0 and 'tmux=True' not in refused.stdout
+        assert 'toggles:show' in refused.stderr
+    assert run('help', 'toggles', 'show').stdout != run('help', 'toggles:show', ok=False).stdout
 
 
 @pytest.mark.req('CLI-009')

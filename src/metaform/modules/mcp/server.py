@@ -374,8 +374,7 @@ Commands = dict[str, tuple[str, dict[str, Any]]]
 def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
     """The tools the server lists, CLI-037: one for each module on the surface, named for the module, and one for
     the chassis's own commands. Each holds its commands, with the summary and the arguments of each; a command is
-    `<module>:<command>` on the command line, and over MCP the tool's name and its `command`, since a tool name holds
-    no colon."""
+    `<module> <command>` on the command line, and over MCP the tool's name and its `command`."""
     found: dict[str, tuple[str, Commands]] = {}
     for module in surface(folder):
         commands: Commands = {verb.name: (verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
