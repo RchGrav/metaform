@@ -814,3 +814,32 @@ def test_the_cestui_que_use_is_the_role_cqu_and_ve_is_no_longer_a_role(run, proj
     run('intake', 'finish', cwd=project)
     roots = json.loads(run('map', 'roots', '--json', cwd=project).stdout)
     assert {item['element']['address'] for item in roots['entry']} == {'stakeholder.cook.home', 'code.timer.kitchen'}
+
+
+FIELDS = {'element': ('namespace_address', 'name_length', 'name', 'refs'),
+          'join': ('provider', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'refs')}
+SUBTYPE_FIELDS = {'join': ('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal'),
+                  'element': ('namespace_address', 'name_length', 'name', 'refs')}
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MCP-031')
+def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_file():
+    """Rich, 2026-10-01: the field definitions are not parsed out of the Canonical Intake, which is being refined and
+    no longer carries the response schema. Each one is written once, in the intake module's prompts.xml under
+    <fields>, and every tool that takes the field shows those words."""
+    import xml.etree.ElementTree as ET
+    written = ET.parse(Path(__file__).parents[1] / 'resources' / 'prompts.xml').getroot().find('fields')
+    assert written is not None
+    assert [group.tag for group in written] == ['element', 'join']  # a subtype join is a join holding an element
+    for verb, groups in (('element', {'element': FIELDS['element']}), ('join', {'join': FIELDS['join']}),
+                         ('subtype', SUBTYPE_FIELDS)):
+        nouns = nouns_of(verb)
+        for group, names in groups.items():
+            for field in names:
+                said = written.findtext(f'{group}/{field}')
+                assert said and said.strip() == nouns[field].help, (verb, field)
+    for field in ('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal'):
+        assert nouns_of('edit')[field].help == nouns_of('join')[field].help
+    source = (Path(__file__).parents[1] / '__init__.py').read_text(encoding='utf-8')
+    assert 'schema//elements' not in source and 'SET ef' not in source  # the Canonical Intake is not parsed for them

@@ -38,46 +38,18 @@ VARIABLE = ('The functional map of the artifact: its elements, and each receiver
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
 
-def _schema_words() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """What the Canonical Intake's response schema says of each field, in its own words: an attribute's placeholder,
-    and the comment on a name or inside refs; for the element, the join and the element a subtype join holds. The
-    tools describe a field with these words and nothing else, BASE-039: the intake is the instruction, so tuning it
-    tunes what the agent meets at the tools, and a field the schema does not describe has no description."""
+def _field_words(group: str) -> dict[str, str]:
+    """The definition of each field of `group`, element or join, written once in this module's prompts.xml under
+    <fields>, MCP-031. The Canonical Intake is not parsed for them: it is the instruction, served as written, and a
+    field's definition lives in one place that every tool taking the field shows."""
     import xml.etree.ElementTree as ET
-    try:
-        root = ET.fromstring(RESOURCE.read_text(encoding='utf-8'),
-                             ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
-    except (OSError, ET.ParseError):
-        return {}, {}, {}
-
-    def words(node: Any) -> dict[str, str]:
-        if node is None:
-            return {}
-        found = {key: value.strip('[]') for key, value in node.attrib.items() if value.startswith('[')}
-        children = list(node)
-        for before, after in zip(children, children[1:]):
-            if before.tag is ET.Comment and isinstance(after.tag, str):
-                found[after.tag] = (before.text or '').strip()
-        refs = node.find('refs')
-        said = next((child.text for child in (refs if refs is not None else ()) if child.tag is ET.Comment), None)
-        if said:
-            found['refs'] = said.strip()
-        return found
-    element = root.find('.//schema//elements/element')
-    join = element.find('joins/join') if element is not None else None
-    held = join.find('join/element') if join is not None else None
-    element_words, join_words, held_words = words(element), words(join), words(held)
-    for step in root.iter('step'):  # the method's own SET clause for ef says what each of the two words means
-        said = re.search(r'\bSET ef = ([^;]+)', step.get('text') or '')
-        if said:
-            join_words['ef'] = said.group(1).strip()
-            break
-    if 'name' in element_words:
-        held_words.setdefault('name', element_words['name'])
-    return element_words, join_words, held_words
+    path = resources.files(__name__) / 'resources' / 'prompts.xml'
+    found = ET.fromstring(path.read_text(encoding='utf-8')).find(f'fields/{group}')
+    return {} if found is None else {child.tag: (child.text or '').strip() for child in found}
 
 
-ELEMENT_WORDS, JOIN_WORDS, HELD_WORDS = _schema_words()
+ELEMENT_WORDS, JOIN_WORDS = _field_words('element'), _field_words('join')
+HELD_WORDS = ELEMENT_WORDS  # the element a subtype join holds is an element
 
 settings.text('intake_file', '', help='An intake file to serve instead of the Canonical Intake. Empty means the '
                                       'Canonical Intake.')
