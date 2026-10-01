@@ -364,6 +364,11 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
       return {source: from.id, target: to.id, x: box.left + point.x, y: box.top + point.y};
     });
   },
+  labels3d: () => [...tags].map(([id, tag]) => { const box = tag.getBoundingClientRect();
+    return {id, text: tag.textContent, hidden: tag.hidden, z: Number(tag.style.zIndex || 0), under: tag.classList.contains('under'),
+      left: box.left, right: box.right, top: box.top, bottom: box.bottom}; }),
+  hover3d: id => { const node = G?.graphData().nodes.find(item => item.id === id); hovered = node || null;
+    $('#tip3d').hidden = !hovered; if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); } },
   figures: () => [...ROAM.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
     target: figure.target, home: figure.home, x: figure.mesh.position.x, y: figure.mesh.position.y, z: figure.mesh.position.z,
     scale: figure.mesh.scale.x})),
@@ -1237,11 +1242,20 @@ function start3D() {
 /* A click on any vertex selects that object itself: an element, a join's purpose vertex or a subtype. */
 function clicked3d(node) { if (node) select(node.id, true); }
 function tipFor(node) {
-  if (node.t === 'el') return [h('b', {}, node.name), h('span', {}, node.address)];
+  if (node.t === 'el') return [h('b', {}, node.name), ...servedBy(node)];
   if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
   const join = S.joins.find(item => item.join_id === node.join);
   if (node.t === 'purpose') return [join?.name ? h('b', {}, join.name) : null, h('span', {}, join?.purpose || 'purpose')];
   return [h('b', {}, node.name || ''), node.joinName ? h('span', {}, node.joinName) : null];
+}
+/* What an element does, which its label does not say, VIEW-038: the relation of each join it provides, the join's
+ * sentence, whose subject is the provider for a Function and the receiver, named, for an Encounter, MAP-020. Its
+ * address is not shown, since that is its name read the other way. */
+function servedBy(node) {
+  const names = new Map(G.graphData().nodes.map(other => [other.id, other.name]));
+  return S.joins.filter(join => join.provider === node.id && (join.relation || join.purpose)).slice(0, 3).map(join =>
+    h('span', {class: 'why'}, join.perspective === 'Encounter' ? h('i', {}, (names.get(join.receiver) || '') + ' ') : null,
+      short(join.relation || join.purpose, 160)));
 }
 /* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
  * below the node only where it would leave the top of the view. */
@@ -1260,6 +1274,44 @@ function placeTip() {
 }
 const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
 const tags = new Map();
+/* The labels keep the draw order of what they name, VIEW-038: a nearer node's label is drawn over a farther one's, and
+ * a label that falls on a nearer node's sphere, or on a label that matters more, goes under it in the quieter color.
+ * Every element keeps its label, VIEW-005, and none is faded toward the background, VIEW-023. What matters more: the
+ * selected node, its neighbors, a node lit by a reach or a ticket, then the nearer node. Positions are written before
+ * any is read, so the page is laid out once a frame. */
+function layered(box) {
+  const camera = G.camera(), area = box.getBoundingClientRect();
+  const scale = area.height / 2 / Math.tan(camera.fov * Math.PI / 360);
+  const away = node => Math.hypot(camera.position.x - node.x, camera.position.y - node.y, camera.position.z - node.z);
+  const spheres = [];
+  for (const node of G.graphData().nodes) {
+    if (node.x === undefined) continue;
+    const point = G.graph2ScreenCoords(node.x, node.y, node.z), far = away(node);
+    spheres.push({id: node.id, x: point.x, y: point.y, far, r: Math.cbrt(nodeSize(node)) * 3 / far * scale});
+  }
+  const rank = tag => tag.classList.contains('sel') ? 0 : tag.classList.contains('near') ? 1
+    : [...tag.classList].some(name => name === 'reach' || name.startsWith('work-')) ? 2 : 3;
+  const shown = [];
+  for (const node of G.graphData().nodes) {
+    const tag = tags.get(node.id);
+    if (!tag || tag.hidden || node.x === undefined) continue;
+    const rect = tag.getBoundingClientRect();
+    shown.push({tag, far: away(node), id: node.id, rank: rank(tag), left: rect.left - area.left, right: rect.right - area.left,
+      top: rect.top - area.top, bottom: rect.bottom - area.top});
+  }
+  shown.sort((one, two) => one.rank - two.rank || one.far - two.far);
+  const placed = [];
+  shown.forEach((label, index) => {
+    const behind = label.rank > 0 && spheres.some(sphere => sphere.id !== label.id && sphere.far < label.far &&
+      Math.hypot(Math.max(label.left, Math.min(sphere.x, label.right)) - sphere.x,
+                 Math.max(label.top, Math.min(sphere.y, label.bottom)) - sphere.y) < sphere.r);
+    const covered = label.rank > 0 && placed.some(other => !(label.right <= other.left || other.right <= label.left ||
+      label.bottom <= other.top || other.bottom <= label.top));
+    if (!behind && !covered) placed.push(label);
+    label.tag.style.zIndex = String(shown.length - index);
+    label.tag.classList.toggle('under', behind || covered);
+  });
+}
 function labels() {
   if (G) {
     const box = $('#labels3d');
@@ -1276,7 +1328,7 @@ function labels() {
       signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
       if (node.t !== 'el') continue;
       let tag = tags.get(node.id);
-      if (!tag) { tag = h('span', {}, short(node.name, 26)); box.append(tag); tags.set(node.id, tag); }
+      if (!tag) { tag = h('span', {}, node.name); box.append(tag); tags.set(node.id, tag); }  // whole, wrapped, VIEW-038
       tag.hidden = node.x === undefined;
       if (tag.hidden) continue;
       const point = G.graph2ScreenCoords(node.x, node.y, node.z);
@@ -1287,6 +1339,7 @@ function labels() {
         node.__threeObj?.userData.written ? 'text' : '']
         .filter(Boolean).join(' ');
     }
+    layered(box);
     // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
     // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
     // too, and a pass switched with each flash would make them blink with it.

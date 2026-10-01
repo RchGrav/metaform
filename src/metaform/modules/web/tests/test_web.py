@@ -3615,3 +3615,39 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     page.wait_for_function(f'() => (window.stages["{worked.work_id}"] || new Set()).has("returning")', timeout=10000)
     page.wait_for_function('() => window.metaform.figures().length === 0', timeout=20000)
     assert cook and problems == []
+
+
+@pytest.mark.req('VIEW-038')
+def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does(run, web, mapped, browser):
+    """Rich, 2026-10-01: make these labels actually useful and respect the draw order; word wrap rather than cut off;
+    the hover said the name, then the name again, then the name in reverse; the data is in the joins."""
+    from metaform.data import Store
+    store = Store('proj')
+    kitchen = store.element('code.timer.kitchen').element_id
+    alarm = store.element('code.alarm.audible').element_id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    staged(page, {kitchen: (2000, 0, 0), alarm: (2000, 0, -150)},
+           ({'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}))
+    page.evaluate('document.querySelector("#labels3d").style.visibility = ""')
+    page.wait_for_timeout(900)
+    labels = {label['id']: label for label in page.evaluate('window.metaform.labels3d()')}
+    near, far = labels[kitchen], labels[alarm]
+    assert near['z'] > far['z'] and not near['under'] and far['under'], (near, far)
+    shown = page.evaluate(f'''(() => {{ const tag = [...document.querySelectorAll("#labels3d span")]
+        .find(span => span.textContent === {json.dumps(far['text'])}); const style = getComputedStyle(tag);
+        return [style.opacity, style.whiteSpace, style.color]; }})()''')
+    assert shown[0] == '1' and shown[1] == 'normal'                   # never faded; it wraps
+    names = {node['id']: node.get('name') for node in page.evaluate('window.metaform.graph().nodes') if node['t'] == 'el'}
+    assert all(label['text'] == names[id] for id, label in labels.items() if id in names)  # whole, never cut off
+    strong = [label for label in labels.values() if not label['under'] and not label['hidden']]
+    for index, one in enumerate(strong):
+        for two in strong[index + 1:]:
+            assert (one['right'] <= two['left'] or two['right'] <= one['left'] or one['bottom'] <= two['top']
+                    or two['bottom'] <= one['top']), (one, two)
+    page.evaluate(f'window.metaform.hover3d("{kitchen}")')
+    tip = page.locator('#tip3d')
+    tip.wait_for(state='visible')
+    assert 'kitchen timer' in tip.inner_text() and 'The timer tells the cook.' in tip.inner_text()
+    assert 'code.timer.kitchen' not in tip.inner_text()               # the address is the name read the other way
+    assert problems == []

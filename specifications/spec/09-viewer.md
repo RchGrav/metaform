@@ -529,6 +529,21 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-032, VIEW-035, VIEW-036, STORE-042, MAP-048, MAP-053.
 - Status: asked for by Rich 2026-10-01.
 
+### VIEW-038 The 3D labels wrap, read clearly, keep the draw order, and the hover says what a part does
+
+- Requirement: Each element's label in the 3D map carries its whole name, wrapped onto lines rather than cut off; it is readable against the background; a nearer node's label is drawn over a farther one's, and a label that falls behind a nearer node's sphere or under a label that matters more goes under it in the quieter color; and pointing at an element shows its name and what it does, not its address.
+- What this means:
+  - The label wraps at word breaks, as Fallback / Address / Controller, and is never cut at a count of characters.
+  - A label is in the text color, a dimmed one in the muted color; none is faded toward the background, VIEW-023, and every element keeps its label, VIEW-005.
+  - What matters more: the selected node, its neighbors, a node lit by a reach or a ticket, then the nearer node.
+  - The hover shows the element's name and, under it, the relation of each join it provides, the sentence of what it does, whose subject is the provider for a Function and the receiver, named, for an Encounter, MAP-020. The address is not shown: it is the name read the other way.
+- Why: Rich, 2026-10-01: "half of them are dark grey on a black background, they are labeled roaming gateway controller, then when you hover it says roaming gateway controller again, and then underneath it says it a 3rd time in reverse"; "is there anyway we can make these labels actually useful, and maybe respect the draw order"; "it cuts off at 32, wouldnt it make more sense to word wrap"; "the data is in the joins".
+- How it shows: The alarm's label behind the kitchen timer goes under the timer's label, in the muted color; a long name wraps; pointing at the alarm shows its name and the sentence of what it does for the timer.
+- Build: `layered` in `app.js` stacks the labels each frame by what matters and by distance; `servedBy` writes the hover's sentences from the joins the element provides.
+- Acceptance: The browser test of the alarm behind the timer and of the hover.
+- Relates to: VIEW-005, VIEW-023, MAP-020.
+- Status: asked for by Rich 2026-10-01.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.

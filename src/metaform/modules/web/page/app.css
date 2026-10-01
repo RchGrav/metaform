@@ -368,12 +368,12 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .pill.work-in-progress{color:var(--text);background:color-mix(in srgb,var(--text) 14%,transparent)}
 .pill.work-fixing{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
 #labels3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-#labels3d span{position:absolute;transform:translate(-50%,-160%);font:500 11px var(--sans);color:var(--muted);white-space:nowrap;text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);transition:color .3s,opacity .3s}
+#labels3d span{position:absolute;transform:translate(-50%,calc(-100% - 8px));font:500 11px/1.15 var(--sans);color:var(--text);white-space:normal;width:max-content;max-width:9em;text-align:center;padding:1px 4px;border-radius:4px;background:color-mix(in srgb,var(--ground) 72%,transparent);text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);transition:color .3s,opacity .3s}
 /* The name of a part drawn in characters stands clear above its text, VIEW-027. */
-#labels3d span.text{transform:translate(-50%,-340%)}
+#labels3d span.text{transform:translate(-50%,calc(-100% - 26px))}
 #labels3d span.near{color:var(--text)}
 #labels3d span.sel{color:var(--signal);font-size:13px;font-weight:600}
-#labels3d span.dim{color:var(--faint)}
+#labels3d span.dim,#labels3d span.under{color:var(--muted)}
 #labels3d span.reach{color:var(--text);font-weight:600;text-shadow:0 0 3px var(--ground),0 0 6px var(--ground),0 0 10px var(--ground)}
 #labels3d span.work-broken,#labels3d span.work-fixing{color:var(--broken)}
 #labels3d span.work-exclude{color:var(--exclude)}
@@ -381,6 +381,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #tip3d[hidden]{display:none}
 .tip3d{font:12px var(--sans);max-width:280px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);padding:6px 8px;border-radius:6px;color:var(--text)}
 .tip3d span{display:block;font-family:var(--mono);color:var(--signal);word-break:break-word}
+.tip3d span.why{font-family:var(--sans);color:var(--text);margin-top:4px}
+.tip3d span.why i{font-style:normal;color:var(--muted)}
 .count{position:absolute;right:14px;bottom:14px;font:12px var(--sans);color:var(--muted);pointer-events:none;text-align:right}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--signal);color:var(--text);padding:10px 16px;border-radius:8px;font-size:13px;max-width:min(560px,calc(100% - 32px));box-shadow:0 8px 30px color-mix(in srgb,var(--shadow) 50%,transparent)}
 .empty{color:var(--faint);font-size:13px;margin:0}
