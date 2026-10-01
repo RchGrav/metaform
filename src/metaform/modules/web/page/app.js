@@ -181,7 +181,7 @@ $('#clearBtn').onclick = async event => {
   try { found = await getJson(`/api/clear-preview?project=${encodeURIComponent(S.project)}`); }
   catch (error) { return toast(error.message); }
   fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
-    h('span', {class: 'backed'}, 'It is backed up first, and you can bring it back from here or from this menu.'),
+    h('span', {class: 'backed'}, 'It is backed up first.'),
     h('div', {class: 'toolbar'},
       h('button', {class: 'btn danger confirm', onclick: () => clearProject(found.project)}, 'Clear it'),
       h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
@@ -194,8 +194,7 @@ async function clearProject(project) {
   if (!response.ok) { showClear(false); return toast(body.error || 'The project was not cleared.'); }
   const left = body.not_removed || [];
   fill($('#clearbox'), h('div', {class: 'warn'}, h('span', {class: 'said'}, body.said),
-    body.backup ? [h('span', {class: 'backed'}, `Backed up as ${body.backup}.`),
-      h('button', {class: 'btn restore', onclick: () => restoreFrom(project, body.backup)}, 'Restore it')] : null,
+    body.backup ? h('span', {class: 'backed'}, `Backed up as ${body.backup}.`) : null,
     left.length ? [h('b', {}, 'Not removed, still on disk:'),
       h('ul', {class: 'left'}, left.map(item => h('li', {}, `${item.path}: ${item.reason}`)))] : null,
     (body.notices || []).map(notice => h('span', {class: 'next'}, notice.message)),

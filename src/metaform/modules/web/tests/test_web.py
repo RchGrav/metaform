@@ -3172,10 +3172,11 @@ def Node_of(address):
 
 @pytest.mark.req('VIEW-019')
 @pytest.mark.req('PROJ-030')
-def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backup_is_restored_from_the_page(
+def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backup_is_restored_from_the_menu(
         run, home, web, mapped, browser):
     """Rich, 2026-09-29: the clear is in an administration menu, says are you sure, backs the project up, allows
-    restoration easily and tells the user."""
+    restoration easily and tells the user. Rich, 2026-10-01: a clear that also offers to restore is not good design;
+    the clear only clears, and a backup is restored from the menu's Restore a backup."""
     from metaform.data import Store
     started(run)
     before = sorted(entry['element']['address'] for entry in keys_of(web)[0]['elements'])
@@ -3187,26 +3188,28 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
     page.click('#clearBtn')
     page.wait_for_selector('#clearbox .warn')
     asked = page.inner_text('#clearbox')
-    assert asked.startswith('Are you sure?') and 'It is backed up first' in asked
+    assert asked.startswith('Are you sure?') and 'It is backed up first.' in asked
+    assert 'bring it back' not in asked and page.locator('#clearbox button').count() == 2   # Clear it and Keep it
     page.click('#clearbox button.confirm')
     page.wait_for_selector('#clearbox .said')
     told = page.inner_text('#clearbox')
     (kept,) = [path.name for path in (home / 'backups' / 'clear' / 'proj').iterdir()]
     assert f'Backed up as {kept}.' in told
+    assert page.locator('#clearbox button.restore').count() == 0       # the clear offers no restore
     page.wait_for_function('() => document.querySelector("#count").textContent.includes("no metaform yet")')
-    page.click('#clearbox button.restore')                            # it is brought back from where it was cleared
-    page.wait_for_selector('#clearbox .restored')
-    assert page.inner_text('#clearbox .restored').startswith(f'Restored proj from {kept}: ')
-    page.wait_for_function('() => window.metaform.loaded() && window.metaform.graph().nodes.length > 0')
-    assert sorted(entry['element']['address'] for entry in keys_of(web)[0]['elements']) == before
-    assert Store('proj').element('code.timer.kitchen') is not None
     page.click('#clearbox button.keep')
-    page.click('#adminBtn')                                           # and from the menu, where the backups are listed
+    page.click('#adminBtn')                                           # restoring is the menu's own act
     page.wait_for_selector('#restoreBtn:not([disabled])')            # the page has looked for backups
     page.click('#restoreBtn')
     page.wait_for_selector('#clearbox .backups button')
     listed = page.locator('#clearbox .backups li').all_inner_texts()
     assert len(listed) == 1 and listed[0].startswith(kept)
+    page.click('#clearbox .backups button')
+    page.wait_for_selector('#clearbox .restored')
+    assert page.inner_text('#clearbox .restored').startswith(f'Restored proj from {kept}: ')
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.graph().nodes.length > 0')
+    assert sorted(entry['element']['address'] for entry in keys_of(web)[0]['elements']) == before
+    assert Store('proj').element('code.timer.kitchen') is not None
     assert problems == []
 
 
