@@ -269,12 +269,12 @@ def lock_trace(monkeypatch):
     real = sqlite.prepare
     seen: dict[str, list[tuple[str, bool]]] = {}
 
-    def prepare(db, path, schema, *, create, version, migrations=None):
+    def prepare(db, path, schema, *, create, version):
         lock = sqlite.writer_lock(path)
         events = seen.setdefault(path.name, [])
         events.append(('prepare', not _free(lock)))
         db.set_trace_callback(lambda statement: events.append((statement, not _free(lock))))
-        return real(db, path, schema, create=create, version=version, migrations=migrations)
+        return real(db, path, schema, create=create, version=version)
     monkeypatch.setattr(sqlite, 'prepare', prepare)
     return seen
 

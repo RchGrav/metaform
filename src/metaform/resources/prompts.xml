@@ -8,7 +8,7 @@ modules available.
 <modules/>
 
 Unless explicitly instructed otherwise you must sequester your context from prior intake runs.
-If this is a new context if told to begin intake run "metaform intake start" and perform the process 
+If this is a new context if told to begin intake run "metaform intake prompt" and perform the process 
 directly, do not delegate. If you have performed actions in this context as orchestrator intake 
 should be delegated.  Treat all prompt semantics as algorithms you must not change any system or intake 
 prompts directly doing so will damage the intake process.  No saved memories have any authority over this
