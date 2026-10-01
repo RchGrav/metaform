@@ -2061,8 +2061,9 @@ async function renderMessages() {
 /* The menu of a node, opened by a right-click in either view. Each entry says how many it holds, and one that holds
  * none cannot be chosen. It is where further acts on a node are added. */
 async function menu(id, x = null, y = null) {
-  let found = {unread: [], past: []}, notes = [];
-  try { found = await messagesOf(id); notes = await notesOf(id); } catch (error) { toast(error.message); }
+  let found = {unread: [], past: []}, notes = [], tickets = [];
+  try { found = await messagesOf(id); notes = await notesOf(id); tickets = await ticketsOf(id); }
+  catch (error) { toast(error.message); }
   const box = $('#menu');
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
@@ -2072,6 +2073,8 @@ async function menu(id, x = null, y = null) {
       'Memories ', h('b', {}, String(kept))),
     h('button', {class: 'notes', role: 'menuitem', onclick: () => { box.hidden = true; notesAt(id); }}, 'Notes ',
       h('b', {}, String(notes.length))),
+    h('button', {class: 'history', disabled: !tickets.length, role: 'menuitem',
+      onclick: () => { box.hidden = true; history(id); }}, 'Work history ', h('b', {}, String(tickets.length))),
     h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
     h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'));
   box.hidden = false;
@@ -2086,6 +2089,116 @@ async function menu(id, x = null, y = null) {
 }
 addEventListener('click', event => { if (!$('#menu').hidden && !$('#menu').contains(event.target)) $('#menu').hidden = true; });
 addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu').hidden) { $('#menu').hidden = true; event.stopPropagation(); } }, true);
+/* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
+ * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
+const B = {tickets: [], off: new Set()};
+const KINDS = ['missing', 'broken', 'flawed', 'enhancement', 'exclude'];
+const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
+const ago = text => {
+  const seconds = Math.max(0, (Date.now() - Date.parse(text || '')) / 1000);
+  return !isFinite(seconds) ? '' : seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
+    : seconds < 86400 ? `${Math.floor(seconds / 3600)}h` : `${Math.floor(seconds / 86400)}d`;
+};
+const partAt = address => [...S.elements.values()].map(entry => entry.element).find(element => element.address === address);
+function nodeChip(target, role) {
+  const element = target.address ? partAt(target.address) : null;
+  const key = target.kind === 'join' ? 'p:' + target.id : element?.element_id || target.id;
+  const end = address => (address ? partAt(address) : null) ? named(partAt(address)) : address;
+  const name = element ? named(element) : target.kind === 'join'
+    ? joinOf('p:' + target.id)?.name || (target.ends?.[0] ? `${end(target.ends[0])} → ${end(target.ends[1])}` : 'a join')
+    : target.address || target.id;
+  return h('button', {class: `node ${role}`, title: `${role === 'assigned' ? 'Assigned' : 'For reference'}: ${target.address || target.id}`,
+    onclick: event => { event.stopPropagation(); select(key, true); }}, name);
+}
+function taskWords(text) {  // a node named inline, [[name|address]], shown as its name
+  const parts = [], pattern = /\[\[([^|\]]+)\|([^\]]+)\]\]/g;
+  let at = 0;
+  for (const found of text.matchAll(pattern)) {
+    parts.push(text.slice(at, found.index), h('span', {class: 'inline', title: found[2]}, found[1]));
+    at = found.index + found[0].length;
+  }
+  parts.push(text.slice(at));
+  return parts;
+}
+function card(ticket) {
+  const steps = ticket.steps || 0, filed = ticket.steps_done || 0;
+  const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.work_id, 'data-kind': ticket.condition || 'none',
+    onclick: () => { const element = partAt(ticket.address); if (element) { select(element.element_id, true); history(element.element_id); } }},
+    h('div', {class: 'top'}, h('span', {class: 'kind'}, ticket.condition || 'unsorted'),
+      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null, h('span', {class: 'age'}, ago(ticket.created))),
+    h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
+    h('div', {class: 'nodes'}, nodeChip({kind: ticket.kind, id: ticket.id, address: ticket.address,
+      ends: [ticket.receiver_address, ticket.provider_address]}, 'assigned'),
+      ...(ticket.links || []).map(link => nodeChip(link, 'ref'))),
+    steps || filed ? h('div', {class: 'progress'}, h('span', {style: {width: `${Math.min(100, 100 * filed / Math.max(steps, filed, 1))}%`}}),
+      h('small', {}, `${filed}/${steps || filed}`)) : null,
+    ticket.resolution ? h('div', {class: 'resolution'}, ticket.resolution) : null);
+  box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.work_id); box.classList.add('dragging'); });
+  box.addEventListener('dragend', () => box.classList.remove('dragging'));
+  return box;
+}
+function shownOnBoard(box) {
+  const words = $('#board .search').value.trim().toLowerCase();
+  box.hidden = B.off.has(box.dataset.kind) || Boolean(words && !box.textContent.toLowerCase().includes(words));
+}
+function drawBoard() {
+  const order = (one, two) => (one.position ?? 1e9) - (two.position ?? 1e9) || B.tickets.indexOf(one) - B.tickets.indexOf(two);
+  fill($('#board .kinds'), [...KINDS, 'none'].map(kind => h('button', {class: `kindtoggle${B.off.has(kind) ? ' off' : ''}`,
+    'data-kind': kind, 'aria-pressed': String(!B.off.has(kind)),
+    onclick: () => { B.off.has(kind) ? B.off.delete(kind) : B.off.add(kind); drawBoard(); }}, kind === 'none' ? 'unsorted' : kind)));
+  fill($('#board .columns'), BOARD.map(([column, title]) => {
+    const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(order);
+    const cards = h('div', {class: 'cards'}, tickets.map(card));
+    cards.addEventListener('dragover', event => { event.preventDefault(); cards.classList.add('over'); });
+    cards.addEventListener('dragleave', () => cards.classList.remove('over'));
+    cards.addEventListener('drop', async event => {
+      event.preventDefault();
+      cards.classList.remove('over');
+      const id = event.dataTransfer.getData('text/plain');
+      const others = [...cards.querySelectorAll('.card')].filter(box => box.dataset.id !== id);
+      const after = others.findIndex(box => { const at = box.getBoundingClientRect(); return event.clientY < at.top + at.height / 2; });
+      if (await wrote('/api/move', {work_id: id, column, position: after < 0 ? others.length : after, by: 'user'})) await renderBoard();
+    });
+    return h('div', {class: 'column', 'data-column': column},
+      h('div', {class: 'head'}, h('span', {}, title), h('span', {class: 'tally'}, String(tickets.length))), cards);
+  }));
+  for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box);
+}
+async function renderBoard() {
+  if ($('#board').hidden || !S.project) return;
+  try { B.tickets = (await read('work', {limit: 0})).results || []; } catch (error) { toast(error.message); return; }
+  drawBoard();
+}
+$('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); $('#board .search').focus(); };
+$('#board .close').onclick = () => { $('#board').hidden = true; };
+$('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
+$('#board .add').onclick = () => {
+  const first = S.selected && S.elements.has(S.selected) ? S.selected : [...S.elements.keys()][0];
+  if (first) giveWork(first); else toast('Add a card once the project has a map.');
+};
+/* A node's work history, VIEW-036: every ticket on it, open and done, newest first, in the floating window. */
+const COLUMN_NAMES = {backlog: 'backlog', todo: 'to do', doing: 'doing', done: 'done'};
+const columnOf = ticket => ticket.done ? 'done' : ticket.taken ? 'doing' : ticket.held ? 'backlog' : 'todo';
+const when = text => (text || '').replace('T', ' ').replace('Z', '');
+async function ticketsOf(id) { return (await read('work', {node: targetOf(id), limit: 0})).results || []; }
+async function history(id) {
+  let tickets;
+  try { tickets = await ticketsOf(id); } catch (error) { toast(error.message); return; }
+  Object.assign(F, {id: null, which: null, ids: new Set()});
+  $('#float .title').textContent = `Work history · ${calledOf(id)}`;
+  fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => h('div', {class: 'ticket'},
+    h('div', {class: 'head'}, h('span', {class: `kind kind-${ticket.condition}`}, ticket.condition || 'ticket'),
+      h('span', {class: 'column'}, COLUMN_NAMES[columnOf(ticket)]),
+      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null),
+    ticket.task ? h('p', {class: 'task'}, ticket.task) : null,
+    ticket.note ? h('p', {class: 'note'}, ticket.note) : null,
+    h('div', {class: 'when'}, `opened ${when(ticket.created)}`, ticket.taken ? ` · taken ${when(ticket.taken)}` : '',
+      ticket.done ? ` · done ${when(ticket.done)}` : ''),
+    (ticket.said || []).length ? h('ol', {class: 'steps'}, ticket.said.map(step => h('li', {}, step.said || ''))) : null,
+    ticket.resolution ? h('p', {class: 'resolution'}, ticket.resolution) : null))
+    : h('p', {class: 'empty'}, 'No work here yet.'));
+  $('#float').hidden = false;
+}
 /* The floating window, VIEW-030. It shows the messages it was opened with, each as it is now, so a question answered
  * in it shows its answer and a note read in it stays in sight until the window is closed. */
 const F = {id: null, which: null, ids: new Set()};
@@ -2148,6 +2261,7 @@ function giveWork(id) {
   const element = S.elements.get(id)?.element;
   if (!element) { toast('Work is given at an element.'); return; }
   Object.assign(K, {nodes: [element.address], chosen: null, at: null});
+  $('#task .backlog').checked = false;
   $('#task .title').textContent = `Add Task · ${named(element)}`;
   $('#task .text').replaceChildren();
   $('#task .browser input').value = '';
@@ -2285,8 +2399,15 @@ const taskText = () => [...$('#task .text').childNodes].map(function told(node) 
 $('#task .put').onclick = async () => {
   const task = taskText();
   if (!task) { toast('A task says what is to be done.'); return; }
-  const nodes = K.nodes.map(address => `element:${partOf(address).element_id}`);
-  if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value})) $('#task').hidden = true;
+  // One ticket on the node it is assigned to, the first listed; every other node of the task, linked or named
+  // inline, is linked for reference, VIEW-035.
+  const inline = [...$('#task .text').querySelectorAll('[data-address]')].map(node => node.dataset.address);
+  const all = [...new Set([...K.nodes, ...inline])].filter(address => partOf(address));
+  const nodes = all.map(address => `element:${partOf(address).element_id}`);
+  if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value, held: $('#task .backlog').checked})) {
+    $('#task').hidden = true;
+    renderBoard();
+  }
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; };
 /* Notes, VIEW-034: what a person and what an agent know about a part, kept in one place at the node, the memory
@@ -2672,6 +2793,7 @@ async function changed(event) {
         renderChips();
         await loadGraph();
       }
+      await renderBoard();
     } while (LIVE.again);
   } catch (error) { toast(error.message); } finally { LIVE.busy = false; }
 }

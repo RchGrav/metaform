@@ -143,8 +143,8 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Requirement: The viewer writes exactly eleven things: it applies its layer choice to the folder's `--layers`, it saves an edited prompt as a new prompt version, it removes the top correction layer after a warning, it clears the selected project after the person confirms, it takes an empty project off the list after the person confirms, it records the person's answer to an open question at a node, it marks a note read, it puts a task the person wrote on the nodes it concerns, it adds an element the person describes, joined to a node, it restores a backup of the selected project, and it writes a note at a node; it writes nothing else.
 - What this means: Agents and people change the metaform through the tools and commands; the viewer shows it. The eleven writes each go through the same operation the CLI and tools use: the settings operation for `--layers`, VIEW-007; the prompt-version operation, VIEW-013 and STORE-044; peel followed by discard of the top correction layer, VIEW-014; the chassis's `clear_project`, which `metaform clear project --confirm` and the `clear_project` tool call, PROJ-025 and VIEW-019; the chassis's `remove_project`, which `metaform remove project` calls, PROJ-031; and the operation that records an answer, MAP-050 and VIEW-021, which marks the question's work record done with the answer as its resolution. Writing memories, answering challenges, adding knowledge or correcting the map from the page is not part of this module. A person gives work from the page, VIEW-032, Rich 2026-09-29.
 - Why: The viewer is for viewing. One path for each write keeps every change under the rules that record provenance and never block. A page that wrote on its own would need its own copy of those rules. A question an agent asks at a node is answered by the person, and the person answers where they see the question, on the map.
-- How it shows: Every API endpoint is a GET that changes nothing, except eleven POSTs: apply layers, save prompt version, remove the top correction layer, clear the project, remove the project, answer a question, mark a note read, add a task, add an element, restore a backup, and add a note.
-- Build: The server routes GET for reads and exactly eleven POST endpoints. `/api/remove-project` takes an empty project off the list through the chassis's `remove_project`, PROJ-031, and `GET /api/remove-preview` says what it keeps. `/api/note` writes a note at a node, VIEW-034. `/api/restore` brings a backup back through the chassis's `restore_project`, PROJ-030, and `GET /api/backups` lists them. `/api/element` adds an element and its join, VIEW-033. `/api/task` writes a task at each node it concerns, VIEW-032. `/api/read` takes a note's id and marks it read, VIEW-030; it reads only an unread note. Each POST calls the chassis or store operation named above and returns its result and notices. The answer's endpoint is `/api/answer`, which takes the question's id and the answer; it answers only an open question, and an answer that says nothing is refused.
+- How it shows: Every API endpoint is a GET that changes nothing, except eleven POSTs: apply layers, save prompt version, move a ticket on the board, clear the project, remove the project, answer a question, mark a note read, add a task, add an element, restore a backup, and add a note.
+- Build: The server routes GET for reads and exactly eleven POST endpoints. `/api/remove-project` takes an empty project off the list through the chassis's `remove_project`, PROJ-031, and `GET /api/remove-preview` says what it keeps. `/api/note` writes a note at a node, VIEW-034. `/api/restore` brings a backup back through the chassis's `restore_project`, PROJ-030, and `GET /api/backups` lists them. `/api/element` adds an element and its join, VIEW-033. `/api/task` writes a task as one ticket on its first node, linking the others for reference, VIEW-032 and VIEW-035. `/api/move` puts a ticket in a column of the board and at a place in it, VIEW-037. `/api/read` takes a note's id and marks it read, VIEW-030; it reads only an unread note. Each POST calls the chassis or store operation named above and returns its result and notices. The answer's endpoint is `/api/answer`, which takes the question's id and the answer; it answers only an open question, and an answer that says nothing is refused.
 - Acceptance: A store's contents and the folder's settings are byte-for-byte unchanged after a session of reads through every GET endpoint. The server exposes no other POST, PUT, PATCH or DELETE route.
 - Relates to: BASE-044, MAP-050, PROJ-025, STORE-017, STORE-044, VIEW-007, VIEW-013, VIEW-014, VIEW-019, VIEW-021.
 - Status: confirmed for the first three writes, 2026-09-25; for the clear, a clear from the page as well as from the command line, 2026-09-13, VIEW-019; for answering a question in the GUI, 2026-09-26 and 2026-09-27, built 2026-09-28; for removing an empty project from the page, PROJ-031, 2026-09-30. Corrected 2026-10-01 by LAYER-025: removing the top correction layer is no longer one of its writes; there are ten.
@@ -500,6 +500,32 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Acceptance: Open, D110.
 - Relates to: MAP-046, MAP-048, VIEW-020, VIEW-027, VIEW-029, LAYER-015, D92.
 - Status: asked for by Rich 2026-10-01. Which node is the most primary and whether a figure stands for a ticket or an agent are open, D110.
+
+### VIEW-036 A node's menu opens its work history
+
+- Requirement: The menu of a node, VIEW-030, has the entry Work history, with the count of the tickets on the node, open and done. It opens the floating window with every ticket on the node, newest first.
+- What this means: Each ticket shows its kind, its column on the board, its task and note, who took it and when, each step the agent filed in its own words, and when it was done and how it was resolved, STORE-042 and VIEW-035.
+- Why: Rich, 2026-10-01: add right clicking on nodes to access the work history.
+- How it shows: A right-click on the alarm, which has a broken ticket done in two steps and an enhancement in the backlog, shows Work history 2; the window lists the enhancement first, then the broken ticket with both steps and its resolution.
+- Build: The entry reads `work` with the node, STORE-025, and fills `#float` with one `.ticket` per record.
+- Acceptance: The browser test of the alarm above.
+- Relates to: VIEW-030, VIEW-035, STORE-042, MAP-053.
+- Status: asked for by Rich 2026-10-01.
+
+### VIEW-037 A classic kanban board of the project's tickets
+
+- Requirement: The page's header has a Board button that opens a window holding the project's tickets as a classic kanban board: the columns Backlog, To do, Doing and Done, each with its count, and a card for each ticket, which a person drags between columns and to a place within one.
+- What this means:
+  - A card shows the ticket's kind, by its color and its name, VIEW-035; its task, with the nodes named inline shown as links; the node it is assigned to and the nodes it links for reference; who took it; its progress, the steps filed of those planned, MAP-053; and, once done, its resolution.
+  - Dragging a card to a column moves the ticket there, STORE-042: to Doing takes it for the user, to Done finishes it, and to Backlog or To do opens it again. Dropping it among other cards puts it at that place.
+  - The board has a search over the cards' words and node names, a toggle for each kind, and Add card, which opens the task editor, VIEW-032. A click on a node of a card selects it on the map; a click on the card opens its node's work history, VIEW-036.
+  - The board follows the store: what an agent writes shows on it as it does on the map.
+- Why: Rich, 2026-10-01: add an actual classic kanban window you can open that mirrors the features in a traditional kanban. Agents are told to assign and track work via Metaform like a kanban, MAP-048.
+- How it shows: With the alarm's flawed ticket in To do, Board shows it in To do with its kind; dragged to Doing it is taken by the user and the map's alarm shows its work in progress.
+- Build: `#board` is the window, opened by `#boardBtn`; it reads `work`, STORE-025, and writes through `POST /api/move`, which calls the store's `move_work`.
+- Acceptance: The browser test of the board.
+- Relates to: VIEW-032, VIEW-035, VIEW-036, STORE-042, MAP-048, MAP-053.
+- Status: asked for by Rich 2026-10-01.
 
 ## Open questions
 

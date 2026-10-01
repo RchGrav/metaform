@@ -38,7 +38,7 @@ from urllib.parse import parse_qs, urlsplit
 from metaform import changes, home, outline, query, results, settings
 from metaform.context import toggled_for
 from metaform.data import Node, Outcome, Store, prompts
-from metaform.data.records import plain
+from metaform.data.records import COLUMNS, TICKETS, plain
 from metaform.errors import Stop, StoreError
 
 from . import WILDCARDS, host_port, loopback, run_file, token
@@ -249,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
                   '/api/element': self.add_part, '/api/restore': self.restore,
-                  '/api/note': self.add_note}
+                  '/api/note': self.add_note, '/api/move': self.move_ticket}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -355,30 +355,38 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, plain(done))
 
     def give_work(self, given: dict[str, Any]) -> None:
-        """Put a task a person wrote on the nodes it concerns, one work record at each, VIEW-032 and MAP-048. Each
-        record's note names the other nodes of the task."""
+        """Put a task a person wrote on the node it is assigned to, the first given, as one ticket that links the other
+        nodes for reference, VIEW-032, VIEW-035 and MAP-048."""
         text, nodes, condition = given.get('task'), given.get('nodes'), given.get('condition', 'missing')
         if not isinstance(text, str) or not text.strip():
             return self.send(400, {'error': 'A task says what is to be done.'})
         if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
             return self.send(400, {'error': 'A task is given at one node or more.'})
-        if condition not in ('missing', 'broken'):
-            return self.send(400, {'error': 'Work is to build something, missing, or to fix something, broken.'})
+        if condition not in TICKETS:
+            return self.send(400, {'error': 'Work is missing, broken, flawed or an enhancement.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
-                places: list[str] = []
-                for target in targets:
-                    found = store.element(target.id) if target.kind == 'element' else None
-                    places.append(found.address if found is not None else f'{target.kind} {target.id}')
-                written = [store.add_work(target, condition, task=text.strip(),
-                                          note='With ' + ', '.join(other for other in places if other != place) + '.'
-                                          if len(places) > 1 else None)
-                           for target, place in zip(targets, places)]
+                written = [store.add_work(targets[0], condition, task=text.strip(), held=bool(given.get('held')),
+                                          links=targets[1:])]
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, {'results': plain(written)})
+
+    def move_ticket(self, given: dict[str, Any]) -> None:
+        """Put a ticket in a column of the board and at a place in it, VIEW-037 and STORE-042."""
+        work_id, column, position = given.get('work_id'), given.get('column'), given.get('position')
+        if not isinstance(work_id, str) or column not in COLUMNS:
+            return self.send(400, {'error': 'A move names a ticket and a column: backlog, todo, doing or done.'})
+        if position is not None and (not isinstance(position, int) or isinstance(position, bool)):
+            return self.send(400, {'error': 'A place in a column is a whole number.'})
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            moved = store.move_work(work_id, column, position, given.get('by'))
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, {'results': plain([moved])})
 
     def add_part(self, given: dict[str, Any]) -> None:
         """Add an element a person describes and join it to a node, in the layer of what people add by hand, and

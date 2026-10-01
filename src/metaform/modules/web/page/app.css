@@ -400,3 +400,63 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .itemtext{white-space:pre-wrap;overflow-wrap:anywhere}
 /* Mermaid lays the 2D map out here before it is shown: a holder of no size, so the page never grows a scrollbar. */
 #draw{position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden}
+
+/* A node's work history, VIEW-036. */
+#float .ticket{border-top:1px solid var(--line);padding:8px 0}
+#float .ticket .head{display:flex;gap:8px;align-items:center;font:12px var(--sans)}
+#float .ticket .kind{padding:1px 6px;border-radius:4px;color:var(--ground);background:var(--muted)}
+#float .ticket .kind-broken{background:var(--broken)}
+#float .ticket .kind-flawed{background:var(--k5)}
+#float .ticket .kind-enhancement{background:var(--k2)}
+#float .ticket .kind-missing{background:var(--text)}
+#float .ticket .kind-exclude{background:var(--exclude)}
+#float .ticket .column,#float .ticket .by{color:var(--muted)}
+#float .ticket .task{margin:6px 0 2px;color:var(--text)}
+#float .ticket .note,#float .ticket .when{color:var(--muted);font-size:12px;margin:2px 0}
+#float .ticket .steps{margin:6px 0;padding-left:20px;font-size:12px;color:var(--text)}
+#float .ticket .resolution{margin:4px 0;color:var(--signal);font-size:12px}
+#task .kindrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+#task .kindrow .hold{display:flex;gap:6px;align-items:center;color:var(--muted)}
+
+/* The board, VIEW-037: glass over the map, a column for each place a ticket can be, a card for each ticket. */
+#board{position:fixed;z-index:22;inset:58px 16px 16px 16px;display:flex;flex-direction:column;background:color-mix(in srgb,var(--panel) 86%,transparent);backdrop-filter:blur(16px) saturate(1.2);border:1px solid var(--line-2);border-radius:14px;box-shadow:0 24px 80px color-mix(in srgb,var(--ground) 80%,transparent)}
+#board[hidden]{display:none}
+#board .bar{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+#board .bar .title{font:600 15px var(--sans);color:var(--text);letter-spacing:.02em;margin-right:6px}
+#board .search{flex:0 1 260px;height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;color:var(--text);font:12px var(--sans)}
+#board .kinds{display:flex;gap:6px;flex:1;flex-wrap:wrap}
+#board .kindtoggle{--c:var(--muted);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c);border-radius:999px;padding:2px 10px;font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;cursor:pointer;transition:opacity .2s,box-shadow .2s}
+#board .kindtoggle:hover{box-shadow:0 0 12px color-mix(in srgb,var(--c) 45%,transparent)}
+#board .kindtoggle.off{opacity:.3}
+#board .bar .add,#board .bar .close{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 12px;cursor:pointer;font:12px var(--sans);color:var(--text)}
+#board .bar .add{border-color:color-mix(in srgb,var(--signal) 60%,transparent);color:var(--signal)}
+#board .columns{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;padding:12px;overflow:auto}
+#board .column{display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel-2) 72%,transparent);border:1px solid var(--line);border-radius:12px}
+#board .column .head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px 6px;font:600 12px var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+#board .column .tally{min-width:22px;text-align:center;padding:1px 7px;border-radius:999px;background:var(--panel);border:1px solid var(--line-2);color:var(--text);font:11px var(--mono)}
+#board .cards{flex:1;overflow:auto;padding:6px 8px 10px;display:flex;flex-direction:column;gap:8px;min-height:80px;border-radius:0 0 12px 12px;transition:background .2s,box-shadow .2s}
+#board .cards.over{background:color-mix(in srgb,var(--signal) 8%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--signal) 45%,transparent)}
+#board .card{--c:var(--muted);position:relative;padding:10px 10px 10px 16px;border-radius:9px;background:var(--panel);border:1px solid var(--line-2);cursor:grab;transition:transform .15s,box-shadow .2s,opacity .2s}
+#board .card[hidden]{display:none}
+#board .card::before{content:'';position:absolute;left:0;top:9px;bottom:9px;width:4px;border-radius:4px;background:var(--c);box-shadow:0 0 10px var(--c)}
+#board .card:hover{transform:translateY(-1px);box-shadow:0 8px 22px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+#board .card.dragging{opacity:.35;transform:scale(.98)}
+#board .card[data-kind="broken"],#board .kindtoggle[data-kind="broken"]{--c:var(--broken)}
+#board .card[data-kind="flawed"],#board .kindtoggle[data-kind="flawed"]{--c:var(--k5)}
+#board .card[data-kind="enhancement"],#board .kindtoggle[data-kind="enhancement"]{--c:var(--k2)}
+#board .card[data-kind="missing"],#board .kindtoggle[data-kind="missing"]{--c:var(--text)}
+#board .card[data-kind="exclude"],#board .kindtoggle[data-kind="exclude"]{--c:var(--exclude)}
+#board .card .top{display:flex;gap:8px;align-items:center;font:11px var(--sans);color:var(--muted)}
+#board .card .kind{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+#board .card .by{color:var(--text)}
+#board .card .age{margin-left:auto;font:10px var(--mono)}
+#board .card .text{margin:6px 0 8px;font:13px/1.45 var(--sans);color:var(--text);display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+#board .card .inline{color:var(--signal)}
+#board .card .nodes{display:flex;flex-wrap:wrap;gap:4px}
+#board .card .node{font:11px var(--sans);border-radius:5px;padding:1px 7px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);cursor:pointer}
+#board .card .node:hover{border-color:var(--signal);color:var(--signal)}
+#board .card .node.ref{color:var(--muted);border-style:dashed}
+#board .card .progress{position:relative;height:4px;background:var(--line);border-radius:4px;margin:10px 0 12px}
+#board .card .progress span{position:absolute;left:0;top:0;bottom:0;background:var(--c);border-radius:4px;box-shadow:0 0 8px var(--c);transition:width .4s}
+#board .card .progress small{position:absolute;right:0;top:6px;font:10px var(--mono);color:var(--muted)}
+#board .card .resolution{margin-top:6px;font:12px var(--sans);color:var(--signal)}

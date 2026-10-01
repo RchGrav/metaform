@@ -21,6 +21,7 @@
       <select id="mf"></select>
     </div>
     <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
+    <button class="clearbtn" id="boardBtn" title="The project's tickets as a kanban board">Board</button>
     <div class="clearpick">
       <button class="clearbtn" id="adminBtn" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration</button>
       <div class="adminbox" id="adminbox" hidden role="menu">
@@ -108,15 +109,19 @@
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
   <div class="body"></div>
 </div>
+<div id="board" hidden role="dialog" aria-label="Board">
+  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <div class="columns"></div>
+</div>
 <div id="task" hidden role="dialog" aria-label="Add a task">
   <div class="bar"><span class="title"></span><button class="full" title="Fill the screen, and back">Full screen</button><button class="close" title="Close">Close</button></div>
   <div class="body">
     <div class="write">
-      <label>The work is <select class="condition"><option value="missing">to build something</option><option value="broken">to fix something</option></select></label>
+      <div class="kindrow"><label>The work is <select class="condition"><option value="missing">to build something</option><option value="broken">to fix something broken</option><option value="flawed">to fix something not right</option><option value="enhancement">an enhancement</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
-      <div class="eyebrow">Nodes of this task</div>
+      <div class="eyebrow">Nodes of this task: the first is the one assigned, the others are for reference</div>
       <div class="linked"></div>
-      <button class="put" title="Write this task on every node listed above, where agents find it and take it">Add task</button>
+      <button class="put" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
       <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole" title="The whole chart in view">Fit</button></div>
     </div>
     <div class="pick">

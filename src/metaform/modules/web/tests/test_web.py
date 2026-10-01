@@ -2899,7 +2899,8 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     assert page.inner_text('#messages').strip() == 'Messages 2'       # a question and a note wait
     entries = lambda: page.eval_on_selector_all('#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
     GIVE = (['memories', 'Memories 0', True],                           # the first of the further acts, VIEW-031
-            ['notes', 'Notes 0', False], ['task', 'Add Task', False],     # from the same menu, VIEW-034, VIEW-032
+            ['notes', 'Notes 0', False], ['history', 'Work history 0', True],  # VIEW-034, VIEW-036
+            ['task', 'Add Task', False],                                # from the same menu, VIEW-032
             ['element', 'Add Element', False])                          # and VIEW-033
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
@@ -2985,17 +2986,22 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     page.click('#task .browser [data-address="exterior.cook"]')
     page.click('#task .link')
     assert linked() == ['code.alarm.audible', 'exterior.cook']
-    page.select_option('#task .condition', 'missing')
+    assert page.eval_on_selector_all('#task .condition option', 'found => found.map(one => one.value)') == [
+        'missing', 'broken', 'flawed', 'enhancement']                 # the four kinds of ticket, VIEW-035
+    page.select_option('#task .condition', 'flawed')
+    page.check('#task .backlog')
     page.click('#task .put')
     page.wait_for_function('() => document.querySelector("#task").hidden')
-    written = [record for record in Store('proj').work(None, 'missing', True, limit=0).results
+    written = [record for record in Store('proj').work(None, None, True, limit=0).results
                if record.task and record.task.startswith('Make the tone louder')]
     text = f"Make the tone louder when [[{names['code.timer.kitchen']}|code.timer.kitchen]] runs out of time."
-    assert sorted((record.address, record.task) for record in written) == [
-        ('code.alarm.audible', text), ('exterior.cook', text)]
-    assert {record.note for record in written} == {'With exterior.cook.', 'With code.alarm.audible.'}
-    for node in (alarm, cook):                                        # the map shows each as having work
-        page.wait_for_function(f'() => window.metaform.look("{node}").work.includes("missing")', timeout=6000)
+    # one ticket, on the node it was opened at, linking every other node of the task for reference, Rich 2026-10-01
+    [ticket] = written
+    assert (ticket.address, ticket.task, ticket.condition, ticket.column) == ('code.alarm.audible', text, 'flawed',
+                                                                               'backlog')
+    assert [link.address for link in ticket.links] == ['exterior.cook', 'code.timer.kitchen']
+    page.wait_for_function(f'() => window.metaform.look("{alarm}").work.includes("flawed")', timeout=6000)
+    assert 'flawed' not in page.evaluate(f'window.metaform.look("{cook}").work')
     assert kitchen and problems == []
 
 
@@ -3464,3 +3470,82 @@ def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_tex
     sweep(label, lambda: page.get_attribute('#task .chart svg', 'viewBox'))
     assert problems == []
 
+
+
+@pytest.mark.req('VIEW-036')
+def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_its_steps(run, web, mapped, browser):
+    """Rich, 2026-10-01: right-clicking a node gives access to its work history: every ticket on it, open and done,
+    newest first, each with its kind, its column, who took it, the steps the agent filed and how it was resolved."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    old = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
+    store.take_work(old.work_id, steps=2, by='codex')
+    store.step_work(old.work_id, 'Traced the pin.')
+    store.step_work(old.work_id, 'Wired the driver.')
+    store.finish_work(old.work_id, 'wired')
+    store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='a softer tone', held=True)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.text_content('#menu button.history') == 'Work history 2'
+    page.click('#menu button.history')
+    page.wait_for_selector('#float:not([hidden]) .ticket')
+    tickets = page.locator('#float .ticket').all_inner_texts()
+    assert len(tickets) == 2
+    newest, oldest = tickets
+    assert 'enhancement' in newest and 'backlog' in newest and 'a softer tone' in newest
+    for words in ('broken', 'done', 'wire the tone', 'codex', 'Traced the pin.', 'Wired the driver.', 'wired'):
+        assert words in oldest, (words, oldest)
+    assert 'Work history' in page.text_content('#float .title')
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-037')
+def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_its_ticket(run, web, mapped, browser):
+    """Rich, 2026-10-01: an actual classic kanban window you can open that mirrors the features in a traditional
+    kanban: columns with counts, cards with their kind, nodes and progress, dragging between and within columns, a
+    search and a filter by kind, and adding a card."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    kitchen = Node('element', 'code.timer.kitchen')
+    todo = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone', links=[kitchen])
+    store.add_work(kitchen, 'enhancement', task='a second countdown', held=True)
+    doing = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
+    store.take_work(doing.work_id, steps=3, by='codex')
+    store.step_work(doing.work_id, 'Traced the pin.')
+    done = store.add_work(kitchen, 'missing', task='the display')
+    store.finish_work(done.work_id, 'built')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    page.click('#boardBtn')
+    page.wait_for_selector('#board:not([hidden]) .card')
+    count = lambda column: page.text_content(f'#board .column[data-column="{column}"] .tally')
+    held = Store('proj').work(limit=0).results
+    expected = [str(sum(record.column == column for record in held)) for column in ('backlog', 'todo', 'doing', 'done')]
+    assert [count(column) for column in ('backlog', 'todo', 'doing', 'done')] == expected
+    card = page.locator(f'#board .card[data-id="{todo.work_id}"]')
+    assert card.get_attribute('data-kind') == 'flawed' and 'a quieter tone' in card.inner_text()
+    chips = card.locator('.node').all_inner_texts()
+    assert len(chips) == 2                                              # the node assigned and the one for reference
+    worked = page.locator(f'#board .card[data-id="{doing.work_id}"]')
+    assert 'codex' in worked.inner_text() and '1/3' in worked.inner_text()
+    page.drag_and_drop(f'#board .card[data-id="{todo.work_id}"]', '#board .column[data-column="doing"] .cards')
+    page.wait_for_function(f'() => document.querySelector(\'#board .column[data-column="doing"] .card[data-id="{todo.work_id}"]\')')
+    moved = next(record for record in Store('proj').work(limit=0).results if record.work_id == todo.work_id)
+    assert (moved.column, moved.taken_by, moved.condition) == ('doing', 'user', 'flawed')
+    assert int(count('doing')) == int(expected[2]) + 1 and int(count('todo')) == int(expected[1]) - 1
+    page.fill('#board .search', 'quieter')
+    assert page.locator('#board .card:visible').count() == 1
+    page.fill('#board .search', '')
+    page.click('#board .kinds [data-kind="flawed"]')                    # a kind toggled off hides its cards
+    assert page.locator(f'#board .card[data-id="{todo.work_id}"]').is_hidden()
+    page.click('#board .kinds [data-kind="flawed"]')
+    page.locator(f'#board .card[data-id="{todo.work_id}"] .node').first.click()
+    page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
+    page.click('#board .add')
+    page.wait_for_selector('#task:not([hidden])')
+    assert problems == []
