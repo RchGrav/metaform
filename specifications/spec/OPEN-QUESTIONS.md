@@ -69,7 +69,7 @@ Recommendation: refining again, which keeps one way to change the metaform; hist
 Recommendation: one record per refinement run, with its provenance and tags, that each version it wrote names, so a run's versions are read together and nothing about who made them is lost.
 
 **D110. The tickets and the agent figures on the map.** VIEW-035. Which node is the most primary: the DE? Does a figure stand for a ticket or for an agent, given that subagents of one session share its session id and process id, 05-cli-settings? What are the stored names of the four kinds, a work record holding only missing, broken and exclude today, and who took a ticket under which harness, which a work record does not hold, D92?
-Recommendation: the DE; one figure per ticket from take to done; the shortest way along the drawn edges.
+Recommendation: the DE; one figure per ticket from take to done; the shortest way along the drawn edges. Built on this recommendation 2026-10-01, Rich may overrule it; the stored names are `flawed` and `enhancement`, Rich 2026-10-01, and who took a ticket is `taken_by`, STORE-042.
 
 ## Answered
 

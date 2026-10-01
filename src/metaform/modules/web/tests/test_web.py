@@ -382,10 +382,12 @@ def test_the_page_loads_only_the_servers_own_files(run, web):
     digest = base64.b64encode(hashlib.sha256(inline[0][1].encode('utf-8')).digest()).decode()
     script = next(part.strip() for part in policy.split(';') if part.strip().startswith('script-src'))
     assert script.split() == ['script-src', "'self'", f"'sha256-{digest}'"]
-    assert json.loads(inline[0][1]) == {'imports': {'three': '/vendor/three.module.min.js'}}
+    assert json.loads(inline[0][1]) == {'imports': {'three': '/vendor/three.module.min.js',
+                                                    'three/addons/': '/vendor/three-addons/'}}  # the figures, VIEW-035
     loaded = re.findall(r'(?:src|href)="([^"]+)"', page)
     assert loaded and all(path.startswith('/') and not path.startswith('//') for path in loaded)
     texts = [page]
+    loaded.append('/page/agents3d.js')                                # imported by the page's own script, VIEW-035
     for path in loaded:
         status, body, headers = request(web, path)
         assert status == 200, path
