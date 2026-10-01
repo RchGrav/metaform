@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MCP Instruction Places</title>
+<style>
+  @page { size: letter landscape; margin: 0.4in 0.45in; }
+  :root {
+    --ink: #1b1f24; --muted: #5b6470; --line: #d5dae0; --head: #eef1f4; --band: #f7f8fa;
+    --always: #0b6e4f; --call: #1f5fbf; --user: #8a4b00; --never: #6b6f76; --unknown: #9a2f2f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 7.8pt/1.25 "Helvetica Neue", Arial, sans-serif; color: var(--ink); background: #fff; }
+  h1 { font-size: 15pt; margin: 0 0 2px; letter-spacing: -0.2px; }
+  .sub { color: var(--muted); font-size: 8pt; margin-bottom: 8px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 8px; font-size: 7.8pt; }
+  .legend div { display: flex; align-items: center; gap: 5px; }
+  .tier { display: inline-block; font-weight: 700; font-size: 6.6pt; letter-spacing: 0.4px; color: #fff;
+          border-radius: 3px; padding: 1px 4px; white-space: nowrap; vertical-align: 1px; }
+  .always { background: var(--always); } .call { background: var(--call); } .user { background: var(--user); }
+  .never { background: var(--never); } .unknown { background: var(--unknown); }
+  section { margin-bottom: 9px; }
+  .grid section { break-inside: avoid; }
+  tr { break-inside: avoid; }
+  h2 { break-after: avoid; }
+  h2 { font-size: 9.6pt; margin: 0; padding: 3px 6px; background: var(--ink); color: #fff; border-radius: 3px 3px 0 0;
+       display: flex; justify-content: space-between; gap: 10px; }
+  h2 span { font-weight: 400; color: #cfd6de; font-size: 7.8pt; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid var(--line); padding: 2px 5px; vertical-align: top; text-align: left; }
+  th { background: var(--head); font-size: 7.4pt; color: var(--muted); font-weight: 700; }
+  tr:nth-child(even) td { background: var(--band); }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.4pt; }
+  td:first-child code { font-weight: 700; }
+  td code { overflow-wrap: anywhere; word-break: break-word; }
+  .c1 { width: 19%; } .c2 { width: 15%; } .c3 { width: 15%; } .c4 { width: 15%; } .c5 { width: 36%; }
+  .note { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 9px; }
+  .grid section { margin-bottom: 0; }
+  .facts { columns: 2; column-gap: 18px; font-size: 7.8pt; margin: 0; padding-left: 14px; }
+  .facts li { margin-bottom: 2px; break-inside: avoid; }
+  .src { color: var(--muted); font-size: 7pt; margin-top: 6px; }
+
+</style>
+</head>
+<body>
+
+<div class="page">
+<h1>MCP instruction places</h1>
+<div class="sub">Every field a server can use to put words in front of a model or a person: its type, its limit, what triggers it and how the model sees it. Protocol revision <b>2026-07-28</b>, host <b>Claude Code</b>. Checked 2026-09-30 against the spec, the <code>mcp</code> 2.2.0 SDK types and the Claude Code MCP docs.</div>
+
+<div class="legend">
+  <div><span class="tier always">ALWAYS</span> in the model's context every turn</div>
+  <div><span class="tier call">ON CALL</span> reaches the model when it acts: finds a tool, calls it, reads a resource</div>
+  <div><span class="tier user">USER</span> only a person triggers it</div>
+  <div><span class="tier never">NEVER</span> not shown to the model</div>
+  <div><span class="tier unknown">UNSTATED</span> Claude Code docs do not say</div>
+</div>
+
+<section>
+<h2>Server <span>sent once per connection: <code>server/discover</code> on 2026-07-28, <code>initialize</code> on older revisions</span></h2>
+<table>
+<tr><th class="c1">Field</th><th class="c2">Type</th><th class="c3">Limit</th><th class="c4">Triggered by</th><th class="c5">How the model sees it</th></tr>
+<tr><td><code>instructions</code></td><td>string, optional</td><td>Claude Code cuts at <b>2,048 chars</b>; <code>CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH</code> changes it</td><td>the client connecting</td><td><span class="tier always">ALWAYS</span> in the system prompt, every turn. Spec: "guidance for LLMs on how to use this server". With tool search, it is what tells the model when to look for your tools.</td></tr>
+<tr><td><code>serverInfo</code>: <code>name</code>, <code>version</code>, <code>title</code>, <code>description</code>, <code>websiteUrl</code>, <code>icons</code></td><td>strings; <code>name</code> and <code>version</code> required</td><td>none stated</td><td>the client connecting</td><td><span class="tier never">NEVER</span> for display, logging and debugging. Spec: clients SHOULD NOT change behavior on it.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Tools <span>model-controlled; listed by <code>tools/list</code> at connect and again on <code>list_changed</code></span></h2>
+<table>
+<tr><th class="c1">Field</th><th class="c2">Type</th><th class="c3">Limit</th><th class="c4">Triggered by</th><th class="c5">How the model sees it</th></tr>
+<tr><td><code>name</code></td><td>string, required</td><td>1 to 128 chars; <code>A-Z a-z 0-9 _ - .</code>; unique per server</td><td>connect</td><td><span class="tier always">ALWAYS</span> as <code>mcp__server__name</code>, by name only while tool search defers the rest</td></tr>
+<tr><td><code>description</code></td><td>string, optional</td><td>Claude Code cuts at <b>2,048 chars</b></td><td>the model finding the tool through ToolSearch</td><td><span class="tier call">ON CALL</span> part of the loaded tool definition. Put critical details first.</td></tr>
+<tr><td><code>inputSchema</code></td><td>JSON Schema object, required; 2020-12 by default</td><td>none stated</td><td>same as description</td><td><span class="tier call">ON CALL</span> each property's <code>description</code>, <code>enum</code>, <code>default</code> and <code>required</code> are how the model learns the arguments. No params: <code>{"type":"object","additionalProperties":false}</code></td></tr>
+<tr><td><code>title</code></td><td>string, optional</td><td>none stated</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> display name</td></tr>
+<tr><td><code>outputSchema</code></td><td>JSON Schema, optional</td><td>none stated</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> if present, <code>structuredContent</code> MUST conform</td></tr>
+<tr><td><code>annotations.readOnlyHint</code></td><td>bool, default <b>false</b></td><td>true / false / omitted</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> true: does not modify its environment. Hint only; untrusted unless the server is trusted.</td></tr>
+<tr><td><code>annotations.destructiveHint</code></td><td>bool, default <b>true</b></td><td>true / false / omitted</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> true: may destroy or overwrite; false: only adds. Counts only when <code>readOnlyHint</code> is false. No reason field.</td></tr>
+<tr><td><code>annotations.idempotentHint</code></td><td>bool, default <b>false</b></td><td>true / false / omitted</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> true: the same call again has no further effect. Counts only when not read-only.</td></tr>
+<tr><td><code>annotations.openWorldHint</code></td><td>bool, default <b>true</b></td><td>true / false / omitted</td><td>connect</td><td><span class="tier unknown">UNSTATED</span> true: reaches external entities, like web search; false: a closed domain, like memory</td></tr>
+<tr><td><code>_meta["anthropic/alwaysLoad"]</code></td><td>bool</td><td>Claude Code only</td><td>session start</td><td><span class="tier always">ALWAYS</span> loads this tool's full definition up front, skipping the search step. Server-wide: <code>alwaysLoad: true</code> in the config.</td></tr>
+<tr><td><code>_meta["anthropic/requiresUserInteraction"]</code></td><td>bool, must be <code>true</code></td><td>Claude Code 2.1.199+</td><td>every call</td><td><span class="tier user">USER</span> a permission prompt on every call, in every mode; no "don't ask again"</td></tr>
+<tr><td><code>_meta["anthropic/maxResultSizeChars"]</code></td><td>integer</td><td>up to <b>500,000 chars</b></td><td>every call</td><td><span class="tier never">NEVER</span> raises this tool's result limit before it is saved to a file</td></tr>
+</table>
+</section>
+</div>
+
+<div class="page">
+<section>
+<h2>Tool results <span>the model calling a tool; the result enters the conversation as the tool result</span></h2>
+<table>
+<tr><th class="c1">Field</th><th class="c2">Type</th><th class="c3">Limit</th><th class="c4">Triggered by</th><th class="c5">How the model sees it</th></tr>
+<tr><td><code>content[]</code> text</td><td><code>{type:"text", text}</code>; <code>text</code> string</td><td>warning at <b>10,000 tokens</b>; cap <b>25,000 tokens</b>, <code>MAX_MCP_OUTPUT_TOKENS</code></td><td>the model's call</td><td><span class="tier call">ON CALL</span> as the tool result. Over the cap it is saved under the session's <code>tool-results</code> folder and replaced by a file reference.</td></tr>
+<tr><td><code>content[]</code> image, audio</td><td><code>data</code> base64 string, <code>mimeType</code> string, both required</td><td>always under the token cap</td><td>the model's call</td><td><span class="tier call">ON CALL</span> images reach the model; images never get the file fallback</td></tr>
+<tr><td><code>content[]</code> resource link</td><td><code>{type:"resource_link", uri, name}</code> required; <code>title</code>, <code>description</code>, <code>mimeType</code>, <code>size</code></td><td>none stated</td><td>the model's call</td><td><span class="tier call">ON CALL</span> a pointer, not the content. Need not appear in <code>resources/list</code>.</td></tr>
+<tr><td><code>content[]</code> embedded resource</td><td><code>{type:"resource", resource:{uri, text | blob, mimeType}}</code></td><td>same cap as text</td><td>the model's call</td><td><span class="tier call">ON CALL</span> the resource's content, inline</td></tr>
+<tr><td><code>structuredContent</code></td><td>any JSON value</td><td>none stated</td><td>the model's call</td><td><span class="tier unknown">UNSTATED</span> spec: also send it as a text block for compatibility</td></tr>
+<tr><td><code>isError</code></td><td>bool</td><td>none</td><td>the model's call</td><td><span class="tier call">ON CALL</span> spec: clients SHOULD show it to the model so it can correct itself. Protocol errors MAY reach the model.</td></tr>
+<tr><td><code>annotations.audience</code></td><td>list of <code>"user"</code>, <code>"assistant"</code></td><td>on any content block, resource or prompt message</td><td>the result</td><td><span class="tier unknown">UNSTATED</span> who the block is for</td></tr>
+<tr><td><code>annotations.priority</code>, <code>lastModified</code></td><td>number 0.0 to 1.0; ISO 8601 string</td><td>range enforced</td><td>the result</td><td><span class="tier unknown">UNSTATED</span> 1 means effectively required, 0 entirely optional</td></tr>
+<tr><td><code>resultType: "input_required"</code>, <code>inputRequests</code>, <code>requestState</code></td><td>multi round-trip result; requests keyed by name; state string</td><td>none stated</td><td>the server needing input mid-call</td><td><span class="tier user">USER</span> carries elicitation; the client answers and retries the call</td></tr>
+</table>
+</section>
+
+<div class="grid">
+<section>
+<h2>Prompts <span>user-controlled; <code>prompts/list</code>, then <code>prompts/get</code></span></h2>
+<table>
+<tr><th style="width:27%">Field</th><th style="width:30%">Type</th><th>Shown</th></tr>
+<tr><td><code>name</code></td><td>string, required</td><td><span class="tier user">USER</span> in the <code>/</code> menu as <code>/server:name (MCP)</code>; <code>/mcp__server__name</code> also runs it</td></tr>
+<tr><td><code>title</code>, <code>description</code></td><td>strings, optional</td><td><span class="tier user">USER</span> menu text</td></tr>
+<tr><td><code>arguments[]</code></td><td><code>{name, title, description, required: bool}</code></td><td><span class="tier user">USER</span> typed space-separated after the command, one token each</td></tr>
+<tr><td><code>messages[]</code></td><td><code>{role: "user" | "assistant", content}</code>; content is text, image, audio, resource link or embedded resource</td><td><span class="tier call">INTO CHAT</span> injected into the conversation when the person runs it. <b>The model cannot invoke a prompt.</b></td></tr>
+</table>
+</section>
+
+<section>
+<h2>Resources <span>application-driven; <code>resources/list</code>, <code>resources/read</code></span></h2>
+<table>
+<tr><th style="width:27%">Field</th><th style="width:30%">Type</th><th>Shown</th></tr>
+<tr><td><code>uri</code>, <code>name</code></td><td>strings, required; custom schemes allowed, RFC 3986</td><td><span class="tier user">USER</span> <code>@server:scheme://path</code> autocomplete</td></tr>
+<tr><td><code>title</code>, <code>description</code>, <code>mimeType</code>, <code>size</code></td><td>strings; integer bytes</td><td><span class="tier call">ON CALL</span> through the list tool Claude Code adds</td></tr>
+<tr><td>contents</td><td><code>{uri, mimeType, text}</code> or <code>{..., blob}</code> base64</td><td><span class="tier user">USER</span> @-mention attaches it; <span class="tier call">ON CALL</span> the model reads it with the read tool</td></tr>
+<tr><td><code>uriTemplate</code></td><td>RFC 6570 string</td><td><span class="tier unknown">UNSTATED</span></td></tr>
+<tr><td><code>annotations</code></td><td>audience, priority, lastModified</td><td><span class="tier unknown">UNSTATED</span></td></tr>
+</table>
+</section>
+</div>
+</div>
+
+<div>
+<div class="grid">
+<section>
+<h2>Elicitation <span>server asks the person mid-request</span></h2>
+<table>
+<tr><th style="width:27%">Field</th><th style="width:30%">Type</th><th>Shown</th></tr>
+<tr><td><code>message</code></td><td>string, required</td><td><span class="tier user">USER</span> in a dialog; the model never sees it</td></tr>
+<tr><td><code>requestedSchema</code></td><td>JSON Schema; <b>flat object, primitive properties only</b>: string, number, boolean, enum</td><td><span class="tier user">USER</span> form fields, with each property's description</td></tr>
+<tr><td><code>url</code></td><td>string, URL mode</td><td><span class="tier user">USER</span> opens a browser flow</td></tr>
+<tr><td>result</td><td><code>action: accept | decline | cancel</code>, <code>content</code> dict</td><td><span class="tier never">NEVER</span> goes to the server</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Other channels <span>none of these reach the model</span></h2>
+<table>
+<tr><th style="width:27%">Field</th><th style="width:30%">Type</th><th>Shown</th></tr>
+<tr><td>completion <code>values</code></td><td>list of strings, <b>max 100</b></td><td><span class="tier user">USER</span> suggestions for prompt and template arguments</td></tr>
+<tr><td>progress <code>message</code></td><td>string, optional; <code>progress</code>, <code>total</code> numbers</td><td><span class="tier user">USER</span> in <code>/tasks</code></td></tr>
+<tr><td>logging <code>data</code></td><td>any; <code>level</code> enum. <b>Deprecated</b></td><td><span class="tier never">NEVER</span></td></tr>
+<tr><td>sampling <code>systemPrompt</code>, <code>messages</code></td><td>string; list; <code>maxTokens</code> int required. <b>Deprecated</b></td><td><span class="tier never">NEVER</span> a separate generation, not the conversation</td></tr>
+</table>
+</section>
+</div>
+
+<section style="margin-top:9px">
+<h2>Skills extension <span><code>io.modelcontextprotocol/skills</code>, Final 2026-09-13; Claude Code is not on the official client matrix</span></h2>
+<table>
+<tr><th class="c1">Field</th><th class="c2">Type</th><th class="c3">Limit</th><th class="c4">Triggered by</th><th class="c5">How the model sees it</th></tr>
+<tr><td><code>skills/list</code> entry</td><td><code>{uri, frontmatter, resources}</code>; frontmatter holds <code>name</code>, <code>description</code></td><td>512 files or 16 MiB per skill</td><td>the host listing skills</td><td>host decides. The model or the person can select a skill by name and description. <code>SKILL.md</code> is read through <code>resources/read</code> only when needed.</td></tr>
+</table>
+</section>
+
+<section style="margin-top:9px">
+<h2>Facts that decide the design</h2>
+<ul class="facts">
+<li>Three tiers in Claude Code: <b>always</b> holds server instructions and tool names; <b>on call</b> holds tool definitions, tool results and resources the model reads; <b>user</b> holds prompts, @-mentions and elicitation.</li>
+<li>A blind agent, one started by another agent, reaches only <b>instructions</b>, <b>tool definitions</b>, <b>tool results</b> and <b>resources</b>. It cannot run a prompt.</li>
+<li>Tool search is on by default: only tool names and server instructions load at session start. <code>ENABLE_TOOL_SEARCH=false</code> loads every definition up front.</li>
+<li>Each tool description and each server's instructions are cut at 2,048 characters. Put what matters first.</li>
+<li>Annotations describe a whole tool. A tool that mixes read-only, additive and destructive commands cannot set one true hint.</li>
+<li>Stdio servers connect on the older protocol, with <code>initialize</code>, unless <code>MCP_PROTOCOL_NEGOTIATION=auto</code> is set.</li>
+<li>Deprecated in 2026-07-28: Roots, Sampling, Logging. Migrations: tool parameters or resource URIs; direct provider APIs; stderr or OpenTelemetry.</li>
+<li>The spec has no length limits of its own on these strings. Every character limit on this sheet is Claude Code's or the SDK's.</li>
+</ul>
+</section>
+
+<div class="src">Sources: modelcontextprotocol.io/specification/2026-07-28, the changelog, discover, tools, prompts, resources, elicitation and completion pages; extensions/skills/overview and extensions/client-matrix; the <code>mcp</code> 2.2.0 Python SDK <code>mcp.types</code>; code.claude.com/docs/en/mcp. UNSTATED marks what the Claude Code docs leave open; test before relying on it.</div>
+</div>
+
+</body>
+</html>

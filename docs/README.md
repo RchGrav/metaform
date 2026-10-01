@@ -21,6 +21,8 @@ For a first session, follow Getting started through a receiving-purpose relation
 
 The [technical reference](inference-metaform/REFERENCE.md) is the full account of the design. Its [implementation map](inference-metaform/IMPLEMENTATION_MAP.md) identifies source symbols, data lifecycles, present interfaces, and source-local differences. [Examples to collect](inference-metaform/EXAMPLES_TO_COLLECT.md) describes useful future evidence; [Ideas](inference-metaform/IDEAS.md) separates new proposals from established mechanisms.
 
+[MCP instruction places](reference/mcp-instruction-places.pdf) is a three-page cheat sheet of every field an MCP server can use to put words in front of a model or a person: its type, its limit, what triggers it and how the model sees it, for protocol revision 2026-07-28 on Claude Code. Its [HTML source](reference/mcp-instruction-places.html) prints it again.
+
 The [bibliography](preprint/references.bib) contains the preprint's research references. [Citation information](preprint/CITATION.md) identifies this edition without implying journal publication or peer review.
 
 ## Examples and evidence
