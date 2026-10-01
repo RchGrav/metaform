@@ -6,6 +6,7 @@
 // three.js, for the glass the nodes are made of, VIEW-025. It is the release the graph library holds and does not
 // give out, carried in vendor/ so the page loads nothing from outside itself, VIEW-003.
 import * as THREE from '/vendor/three.module.min.js';
+import {createAgent, drawGlyph, releaseGlyph, orientAgent} from '/page/agents3d.js';
 // drei's transmission material in its vanilla form, the glass itself, VIEW-025. It imports three.js as `three`, which
 // the page's import map names as the same file, so both share one three.js.
 import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
@@ -363,6 +364,11 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
       return {source: from.id, target: to.id, x: box.left + point.x, y: box.top + point.y};
     });
   },
+  figures: () => [...ROAM.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
+    target: figure.target, home: figure.home, x: figure.mesh.position.x, y: figure.mesh.position.y, z: figure.mesh.position.z,
+    scale: figure.mesh.scale.x})),
+  at3d: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
+    return node && node.x !== undefined ? {x: node.x, y: node.y, z: node.z, r: Math.cbrt(nodeSize(node)) * 3} : null; },
   ground: () => G ? G.backgroundColor() : null};
 
 /* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
@@ -407,6 +413,120 @@ function look(id) {
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'flawed', 'enhancement', 'exclude', 'question', 'message'];
+/* The agents at work, VIEW-035: a figure for each ticket an agent works, from the moment it is taken until it is
+ * closed. It materializes on the most primary node, the DE, makes its way along the map's own edges to the ticket's
+ * node, goes onto it and circles it, facing the way it moves, faster as steps are filed, until the ticket is closed;
+ * then it makes its way back and is gone. A ticket that was finished before its figure got there is still touched,
+ * and then the figure walks back. A figure is one of the sixteen characters of agents3d.js, drawn so that no two at
+ * work look alike. With reduced motion it stands at the node. */
+const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6, orbit: 1.5, lap: 4.5, recent: 120,
+  appear: 0.8, touch: 0.9, vanish: 0.6};
+const nodeById = (data, id) => data.nodes.find(node => node.id === id);
+const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE') || data.nodes.find(node => node.t === 'el');
+const ticketNode = ticket => ticket.kind === 'join' ? 'p:' + ticket.id : ticket.id;
+const busyOf = ticket => { const planned = ticket.steps || 0, filed = ticket.steps_done || 0;
+  return planned ? Math.min(1, filed / planned) : filed ? 1 - 1 / (1 + FLASH.step * filed) : 0; };
+const ballOf = node => Math.cbrt(nodeSize(node)) * 3;
+function routeOf(data, from, to) {  // the fewest edges of the drawn map from one node to another
+  const near = new Map(), add = (one, two) => { if (!near.has(one)) near.set(one, []); near.get(one).push(two); };
+  for (const link of data.links) { add(endOf(link.source), endOf(link.target)); add(endOf(link.target), endOf(link.source)); }
+  const back = new Map([[from, null]]), queue = [from];
+  while (queue.length && !back.has(to)) {
+    const at = queue.shift();
+    for (const next of near.get(at) || []) if (!back.has(next)) { back.set(next, at); queue.push(next); }
+  }
+  if (!back.has(to)) return [from, to];
+  const path = [];
+  for (let at = to; at !== null; at = back.get(at)) path.unshift(at);
+  return path;
+}
+function figures(tickets) {  // the figures the tickets call for, VIEW-035
+  if (!G) return;
+  const data = G.graphData(), home = primaryOf(data);
+  if (!home) return;
+  const now = Date.now();
+  for (const ticket of tickets) {
+    const figure = ROAM.figures.get(ticket.work_id), target = ticketNode(ticket);
+    if (figure) { Object.assign(figure, {done: Boolean(ticket.done), busy: busyOf(ticket)}); continue; }
+    const working = Boolean(ticket.taken && !ticket.done);
+    const finished = Boolean(ticket.taken && ticket.done) && now - Date.parse(ticket.done) < ROAM.recent * 1000;
+    if ((working || finished) && !ROAM.seen.has(ticket.work_id) && nodeById(data, target)) {
+      const glyph = drawGlyph(ticket.work_id), mesh = createAgent(glyph);
+      mesh.scale.setScalar(0.001);
+      G.scene().add(mesh);
+      ROAM.seen.add(ticket.work_id);
+      ROAM.figures.set(ticket.work_id, {id: ticket.work_id, glyph, mesh, home: home.id, target, stage: 'arriving',
+        path: routeOf(data, home.id, target), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
+        done: Boolean(ticket.done), busy: busyOf(ticket)});
+    }
+  }
+  for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.work_id === id)) figure.done = true;
+}
+const AHEAD = new THREE.Vector3();
+function roam3d(data) {
+  const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM.last || now)));
+  ROAM.last = now;
+  for (const [id, figure] of ROAM.figures) {
+    const {mesh} = figure, size = ROAM.size;
+    const gone = () => { G.scene().remove(mesh); releaseGlyph(id); ROAM.figures.delete(id); };
+    figure.clock += passed;
+    const target = nodeById(data, figure.target), home = nodeById(data, figure.home);
+    if (!target || target.x === undefined || !home || home.x === undefined) continue;
+    if (reduced()) {  // no walking: the figure stands on its node while the ticket is worked
+      mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
+      mesh.scale.setScalar(size);
+      if (figure.done) gone();
+      continue;
+    }
+    if (figure.stage === 'arriving') {  // it materializes on the most primary node
+      const grown = Math.min(1, figure.clock / ROAM.appear), over = 1 + 1.7 * Math.pow(grown - 1, 3) + 0.7 * Math.pow(grown - 1, 2);
+      mesh.position.set(home.x, home.y + ballOf(home) + size * 0.6, home.z);
+      mesh.scale.setScalar(size * Math.max(0.001, over));
+      if (grown >= 1) Object.assign(figure, {stage: 'going', leg: 0, along: 0, clock: 0});
+    } else if (figure.stage === 'going' || figure.stage === 'returning') {  // along the map's own edges
+      const from = nodeById(data, figure.path[figure.leg]), to = nodeById(data, figure.path[figure.leg + 1]);
+      if (!from || !to || from.x === undefined || to.x === undefined) {
+        Object.assign(figure, figure.stage === 'going' ? {stage: figure.done ? 'touching' : 'circling'} : {stage: 'leaving'}, {clock: 0});
+        continue;
+      }
+      AHEAD.set(to.x - from.x, to.y - from.y, to.z - from.z);
+      const length = Math.max(1, AHEAD.length());
+      figure.along = Math.min(1, figure.along + passed * ROAM.speed / length);
+      const hop = Math.sin(Math.PI * figure.along) * Math.min(6, length * 0.08);
+      mesh.position.set(from.x + AHEAD.x * figure.along, from.y + AHEAD.y * figure.along + size * 0.6 + hop,
+        from.z + AHEAD.z * figure.along);
+      mesh.scale.setScalar(size);
+      orientAgent(mesh, AHEAD, 0.25);
+      if (figure.along >= 1) {
+        figure.leg += 1;
+        figure.along = 0;
+        if (figure.leg >= figure.path.length - 1) {
+          Object.assign(figure, {clock: 0, stage: figure.stage === 'returning' ? 'leaving' : figure.done ? 'touching' : 'circling'});
+        }
+      }
+    } else if (figure.stage === 'circling') {  // on the node, around it, faster with each step filed
+      const out = Math.min(1, figure.clock / 0.6), eased = 1 - Math.pow(1 - out, 3);  // it spirals out onto its orbit
+      const reach = (ballOf(target) + size * ROAM.orbit) * eased;
+      figure.angle += passed * (2 * Math.PI / ROAM.lap) * (1 + 2 * figure.busy);
+      const turn = figure.angle;
+      mesh.position.set(target.x + Math.cos(turn) * reach, target.y + Math.sin(turn * 2) * reach * 0.18 + size * 0.3,
+        target.z + Math.sin(turn) * reach);
+      mesh.scale.setScalar(size);
+      AHEAD.set(-Math.sin(turn), Math.cos(turn * 2) * 0.36, Math.cos(turn));
+      orientAgent(mesh, AHEAD, 0.3);
+      if (figure.done) Object.assign(figure, {stage: 'returning', path: routeOf(data, figure.target, figure.home), leg: 0, along: 0, clock: 0});
+    } else if (figure.stage === 'touching') {  // finished before it got there: it still touches the node
+      const dip = Math.min(1, figure.clock / ROAM.touch);
+      mesh.position.set(target.x, target.y + ballOf(target) * (1 - 0.6 * Math.sin(Math.PI * dip)) + size * 0.4, target.z);
+      if (dip >= 1) Object.assign(figure, {stage: 'returning', path: routeOf(data, figure.target, figure.home), leg: 0, along: 0, clock: 0});
+    } else if (figure.stage === 'leaving') {  // home again, it is gone
+      const faded = Math.min(1, figure.clock / ROAM.vanish);
+      mesh.scale.setScalar(size * Math.max(0.001, 1 - faded));
+      if (faded >= 1) { gone(); continue; }
+    }
+    mesh.userData.update(passed, {busy: figure.stage === 'circling' ? figure.busy : 0});
+  }
+}
 /* A ticket's light, VIEW-035: broken flashes red, flawed yellow and enhancement green. Flashing lets the node's own
  * color show between flashes, and each step filed makes it faster: from FLASH.slow a beat while it waits, to
  * FLASH.fast as the steps planned are filed, or a little faster with each step when none were planned. */
@@ -1148,6 +1268,7 @@ function labels() {
       colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
     DRIFT.value = reduced() ? 0 : performance.now() / 1000;  // the distortion of the glass drifts, VIEW-025
     wave3d(G.graphData());
+    roam3d(G.graphData());
     text3d();
     let signaled = false;
     for (const node of G.graphData().nodes) {
@@ -2848,9 +2969,10 @@ async function itemsOf(generation) {
 async function progressOf() {
   const found = new Map();
   let tickets = [];
-  try { tickets = (await read('work', {open: true, limit: 0})).results || []; } catch (error) { return found; }
+  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { return found; }
+  S.tickets = tickets;
   for (const ticket of tickets) {
-    if (!ticket.taken) continue;
+    if (!ticket.taken || ticket.done) continue;
     const keys = ticket.kind === 'join' ? ['p:' + ticket.id, 's:' + ticket.id] : [ticket.id];
     const done = {filed: ticket.steps_done || 0, planned: ticket.steps || 0};
     const share = one => one.planned ? one.filed / one.planned : one.filed;
@@ -2877,6 +2999,7 @@ async function loadGraph() {
     if (generation !== S.loading) return;
     S.items = items;
     S.progress = await progressOf();
+    figures(S.tickets || []);
   } catch (error) { toast(error.message); }
   if (generation !== S.loading) return;
   S.loading = 0;

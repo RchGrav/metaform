@@ -3576,3 +3576,40 @@ def test_a_ticket_flashes_its_node_in_its_kinds_light_faster_with_each_step_file
     faster = page.evaluate(f'window.metaform.look("{alarm}").pace')
     assert faster < slow and page.evaluate(f'window.metaform.look("{kitchen}").pace') == slow
     assert problems == []
+
+
+@pytest.mark.req('VIEW-035')
+def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_back_when_it_closes(run, web, mapped, browser):
+    """Rich, 2026-10-01: the agents materialize on the most primary node and navigate the mesh to the node being
+    worked on; they go onto it and circle it until the ticket is closed, then navigate back; even if the agent
+    finished, they still touch the node and walk back."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    cook = store.element('exterior.cook').element_id
+    worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
+    store.take_work(worked.work_id, steps=2, by='codex')
+    quick = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='a second recipe')
+    store.take_work(quick.work_id, by='claude')
+    store.finish_work(quick.work_id, 'added')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2', timeout=15000)
+    page.evaluate('''() => { window.stages = {}; setInterval(() => { for (const figure of window.metaform.figures())
+        (window.stages[figure.work_id] ||= new Set()).add(figure.stage); }, 50); }''')
+    glyphs = page.evaluate('window.metaform.figures().map(figure => figure.glyph)')
+    assert len(set(glyphs)) == 2                                      # no two at work look alike
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{worked.work_id}" && one.stage === "circling")',
+                           timeout=20000)
+    page.wait_for_timeout(1000)                                      # out onto its orbit
+    figure = next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == worked.work_id)
+    node = page.evaluate(f'window.metaform.at3d("{alarm}")')
+    away = sum((figure[axis] - node[axis]) ** 2 for axis in 'xyz') ** 0.5
+    assert node['r'] < away < node['r'] + 12, (away, node)            # on the node and around it
+    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{quick.work_id}")', timeout=20000)
+    seen = page.evaluate(f'[...window.stages["{quick.work_id}"] || []]')
+    assert 'touching' in seen and 'circling' not in seen, seen        # finished: it touched the node and went back
+    run('map', 'work', 'op=done', f'id={worked.work_id}', 'resolution=quieter', cwd=mapped)
+    page.wait_for_function(f'() => (window.stages["{worked.work_id}"] || new Set()).has("returning")', timeout=10000)
+    page.wait_for_function('() => window.metaform.figures().length === 0', timeout=20000)
+    assert cook and problems == []
