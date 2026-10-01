@@ -4,7 +4,7 @@ Serves the Canonical Intake instructions by name and records the intake one obje
 
 ## Purpose
 
-The intake is agent work. The agent starts the intake with `intake start`, which hands it the Canonical Intake to follow, and records each element, join and subtype join in its own call as soon as it is reasoned, and anneals one join at a time with `intake absorb`. Once everything is recorded it reads the map back, whole or one receiver at a time, proofs and corrects it, then finishes it. Every object is named by the key its recording call returned, `element_id` or `join_id`, and an element's address is `namespace_address`, as in the Canonical Intake. Until the finish the intake layer is building: no context read sees it, and the web GUI draws it live. The module also reports whether the project has an intake, or one being recorded. It ships enabled.
+The intake is agent work. A subagent reads the instructions with `intake prompt`, starts the intake, and records each element, join and subtype join in its own call as soon as it is reasoned, and anneals one join at a time with `intake absorb`. Once everything is recorded it reads the map back, whole or one receiver at a time, proofs and corrects it, then finishes it. Every object is named by the key its recording call returned, `element_id` or `join_id`, and an element's address is `namespace_address`, as in the Canonical Intake. Until the finish the intake layer is building: no context read sees it, and the web GUI draws it live. The module also reports whether the project has an intake, or one being recorded. It ships enabled.
 
 ## Template version
 
@@ -12,7 +12,7 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `start`, `element`, `join`, `subtype`, `absorb`, `show`, `edit`, `remove`, `finish` and `status`, and a status hook.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares `prompt`, `start`, `element`, `join`, `subtype`, `absorb`, `show`, `edit`, `remove`, `finish` and `status`, and a status hook.
 
 ## Common base used
 
@@ -24,7 +24,8 @@ Started from template 0.2.0.
 
 ## Verbs
 
-- `start`: opens the building intake layer, with the model, role, blinded flag and result id the agent gives, or resumes the one being recorded. When the active metaform already has an intake, the new one is recorded in a new metaform `intake-<UTC timestamp>`, which becomes active at the finish. It says the layer, the project and the metaform, each as a line, with its notices, then returns the Canonical Intake exactly as stored with the project's target filled, and nothing after it, on a fresh start and on a resume. Over MCP the lines are one text block and the intake the next. The text is read before the layer is opened, so an unreadable `--intake-file` writes nothing. Tool `intake` with command `start`.
+- `prompt`: the stored intake text with the project's target filled, then the recording lines: always how to record with the intake tools and the rule to stop and submit a trouble report with `feedback` instead of retrying; the report request when `--report` is on; the feedback request when `--debug` is on. Takes `--report` and `--debug` for one call. Tool `intake_prompt`.
+- `start`: opens the building intake layer, with the model, role, blinded flag and result id the agent gives, or resumes the one being recorded. When the active metaform already has an intake, the new one is recorded in a new metaform `intake-<UTC timestamp>`, which becomes active at the finish. Tool `intake_start`.
 - `element <namespace_address>`: records one element, with optional `role`, `name_length`, `refs` and `extra`, and returns its `element_id`. An element is its address, name_length and role; its name is its address read through name_length. A `name` sent here is kept in the element's `extra` with a notice, since the project's name for a functionality goes on the join. Recording an address again describes it again: the fields given replace the ones it had. Tool `intake_element`.
 - `join <receiver> <provider>`: records one join, with optional `name`, the project's own name for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `type`, `refs` and `extra`. Returns its `join_id`. Tool `intake_join`.
 - `subtype <into> <namespace_address>`: records one subtype join inside the parent join `into`, holding the element at `namespace_address`, which it records, or describes again with the `role` and `name_length` given, as `element` does: the absorbed part stays one element record, MAP-030. Optional `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `name`, the subtype join's name, `refs`, the subtype join's, `purpose`, kept in its `extra`, and `extra`. Returns the subtype join's `join_id`, its `parent` and the `element_id` it holds. Tool `intake_subtype`.
@@ -40,7 +41,7 @@ Nothing is refused for its content. What does not fit is stored as given and nam
 
 ## Settings
 
-`--intake-file`, default empty, meaning the Canonical Intake in `resources/`, which `start` hands over. No setting adds anything to it.
+`--intake-file`, default empty, meaning the Canonical Intake in `resources/`. The prompt also reads the chassis settings `--report`, default on, and `--debug`, default off, CLI-034.
 
 ## Events
 
@@ -77,6 +78,7 @@ The same in both; the intake text travels inside the module.
 ## Demonstration
 
 ```
+metaform intake prompt
 metaform intake start model=opus role="intake agent" id=my-result
 metaform intake element stakeholder.cook.home role=VE name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2

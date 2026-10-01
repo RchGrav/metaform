@@ -58,7 +58,7 @@ def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
         return out
 
     start = [arg for arg in extra if arg.split('=', 1)[0] in ('model', 'role', 'blinded')]
-    run('intake', 'start', *start, *([f'id={document["id"]}'] if 'id' in document else []), cwd=cwd)
+    call('start', 'start', *start, *([f'id={document["id"]}'] if 'id' in document else []))
     elements = document['elements']
     for index, element in enumerate(elements):
         call(f'elements[{index}]', 'element', element.get('namespace_address', ''),
@@ -101,16 +101,6 @@ def footer(text):
     return text.split('</process>\n', 1)[1]
 
 
-def started(run, cwd, *args):
-    """What `intake start` prints: a line each for the layer, the project and the metaform, a line for each notice,
-    then the intake to follow, BASE-039."""
-    out = run('intake', 'start', *args, cwd=cwd).stdout
-    head, _, rest = out.partition('<')
-    lines = [line for line in head.splitlines() if line]
-    fields = dict(line.split(': ', 1) for line in lines if not line.startswith('Notice: '))
-    return fields, [line for line in lines if line.startswith('Notice: ')], '<' + rest
-
-
 @pytest.mark.req('BASE-039')
 def test_the_served_intake_is_the_stored_file_byte_for_byte():
     assert RESOURCE.read_bytes() == SPEC.read_bytes()
@@ -119,39 +109,14 @@ def test_the_served_intake_is_the_stored_file_byte_for_byte():
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MCP-009')
 @pytest.mark.req('MAP-043')
-def test_start_hands_the_agent_the_intake_with_only_its_target_filled(run, project):
-    """Rich, 2026-09-30: the instructions tell the agent to run intake start, so start is what hands it the procedure.
-    A fresh agent given nothing to follow spent its context finding it."""
-    fields, _, served = started(run, project)
-    assert fields['layer'].startswith('intake-') and (fields['project'], fields['metaform']) == ('timer', 'main')
+def test_prompt_serves_the_intake_with_only_its_target_filled(run, project):
+    out = run('intake', 'prompt', cwd=project).stdout
+    served, _, tail = out.partition('</process>\n')
     stored = SPEC.read_text(encoding='utf-8')
-    assert without_target(served) == without_target(stored)  # the intake is the instruction; nothing is added to it
+    assert without_target(served + '</process>\n') == without_target(stored)
+    assert tail == ''  # the intake is the instruction, and nothing is served beside it
     target = re.search(r'<target [^>]*>', served).group(0)
     assert 'type="path"' in target and f'value="{str(project).replace("&", "&amp;")}"' in target
-    same, notices, again = started(run, project)
-    assert same['layer'] == fields['layer'] and again == served  # a resume hands it over again
-    assert any('already being recorded' in notice for notice in notices)
-
-
-@pytest.mark.req('BASE-039')
-def test_there_is_no_second_command_that_serves_the_intake(run, project):
-    gone = run('intake', 'prompt', cwd=project, ok=False)
-    assert gone.returncode == 2 and 'intake has no verb prompt' in gone.stderr
-
-
-@pytest.mark.req('BASE-039')
-@pytest.mark.req('BASE-036')
-def test_over_mcp_start_says_its_lines_then_hands_over_the_intake_unmodified(home, project, monkeypatch):
-    """Over MCP the lines are one text block and the intake is the next, byte for byte, never inside JSON."""
-    import anyio
-
-    from metaform.modules.mcp import server
-    monkeypatch.setenv('METAFORM_HOME', str(home))
-    error, blocks = anyio.run(server.run_tool, project, 'intake_start', {'model': 'opus'})
-    assert not error and len(blocks) == 1
-    head, _, served = blocks[0].partition('<')
-    assert head.splitlines()[0].startswith('layer: intake-') and head.endswith('\n') and not head.endswith('\n\n')
-    assert without_target('<' + served) == without_target(SPEC.read_text(encoding='utf-8'))
 
 
 @pytest.mark.req('CLI-034')
@@ -160,11 +125,11 @@ def test_over_mcp_start_says_its_lines_then_hands_over_the_intake_unmodified(hom
 def test_no_setting_adds_an_instruction_to_the_intake(run, project):
     """Rich, 2026-09-29: no instructions are side loaded into a workflow. What is added beside the intake competes
     with it, and the agent cannot tell which of the two is the procedure."""
-    plain = started(run, project)[2]
+    plain = run('intake', 'prompt', cwd=project).stdout
     run('set', '--debug', '--no-report', cwd=project)
-    assert started(run, project)[2] == plain
+    assert run('intake', 'prompt', cwd=project).stdout == plain
     run('set', '--no-debug', '--report', cwd=project)
-    assert started(run, project)[2] == plain
+    assert run('intake', 'prompt', cwd=project).stdout == plain
     assert plain.endswith('</process>\n') and without_target(plain) == without_target(SPEC.read_text(encoding='utf-8'))
 
 
@@ -365,7 +330,7 @@ def test_an_odd_ref_sent_to_an_intake_tool_is_placed_by_the_stores_one_rule(run,
     """The store owns what happens to a ref that is not a key and a value, STORE-012, for every writer; an intake tool
     hands its refs on as given. A ref that is a record is split into an item of its own, as the store does with any
     list of records in an extra, STORE-004, which a second copy of the rule in the intake module never did."""
-    run('intake', 'start', cwd=project)
+    recorded(run, project, 'start')
     made = recorded(run, project, 'element', 'code.probe.echo', 'role=SE', 'name_length=1',
                     'refs=[["path", "src/echo.c"], {"path": "src/pins.h"}]')
     messages = [(notice['where'], notice['message']) for notice in made['notices']]
@@ -516,7 +481,7 @@ def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):
     store = Store('photos')
     assert store.element('media.photo.product').role == 'AUE' and store.element('media.photo.subject').role == 'DE'
     assert store.project().target_type == 'artifact'
-    served = started(run, photos)[2]
+    served = run('intake', 'prompt', cwd=photos).stdout
     assert re.search(r'<target [^>]*type="artifact"[^>]*value="kitchen_photos"', served)
 
 
@@ -525,7 +490,7 @@ def test_a_test_intake_file_is_served_only_when_the_setting_names_it(run, projec
     other = tmp_path / 'other.xml'
     other.write_text('<process><target type="x" value="y"/>{project_id}</process>\n', encoding='utf-8')
     run('set', '--intake-file', str(other), cwd=project)
-    out = started(run, project)[2]
+    out = run('intake', 'prompt', cwd=project).stdout
     assert out.startswith('<process><target type="path" value=') and 'timer</process>' in out
 
 
@@ -535,11 +500,11 @@ def test_the_intake_serves_the_shipped_file_and_keeps_nothing_in_the_prompt_stor
     """The Canonical Intake is the one prompt that is not edited: it is served as shipped, never kept as a stored
     prompt, and a stored prompt of the same name does not reach it, Rich 2026-09-26."""
     from metaform.data import prompts
-    first = started(run, project)[2]
+    first = run('intake', 'prompt', cwd=project).stdout
     assert without_target(first).startswith(without_target(RESOURCE.read_text(encoding='utf-8')))
     assert prompts.prompts() == ()
     prompts.add_prompt('canonical-intake', 'xml', '<!-- edited in the viewer -->\n<process/>\n')
-    assert started(run, project)[2] == first
+    assert run('intake', 'prompt', cwd=project).stdout == first
     result = submit(run, project, FIXTURE, tmp_path)
     store = Store('timer')
     layer = store.layer_ref(result['layer'])
@@ -555,7 +520,7 @@ def test_an_intake_file_is_served_as_it_is_and_links_no_version(run, home, proje
     own = tmp_path / 'own-intake.xml'
     own.write_text('<process><target/></process>\n', encoding='utf-8')
     run('set', f'--intake-file={own}', cwd=project)
-    assert started(run, project)[2].startswith('<process><target ')
+    assert run('intake', 'prompt', cwd=project).stdout.startswith('<process><target ')
     result = submit(run, project, FIXTURE, tmp_path)
     layer = Store('timer').layer_ref(result['layer'])
     assert prompts.use_of('timer', layer.metaform_id, layer.layer_id) is None
@@ -621,8 +586,9 @@ def test_recording_without_a_start_starts_the_intake_and_a_second_start_resumes_
     made = json.loads(run('intake', 'element', 'code.a', 'role=DE', '--json', cwd=project).stdout)
     assert any('started' in notice['message'] for notice in made['notices'])
     layer = json.loads(run('intake', 'show', '--json', cwd=project).stdout)['layer']
-    again, notices, _ = started(run, project)
-    assert again['layer'] == layer and any('already being recorded' in notice for notice in notices)
+    again = json.loads(run('intake', 'start', '--json', cwd=project).stdout)
+    assert again['layer'] == layer and any('already being recorded' in notice['message']
+                                           for notice in again['notices'])
     assert len(json.loads(run('intake', 'show', '--json', cwd=project).stdout)['elements']) == 1
 
 
@@ -670,15 +636,17 @@ def test_a_resumed_intake_keeps_the_provenance_the_agent_gives_that_its_layer_la
     """An orchestrator starts the intake with the model; the agent's own start resumes it and gives its role and its
     result's id. What the layer lacks is filled in; what it already holds is kept, and a different value is named."""
     from metaform.data import Store
-    first = started(run, project, 'model=opus')[0]
-    again = started(run, project, 'model=opus', 'role=intake agent', 'id=result-1', 'blinded=false')[0]
+    first = json.loads(run('intake', 'start', 'model=opus', '--json', cwd=project).stdout)
+    again = json.loads(run('intake', 'start', 'model=opus', 'role=intake agent', 'id=result-1', 'blinded=false',
+                           '--json', cwd=project).stdout)
     assert again['layer'] == first['layer']
     store = Store('timer')
     kept = store.provenance(first['layer'])
     assert (kept.model, kept.role, kept.blinded) == ('opus', 'intake agent', False)
     assert [layer.result_id for layer in store.layers(kind='intake', limit=0).results] == ['result-1']
-    third = started(run, project, 'model=sonnet')[1]
-    assert any(notice.startswith('Notice: model: ') and 'opus' in notice and 'sonnet' in notice for notice in third)
+    third = json.loads(run('intake', 'start', 'model=sonnet', '--json', cwd=project).stdout)
+    assert any(notice['where'] == 'model' and 'opus' in notice['message'] and 'sonnet' in notice['message']
+               for notice in third['notices'])
     assert store.provenance(first['layer']).model == 'opus'
 
 
@@ -689,7 +657,7 @@ def recorded(run, cwd, *args):
 def failsafe_intake(run, project):
     """A building intake where an operator receives from a gateway failsafe and from an echo probe the failsafe can
     absorb, and an alarm receives from the probe too."""
-    run('intake', 'start', cwd=project)
+    recorded(run, project, 'start')
     for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE'), ('code.probe.echo', 'SE'),
                           ('code.alarm', 'SE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
@@ -814,7 +782,7 @@ def test_edit_never_moves_an_element_and_moves_a_join_by_its_receiver(run, proje
 def test_a_subtype_join_takes_the_type_the_intake_writes_on_it(run, project):
     """The intake writes `type="purpose"` on the join it nests inside another, so the tool takes it there. It is where
     the join sits that makes it a subtype join, and the type is no fault to name or to set aside."""
-    run('intake', 'start', cwd=project)
+    recorded(run, project, 'start')
     for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
     parent = recorded(run, project, 'join', 'stakeholder.operator', 'code.failsafe.gateway', 'purpose=Stay connected.',
