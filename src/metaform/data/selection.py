@@ -106,7 +106,7 @@ class Resolver:
         self._at: dict[str, frozenset[str]] = {}
 
     def _selectable(self, layer: LayerRow) -> bool:
-        return layer.finished and layer.kind != 'correction' and layer.layer_id not in self.hidden
+        return layer.finished and layer.layer_id not in self.hidden
 
     def rows(self, address: str) -> list[tuple[str, str]]:
         """The select and mask rows at one address: one primary-key range read, cached."""
@@ -116,7 +116,7 @@ class Resolver:
         return self._rows[address]
 
     def at(self, address: str) -> frozenset[str]:
-        """The layer ids that reach this address, correction layers excluded."""
+        """The layer ids that reach this address."""
         if address in self._at:
             return self._at[address]
         chain = prefixes(address)
@@ -135,12 +135,10 @@ class Resolver:
         return result
 
     def reaches(self, layer_id: str, address: str | None) -> bool:
-        """Whether a layer's content shows at an address in context. Correction layers always do."""
+        """Whether a layer's content shows at an address in context."""
         layer = self.layers.get(layer_id)
         if layer is None:
             return False
-        if layer.kind == 'correction':
-            return layer.finished
         if address is None:
             return False
         return layer_id in self.at(address)

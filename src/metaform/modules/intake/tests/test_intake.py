@@ -157,7 +157,7 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert (report['project'], report['metaform'], report['elements'], report['joins'], report['subtypes'],
             report['work']) == ('timer', 'main', 4, 2, 1, 0)
     assert set(notices(report)) == NAMED
-    assert re.fullmatch(r'intake-\d{8}T\d{6}Z-[0-9a-f]{6}', report['layer'])
+    assert report['layer'] == 'intake'  # LAYER-025: no time or random part
     store = Store('timer')
     assert store.has_intake()
     kitchen = store.element('code.timer.kitchen')
@@ -209,11 +209,11 @@ def test_the_projects_name_for_a_functionality_is_recorded_on_its_join_and_an_el
     assert 'join' in named['message'] and 'extra' in named['message']
     run('intake', 'element', 'code.alarm.audible', 'role=SE', 'name_length=2', cwd=project)
     join = json.loads(run('intake', 'join', 'code.timer.kitchen', 'code.alarm.audible', 'name=end-of-countdown alarm',
-                          'purpose=Get attention.', 'ef=Rings.', 'perspective=Encounter', 'relation=The alarm rings.',
+                          'purpose=Get attention.', 'ef=Rings.', 'perspective=Encounter', 'ifd=receives', 'relation=The alarm rings.',
                           'verb=rings', 'observation=A piezo.', '--json', cwd=project).stdout)
     assert join['notices'] == []
     inner = json.loads(run('intake', 'subtype', join['join_id'], 'code.loop.tick', 'name=one-second tick',
-                           'name_length=2', 'role=SE', 'ef=Ticks.', 'perspective=Function', 'relation=The loop ticks.',
+                           'name_length=2', 'role=SE', 'ef=Ticks.', 'perspective=Function', 'ifd=receives', 'relation=The loop ticks.',
                            'verb=ticks', 'observation=One interrupt a second.', '--json', cwd=project).stdout)
     assert inner['notices'] == []
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
@@ -447,7 +447,7 @@ def test_two_elements_with_one_address_are_one_element_holding_both_joins(run, p
     doubled = copy.deepcopy(FIXTURE)
     doubled['elements'].append({'namespace_address': 'stakeholder.cook.home', 'role': 'CQU', 'joins': [
         {'provider': 'code.alarm.audible', 'purpose': 'Hear it from the next room.', 'ef': 'Rings loudly.',
-         'perspective': 'Encounter', 'relation': 'The alarm reaches the cook.', 'verb': 'reaches', 'observation': 'Loud.'}]})
+         'perspective': 'Encounter', 'ifd': 'receives', 'relation': 'The alarm reaches the cook.', 'verb': 'reaches', 'observation': 'Loud.'}]})
     report = submit(run, project, doubled, tmp_path)
     assert set(notices(report)) == NAMED
     joins = Store('timer').joins('stakeholder.cook.home').results
@@ -479,7 +479,7 @@ def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):
         {'namespace_address': 'media.photo.product', 'role': 'AUE', 'name': 'kitchen photos'},
         {'namespace_address': 'stakeholder.seller', 'role': 'CQU', 'joins': [
             {'provider': 'media.photo.subject', 'purpose': 'Show the object at its best.', 'ef': 'Frames it.',
-             'perspective': 'Encounter', 'relation': 'The subject carries the sale.', 'observation': 'One mixer, centred.'}]},
+             'perspective': 'Encounter', 'ifd': 'receives', 'relation': 'The subject carries the sale.', 'observation': 'One mixer, centred.'}]},
         {'namespace_address': 'media.photo.subject', 'role': 'DE'}]}
     submit(run, photos, document, tmp_path)
     store = Store('photos')
@@ -538,7 +538,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name=Home cook', cwd=project)
     made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen',
                           'purpose=Know when each dish is done.', 'ef=Counts down and rings.', 'perspective=Function',
-                          'relation=The kitchen timer tells the cook.', 'verb=tells',
+                          'ifd=receives', 'relation=The kitchen timer tells the cook.', 'verb=tells',
                           'observation=One countdown per dish.', '--json', cwd=project).stdout)
     assert made['join_id'] and [notice['where'] for notice in made['notices']] == ['provider']
     assert 'code.timer.kitchen was not an element' in made['notices'][0]['message']
@@ -560,7 +560,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('STORE-032')
 @pytest.mark.req('BASE-044')
-def test_edit_and_remove_change_a_building_intake_and_a_finished_one_changes_only_by_correction(run, project):
+def test_edit_and_remove_change_a_building_intake_and_a_finished_one_changes_only_by_refining(run, project):
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.a', 'role=DE', cwd=project)
     run('intake', 'element', 'code.b', 'role=SE', cwd=project)
@@ -575,9 +575,9 @@ def test_edit_and_remove_change_a_building_intake_and_a_finished_one_changes_onl
         (first['join_id'], 'The better purpose.')]
     run('intake', 'finish', cwd=project)
     late = json.loads(run('intake', 'edit', first['join_id'], 'purpose=Too late.', '--json', cwd=project).stdout)
-    assert 'correction layer' in late['notices'][0]['message']
+    assert 'op=refine' in late['notices'][0]['message'] and 'correction' not in late['notices'][0]['message']
     gone = json.loads(run('intake', 'remove', first['join_id'], '--json', cwd=project).stdout)
-    assert 'correction layer' in gone['notices'][0]['message']
+    assert 'op=refine' in gone['notices'][0]['message'] and 'correction' not in gone['notices'][0]['message']
     assert [(join.join_id, join.purpose) for join in Store('timer').joins('code.a').results] == [
         (first['join_id'], 'The better purpose.')]
 
@@ -774,7 +774,7 @@ def test_edit_never_moves_an_element_and_moves_a_join_by_its_receiver(run, proje
     assert recorded(run, project, 'show', 'receiver=code.alarm')['joins'] == []
     recorded(run, project, 'finish')
     late = recorded(run, project, 'absorb', probe['join_id'], parent['join_id'])
-    assert 'correction layer' in late['notices'][0]['message']
+    assert 'op=refine' in late['notices'][0]['message'] and 'correction' not in late['notices'][0]['message']
     assert [join.join_id for join in Store('timer').joins('stakeholder.operator').results] == sorted(
         [parent['join_id'], probe['join_id']])
 
@@ -845,3 +845,55 @@ def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_f
         assert nouns_of('edit')[field].help == nouns_of('join')[field].help
     source = (Path(__file__).parents[1] / '__init__.py').read_text(encoding='utf-8')
     assert 'schema//elements' not in source and 'SET perspective' not in source  # the Canonical Intake is not parsed for them
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MAP-046')
+def test_a_condition_given_with_an_element_a_join_or_a_subtype_join_is_an_open_work_record_at_it(run, project):
+    """Rich, 2026-10-01: the agent said it found missing and broken things, and nothing like that showed in the GUI.
+    The Canonical Intake's step 2 has the agent mark them; the intake tools take the mark and the finding."""
+    run('intake', 'start', cwd=project)
+    element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'condition=broken',
+                       'note=Non-debug modes are forced to debug.')
+    run('intake', 'element', 'code.timer', 'role=DE', cwd=project)
+    join = recorded(run, project, 'join', 'code.timer', 'code.auth', 'purpose=p', 'ef=f', 'perspective=Function',
+                    'ifd=receives', 'relation=r', 'verb=v', 'observation=o', 'condition=missing',
+                    'note=The demo does not declare its autoap dependency.')
+    subtype = recorded(run, project, 'subtype', join['join_id'], 'code.auth.tofu', 'purpose=q', 'ef=g',
+                       'perspective=Function', 'ifd=sends', 'relation=s', 'verb=w', 'observation=o', 'role=SE',
+                       'condition=exclude', 'note=Stale build context.')
+    plain = recorded(run, project, 'element', 'code.clock', 'role=SE')
+    for made in (element, join, subtype, plain):
+        assert made['notices'] == []
+    recorded(run, project, 'finish')
+    work = {(row.kind, row.id): (row.condition, row.note, row.done)
+            for row in Store('timer').work(open=True, limit=0).results}
+    assert work == {
+        ('element', element['element_id']): ('broken', 'Non-debug modes are forced to debug.', None),
+        ('join', join['join_id']): ('missing', 'The demo does not declare its autoap dependency.', None),
+        ('join', subtype['join_id']): ('exclude', 'Stale build context.', None)}
+    assert Store('timer').element('code.auth').open_work == ('broken',)  # what the page draws the node from
+    assert 'condition' not in (Store('timer').element('code.auth').extra or {})  # apart from the map, MAP-046
+    assert Store('timer').element('code.clock').open_work == ()
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('BASE-039')
+def test_every_join_and_subtype_join_is_asked_its_information_flow_direction(run, project):
+    """IFD, Information Flow Direction, Rich 2026-10-01: the primary flow of information. sends: OP to EF. receives:
+    EF to OP. both: equal need. It is a field of the join and the subtype join beside perspective, defined once in
+    prompts.xml, a closed choice of three, kept with the join, and named in a notice when it is missing."""
+    for noun in (nouns_of('join')['ifd'], nouns_of('subtype')['ifd'], nouns_of('edit')['ifd']):
+        assert noun.schema['enum'] == ['sends', 'receives', 'both']
+        assert noun.help.startswith('IFD, Information Flow Direction')
+    run('intake', 'start', cwd=project)
+    run('intake', 'element', 'code.store.state', 'role=SE', cwd=project)
+    read = recorded(run, project, 'join', 'code.selector.route', 'code.store.state', 'purpose=p', 'ef=f',
+                    'perspective=Function', 'ifd=receives', 'relation=r', 'verb=v', 'observation=o')
+    write = recorded(run, project, 'join', 'code.protocol.sync', 'code.store.state', 'purpose=q', 'ef=g',
+                     'perspective=Function', 'relation=s', 'verb=w', 'observation=o')
+    assert 'ifd' in [notice['where'] for notice in write['notices']]
+    assert 'ifd' not in [notice['where'] for notice in read['notices']]
+    store = Store('timer')
+    held = {join.join_id: join for join in store.joins('code.selector.route', raw=True).results}
+    assert held[read['join_id']].extra == {'ifd': 'receives'}

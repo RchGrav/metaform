@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from storekit import PROVENANCE, correction, diff, dump, knowledge, memory, small_map, store_file
+from storekit import PROVENANCE, diff, dump, knowledge, memory, small_map, store_file
 
 from metaform.data import Node, StoreError
 
@@ -50,22 +50,8 @@ def build(store) -> World:
     return World(outer, inner, item, prop, finished_item, memo, challenge, k_join, work)
 
 
-def fix_with_change(store, world):
-    fix = correction(store, 'fix')
-    store.correct(fix.name, world.inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
-    return fix
-
-
-def added_by_finished_fix(store, world):
-    fix = correction(store, 'fix')
-    world.fixed = store.add_element(fix.name, 'code.fixed')
-    store.finish(fix.name)
-
-
-def finished_fix(store, world):
-    fix = fix_with_change(store, world)
-    store.finish(fix.name)
-    return fix
+def refined(store, world):
+    return store.refine(world.inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
 
 
 CASES: dict[str, tuple[Callable, Callable, dict]] = {
@@ -77,8 +63,6 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
                         lambda s, w, c: s.layer('new', 'test', 'New.', mutable=True, hideable=True, provenance=PROVENANCE, tags=('x',)),
                         {'layers': (1, 0), 'provenance': (1, 0), 'layer_tags': (1, 0)}),
     'finish': (lambda s, w: None, lambda s, w, c: s.finish('k'), {'layers': (1, 1)}),
-    'finish correction': (fix_with_change, lambda s, w, c: s.finish('fix'),
-                          {'layers': (1, 1), 'correction_stack': (1, 0), 'current_joins': (1, 1)}),
     'edit': (lambda s, w: None, lambda s, w, c: s.edit(w.item.item_id, {'value': 'changed'}), {'items': (1, 1)}),
     'remove': (lambda s, w: None, lambda s, w, c: s.remove(w.item.item_id),
                {'items': (0, 1), 'current_items': (0, 1)}),
@@ -136,14 +120,23 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     'update_item': (lambda s, w: None, lambda s, w, c: s.update_item(w.memo.item_id, 'changed'), {'items': (1, 1)}),
     'delete_item': (lambda s, w: None, lambda s, w, c: s.delete_item(w.memo.item_id),
                     {'items': (0, 1), 'current_items': (0, 1)}),
-    'correct': (lambda s, w: correction(s, 'fix'),
-                lambda s, w, c: s.correct('fix', w.inner.join_id, {'ef': 'x'}, reason='r'),
-                {'joins': (1, 0)}),
-    'peel': (finished_fix, lambda s, w, c: s.peel('fix'),
-             {'layers': (1, 1), 'correction_stack': (0, 1), 'current_joins': (1, 1)}),
+    # A refinement is one more version of the thing in the metaform's own layer, made current at once; no layer is
+    # written, LAYER-025.
+    'refine': (lambda s, w: None,
+               lambda s, w, c: s.refine(w.inner.join_id, {'ef': 'x'}, reason='r'),
+               {'joins': (1, 0), 'current_joins': (1, 1)}),
+    'refine a removal': (lambda s, w: None,
+                         lambda s, w, c: s.refine(w.outer.join_id, remove=True, reason='r'),
+                         {'joins': (1, 0), 'refs': (1, 0), 'current_joins': (0, 1)}),
+    'add_element into the finished intake': (lambda s, w: None, lambda s, w, c: s.add_element('intake-1', 'code.x'),
+                                             {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0),
+                                              'current_elements': (1, 0), 'address_elements': (1, 0),
+                                              'types': (1, 0)}),
+    'add_ref on the metaform': (lambda s, w: None, lambda s, w, c: s.add_ref(w.outer.join_id, 'path', 'x'),
+                                {'refs': (1, 0)}),
     'reexamined': (lambda s, w: (s.layer('built', 'test', 'Built.', mutable=True, hideable=True,
                                          provenance=PROVENANCE, sources=('intake-1',)),
-                                 s.finish('built'), finished_fix(s, w)),
+                                 s.finish('built'), refined(s, w)),
                    lambda s, w, c: s.reexamined('built'), {'reexamine': (0, 1)}),
     'select': (lambda s, w: None, lambda s, w, c: s.select('code.timer', 'done'), {'selections': (1, 0)}),
     'mask': (lambda s, w: None, lambda s, w, c: s.mask('code.timer', 'done'), {'selections': (1, 0)}),
@@ -260,8 +253,6 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
         True, lambda s, w, got, before: got.name == 'k-2'),
     'finish twice': (lambda s, w: None, lambda s, w: s.finish('done'), False, _unchanged),
     'edit intake': (lambda s, w: None, lambda s, w: s.edit(w.outer.join_id, {'purpose': 'x'}), False, _unchanged),
-    'edit finished correction': (added_by_finished_fix,
-                                 lambda s, w: s.edit(w.fixed.element_id, {'extra': {'a': 1}}), False, _unchanged),
     'edit memory': (lambda s, w: None, lambda s, w: s.edit(w.memo.item_id, {'value': 'x'}), False, _unchanged),
     'edit key not allowed': (lambda s, w: None,
                              lambda s, w: s.edit(w.k_join.join_id, {'colour': 'blue', 'purpose': 'new'}), True,
@@ -288,17 +279,10 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                           lambda s, w, got, before: s.element('code.k.a', raw=True) is None and
                           s.joins('code.k.b', 'provider', raw=True).results[0].orphaned),
     'discard intake': (lambda s, w: None, lambda s, w: s.discard('intake-1'), False, _unchanged),
-    'discard stacked correction': (finished_fix, lambda s, w: s.discard('fix'), False, _unchanged),
     'discard memory': (lambda s, w: None, lambda s, w: s.discard('memory'), False, _unchanged),
-    'add_element intake after its write': (lambda s, w: None, lambda s, w: s.add_element('intake-1', 'code.x'),
-                                           False, _unchanged),
-    'add_element finished correction': (finished_fix, lambda s, w: s.add_element('fix', 'code.x'), False,
-                                        _unchanged),
     'add_element role in a knowledge layer': (lambda s, w: None,
                                               lambda s, w: s.add_element('k', 'code.k.y', role='BOGUS'), True,
                                               lambda s, w, got, before: got.role is None),
-    'add_ref intake owner': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.join_id, 'path', 'x'), False,
-                             _unchanged),
     'add_item unknown target': (lambda s, w: None,
                                 lambda s, w: s.add_item('k', Node('element', 'code.nothing'), 'v'), True,
                                 _raw_element('code.nothing')),
@@ -356,25 +340,16 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'update_item not memory': (lambda s, w: None, lambda s, w: s.update_item(w.item.item_id, 'x'), False,
                                _unchanged),
     'delete_item not memory': (lambda s, w: None, lambda s, w: s.delete_item(w.item.item_id), False, _unchanged),
-    'correct in a knowledge layer': (lambda s, w: None,
-                                     lambda s, w: s.correct('k', w.inner.join_id, {'ef': 'x'}, reason='r'),
-                                     False, _unchanged),
-    'correct key not allowed': (lambda s, w: correction(s, 'fix'),
-                                lambda s, w: s.correct('fix', w.inner.join_id, {'colour': 'x', 'ef': 'y'},
-                                                       reason='r'), True,
-                                lambda s, w, got, before: got.fields['ef'] == 'y'),
-    'correct an element address': (lambda s, w: correction(s, 'fix'),
-                                   lambda s, w: s.correct('fix', s.element('code.timer.kitchen').element_id,
-                                                          {'address': 'code.timer.egg'}, reason='r'),
-                                   False, _unchanged),
-    'peel a knowledge layer': (lambda s, w: None, lambda s, w: s.peel('done'), False, _unchanged),
-    'peel below the top': (lambda s, w: (finished_fix(s, w), correction(s, 'fix2'),
-                                         s.correct('fix2', w.inner.join_id, {'ef': 'z'}, reason='r'),
-                                         s.finish('fix2')),
-                           lambda s, w: s.peel('fix'), False, _unchanged),
-    'select a correction layer': (finished_fix, lambda s, w: s.select('code.timer', 'fix'), False, _unchanged),
-    'mask a correction layer': (finished_fix, lambda s, w: s.mask('code.timer', 'fix'), False, _unchanged),
-    'hide a correction layer': (finished_fix, lambda s, w: s.hide('fix'), False, _unchanged),
+    'refine a knowledge layer\'s join': (lambda s, w: None,
+                                         lambda s, w: s.refine(w.k_join.join_id, {'ef': 'x'}, reason='r'),
+                                         False, _unchanged),
+    'refine key not allowed': (lambda s, w: None,
+                               lambda s, w: s.refine(w.inner.join_id, {'colour': 'x', 'ef': 'y'}, reason='r'), True,
+                               lambda s, w, got, before: got.fields['ef'] == 'y'),
+    'refine an element address': (lambda s, w: None,
+                                  lambda s, w: s.refine(s.element('code.timer.kitchen').element_id,
+                                                        {'address': 'code.timer.egg'}, reason='r'),
+                                  False, _unchanged),
     'hide a layer that is not hideable': (lambda s, w: None, lambda s, w: s.hide('intake-1'), False, _unchanged),
     'select at an address out of form': (lambda s, w: None, lambda s, w: s.select('Code..Timer', 'done'), True,
                                          lambda s, w, got, before: True),
@@ -426,9 +401,9 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                           lambda s, w: s.edit(w.k_join.join_id, {'refs': [('path', 'a.c'), ('line', 12)]}), True,
                           lambda s, w, got, before: _odd_refs(
                               s.joins('code.k.a', raw=True).results[0], [['line', 12]], ('path', 'a.c'))),
-    'correct ref not text': (lambda s, w: correction(s, 'fix'),
-                             lambda s, w: s.correct('fix', w.inner.join_id, {'refs': [('path', 'a.c'), ('line', 12)]},
-                                                    reason='r'), True,
+    'refine ref not text': (lambda s, w: None,
+                            lambda s, w: s.refine(w.inner.join_id, {'refs': [('path', 'a.c'), ('line', 12)]},
+                                                  reason='r'), True,
                              lambda s, w, got, before: [(ref.key, ref.value) for ref in got.refs] == [('path', 'a.c')]
                              and got.fields['extra'] == {'refs': [['line', 12]]}),
 }

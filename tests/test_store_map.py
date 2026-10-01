@@ -5,7 +5,7 @@ import re
 import sqlite3
 
 import pytest
-from storekit import correction, diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
 
 from metaform.data import Node, StoreError
 
@@ -121,13 +121,9 @@ def test_an_imported_elements_identity_comes_back_when_it_is_removed_and_recorde
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
     import_document(document)
     moved = Store('proj')
-    drop = correction(moved, 'drop')
-    moved.correct(drop.name, alarm, remove=True, reason='gone')
-    moved.finish(drop.name)
+    moved.refine(alarm, remove=True, reason='gone')
     assert moved.element('code.alarm.audible') is None
-    back = correction(moved, 'back')
-    put = moved.add_element(back.name, 'code.alarm.audible', role='SE')
-    moved.finish(back.name)
+    put = moved.add_element('intake-1', 'code.alarm.audible', role='SE')
     assert put.element_id == alarm and moved.element('code.alarm.audible').element_id == alarm
     assert values(moved.node(Node('element', 'code.alarm.audible')), 'memory') == ['alarm memory']
     assert [held.join_id for held in moved.joins('code.timer.kitchen').results] == [
@@ -316,13 +312,13 @@ def test_an_element_held_by_a_subtype_join_held_again_is_stored_with_a_notice_na
 
 
 @pytest.mark.req('STORE-012')
-def test_add_ref_on_the_intake_layer_writes_nothing_and_names_a_correction(home, store):
+@pytest.mark.req('LAYER-025')
+def test_add_ref_on_the_finished_intake_adds_the_ref_to_the_current_version(store):
     _, outer, _ = small_map(store)
-    before = dump(store_file(home, store))
-    untouched = store.add_ref(outer.join_id, 'path', 'more.c')
-    assert [notice.where for notice in untouched.notices] == ['owner']
-    assert 'op=correct' in untouched.notices[0].message
-    assert dump(store_file(home, store)) == before
+    added = store.add_ref(outer.join_id, 'path', 'more.c')
+    assert (added.key, added.value) == ('path', 'more.c')
+    assert [(ref.key, ref.value) for ref in store.joins('stakeholder.cook.home').results[0].refs] == [
+        ('path', 'src'), ('path', 'more.c')]
 
 
 @pytest.mark.req('MAP-021')
@@ -508,4 +504,5 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '7' and kinds == {'purpose', 'subtype'}  # layout 7: ef and perspective, MAP-020
+    assert version == '8' and kinds == {'purpose', 'subtype'}  # layout 8: every version kept in its layer, LAYER-025
+    assert 'correction_stack' not in tables

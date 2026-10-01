@@ -74,7 +74,7 @@ An explicit context read is evidence that material was supplied, not by itself p
 
 **Benefit.** A reader could understand a refactor whose physical diff is large but whose functional identity remains, or a small code change whose effect alters an important receiving relationship. This would make recomposition visible at the level the Inference Metaform describes.
 
-**Connection to existing mechanisms.** The [exact identity account](REFERENCE.md#identity) supplies the semantic distinction; [corrections](IMPLEMENTATION_MAP.md#corrections) and [artifact origin/variant history](IMPLEMENTATION_MAP.md#supporting) retain different change records. A comparison would need to connect those records explicitly. The existing `Store.identity` operation retrieves provider-side joins; it does not decide semantic equality for the proposed view.
+**Connection to existing mechanisms.** The [exact identity account](REFERENCE.md#identity) supplies the semantic distinction; [refinements](IMPLEMENTATION_MAP.md#corrections) and [artifact origin/variant history](IMPLEMENTATION_MAP.md#supporting) retain different change records. A comparison would need to connect those records explicitly. The existing `Store.identity` operation retrieves provider-side joins; it does not decide semantic equality for the proposed view.
 
 **Concrete illustration.** Loader implementation is moved between files. The comparison still shows the module author receiving the ability to add a capability once and the MCP server receiving declared tool operations. A second change alters which operations modules can expose; its consequences are shown at those receiving relationships rather than hidden among file moves.
 

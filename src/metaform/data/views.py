@@ -13,8 +13,7 @@ import json
 import sqlite3
 from typing import Any, cast
 
-from . import corrections, prompts
-from .corrections import METAFORM_KINDS
+from . import prompts, versions
 from .ids import decode_extra
 from .names import reading, short_name
 from .records import (
@@ -48,6 +47,7 @@ from .rows import (
 )
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
+from .versions import METAFORM_KINDS
 
 Row = sqlite3.Row
 
@@ -188,7 +188,6 @@ def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hid
           with_provenance: bool = False) -> Layer:
     db = tx.db
     layer_id = found.layer_id
-    position = db.execute('SELECT position FROM correction_stack WHERE layer_id=?', (layer_id,)).fetchone()
     return Layer(
         layer_id, found.metaform_id, found.name, found.module, found.variable, found.kind, found.mutable,
         found.hideable, found.result_id, found.created, found.ready,
@@ -201,12 +200,11 @@ def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hid
         layer_id in (hidden if hidden is not None else hidden_closure(db)),
         (layer_id in toggled) if toggled is not None else False,
         db.execute('SELECT 1 FROM reexamine WHERE layer_id=? LIMIT 1', (layer_id,)).fetchone() is not None,
-        int(position[0]) if position else None,
         provenance(tx, layer_id) if with_provenance else None)
 
 
-def version(tx: Tx, kind: str, row: Row, positions: dict[str, int]) -> Version:
-    spec = corrections.KINDS[kind]
+def version(tx: Tx, kind: str, row: Row) -> Version:
+    spec = versions.KINDS[kind]
     fields: dict[str, Any] = {key: row[key] for key in row.keys()
                               if key not in ('row', spec.id_column, 'layer_id', 'op', 'reason', 'evidence')}
     if 'extra' in fields:
@@ -214,7 +212,7 @@ def version(tx: Tx, kind: str, row: Row, positions: dict[str, int]) -> Version:
     if 'value' in fields and fields['value'] is not None:
         fields['value'] = json.loads(str(fields['value']))
     return Version(str(row[spec.id_column]), kind, str(row['layer_id']), layer_name(tx, str(row['layer_id'])),
-                   positions.get(str(row['layer_id'])), cast(Op, row['op']), row['reason'], row['evidence'], fields,
+                   cast(Op, row['op']), row['reason'], row['evidence'], fields,
                    read_refs(tx.db, kind, row['row']))
 
 

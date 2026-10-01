@@ -7,7 +7,7 @@
 
 This record describes the local command exercise used to check instructions in the guides. It is separate from the author's original model work and from the supplied September 26 project intake.
 
-It records the source of that day. Since then the intake is recorded one object per call and `intake submit` is gone, and the store is at schema version 5, which does not import the version 1 export this exercise imported. The guides now use the kitchen timer's map recorded by hand in [Getting started](../guides/getting-started.md#record-a-small-map-by-hand).
+It records the source of that day. Since then the intake is recorded one object per call and `intake submit` is gone, correction layers, the correction stack and `map stack` are gone, the metaform changes by refining in the one `intake` layer, and the store is at schema version 8, which does not import the version 1 export this exercise imported. The guides now use the kitchen timer's map recorded by hand in [Getting started](../guides/getting-started.md#record-a-small-map-by-hand).
 
 ## Environment and inputs
 
@@ -32,7 +32,7 @@ There were **48 CLI invocations**. All returned process exit status zero. Result
 | 28-30 | Export, reimport into the same project, and inspect configuration | Reimport skipped existing record identities rather than duplicating them. Configuration remained in the isolated home. |
 | 31-33 | Enable the documented `nodeview` module and read an element and a join | The example loaded and returned the requested graph nodes through the supplied shared context/store. |
 | 34-35 | Create a memory relation and search memory | The memory relation was retained independently of the functional purpose joins; the search returned matching memory content. |
-| 36-41 | Create and finish a correction layer, examine history and stack, then peel it | The correction recorded a deliberately local exercise observation, appeared in correction history, and could be peeled. The supplied source assertion was not edited. |
+| 36-41 | Create and finish a correction layer, examine history and stack, then peel it (as of that day; these operations no longer exist) | The correction recorded a deliberately local exercise observation, appeared in correction history, and could be peeled. The supplied source assertion was not edited. |
 | 42-44 | Register `timer-fixture`, submit the wrapper object, then submit its extracted element array | The wrapper produced an unreadable-array notice and no stored layer. The array produced three elements, two joins, one internal subtype, and five refs, with no notices. |
 | 45-48 | Submit the same element array again, list Metaforms, activate `main`, and read roots | Repeated intake created and activated a new Metaform while retaining the first one. Reactivating `main` made the original timer map readable. |
 

@@ -253,7 +253,7 @@ def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home,
     kitchen = store.element('code.timer.kitchen')
     before = dump(store_file(home, store))
     untouched = store.edit(kitchen.element_id, {'role': 'SE'})
-    assert 'op=correct' in untouched.notices[0].message
+    assert 'op=refine' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
 
@@ -319,12 +319,9 @@ def test_a_property_stays_with_its_element_which_never_moves_and_an_item_never_t
     applying = [item.value for item in store.context('code.engine.game').applying]
     assert applying == ['profile before optimizing']
     assert values(store.node(Node('element', 'code.engine.game')), 'practices') == []
-    fix = store.layer('move', 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
-                      provenance=PROVENANCE)
-    tried = store.correct(fix.name, store.element('code.engine').element_id, {'address': 'code.runtime'},
-                          reason='It is the runtime.')
+    tried = store.refine(store.element('code.engine').element_id, {'address': 'code.runtime'},
+                         reason='It is the runtime.')
     assert [notice.where for notice in tried.notices] == ['address']
-    store.finish(fix.name)
     assert [item.value for item in store.context('code.engine.game').applying] == ['profile before optimizing']
     assert store.context('code.runtime.game').applying == ()
 

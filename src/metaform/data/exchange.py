@@ -20,7 +20,7 @@ from typing import Any
 from .. import home
 from ..errors import StoreError
 from ..sqlite import SCHEMA_VERSION
-from . import corrections
+from . import versions
 from .ids import as_list, as_object, prefixes
 from .schema import STORE_SCHEMA
 from .session import open_store
@@ -28,7 +28,7 @@ from .session import open_store
 FORMAT = 1
 THINGS = ('elements', 'joins', 'items', 'properties')  # a subtype join is a row of joins, STORE-011
 KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'items': 'item', 'properties': 'property'}
-ID_OF_TABLE = {table: corrections.KINDS[kind].id_column for table, kind in KIND_OF_TABLE.items()}
+ID_OF_TABLE = {table: versions.KINDS[kind].id_column for table, kind in KIND_OF_TABLE.items()}
 
 
 def _rows(db: sqlite3.Connection, sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
@@ -69,7 +69,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'correction_stack', 'requires'):
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
@@ -96,21 +96,28 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                  if row['layer_id'] in chosen and row['source_layer_id'] in chosen]
     document['hidden'] = [row[0] for row in db.execute('SELECT layer_id FROM hidden_layers ORDER BY rowid')
                           if row[0] in chosen]
-    owner_ids: dict[tuple[str, int], tuple[str, str]] = {}
+    # A ref names its owner by the thing, its layer and which of the thing's versions in that layer it is, since the
+    # metaform keeps every version of a thing in its own layer, LAYER-025.
+    owner_ids: dict[tuple[str, int], tuple[str, str, int]] = {}
     for table in THINGS:
         rows: list[dict[str, Any]] = []
         for layer_id in [layer['layer_id'] for layer in document['layers']]:
             rows += _rows(db, f'SELECT * FROM {table} WHERE layer_id=?', (layer_id,))
         rows.sort(key=lambda row: row['row'])
+        seen: dict[tuple[str, str], int] = {}
         for row in rows:
-            owner_ids[(KIND_OF_TABLE[table], row['row'])] = (row[ID_OF_TABLE[table]], row['layer_id'])
+            version = seen.get((row[ID_OF_TABLE[table]], row['layer_id']), 0)
+            seen[(row[ID_OF_TABLE[table]], row['layer_id'])] = version + 1
+            owner_ids[(KIND_OF_TABLE[table], row['row'])] = (row[ID_OF_TABLE[table]], row['layer_id'], version)
         document[table] = _without_row(rows)
     refs: list[tuple[int, dict[str, Any]]] = []
-    for (owner, owner_row), (owner_id, owner_layer) in sorted(owner_ids.items(), key=lambda pair: pair[0][1]):
+    for (owner, owner_row), (owner_id, owner_layer, version) in sorted(owner_ids.items(),
+                                                                      key=lambda pair: pair[0][1]):
         for ref in _rows(db, 'SELECT ref_id, position, key, value FROM refs WHERE owner=? AND owner_row=? '
                              'ORDER BY position', (owner, owner_row)):
             refs.append((ref['ref_id'], {'owner': owner, 'owner_id': owner_id, 'owner_layer_id': owner_layer,
-                                         'position': ref['position'], 'key': ref['key'], 'value': ref['value']}))
+                                         'owner_version': version, 'position': ref['position'], 'key': ref['key'],
+                                         'value': ref['value']}))
     refs.sort(key=lambda pair: pair[0])
     document['refs'] = [ref for _, ref in refs]
     item_ids = {row['item_id'] for row in document['items']}
@@ -118,8 +125,6 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                     if row['item_id'] in item_ids]
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
     document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
-    document['correction_stack'] = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack '
-                                                                 'ORDER BY position') if row[0] in chosen]
     addresses = {row['address'] for table in ('elements', 'selections') for row in document[table]}
     needed = {prefix for address in addresses for prefix in prefixes(address)}
     document['types'] = [row for row in _rows(db, 'SELECT address, parent FROM types ORDER BY rowid')
@@ -158,7 +163,7 @@ ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 
               *THINGS, 'challenge_states', 'plans', 'work')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
-REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'position', 'key', 'value')
+REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
 
 
 @cache
@@ -240,8 +245,7 @@ def _validate(document: Any) -> None:
                 problems.append(f'{where}.refs: not a list')
             for place, ref in enumerate(refs or []):
                 _record(ref, f'{where}.refs[{place}]', REF_KEYS, problems)
-            for key in ('hidden', 'correction_stack'):
-                _strings(metaform.get(key, []), f'{where}.{key}', problems)
+            _strings(metaform.get('hidden', []), f'{where}.hidden', problems)
             requires = as_list(metaform.get('requires', []))
             if requires is None:
                 problems.append(f'{where}.requires: not a list')
@@ -434,8 +438,9 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         if row['layer_id'] in fresh and db.execute('SELECT 1 FROM layers WHERE layer_id=?',
                                                    (row['source_layer_id'],)).fetchone():
             _insert(db, 'layer_sources', row)
-    rows_of: dict[tuple[str, str, str], int] = {}
-    touched: dict[str, list[str]] = {kind: [] for kind in corrections.ORDER}
+    rows_of: dict[tuple[str, str, str, int], int] = {}
+    versions_of: dict[tuple[str, str, str], int] = {}
+    touched: dict[str, list[str]] = {kind: [] for kind in versions.ORDER}
     new_ids: set[tuple[str, str]] = set()
     for table in THINGS:  # every identity first, so a subtype join written before its parent finds it, STORE-011
         kind = KIND_OF_TABLE[table]
@@ -457,14 +462,16 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
                 report['things_skipped'] += 1
             cursor = _insert(db, table, row)
             if kind == 'element' and row['op'] != 'remove':
-                corrections.hold_address(db, row['address'], row[column])
-            rows_of[(kind, row[column], row['layer_id'])] = int(cursor.lastrowid or 0)
+                versions.hold_address(db, row['address'], row[column])
+            version = versions_of.get((kind, row[column], row['layer_id']), 0)
+            versions_of[(kind, row[column], row['layer_id'])] = version + 1
+            rows_of[(kind, row[column], row['layer_id'], version)] = int(cursor.lastrowid or 0)
             if row[column] not in touched[kind]:
                 touched[kind].append(row[column])
     for ref in metaform.get('refs', []):
         if ref['owner_layer_id'] not in fresh:
             continue
-        owner_row = rows_of.get((ref['owner'], ref['owner_id'], ref['owner_layer_id']))
+        owner_row = rows_of.get((ref['owner'], ref['owner_id'], ref['owner_layer_id'], int(ref['owner_version'])))
         if owner_row is None:
             raise StoreError(f'A ref names {ref["owner"]} {ref["owner_id"]}, which the document does not hold.',
                              'metaform export > <file>')
@@ -484,14 +491,8 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             _insert(db, 'plans', row, ignore=True)
     for row in metaform.get('work', []):  # a work record has no layer; it follows its object, STORE-042
         _insert(db, 'work', row, ignore=True)
-    for layer_id in metaform.get('correction_stack', []):
-        if layer_id in fresh:
-            db.execute('INSERT INTO correction_stack(position, layer_id) VALUES (?, ?)',
-                       (corrections.top_position(db) + 1, layer_id))
-    kinds = corrections.layer_kinds(db)
-    positions = corrections.stack_positions(db)
-    for kind in corrections.ORDER:
-        corrections.recompute(db, kind, touched[kind], kinds, positions)
+    for kind in versions.ORDER:
+        versions.recompute(db, kind, touched[kind])
 
 
 def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
@@ -499,7 +500,7 @@ def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
     if kind == 'property':
         return db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (row['property_id'],)).fetchone() \
             is None
-    ident = row[corrections.KINDS[kind].id_column]
+    ident = row[versions.KINDS[kind].id_column]
     if db.execute('SELECT 1 FROM identities WHERE id=?', (ident,)).fetchone():
         return False
     db.execute('INSERT INTO identities(id, kind) VALUES (?, ?)', (ident, kind))

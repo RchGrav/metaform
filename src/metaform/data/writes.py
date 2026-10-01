@@ -3,9 +3,10 @@
 Every function works inside one open write transaction and never refuses a
 write for its content, BASE-044 and STORE-026: what does not fit is stored as
 given, and the result carries a notice for it. A write aimed at something that
-cannot change in place, a finished intake, a finished correction layer
-or memory through the knowledge tool, writes nothing and returns a notice
-naming the operation that does it. Only a reference that cannot be read at all,
+cannot change in place, what a finished intake holds or memory through the
+knowledge tool, writes nothing and returns a notice naming the operation that
+does it. The finished intake still takes additions: the metaform grows in its
+own layer, LAYER-025. Only a reference that cannot be read at all,
 such as an id that names nothing, raises `StoreError`.
 """
 from __future__ import annotations
@@ -18,10 +19,8 @@ from typing import Any, TypeVar, cast
 from .. import home
 from ..errors import StoreError
 from ..wording import count
-from . import corrections, rows, views
-from .corrections import METAFORM_KINDS
+from . import rows, versions, views
 from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
-from .names import reading, short_name
 from .records import (
     CONDITIONS,
     MESSAGES,
@@ -44,6 +43,7 @@ from .records import (
 from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
+from .versions import METAFORM_KINDS
 
 RecordT = TypeVar('RecordT', Element, Join, Subtype, Item, Property, Version)
 
@@ -65,8 +65,8 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
     """An element's name_length and role as its row holds them, and what does not fit, kept for its extra, STORE-009.
 
     A name_length that is not a whole number is kept in the extra; a whole number below 1 is stored as given. A role
-    is the intake's classification of the artifact, D48: given in a layer other than the intake or a correction
-    layer, it is kept in the extra; a role outside the five is stored as given. Each is named in a notice, BASE-044.
+    is the intake's classification of the artifact, D48: given in a layer other than the intake, it is kept in the
+    extra; a role outside the five is stored as given. Each is named in a notice, BASE-044.
     """
     kept: dict[str, Any] = {}
     length: int | None = None
@@ -100,9 +100,6 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
-    stop = rows.frozen(tx, found)
-    if stop is not None:
-        return Outcome((stop,))
     notices: list[Notice] = []
     kept_extra, split = rows.extra_fields(extra, address, notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, address, notices)
@@ -129,10 +126,6 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
         kept_extra = {**(kept_extra or {}), **aside}
     element_id = rows.new_element(tx, found, address, kept_extra, name_length=length, role=stored_role, refs=pairs)
     rows.split_items(tx, found, 'element', element_id, split)
-    if found.kind == 'correction':
-        return Element(element_id, address, found.layer_id, found.name, reading(address), short_name(address, length),
-                       length, stored_role, tuple(Ref(key, value) for key, value in pairs), kept_extra,
-                       notices=tuple(notices))
     record = views.element(tx, element_id, None)
     assert record is not None
     return _with(record, notices)
@@ -151,9 +144,6 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     for the functionality it names, MAP-020."""
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
-    stop = rows.frozen(tx, found)
-    if stop is not None:
-        return Outcome((stop,))
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('name', name), ('purpose', purpose), ('ef', ef), ('relation', relation), ('verb', verb),
@@ -179,9 +169,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
          perspective, texts['relation'], texts['verb'], texts['observation'], texts['non_goal'],
          encode_extra(kept_extra, 'the join')))
     row = int(cursor.lastrowid or 0)
-    if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
-                      (join_id, row, receiver_id, provider_id))
+    tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
+                  (join_id, row, receiver_id, provider_id))
     rows.write_refs(tx, 'join', row, pairs)
     rows.split_items(tx, found, 'join', join_id, split)
     record = views.join(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
@@ -203,9 +192,6 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
-    stop = rows.frozen(tx, found)
-    if stop is not None:
-        return Outcome((stop,))
     parent = _parent_of(tx, join, found)
     notices: list[Notice] = []
     kept_extra, split = rows.extra_fields(extra, 'the subtype join', notices)
@@ -229,9 +215,8 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
          texts['relation'],
          texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
     row = int(cursor.lastrowid or 0)
-    if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
-                      (join_id, row, parent, element_id))
+    tx.db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
+                  (join_id, row, parent, element_id))
     rows.write_refs(tx, 'join', row, pairs)
     rows.split_items(tx, found, 'join', join_id, split)
     record = views.subtype(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
@@ -244,12 +229,6 @@ def _held_element(tx: Tx, found: LayerRow, address: str, name_length: Any, role:
     if not rows.address_form(address) and not is_id(address):
         notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
     current = rows.current_element(tx, address)
-    if current is None and found.kind == 'correction':
-        column = 'element_id' if is_id(address) else 'address'
-        written = tx.db.execute(f"SELECT element_id FROM elements WHERE {column}=? AND layer_id=? AND op != 'remove'",
-                                (address, found.layer_id)).fetchone()
-        if written is not None:
-            return str(written[0])
     if current is None:
         if is_id(address):
             raise StoreError(f'No element has the id {address}.', 'metaform map where <address>')
@@ -279,7 +258,7 @@ def _parent_of(tx: Tx, join: Any, found: LayerRow) -> str:
     subtype join cannot be stored without one, so any other reference cannot be read, D5 and MAP-032."""
     if isinstance(join, str) and is_id(join):
         held = tx.db.execute('SELECT 1 FROM current_joins WHERE join_id=?', (join,)).fetchone()
-        written = tx.db.execute('SELECT parent FROM joins WHERE join_id=? AND layer_id=?',
+        written = tx.db.execute('SELECT parent FROM joins WHERE join_id=? AND layer_id=? ORDER BY row DESC LIMIT 1',
                                 (join, found.layer_id)).fetchone()
         if held is not None or (written is not None and written[0] is None):
             return join
@@ -291,21 +270,14 @@ def _parent_of(tx: Tx, join: Any, found: LayerRow) -> str:
 
 
 def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
-    """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
+    """Add one ref to a thing's current version, STORE-012; the metaform's own things take refs too, LAYER-025."""
     key = key if isinstance(key, str) else json.dumps(key, ensure_ascii=False, sort_keys=True)
     value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     kind = rows.kind_of(tx, owner)
-    spec = corrections.KINDS[kind]
-    current = corrections.current_row(tx.db, kind, owner)
+    current = versions.current_row(tx.db, kind, owner)
     if current is None:
         return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
                                         f'history {owner}'),))
-    layer_id = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (current,)).fetchone()[0]
-    found = rows.layer(tx, str(layer_id))
-    if found.kind in METAFORM_KINDS and not (found.kind == 'intake' and (not found.finished or
-                                                                        found.layer_id in tx.created)):
-        return Outcome((Notice('owner', f'{owner} belongs to {found.name}; its refs change only through a correction '
-                                        f'layer: {rows.correct_step(owner)}. Nothing was written.'),))
     last = tx.db.execute('SELECT MAX(position) FROM refs WHERE owner=? AND owner_row=?',
                          (kind, current)).fetchone()[0]
     rows.write_refs(tx, kind, current, [(key, value)], start=(int(last) + 1) if last is not None else 0)
@@ -319,9 +291,6 @@ def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None 
     """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015."""
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
-    stop = rows.frozen(tx, found)
-    if stop is not None:
-        return Outcome((stop,))
     notices: list[Notice] = []
     answers = _as_answers(value, notices)
     if not answers:
@@ -347,9 +316,6 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
     """
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
-    stop = rows.frozen(tx, found)
-    if stop is not None:
-        return Outcome((stop,))
     notices: list[Notice] = []
     answers = _as_answers(value, notices)
     if not answers:
@@ -368,9 +334,8 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
                                                           encode_value(answer, 'the property'),
                                                           encode_extra(kept_extra, 'the property')))
         row = int(cursor.lastrowid or 0)
-        if found.kind != 'correction':
-            tx.db.execute('INSERT INTO current_properties(property_id, row, layer_id, element_id) VALUES (?, ?, ?, ?)',
-                          (property_id, row, found.layer_id, element_id))
+        tx.db.execute('INSERT INTO current_properties(property_id, row, layer_id, element_id) VALUES (?, ?, ?, ?)',
+                      (property_id, row, found.layer_id, element_id))
         rows.write_refs(tx, 'property', row, pairs)
         made.append(row)
     rows.split_items(tx, found, 'element', element_id, split)
@@ -427,16 +392,17 @@ def delete_item(tx: Tx, item_id: str) -> Outcome:
     return Outcome()
 
 
-# Edit and remove, in place, in a knowledge layer or a building correction layer --------------------------------
+# Edit and remove, in place, in a knowledge layer or a building intake ----------------------------------------
 
 def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
-    """Why a thing cannot change in place: memory has its own operations; the metaform changes only by correction."""
+    """Why a thing cannot change in place: memory has its own operations; the finished metaform changes only by
+    refining, which keeps every version, LAYER-025."""
     if found.kind == 'memory':
         return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
                             'delete-observations. Nothing was written.')
-    if found.kind in ('intake', 'correction') and found.finished:
-        return Notice('id', f'{thing} belongs to {found.name}; the metaform changes only through a correction layer: '
-                            f'{rows.correct_step(thing)}. Nothing was written.')
+    if found.kind in METAFORM_KINDS and found.finished:
+        return Notice('id', f'{thing} belongs to {found.name}; the metaform changes by refining, which keeps every '
+                            f'version: {rows.refine_step(thing)}. Nothing was written.')
     return None
 
 
@@ -563,9 +529,9 @@ def _lift(tx: Tx, found: LayerRow, thing: str, parent: str, notices: list[Notice
     for row in tx.db.execute('SELECT * FROM joins WHERE layer_id=? AND parent=? ORDER BY row',
                              (found.layer_id, thing)).fetchall():
         tx.db.execute('UPDATE joins SET parent=? WHERE row=?', (parent, row['row']))
-        if corrections.current_of_row(tx.db, 'join', int(row['row'])) is not None:
-            corrections.drop_current(tx.db, 'join', 'row', row['row'])
-            corrections.insert_current(tx.db, 'join', str(row['join_id']),
+        if versions.current_of_row(tx.db, 'join', int(row['row'])) is not None:
+            versions.drop_current(tx.db, 'join', 'row', row['row'])
+            versions.insert_current(tx.db, 'join', str(row['join_id']),
                                        tx.db.execute('SELECT * FROM joins WHERE row=?', (row['row'],)).fetchone())
         lifted.append(str(row['join_id']))
     left = [str(row[0]) for row in tx.db.execute('SELECT join_id FROM current_subtypes WHERE parent=?', (thing,))]
@@ -579,7 +545,7 @@ def _lift(tx: Tx, found: LayerRow, thing: str, parent: str, notices: list[Notice
 
 
 def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
-    """Change a thing of a knowledge layer, or of a building intake or correction layer, in place, STORE-032.
+    """Change a thing of a knowledge layer, or of a building intake, in place, STORE-032.
 
     A join's receiver, provider and parent move it, and it stays the same join, MAP-003; an element's address is never
     changed, MAP-015.
@@ -597,7 +563,7 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
                             held=kind == 'join' and row['parent'] is not None)
     if not allowed:
         return Outcome(tuple(notices))
-    spec = corrections.KINDS[kind]
+    spec = versions.KINDS[kind]
     columns, split = changed_columns(tx, kind, allowed, found, notices, row)
     if columns:
         assignments = ', '.join(f'{column}=?' for column in columns)
@@ -609,14 +575,14 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
         target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
                                   else _node_of(kind, thing, row))
         rows.split_items(tx, found, target_kind, target_id, split)
-    if corrections.current_of_row(tx.db, kind, int(row['row'])) is not None:
+    if versions.current_of_row(tx.db, kind, int(row['row'])) is not None:
         updated = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row['row'],)).fetchone()
-        corrections.drop_current(tx.db, kind, 'row', row['row'])
-        corrections.insert_current(tx.db, kind, thing, updated)
+        versions.drop_current(tx.db, kind, 'row', row['row'])
+        versions.insert_current(tx.db, kind, thing, updated)
     if kind == 'join' and 'parent' in columns:
         _lift(tx, found, thing, str(columns['parent']), notices)
     record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?',
-                                                   (row['row'],)).fetchone(), {})
+                                                   (row['row'],)).fetchone())
     return _with(record, notices)
 
 
@@ -821,7 +787,7 @@ def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:
 
 
 def remove(tx: Tx, thing: str | int) -> Outcome:
-    """Delete a row a knowledge layer or a building correction layer wrote, with its refs, STORE-032.
+    """Delete a row a knowledge layer or a building intake wrote, with its refs, STORE-032.
 
     What in the same layer still used it as receiver, provider or target is left orphaned and named, STORE-017.
     """
@@ -833,9 +799,9 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
     if stop is not None:
         return Outcome((stop,))
     users = _users(tx, kind, thing, found)
-    spec = corrections.KINDS[kind]
+    spec = versions.KINDS[kind]
     tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
-    corrections.drop_current(tx.db, kind, 'row', row['row'])
+    versions.drop_current(tx.db, kind, 'row', row['row'])
     if kind == 'item':
         tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
     tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
@@ -849,7 +815,7 @@ def _remove_ref(tx: Tx, ref_id: int) -> Outcome:
     ref = tx.db.execute('SELECT owner, owner_row FROM refs WHERE ref_id=?', (ref_id,)).fetchone()
     if ref is None:
         raise StoreError(f'No ref {ref_id}.', 'metaform map where <address>')
-    table = corrections.KINDS[str(ref['owner'])].table
+    table = versions.KINDS[str(ref['owner'])].table
     layer_id = tx.db.execute(f'SELECT layer_id FROM {table} WHERE row=?', (ref['owner_row'],)).fetchone()[0]
     stop = unchangeable(tx, rows.layer(tx, str(layer_id)), str(ref_id))
     if stop is not None:

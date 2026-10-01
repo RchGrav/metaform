@@ -31,7 +31,7 @@ Every design decision goes into this spec when it is decided, in the record that
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
 | 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, the nonce service, the workflow module |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the top menu and entering a module, the working folder, aliases, the settings screen |
-| 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the first working test |
+| 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the slash commands, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
 | 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history, clearing a project |
 | 09-viewer.md | VIEW | The one web GUI, user global, and its first view, the viewer: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object in the left window |

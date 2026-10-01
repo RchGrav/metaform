@@ -115,7 +115,7 @@ It also defines the first working test, which exercises all three end to end.
 - Build: When the folder resolves to no registered project, no intake notice appears; the text ends instead with a blank line and `This folder is not in a registered project. To register one: metaform add project <id> <path>`. Otherwise the notice comes from the intake module's status hook, BASE-035 and BASE-039, which the chassis calls like any module's hook, so the chassis never checks for the intake module by name. "Has an intake" is `has_intake()`: a finished layer of kind intake exists, STORE-032. The intake layer is building while it is recorded and counts only once it is finished, so a half-recorded intake never clears the notice; while one is being recorded, the hook says so in place of the notice, BASE-039. The notice appears only when the intake module is on the folder's surface, because only surfaced modules' hooks are called. The intake instructions are served by the intake module, BASE-039, exactly as stored except for the filled `<target>` attributes and any `{project_id}` placeholder, followed by a blank line and the module's recording lines.
 - Acceptance: Instructions for a project with no intake layer and none being recorded contain the notice, and the command it names exists on the surface. Instructions for a project with a finished intake layer do not contain it. The text returned by `intake prompt`, with the appended recording lines removed, equals the stored intake file with only the `<target>` element's attributes filled.
 - Relates to: MCP-007, MCP-024, MCP-027, CLI-028, LAYER-001, LAYER-014, STORE-032, BASE-039.
-- Status: confirmed, including recording the intake one object per call through the intake tools, 2026-09-26, and the intake going to a fresh agent with no stake, the main agent performing it only when that is the only choice, 2026-09-19. The intake module, its command names and the notice wording follow D38, recommended. Open against MCP-031, 2026-09-30: the instructions are now the chassis's instructions prompt, which says a new context performs the intake directly and does not delegate it, and no notice is added to them.
+- Status: confirmed, including recording the intake one object per call through the intake tools, 2026-09-26, and the intake going to a fresh agent with no stake, the main agent performing it only when that is the only choice, 2026-09-19. The intake module, its command names and the notice wording follow D38, recommended. Open against MCP-031, 2026-09-30: the instructions are now the chassis's instructions prompt, and no notice is added to them. The paragraph on performing the intake directly that the prompt carried from 2026-09-30 was for testing and was not meant for other projects, Rich 2026-10-01; it is removed, and the instructions give no direction on the intake.
 
 ### MCP-010 AI tools start the server with uvx
 
@@ -414,6 +414,10 @@ It also defines the first working test, which exercises all three end to end.
 11. NEW Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? D96. (MCP-028)
 12. NEW Can a person submit work directly in the web GUI, as the explanation offered with an intake says? D92. (MCP-027)
 13. NEW What do the instructions say, word for word? (MCP-029)
+14. NEW Are the verbs inferred for `status`, `config`, `web`, `messages` and `tasks` the ones meant, and does any of them carry words of Rich's? D104. (MCP-033)
+15. NEW Does `/metaform:prompt` show a stored prompt, or run one on the map? D105. (MCP-033)
+16. NEW What does `/metaform:correct` have the agent do? D106. (MCP-033)
+17. NEW What does `/metaform:refine` do? D107. (MCP-033)
 
 ### MCP-030 A nonce routes an MCP call to the module that serves it
 
@@ -435,4 +439,45 @@ It also defines the first working test, which exercises all three end to end.
 - Build: `metaform.prompt_files` reads a prompt by name from a `resources/prompts.xml` folder; `compose` in `src/metaform/instructions.py` fills the instructions prompt. A module's line is its instructions prompt followed by the `instruction` its status hook returns for the folder's state, when it returns one; the web module's autostart message arrives this way, VIEW-015. With no project for the folder the registered projects and the way to register one follow it, from the chassis's `registered` and `no_project` prompts.
 - Acceptance: No line of a prompt file's prompts appears in any Python source outside tests. With `debug` off neither `stop` nor `debug` is in the instructions; with it on they end them. The instructions equal the chassis's `instructions` prompt with the surfaced modules' `instructions` prompts listed. Neither the intake notice nor the web notice is in the instructions.
 - Relates to: MCP-007, MCP-008, MCP-009, MCP-029, BASE-044.
-- Status: confirmed by Rich 2026-09-30, with the instructions prompt in his words. Supersedes MCP-029's "the wording is the builder's." The trouble report and debug feedback prompts, `stop` and `debug`, end the instructions only while the `debug` setting is on, 2026-09-30: sent to every session they were a universal instruction, and the setting's own meaning is to ask agents for feedback and trouble reports.
+- Status: confirmed by Rich 2026-09-30, with the instructions prompt in his words. Its paragraph on intake runs, from sequestering context to saved memories having no authority, was for testing and was not meant for other projects, Rich 2026-10-01, and is removed. Supersedes MCP-029's "the wording is the builder's." The trouble report and debug feedback prompts, `stop` and `debug`, end the instructions only while the `debug` setting is on, 2026-09-30: sent to every session they were a universal instruction, and the setting's own meaning is to ask agents for feedback and trouble reports.
+
+### MCP-032 Slash commands are MCP prompts the server serves, each running at most one verb
+
+- Requirement: The MCP server serves Metaform's slash commands as MCP prompts. A host shows each one as `/metaform:<name>`, and running it puts the command's text into the conversation as the person's message.
+- What this means: A slash command is run by a person; the model cannot run one. The server answers `prompts/list` with the commands of the owners on the folder's command surface, and `prompts/get` with one command's text. Each command belongs to the chassis or to one module and is declared in its owner's `resources/prompts.xml`, inside a `<commands>` element, as an element named for the command. The element may name one verb it runs. Its text is what the person's message says, and an empty `<result/>` inside it marks where the verb's result goes. An element with a verb and no text serves the verb's result alone; an element with no verb serves its text alone. A command's arguments are its verb's nouns, from the verb's declaration, and its description in the host's menu is the verb's summary. The skill, MCP-021, does not change: Claude Code names a personal skill `/<name>` and never with a colon, so the colon form comes only from a server's prompts or a plugin.
+- Why: Rich, 2026-10-01: these are the commands that are needed. The colon is Claude Code's form for running a server's prompt, CLI-037. Served by the live server, a command's result is the project's state at the moment it runs, and its words come from the XML file, MCP-031, so no copy of them sits in a file that drifts. Running a verb keeps one declaration behind the CLI command, the tool and the slash command, MCP-003, so a new command needs one XML element and no MCP code. Every host that supports MCP prompts gets the same commands.
+- How it shows: In Claude Code, typing `/metaform:` lists the commands. `/metaform:intake` puts into the conversation exactly what `metaform intake prompt` prints for the same folder. `/mcp__metaform__intake` runs the same command.
+- Build: The `mcp` module's server passes `on_list_prompts` and `on_get_prompt` to `Server`, MCP-002. `prompts/list` returns one `Prompt` per command whose owner is on the folder's command surface, MCP-004, the chassis's always: `name` the element's name; `description` the verb's summary; `arguments` one `PromptArgument` per noun of the verb, its help as `description` and `required` as the noun declares. `prompts/get` builds a Context for the call as `call_tool` does, BASE-028, runs the verb with the arguments given, takes its result as the CLI prints it, BASE-036, and returns one message, role `user`, whose text is the element's text with the result in place of `<result/>`. A verb's error is served as the message's text with its `Next:` line, so the person sees what the CLI would print. An unknown command, or one whose owner is off the surface, is an error naming it, with `Next: metaform help commands`. When two owners declare one command name, the second is refused at load with the reason, BASE-037. `prompt_files` reads the `<commands>` children; no command's words are written in Python, MCP-031. Unknown, checked against the real host before a command with a free-text argument is built: the reference sheet says Claude Code passes a prompt's arguments space-separated, one token each, which would hand a free-text argument only its first word.
+- Acceptance:
+  - A real MCP client, as in MCP-002's test, lists the prompts and finds every declared command of the surfaced owners and no other.
+  - `prompts/get` for `intake` returns one user message whose text equals what `metaform intake prompt` prints for the same folder.
+  - A command declared with text and `<result/>` returns the text with the verb's result in its place. Editing the XML changes what is served with no change to the code.
+  - With the surface narrowed so a module is off it, that module's commands are absent from the list, and getting one is an error.
+  - A test module that declares a command, with no MCP code written for it, has it served, with its verb's nouns as its arguments.
+  - When two owners declare one name, the second fails to load and says why.
+- Relates to: MCP-002, MCP-003, MCP-004, MCP-021, MCP-031, MCP-033, CLI-037, BASE-028, BASE-036, BASE-037.
+- Status: the commands are Rich's, 2026-10-01. Serving them as MCP prompts follows CLI-037 and is recommended, as is declaring each in XML with at most one verb. Not built.
+
+### MCP-033 The slash commands are prompt, tasks, messages, intake, refine, correct, web, config and status
+
+- Requirement: The server serves these nine slash commands: `/metaform:prompt`, `/metaform:tasks`, `/metaform:messages`, `/metaform:intake`, `/metaform:refine`, `/metaform:correct`, `/metaform:web`, `/metaform:config` and `/metaform:status`.
+- What this means: Each command is declared by its owner as MCP-032 says. The table gives each command's owner and the verb it runs. Only `intake` is settled; the rest are inferred from the commands that exist today, and the questions name what is open.
+
+| Command | Owner | Verb it runs | Known or open |
+|---|---|---|---|
+| `intake` | intake | `intake prompt` | Known. It serves exactly what `intake prompt` returns and has no words of its own, since the Canonical Intake and the instructions are the only directions an intake agent is given, MCP-031. |
+| `status` | chassis | `metaform` alone, CLI-005 | Inferred, D104. |
+| `config` | chassis | `config --show` | Inferred, D104. The settings screen is interactive and a host cannot open it, CLI-026. |
+| `web` | web | `web start`, VIEW-002 | Inferred, D104. It starts the web GUI when it is not running, and serves its address. |
+| `messages` | map | `map messages`, MAP-050 | Inferred, D104. |
+| `tasks` | map | `map work open=true`, MAP-049 | Inferred, D104. What a task is waits on D92. |
+| `prompt` | chassis | `prompt <name> [<version>]`, STORE-044 | Open, D105. |
+| `correct` | map | none, or `map knowledge op=create kind=correction`, LAYER-011 | Open, D106. |
+| `refine` | open | open | Open, D107. |
+
+- Why: Rich, 2026-10-01, named these nine as the commands that are needed.
+- How it shows: Typing `/metaform:` in Claude Code lists the nine, each with its verb's summary.
+- Build: One element per command in its owner's `resources/prompts.xml`, MCP-032. A command's words, where it has any, are Rich's, MCP-031; the builder writes none, and a command waiting on its words is served with its verb's result alone.
+- Acceptance: The list from a real MCP client holds the nine names when every owner is on the surface. Each settled command passes MCP-032's acceptance against its own verb. A command whose question is open is not built past what its row settles.
+- Relates to: MCP-032, CLI-005, CLI-026, VIEW-002, MAP-049, MAP-050, LAYER-011, STORE-044.
+- Status: the nine names, Rich 2026-10-01. `intake` is known. Each other row is inferred or open as the table says, D104 to D107.

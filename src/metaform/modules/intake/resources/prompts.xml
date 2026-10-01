@@ -2,7 +2,7 @@
 <!-- intake's prompts, MCP-031. What is between an element's tags is what is served.
      <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
      it: <element> for intake element and the element a subtype join holds, <join> for intake join, intake subtype and
-     intake edit. role is defined by its allowed values, and perspective by its allowed values as well as these words. -->
+     intake edit. condition and note are the Canonical Intake's step 2 words, MAP-046. role is defined by its allowed values, and perspective by its allowed values as well as these words. -->
 <prompts>
 <instructions>intake is active.</instructions>
 <fields>
@@ -12,6 +12,8 @@
     <name_length>proper_noun_lookback_segment_count</name_length>
     <name>Canonical Name (Project official terminology) or Informal Name</name>
     <refs>Uniform dictionary shape for type-specific or artifact-specific keys</refs>
+    <condition>Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination.</condition>
+    <note>record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references.</note>
   </element>
   <join>
     <receiver>namespace address of the Receiving Element. RE, Receiving Element/Entity: The **who** or **what** bearing an OP. This is the element, person, group, system, component, or other participant with an Operative Purpose for the Encounter Function of an Element. The OP belongs to that receiver, and the join that records it lives in that receiver. Join: A dictionary object that exists in the Receiving Entity (RE) with a relation in active voice, an observation of the long lasting stable state of what is there; additionally it contains a dictionary of objects containing type specific or AUE specific references and logic.</receiver>
@@ -19,11 +21,14 @@
     <purpose>State the objective or standard this element or action fulfills. OP, Operative Purpose: The **why**. This is the active goal held in a CQU's join dictionary — that an element's encounter function intends to accomplish.</purpose>
     <ef>Encounter Function of the PE within the RE context. EF, Encounter Function: The **how** of what is delivered.  This may be understood as the function of an encounter or the encounter of a function depending on the contextual understanding of the Artifact. This is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its CQU. It explains how the effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is stored in the CQU-owned join because a PE element type's functionality on the whole may satisfy different Vested Entities' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins.</ef>
     <perspective>Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter</perspective>
+    <ifd>IFD, Information Flow Direction: the primary flow of information. sends: OP to EF. receives: EF to OP. both: equal need.</ifd>
     <relation>Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if perspective is Function, or the RE if perspective is Encounter</relation>
     <verb>The single root verb extracted from the relation (e.g., provides, tracks, restricts)</verb>
     <observation>Only high-value observations consisting of long-lasting, stable state for agent orientation</observation>
     <non_goal>high-value non-goals consisting of structural constraints</non_goal>
     <refs>Uniform dictionary shape for type-specific or artifact-specific keys</refs>
+    <condition>Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination.</condition>
+    <note>record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references.</note>
   </join>
 </fields>
 </prompts>

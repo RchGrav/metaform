@@ -120,6 +120,7 @@ def _spec_ids():
     return ids
 
 
+@pytest.hookimpl(tryfirst=True)  # before xdist reads the browser groups below
 def pytest_collection_modifyitems(config, items):
     """Every test names the requirement it protects and what kind of run it is, QUAL-009, QUAL-014 and E4."""
     known = _spec_ids()
@@ -134,3 +135,11 @@ def pytest_collection_modifyitems(config, items):
             problems.append(f'{item.nodeid}: no @pytest.mark.kind of fixture, simulation or real')
     if problems:
         raise pytest.UsageError('Tests without a traced requirement:\n' + '\n'.join(problems))
+    # Each browser test draws WebGL in software, which is heavy on the processor; spread over every core at once
+    # they time out, so they run in BROWSERS groups, at most that many at a time, beside everything else.
+    browsers = [item for item in items if 'browser' in getattr(item, 'fixturenames', ())]
+    for number, item in enumerate(browsers):
+        item.add_marker(pytest.mark.xdist_group(f'browser-{number % BROWSERS}'))
+
+
+BROWSERS = 4

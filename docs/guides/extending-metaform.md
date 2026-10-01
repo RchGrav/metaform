@@ -143,7 +143,7 @@ The setting named `confirm` is not a persistent setting. It is the contract's on
 
 ## Use the graph and knowledge facilities directly
 
-The `Store` façade exposes the existing data operations to a module: functional records, node reads, scoped context, layer construction, items, properties, references, work records, corrections, challenges, plans, and history. A module does not need to call another module's CLI to access those facilities.
+The `Store` façade exposes the existing data operations to a module: functional records, node reads, scoped context, layer construction, items, properties, references, work records, refinements, challenges, plans, and history. A module does not need to call another module's CLI to access those facilities.
 
 Hello's subscriber demonstrates a persistent contribution:
 
@@ -165,11 +165,11 @@ The example's history read directly addresses its layer. General knowledge inten
 
 A module that records functional structure writes the same records the intake does. An element is its address, `name_length` and role: `store.add_element(layer, address, name_length=2, role='SE')`. The project's name for a functionality goes on the join: `store.add_join(layer, receiver, provider, name=..., purpose=..., function=..., ef='Function', relation=..., verb=...)`. A subtype join sits inside a parent join and holds an ordinary element: `store.add_subtype(layer, join_id, address, ...)`. `store.where(address)` reads one address with what relies on it and what it relies on. An element never moves; `store.edit` and `store.correct` move a join with `receiver`, `provider` or `parent`. Nothing is refused for its content: what does not fit is stored as given and the result carries `notices`.
 
-`Store.edit` and `Store.correct` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `op=correct` do not read them. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
+`Store.edit` and `Store.refine` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `op=refine` read `ef` and do not read `verb`. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
 
 The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module records an intended part that is not built as `missing`, a malfunction as `broken`, and material outside intake scope or code conflicting with a superseding specification as `exclude`. It writes `store.add_work(Node('element', address), condition, note='what and where', task='what it needs')`, using the condition that describes the finding. An exclusion note links the affected material and the scope reason or superseding specification for review. The module changes the record with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element and join read, a subtype join's included, carries `open_work`. The web GUI draws a node ghostly while a `missing` record is open and flashes it red while a `broken` one is. Hello's `todo` and `done` verbs show it.
 
-The memory module is one consumer of node-addressed storage. Other modules can contribute their own layers without converting every finding into mutable memory. Conversely, memory's lack of revision history does not imply that corrections or prompt versions lack their own histories.
+The memory module is one consumer of node-addressed storage. Other modules can contribute their own layers without converting every finding into mutable memory. Conversely, memory's lack of revision history does not imply that refinements or prompt versions lack their own histories.
 
 Store API: [store.py](../../src/metaform/data/store.py). Reader semantics: [Working with Metaform](working-with-metaform.md#keep-a-body-of-knowledge-as-a-layer).
 

@@ -81,11 +81,6 @@ def knowledge(store, name, *, hideable=True, tags=(), sources=()):
                        provenance=PROVENANCE, tags=tags, sources=sources)
 
 
-def correction(store, name):
-    return store.layer(name, 'test', 'Corrections to the metaform.', kind='correction', mutable=False,
-                       hideable=False, provenance=PROVENANCE)
-
-
 def memory(store):
     return store.layer('memory', 'memory', 'What agents have noted at this node.', kind='memory', mutable=True,
                        hideable=True, ready=True)
@@ -119,7 +114,7 @@ def values(view, layer=None):
     return grouped if layer is None else grouped.get(layer, [])
 
 
-ALLOWED_SCANS = {'layers', 'projects', 'hidden_layers', 'layer_sources', 'layer_tags', 'correction_stack'}
+ALLOWED_SCANS = {'layers', 'projects', 'hidden_layers', 'layer_sources', 'layer_tags'}
 PLANNED = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
 
 

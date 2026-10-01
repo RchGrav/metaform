@@ -12,7 +12,7 @@ This document connects the [described mechanisms](REFERENCE.md) to the source on
 4. [Canonical Intake: resource to stored result](#intake)
 5. [Selection, properties, and visibility](#selection)
 6. [Memory](#memory)
-7. [Corrections and re-examination](#corrections)
+7. [Refining the metaform and re-examination](#corrections)
 8. [Prompt versions and lexicalization](#prompts)
 9. [Blindspot challenges and plans](#challenges)
 10. [Community extension and execution facilities](#extensions)
@@ -43,7 +43,7 @@ It is byte-identical to `specifications/Canonical_Intake.xml`, and a test fails 
 
 ### The earlier map used as the example
 
-The standalone project JSON, [project-metaform.json](../examples/project-metaform.json), is an export of an earlier version: the supplied `exports/metaform-main.json` of September 26, 2026, at schema version 1, with one change, each join and subtype row recording `verb` as null because that intake was made before `verb` existed. The current store is at schema version 5 and does not import it. Its Metaform is named `main`, id `6a339171fe6f44c49a40f4a270d98913`, with intake layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`, named `intake-20260926T192840Z-f04016`, created September 26, 2026 at 19:28:40 UTC. Its recorded result id is `metaform-intake-20260926-a823b992`.
+The standalone project JSON, [project-metaform.json](../examples/project-metaform.json), is an export of an earlier version: the supplied `exports/metaform-main.json` of September 26, 2026, at schema version 1, with one change, each join and subtype row recording `verb` as null because that intake was made before `verb` existed. The current store is at schema version 8 and does not import it. Intake layers are now named `intake`; the dated name is that snapshot's. Its Metaform is named `main`, id `6a339171fe6f44c49a40f4a270d98913`, with intake layer `2f6b86ffc49c4575bfdbf0ad2ac712f7`, named `intake-20260926T192840Z-f04016`, created September 26, 2026 at 19:28:40 UTC. Its recorded result id is `metaform-intake-20260926-a823b992`.
 
 The export's record shapes are those of that day. The project's names are descriptor items at the elements, where the current store holds them on the joins as `name`. Each subtype is its own row with its own id, where the current store holds a join of type `subtype` inside its parent join, holding an ordinary element. The condition of an object is a finding with a `flag`, where the current store holds work records apart from the map.
 
@@ -62,7 +62,7 @@ The export's record shapes are those of that day. The project's names are descri
 | Report records in SQLite | 2 |
 | Challenge states / plans | 0 / 0 |
 
-Selections and the correction stack are empty in this export. These counts identify stored material; they do not define the capabilities of the store.
+Selections are empty in this export, and it holds no refinements. These counts identify stored material; they do not define the capabilities of the store.
 
 ### What was checked
 
@@ -89,7 +89,7 @@ Relative source links resolve from `docs/inference-metaform/` in the repository.
 | Condition of an object | Findings of that map | Work records, `tbd`, `broken` or `cruft`, apart from the map, on elements and joins. |
 | One read of an address | `code.api.map` | `where`: the element, what relies on it, what it relies on, the subtype joins, open work and layers in context. |
 | Exact semantic identity | Provider-side `Store.identity` read | Retrieves receiving joins; no semantic equivalence prover or supplied formal resolution mapping. |
-| Knowledge selection | Internal `code.resolver.layer` | Starting set, prefix select/mask, hidden-source closure, separate corrections. |
+| Knowledge selection | Internal `code.resolver.layer` | Starting set, prefix select/mask, hidden-source closure. |
 | Scoped inherited knowledge | `Store.context`; properties | Separate applying and visible properties; local items do not inherit. |
 | Shared memory | `code.memory.agent` | Nine memory operations over graph nodes; mutable, unversioned memory layer. |
 | Prompt versions | Internal `code.store.prompt`; web prompt editor | Version and use records exist; current intake does not populate them. |
@@ -104,7 +104,7 @@ Relative source links resolve from `docs/inference-metaform/` in the repository.
 
 ### Data model
 
-The public `Store` delegates into the data package. The core record definitions and SQLite schema distinguish elements, joins, subtype joins, items, properties, refs, layers, provenance, selections, work records, challenges, plans, and current/correction views. The metaform store's schema is at version 5, and a change to it starts fresh, with no migration; the base, history and prompt databases each keep their own version, 1, so a change to the store's layout refuses none of them.
+The public `Store` delegates into the data package. The core record definitions and SQLite schema distinguish elements, joins, subtype joins, items, properties, refs, layers, provenance, selections, work records, challenges, plans, and current views of each thing's newest version. The metaform store's schema is at version 8, and a change to it starts fresh, with no migration; the base, history and prompt databases each keep their own version, 1, so a change to the store's layout refuses none of them.
 
 An element is its identity, its namespace address, its `name_length` and its role, with refs linked to it; its name is its address read through `name_length`. A join identifies its receiver and provider and carries the project's `name` for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, and optional additional fields. A subtype join is a join of type `subtype` held inside a containing purpose join, with its own join id, functional description and purpose; it names the element it holds, which stays one ordinary element record. Its current row is kept in `current_subtypes`, apart from the `current_joins` every read of the element graph uses, and an element whose only joins are subtype joins is no root and no node of the outer map. An element cannot be moved: its address is its identity, and an element recorded again at an address it held before is the same element, found through `address_elements`, with every record related to it. A join can be moved to another receiver, provider or parent join and keeps its id. A work record, in the `work` table, holds the condition of an element or a join apart from the map, keyed by its own `work_id`, and follows its object through every version.
 
@@ -129,7 +129,7 @@ Sources: [Store reads:308-375](../../src/metaform/data/store.py#L308-L375), [rea
 
 ### Known Function/Encounter interface difference
 
-The store and intake support `ef` and `verb`, and the map knowledge interface writes them on `add-join` and `add-subtype`; its `edit` and `correct` do not read them. See [C01](#c01) for the exact interface paths. This is a localized correspondence issue, not a missing semantic distinction in the whole record model.
+The store and intake support `ef` and `verb`, and the map knowledge interface writes them on `add-join` and `add-subtype`; its `edit` and `refine` read `ef` and do not read `verb`. See [C01](#c01) for the exact interface paths. This is a localized correspondence issue, not a missing semantic distinction in the whole record model.
 
 <a id="intake"></a>
 ## 4. Canonical Intake: resource to stored result
@@ -174,7 +174,7 @@ The intake tests inspect complete writes, names on joins, `ef` and `verb` fields
 
 ### Resolver behavior
 
-[selection.py:91-156](../../src/metaform/data/selection.py#L91-L156) implements `Resolver`. Its incoming root is an explicit root selection when provided, otherwise nonempty toggled names, otherwise all finished, nonhidden, non-correction layers. An explicitly empty root and an absent root therefore have different meanings.
+[selection.py:91-156](../../src/metaform/data/selection.py#L91-L156) implements `Resolver`. Its incoming root is an explicit root selection when provided, otherwise nonempty toggled names, otherwise all finished, nonhidden layers. An explicitly empty root and an absent root therefore have different meanings.
 
 At each prefix the resolver removes mask rows and adds selectable select rows. When there is no local row for a layer, its incoming membership is preserved. This implements `(incoming & mask) | select` with sparse sets. A descendant select can restore a layer masked by an ancestor, without selecting the parent or a sibling.
 
@@ -206,19 +206,17 @@ The nine operations are declared as module verbs and become MCP tools through th
 Inspected tests include [join-addressed memory](../../src/metaform/modules/memory/tests/test_memory.py#L57-L63), [deletion semantics](../../src/metaform/modules/memory/tests/test_memory.py#L77-L88), and [selection](../../src/metaform/modules/memory/tests/test_memory.py#L121-L130). The September 26 export holds no memory observations.
 
 <a id="corrections"></a>
-## 7. Corrections and re-examination
+## 7. Refining the metaform and re-examination
 
-The September 26 map holds `code.stack.correction` as an internal contribution of the graph store to the chassis. Implementation is in [corrections.py](../../src/metaform/data/corrections.py), [layering.py:244-355](../../src/metaform/data/layering.py#L244-L355), and the `Store.correct`, `finish`, `peel`, `history`, and `peel_preview` APIs.
+The metaform changes by refining. There are no correction layers, no correction stack and no peeling. The finished intake is one layer, named `intake`, and a refinement writes a new version of one thing in it, as `Store.refine` in [layering.py](../../src/metaform/data/layering.py), reached by `metaform map knowledge op=refine id=<id> <field>=<value> reason=<why> [evidence=<what>] [remove=true]` with no layer named. Every version of a thing is kept, and `Store.history`, `metaform map history <id>`, reads them in the order written. The thing's current row is its newest unless that row is a removal. [versions.py](../../src/metaform/data/versions.py) holds the version tables. A finished intake also takes additions: `op=add-element`, `op=add-join` and the other add operations with `layer=intake`.
 
-A correction is assembled while building and applied when finished. Current records are recomputed against the applied stack. The top correction can be peeled, returning it to building and recomputing affected current views. Correction layers are not normal selectable/hideable knowledge layers.
+A finished intake and memory are protected from in-place `edit`: `writes.unchangeable` names `op=refine` for the first and the memory operations for the second. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. A refinement of a thing that belongs to a knowledge layer writes nothing and names `op=edit` instead.
 
-An element cannot be moved: a correction's `address` for an element is not applied and is named in a notice. A join can be moved: a correction's `receiver`, `provider` or `parent` is a change of the same join, which keeps its id and everything attached to it; with `parent` it becomes a subtype join, and the subtype joins it held pass to its new parent. A correction layer that removes a thing orphans everything current that still depends on it and names each in its result; nothing is refused. An element recorded again at the same address is the same element, so what was attached to it returns with it. The peel preview names a join a layer moved and where it moves back to.
+An element cannot be moved: a refinement's `address` for an element is not applied and is named in a notice. A join can be moved: a refinement's `receiver`, `provider` or `parent` is a change of the same join, which keeps its id and everything attached to it; with `parent` it becomes a subtype join, and the subtype joins it held pass to its new parent. A removal orphans everything current that still depends on the removed thing and names each in its result; nothing is refused. An element recorded again at the same address is the same element, so what was attached to it returns with it. `op=refine` reads `ef` and does not read `verb`, [C01](#c01).
 
-The source marks layers built from the original adding layer for re-examination when the relevant correction applies. It does not implement an unspecified universal transitive semantic invalidation algorithm. The hidden-layer source closure and correction re-examination are different mechanisms.
+The source marks layers built from the metaform for re-examination when a refinement changes what they were built on, and `metaform map reexamined <layer>` clears the mark. It does not implement an unspecified universal transitive semantic invalidation algorithm. The hidden-layer source closure and re-examination are different mechanisms.
 
-A further lifecycle detail matters for ordinary knowledge: `writes.unchangeable` protects a finished intake and finished corrections and redirects memory to its own mutation APIs. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. See [writes.py:431-439](../../src/metaform/data/writes.py#L431-L439), [edit:590-629](../../src/metaform/data/writes.py#L590-L629), and [the finished-layer test](../../tests/test_store_layers.py#L241-L257).
-
-Inspected correction tests cover precedence, history, peeling, orphan/restoration, join moves, the element that never moves, re-examination, and retention of `ef`: [test_store_corrections.py](../../tests/test_store_corrections.py).
+Inspected tests: [test_store_refinements.py](../../tests/test_store_refinements.py) covers a refinement as a version that makes no layer, history, orphans and their restoration, join moves, the element that never moves, absorbing a join, and re-examination.
 
 <a id="prompts"></a>
 ## 8. Prompt versions and lexicalization
@@ -290,7 +288,7 @@ The loader records disabled, incompatible, missing-dependency, and failed candid
 | Module | Function in this source | Shipped default |
 |---|---|---|
 | `intake` | Serve the Canonical Intake, record it one object per call while it builds, anneal, show, edit and finish it, report intake state. | Enabled |
-| `map` | Graph reads, the one read of an address, knowledge and correction operations, work records, selection, challenges/plans. | Enabled |
+| `map` | Graph reads, the one read of an address, knowledge operations and refining, work records, selection, challenges/plans. | Enabled |
 | `memory` | Shared observations and relations at map nodes. | Enabled |
 | `mcp` | Serve the generated tool surface over stdio. | Enabled |
 | `web` | Detached graph and record inspection interface, pushed each change to the map, with Clear project. | Enabled |
@@ -331,9 +329,9 @@ A per-call project or layer choice and a stored folder setting are separate inpu
 
 ### Read and write encounters
 
-`code.api.map` connects Store operations to verbs and tools. Its reads cover entry roots, the one read of an address, elements, receiving/provider joins, identity, subtypes, children, node content, property context, links, refs, history, stack, search, layers, and work records. Knowledge operations create and populate layers, write records and plans, and manage corrections; `work` adds, edits, lists and finishes work records. Nothing is refused for its content: only a field a record cannot be stored without stops a call, and every other missing field is stored empty with a notice. Selection and challenge operations are additional explicit verbs.
+`code.api.map` connects Store operations to verbs and tools. Its reads cover entry roots, the one read of an address, elements, receiving/provider joins, identity, subtypes, children, node content, property context, links, refs, history, search, layers, and work records. Knowledge operations create and populate layers, write records and plans, and refine the metaform with `op=refine`; `work` adds, edits, lists and finishes work records. Nothing is refused for its content: only a field a record cannot be stored without stops a call, and every other missing field is stored empty with a notice. Selection and challenge operations are additional explicit verbs.
 
-`code.gui.web` supplies graph and record inspection over these stored operations. [server.py](../../src/metaform/modules/web/server.py) exposes named reads and four writes: apply layers to the project folder, save a prompt version, peel/discard the top correction, and clear the selected project through the same `clear_project` that `metaform clear project --confirm` calls, with its caution read first from `/api/clear-preview`. After a write that changed the map it fires `map.changed` on the module event bus, as a command does. It holds one server-sent events stream per open page and writes each `map.changed` to all of them; its loop waits for a connection with no timeout, and nothing in it polls. [app.js](../../src/metaform/modules/web/page/app.js) and the page resources render the functional graph, purpose relationships, inspector, and prompt editing. They do not imply that every possible graph edit is a browser operation.
+`code.gui.web` supplies graph and record inspection over these stored operations. [server.py](../../src/metaform/modules/web/server.py) exposes named reads and ten writes, accepted only from the GUI's own page: apply layers to the project folder, save a prompt version, answer a question, mark a note read, give a task, add an element, add a note, restore a backup, remove an empty project, and clear the selected project through the same `clear_project` that `metaform clear project --confirm` calls, with its caution read first from `/api/clear-preview`. After a write that changed the map it fires `map.changed` on the module event bus, as a command does. It holds one server-sent events stream per open page and writes each `map.changed` to all of them; its loop waits for a connection with no timeout, and nothing in it polls. [app.js](../../src/metaform/modules/web/page/app.js) and the page resources render the functional graph, purpose relationships, inspector, and prompt editing. They do not imply that every possible graph edit is a browser operation.
 
 The graph view's purpose vertices make the receiving relationship visible rather than drawing only an unlabeled dependency. The stored graph's own internal subtype decomposition should still be distinguished from a code-module architecture diagram.
 
@@ -362,13 +360,13 @@ The September 26 map separately names intended side-by-side web-variant launchin
 These entries preserve both the described semantics and the supplied source. They do not silently revise either one, and no code fixes were made as part of the documentation.
 
 <a id="c01"></a>
-### C01. The map knowledge interface cannot change a join's `ef` or `verb`
+### C01. The map knowledge interface cannot change a join's `verb`
 
-**Source-inspected.** Intake and Store support `ef` and `verb` on joins and subtype joins. The map module's `op=add-join` and `op=add-subtype` read both and write them to the dedicated fields. Its `FIELDS`, which `op=edit` and `op=correct` read, omit them: a value given there is named in a notice, `op=edit does not read ef; it was ignored.`, and nothing is written for it. `intake edit` changes both while an intake is building, and `Store.edit` and `Store.correct` take both.
+**Source-inspected.** Intake and Store support `ef` and `verb` on joins and subtype joins. The map module's `op=add-join` and `op=add-subtype` read both and write them to the dedicated fields. Its `FIELDS`, which `op=edit` and `op=refine` read, include `ef` and omit `verb`: a value given for `verb` there is named in a notice, `op=refine does not read verb; it was ignored.`, and nothing is written for it. `intake edit` changes both while an intake is building, and `Store.edit` and `Store.refine` take both.
 
 Sources: [map fields](../../src/metaform/modules/map/__init__.py#L27-L28), [operation reads and dispatch](../../src/metaform/modules/map/__init__.py#L239-L384), [intake recording](../../src/metaform/modules/intake/__init__.py#L287-L318), [Store add methods](../../src/metaform/data/store.py#L185-L218), [editable fields](../../src/metaform/data/rows.py#L25-L31).
 
-**Correspondence:** preserve Function/Encounter in the design and record model. The source-local repair area is the map interface's edit and correct, not removal or reinterpretation of the distinction.
+**Correspondence:** preserve Function/Encounter in the design and record model. The source-local repair area is the map interface's edit and refine, not removal or reinterpretation of the distinction.
 
 <a id="c02"></a>
 ### C02. One live language-intake exclusion and the broader Encounter account coexist
@@ -407,7 +405,7 @@ The author's broader account attaches language Encounters such as `code.c` and a
 <a id="c06"></a>
 ### C06. Retention, editability, and participation have distinct implementations
 
-**Source-inspected.** Memory is mutable and unversioned; ordinary knowledge records can be edited in place; intake and finished corrections are protected by different rules; prompt versions retain text immutably. Hiding and masking exclude context without deleting content, and explicit named/raw reads can inspect retained content.
+**Source-inspected.** Memory is mutable and unversioned; ordinary knowledge records can be edited in place; a finished intake changes only by refining, which keeps every version, and memory by its own operations; prompt versions retain text immutably. Hiding and masking exclude context without deleting content, and explicit named/raw reads can inspect retained content.
 
 **Correspondence:** descriptions such as every layer is immutable, every memory has provenance, or every hidden item is inaccessible through all reads would be incorrect. The exact layer lifecycle is the basis for explaining reuse and history. See [sections 5-8](#selection).
 
@@ -484,7 +482,7 @@ The earlier bus/runtime illustration versus current sequential awaited delivery 
 | Knowledge and memory lifecycle | [test_store_layers.py:122-136](../../tests/test_store_layers.py#L122-L136), [227-257](../../tests/test_store_layers.py#L227-L257). |
 | Relationship-addressed memory | [memory tests](../../src/metaform/modules/memory/tests/test_memory.py): join nodes, relations at both ends, deletion, selection, and newly noted elements. |
 | Challenges and direct plans | [test_store_challenges.py](../../tests/test_store_challenges.py). |
-| Corrections | [test_store_corrections.py](../../tests/test_store_corrections.py): precedence, peel, orphans, join moves, the element that never moves, re-examination, and `ef`. |
+| Refinements | [test_store_refinements.py](../../tests/test_store_refinements.py): a refinement as a version that makes no layer, history, orphans, join moves, the element that never moves, re-examination, and `ef`, `perspective` and `verb` kept through every refinement. |
 | Elements, joins, work records and the address read | [test_store_map.py](../../tests/test_store_map.py), [test_store_reads.py](../../tests/test_store_reads.py), [test_store_operations.py](../../tests/test_store_operations.py): an element is its address, `name_length` and role, names on joins, subtype joins, identity kept at an address, work records apart from the map, and `where`. |
 | Announcing changes | [test_map_changed.py](../../tests/test_map_changed.py): `map.changed` once per command that changed the map, never for a read, on the command line and over MCP. |
 | Prompt version/use | [test_prompts.py](../../tests/test_prompts.py): version retention, use linkage, shipped text, indexed reads. |
@@ -511,7 +509,7 @@ The earlier run has report/feedback files with id `70618d7651c24ba9b04219544af15
 <a id="graph-index"></a>
 ## 15. Complete index of the September 26 map
 
-The following index is derived from the supplied `exports/metaform-main.json`, not from an invented decomposition of the code. It includes all 19 global elements, all 33 purpose joins, and all 26 internal subtypes in that export. It is an index to the functionality represented on September 26; implementation status remains governed by the sections above. The project names in these tables are the export's descriptor names at its elements and the names on its subtype rows; the current store holds a project name on the join, and a subtype as a join of type `subtype` holding an element.
+Descriptions in this index are the snapshot's own wording; they name a correction stack and correction layers that Metaform has since replaced with refining in the one `intake` layer. The following index is derived from the supplied `exports/metaform-main.json`, not from an invented decomposition of the code. It includes all 19 global elements, all 33 purpose joins, and all 26 internal subtypes in that export. It is an index to the functionality represented on September 26; implementation status remains governed by the sections above. The project names in these tables are the export's descriptor names at its elements and the names on its subtype rows; the current store holds a project name on the join, and a subtype as a join of type `subtype` holding an element.
 
 `document.specification` and the internal `document.rules.collaboration` are included because the supplied map represents them. The excluded narrative documents themselves were not used as a source for this reference.
 
@@ -780,7 +778,7 @@ The containment shown in this table refers to the join in which the provider sup
 | `code.bus.event` | event bus | `code.chassis` <- `code.system.plugin` |
 | `code.integration.continuous` | CI | `document.specification` <- `code.suite.test` |
 
-The export's five findings concern the `ef` interface, side-by-side variant launching, origin-unit export, installed-skill verification, and CI lint results. Since then the map interface writes `ef` on `add-join` and `add-subtype`, [C01](#c01). A subtype flagged missing remains part of the represented function; consult [localized correspondence](#correspondence) and [supporting capabilities](#supporting) before treating its name as an implemented command.
+The export's five findings concern the `ef` interface, side-by-side variant launching, origin-unit export, installed-skill verification, and CI lint results. Since then the map interface writes `ef` on `add-join` and `add-subtype` and reads it on `edit` and `refine`, [C01](#c01). A subtype flagged missing remains part of the represented function; consult [localized correspondence](#correspondence) and [supporting capabilities](#supporting) before treating its name as an implemented command.
 
 Source: [the September 26 project export](../examples/project-metaform.json).
 

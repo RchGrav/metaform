@@ -14,7 +14,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from . import corrections, rows, views
+from . import rows, versions, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
 from .records import (
@@ -31,9 +31,7 @@ from .records import (
     Message,
     Node,
     NodeView,
-    Notice,
     Page,
-    PeelPreview,
     Property,
     Provenance,
     Report,
@@ -342,8 +340,8 @@ def citing(tx: Tx, key: str, value: str, limit: int, after: str | None) -> Page[
 
     def build(row: Row) -> Citation | None:
         owner = str(row['owner'])
-        spec = corrections.KINDS[owner]
-        current = corrections.current_of_row(tx.db, owner, int(row['owner_row']))
+        spec = versions.KINDS[owner]
+        current = versions.current_of_row(tx.db, owner, int(row['owner_row']))
         if current is None or (owner, current) in seen:
             return None
         seen.add((owner, current))
@@ -354,22 +352,11 @@ def citing(tx: Tx, key: str, value: str, limit: int, after: str | None) -> Page[
 
 
 def history(tx: Tx, thing: str, limit: int, after: str | None) -> Page[Version]:
-    """Every version of a thing: the row that added it, then each stacked correction's row, in order."""
+    """Every version of a thing in the order it was written: the row that added it, then each refinement."""
     kind = rows.kind_of(tx, thing)
-    spec = corrections.KINDS[kind]
-    positions = corrections.stack_positions(tx.db)
-    kinds = corrections.layer_kinds(tx.db)
-    ordered = sorted((row for row in tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=?', (thing,))
-                      if kinds[row['layer_id']] != 'correction' or row['layer_id'] in positions),
-                     key=lambda row: positions.get(str(row['layer_id']), 0))
-    return sliced(tuple(views.version(tx, kind, row, positions) for row in ordered), limit, after)
-
-
-def stack(tx: Tx, limit: int, after: str | None) -> Page[Layer]:
-    """The correction layers in the order they were applied, each with its provenance."""
-    found = tuple(views.layer(tx, rows.layer(tx, str(row[0])), with_provenance=True)
-                  for row in tx.db.execute('SELECT layer_id FROM correction_stack ORDER BY position'))
-    return sliced(found, limit, after)
+    spec = versions.KINDS[kind]
+    ordered = tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=? ORDER BY row', (thing,))
+    return sliced(tuple(views.version(tx, kind, row) for row in ordered), limit, after)
 
 
 def layers(tx: Tx, res: Resolver, tag: str | None, kind: str | None, module: str | None, limit: int,
@@ -549,21 +536,6 @@ def save_report(tx: Tx, name: str, run_id: str, kind: str, size: int, layer: str
 def has_intake(tx: Tx) -> bool:
     return tx.db.execute("SELECT 1 FROM layers WHERE kind='intake' AND ready IS NOT NULL LIMIT 1").fetchone() \
         is not None
-
-
-def peel_preview(tx: Tx, layer: str) -> PeelPreview:
-    """What removing a correction layer would change, and whether it is the top one, VIEW-014."""
-    found = rows.layer(tx, layer)
-    if found.kind != 'correction':
-        return PeelPreview(found.name, False, notices=(
-            Notice('layer', f'{found.name} is not a correction layer; only a correction layer is removed from the stack.'),))
-    top = tx.db.execute('SELECT layer_id FROM correction_stack ORDER BY position DESC LIMIT 1').fetchone()
-    stacked = tx.db.execute('SELECT 1 FROM correction_stack WHERE layer_id=?', (found.layer_id,)).fetchone()
-    if stacked is None:
-        return PeelPreview(found.name, False, notices=(
-            Notice('layer', f'{found.name} is not on the stack; it changes nothing yet.'),))
-    return PeelPreview(found.name, top is not None and top[0] == found.layer_id,
-                       tuple(corrections.preview(tx.db, found.layer_id)))
 
 
 def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphPage:

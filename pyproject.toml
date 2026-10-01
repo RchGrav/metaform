@@ -14,13 +14,14 @@ metaform = "metaform.cli:main"
 
 [project.optional-dependencies]
 # The checkers and the browser driver are pinned, so CI is repeatable.
-dev = ["pytest>=8", "mcp>=2.2", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
+dev = ["pytest>=8", "pytest-xdist>=3.8", "mcp>=2.2", "pyright==1.1.414", "ruff==0.16.9", "playwright==1.63.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metaform"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/metaform/modules"]
+addopts = "-n auto --dist loadgroup"  # every core, browser tests grouped, conftest.py; half an hour on one core
 markers = [
     "req(id): the spec requirement a test protects, QUAL-009 and E4",
     "kind(kind): fixture, simulation or real, QUAL-014",

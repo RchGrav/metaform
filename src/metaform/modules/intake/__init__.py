@@ -16,15 +16,14 @@ from __future__ import annotations
 
 import json
 import re
-import secrets
 import sys
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from metaform import settings
-from metaform.data import Element, GraphPage, Join, Layer, Notice, Store, Subtype
+from metaform.data import Element, GraphPage, Join, Layer, Node, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
 from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
@@ -98,6 +97,7 @@ def prompt(ctx: Context) -> str:
 
 Notices = list[dict[str, str]]
 JOIN_TEXT = ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation')
+IFD = {'type': 'string', 'enum': ['sends', 'receives', 'both']}  # Information Flow Direction, the primary flow of information
 SUBTYPE_TEXT = ('ef', 'perspective', 'relation', 'verb', 'observation')
 ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
 ADDRESS = 'namespace_address'  # the element's address, named as in the Canonical Intake, MAP-040
@@ -203,7 +203,7 @@ def _open(ctx: Context, store: Store, notices: Notices) -> Recording:
     # No copy of the intake text is kept: the Canonical Intake's purpose never changes, STORE-016.
     provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': None,
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role'), 'blinded': ctx.nouns.get('blinded')}
-    layer = target.layer(f'intake-{_stamp()}-{secrets.token_hex(3)}', 'intake', VARIABLE, kind='intake',
+    layer = target.layer('intake', 'intake', VARIABLE, kind='intake',
                          mutable=False, hideable=False, provenance=provenance, result_id=_text(ctx, 'id', notices))
     return Recording(target, layer, name, is_active)
 
@@ -292,7 +292,17 @@ def element(ctx: Context) -> Any:
     given['name_length'] = _whole(ctx.nouns.get('name_length'))
     address = ctx.nouns[ADDRESS]
     made = _describe(rec, address, given, refs, extra, notices)
+    _condition(ctx, rec, 'element', made, notices)
     return {'element_id': made, ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
+
+
+def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], thing: str | None,
+               notices: Notices) -> None:
+    """A condition or a note given with what was recorded is an open work record at it, MAP-046: the missing, broken
+    and exclude marks of the Canonical Intake's step 2, apart from the map."""
+    if thing is None or (ctx.nouns.get('condition') is None and ctx.nouns.get('note') is None):
+        return
+    _note(notices, rec.store.add_work(Node(kind, thing), ctx.nouns.get('condition'), note=ctx.nouns.get('note')))
 
 
 def _missing(ctx: Context, names: tuple[str, ...], notices: Notices) -> None:
@@ -301,17 +311,25 @@ def _missing(ctx: Context, names: tuple[str, ...], notices: Notices) -> None:
             notices.append({'where': name, 'message': f'{name} is missing; stored empty.'})
 
 
+def _with_ifd(ctx: Context, extra: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A join's Information Flow Direction is kept in its extra, under ifd."""
+    ifd = ctx.nouns.get('ifd')
+    return extra if ifd is None else {**(extra or {}), 'ifd': ifd}
+
+
 def join(ctx: Context) -> Any:
     """Record one join: the receiver's purpose served by the provider's encounter function."""
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
-    _missing(ctx, JOIN_TEXT, notices)
+    _missing(ctx, (*JOIN_TEXT, 'ifd'), notices)
+    extra = _with_ifd(ctx, extra)
     receiver, provider = ctx.nouns['receiver'], ctx.nouns['provider']
     made = rec.store.add_join(rec.layer.name, receiver, provider,
                               **{name: ctx.nouns.get(name) for name in ('name', *JOIN_TEXT, 'non_goal')},
                               type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra)
     _note(notices, made)
+    _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
     return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
             'layer': rec.layer.name, 'notices': notices}
 
@@ -322,7 +340,8 @@ def subtype(ctx: Context) -> Any:
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
-    _missing(ctx, SUBTYPE_TEXT, notices)
+    _missing(ctx, (*SUBTYPE_TEXT, 'ifd'), notices)
+    extra = _with_ifd(ctx, extra)
     address = ctx.nouns[ADDRESS]
     described = {'role': ctx.nouns.get('role'), 'name_length': _whole(ctx.nouns.get('name_length'))}
     element_id = _describe(rec, address, described, None, None, notices)
@@ -331,6 +350,7 @@ def subtype(ctx: Context) -> Any:
                                                                            'purpose')},
                                  refs=refs or (), extra=extra)
     _note(notices, made)
+    _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
     return {'join_id': getattr(made, 'join_id', None), 'parent': ctx.nouns['into'], 'element_id': element_id,
             ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
 
@@ -596,18 +616,22 @@ NOUNS = {noun.name: noun for noun in (
     Noun('refs', J('refs', ''), required=False, schema=REFS),
     Noun('extra', '', required=False, schema=EXTRA),
     Noun('type', '', required=False),
+    Noun('condition', E('condition', ''), required=False),
+    Noun('note', E('note', ''), required=False),
+    Noun('ifd', J('ifd', ''), required=False, schema=IFD),
     *(Noun(field, J(field, ''), required=False, schema=EF if field == 'perspective' else None)
       for field in ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal')),
 )}
 SUBTYPE_NOUNS = (
     Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
     Noun(ADDRESS, H(ADDRESS, '')),
-    *_nouns('type', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal'),
+    *_nouns('type', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal'),
     Noun('role', H('role', ''), required=False, schema=SUBTYPE_ROLE),
     Noun('name', H('name', ''), required=False),
     Noun('name_length', H('name_length', ''), required=False, schema=NAME_LENGTH),
     Noun('refs', H('refs', ''), required=False, schema=REFS),
     NOUNS['extra'],
+    *_nouns('condition', 'note'),
 )
 ABSORB_NOUNS = (
     Noun('join', 'The join_id of the join where the element provides, the join to place inside its parent.'),
@@ -623,7 +647,8 @@ MODULE = Module(
     details='The intake text is served unchanged except for its filled target. The intake is recorded as it is '
             'reasoned, one element, join or subtype join per call, into one building intake layer, annealed with '
             'absorb, read back with show, whole or one receiver at a time, and corrected with edit and remove. No '
-            'other read sees it until finish; after finish it changes only through a correction layer. Nothing is '
+            'other read sees it until finish; after finish the metaform changes by refining, metaform map knowledge '
+            'op=refine, in the same layer. Nothing is '
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
         Verb('prompt', prompt, 'The Canonical Intake instructions for this project.',
@@ -637,15 +662,17 @@ MODULE = Module(
                     Noun('id', "The result's generated id.", required=False))),
         Verb('element', element, 'Record one element, or describe again one already recorded.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),
-                    *_nouns('role', 'name_length'),
+                    *_nouns('name_length'),
+                    Noun('name', E('name', ''), required=False),
+                    *_nouns('role'),
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
                     NOUNS['extra'],
-                    Noun('name', E('name', ''), required=False))),
+                    *_nouns('condition', 'note'))),
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
              nouns=(Noun('receiver', J('receiver', '')),
                     Noun('provider', J('provider', '')),
-                    *_nouns('name', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal', 'type',
-                            'refs', 'extra'))),
+                    *_nouns('name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal', 'type',
+                            'refs', 'extra', 'condition', 'note'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join, holding an element.',
              nouns=SUBTYPE_NOUNS),
         Verb('absorb', absorb, "Anneal: make a recorded join a subtype join inside its parent's purpose join, keeping "
@@ -658,7 +685,7 @@ MODULE = Module(
                            'had.',
              nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
                                'included.'),
-                    *_nouns('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal', 'type'),
+                    *_nouns('purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal', 'type'),
                     Noun('receiver', 'A new receiver for a join, by namespace address: the join moves and keeps its '
                                      'join_id.', required=False),
                     Noun('provider', 'A new Providing Element for a join, by namespace address.', required=False),
@@ -669,8 +696,8 @@ MODULE = Module(
              nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
                                'included.'),)),
         Verb('finish', finish, 'Finish and activate the recorded metaform, keeping the earlier one whole. Switch '
-                               'back with metaform map activate <previous-name>. The finished intake changes only '
-                               'through a correction layer.',
+                               'back with metaform map activate <previous-name>. After finish the metaform changes '
+                               'by refining: metaform map knowledge op=refine.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),

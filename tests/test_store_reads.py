@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from storekit import correction, knowledge, memory, plans, scans, small_map
+from storekit import knowledge, memory, plans, scans, small_map
 
 from metaform.data import Node, Store
 
@@ -25,9 +25,7 @@ def populated(store):
     store.select('code.alarm.audible', notes.name)
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('element', 'code.timer.kitchen'), 'drifts under load')
-    fix = correction(store, 'fix-1')
-    store.correct(fix.name, inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
-    store.finish(fix.name)
+    store.refine(inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
     return layer, outer, inner
 
 
@@ -60,8 +58,6 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'links_to': lambda: store.links_to(Node('element', 'code.alarm.audible')).results,
         'citing': lambda: store.citing('path', 'src/tick.c').results,
         'history': lambda: store.history(inner.join_id).results,
-        'stack': lambda: store.stack().results,
-        'peel_preview': lambda: store.peel_preview('fix-1'),
         'graph': lambda: store.graph(limit=2),
         'layers': lambda: store.layers().results,
         'layers by tag': lambda: store.layers(tag='practices').results,
@@ -124,7 +120,7 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
         ('code.loop.tick', 'tick loop', 'Advances each countdown.')]
     assert relying['code.timer.kitchen.display'].layer == 'notes'
     assert [(join.join_id, join.provider_address, join.ef, join.layer) for join in kitchen.receives] == [
-        (inner.join_id, 'code.alarm.audible', 'Plays a loud tone.', 'fix-1')]
+        (inner.join_id, 'code.alarm.audible', 'Plays a loud tone.', 'intake-1')]
     assert kitchen.subtype is None and kitchen.join is None and kitchen.work == ()
     assert {group.layer: ([item.value for item in group.items], [prop.value for prop in group.properties])
             for group in kitchen.layers} == {'notes': (['keep the loop small'], ['C']),
@@ -196,7 +192,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
     assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
                                   'purpose': 'Get attention when a countdown ends.', 'ef': 'Plays a loud tone.',
                                   'relation': 'The alarm rings for the timer.', 'observation': 'A piezo speaker.',
-                                  'name': 'audible alarm', 'layer': 'fix-1'}]
+                                  'name': 'audible alarm', 'layer': 'intake-1'}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']
     alarm = store.element('code.alarm.audible').element_id
     assert small['layers'][0]['items'] == [{'layer': 'notes', 'value': 'keep the loop small',

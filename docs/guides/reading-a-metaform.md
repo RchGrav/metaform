@@ -4,7 +4,7 @@
 
 An Inference Metaform is a representation of **what a workpiece is doing**. Its addresses organize functional meaning; its joins explain receiving purposes and how providers serve them. It is not a source-file hierarchy or a call graph with more descriptive labels.
 
-This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 5 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 8 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
 
 The export was written by the store of that day, and three of its record shapes have changed since. The project's name for a functionality was a descriptor item at the element; it is now the join's `name`. A subtype was its own row; it is now a join of type `subtype` inside its parent join, holding an ordinary element. The condition of an object was a finding with a `flag`; it is now a work record, apart from the map. The export also predates `verb`, so its joins and subtypes record `verb` as null, and its relations are whole sentences.
 
@@ -177,7 +177,7 @@ The exported graph's broad provider records contain receiver-specific joins. The
 
 ## Distinguish the representation from attached knowledge
 
-An element or a join, a subtype join included, provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Corrections retain changes to the representation through a separate stack.
+An element or a join, a subtype join included, provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Refinements retain changes to the representation as versions in the `intake` layer.
 
 ```sh
 metaform map node element:code.system.plugin

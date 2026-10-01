@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from storekit import correction, dump, knowledge, memory, record_intake, small_map, store_file
+from storekit import dump, knowledge, memory, record_intake, small_map, store_file
 
 from metaform import home as metaform_home
 from metaform.data import Node, Store, StoreError, export_document, import_document
@@ -24,9 +24,9 @@ def filled(store):
     store.mask('code.alarm', notes.name)
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('join', inner.join_id), 'quiet tone')
-    fix = correction(store, 'fix-1')
-    store.correct(fix.name, inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder', evidence='bench')
-    store.finish(fix.name)
+    store.refine(inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder', evidence='bench')
+    store.refine(outer.join_id, {'refs': [('path', 'src'), ('path', 'src/timer.c')]}, reason='both files')
+    store.refine(outer.join_id, {'purpose': 'Serve each dish on time.'}, reason='sharper')
     return outer, inner
 
 
@@ -40,19 +40,24 @@ def move_home(monkeypatch, tmp_path, name):
 @pytest.mark.req('STORE-007')
 @pytest.mark.req('STORE-021')
 def test_export_import_export_gives_the_same_document(home, store, monkeypatch, tmp_path):
-    filled(store)
+    outer, _ = filled(store)
+    versions = [(version.op, version.fields['purpose'], [(ref.key, ref.value) for ref in version.refs])
+                for version in store.history(outer.join_id).results]
     kitchen = store.element('code.timer.kitchen').element_id
     first = export_document(['proj'])
     move_home(monkeypatch, tmp_path, 'other-home')
     report = import_document(json.loads(json.dumps(first)))
-    assert report['layers_added'] >= 4 and report['layers_skipped'] == 0
+    assert report['layers_added'] == 3 and report['layers_skipped'] == 0
     second = export_document(['proj'])
     assert second == first
     moved = Store('proj')
     assert moved.element('code.timer.kitchen').element_id == kitchen
     join = next(join for join in moved.joins('code.alarm.audible', raw=True).results if join.layer == 'notes')
     assert join.extra == {'latency_budget': '5 ms'}
-    assert [layer.name for layer in moved.stack().results] == ['fix-1']
+    assert [(version.op, version.fields['purpose'], [(ref.key, ref.value) for ref in version.refs])
+            for version in moved.history(outer.join_id).results] == versions  # every version, with its own refs
+    assert len(versions) == 3
+    assert moved.joins('stakeholder.cook.home').results[0].purpose == 'Serve each dish on time.'  # the newest is current
 
 
 @pytest.mark.req('STORE-027')
@@ -95,9 +100,7 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
 def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they_were(home, store, monkeypatch,
                                                                                        tmp_path):
     _, outer, inner = small_map(store)
-    fix = correction(store, 'fix-1')
-    store.correct(fix.name, inner.join_id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
-    store.finish(fix.name)
+    store.refine(inner.join_id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
     notes = knowledge(store, 'notes')
     for address in ('code.a', 'code.p', 'code.q'):
         store.add_element(notes.name, address)
@@ -125,7 +128,7 @@ def test_importing_what_already_exists_changes_nothing(home, store):
         row['value'] = json.dumps('rewritten elsewhere')
     before = dump(store_file(home, store))
     report = import_document(document)
-    assert report['layers_added'] == 0 and report['layers_skipped'] >= 4 and report['metaforms_added'] == 0
+    assert report['layers_added'] == 0 and report['layers_skipped'] == 3 and report['metaforms_added'] == 0
     assert dump(store_file(home, store)) == before
 
 

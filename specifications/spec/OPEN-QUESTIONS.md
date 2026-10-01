@@ -50,6 +50,24 @@ Recommendation: a file in `specifications/`, beside `code_quality_standards.md`.
 
 **D103. Why the ideation agent adds one feature.** An ideation agent examines the whole project, adds the single most valuable missing feature, and may build its own module to do it, LAYER-023. What is it for, beside the blind spot analyses of LAYER-014, and why one feature? (LAYER-023)
 
+**D104. The inferred slash commands.** Rich named `status`, `config`, `web`, `messages` and `tasks` as slash commands, MCP-033. Each is inferred to run one verb and serve its result: `status` what `metaform` alone prints, `config` what `config --show` prints, `web` what `web start` prints after starting the web GUI when it is not running, `messages` what `map messages` prints, and `tasks` what `map work open=true` prints. Is each the verb meant, and does any carry words of Rich's that tell the agent what to do with the result, such as walking the person through the open questions, or taking a task? (MCP-032, MCP-033, D92)
+Recommendation: each runs the verb in MCP-033's table and serves its result alone until Rich writes its words.
+
+**D105. `/metaform:prompt`.** Does it show a stored prompt by name, the way `metaform prompt <name>` does, STORE-044, or run a stored prompt on the metaform, preprocessed against the map, LAYER-017? (MCP-033, STORE-044, LAYER-017)
+Recommendation: none. The two are different commands, and which one is meant is Rich's intent.
+
+**D106. `/metaform:correct`.** A correction layer is the only way to change the metaform, LAYER-011. Running the command could create a correction layer at once, or serve Rich's words telling the agent to record the correction the person describes in a new correction layer and finish it. Which, and what are the words? (MCP-033, LAYER-011)
+Recommendation: no verb, and Rich's words, so no empty correction layer is left behind when the person stops before saying what is wrong.
+
+**D107. `/metaform:refine`.** No command or record of this name exists. What does it do, and which module owns it: annealing, MAP-030, building a knowledge layer node by node, LAYER-020, or something else? (MCP-033)
+Recommendation: none. Nothing in the spec says what is meant. Since 2026-10-01 changing the metaform is called refining, LAYER-025; whether `/metaform:refine` starts a refinement, and whether `/metaform:correct` is still a command of its own, D106, are still Rich's.
+
+**D108. Undoing a refinement.** Refinements are versions in the `intake` layer, LAYER-025, and every version is kept. Correction layers were undone by peeling the top one, VIEW-014. Is a refinement undone, and how: the page steps a thing back one version, or a refinement is undone only by refining again? (LAYER-025, VIEW-014)
+Recommendation: refining again, which keeps one way to change the metaform; history shows each earlier version to refine back to.
+
+**D109. Who made a refinement.** A correction layer carried its own provenance: the module, workflow, prompt, model and role of the agent that made it, and its tags. A refinement is a version in the `intake` layer, LAYER-025, and keeps only its reason and evidence; the intake layer's provenance is the intake agent's. Is the model, role and prompt of each refinement recorded, and where: on each version, or as one record per refinement run that its versions name? (LAYER-025, LAYER-010, STORE-044)
+Recommendation: one record per refinement run, with its provenance and tags, that each version it wrote names, so a run's versions are read together and nothing about who made them is lost.
+
 ## Answered
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.

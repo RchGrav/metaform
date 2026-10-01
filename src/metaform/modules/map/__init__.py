@@ -159,10 +159,6 @@ def history(ctx: Context) -> Any:
     return _store(ctx).history(ctx.nouns['id'], **_paging(ctx))
 
 
-def stack(ctx: Context) -> Any:
-    return _store(ctx).stack(**_paging(ctx))
-
-
 def metaforms(ctx: Context) -> Any:
     return _other_project(ctx).metaforms(**_paging(ctx))
 
@@ -263,9 +259,8 @@ READS: dict[str, frozenset[str]] = {
     'add-plan': frozenset({'element', 'join'}),
     'edit': frozenset({'id', *FIELDS}),
     'remove': frozenset({'id'}),
-    'correct': frozenset({'id', 'reason', 'evidence', 'remove', *FIELDS}),
+    'refine': frozenset({'id', 'reason', 'evidence', 'remove', *FIELDS}),
     'finish': frozenset(),
-    'peel': frozenset(),
     'discard': frozenset(),
 }
 
@@ -274,8 +269,8 @@ READS: dict[str, frozenset[str]] = {
 NEEDS: dict[str, tuple[str, ...]] = {
     'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'provider'),
     'add-subtype': ('join', 'address'), 'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
-    'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',), 'correct': ('layer', 'id'),
-    'finish': ('layer',), 'peel': ('layer',), 'discard': ('layer',),
+    'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',), 'refine': ('id',),
+    'finish': ('layer',), 'discard': ('layer',),
 }
 # The operations that name their thing by id, so a missing layer is named in a notice and the call goes ahead.
 BY_ID = ('edit', 'remove', 'add-ref')
@@ -312,7 +307,8 @@ def _with_notices(result: Any, notices: list[Notice]) -> Any:
 
 
 def knowledge(ctx: Context) -> Any:
-    """Create, build, edit and finish a knowledge or correction layer, one object per call, LAYER-018. Nothing is
+    """Create, build, edit and finish a knowledge layer, and refine the metaform, one object per call, LAYER-018 and
+    LAYER-025. Nothing is
     refused for its content; only a field in NEEDS stops a call, before anything is written, BASE-038 and BASE-044."""
     op = ctx.nouns.get('op')
     if op is None:
@@ -320,8 +316,8 @@ def knowledge(ctx: Context) -> Any:
     if op not in READS:
         raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
     _need(ctx, *NEEDS.get(op, ()))
-    if op == 'create' and ctx.nouns.get('kind', 'layer') not in ('layer', 'correction'):
-        raise Stop('knowledge creates a knowledge layer or a correction layer: kind=layer or kind=correction.',
+    if op == 'create' and ctx.nouns.get('kind', 'layer') != 'layer':
+        raise Stop('knowledge creates a knowledge layer: kind=layer.',
                    'metaform help map knowledge')
     notices = _unread(ctx, op)
     return _with_notices(_knowledge(ctx, op, notices), notices)
@@ -383,14 +379,12 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'remove':
         thing = nouns['id']
         return store.remove(int(thing) if str(thing).isdigit() else thing)
-    if op == 'correct':
+    if op == 'refine':
         (reason,) = _empty(ctx, notices, 'reason')
-        return store.correct(name, nouns['id'], _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
-                             evidence=nouns.get('evidence'))
+        return store.refine(nouns['id'], _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
+                            evidence=nouns.get('evidence'))
     if op == 'finish':
         return store.finish(name)
-    if op == 'peel':
-        return store.peel(name)
     if op == 'discard':
         return store.discard(name)
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
@@ -402,13 +396,13 @@ def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] |
 
 KNOWLEDGE_NOUNS = (
     _noun('op', 'create, add-element, add-join, add-subtype, add-property, add-item, add-ref, add-plan, edit, remove, '
-                'correct, finish, peel or discard.'),
+                'refine, finish or discard.'),
     _noun('layer', 'The layer this call works on, by name or id. An object added without one goes to a new layer '
                    'named unnamed-<time>.'),
     _noun('variable', 'create: the one question the layer answers.'),
     _noun('mutable', 'create: whether its items change in place.', 'bool'),
     _noun('hideable', 'create: whether it can be hidden.', 'bool'),
-    _noun('kind', 'create: layer, or correction.'),
+    _noun('kind', 'create: layer.'),
     _noun('fields', 'create: the fields of the variable, a JSON list of names.', 'json', {'type': 'array'}),
     _noun('sources', 'create: the layers it is built from, a JSON list.', 'json', {'type': 'array'}),
     _noun('tags', 'create: its tags, a JSON list.', 'json', {'type': 'array'}),
@@ -420,7 +414,7 @@ KNOWLEDGE_NOUNS = (
                   'the element, the one a subtype join holds included.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
-                     'the subtype join holds. An element cannot be moved: edit and correct do not apply it.'),
+                     'the subtype join holds. An element cannot be moved: edit and refine do not apply it.'),
     _noun('name', "add-join and add-subtype: the project's own name for the functionality the join names, its "
                   'canonical or informal name. An element holds no name: its name is its address read through '
                   'name_length.'),
@@ -428,11 +422,11 @@ KNOWLEDGE_NOUNS = (
           'int'),
     _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
     _noun('extra', 'A JSON object of further fields.', 'json', {'type': 'object'}),
-    _noun('receiver', 'add-join: the element that holds the purpose; edit and correct: another receiver, which moves '
+    _noun('receiver', 'add-join: the element that holds the purpose; edit and refine: another receiver, which moves '
                       'the join.'),
-    _noun('provider', 'add-join: the element whose function serves it; edit and correct: another provider, or on a '
+    _noun('provider', 'add-join: the element whose function serves it; edit and refine: another provider, or on a '
                       'subtype join another element to hold.'),
-    _noun('parent', 'edit and correct: the id of a join held by a receiver; the join becomes a subtype join inside '
+    _noun('parent', 'edit and refine: the id of a join held by a receiver; the join becomes a subtype join inside '
                     'it, keeping its purpose.'),
     _noun('purpose', 'add-join and add-subtype: the Operative Purpose; a subtype join keeps its own purpose.'),
     _noun('ef', "add-join and add-subtype: the Encounter Function."),
@@ -451,10 +445,11 @@ KNOWLEDGE_NOUNS = (
     _noun('link', 'add-item: a node the item links to.'),
     _noun('owner', 'add-ref: the id of the thing the ref belongs to.'),
     _noun('key', 'add-ref: the ref key.'),
-    _noun('id', 'edit, remove and correct: the id of the thing.'),
-    _noun('reason', 'correct: why.'),
-    _noun('evidence', 'correct: what shows it.'),
-    _noun('remove', 'correct: remove the thing instead of changing it.', 'bool'),
+    _noun('id', 'edit, remove and refine: the id of the thing.'),
+    _noun('reason', 'refine: why.'),
+    _noun('evidence', 'refine: what shows it.'),
+    _noun('remove', 'refine: remove the thing from the metaform instead of changing it; its versions are kept.',
+          'bool'),
 )
 
 # The nouns each work operation reads, besides op.
@@ -615,8 +610,8 @@ MODULE = Module(
              nouns=(Noun('node', 'A node.'), _noun('layer', 'Only this layer.'), *PAGING), switches=RAW),
         Verb('citing', citing, 'Everything whose refs hold a key and value.',
              nouns=(Noun('key', 'The ref key, such as path.'), Noun('value', 'The ref value.'), *PAGING)),
-        Verb('history', history, 'Every version of a thing, in stack order.', nouns=(Noun('id', 'An id.'), *PAGING)),
-        Verb('stack', stack, 'The correction layers in the order they were applied.', nouns=PAGING),
+        Verb('history', history, 'Every version of a thing, in the order it was written.',
+             nouns=(Noun('id', 'An id.'), *PAGING)),
         Verb('metaforms', metaforms, "The project's metaforms.", nouns=(_noun('project', 'A project id.'), *PAGING)),
         Verb('add-metaform', add_metaform, 'Start a new, empty metaform and make it active.',
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
@@ -667,10 +662,12 @@ MODULE = Module(
              nouns=(_noun('node', 'Only those at this node.'), _noun('kind', 'question or message.'),
                     _noun('open', 'true for those that still wait, false for those answered or read.', 'bool'),
                     *PAGING)),
-        Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge or correction layer.',
+        Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge layer, and refine the metaform.',
              nouns=KNOWLEDGE_NOUNS,
-             details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
-                     'operations change one object each; op=finish marks it ready.',
+             details='Every call but op=refine names its layer with layer=. op=create makes the layer; the add, edit '
+                     'and remove operations change one object each; op=finish marks it ready. op=refine changes or '
+                     'removes one thing of the metaform as its newest version in the metaform\'s own layer, keeping '
+                     'every earlier one; the metaform grows by the add operations with layer=intake.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',

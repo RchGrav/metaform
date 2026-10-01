@@ -187,7 +187,7 @@ TOGGLED = ['intake-1', *KNOWLEDGE]
 
 def build(store):
     """An intake with a DE carrying a broken work record and a subtype; a knowledge layer on, one masked at code.alarm, one hidden; and a
-    knowledge item orphaned when a correction removes its element, VIEW-004."""
+    knowledge item orphaned when a refinement removes its element, VIEW-004 and LAYER-025."""
     from metaform.data import Node
     with store.atomic():
         intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
@@ -221,10 +221,7 @@ def build(store):
         store.finish(name)
     store.mask('code.alarm', 'extra')
     store.hide('secret')
-    fix = store.layer('fix-1', 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
-                      provenance=PROVENANCE)
-    store.correct(fix.name, store.element('code.gone').element_id, remove=True, reason='It is not there.')
-    store.finish(fix.name)
+    store.refine(store.element('code.gone').element_id, remove=True, reason='It is not there.')
 
 
 @pytest.fixture
@@ -268,7 +265,6 @@ def test_each_read_endpoint_returns_what_its_store_read_returns_in_context_and_r
         '/api/work': lambda raw: store.work(),
         '/api/work?node=element:code.timer.kitchen': lambda raw: store.work(node=kitchen),
         '/api/search?text=loop': lambda raw: store.search('loop'),
-        '/api/stack': lambda raw: store.stack(),
         '/api/provenance?layer=notes': lambda raw: store.provenance('notes'),
         '/api/metaforms': lambda raw: store.metaforms(),
         '/api/layer-items?layer=notes': lambda raw: store.layer_items('notes'),
@@ -344,7 +340,7 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
                  '/api/graph?project=proj&limit=0', '/api/graph?project=proj&raw=true&layers=notes',
                  '/api/children?project=proj&address=code', '/api/node?project=proj&target=element:code.timer.kitchen',
                  '/api/joins?project=proj&element=code.timer.kitchen', '/api/layers?project=proj',
-                 '/api/work?project=proj', '/api/search?project=proj&text=loop', '/api/stack?project=proj',
+                 '/api/work?project=proj', '/api/search?project=proj&text=loop',
                  '/api/provenance?project=proj&layer=notes'):
         assert request(web, path)[0] == 200, path
     assert [path.read_bytes() for path in stores] == before
@@ -534,7 +530,7 @@ def test_the_layers_list_opens_from_the_header_and_back_and_forward_sit_clear_of
     by_name = {row['text'].split()[0]: row for row in rows}
     assert by_name['notes']['checked'] and not by_name['notes']['disabled'] and 'layer' in by_name['notes']['text']
     assert by_name['secret']['disabled'] and 'hidden' in by_name['secret']['text']
-    assert by_name['corrections']['checked'] and by_name['corrections']['disabled']
+    assert sorted(by_name) == ['extra', 'intake-1', 'notes', 'secret']  # nothing about refinements, LAYER-025
     assert page.is_visible('#layerlist #apply')
     page.keyboard.press('Escape')
     assert not page.is_visible('#layerlist')
@@ -569,78 +565,40 @@ def test_toggling_layers_in_the_page_changes_only_the_view_until_apply(run, web,
     assert problems == []
 
 
-def stacked(store):
-    """Two more correction layers on the fixture's fix-1: fix-2 records a bell and moves the timer's alarm join to it,
-    fix-3 records a chime and moves the join on to that; an element never moves, MAP-015."""
-    alarm = store.joins('code.timer.kitchen').results[0].join_id
-    for name, new in (('fix-2', 'code.alarm.bell'), ('fix-3', 'code.alarm.chime')):
-        layer = store.layer(name, 'test', 'Corrections.', kind='correction', mutable=False, hideable=False,
-                            provenance=PROVENANCE)
-        store.add_element(layer.name, new, name_length=1, role='SE')
-        store.correct(layer.name, alarm, {'provider': new}, reason=f'it is a {new[11:]}')
-        store.finish(layer.name)
-
-
 def remove(port, layer, headers=None):
     body = json.dumps({'project': 'proj', 'layer': layer})
     return api(port, '/api/remove-correction', method='POST', body=body,
                headers=headers or {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{port}'})
 
 
-@pytest.mark.req('VIEW-014')
-@pytest.mark.req('VIEW-011')
-def test_only_the_top_correction_layer_is_removed_and_a_request_for_another_changes_nothing(run, home, web, mapped):
-    from metaform.data import Store
-    store = Store('proj')
-    stacked(store)
-    started(run)
-    assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2', 'fix-3']
-    assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is False
-    preview = api(web, '/api/peel-preview?project=proj&layer=fix-3')[1]
-    assert preview['top'] is True
-    assert [(change['kind'], change['what'], change['effect'], change['detail']) for change in preview['changes']] == [
-        ('element', 'code.alarm.chime', 'disappears', None),
-        ('join', 'code.timer.kitchen -> code.alarm.chime', 'moves back', 'to code.timer.kitchen -> code.alarm.bell')]
-    files = sorted((home / 'projects').rglob('store.sqlite3'))
-    removed_id = store.layer_ref('fix-3').layer_id
-    before = [path.read_bytes() for path in files]
-    status, answer = remove(web, 'fix-2')
-    assert status == 200 and answer['removed'] is False and 'fix-3' in answer['notices'][0]['message']
-    assert [path.read_bytes() for path in files] == before
-    assert remove(web, 'fix-3', {'Content-Type': 'application/json'})[0] == 403
-    status, answer = remove(web, 'fix-3')
-    assert status == 200 and answer['removed'] is True
-    assert [layer['name'] for layer in api(web, '/api/stack?project=proj')[1]['results']] == ['fix-1', 'fix-2']
-    assert store.element('code.alarm.bell') is not None and store.element('code.alarm.chime') is None
-    assert 'fix-3' not in [layer.name for layer in store.layers(limit=0).results] and store.provenance('fix-2')
-    from metaform.data import export_document
-    rows = [row for metaform in export_document(['proj'])['projects'][0]['metaforms'] for row in metaform['provenance']]
-    assert rows and removed_id not in [row['layer_id'] for row in rows]
-    assert api(web, '/api/peel-preview?project=proj&layer=fix-2')[1]['top'] is True
-
-
-@pytest.mark.req('VIEW-014')
+@pytest.mark.req('LAYER-025')
+@pytest.mark.req('VIEW-006')
+@pytest.mark.req('VIEW-007')
 @pytest.mark.req('VIEW-012')
-def test_the_page_offers_removal_only_on_the_top_layer_and_warns_first(run, web, mapped, browser):
+def test_a_refined_join_is_drawn_as_the_metaform_is_and_the_page_offers_no_correction_layers(run, web, mapped, browser):
+    """Rich, 2026-10-01: refinements should not be changing things' colors, and need not be in layer select."""
     from metaform.data import Store
-    stacked(Store('proj'))
+    join = Store('proj').joins('code.timer.kitchen').results[0].join_id
     started(run)
     page, problems, _ = opened(browser, web)
-    page.click('#t-corr')
-    page.wait_for_selector('#p-corr .lyr.top')
-    assert page.locator('#p-corr button.remove').count() == 1
-    assert page.text_content('#p-corr .lyr.top b') == 'fix-3'
-    assert page.locator('#p-corr .lyr.top button.remove').count() == 1
-    page.click('#p-corr button.remove')
-    page.wait_for_selector('#p-corr .warn')
-    warning = page.text_content('#p-corr .warn')
-    assert 'code.alarm.chime' in warning and 'moves back' in warning and 'code.alarm.bell' in warning
-    assert [layer.name for layer in Store('proj').stack(limit=0).results] == ['fix-1', 'fix-2', 'fix-3']
-    page.click('#p-corr .warn button.confirm')
-    page.wait_for_function('() => document.querySelector("#p-corr .lyr.top b")?.textContent === "fix-2"')
-    assert [layer.name for layer in Store('proj').stack(limit=0).results] == ['fix-1', 'fix-2']
-    assert page.locator('#p-corr button.remove').count() == 1
-    assert problems == []
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    colors = lambda shown: sorted((link['k'], link['color'].lower()) for link in
+                                  shown.evaluate('window.metaform.linkColors()') if link['join'] == join)
+    before = colors(page)
+    assert before
+    run('map', 'knowledge', 'op=refine', f'id={join}', 'purpose=Ring when the countdown ends.', 'reason=wording',
+        cwd=mapped)
+    run('map', 'knowledge', 'op=refine', f'id={join}', 'ef=Plays a loud tone.', 'reason=louder', cwd=mapped)
+    again, again_problems, _ = opened(browser, web)
+    again.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    assert colors(again) == before
+    assert again.evaluate(f'window.metaform.graph().nodes.find(node => node.id === "p:{join}").layer') == 'intake-1'
+    again.click('#layersBtn')
+    rows = again.evaluate("[...document.querySelectorAll('#layerlist .layerrow .name')].map(name => name.textContent)")
+    assert sorted(rows) == ['extra', 'intake-1', 'notes', 'secret']
+    assert again.locator('#t-corr').count() == 0 and again.locator('#p-corr').count() == 0
+    assert remove(web, 'intake-1')[0] == 404  # the page's write that removed a correction layer is gone
+    assert problems == [] and again_problems == []
 
 
 @pytest.mark.req('VIEW-009')
@@ -877,7 +835,7 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
     exclude = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--exclude").trim().toLowerCase()')
     others = page.evaluate("""() => { const style = getComputedStyle(document.documentElement);
         return ['--broken', '--missing', '--function', '--encounter', '--signal', '--de', '--intake', '--memory',
-                '--correction', '--tree', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
+                '--danger', '--tree', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
             .map(name => style.getPropertyValue(name).trim().toLowerCase()); }""")
     assert exclude and exclude not in others
     for node in (cook, purpose):
@@ -2160,8 +2118,8 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
     assert page.inner_text('#adminbox #clearBtn') == 'Clear project'
     page.keyboard.press('Escape')
     assert page.is_hidden('#adminbox')
-    other.click('#t-corr')  # a tab left open is redrawn by the push, not only when clicked again
-    other.wait_for_selector('#p-corr .lyr.top')
+    other.click('#t-prov')  # a tab left open is redrawn by the push, not only when clicked again
+    other.wait_for_selector('#p-prov .layerlist button')
     before = kept(home)
     page.click('#adminBtn')
     page.click('#clearBtn')
@@ -2183,10 +2141,8 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
     assert metaform_names(run, mapped) == []
     for shown in (page, other):
         no_metaform_shown(shown)
-    other.wait_for_function(f'() => document.querySelector("#p-corr").innerText.includes("{NO_METAFORM}")',
+    other.wait_for_function(f'() => document.querySelector("#p-prov").innerText.includes("{NO_METAFORM}")',
                             timeout=5000)
-    other.click('#t-prov')
-    other.wait_for_function(f'() => document.querySelector("#p-prov").innerText.includes("{NO_METAFORM}")')
     assert problems == [] and other_problems == [] and remote == []
     run('intake', 'start', cwd=mapped)
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=mapped)
@@ -2254,32 +2210,20 @@ def heard_by(log):
 @pytest.mark.req('BASE-010')
 def test_a_write_from_the_page_is_announced_on_the_event_bus_as_a_command_is(run, home, web, mapped, tmp_path,
                                                                           user_module):
-    """A module of the user's own hears the page's clear and correction removal once each, as it hears the command's,
-    and the open pages still hear each once; a write that changes nothing is not announced."""
-    from metaform import home as metaform_home
-    from metaform.data import Store
+    """A module of the user's own hears the page's clear once, as it hears the command's, and the open pages still hear
+    it once; a write that changes nothing is not announced."""
     log = tmp_path / 'heard.jsonl'
     user_module('watcher', WATCHER.replace('LOGPATH', repr(str(log))))
-    stacked(Store('proj'))
     started(run)
-    active = metaform_home.active_metaform('proj').metaform_id
     heard, first = events_on(web)
     heard_by(log)
-    status, answer = remove(web, 'fix-2')  # not on top: nothing changes, nothing is announced
-    assert status == 200 and answer['removed'] is False
     status, answer = clear(web)  # the caution alone: nothing changes, nothing is announced
     assert status == 400
     time.sleep(0.5)
     assert heard_by(log) == [] and heard == []
-    status, answer = remove(web, 'fix-3')
-    assert status == 200 and answer['removed'] is True
-    assert first.wait(5)
-    time.sleep(0.5)
-    assert heard_by(log) == [{'project': 'proj', 'metaform_id': active, 'surface': 'web'}]
-    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': active}}]
-    heard.clear()
     status, answer = clear(web, confirm=True)
     assert status == 200 and answer['metaforms'] == ['main']
+    assert first.wait(5)
     time.sleep(0.5)
     assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'web'}]
     assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
@@ -2317,7 +2261,7 @@ def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_
     page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
     no_metaform_shown_for(page, 'live')
     said = page.evaluate('window.toasts')
-    assert [text for text in said if text.startswith('The intake intake-') and text.endswith(' stopped: live was cleared.')]
+    assert 'The intake stopped: live was cleared.' in said  # the layer is named intake, LAYER-025
     assert not [text for text in said if 'finished' in text]
     run('intake', 'start', cwd=folder)
     run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
@@ -2326,7 +2270,7 @@ def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_
     run('intake', 'finish', cwd=folder)
     page.wait_for_function('() => window.metaform.live() === null && window.metaform.loaded()', timeout=15000)
     said = page.evaluate('window.toasts')
-    assert [text for text in said if text.startswith('The intake intake-') and text.endswith(' finished.')]
+    assert 'The intake finished.' in said
     assert not [text for text in said if 'stopped' in text]
     assert problems == []
 
@@ -2367,7 +2311,7 @@ def contrast(one, other):
     return (high + 0.05) / (low + 0.05)
 
 
-LAYER_COLORS = ['--intake', '--memory', '--correction', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
+LAYER_COLORS = ['--intake', '--memory', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
 NODE_COLORS = ['--de', '--signal', '--text', '--exclude', '--broken', *LAYER_COLORS]
 LINK_COLORS = ['--tree', '--function', '--encounter', *LAYER_COLORS]
 LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--exclude',
@@ -3479,3 +3423,44 @@ def test_remove_project_in_the_administration_menu_names_what_a_project_holds_th
     assert page.input_value('#proj') == 'other'
     assert 'proj' not in [line.split()[0] for line in run('list', 'projects').stdout.splitlines()]
     assert problems == [] and remote == []
+
+
+@pytest.mark.req('VIEW-032')
+@pytest.mark.req('VIEW-008')
+def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_text(run, web, mapped, browser):
+    """Rich, 2026-10-01: dragging the 2D map selected the label text of every node, and the next drag dragged the
+    labels instead of the map. A drag that starts on a label and sweeps across the others moves the view, selects no
+    text, and the drag after it moves the view again."""
+    from metaform.data import Store
+    alarm = Store('proj').element('code.alarm.audible').element_id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+
+    def sweep(start, view):
+        """Two drags from a label across the chart, each one checked for the view moving and no text selected."""
+        for _ in range(2):
+            before = [float(number) for number in view().split()]
+            page.mouse.move(*start)
+            page.mouse.down()
+            for step in range(1, 13):
+                page.mouse.move(start[0] - step * 20, start[1] - step * 8)
+            assert page.evaluate('getSelection().toString()') == ''  # while it drags, not only once it is let go
+            page.mouse.up()
+            assert page.evaluate('getSelection().toString()') == ''
+            after = [float(number) for number in view().split()]
+            assert after[0] > before[0] and after[1] > before[1]  # dragged up and left, the view moves down and right
+            page.wait_for_timeout(300)
+
+    label = page.evaluate(f"""(() => {{ const box = document.querySelector('#map2d svg g.node text').getBoundingClientRect();
+        return [box.left + box.width / 2, box.top + box.height / 2]; }})()""")
+    sweep(label, lambda: page.get_attribute('#map2d svg', 'viewBox'))
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.task')
+    page.wait_for_selector('#task .chart svg g[data-address] text')
+    page.wait_for_timeout(900)
+    label = page.evaluate("""(() => { const box = document.querySelector('#task .chart svg g[data-address] text').getBoundingClientRect();
+        return [box.left + box.width / 2, box.top + box.height / 2]; })()""")
+    sweep(label, lambda: page.get_attribute('#task .chart svg', 'viewBox'))
+    assert problems == []
+

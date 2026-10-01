@@ -33,11 +33,10 @@ def noted(result: Any, notices: list[tuple[str, str]]) -> Any:
 def _layer_row(layer: Layer) -> list[str]:
     """One layer as a row: name, kind, module, tags, ready or building, on or off, CLI-033 and LAYER-019.
 
-    A correction layer on the stack is `applied`, since it is never toggled, LAYER-011; `hidden` and the re-examine
-    mark follow when they hold, LAYER-006 and STORE-036.
+    `hidden` and the re-examine mark follow when they hold, LAYER-006 and STORE-036.
     """
     state = 'ready' if layer.ready else 'building'
-    toggled = 'applied' if layer.position is not None else ('on' if layer.on else 'off')
+    toggled = 'on' if layer.on else 'off'
     flags = [word for word, holds in (('hidden', layer.hidden), ('re-examine', layer.reexamine)) if holds]
     return [layer.name, layer.kind, layer.module, ','.join(layer.tags), state, toggled, *flags]
 

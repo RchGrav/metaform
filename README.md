@@ -58,7 +58,7 @@ one project into another. The addresses don't move; the purposes don't change.
 
 **Traces.** Every layer keeps the record of how it was made — the module,
 workflow, model and role behind it, and the prompt version it came from.
-Corrections keep every earlier version, and variants keep each worker's files
+Refinements keep every earlier version, and variants keep each worker's files
 against one origin. *Why is it like this?* is a query, not an excavation.
 
 ## How the mechanism works
@@ -91,7 +91,7 @@ flowchart LR
     U --> I["project-grounded<br/>interpretation"]
     R["Request"] --> I
     I --> S["subsequent work"]
-    S --> F["findings, memory, corrections<br/>retained at meaningful addresses"]
+    S --> F["findings, memory, refinements<br/>retained at meaningful addresses"]
 ```
 
 The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements, joins, and internal subtypes, rather than detached from the functionality it concerns.
@@ -118,7 +118,7 @@ An agent handed the address `code.timer.kitchen` reads it once, with `metaform m
   "kind": "element",
   "element": {
     "address": "code.timer.kitchen",
-    "layer": "intake-20260927T205948Z-001fa5",
+    "layer": "intake",
     "reading": "kitchen timer code",
     "short_name": "kitchen timer",
     "name_length": 2,
@@ -128,7 +128,7 @@ An agent handed the address `code.timer.kitchen` reads it once, with `metaform m
   "provides": [
     {
       "receiver": "stakeholder.cook.home",
-      "layer": "intake-20260927T205948Z-001fa5",
+      "layer": "intake",
       "type": "purpose",
       "name": "dish clock",
       "purpose": "Know when each dish is done without watching the clock.",
@@ -140,7 +140,7 @@ An agent handed the address `code.timer.kitchen` reads it once, with `metaform m
       "subtypes": [
         {
           "element": "code.loop.tick",
-          "layer": "intake-20260927T205948Z-001fa5",
+          "layer": "intake",
           "type": "subtype",
           "reading": "tick loop code",
           "short_name": "tick loop",
@@ -160,7 +160,7 @@ An agent handed the address `code.timer.kitchen` reads it once, with `metaform m
   "receives": [
     {
       "provider": "code.alarm.audible",
-      "layer": "intake-20260927T205948Z-001fa5",
+      "layer": "intake",
       "type": "purpose",
       "name": "buzzer",
       "purpose": "Get the cook's attention the moment a countdown ends.",
@@ -291,7 +291,7 @@ For an agent connection, build the selected modules with `metaform build`, then 
 The [documentation index](docs/README.md) connects the complete set:
 
 - [Getting started](docs/guides/getting-started.md): install, connect, register, perform intake, and inspect the first result.
-- [Working with Metaform](docs/guides/working-with-metaform.md): relationships, memory, layers, corrections, project context, GUI, and exchange.
+- [Working with Metaform](docs/guides/working-with-metaform.md): relationships, memory, layers, refining the metaform, project context, GUI, and exchange.
 - [Reading an Inference Metaform](docs/guides/reading-a-metaform.md): types, names, receiving purposes, joins, and the project's own functional map.
 - [Extending Metaform](docs/guides/extending-metaform.md): build a module using the template, example, and shared facilities.
 

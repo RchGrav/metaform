@@ -16,7 +16,7 @@ from typing import Any
 
 from ..errors import StoreError
 from ..wording import odd_refs_notice
-from . import corrections
+from . import versions
 from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id, prefixes
 from .records import Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
@@ -34,8 +34,8 @@ TEXT_COLUMNS = ('purpose', 'ef', 'relation', 'verb', 'observation', 'non_goal', 
 Row = sqlite3.Row
 
 
-def correct_step(thing: str = '<id>') -> str:
-    return f'metaform map knowledge op=correct layer=<correction layer> id={thing} reason=<why>'
+def refine_step(thing: str = '<id>') -> str:
+    return f'metaform map knowledge op=refine id={thing} <field>=<value> reason=<why>'
 
 
 # Values that do not fit -----------------------------------------------------------------------------------------
@@ -121,22 +121,6 @@ def layer(tx: Tx, ref: object) -> LayerRow:
 def layer_name(tx: Tx, layer_id: str) -> str:
     row = tx.db.execute('SELECT name FROM layers WHERE layer_id=?', (layer_id,)).fetchone()
     return str(row[0]) if row else layer_id
-
-
-def frozen(tx: Tx, found: LayerRow) -> Notice | None:
-    """Why a write into this layer is not applied: a finished intake and a finished correction layer."""
-    if found.kind == 'intake' and found.finished and found.layer_id not in tx.created:
-        return Notice('layer', f'{found.name} is the intake layer; the metaform changes only through a correction '
-                               f'layer: {correct_step()}. Nothing was written.')
-    if found.kind == 'correction' and found.finished:
-        return Notice('layer', f'Correction layer {found.name} is finished; only the top correction layer can be '
-                               f'peeled and changed: metaform map knowledge op=peel layer={found.name}. Nothing was '
-                               'written.')
-    return None
-
-
-def top(tx: Tx) -> int:
-    return corrections.top_position(tx.db)
 
 
 def types(tx: Tx, address: str) -> None:
@@ -230,8 +214,8 @@ def kind_of(tx: Tx, thing: Any) -> str:
 
 def own_row(tx: Tx, kind: str, thing: str) -> tuple[Row, LayerRow]:
     """The row a thing was added with, and the layer that added it."""
-    spec = corrections.KINDS[kind]
-    rows = tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=?', (thing,)).fetchall()
+    spec = versions.KINDS[kind]
+    rows = tx.db.execute(f'SELECT * FROM {spec.table} WHERE {spec.id_column}=? ORDER BY row', (thing,)).fetchall()
     added = [row for row in rows if row['op'] == 'add']
     if not added:
         raise StoreError(f'No {kind} has the id {thing}.', 'metaform map where <address>')
@@ -240,7 +224,7 @@ def own_row(tx: Tx, kind: str, thing: str) -> tuple[Row, LayerRow]:
 
 
 def target_current(tx: Tx, kind: str, thing: str) -> bool:
-    return corrections.current_row(tx.db, kind, thing) is not None
+    return versions.current_row(tx.db, kind, thing) is not None
 
 
 # Elements, made where a write needs one ---------------------------------------------------------------------
@@ -249,7 +233,7 @@ def reused_element(tx: Tx, address: str) -> str | None:
     """The element id the address last held, when no current element holds that id, STORE-009.
 
     An element's identity belongs to its address: an add at an address whose element was removed, by a layer's
-    own remove or by a correction, is that element again, and everything still linked to it comes back with it.
+    own remove or by a refinement, is that element again, and everything still linked to it comes back with it.
     """
     held = tx.db.execute('SELECT element_id FROM address_elements WHERE address=?', (address,)).fetchone()
     if held is None:
@@ -274,10 +258,9 @@ def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | N
                            'VALUES (?, ?, ?, ?, ?, ?)',
                            (element_id, found.layer_id, address, name_length, role, encode_extra(extra, address)))
     row = int(cursor.lastrowid or 0)
-    corrections.hold_address(tx.db, address, element_id)
-    if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
-                      (element_id, row, address, role))
+    versions.hold_address(tx.db, address, element_id)
+    tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
+                  (element_id, row, address, role))
     write_refs(tx, 'element', row, refs)
     return element_id
 
@@ -305,12 +288,6 @@ def element_at(tx: Tx, ref: Any, found: LayerRow, what: str, notices: list[Notic
     current = current_element(tx, ref)
     if current is not None:
         return str(current['element_id'])
-    if found.kind == 'correction':
-        column = 'element_id' if is_id(ref) else 'address'
-        row = tx.db.execute(f"SELECT element_id FROM elements WHERE {column}=? AND layer_id=? AND op != 'remove'",
-                            (ref, found.layer_id)).fetchone()
-        if row is not None:
-            return str(row[0])
     if is_id(ref):
         raise StoreError(f'No element has the id {ref}.', 'metaform map where <address>')
     notices.append(Notice(what, f'{ref} was not an element; it was created in layer {found.name}.'))
@@ -378,7 +355,7 @@ def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
 
 def insert_item(tx: Tx, found: LayerRow, target_kind: str, target_id: str, value: Any, link_kind: str | None,
                 link_id: str | None, pairs: list[tuple[str, str]], extra: dict[str, Any] | None) -> str:
-    """One item row with its identity and refs; current at once unless its layer is a correction layer."""
+    """One item row with its identity and refs, current at once."""
     encoded = encode_value(value, f'{target_kind}:{target_id}')
     encoded_extra = encode_extra(extra, 'the item')
     item_id = new_id()
@@ -389,10 +366,9 @@ def insert_item(tx: Tx, found: LayerRow, target_kind: str, target_id: str, value
                            (item_id, found.layer_id, target_kind, target_id, encoded, link_kind, link_id,
                             encoded_extra))
     row = int(cursor.lastrowid or 0)
-    if found.kind != 'correction':
-        tx.db.execute('INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id, link_kind, '
-                      'link_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                      (item_id, row, found.layer_id, target_kind, target_id, link_kind, link_id))
+    tx.db.execute('INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id, link_kind, '
+                  'link_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  (item_id, row, found.layer_id, target_kind, target_id, link_kind, link_id))
     write_refs(tx, 'item', row, pairs)
     return item_id
 

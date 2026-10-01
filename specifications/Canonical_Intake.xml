@@ -72,18 +72,17 @@
             <root_type name="stakeholder" />
         </root_types>
         <rules>
-            <rule>For each dotted part, the address in the namespace must be reversible and read as its name.</rule>
-            <rule>All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities.  (Artifacts ⊂ Entities ⊂ Elements)</rule>
-            <rule>Namespace entries must describe the type of functional approach as a proper noun.</rule>
-            <rule>To be placed into the namespace, an entry must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.</rule>
-            <rule>There must be one or more entities each with a distinct unique objective purpose and encounter function for the defining element.</rule>
-            <rule>Children must take their parent's name as their last name when reversed and read as a noun.</rule>
-            <rule>Multi-word names: when the new leaf is a variant functionality of its parent type, such as physics engine and game engine, express the namespace with periods between the segments: code.engine.game, code.engine.physics. Every prefix is a complete type that yields its own inference and passes its practices to its children, so words that form a valid prefix of their own must remain separate segments. Words may be joined with underscores in one segment only when none of them forms a valid prefix, as in code.queue.dead_letter and data.bill_of_materials, where the name must also read correctly once reversed.</rule>
-            <rule>Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.</rule>
-            <rule>The segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name.</rule>
-            <rule>It must be a part or type of its parent scope.</rule>
-            <rule>Namespace must narrow from trunk to leaf.</rule>
-            <rule>The namespace address names the type. The join refines that type with what this AUE does, so the address stays general and the join stays specific.</rule>
+            <rule>1. For each dotted part, the address in the namespace must be reversible and read as its name: the segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name, and children must take their parent's name as their last name when reversed and read as a noun.</rule>
+            <rule>2. All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities. (Artifacts ⊂ Entities ⊂ Elements)</rule>
+            <rule>3. Namespace entries must describe the type of functional approach as a proper noun.</rule>
+            <rule>4. Namespace must narrow from trunk to leaf; to be placed into the namespace, an entry must be a part or type of its parent scope—it must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.</rule>
+            <rule>5. There must be one or more entities each with a distinct unique objective purpose and encounter function for the defining element.</rule>
+            <rule>6. Multi-word names: when the new leaf is a variant functionality of its parent type, such as physics engine and game engine, express the namespace with periods between the segments: code.engine.game, code.engine.physics. Every prefix is a complete type that yields its own inference and passes its practices to its children, so words that form a valid prefix of their own must remain separate segments. Words may be joined with underscores in one segment only when none of them forms a valid prefix, as in code.queue.dead_letter and data.bill_of_materials, where the name must also read correctly once reversed.</rule>
+            <rule>7. Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.</rule>
+            <rule>8. The namespace address names the type. The join refines that type with what this AUE does, so the address stays general and the join stays specific.</rule>
+            <rule>9. Industry-Standard Lexicon, Grounded Nomenclature, and Non-Coinage: All elements, segment identifiers, compound tokens, and resulting reversed noun phrases must use the established, standard terminology recognized by practitioners who work directly with that class of artifact. Abstract pattern labels, bespoke synonyms, internal shorthand, colloquial phrases, and marketing terms are strictly prohibited. Where an authoritative or formally standardized term does not exist, the segment must use the plain, common noun for what the thing functionally is or does in ordinary practice. Never coin, invent, or adapt a term under any circumstances.</rule>
+            <rule>10. Continuous Auditing and Strict Remediation: During any Refinement or Corrections operation, all existing elements and namespace paths must be actively audited against these rules. No pre-existing entry is exempt. You must proactively file and execute Corrections to repair any identified violations—such as non-standard terminology, coined words, or improper segmentation—bringing the entire namespace path into absolute compliance.</rule>
+            <rule>11. Canonical Name Field Priority: There is a field called `name`. This field must always hold the canonical name exactly as it is used in the project specifications. If there is no project specification for it, then use the industry term.</rule>
         </rules>
         <examples type="reading">
             <example namespace_address="code.loop.main" reading="main loop program code" />

@@ -361,9 +361,6 @@ def _check_layers(names: Any, folder: Path) -> list[str] | None:
     layers = {layer.name: layer for layer in Store(project_id).layers(limit=0).results}
     notices: list[str] = []
     for name in names:
-        if name in layers and layers[name].kind == 'correction':
-            raise SettingError(f'{name} is a correction layer; correction layers are always applied.',
-                               'metaform map layers')
         if name not in layers and not Store(project_id).layers(tag=name, limit=0).results:
             notices.append(f'{name} is not a layer or a tag here; it was kept and turns nothing on. See metaform map '
                            'layers')

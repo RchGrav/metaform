@@ -1,4 +1,4 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 5.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 8.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 An element is its address, name_length and role, STORE-009, and it cannot be
@@ -12,7 +12,9 @@ current row is in `current_subtypes`, never in `current_joins`, which every read
 the element graph uses, STORE-011. `work` holds the work records, the condition of
 an object kept apart from the map and attached to no layer, STORE-042. One index
 is added beyond the section's own: `elements_by_address`, for the history of one
-address, STORE-005.
+address, STORE-005. A thing keeps every version it was given in its layer, so the
+metaform is refined in its own intake layer, LAYER-025: no thing is unique per
+layer, and `<table>_by_id` reads a thing's versions in order.
 """
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ CREATE TABLE IF NOT EXISTS layers(
   mutable     INTEGER NOT NULL CHECK(mutable IN (0, 1)),
   hideable    INTEGER NOT NULL CHECK(hideable IN (0, 1)),
   result_id   TEXT,
-  kind        TEXT NOT NULL DEFAULT 'layer' CHECK(kind IN ('layer','intake','memory','correction')),
+  kind        TEXT NOT NULL DEFAULT 'layer' CHECK(kind IN ('layer','intake','memory')),
   created     TEXT NOT NULL,
   ready       TEXT
 );
@@ -66,10 +68,10 @@ CREATE TABLE IF NOT EXISTS layer_sources(
 );
 CREATE INDEX IF NOT EXISTS layer_sources_by_source ON layer_sources(source_layer_id);
 CREATE TABLE IF NOT EXISTS reexamine(
-  layer_id            TEXT NOT NULL REFERENCES layers(layer_id),
-  correction_layer_id TEXT NOT NULL REFERENCES layers(layer_id),
-  thing_id            TEXT NOT NULL,
-  PRIMARY KEY(layer_id, correction_layer_id, thing_id)
+  layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
+  changed_in TEXT NOT NULL REFERENCES layers(layer_id),
+  thing_id   TEXT NOT NULL,
+  PRIMARY KEY(layer_id, changed_in, thing_id)
 );
 CREATE TABLE IF NOT EXISTS provenance(
   layer_id TEXT PRIMARY KEY REFERENCES layers(layer_id),
@@ -79,10 +81,6 @@ CREATE TABLE IF NOT EXISTS provenance(
   model    TEXT,
   role     TEXT,
   blinded  INTEGER CHECK(blinded IN (0, 1))
-);
-CREATE TABLE IF NOT EXISTS correction_stack(
-  position INTEGER PRIMARY KEY,
-  layer_id TEXT NOT NULL UNIQUE REFERENCES layers(layer_id)
 );
 
 CREATE TABLE IF NOT EXISTS elements(
@@ -95,9 +93,9 @@ CREATE TABLE IF NOT EXISTS elements(
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
-  evidence    TEXT,
-  UNIQUE(element_id, layer_id)
+  evidence    TEXT
 );
+CREATE INDEX IF NOT EXISTS elements_by_id ON elements(element_id, row);
 CREATE TABLE IF NOT EXISTS current_elements(
   element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
   row        INTEGER NOT NULL UNIQUE REFERENCES elements(row),
@@ -131,9 +129,9 @@ CREATE TABLE IF NOT EXISTS joins(
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
-  evidence    TEXT,
-  UNIQUE(join_id, layer_id)
+  evidence    TEXT
 );
+CREATE INDEX IF NOT EXISTS joins_by_id ON joins(join_id, row);
 CREATE TABLE IF NOT EXISTS current_joins(
   join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
   row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
@@ -180,9 +178,9 @@ CREATE TABLE IF NOT EXISTS items(
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
-  evidence    TEXT,
-  UNIQUE(item_id, layer_id)
+  evidence    TEXT
 );
+CREATE INDEX IF NOT EXISTS items_by_id ON items(item_id, row);
 CREATE TABLE IF NOT EXISTS current_items(
   item_id     TEXT PRIMARY KEY REFERENCES item_ids(item_id),
   row         INTEGER NOT NULL UNIQUE REFERENCES items(row),
@@ -218,9 +216,9 @@ CREATE TABLE IF NOT EXISTS properties(
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
-  evidence    TEXT,
-  UNIQUE(property_id, layer_id)
+  evidence    TEXT
 );
+CREATE INDEX IF NOT EXISTS properties_by_id ON properties(property_id, row);
 CREATE TABLE IF NOT EXISTS current_properties(
   property_id TEXT PRIMARY KEY,
   row         INTEGER NOT NULL UNIQUE REFERENCES properties(row),

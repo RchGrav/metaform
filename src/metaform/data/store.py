@@ -9,7 +9,7 @@ STORE-019.
 
 `Store` is the one public door. Each method opens its transaction and calls one
 operation of the internal modules, which each take that `Tx`: `writes` for the
-map's objects, `layering` for layers and the correction stack, `challenges` for
+map's objects, `layering` for layers and refining the metaform, `challenges` for
 challenge states and plans, `reads` for every read. No write is refused for its
 content, BASE-044 and STORE-026: what does not fit is stored as given and named
 in the result's `notices`.
@@ -43,7 +43,6 @@ from .records import (
     Notice,
     Outcome,
     Page,
-    PeelPreview,
     Plan,
     Property,
     Provenance,
@@ -145,7 +144,7 @@ class Store:
             return layering.complete(tx, layer, provenance, result_id)
 
     def finish(self, layer: str) -> Layer | Outcome:
-        """Mark a layer ready; a correction layer is also applied on top of the stack, STORE-017."""
+        """Mark a layer ready, STORE-024."""
         with self._write() as tx:
             return layering.finish(tx, layer)
 
@@ -252,7 +251,7 @@ class Store:
             return writes.delete_item(tx, item)
 
     def edit(self, thing: str, changes: Any) -> Version | Outcome:
-        """Change a thing of a knowledge layer, or of a building intake or correction layer, in place, STORE-032. A
+        """Change a thing of a knowledge layer, or of a building intake, in place, STORE-032. A
         join's receiver, provider and parent move it, MAP-003; an element's address never changes, MAP-015."""
         with self._write() as tx:
             return writes.edit(tx, thing, changes)
@@ -312,22 +311,18 @@ class Store:
             return writes.finish_work(tx, work_id, resolution)
 
     def remove(self, thing: str | int) -> Outcome:
-        """Delete a row a knowledge layer or a building correction layer wrote, with its refs, STORE-032."""
+        """Delete a row a knowledge layer or a building intake wrote, with its refs, STORE-032."""
         with self._write() as tx:
             return writes.remove(tx, thing)
 
-    # ------------------------------------------------------------ corrections
+    # ------------------------------------------------------------ refining
 
-    def correct(self, layer: str, thing: str, changes: dict[str, Any] | None = None, *, remove: bool = False,
-                reason: Any, evidence: Any = None) -> Version | Outcome:
-        """Write a change or removal of a thing of the metaform into a building correction layer, STORE-017."""
+    def refine(self, thing: str, changes: dict[str, Any] | None = None, *, remove: bool = False, reason: Any,
+               evidence: Any = None) -> Version | Outcome:
+        """Write a change or removal of a thing of the metaform as its newest version in the metaform's own layer,
+        keeping every earlier version, LAYER-025."""
         with self._write() as tx:
-            return layering.correct(tx, layer, thing, changes, remove=remove, reason=reason, evidence=evidence)
-
-    def peel(self, layer: str) -> Layer | Outcome:
-        """Take the top correction layer off the stack and return it to building, STORE-017."""
-        with self._write() as tx:
-            return layering.peel(tx, layer)
+            return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence)
 
     # ------------------------------------------------------------- challenges
 
@@ -418,14 +413,9 @@ class Store:
             return reads.citing(tx, key, value, limit, after)
 
     def history(self, thing: str, *, limit: int = LIMIT, after: str | None = None) -> Page[Version]:
-        """Every version of a thing: the row that added it, then each stacked correction's row, in order."""
+        """Every version of a thing in the order it was written: the row that added it, then each refinement."""
         with self._read() as tx:
             return reads.history(tx, thing, limit, after)
-
-    def stack(self, *, limit: int = LIMIT, after: str | None = None) -> Page[Layer]:
-        """The correction layers in the order they were applied, each with its provenance."""
-        with self._read() as tx:
-            return reads.stack(tx, limit, after)
 
     def layers(self, tag: str | None = None, kind: str | None = None, module: str | None = None, *,
                limit: int = LIMIT, after: str | None = None) -> Page[Layer]:
@@ -453,11 +443,6 @@ class Store:
     def extract(self, ids: Sequence[str], folder: Path, origin: str | None = None) -> list[Path]:
         """Reconstruct variants into folders with Python alone, PROJ-018."""
         return history.extract(self.project_id, ids, folder, origin)
-
-    def peel_preview(self, layer: str) -> PeelPreview:
-        """What removing a correction layer would change, and whether it is on top, writing nothing, VIEW-014."""
-        with self._read() as tx:
-            return reads.peel_preview(tx, layer)
 
     def provenance(self, layer: str) -> Provenance | None:
         with self._read() as tx:

@@ -238,7 +238,6 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
     assert j(run, 'identity', 'code.timer.kitchen', cwd=mapped) == json.loads(json.dumps(
         store.identity('code.timer.kitchen').to_dict()))
     assert j(run, 'where', 'code.alarm.audible', cwd=mapped)['element']['address'] == 'code.alarm.audible'
-    assert j(run, 'stack', cwd=mapped) == {'results': [], 'next': None}
     assert [form['name'] for form in j(run, 'metaforms', cwd=mapped)['results']] == ['main']
     join = store.joins('code.timer.kitchen').results[0]
     assert j(run, 'history', join.join_id, cwd=mapped)['results'][0]['op'] == 'add'
@@ -297,25 +296,40 @@ def test_a_write_sent_without_a_layer_goes_to_a_new_unnamed_layer(run, mapped):
     assert added['layer'] == unnamed[0] and any(unnamed[0] in notice['message'] for notice in added['notices'])
 
 
+@pytest.mark.req('LAYER-025')
 @pytest.mark.req('STORE-034')
 @pytest.mark.req('BASE-044')
-def test_a_correction_moves_a_join_by_its_receiver_and_never_moves_an_element(run, mapped):
+def test_refining_moves_a_join_by_its_receiver_in_the_intake_layer_and_never_moves_an_element(run, mapped):
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
     kitchen = store.element('code.timer.kitchen').element_id
-    k(run, mapped, 'op=create', 'layer=fix-a', 'kind=correction', 'variable=Fixes.', 'mutable=false',
-      'hideable=false', *PROVENANCE)
-    moved = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={join.join_id}', 'purpose=First fix.',
+    layers = [layer.name for layer in store.layers(limit=0).results]
+    moved = run('map', 'knowledge', 'op=refine', f'id={join.join_id}', 'purpose=First fix.',
                 'receiver=stakeholder.cook.home', 'reason=r', cwd=mapped)
     assert 'Notice:' not in moved.stdout
-    kept = run('map', 'knowledge', 'op=correct', 'layer=fix-a', f'id={kitchen}', 'address=code.timer.egg',
-               'reason=r', cwd=mapped)
+    kept = run('map', 'knowledge', 'op=refine', f'id={kitchen}', 'address=code.timer.egg', 'reason=r', cwd=mapped)
     assert re.search(r'^Notice: address: ', kept.stdout, re.MULTILINE)
-    k(run, mapped, 'op=finish', 'layer=fix-a')
     after = {found.join_id: found for found in Store('proj').joins('stakeholder.cook.home').results}[join.join_id]
-    assert (after.purpose, after.receiver_address) == ('First fix.', 'stakeholder.cook.home')
+    assert (after.purpose, after.receiver_address, after.layer) == ('First fix.', 'stakeholder.cook.home', 'intake-1')
     assert Store('proj').element('code.timer.kitchen').element_id == kitchen
     assert Store('proj').element('code.timer.egg') is None
+    assert [layer.name for layer in Store('proj').layers(limit=0).results] == layers
+    history = j(run, 'history', join.join_id, cwd=mapped)['results']
+    assert [(version['layer'], version['op'], version['fields']['purpose']) for version in history] == [
+        ('intake-1', 'add', join.purpose), ('intake-1', 'change', 'First fix.')]
+
+
+@pytest.mark.req('LAYER-025')
+def test_knowledge_creates_no_correction_layer_and_offers_no_correct_or_peel(run, mapped):
+    refused = run('map', 'knowledge', 'op=create', 'layer=fix-a', 'kind=correction', 'variable=Fixes.',
+                  'mutable=false', 'hideable=false', *PROVENANCE, cwd=mapped, ok=False)
+    assert refused.returncode != 0 and 'kind=layer' in refused.stdout + refused.stderr
+    for op in ('correct', 'peel'):
+        gone = run('map', 'knowledge', f'op={op}', 'layer=intake', 'id=x', 'reason=r', cwd=mapped, ok=False)
+        assert gone.returncode != 0 and 'not a knowledge operation' in gone.stdout + gone.stderr
+    page = run('help', 'map', 'knowledge', cwd=mapped).stdout
+    assert 'refine' in page and 'correction' not in page and 'peel' not in page
+    assert 'stack' not in run('help', 'map', cwd=mapped).stdout.split()
 
 
 @pytest.mark.req('STORE-039')
@@ -339,16 +353,13 @@ def test_a_property_named_by_node_attaches_by_the_nodes_kind(run, mapped):
 @pytest.mark.req('CLI-033')
 @pytest.mark.req('LAYER-019')
 @pytest.mark.req('BASE-036')
-def test_layers_stack_and_metaforms_read_as_one_aligned_row_each(run, mapped):
+def test_layers_and_metaforms_read_as_one_aligned_row_each(run, mapped):
     k(run, mapped, 'op=create', 'layer=practices-cpp', 'variable=C++ practice here.', 'mutable=true', 'hideable=true',
       'tags=["practices"]', *PROVENANCE)
     k(run, mapped, 'op=finish', 'layer=practices-cpp')
     k(run, mapped, 'op=create', 'layer=draft', 'variable=Drafts.', 'mutable=true', 'hideable=true', *PROVENANCE)
-    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
-      'hideable=false', *PROVENANCE)
     join = Store('proj').joins('code.timer.kitchen').results[0]
-    k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'ef=Plays a loud tone.', 'reason=r')
-    k(run, mapped, 'op=finish', 'layer=fix-1')
+    k(run, mapped, 'op=refine', f'id={join.join_id}', 'ef=Plays a loud tone.', 'reason=r')
 
     def rows(*args):
         lines = run('map', *args, cwd=mapped).stdout.splitlines()
@@ -359,8 +370,7 @@ def test_layers_stack_and_metaforms_read_as_one_aligned_row_each(run, mapped):
     assert layers['intake-1'] == ['intake-1', 'intake', 'intake', 'ready', 'on']
     assert layers['practices-cpp'] == ['practices-cpp', 'layer', 'test', 'practices', 'ready', 'on']
     assert layers['draft'] == ['draft', 'layer', 'test', 'building', 'off']
-    assert layers['fix-1'] == ['fix-1', 'correction', 'test', 'ready', 'applied']
-    assert list(rows('stack')) == ['fix-1']
+    assert sorted(layers) == ['draft', 'intake-1', 'practices-cpp']  # refining makes no layer, LAYER-025
     metaforms = rows('metaforms')
     assert metaforms['main'][-1] == 'active'
     assert {layer['name'] for layer in j(run, 'layers', cwd=mapped)['results']} == set(layers)
@@ -377,9 +387,7 @@ def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored
     assert [notice['where'] for notice in finished['notices']] == ['reason']
     assert 'ignored' in finished['notices'][0]['message'] and finished['ready']
     join = Store('proj').joins('code.timer.kitchen').results[0]
-    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
-      'hideable=false', *PROVENANCE)
-    corrected = json.loads(k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'purpose=Fixed.',
+    corrected = json.loads(k(run, mapped, 'op=refine', f'id={join.join_id}', 'purpose=Fixed.',
                              'reason=r', 'variable=x').stdout)
     assert [notice['where'] for notice in corrected['notices']] == ['variable']
     assert 'ignored' in corrected['notices'][0]['message'] and corrected['fields']['extra'] is None
@@ -427,10 +435,8 @@ def test_a_knowledge_write_missing_a_field_its_record_can_hold_empty_is_stored_w
     assert [where for where, _ in said(edited)] == ['layer'] and [where for where, _ in said(removed)] == ['layer']
     assert [found.value for found in Store('proj').layer_items('bare').results] == ['Set later.']
 
-    k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
-      'hideable=false', *PROVENANCE)
     intake_join = Store('proj').joins('code.timer.kitchen').results[0]
-    corrected = json.loads(k(run, mapped, 'op=correct', 'layer=fix-1', f'id={intake_join.join_id}',
+    corrected = json.loads(k(run, mapped, 'op=refine', f'id={intake_join.join_id}',
                              'purpose=Get the cook back.').stdout)
     assert said(corrected) == [('reason', 'reason is missing; stored empty.')]
 
@@ -447,10 +453,8 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
         ('op', ['knowledge', 'op=paint', 'layer=notes']),
         ('layer', ['knowledge', 'op=create', 'variable=x', 'mutable=true', 'hideable=true']),
         ('layer', ['knowledge', 'op=finish']),
-        ('layer', ['knowledge', 'op=peel']),
         ('layer', ['knowledge', 'op=discard']),
         ('layer', ['knowledge', 'op=add-plan', 'element=code.alarm.audible']),
-        ('layer', ['knowledge', 'op=correct', f'id={join}', 'reason=r']),
         ('kind', ['knowledge', 'op=create', 'layer=odd', 'kind=memory', 'variable=x', 'mutable=true',
                   'hideable=true']),
         ('address', ['knowledge', 'op=add-element', 'layer=notes']),
@@ -464,7 +468,7 @@ def test_a_map_write_missing_what_its_record_cannot_be_stored_without_stops_once
         ('owner', ['knowledge', 'op=add-ref', 'layer=notes', 'key=path', 'value="alarm.c"']),
         ('id', ['knowledge', 'op=edit', 'layer=notes', 'value="v"']),
         ('id', ['knowledge', 'op=remove', 'layer=notes']),
-        ('id', ['knowledge', 'op=correct', 'layer=notes', 'reason=r']),
+        ('id', ['knowledge', 'op=refine', 'reason=r']),
         ('op', ['work', 'op=paint']),
         ('node', ['work', 'op=add', 'condition=missing']),
         ('id', ['work', 'op=edit', 'condition=missing']),

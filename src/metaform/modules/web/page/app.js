@@ -61,8 +61,7 @@ function colorVar(layerName) {
   if (!layer) return '--intake';
   if (layer.kind === 'intake') return '--intake';
   if (layer.kind === 'memory') return '--memory';
-  if (layer.kind === 'correction') return '--correction';
-  const knowledge = S.layers.filter(item => !['intake', 'memory', 'correction'].includes(item.kind));
+  const knowledge = S.layers.filter(item => !['intake', 'memory'].includes(item.kind));
   return KNOWLEDGE[knowledge.indexOf(layer) % KNOWLEDGE.length];
 }
 const layerColor = name => css(colorVar(name));
@@ -75,7 +74,7 @@ function renderChips() {
   const on = shownOn();
   const box = $('#layers');
   fill(box);
-  const listed = S.layers.filter(item => item.kind !== 'correction');
+  const listed = S.layers;
   let count = 0;
   for (const layer of listed) {
     const usable = layer.ready && !layer.hidden, checked = usable && on.has(layer.name);
@@ -92,13 +91,6 @@ function renderChips() {
     box.append(h('label', {class: 'layerrow', style: {'--c': `var(${colorVar(layer.name)})`},
       title: layer.hidden ? 'Hidden: it stays out even when turned on.' : !layer.ready ? 'Still building.' : null},
       input, h('i'), h('span', {class: 'name'}, layer.name), ' ', h('span', {class: 'meta'}, [layer.kind, ...(layer.tags || []), state].join(' · '))));
-  }
-  const corrections = S.layers.filter(item => item.kind === 'correction').length;
-  if (corrections) {
-    const input = h('input', {type: 'checkbox', disabled: true});
-    input.checked = true;
-    box.append(h('label', {class: 'layerrow fixed', style: {'--c': 'var(--correction)'}, title: 'Correction layers are always applied, in order.'},
-      input, h('i'), h('span', {class: 'name'}, 'corrections'), ' ', h('span', {class: 'meta'}, `${corrections} · always applied`)));
   }
   $('#layersBtn').textContent = `Layers · ${count} of ${listed.length}`;
   $('#apply').disabled = S.view === null;
@@ -2600,55 +2592,11 @@ $('#saveBtn').onclick = async () => {
   toast(`Saved as version ${saved.number}. Layers made with earlier versions still show the version that made them.`);
 };
 
-/* ---------- corrections: removed one at a time from the top, after a warning, VIEW-014 ---------- */
-async function renderCorr(warning = null) {
-  const pane = $('#p-corr');
-  if (noMetaform()) return fill(pane, h('p', {class: 'empty'}, noneYet()));
-  fill(pane, h('div', {class: 'eyebrow'}, 'Correction stack · applied in order, newest on top'),
-    h('p', {class: 'empty'}, 'Correction layers always apply and cannot be toggled. Only the top one can be removed.'));
-  let stack;
-  try { stack = (await read('stack', {limit: 0})).results.slice().reverse(); }
-  catch (error) { pane.append(h('p', {class: 'empty'}, error.message)); return; }
-  if (!stack.length) return pane.append(h('p', {class: 'empty'}, 'No correction layers. The metaform reads as the intake left it.'));
-  pane.append(h('div', {class: 'stack'}, stack.map((layer, index) => h('div', {class: 'lyr' + (index === 0 ? ' top' : '')},
-    h('div', {style: {display: 'flex', 'justify-content': 'space-between', gap: '8px'}}, h('b', {}, layer.name),
-      h('span', {class: 'meta'}, layer.ready || '')),
-    layer.provenance?.role ? h('div', {class: 'meta'}, `${layer.provenance.role}${layer.provenance.model ? ' · ' + layer.provenance.model : ''}`) : null,
-    h('div', {class: 'meta'}, layer.variable || ''),
-    index === 0 && !warning ? h('div', {}, h('button', {class: 'btn danger remove', onclick: () => warn(layer.name)},
-      'Remove this layer')) : null))));
-  if (warning) pane.append(warning);
-}
-async function warn(name) {
-  let preview;
-  try { preview = await read('peel-preview', {layer: name}); } catch (error) { return toast(error.message); }
-  if (!preview.top) { toast((preview.notices || []).map(notice => notice.message).join(' ') || `${name} is no longer on top.`); return renderCorr(); }
-  const lines = preview.changes.map(change => h('li', {}, `${change.kind} ${change.what} ${change.effect}` + (change.detail ? `, ${change.detail}` : '')));
-  const box = h('div', {class: 'warn'}, h('b', {}, `Remove ${name}?`), h('span', {}, 'This changes the metaform every agent reads:'),
-    lines.length ? h('ul', {}, lines) : h('p', {class: 'empty'}, 'It changed nothing that is still applied.'),
-    h('div', {class: 'toolbar'},
-      h('button', {class: 'btn danger confirm', onclick: () => removeTop(name)}, 'Remove it'),
-      h('button', {class: 'btn', onclick: () => renderCorr()}, 'Keep it')));
-  renderCorr(box);
-}
-async function removeTop(name) {
-  const response = await fetch('/api/remove-correction', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({project: S.project, metaform: S.metaform, layer: name})});
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.removed) toast(body.error || (body.notices || []).map(notice => notice.message).join(' ') || 'Nothing was removed.');
-  else toast(`${name} removed. The layer below it is now on top.`);
-  S.layers = (await read('layers', {limit: 0})).results;
-  renderChips();
-  await renderCorr();
-  loadGraph();
-}
-
 /* ---------- tabs, toast ---------- */
-const TABS = {object: '#p-object', prov: '#p-prov', prompt: '#p-prompt', corr: '#p-corr'};
+const TABS = {object: '#p-object', prov: '#p-prov', prompt: '#p-prompt'};
 function showTab(tab) {
   for (const [key, selector] of Object.entries(TABS)) { $(selector).hidden = key !== tab; $('#t-' + key).setAttribute('aria-selected', String(key === tab)); }
   if (tab === 'prov') renderProv();
-  if (tab === 'corr') renderCorr();
   if (tab === 'prompt' && !P.editor) renderPrompt();
   if (tab === 'prompt' && P.editor) setTimeout(() => P.editor.refresh(), 0);
 }
@@ -2687,11 +2635,11 @@ async function follow(found) {
     else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
-    const {layer, metaform} = LIVE;
+    const {metaform} = LIVE;
     const stands = (await read('metaforms', {limit: 0})).results.some(item => item.metaform_id === metaform);
     Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
     renderLegend();
-    toast(stands ? `The intake ${layer} finished.` : `The intake ${layer} stopped: ${S.project} was cleared.`);
+    toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     await loadProject();
     return;
   }
@@ -2737,7 +2685,7 @@ function listen() {
  * as in every read, VIEW-017. */
 async function itemsOf(generation) {
   const found = new Map();
-  for (const layer of S.layers.filter(item => item.ready && !['intake', 'correction'].includes(item.kind))) {
+  for (const layer of S.layers.filter(item => item.ready && item.kind !== 'intake')) {
     let after = null;
     do {
       const page = await read('layer-items', {layer: layer.name, in_context: 'true', limit: 500, ...(after ? {after} : {}), ...viewLayers()});
@@ -2794,7 +2742,6 @@ async function loadMetaform() {
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();
   if ($('#p-prov').hidden === false) renderProv();
-  if ($('#p-corr').hidden === false) renderCorr();
   await loadGraph();
 }
 async function loadProject(wanted = null) {

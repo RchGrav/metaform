@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '7'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
+SCHEMA_VERSION = '8'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
+
+Upgrade = Callable[[sqlite3.Connection, Path, str], None]  # brings a file at an earlier version up to date
 
 _WRITERS: dict[str, threading.RLock] = {}
 _WRITERS_GUARD = threading.Lock()
@@ -48,7 +50,8 @@ def memory(schema: str) -> sqlite3.Connection:
 
 
 @contextmanager
-def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[sqlite3.Connection, None, None]:
+def opened(path: Path, schema: str, *, write: bool, version: str,
+           upgrade: Upgrade | None = None) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to the file, opened inside the file's lock, STORE-006; the caller begins and ends
     the transaction. A write holds the lock until the block ends and creates the file when there is none. A read
     lets go of the lock once its connection is prepared, and reads a file with nothing committed yet, no file, no
@@ -62,7 +65,7 @@ def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[s
             path.parent.mkdir(parents=True, exist_ok=True)
             db = connect(path)
             try:
-                prepare(db, path, schema, create=True, version=version)
+                prepare(db, path, schema, create=True, version=version, upgrade=upgrade)
             except BaseException:
                 db.close()
                 raise
@@ -70,7 +73,7 @@ def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[s
             if _has_bytes(path):
                 db = connect(path)
                 try:
-                    if not prepare(db, path, schema, create=False, version=version):
+                    if not prepare(db, path, schema, create=False, version=version, upgrade=upgrade):
                         db.close()
                         db = None
                 except BaseException:
@@ -96,10 +99,12 @@ def _has_bytes(path: Path) -> bool:
         return False
 
 
-def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, version: str) -> bool:
+def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, version: str,
+            upgrade: Upgrade | None = None) -> bool:
     """Check the schema version, creating the schema first when the file is new and creation is allowed. False
     when the file holds no tables and creation is not allowed: another process is creating it, and nothing in it
     is committed yet, so the caller reads it as empty. `version` is the version this kind of database is at, STORE-029.
+    A file at an earlier version is brought up to it by `upgrade` when this kind of database has one, STORE-029.
     """
     found = _version(db)
     if found is None:
@@ -124,6 +129,9 @@ def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, ve
                              f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{version}');"
                              '\nCOMMIT;')
             found = _version(db)
+    if found != version and upgrade is not None and found is not None and found.isdigit() and int(found) < int(version):
+        upgrade(db, path, found)
+        found = _version(db)
     if found != version:
         raise StoreError(f'{path} has schema version {found}; this Metaform supports version {version}.',
                          'install the Metaform release that wrote it')

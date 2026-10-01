@@ -108,7 +108,7 @@ metaform memory open-nodes join:d14bd3498b614dfbaf0754c99b28dba3
 
 These commands create a local example memory; the sentence is not present in the supplied original export. A subsequent agent can retrieve it at the join that gives it meaning. A general conclusion intended to participate in several tasks can instead be recorded in a purpose-named knowledge layer, with source/provenance associations.
 
-The memory write alone does not certify a review result or version the finding. Memory is mutable in this edition. A correction to the represented graph uses the correction mechanism; a versioned prompt uses the prompt store; a captured implementation result uses artifact history. Their different lifecycles make it important to record the association actually produced.
+The memory write alone does not certify a review result or version the finding. Memory is mutable in this edition. A refinement of the represented graph is a new version in the `intake` layer; a versioned prompt uses the prompt store; a captured implementation result uses artifact history. Their different lifecycles make it important to record the association actually produced.
 
 ## What this example demonstrates
 

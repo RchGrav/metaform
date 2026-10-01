@@ -128,7 +128,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="selection"></a>
 ### Target 7. Stored knowledge, participating knowledge, and hidden sources
 
-**Mechanism.** An incoming layer set is transformed by local masks and selections along an address path. Hiding a layer also affects dependent layers through source relationships. Corrections and named raw reads have distinct behavior. See [knowledge layers](REFERENCE.md#layers).
+**Mechanism.** An incoming layer set is transformed by local masks and selections along an address path. Hiding a layer also affects dependent layers through source relationships. Refinements, which change the intake layer, and named raw reads have distinct behavior. See [knowledge layers](REFERENCE.md#layers).
 
 **Material to retain.** Preserve layer identities and kinds, source relationships, the incoming selection, relevant select/mask rows, hide state, and exact context-read results. A compact sequence can show an inherited selection, removal at a parent, and re-addition at a descendant. A separate sequence can show hidden dependency closure and a direct named read of material that does not participate in context.
 
@@ -150,7 +150,7 @@ Each target describes material worth retaining and the relationship it would exp
 
 **Material to retain.** Keep the examination request, graph view, source revision or original artifact, inspected locations, finding, explicit rationale, and any resulting clarification or change. Retain whether the critic actually inspected implementation. A Metaform-only observation should keep that source scope rather than inherit evidence from a later code examination.
 
-**What this exposes.** The current `ef` interface omission provides a concrete source-backed case: the intake and store support the field, and the map knowledge interface adds it, while its edit and correct do not read it. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
+**What this exposes.** The current `ef` interface omission provides a concrete source-backed case: the intake and store support the field, and the map knowledge interface adds it, while its edit and refine read `ef` but not `verb`. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
 
 <a id="mutation"></a>
 ### Target 10. A relationship-preserving implementation change
@@ -191,11 +191,11 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="provenance"></a>
 ### Target 14. A connected provenance and realization-history example
 
-**Mechanism.** Layer provenance, prompt versions and use records, corrections, mutable memory, and artifact origin/variant history retain different things. Their relationships make a contribution's context inspectable without claiming one universal history model. See [provenance](REFERENCE.md#provenance).
+**Mechanism.** Layer provenance, prompt versions and use records, the versions a refinement keeps, mutable memory, and artifact origin/variant history retain different things. Their relationships make a contribution's context inspectable without claiming one universal history model. See [provenance](REFERENCE.md#provenance).
 
-**Material to retain.** Keep the available origin or source identity, variant, layer provenance, original and prepared prompt versions, use links, selected context, result, and subsequent correction or change. Record absent links as absent rather than reconstructing a fictitious exact prompt from current text. For mutable memory, capture the relevant state at use time separately when a historical account is desired.
+**Material to retain.** Keep the available origin or source identity, variant, layer provenance, original and prepared prompt versions, use links, selected context, result, and any later refinement or change. Record absent links as absent rather than reconstructing a fictitious exact prompt from current text. For mutable memory, capture the relevant state at use time separately when a historical account is desired.
 
-**What this exposes.** A reader can follow which recorded input informed a result, where an implementation changed, and which later reads see corrections. The current intake supplies actual layer provenance but does not populate a prompt version. The [prompt](IMPLEMENTATION_MAP.md#prompts), [correction](IMPLEMENTATION_MAP.md#corrections), and [history](IMPLEMENTATION_MAP.md#supporting) facilities should appear with their real boundaries.
+**What this exposes.** A reader can follow which recorded input informed a result, where an implementation changed, and which later reads see refinements. The current intake supplies actual layer provenance but does not populate a prompt version. The [prompt](IMPLEMENTATION_MAP.md#prompts), [refining](IMPLEMENTATION_MAP.md#corrections), and [history](IMPLEMENTATION_MAP.md#supporting) facilities should appear with their real boundaries.
 
 <a id="reuse"></a>
 ### Target 15. One preparation reused across several operations

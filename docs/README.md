@@ -27,7 +27,7 @@ The [bibliography](preprint/references.bib) contains the preprint's research ref
 
 ## Examples and evidence
 
-[project-metaform.json](examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1, copied with one change, `verb` recorded as null on each join and subtype row. The current chassis imports schema version 5 only and stops on this file. The reader guide and walkthrough quote its records as recorded material, and [the reader guide](guides/reading-a-metaform.md) says which of its record shapes have changed since. [CLI-EXERCISE.md](examples/CLI-EXERCISE.md) is the dated record of the command exercise made for the September 26 edition.
+[project-metaform.json](examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1, copied with one change, `verb` recorded as null on each join and subtype row. The current chassis imports schema version 8 only and stops on this file. The reader guide and walkthrough quote its records as recorded material, and [the reader guide](guides/reading-a-metaform.md) says which of its record shapes have changed since. [CLI-EXERCISE.md](examples/CLI-EXERCISE.md) is the dated record of the command exercise made for the September 26 edition.
 
 The guides label **derived illustrations** when they demonstrate a described use rather than quote an executed agent task. The current store, command line, memory, layer, module, and GUI operations are explained as operations. Lexicalization, complete automated blindspot production, and intent-driven recomposition are explained as mechanisms with their construction boundaries, not invented commands.
 

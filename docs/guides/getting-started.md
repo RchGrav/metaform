@@ -122,13 +122,13 @@ An element is its address, `name_length` and role; its name is its address read 
 
 Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. `intake_join` returns the `join_id` that `intake_subtype` takes as `into` for a subtype join inside it, and `intake_absorb` makes a recorded join a subtype join inside its parent's join, keeping its `join_id`; the element it holds stays one element. An element's address is `namespace_address` in every intake tool, as in the Canonical Intake. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
 
-Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` correct it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, joins, subtype joins, refs and open work records, and a notice naming any address recorded only as the end of a join and never described.
+Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` change it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, joins, subtype joins, refs and open work records, and a notice naming any address recorded only as the end of a join and never described.
 
-The intake tools carry no condition field. What the agent finds in the specifications and not built, broken, or exclude it writes as a work record with `map_work`, apart from the map; the web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red.
+`intake element`, `intake join` and `intake subtype` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map_work`.
 
 ### What stays available
 
-The first intake produces a retained intake layer. Repeating intake for a Metaform that already has one creates a **new active Metaform**, while keeping the previous one whole. It does not replace the old base layer in place.
+The intake produces one layer, named `intake`. After it is finished the metaform changes by refining that layer with `op=refine`, which keeps every earlier version, and does not stack new layers: see [Refine the metaform](working-with-metaform.md#refine-the-metaform). Repeating intake for a Metaform that already has one creates a **new active Metaform**, while keeping the previous one whole. It does not replace the old base layer in place.
 
 ```sh
 metaform list metaforms
@@ -202,7 +202,7 @@ The shell examples use POSIX single quotes around JSON; on Windows PowerShell, q
 
 ### The earlier export in docs/examples
 
-[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 5 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 5.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
+[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 8 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 8.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
 
 ## When the first command does not do what you expect
 

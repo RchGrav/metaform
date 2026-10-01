@@ -186,7 +186,7 @@ When creating a layer derived from other layers, the `sources` JSON array record
 
 ## Select the understanding for a task
 
-Without a nonempty explicit layer selection, the ordinary starting set includes all finished, nonhidden, non-correction layers. Local settings then remove or add participation along namespace prefixes. A local mask defaults to preserving incoming membership; a local select defaults to adding nothing. This is not a default-deny scheme.
+Without a nonempty explicit layer selection, the ordinary starting set includes all finished, nonhidden layers. Local settings then remove or add participation along namespace prefixes. A local mask defaults to preserving incoming membership; a local select defaults to adding nothing. This is not a default-deny scheme.
 
 For example, exclude review notes from the `code.timer` branch, then restore them for the kitchen timer:
 
@@ -215,11 +215,11 @@ metaform map unhide review-notes
 
 Only hideable layers can be hidden. The store also excludes derived layers whose explicitly recorded sources depend transitively on hidden layers. It does not infer unlimited semantic invalidation from any association. Direct reads of the retained layer remain distinct from its participation in normal context.
 
-Intake, knowledge, memory, and corrections have different lifecycles. In particular, corrections are not selectable/hideable knowledge overlays; they apply through the correction stack.
+Intake, knowledge, and memory have different lifecycles. The intake layer is the metaform itself, not an overlay: it is not hidden or masked, and it changes by refining, below.
 
 ## Record the condition of an object as work
 
-The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `missing`, to be done or determined, `broken`, or `exclude`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a correction.
+The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `missing`, to be done or determined, `broken`, or `exclude`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a refinement.
 
 ```sh
 metaform map work op=add node=element:code.alarm.audible condition=broken note="The alarm pin is unconnected on the second board revision." task="Wire the alarm pin on revision two."
@@ -227,29 +227,29 @@ metaform map work node=element:code.alarm.audible
 metaform map work op=done id=<work_id> resolution="Wired on revision two."
 ```
 
-`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps, a critic with its findings, and any agent at any time.
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps: `intake element`, `intake join` and `intake subtype` take `condition` and `note`, which write an open work record at what was just recorded. a critic with its findings, and any agent at any time.
 
-## Correct represented understanding
+## Refine the metaform
 
-Use a correction layer when changing the established representation while retaining the change and its reason. Ordinary mutable notes are not a substitute for that history.
+The metaform is the metaform: it does not stack new layers or new colors each time something changes. The finished intake is one layer, named `intake`, and the metaform expands and changes inside it. Periodically refine it.
 
-The command shape is:
+A refinement changes or removes one thing of the metaform and records why. No layer is named:
 
 ```text
-metaform map knowledge op=create layer=clarification variable="What this correction changes." kind=correction mutable=false hideable=false
-metaform map knowledge op=correct layer=clarification id=<record-id> observation="<corrected observation>" reason="<why it changes>" evidence="<supporting evidence>"
-metaform map knowledge op=finish layer=clarification
-metaform map history <record-id>
-metaform map stack
+metaform map knowledge op=refine id=<id> <field>=<value> reason="<why it changes>" evidence="<what shows it>"
+metaform map knowledge op=refine id=<id> remove=true reason="<why it goes>"
+metaform map history <id>
 ```
 
-Replace the angle-bracket fields with the actual target and reasoning. A correction begins in the building state and is applied on finish. `op=peel layer=<top-correction>` takes the top correction off the stack and returns it to building. Use the stack order shown by the store; this is not arbitrary undo of an interior layer.
+`evidence` is optional. Replace the angle-bracket fields with the actual id and reasoning. Each refinement writes a new version of the thing in the `intake` layer and keeps every earlier version, so the reason for each change stays with it. `metaform map history <id>` reads every version in the order it was written. A removal also keeps its versions. It leaves what pointed at the removed thing orphaned and names each in its result.
 
-An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=edit` or `op=correct` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
+A finished intake also takes additions directly: `op=add-element`, `op=add-join`, `op=add-subtype` and the other add operations with `layer=intake`. Use them to expand the metaform, and `op=refine` to change what is already there.
 
-Corrections can mark dependent knowledge as requiring re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither finishing a correction nor marking a layer re-examined automatically performs the reasoning.
+An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=refine` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
 
-`op=edit` and `op=correct` do not read `ef` or `verb`: a value given for either is named in a notice and ignored, so a join's Function or Encounter word cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `correct` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the exact omission.
+A knowledge layer built on what a refinement changed is marked for re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither a refinement nor marking a layer re-examined performs the reasoning.
+
+`op=edit` and `op=refine` read `ef` but not `verb`: a value given for `verb` is named in a notice and ignored, so a join's verb cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `refine` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the omission.
 
 ## Use prompting and criticism without changing the assignment
 
@@ -286,7 +286,7 @@ metaform web stop
 
 The first command starts or locates the shared web process for the current Metaform home and prints its address. The second stops it. The default bind is loopback at port 7433. The source has separate host/origin and token handling for a non-loopback bind; do not treat changing `web_bind` as equivalent to the default local-only exposure.
 
-The header holds the project and Metaform selectors, **Clear project**, and a **Layers** button that counts the layers shown, such as `Layers · 3 of 5`, and opens a checklist with one row per layer and **Apply to folder** at its foot. The left pane holds the two-dimensional map, with **Back**, **Forward**, the breadcrumb and **Fit** on a strip above it, and four inspection tabs: **Object**, **Provenance**, **Prompt**, and **Corrections**. The three-dimensional graph fills the right, and every item of the layers turned on is its own node there. Select a graph object to inspect its recorded content. In the 2D view, use Fit or `F`; the 3D view supports orbit, zoom, selection, and layout controls.
+The header holds the project and Metaform selectors, **Clear project**, and a **Layers** button that counts the layers shown, such as `Layers · 3 of 5`, and opens a checklist with one row per layer and **Apply to folder** at its foot. The left pane holds the two-dimensional map, with **Back**, **Forward**, the breadcrumb and **Fit** on a strip above it, and three inspection tabs: **Object**, **Provenance** and **Prompt**. The three-dimensional graph fills the right, and every item of the layers turned on is its own node there. Select a graph object to inspect its recorded content. In the 2D view, use Fit or `F`; the 3D view supports orbit, zoom, selection, and layout controls.
 
 The checklist selects what the view presents. **Apply to folder** persists the chosen layer context for that folder. A temporary visual selection and the folder's working context are different operations.
 
@@ -294,7 +294,7 @@ The page shows each node's condition from its work records: a node with an open 
 
 The page follows the map without polling. After any command that changes a project's map, on the command line or over MCP, and after the page's own writes, `map.changed` is announced and the server pushes it to every open page, which redraws without a reload. An intake being recorded is drawn as each object arrives.
 
-The Prompt tab exposes existing prompt versions, comparisons, and **Save as new version**. It does not generate a lexicalized prompt merely because it displays prompt records. The Corrections tab presents the relevant retained changes rather than editing the runtime source.
+The Prompt tab exposes existing prompt versions, comparisons, and **Save as new version**. It does not generate a lexicalized prompt merely because it displays prompt records.
 
 **Clear project** in the header does what `metaform clear project <project> --confirm` does for the selected project: it removes the project's metaforms and report files and keeps its registration, folder, settings, origins and variants. It first shows the command's own caution and asks on the page. Afterwards every open page shows the project with no metaform until the next intake.
 
@@ -351,7 +351,7 @@ metaform extract <variant-id> <empty-destination-folder> origin=<origin-id>
 
 An origin is based on the repository commit or a plain-folder copy. Variants record differences against an origin; extraction reconstructs and verifies the resulting content. The destination must be empty for extraction. The optional `remove=true` variant behavior is not needed for ordinary capture and is not used here.
 
-Artifact variants, layer provenance, correction history, and prompt versions are distinct records. They become a connected account of a task when the actual associations are recorded; the presence of each facility is not proof that every producer automatically records every association.
+Artifact variants, layer provenance, the version history of the metaform, and prompt versions are distinct records. They become a connected account of a task when the actual associations are recorded; the presence of each facility is not proof that every producer automatically records every association.
 
 ## Reports and further reading
 

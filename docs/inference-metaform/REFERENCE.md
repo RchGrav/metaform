@@ -555,7 +555,7 @@ These operations have distinct meanings:
 | Hide | Exclude a hideable layer from context, including its dependency closure. |
 | Unhide | Remove that hide state; other scope and dependency rules still apply. |
 | Building | Content is being assembled and is not yet an ordinary participating layer. |
-| Finish | Make the assembled layer ready; a correction is also applied to its stack. |
+| Finish | Make the assembled layer ready. |
 | Discard | Delete a discardable layer's stored content, subject to its actual lifecycle. |
 
 Hidden is not deleted. A direct named layer read can inspect content that a context read excludes. A raw read is another explicit view. Selection is a semantic participation mechanism, not a claim that the stored information is inaccessible through every interface.
@@ -579,7 +579,7 @@ The resolver walks prefixes from trunk to leaf. With no local rows, the incoming
 
 The starting selection is a separate input. An explicitly supplied root selection is used as given after resolving valid selectable layers. Otherwise, nonempty call/folder toggles are used. With neither, the current resolver starts from finished, nonhidden, selectable layers. Local select=0 therefore does not mean the project starts with an empty knowledge set.
 
-Corrections are applied separately from the normal selection. An all-ones default mask is not an always-on core, and these defaults do not prescribe a fixed table of reserved layer bits.
+The intake layer is not selected or masked like a knowledge layer; it is the metaform every read starts from. An all-ones default mask is not an always-on core, and these defaults do not prescribe a fixed table of reserved layer bits.
 
 ### Derived selection example
 
@@ -607,15 +607,15 @@ That distinction supports broad understanding of a mixed realization while prese
 
 | Content | Lifecycle in the implementation |
 |---|---|
-| Intake | Immutable, nonhideable base layer; repeat intake creates another Metaform rather than overwriting it. |
+| Intake | Nonhideable base layer, named `intake`, which is the metaform itself. It changes only by refining, which writes a new version of one thing and keeps every earlier one; it also takes additions with `layer=intake`. Repeat intake creates another Metaform rather than overwriting it. |
 | General knowledge layer | Created, populated, and finished; ordinary knowledge records remain editable through their supported operations. Its declared characteristics and layer rules govern its use. |
 | Memory | One ready, mutable, hideable layer created on first write; items change or are deleted in place; no own memory history or provenance. |
-| Correction layer | Built and then applied on a stack; finished corrections are immutable and not selected or masked like normal knowledge layers; the top can be peeled. |
+| Refinement | Not a layer. A new version of one thing in the `intake` layer, with its reason and evidence; every earlier version is kept and read with `metaform map history <id>`. |
 | Prompt version | A saved text version with a parent; earlier text is retained unchanged. |
-| Origin/variant material | File-state history tied to an origin, separate from graph corrections and memory. |
+| Origin/variant material | File-state history tied to an origin, separate from refinements of the graph and from memory. |
 | Work record | The condition of an element or a join, apart from the map and from every layer: open until its task is done, then done with its resolution kept; it follows its object through every version and survives a layer's discard. |
 
-Correction application changes the current graph view while retaining the underlying correction history. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, provider or parent join, keeping its identity and its attached items. Knowledge that depends on affected content can be marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
+A refinement changes the current graph view while retaining every earlier version of the thing. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, provider or parent join, keeping its identity and its attached items. A knowledge layer built on what a refinement changed is marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
 
 This separation lets an agent reason about what is stored, what currently applies, what has changed, and what a previous operation used without treating those as the same question.
 
@@ -744,9 +744,9 @@ A C response should identify the actual functional location and explain how it s
 
 ### Derived challenge illustrations
 
-**A: an already considered concern.** A critic proposes retaining every shared-memory edit as immutable history. The project could explain that this memory layer is intentionally mutable working memory, while prompt versions, correction layers, and other knowledge records have separate retention roles. That answer would need the project's actual rationale for choosing this division. The example illustrates a possible A exchange; it does not claim that this rationale has already been recorded as an answer.
+**A: an already considered concern.** A critic proposes retaining every shared-memory edit as immutable history. The project could explain that this memory layer is intentionally mutable working memory, while prompt versions, the versions a refinement keeps, and other knowledge records have separate retention roles. That answer would need the project's actual rationale for choosing this division. The example illustrates a possible A exchange; it does not claim that this rationale has already been recorded as an answer.
 
-**B: an unexplored interface concern.** A critic examining the current code finds that joins have `ef` and `verb` fields in intake and storage, but the map knowledge interface's edit and correct do not read them. A B response could identify the effect on changing Function/Encounter distinctions through that surface and explore the interface change. The interface omission is source-observed; the challenge response here is a derived illustration, not a stored project response.
+**B: an unexplored interface concern.** A critic examining the current code finds that joins have `ef` and `verb` fields in intake and storage, but the map knowledge interface's edit and refine read `ef` but do not read `verb`. A B response could identify the effect on changing Function/Encounter distinctions through that surface and explore the interface change. The interface omission is source-observed; the challenge response here is a derived illustration, not a stored project response.
 
 **C: functionality handled elsewhere.** A critic asks how asynchronous tasks are owned and cleaned up when a module is unloaded. A project response can point to `Context.spawn` and the loader's task ownership and unload behavior, explaining that the capability is shared rather than reimplemented in each module. A complete C response connects those source locations to the concern instead of relying on the absence or presence of a separately named runtime node.
 
@@ -835,7 +835,7 @@ Sources: [module contract](../../src/metaform/module.py), [loader](../../src/met
 
 ### Retain the origin of a contribution
 
-Provenance keeps retained understanding connected to the operation that produced it. A later agent can distinguish a base intake, a subsequent knowledge contribution, a critic's finding, a correction, and a local memory note. It can also distinguish the text used for one prompt version from text edited later.
+Provenance keeps retained understanding connected to the operation that produced it. A later agent can distinguish a base intake, a subsequent knowledge contribution, a critic's finding, a refinement, and a local memory note. It can also distinguish the text used for one prompt version from text edited later.
 
 The source supports layer provenance fields for module, workflow, prompt, model, role, and blinded status, together with a layer's identity, timestamps, result id, declared variable, and source-layer dependencies. Those fields describe a contribution at the layer level; individual refs, observations, reasons, and evidence can provide more specific grounding.
 
@@ -849,11 +849,11 @@ This supports the author's point that an earlier prompt can remain as issued whi
 
 These boundaries are part of understanding the actual lifecycles, not reasons to weaken the role of provenance. The [implementation map](IMPLEMENTATION_MAP.md#prompts) identifies the facilities and their existing uses.
 
-### Graph correction and artifact history are different histories
+### Graph refinement and artifact history are different histories
 
-Graph corrections record changes to the represented form, apply on a stack, and support current views and history. Artifact origins and variants preserve workpiece file states against a baseline. An origin can be based on repository state or a plain-folder copy; variants retain their differences from that origin and can be reconstructed with recorded hash checks.
+Graph refinements record changes to the represented form as versions in the `intake` layer and support current views and history. Artifact origins and variants preserve workpiece file states against a baseline. An origin can be based on repository state or a plain-folder copy; variants retain their differences from that origin and can be reconstructed with recorded hash checks.
 
-Together these facilities support questions such as: what form was represented, what knowledge was selected, what contribution changed the map, and what artifact realization resulted? They remain separate records whose actual links must be used. A file variant is not automatically a graph correction, and a provenance row is not automatically a complete prompt-to-code-diff trace.
+Together these facilities support questions such as: what form was represented, what knowledge was selected, what contribution changed the map, and what artifact realization resulted? They remain separate records whose actual links must be used. A file variant is not automatically a graph refinement, and a provenance row is not automatically a complete prompt-to-code-diff trace.
 
 The underlying aim is that previously performed reasoning remains intelligible and useful. Retaining an answer without its purpose, or a result without the source understanding it used, makes later agents repeat the interpretive work that the Inference Metaform is designed to amortize.
 
@@ -921,7 +921,7 @@ This walkthrough reuses one prepared interpretation of the plugin system across 
 
 The functional map describes the map API as the agent-facing encounter with stored elements, joins, and layers. The critic examines the actual implementation with that receiving purpose in view.
 
-The intake tools, store APIs, and record schema support `ef` and `verb`, and the knowledge interface writes them when it adds a join or a subtype join. Its edit and correct omit them from the fields they read, so an `ef` given there is named in a notice and ignored rather than reaching its dedicated field.
+The intake tools, store APIs, and record schema support `ef` and `verb`, and the knowledge interface writes them when it adds a join or a subtype join. Its edit and refine read `ef` but omit `verb` from the fields they read, so a `verb` given there is named in a notice and ignored rather than reaching its dedicated field.
 
 The issue is not that the entire graph lacks Function/Encounter semantics. It is that one interface does not carry an existing semantic field through to its implemented destination. The functional description allows the critic to locate the mismatch precisely: agents using this encounter should be able to supply the distinction supported by the underlying records.
 
@@ -992,7 +992,7 @@ These commitments express what the described mechanisms mean and what must remai
 | F20 | Blindspot responses carry reasons, unexplored relevance, or a located existing handling, not merely states. | [Challenges](#criticism) |
 | F21 | Community modules receive the implemented shared context, store, settings, events, lifecycle, tools, and instruction facilities. | [Extensibility](#extensibility) |
 | F22 | A shared facility and a producer that uses it remain distinguishable. | [Module architecture](#extensibility) |
-| F23 | Provenance, prompt versions, corrections, memory, and artifact variants retain their actual lifecycles. | [Provenance](#provenance) |
+| F23 | Provenance, prompt versions, refinements, memory, and artifact variants retain their actual lifecycles. | [Provenance](#provenance) |
 | F24 | User intent can shape and transform work across artifact types through the represented relationships. | [Formation](#formation) |
 
 <a id="terminology"></a>
@@ -1006,7 +1006,7 @@ These commitments express what the described mechanisms mean and what must remai
 | Artifact Type / AT | [5](#intake) |
 | Blindspot challenge / A, B, C | [11](#criticism) |
 | Canonical Intake | [5](#intake) |
-| Correction layer | [9](#layers), [13](#provenance) |
+| Refinement | [9](#layers), [13](#provenance) |
 | Defining Element / DE | [3](#semantic-structure) |
 | Encounter / Encounter Function / EF | [6](#encounters) |
 | Entity / Element | [3](#semantic-structure) |

@@ -42,7 +42,7 @@ flowchart LR
     C --> F["Request + project-grounded<br/>interpretation"]
     F --> G["Selected understanding<br/>for subsequent work"]
     G --> H["Implementation, examination,<br/>synthesis, recomposition"]
-    H --> I["New findings, memory, corrections,<br/>and retained relationships"]
+    H --> I["New findings, memory, refinements,<br/>and retained relationships"]
 ```
 
 This is a connected account of the mechanisms, not a mandatory pipeline that every operation must traverse in full. A task can enter through a node, a relationship, a knowledge layer, or a broader type perspective. Nor does preparation replace the executing model's inference with stored answers. It changes the material on which that inference operates.
@@ -194,7 +194,7 @@ The starting selection is established separately. The implemented resolver uses 
 
 This is not an invented always-on core, a fixed-width bit layout, or a default-deny architecture. Local absence of a selection row preserves the incoming choice. An explicitly empty starting selection and an unspecified starting selection are distinct inputs at the API level.
 
-Hidden layers remain stored. The resolver also excludes layers whose explicitly recorded sources depend transitively on hidden layers. That is a defined source-dependency closure, not a claim that every semantic association causes automatic invalidation. Direct named or raw reads remain different from participation in the current view. Corrections apply through their own stack rather than ordinary selectable-layer membership. These behaviors are implemented in [selection.py](../../src/metaform/data/selection.py) and [layering.py](../../src/metaform/data/layering.py).
+Hidden layers remain stored. The resolver also excludes layers whose explicitly recorded sources depend transitively on hidden layers. That is a defined source-dependency closure, not a claim that every semantic association causes automatic invalidation. Direct named or raw reads remain different from participation in the current view. The intake layer is the metaform itself, not a selectable overlay, and it changes by refining. These behaviors are implemented in [selection.py](../../src/metaform/data/selection.py) and [layering.py](../../src/metaform/data/layering.py).
 
 Scope-aware selection is necessary to make prepared understanding useful across different operations. A layer relevant to a review need not become a perpetual instruction for every future task. A specialized Encounter can be visible to broad reasoning without becoming a sibling's assumption. The retained knowledge remains available for the operation to which it belongs.
 
@@ -278,7 +278,7 @@ Different records have different lifecycles:
 | Intake | Immutable, nonhideable base layer; another intake is retained in a new Metaform. |
 | General knowledge | Declared layer with building/finished state, mutability, visibility, and optional source/provenance associations. |
 | Memory | Mutable node-addressed items, without a separate memory revision/provenance history. |
-| Corrections | Recorded changes with reasons and evidence, applied through an ordered correction stack. |
+| Refinements | Recorded changes with reasons and evidence, each a new version of one thing in the `intake` layer, every earlier version kept. |
 | Prompts | Separate version and use records; current intake does not populate them. |
 | Artifact history | Origins, variants, reconstruction, and extraction, distinct from the map's own records. |
 
@@ -314,7 +314,7 @@ This illustrates the importance of source correspondence. A represented function
 |---|---|
 | Canonical Intake | Serves the operative resource and records the agent's result one object per call, as it is reasoned, into an intake layer that becomes visible when the agent finishes it after a proofing pass. The agent performs the inference. |
 | Functional records | Elements, receiver-owned joins, internal subtypes, descriptors, and references are stored and queryable. |
-| Knowledge participation | Layer selection, local masks/selects, scoped properties, hidden-source closure, and corrections are implemented. |
+| Knowledge participation | Layer selection, local masks/selects, scoped properties, hidden-source closure, and refinements are implemented. |
 | Addressed memory | Implemented at elements, joins, and subtypes. |
 | Project lexicalization | Name/address, context, memory, and prompt facilities exist; the integrated preprocessing producer is not shipped. |
 | Blindspot exchange | State/plan storage exists; producing and coupling the substantive rationale remains distinct. |

@@ -13,12 +13,12 @@ from typing import Any, Generic, Literal, NamedTuple, TypeVar, cast
 from ..errors import StoreError
 
 NodeKind = Literal['element', 'join', 'type']
-LayerKind = Literal['layer', 'intake', 'memory', 'correction']
+LayerKind = Literal['layer', 'intake', 'memory']
 Op = Literal['add', 'change', 'remove']  # what a row does, STORE-017
 Answer = Literal['A', 'B', 'C', 'plan']  # a challenge's state, STORE-040
 NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')  # a subtype join is a join, STORE-011
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
-LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
+LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
@@ -263,19 +263,17 @@ class Layer(Record):
     hidden: bool = False
     on: bool = False
     reexamine: bool = False
-    position: int | None = None
     provenance: Provenance | None = None
     notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)
 class Version(Record):
-    """One stored version of a thing: the row that added it, or a correction layer's row."""
+    """One stored version of a thing: the row that added it, or a refinement, LAYER-025."""
     id: str
     kind: str
     layer_id: str
     layer: str
-    position: int | None
     op: Op
     reason: str | None
     evidence: str | None
@@ -438,26 +436,6 @@ class GraphPage(Record):
     elements: tuple[GraphElement, ...]
     joins: tuple[GraphJoin, ...]
     next: str | None = None
-
-
-@dataclass(frozen=True)
-class PeelChange(Record):
-    """One change removing a correction layer would make: what, and whether it disappears, comes back, moves back,
-    reverts, shows again or becomes orphaned, VIEW-014."""
-    kind: str
-    id: str
-    what: str
-    effect: str
-    detail: str | None = None
-
-
-@dataclass(frozen=True)
-class PeelPreview(Record):
-    """What removing a correction layer would change, and whether it is on top, so it can be removed, VIEW-014."""
-    layer: str
-    top: bool
-    changes: tuple[PeelChange, ...] = ()
-    notices: tuple[Notice, ...] = ()
 
 
 @dataclass(frozen=True)

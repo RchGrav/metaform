@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
-        writes = {'/api/apply-layers': self.apply_layers, '/api/remove-correction': self.remove_correction,
+        writes = {'/api/apply-layers': self.apply_layers,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
                   '/api/element': self.add_part, '/api/restore': self.restore,
@@ -263,20 +263,6 @@ class Handler(BaseHTTPRequestHandler):
             # The web module's own subscriber hands it back to this server, which pushes it to every open page.
             project = home.project(str(given.get('project', '')))
             changes.announce(Path(project.path) if project is not None else home.home(), 'web')
-
-    def remove_correction(self, given: dict[str, Any]) -> None:
-        """Peel the top correction layer and discard it, in one write, only while it is still the top, VIEW-014."""
-        layer = str(given.get('layer', ''))
-        try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
-            with store.atomic():
-                peeled = store.peel(layer)
-                if isinstance(peeled, Outcome):
-                    return self.send(200, {'layer': layer, 'removed': False, 'notices': plain(peeled.notices)})
-                done = store.discard(layer)
-        except (Stop, StoreError) as error:
-            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
-        self.send(200, {'layer': layer, 'removed': True, 'notices': plain(done.notices)})
 
     def save_prompt(self, given: dict[str, Any]) -> None:
         """Save an edited prompt as its next version, edited from `parent`; no version ever changes, VIEW-013."""
