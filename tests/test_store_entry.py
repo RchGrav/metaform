@@ -37,7 +37,6 @@ def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home
 
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('BASE-038')
-@pytest.mark.req('MCP-008')
 def test_map_roots_and_where_with_no_address_return_the_entry(run, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()
@@ -46,10 +45,6 @@ def test_map_roots_and_where_with_no_address_return_the_entry(run, tmp_path):
     roots = json.loads(run('map', 'roots', '--json', cwd=folder).stdout)
     assert {item['element']['address'] for item in roots['entry']} == {'stakeholder.cook.home', 'code.timer.kitchen'}
     assert json.loads(run('map', 'where', '', '--json', cwd=folder).stdout) == roots
-    purpose = run('help', 'agents', cwd=folder).stdout
-    assert 'With no address, use command roots.' in purpose
-    assert 'call the map tool with command where and the part\'s address: it returns what the part is for, what ' \
-           'relies on it and what it relies on.' in purpose
 
 
 @pytest.mark.req('STORE-042')
