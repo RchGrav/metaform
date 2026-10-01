@@ -188,18 +188,18 @@ class Store:
     # ---------------------------------------------------------------- the map
 
     def add_element(self, layer: str | None, address: Any, *, name_length: Any = None, role: Any = None,
-                    refs: Iterable[Any] = (), extra: Any = None) -> Element | Outcome:
-        """Write an element, its address, name_length and role, or return the one already at the address,
+                    refs: Iterable[Any] = (), extra: Any = None, name: Any = None) -> Element | Outcome:
+        """Write an element, its address, name_length, name and role, or return the one already at the address,
         STORE-009."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_element(tx, named, address, name_length=name_length, role=role, refs=refs,
-                                                  extra=extra), notice)
+                                                  extra=extra, name=name), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
                  ef: Any = None, perspective: Any = None, relation: Any = None, verb: Any = None,
                  observation: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
-                 extra: Any = None) -> Join | Outcome:
+                 extra: Any = None, ifd: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010, with the project's name for
         the functionality it names, MAP-020."""
         with self._write() as tx:
@@ -207,12 +207,13 @@ class Store:
             return self._noted(writes.add_join(tx, named, receiver, provider, name=name, purpose=purpose,
                                                ef=ef, perspective=perspective, relation=relation, verb=verb,
                                                observation=observation, non_goal=non_goal, type=type, refs=refs,
-                                               extra=extra), notice)
+                                               extra=extra, ifd=ifd), notice)
 
     def add_subtype(self, layer: str | None, join: Any, address: Any, *, ef: Any = None, perspective: Any = None,
                     relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
                     name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
-                    extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
+                    extra: Any = None, purpose: Any = None, ifd: Any = None,
+                    element_name: Any = None) -> Subtype | Outcome:
         """Write a subtype join inside its parent join, holding the element at `address`, an ordinary element record;
         it carries its own purpose, the share of its parent's it serves, STORE-011 and MAP-030."""
         with self._write() as tx:
@@ -220,7 +221,7 @@ class Store:
             return self._noted(writes.add_subtype(tx, named, join, address, ef=ef, perspective=perspective, relation=relation,
                                                   verb=verb, observation=observation, non_goal=non_goal, name=name,
                                                   name_length=name_length, role=role, refs=refs, extra=extra,
-                                                  purpose=purpose), notice)
+                                                  purpose=purpose, ifd=ifd, element_name=element_name), notice)
 
     def add_ref(self, owner: str, key: str, value: str) -> Ref | Outcome:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""

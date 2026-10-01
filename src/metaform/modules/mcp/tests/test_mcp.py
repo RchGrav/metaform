@@ -516,7 +516,7 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_absorb', 'intake_show',
             'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
     assert error is False and described_error is False
-    assert [notice['where'] for notice in named] == ['name'] and 'join' in named[0]['message']
+    assert named == []  # the element's name is its own field, Rich 2026-10-01
     assert [row['name'] for row in shown['joins']] == ['countdown alarm']
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
@@ -525,7 +525,7 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
     assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
     kitchen = Store('fresh').element('code.timer.kitchen')
     assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
-    assert (kitchen.short_name, kitchen.extra) == ('kitchen timer', {'name': 'kitchen timer'})
+    assert (kitchen.short_name, kitchen.name, kitchen.extra) == ('kitchen timer', 'kitchen timer', None)
 
 
 @pytest.mark.req('VIEW-018')

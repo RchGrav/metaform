@@ -27,8 +27,9 @@ settings.boolean('tasks', True, help='Assign and track work on the map like a ka
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 EF = {'type': 'string', 'enum': list(PERSPECTIVES)}
-FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'relation',
-          'observation', 'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+# What edit and refine change; perspective, ifd and verb among them, which were dropped before, an intake found.
+FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'perspective', 'ifd', 'relation',
+          'verb', 'observation', 'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
 
 
 def _node(text: str) -> Node:
@@ -250,11 +251,11 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
-    'add-element': frozenset({'address', 'name_length', 'role', 'refs', 'extra'}),
-    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb',
+    'add-element': frozenset({'address', 'name_length', 'name', 'role', 'refs', 'extra'}),
+    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb',
                            'observation', 'non_goal', 'type', 'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal',
-                              'name', 'name_length', 'role', 'refs', 'extra'}),
+    'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
+                              'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
@@ -350,17 +351,19 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
                            tags=tuple(nouns.get('tags', ())), provenance=provenance,
                            sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
-        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role', 'refs', 'extra'))
+        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role', 'refs', 'extra'),
+                                 name=nouns.get('name'))
     if op == 'add-join':
         purpose, ef, relation, observation = _empty(ctx, notices, 'purpose', 'ef', 'relation',
                                                           'observation')
         return store.add_join(name, nouns['receiver'], nouns['provider'], purpose=purpose, ef=ef,
                               relation=relation, observation=observation,
-                              **_optional(ctx, 'name', 'perspective', 'verb', 'non_goal', 'type', 'refs', 'extra'))
+                              **_optional(ctx, 'name', 'perspective', 'ifd', 'verb', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         return store.add_subtype(name, nouns['join'], nouns['address'],
-                                 **_optional(ctx, 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal',
-                                             'name', 'name_length', 'role', 'refs', 'extra'))
+                                 **_optional(ctx, 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
+                                             'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'),
+                                 element_name=nouns.get('name'))
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
@@ -417,9 +420,9 @@ KNOWLEDGE_NOUNS = (
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
                      'the subtype join holds. An element cannot be moved: edit and refine do not apply it.'),
-    _noun('name', "add-join and add-subtype: the project's own name for the functionality the join names, its "
-                  'canonical or informal name. An element holds no name: its name is its address read through '
-                  'name_length.'),
+    _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element. '
+                  "add-join: the project's own name for the functionality the join names. add-subtype: both, for the "
+                  'subtype join and the element it holds.'),
     _noun('name_length', 'add-element and add-subtype: how many trailing segments form the element\'s short name.',
           'int'),
     _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
@@ -434,6 +437,8 @@ KNOWLEDGE_NOUNS = (
     _noun('ef', "add-join and add-subtype: the Encounter Function."),
     _noun('perspective', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '
                 'functionality of the encounter.', schema=EF),
+    _noun('ifd', 'add-join and add-subtype: IFD, Information Flow Direction, the primary flow of information. sends: OP to '
+                 'EF. receives: EF to OP. both: equal need.', schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
     _noun('relation', 'add-join and add-subtype: the relation in active voice.'),
     _noun('verb', 'add-join and add-subtype: the third-person singular present-tense active verb of the relation, '
                   'ending in -s or -es.'),

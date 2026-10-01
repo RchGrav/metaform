@@ -30,9 +30,8 @@ def project(run, tmp_path):
 OBJECT_KEYS = {'namespace_address', 'role', 'name', 'name_length', 'refs', 'joins'}
 JOIN_KEYS = {'type', 'provider', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal',
              'refs', 'subtypes'}
-# The Canonical Intake's schema still puts a name on each element, and the fixture follows it: each is kept in the
-# element's extra with a notice, since the project's name for a functionality goes on the join, BASE-039.
-NAMED = {'elements[0].name', 'elements[1].name', 'elements[2].name'}
+# Each element of the fixture carries its name, which is stored on the element, Rich 2026-10-01, with no notice.
+NAMED: set[str] = set()
 SUBTYPE_KEYS = {'provider', 'ef', 'perspective', 'relation', 'verb', 'observation', 'element', 'purpose'}
 
 
@@ -162,7 +161,7 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert store.has_intake()
     kitchen = store.element('code.timer.kitchen')
     assert (kitchen.short_name, kitchen.name_length, kitchen.role, kitchen.open_work) == ('kitchen timer', 2, 'DE', ())
-    assert kitchen.extra == {'name': 'kitchen timer daemon'}
+    assert (kitchen.name, kitchen.extra) == ('kitchen timer daemon', None)  # its own field, Rich 2026-10-01
     assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
     cook_join = store.joins('stakeholder.cook.home').results[0]
     assert (cook_join.provider_address, cook_join.purpose, cook_join.non_goal, cook_join.layer) == (
@@ -197,17 +196,17 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
 @pytest.mark.req('MAP-040')
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('BASE-044')
-def test_the_projects_name_for_a_functionality_is_recorded_on_its_join_and_an_element_keeps_a_name_in_its_extra(
-        run, project):
-    """Rich, 2026-09-27: the element is its address, name_length and role, and the project's own name for a
-    functionality goes on the join, the purpose join and the subtype join alike. The Canonical Intake still shows a
-    name on the element, so a name sent there is kept in the element's extra and the notice says where it goes."""
+def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(run, project):
+    """Rich, 2026-10-01: the name goes anywhere there is a namespace and name length; extra should be gone. The element
+    holds its name in a field of its own, beside name_length; the join keeps the project's name for the functionality."""
     run('intake', 'start', cwd=project)
     element = json.loads(run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name_length=2',
                              'name=kitchen timer daemon', '--json', cwd=project).stdout)
-    [named] = [notice for notice in element['notices'] if notice['where'] == 'name']
-    assert 'join' in named['message'] and 'extra' in named['message']
-    run('intake', 'element', 'code.alarm.audible', 'role=SE', 'name_length=2', cwd=project)
+    assert [notice for notice in element['notices'] if notice['where'] == 'name'] == []
+    unnamed = json.loads(run('intake', 'element', 'code.alarm.audible', 'role=SE', 'name_length=2', '--json',
+                             cwd=project).stdout)
+    assert [notice['message'] for notice in unnamed['notices'] if notice['where'] == 'name'] == [
+        'name is missing; stored empty.']
     join = json.loads(run('intake', 'join', 'code.timer.kitchen', 'code.alarm.audible', 'name=end-of-countdown alarm',
                           'purpose=Get attention.', 'ef=Rings.', 'perspective=Encounter', 'ifd=receives', 'relation=The alarm rings.',
                           'verb=rings', 'observation=A piezo.', '--json', cwd=project).stdout)
@@ -218,18 +217,17 @@ def test_the_projects_name_for_a_functionality_is_recorded_on_its_join_and_an_el
     assert inner['notices'] == []
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
     assert [row['name'] for row in shown['joins']] == ['end-of-countdown alarm']
-    assert [(row['name'], row['short_name']) for row in shown['joins'][0]['subtypes']] == [
-        ('one-second tick', 'tick loop')]
     kitchen = next(row for row in shown['elements'] if row['namespace_address'] == 'code.timer.kitchen')
-    assert (kitchen['short_name'], kitchen['name_length'], kitchen['role'], kitchen['extra']) == (
-        'kitchen timer', 2, 'DE', {'name': 'kitchen timer daemon'})
-    assert 'name' not in kitchen
+    assert (kitchen['short_name'], kitchen['name_length'], kitchen['name'], kitchen['role']) == (
+        'kitchen timer', 2, 'kitchen timer daemon', 'DE')
+    assert not kitchen.get('extra')
     run('intake', 'finish', cwd=project)
     store = Store('timer')
     held = store.joins('code.timer.kitchen').results[0]
-    assert held.name == 'end-of-countdown alarm'
+    assert (held.name, held.ifd, held.extra) == ('end-of-countdown alarm', 'receives', None)
     assert store.subtypes(held.join_id).results[0].name == 'one-second tick'
-    assert store.element('code.timer.kitchen').extra == {'name': 'kitchen timer daemon'}
+    assert (store.element('code.timer.kitchen').name, store.element('code.timer.kitchen').extra) == ('kitchen timer daemon', None)
+    assert store.element('code.loop.tick').name == 'one-second tick'  # the element a subtype join holds is named too
 
 
 @pytest.mark.req('MAP-020')
@@ -324,7 +322,7 @@ def test_what_does_not_fit_is_stored_as_given_and_named_in_a_notice(run, project
     assert {join.provider_address for join in store.joins('stakeholder.cook.home').results} == {
         'code.nowhere', 'stakeholder.cook.home'}
     odd = store.where('Code..Alarm', raw=True)
-    assert odd is not None and odd.element.extra == {'colour': 'red', 'name': 'audible alarm'}
+    assert odd is not None and (odd.element.extra, odd.element.name) == ({'colour': 'red'}, 'audible alarm')
 
 
 @pytest.mark.req('STORE-012')
@@ -335,7 +333,7 @@ def test_an_odd_ref_sent_to_an_intake_tool_is_placed_by_the_stores_one_rule(run,
     hands its refs on as given. A ref that is a record is split into an item of its own, as the store does with any
     list of records in an extra, STORE-004, which a second copy of the rule in the intake module never did."""
     recorded(run, project, 'start')
-    made = recorded(run, project, 'element', 'code.probe.echo', 'role=SE', 'name_length=1',
+    made = recorded(run, project, 'element', 'code.probe.echo', 'role=SE', 'name_length=1', 'name=echo probe',
                     'refs=[["path", "src/echo.c"], {"path": "src/pins.h"}]')
     messages = [(notice['where'], notice['message']) for notice in made['notices']]
     assert messages == [
@@ -436,7 +434,7 @@ def test_the_intake_tools_carry_no_condition_field_and_a_flag_sent_anyway_is_kep
     report = submit(run, project, given, tmp_path)
     assert report['work'] == 0 and 'elements[2].flag' in notices(report)
     alarm = Store('timer').element('code.alarm.audible')
-    assert alarm.open_work == () and alarm.extra == {'flag': 'broken', 'name': 'audible alarm'}
+    assert alarm.open_work == () and (alarm.extra, alarm.name) == ({'flag': 'broken'}, 'audible alarm')
     assert not hasattr(alarm, 'flag')
 
 
@@ -853,7 +851,7 @@ def test_a_condition_given_with_an_element_a_join_or_a_subtype_join_is_an_open_w
     """Rich, 2026-10-01: the agent said it found missing and broken things, and nothing like that showed in the GUI.
     The Canonical Intake's step 2 has the agent mark them; the intake tools take the mark and the finding."""
     run('intake', 'start', cwd=project)
-    element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'condition=broken',
+    element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=broken',
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', cwd=project)
     join = recorded(run, project, 'join', 'code.timer', 'code.auth', 'purpose=p', 'ef=f', 'perspective=Function',
@@ -861,8 +859,8 @@ def test_a_condition_given_with_an_element_a_join_or_a_subtype_join_is_an_open_w
                     'note=The demo does not declare its autoap dependency.')
     subtype = recorded(run, project, 'subtype', join['join_id'], 'code.auth.tofu', 'purpose=q', 'ef=g',
                        'perspective=Function', 'ifd=sends', 'relation=s', 'verb=w', 'observation=o', 'role=SE',
-                       'condition=exclude', 'note=Stale build context.')
-    plain = recorded(run, project, 'element', 'code.clock', 'role=SE')
+                       'name=TOFU', 'condition=exclude', 'note=Stale build context.')
+    plain = recorded(run, project, 'element', 'code.clock', 'role=SE', 'name=clock')
     for made in (element, join, subtype, plain):
         assert made['notices'] == []
     recorded(run, project, 'finish')
@@ -896,4 +894,4 @@ def test_every_join_and_subtype_join_is_asked_its_information_flow_direction(run
     assert 'ifd' not in [notice['where'] for notice in read['notices']]
     store = Store('timer')
     held = {join.join_id: join for join in store.joins('code.selector.route', raw=True).results}
-    assert held[read['join_id']].extra == {'ifd': 'receives'}
+    assert (held[read['join_id']].ifd, held[read['join_id']].extra) == ('receives', None)

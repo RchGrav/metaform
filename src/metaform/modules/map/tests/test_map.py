@@ -257,16 +257,15 @@ def test_each_read_verb_returns_what_its_operation_returns(run, mapped):
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('BASE-043')
-def test_a_knowledge_layer_names_a_functionality_on_its_join_and_a_name_sent_for_an_element_is_kept_in_its_extra(
-        run, mapped):
-    """Rich, 2026-09-27: the project's name for a functionality goes on the join; an element is its address,
-    name_length and role, so a name sent with add-element is kept in the element's extra and named, BASE-043."""
+def test_a_knowledge_layer_names_an_element_and_a_functionality_on_its_join(run, mapped):
+    """Rich, 2026-10-01: a name goes anywhere there is a namespace and name length, the element's own field beside
+    name_length; the project's name for a functionality stays on the join."""
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     element = json.loads(k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.display.lcd',
                            'name=time display', 'name_length=2').stdout)
-    assert (element['short_name'], element['name_length'], element['extra']) == ('lcd display', 2,
-                                                                                   {'name': 'time display'})
-    assert 'name' not in element and [notice['where'] for notice in element['notices']] == ['name']
+    assert (element['short_name'], element['name_length'], element['name'], element.get('extra')) == (
+        'lcd display', 2, 'time display', None)
+    assert element['notices'] == []
     join = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.display.lcd',
                         'provider=code.timer.kitchen', 'name=time left', 'purpose=Show the time left.',
                         'ef=Reports the time left.', 'relation=The timer feeds the display.',
@@ -811,3 +810,17 @@ def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(
     assert (doing['condition'], doing['taken_by'], doing['held'], bool(doing['taken'])) == ('flawed', 'codex', False, True)
     done = json.loads(run('map', 'work', 'op=move', f'id={made["work_id"]}', 'column=done', '--json', cwd=mapped).stdout)
     assert done['done'] and done['condition'] == 'flawed'
+
+
+@pytest.mark.req('LAYER-025')
+@pytest.mark.req('MAP-020')
+def test_refining_a_join_changes_its_perspective_verb_and_ifd(run, mapped):
+    """An intake of Metaform found that knowledge edit and refine dropped perspective and verb, Rich 2026-10-01: if you
+    see issues you can fix them. They change with the rest of a join's fields, and so does its IFD."""
+    from metaform.data import Store
+    join = Store('proj').joins('code.timer.kitchen').results[0]
+    refined = json.loads(k(run, mapped, 'op=refine', f'id={join.join_id}', 'perspective=Encounter', 'verb=sounds',
+                           'ifd=sends', 'reason=The alarm is what the timer encounters.').stdout)
+    assert not [notice for notice in refined.get('notices', []) if notice['where'] in ('perspective', 'verb', 'ifd')]
+    now = next(held for held in Store('proj').joins('code.timer.kitchen').results if held.join_id == join.join_id)
+    assert (now.perspective, now.verb, now.ifd) == ('Encounter', 'sounds', 'sends')

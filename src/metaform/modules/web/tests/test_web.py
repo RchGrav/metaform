@@ -3079,6 +3079,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     assert page.is_visible('#element') and Store('proj').element('code.alarm.visible') is None
     page.fill('#element .address', 'code.alarm.visible')
     page.fill('#element .length', '2')
+    page.fill('#element .name', 'Flash Alert')                         # its canonical name, Rich 2026-10-01
     page.select_option('#element .receives', 'node')                  # the alarm holds the purpose; the new part serves it
     page.fill('#element .purpose', 'Tell a cook who cannot hear that the time is up.')
     page.fill('#element .ef', 'Flashes a lamp when the timer runs out.')
@@ -3087,7 +3088,8 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     page.wait_for_function('() => document.querySelector("#element").hidden')
     store = Store('proj')
     made = store.element('code.alarm.visible')
-    assert made is not None and (made.layer, made.name_length, made.short_name) == ('additions', 2, 'visible alarm')
+    assert made is not None and (made.layer, made.name_length, made.short_name, made.name) == (
+        'additions', 2, 'visible alarm', 'Flash Alert')
     joined = [join for join in store.joins('code.alarm.audible').results if join.provider == made.element_id]
     assert [(join.receiver, join.layer, join.purpose, join.ef) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]

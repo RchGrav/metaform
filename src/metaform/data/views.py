@@ -77,7 +77,7 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     return Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
                    reading(address), short_name(address, length), length, current['role'],
                    read_refs(tx.db, 'element', current['row']), decode_extra(current['extra']),
-                   state='plan' if plan else None, open_work=open_work(tx, 'element', element_id))
+                   state='plan' if plan else None, open_work=open_work(tx, 'element', element_id), name=current['name'])
 
 
 def join_orphaned(tx: Tx, row: Row) -> bool:
@@ -99,7 +99,7 @@ def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) 
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
                 row['name'], row['purpose'], row['ef'], row['perspective'], row['relation'], row['verb'], row['observation'], row['non_goal'],
                 read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned,
-                open_work(tx, 'join', str(row['join_id'])))
+                open_work(tx, 'join', str(row['join_id'])), ifd=row['ifd'])
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
@@ -116,10 +116,10 @@ def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:
     """A subtype join, STORE-011: its own fields and layer, with the element it holds, an ordinary element record read
     by its id, MAP-030."""
     element_id = str(row['provider'])
-    held = tx.db.execute('SELECT e.address, e.name_length, e.role FROM current_elements c JOIN elements e '
+    held = tx.db.execute('SELECT e.address, e.name_length, e.role, e.name FROM current_elements c JOIN elements e '
                          'ON e.row = c.row WHERE c.element_id=?', (element_id,)).fetchone()
     if held is None:
-        held = tx.db.execute('SELECT address, name_length, role FROM elements WHERE element_id=? ORDER BY row DESC '
+        held = tx.db.execute('SELECT address, name_length, role, name FROM elements WHERE element_id=? ORDER BY row DESC '
                              'LIMIT 1', (element_id,)).fetchone()
     address = None if held is None else str(held['address'])
     length = held['name_length'] if held is not None and whole_number(held['name_length']) else None
@@ -129,7 +129,8 @@ def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:
                    None if held is None else held['role'], row['purpose'], row['ef'], row['perspective'], row['relation'],
                    row['verb'],
                    row['observation'], row['non_goal'], read_refs(tx.db, 'join', row['row']),
-                   decode_extra(row['extra']), join_orphaned(tx, row), open_work(tx, 'join', str(row['join_id'])))
+                   decode_extra(row['extra']), join_orphaned(tx, row), open_work(tx, 'join', str(row['join_id'])),
+                   ifd=row['ifd'], element_name=None if held is None else held['name'])
 
 
 def visible_subtype(tx: Tx, row: Row, res: Resolver | None) -> Subtype | None:

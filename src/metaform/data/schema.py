@@ -1,4 +1,4 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 9.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 10.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 An element is its address, name_length and role, STORE-009, and it cannot be
@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS elements(
   layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
   address     TEXT NOT NULL REFERENCES types(address),
   name_length INTEGER,
+  name        TEXT,
   role        TEXT,
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
@@ -122,6 +123,7 @@ CREATE TABLE IF NOT EXISTS joins(
   purpose     TEXT,
   ef          TEXT,
   perspective TEXT CHECK(perspective IN ('Function','Encounter')),
+  ifd         TEXT,
   relation    TEXT,
   verb        TEXT,
   observation TEXT,

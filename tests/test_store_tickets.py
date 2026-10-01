@@ -9,6 +9,7 @@ from storekit import small_map, store_file
 
 from metaform.data import Node, StoreError
 from metaform.data.session import open_store
+from metaform.sqlite import SCHEMA_VERSION
 
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('MAP-048')]
 
@@ -91,8 +92,8 @@ def test_a_layout_8_store_opens_at_layout_9_with_taken_tickets_keeping_their_kin
     db.commit()
     db.close()
     with open_store(path, write=False) as opened:
-        assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == '9'
+        assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
     tickets = {ticket.work_id: ticket for ticket in store.work(limit=0).results}
     assert (tickets[built.work_id].condition, tickets[built.work_id].column) == ('missing', 'doing')
     assert (tickets[fixed.work_id].condition, tickets[fixed.work_id].column) == ('broken', 'doing')
-    assert list((home / 'backups' / 'upgrade-9').glob('*/*/*.metaform.sqlite3'))
+    assert list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.metaform.sqlite3'))

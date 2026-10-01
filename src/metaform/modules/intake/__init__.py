@@ -101,8 +101,6 @@ IFD = {'type': 'string', 'enum': ['sends', 'receives', 'both']}  # Information F
 SUBTYPE_TEXT = ('ef', 'perspective', 'relation', 'verb', 'observation')
 ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
 ADDRESS = 'namespace_address'  # the element's address, named as in the Canonical Intake, MAP-040
-NAMED = ("An element is its address, name_length and role and holds no name: the project's name for a functionality "
-         "goes on the join, with intake_join name. The name was kept in the element's extra.")
 UNMOVED = ("An element cannot be moved: its namespace_address is its identity, and another address is a different "
            "element, MAP-015. namespace_address was not applied; record the element at the new address with "
            "element and move its joins to it with edit receiver= or provider=.")
@@ -261,19 +259,17 @@ def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[An
     if role is None and (not own or current is None or current.role is None):
         notices.append({'where': 'role', 'message': 'role is missing; the element was stored without a role.'})
     name = given.get('name')
-    if name is not None:
-        kept = extra if extra is not None else (current.extra if own and current is not None else None)
-        extra = {**(kept or {}), 'name': name}
-        notices.append({'where': 'name', 'message': NAMED})
+    if name is None and (not own or current is None or current.name is None):
+        notices.append({'where': 'name', 'message': 'name is missing; stored empty.'})
     if not own:
         made = rec.store.add_element(rec.layer.name, address, name_length=given.get('name_length'), role=role,
-                                     refs=refs or (), extra=extra)
+                                     refs=refs or (), extra=extra, name=name)
         _note(notices, made)
         if current is not None and extra is not None:
             _note(notices, rec.store.edit(current.element_id, {'extra': extra}))
         return getattr(made, 'element_id', None)
     assert current is not None
-    changes: dict[str, Any] = {key: given[key] for key in ('name_length', 'role') if given.get(key) is not None}
+    changes: dict[str, Any] = {key: given[key] for key in ('name_length', 'name', 'role') if given.get(key) is not None}
     if refs is not None:
         changes['refs'] = refs
     if extra is not None:
@@ -311,23 +307,17 @@ def _missing(ctx: Context, names: tuple[str, ...], notices: Notices) -> None:
             notices.append({'where': name, 'message': f'{name} is missing; stored empty.'})
 
 
-def _with_ifd(ctx: Context, extra: dict[str, Any] | None) -> dict[str, Any] | None:
-    """A join's Information Flow Direction is kept in its extra, under ifd."""
-    ifd = ctx.nouns.get('ifd')
-    return extra if ifd is None else {**(extra or {}), 'ifd': ifd}
-
-
 def join(ctx: Context) -> Any:
     """Record one join: the receiver's purpose served by the provider's encounter function."""
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
     _missing(ctx, (*JOIN_TEXT, 'ifd'), notices)
-    extra = _with_ifd(ctx, extra)
     receiver, provider = ctx.nouns['receiver'], ctx.nouns['provider']
     made = rec.store.add_join(rec.layer.name, receiver, provider,
                               **{name: ctx.nouns.get(name) for name in ('name', *JOIN_TEXT, 'non_goal')},
-                              type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra)
+                              type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra,
+                              ifd=ctx.nouns.get('ifd'))
     _note(notices, made)
     _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
     return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
@@ -341,14 +331,14 @@ def subtype(ctx: Context) -> Any:
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
     _missing(ctx, (*SUBTYPE_TEXT, 'ifd'), notices)
-    extra = _with_ifd(ctx, extra)
     address = ctx.nouns[ADDRESS]
-    described = {'role': ctx.nouns.get('role'), 'name_length': _whole(ctx.nouns.get('name_length'))}
+    described = {'role': ctx.nouns.get('role'), 'name_length': _whole(ctx.nouns.get('name_length')),
+                 'name': ctx.nouns.get('name')}
     element_id = _describe(rec, address, described, None, None, notices)
     made = rec.store.add_subtype(rec.layer.name, ctx.nouns['into'], element_id or address,
                                  **{name: ctx.nouns.get(name) for name in (*SUBTYPE_TEXT, 'non_goal', 'name',
                                                                            'purpose')},
-                                 refs=refs or (), extra=extra)
+                                 refs=refs or (), extra=extra, ifd=ctx.nouns.get('ifd'))
     _note(notices, made)
     _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
     return {'join_id': getattr(made, 'join_id', None), 'parent': ctx.nouns['into'], 'element_id': element_id,
@@ -378,13 +368,14 @@ def _refs(found: Any) -> list[dict[str, str]]:
 
 def _element_entry(found: Element) -> dict[str, Any]:
     return {'element_id': found.element_id, ADDRESS: found.address, 'short_name': found.short_name,
-            'role': found.role, 'name_length': found.name_length, 'refs': _refs(found.refs), 'extra': found.extra}
+            'name_length': found.name_length, 'name': found.name, 'role': found.role, 'refs': _refs(found.refs),
+            'extra': found.extra}
 
 
 def _subtype_entry(item: Subtype) -> dict[str, Any]:
     return {'join_id': item.join_id, 'parent': item.parent, 'element_id': item.element_id, ADDRESS: item.address,
             'short_name': item.short_name, 'role': item.role, 'name_length': item.name_length, 'name': item.name,
-            'purpose': item.purpose,
+            'element_name': item.element_name, 'purpose': item.purpose, 'ifd': item.ifd,
             **{name: getattr(item, name) for name in (*SUBTYPE_TEXT, 'non_goal')}, 'refs': _refs(item.refs),
             'extra': item.extra}
 
@@ -392,6 +383,7 @@ def _subtype_entry(item: Subtype) -> dict[str, Any]:
 def _join_entry(held: Join, inside: tuple[Subtype, ...]) -> dict[str, Any]:
     return {'join_id': held.join_id, 'receiver': held.receiver_address, 'provider': held.provider_address,
             'type': held.type, 'name': held.name, **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')},
+            'ifd': held.ifd,
             'refs': _refs(held.refs), 'extra': held.extra, 'subtypes': [_subtype_entry(item) for item in inside]}
 
 
@@ -454,7 +446,7 @@ def show(ctx: Context) -> Any:
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, **shown}
 
 
-JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation',
+JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
               'non_goal')
 
 

@@ -468,3 +468,4 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card .progress span{position:absolute;left:0;top:0;bottom:0;background:var(--c);border-radius:4px;box-shadow:0 0 8px var(--c);transition:width .4s}
 #board .card .progress small{position:absolute;right:0;top:6px;font:10px var(--mono);color:var(--muted)}
 #board .card .resolution{margin-top:6px;font:12px var(--sans);color:var(--signal)}
+#p-object .canonical{font:600 14px var(--sans);color:var(--signal);margin:-4px 0 6px}  /* the element's canonical name */

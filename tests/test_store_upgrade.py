@@ -84,3 +84,23 @@ def test_a_store_older_than_layout_7_is_refused_and_left_unchanged(home: Path, t
         with open_store(path, write=False):
             pass
     assert path.read_bytes() == before
+
+
+def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_into_their_own_fields(home, tmp_path):
+    """Rich, 2026-10-01: extra should be gone; a name goes anywhere there is a namespace and name length, and the IFD is
+    a field of the join. Layout 10 moves each out of the extra it was kept in."""
+    path = tmp_path / 'main.metaform.sqlite3'
+    layout_7_store(path)
+    db = sqlite3.connect(path)
+    db.executescript("""
+        UPDATE elements SET extra='{"name": "kitchen timer daemon", "colour": "red"}' WHERE element_id='E1';
+        UPDATE joins SET extra='{"ifd": "receives"}' WHERE row=1;
+    """)
+    db.commit()
+    db.close()
+    with open_store(path, write=False) as opened:
+        assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
+        element = opened.execute("SELECT name, extra FROM elements WHERE element_id='E1'").fetchone()
+        joined = opened.execute('SELECT ifd, extra FROM joins WHERE row=1').fetchone()
+    assert (element[0], element[1]) == ('kitchen timer daemon', '{"colour":"red"}')
+    assert (joined[0], joined[1]) == ('receives', None)

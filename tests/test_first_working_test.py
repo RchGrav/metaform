@@ -175,9 +175,8 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                             'note': 'the pin is never released', 'task': 'release it after stop'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
         assert (report['elements'], report['joins'], report['subtypes'], report['work']) == (4, 2, 1, 1)
-        # The fixture follows the Canonical Intake, whose schema still names each element: each name is kept in the
-        # element's extra and named, since the project's name for a functionality goes on the join, BASE-039.
-        assert noticed == ['name', 'name', 'name', 'purpose']
+        # Each element of the fixture carries its name, kept on the element with no notice, Rich 2026-10-01.
+        assert noticed == ['purpose']
     finally:
         host.close()
 

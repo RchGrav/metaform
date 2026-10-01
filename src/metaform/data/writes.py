@@ -92,10 +92,9 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
 
 
 def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, role: Any = None,
-                refs: Iterable[Any] = (), extra: Any = None) -> Element | Outcome:
-    """Write an element, its address, name_length and role, or return the one already at the address, STORE-009.
-
-    An element holds no name: the project's name for a functionality is on the join, MAP-020.
+                refs: Iterable[Any] = (), extra: Any = None, name: Any = None) -> Element | Outcome:
+    """Write an element, its address, name_length, name and role, or return the one already at the address,
+    STORE-009. Its name is the canonical name the project uses for it, Rich 2026-10-01.
     """
     pairs, odd = refs_fit(refs)
     if not isinstance(address, str):
@@ -114,8 +113,9 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
         record = views.element(tx, element_id, None)
         assert record is not None
         differs = (name_length is not None and name_length != record.name_length) or \
-            (role is not None and role != record.role)
+            (role is not None and role != record.role) or (name is not None and name != record.name)
         given = (('name_length', name_length is not None and name_length != record.name_length),
+                 ('name', name is not None and name != record.name),
                  ('role', role is not None and role != record.role), ('refs', bool(pairs)))
         notices += [Notice(field, f'{address} is already element {element_id} of layer {record.layer}, which keeps '
                                   f'its own {field}; the {field} given here was not applied.')
@@ -125,7 +125,8 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
     length, stored_role, aside = _element_fields(name_length, role, found, notices)
     if aside:
         kept_extra = {**(kept_extra or {}), **aside}
-    element_id = rows.new_element(tx, found, address, kept_extra, name_length=length, role=stored_role, refs=pairs)
+    element_id = rows.new_element(tx, found, address, kept_extra, name_length=length, role=stored_role, refs=pairs,
+                                  name=rows.text(name, 'name', notices))
     rows.split_items(tx, found, 'element', element_id, split)
     record = views.element(tx, element_id, None)
     assert record is not None
@@ -140,7 +141,7 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
              ef: Any = None, perspective: Any = None, relation: Any = None, verb: Any = None, observation: Any = None,
              non_goal: Any = None, type: Any = 'purpose',
-             refs: Iterable[Any] = (), extra: Any = None) -> Join | Outcome:
+             refs: Iterable[Any] = (), extra: Any = None, ifd: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
     for the functionality it names, MAP-020."""
     pairs, odd = refs_fit(refs)
@@ -164,10 +165,10 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, ef, perspective, relation, verb, '
-        'observation, non_goal, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, ef, perspective, ifd, relation, '
+        'verb, observation, non_goal, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (join_id, found.layer_id, kind, receiver_id, provider_id, texts['name'], texts['purpose'], texts['ef'],
-         perspective, texts['relation'], texts['verb'], texts['observation'], texts['non_goal'],
+         perspective, _ifd(ifd, notices), texts['relation'], texts['verb'], texts['observation'], texts['non_goal'],
          encode_extra(kept_extra, 'the join')))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
@@ -181,7 +182,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
 def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, perspective: Any = None,
                 relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
                 name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
-                extra: Any = None, purpose: Any = None) -> Subtype | Outcome:
+                extra: Any = None, purpose: Any = None, ifd: Any = None, element_name: Any = None) -> Subtype | Outcome:
     """Write a subtype join inside its parent join, holding the element at `address`, with its own purpose, the
     share of the parent's purpose it serves, STORE-011.
 
@@ -202,7 +203,7 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('purpose', purpose), ('ef', ef), ('relation', relation), ('verb', verb), ('observation', observation),
         ('non_goal', non_goal), ('name', name))}
-    element_id = _held_element(tx, found, address, name_length, role, notices)
+    element_id = _held_element(tx, found, address, name_length, role, notices, element_name)
     for other in rows.holding(tx, element_id):
         notices.append(Notice('address', f'{address} is already held by subtype join {other}; a part serving two '
                                          'joins is its own element, D4. Stored as given.'))
@@ -210,10 +211,10 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, perspective, relation, "
-        "verb, observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, perspective, ifd, "
+        "relation, verb, observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (join_id, found.layer_id, parent, element_id, texts['name'], texts['purpose'], texts['ef'], perspective,
-         texts['relation'],
+         _ifd(ifd, notices), texts['relation'],
          texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
@@ -224,8 +225,19 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     return _with(record, notices)
 
 
+IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction, Rich 2026-10-01
+
+
+def _ifd(value: Any, notices: list[Notice]) -> str | None:
+    """A join's Information Flow Direction: sends, receives or both; anything else is stored as given, BASE-044."""
+    if value is None or value in IFDS:
+        return value
+    notices.append(Notice('ifd', f'{value!r} is not sends, receives or both; it was stored as given.'))
+    return str(value)
+
+
 def _held_element(tx: Tx, found: LayerRow, address: str, name_length: Any, role: Any,
-                  notices: list[Notice]) -> str:
+                  notices: list[Notice], name: Any = None) -> str:
     """The element a subtype join holds: the one at the address, or a new one written in the layer, STORE-011."""
     if not rows.address_form(address) and not is_id(address):
         notices.append(Notice('address', f'{address!r} is not in the address form; it was stored as given.'))
@@ -234,11 +246,13 @@ def _held_element(tx: Tx, found: LayerRow, address: str, name_length: Any, role:
         if is_id(address):
             raise StoreError(f'No element has the id {address}.', 'metaform map where <address>')
         length, stored_role, kept = _element_fields(name_length, role, found, notices)
-        return rows.new_element(tx, found, address, kept or None, name_length=length, role=stored_role)
+        return rows.new_element(tx, found, address, kept or None, name_length=length, role=stored_role,
+                                name=rows.text(name, 'name', notices))
     element_id = str(current['element_id'])
     record = views.element(tx, element_id, None)
     assert record is not None
-    for field, given, own in (('name_length', name_length, record.name_length), ('role', role, record.role)):
+    for field, given, own in (('name_length', name_length, record.name_length), ('name', name, record.name),
+                              ('role', role, record.role)):
         if given is not None and given != own:
             notices.append(Notice(field, f'{record.address} is already element {element_id} of layer {record.layer}, '
                                          f'which keeps its own {field}; the {field} given here was not applied.'))

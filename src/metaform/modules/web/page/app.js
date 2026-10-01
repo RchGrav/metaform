@@ -2640,7 +2640,7 @@ function addElement(id) {
   $('#element .title').textContent = `Add Element · joined to ${named(element)}`;
   $('#element .receives option[value="node"]').textContent = `${named(element)}, and the new element serves it`;
   $('#element .receives option[value="new"]').textContent = `the new element, and ${named(element)} serves it`;
-  for (const name of ['.purpose', '.ef']) $('#element ' + name).value = '';
+  for (const name of ['.purpose', '.ef', '.name']) $('#element ' + name).value = '';
   // It is written on from the address of the node: a part added beside a part mostly shares its trunk.
   E.from = element.address.includes('.') ? element.address.slice(0, element.address.lastIndexOf('.') + 1) : '';
   $('#element .address').value = E.from;
@@ -2656,7 +2656,8 @@ $('#element .add').onclick = async () => {
     return;
   }
   const given = {address, node: `element:${E.node}`, receives: $('#element .receives').value,
-    name_length: Number($('#element .length').value) || 1, role: $('#element .role').value,
+    name_length: Number($('#element .length').value) || 1, name: $('#element .name').value.trim(),
+    role: $('#element .role').value,
     purpose: $('#element .purpose').value.trim(), ef: $('#element .ef').value.trim(),
     validate: $('#element .validate').checked};
   const response = await fetch('/api/element', {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2763,6 +2764,7 @@ async function renderObject(id) {
   fill(pane, 
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, element.short_name || element.address),
+    element.name ? h('div', {class: 'canonical'}, element.name) : null,  // what the project calls it
     h('div', {class: 'addr'}, element.address),
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
       (element.open_work || []).map(workPill), layerPill(element.layer),

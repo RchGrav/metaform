@@ -69,7 +69,8 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'work_links', 'requires'):
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'work_links', 'work_steps', 'messages',
+                 'reexamine', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
@@ -126,6 +127,11 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
     document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
     document['work_links'] = _rows(db, 'SELECT * FROM work_links ORDER BY work_id, number')
+    # the steps a ticket's agent filed and what waits for the user at a node, STORE-042, MAP-050 and MAP-053
+    document['work_steps'] = _without_row(_rows(db, 'SELECT * FROM work_steps ORDER BY work_id, number, row'))
+    document['messages'] = _without_row(_rows(db, 'SELECT * FROM messages ORDER BY row'))
+    document['reexamine'] = [row for row in _rows(db, 'SELECT * FROM reexamine ORDER BY rowid')
+                             if row['layer_id'] in chosen and row['changed_in'] in chosen]
     addresses = {row['address'] for table in ('elements', 'selections') for row in document[table]}
     needed = {prefix for address in addresses for prefix in prefixes(address)}
     document['types'] = [row for row in _rows(db, 'SELECT address, parent FROM types ORDER BY rowid')
@@ -161,7 +167,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'work', 'work_links')
+              *THINGS, 'challenge_states', 'plans', 'work', 'work_links', 'work_steps', 'messages', 'reexamine')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
@@ -427,6 +433,18 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         _insert(db, 'layers', {**layer, 'metaform_id': metaform_id})
         report['layers_added'] += 1
     fresh = set(new_layers)
+    # Tickets and messages have no layer; each follows its object, so it comes in whether or not a layer is new,
+    # and once, STORE-042.
+    for row in metaform.get('work', []):
+        _insert(db, 'work', row, ignore=True)
+    for row in metaform.get('work_links', []):
+        _insert(db, 'work_links', row, ignore=True)
+    for row in metaform.get('work_steps', []):
+        if not db.execute('SELECT 1 FROM work_steps WHERE work_id=? AND number=? AND at=?',
+                          (row['work_id'], row['number'], row['at'])).fetchone():
+            _insert(db, 'work_steps', row)
+    for row in metaform.get('messages', []):
+        _insert(db, 'messages', row, ignore=True)
     if not fresh:
         return
     for row in metaform.get('types', []):
@@ -490,10 +508,9 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for row in metaform.get('plans', []):
         if row['layer_id'] in fresh:
             _insert(db, 'plans', row, ignore=True)
-    for row in metaform.get('work', []):  # a work record has no layer; it follows its object, STORE-042
-        _insert(db, 'work', row, ignore=True)
-    for row in metaform.get('work_links', []):
-        _insert(db, 'work_links', row, ignore=True)
+    for row in metaform.get('reexamine', []):
+        if row['layer_id'] in fresh:
+            _insert(db, 'reexamine', row, ignore=True)
     for kind in versions.ORDER:
         versions.recompute(db, kind, touched[kind])
 

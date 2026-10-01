@@ -250,3 +250,33 @@ def test_a_wheel_folder_that_is_not_there_names_the_folders_that_are(run, home):
     missing = run('import', 'wheel=metaform-8.8.8', ok=False)
     assert missing.returncode != 0 and 'metaform-8.8.8' in missing.stderr
     assert 'Next: metaform import wheel=metaform-1.0.0' in missing.stderr
+
+
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('STORE-042')
+def test_a_tickets_links_and_steps_and_the_messages_at_nodes_are_carried_by_export_and_import(home, store, monkeypatch,
+                                                                                               tmp_path):
+    """An intake of Metaform found that export left out messages and work steps, Rich 2026-10-01: if you see issues
+    you can fix them; we need a rock solid data store. A ticket's reference links and filed steps, and the questions
+    and messages left at nodes, come through export and import, and importing again adds nothing twice."""
+    filled(store)
+    ticket = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone',
+                            links=[Node('element', 'code.timer.kitchen')])
+    store.take_work(ticket.work_id, steps=3, by='codex')
+    store.step_work(ticket.work_id, 'Found the gain.')
+    store.step_work(ticket.work_id, 'Lowered it.')
+    asked = store.ask(Node('element', 'code.alarm.audible'), 'How quiet?', suggestions=['half', 'a quarter'])
+    store.tell(Node('element', 'code.timer.kitchen'), 'The tick drifts under load.')
+    first = export_document(['proj'])
+    move_home(monkeypatch, tmp_path, 'other-home')
+    import_document(json.loads(json.dumps(first)))
+    assert export_document(['proj']) == first
+    import_document(json.loads(json.dumps(first)))                    # again: nothing twice
+    assert export_document(['proj']) == first
+    moved = Store('proj')
+    carried = next(record for record in moved.work(limit=0).results if record.work_id == ticket.work_id)
+    assert [link.address for link in carried.links] == ['code.timer.kitchen']
+    assert ([step.said for step in carried.said], carried.steps_done, carried.taken_by) == (
+        ['Found the gain.', 'Lowered it.'], 2, 'codex')
+    kept = {message.message_id: message for message in moved.messages(limit=0).results}
+    assert asked.message_id in kept and len(kept) == 2

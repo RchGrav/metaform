@@ -159,9 +159,10 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
     assert (element.address, element.name_length, element.role, element.short_name, element.reading) == (
         'code.timer.kitchen', 2, 'DE', 'kitchen timer', 'kitchen timer code')
     assert [(ref.key, ref.value) for ref in element.refs] == [('path', 'src/main.c')]
-    assert not {'name', 'descriptors'} & set(element.to_dict())
+    # Rich, 2026-10-01: a name goes anywhere there is a namespace and name length; it is the element's own field
+    assert 'descriptors' not in element.to_dict() and element.name is None
     columns = {row[1] for row in sqlite3.connect(store_file(home, store)).execute('PRAGMA table_info(elements)')}
-    assert {'name_length', 'role'} <= columns and 'name' not in columns
+    assert {'name_length', 'name', 'role'} <= columns
 
 
 @pytest.mark.req('STORE-009')
@@ -504,5 +505,5 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '9' and kinds == {'purpose', 'subtype'}  # layout 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
+    assert version == '10' and kinds == {'purpose', 'subtype'}  # layout 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
     assert 'correction_stack' not in tables

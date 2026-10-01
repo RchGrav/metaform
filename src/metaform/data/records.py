@@ -118,8 +118,9 @@ class Page(NamedTuple, Generic[T]):
 
 @dataclass(frozen=True)
 class Element(Record):
-    """An element is its address, name_length and role, STORE-009. Its only name is its address read backward
-    through name_length, `short_name`, MAP-012; the project's name for a functionality is on the join, MAP-020."""
+    """An element is its address, name_length, name and role, STORE-009. `short_name` is its address read backward
+    through name_length, MAP-012; `name` is the canonical name the project uses for it, Rich 2026-10-01: a name goes
+    anywhere there is a namespace and name length."""
     element_id: str
     address: str
     layer_id: str
@@ -136,6 +137,7 @@ class Element(Record):
     orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
+    name: str | None = None  # the canonical name the project uses for it
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,7 @@ class Join(Record):
     orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
+    ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
 
 
 @dataclass(frozen=True)
@@ -194,6 +197,8 @@ class Subtype(Record):
     orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
+    ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
+    element_name: str | None = None  # the canonical name of the element it holds
 
 
 @dataclass(frozen=True)

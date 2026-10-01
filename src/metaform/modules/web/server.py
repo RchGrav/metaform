@@ -405,7 +405,7 @@ class Handler(BaseHTTPRequestHandler):
                 store.layer(ADDITIONS, 'web', 'What people added to the map by hand.', mutable=True, hideable=True,
                             provenance=ADDED, ready=True)
                 made = store.add_element(ADDITIONS, address.strip(), name_length=given.get('name_length') or None,
-                                         role=given.get('role') or None)
+                                         role=given.get('role') or None, name=given.get('name') or None)
                 if isinstance(made, Outcome):
                     return self.send(400, {'error': 'The element was not written.', 'notices': plain(made.notices)})
                 held = Node.parse(anchor).id

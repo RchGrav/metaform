@@ -23,13 +23,13 @@ from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('name_length', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb',
+    'element': ('name_length', 'name', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
+    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb',
              'observation', 'non_goal', 'extra'),  # receiver, provider and parent move it, MAP-003
     'item': ('value', 'link', 'extra'),
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type', 'name')
+TEXT_COLUMNS = ('purpose', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type', 'name', 'ifd')
 
 Row = sqlite3.Row
 
@@ -244,7 +244,8 @@ def reused_element(tx: Tx, address: str) -> str | None:
 
 
 def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | None = None, *,
-                name_length: int | None = None, role: str | None = None, refs: Iterable[tuple[str, str]] = ()) -> str:
+                name_length: int | None = None, role: str | None = None, refs: Iterable[tuple[str, str]] = (),
+                name: str | None = None) -> str:
     """Write a new element row in a layer, under the id the address held before when nothing holds it now.
 
     The row is the element: its address, name_length and role, STORE-009; its refs are rows owned by it.
@@ -254,9 +255,9 @@ def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | N
         tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
         identity(tx, element_id, 'element')
     types(tx, address)
-    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, role, extra) '
-                           'VALUES (?, ?, ?, ?, ?, ?)',
-                           (element_id, found.layer_id, address, name_length, role, encode_extra(extra, address)))
+    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, name, role, extra) '
+                           'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                           (element_id, found.layer_id, address, name_length, name, role, encode_extra(extra, address)))
     row = int(cursor.lastrowid or 0)
     versions.hold_address(tx.db, address, element_id)
     tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',

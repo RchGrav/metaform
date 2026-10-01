@@ -31,8 +31,8 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
     """Update a store at layout 7 or 8 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 and 8.',
+    if found not in ('7', '8', '9'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7, 8 and 9.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -58,6 +58,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
                 ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
                 recompute(db, _kind_name(kind.table), ids)
         _tickets(db)
+        _fields(db)
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
             raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '
@@ -118,6 +119,16 @@ def _tickets(db: sqlite3.Connection) -> None:
     """A taken ticket keeps its kind: in-progress was a missing one taken, fixing a broken one taken."""
     for shown, kind in (('in-progress', 'missing'), ('fixing', 'broken')):
         db.execute('UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?', (kind, shown))
+
+
+def _fields(db: sqlite3.Connection) -> None:
+    """Layout 10, Rich 2026-10-01: an element's name and a join's IFD are fields of their own, no longer kept in its
+    extra; each is moved out of the extra, and an extra left empty is cleared."""
+    for table, key in (('elements', 'name'), ('joins', 'ifd')):
+        db.execute(f"UPDATE {table} SET {key}=json_extract(extra, '$.{key}') WHERE {key} IS NULL AND json_valid(extra) "
+                   f"AND json_type(extra, '$.{key}') = 'text'")
+        db.execute(f"UPDATE {table} SET extra=NULLIF(json_remove(extra, '$.{key}'), '{{}}') WHERE json_valid(extra) "
+                   f"AND json_type(extra, '$.{key}') = 'text'")
 
 
 def _plain(sql: str) -> str:
