@@ -45,7 +45,7 @@ SECTIONS = [
         ('<code>inputSchema.properties.&lt;arg&gt;.description</code>', 'The definition of one argument, written inside '
          'the schema. JSON Schema\'s own keyword, not an MCP field.', 'string', 'none stated by Claude Code',
          'same as description', t(C, 'with <code>enum</code>, <code>default</code> and <code>required</code>, it is how the model learns each field')),
-        ('<code>title</code>', 'A display name for people, like "Record the intake". Nothing calls it.',
+        ('<code>title</code>', 'A label an app can show people instead of the name. Calls always use <code>name</code>.',
          'string, optional; free text', 'none stated', 'connect',
          t(X, 'hosts show <code>title</code>, else <code>annotations.title</code>, else <code>name</code>. Not a place for instruction.')),
         ('<code>annotations.title</code>', 'The older place for the same display name.', 'string, optional', 'none stated',
@@ -110,9 +110,12 @@ SECTIONS = [
          'strings, optional', t(U, 'menu text')),
         ('<code>arguments[]</code>', 'Values the person types after the command.',
          '<code>{name, title, description, required: bool}</code>', t(U, 'space-separated, one token each')),
-        ('<code>messages[]</code>', 'The messages the prompt produces when run.',
-         '<code>{role: "user" | "assistant", content}</code>; text, image, audio, resource link or embedded resource',
-         t(C, 'injected into the conversation when the person runs it')),
+        ('<code>messages[].content.text</code>', "<b>The prompt's text.</b> The whole prewritten prompt goes here, "
+         "with the person's arguments filled in.", 'string inside <code>{role: "user", content: {type: "text", text}}</code>; '
+         'no stated limit', t(C, 'injected into the conversation as the person\'s own message when they run it')),
+        ('<code>messages[]</code>', 'The list of messages the prompt returns; one is enough. Content may also be image, '
+         'audio, resource link or embedded resource.', '<code>{role: "user" | "assistant", content}</code>',
+         t(C, 'each one enters the conversation in order')),
     ]),
     ('Resources', 'A resource is content the server exposes by URI, like a file or a record, to be read. Nothing writes '
      'a resource through MCP.', 'application-driven; <code>resources/list</code>, <code>resources/read</code>', False, [
@@ -166,7 +169,7 @@ PLACES = [
      'the definition of one field'),
     ('call', 'result <code>text</code>', '25,000 tokens', 'once per call; a second call appends it again',
      'what is needed only at that moment; it cannot govern the call that returned it'),
-    ('person', 'prompt <code>messages</code>; @-mentioned resource', 'none stated',
+    ('person', 'prompt <code>messages[].content.text</code>; @-mentioned resource', 'none stated',
      'when the person runs <code>/server:prompt</code> or types <code>@</code>', 'entry points a person chooses; a model cannot run a prompt'),
     ('display', '<code>title</code> on tools, prompts, arguments, resources, <code>serverInfo</code>', 'none stated',
      'shown to people; not stated for the model', 'names for people to read, never instruction'),
@@ -208,6 +211,7 @@ CSS = '''
   .always{background:var(--always)} .call{background:var(--call)} .user{background:var(--user)}
   .never{background:var(--never)} .unknown{background:var(--unknown)}
   section { margin-bottom:9px; }
+  section.keep { break-inside:avoid; }
   h2 { font-size:9.4pt; margin:0; padding:3px 6px; background:var(--ink); color:#fff; border-radius:3px 3px 0 0;
        display:flex; justify-content:space-between; gap:10px; break-after:avoid; }
   h2 span { font-weight:400; color:#cfd6de; font-size:7.6pt; text-align:right; }
@@ -246,7 +250,8 @@ def table(full, rows):
 parts = []
 for title, what, when, full, rows in SECTIONS:
     span = f' <span>{when}</span>' if when else ''
-    parts.append(f'<section><h2>{title}{span}</h2><p class="def">{what}</p>{table(full, rows)}</section>')
+    keep = ' class="keep"' if len(rows) <= 6 else ''
+    parts.append(f'<section{keep}><h2>{title}{span}</h2><p class="def">{what}</p>{table(full, rows)}</section>')
 places = ('<section><h2>Where written instruction can go <span>prose only travels in string fields; every hint and '
           'flag goes on its own field</span></h2><table><tr><th style="width:9%">Level</th><th style="width:22%">Field</th>'
           '<th style="width:11%">Limit in Claude Code</th><th style="width:24%">Enters the context</th><th>Use it for</th></tr>'
