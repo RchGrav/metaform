@@ -26,7 +26,8 @@ from .records import (
     MESSAGES,
     PERSPECTIVES,
     ROLES,
-    TAKEN,
+    COLUMNS,
+    TICKETS,
     Element,
     Item,
     Join,
@@ -610,7 +611,7 @@ def _condition(value: Any, notices: list[Notice]) -> str:
         notices.append(Notice('condition', f'A {value} is not the condition of a part; it was stored as given. Ask the '
                                            'user with metaform map ask, and leave a message with metaform map tell.'))
         return str(value)
-    notices.append(Notice('condition', f'{value!r} is not missing, broken, exclude, in-progress or fixing; it was stored '
+    notices.append(Notice('condition', f'{value!r} is not missing, broken, flawed, enhancement or exclude; it was stored '
                                        'as given.'))
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
@@ -623,7 +624,7 @@ def _work_row(tx: Tx, work_id: str) -> Any:
 
 
 def add_work(tx: Tx, node: Any, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
-             reviewed: Any = False) -> WorkRecord:
+             reviewed: Any = False, links: Any = ()) -> WorkRecord:
     """Write the condition of an element, join or subtype as its own record, apart from the map, STORE-042."""
     notices: list[Notice] = []
     kind, thing = rows.work_target(tx, node, notices)
@@ -632,7 +633,17 @@ def add_work(tx: Tx, node: Any, condition: Any, *, note: Any = None, task: Any =
                   'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                   (work_id, kind, thing, _condition(condition, notices), _work_text(note, 'note', notices),
                    _work_text(task, 'task', notices), int(bool(held)), int(bool(reviewed)), home.now()))
+    _link(tx, work_id, links, notices)
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
+    """Replace the nodes a ticket links for reference, VIEW-035: each an element or a join, in the order given."""
+    tx.db.execute('DELETE FROM work_links WHERE work_id=?', (work_id,))
+    for number, node in enumerate(links or ()):
+        kind, thing = rows.work_target(tx, node, notices)
+        tx.db.execute('INSERT INTO work_links(work_id, number, target_kind, target_id) VALUES (?, ?, ?, ?)',
+                      (work_id, number, kind, thing))
 
 
 def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
@@ -643,6 +654,9 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     if given is None:
         raise StoreError('The changes to a work record are an object of its fields.', 'metaform help map work')
     for key in sorted(given):
+        if key == 'links':
+            _link(tx, work_id, given[key], notices)
+            continue
         if key not in WORK_FIELDS:
             notices.append(Notice(key, f'A work record has no field {key}; it was not stored.'))
             continue
@@ -735,7 +749,7 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     row = _work_row(tx, work_id)
     if row['done'] is not None:
         notices.append(Notice('done', f'This work record was done at {row["done"]}; the step was stored.'))
-    elif str(row['condition']) not in TAKEN.values():
+    elif row['taken'] is None:
         notices.append(Notice('condition', 'This task was not taken when the step was reported; the step was stored. '
                                            'Take a task before its first step.'))
     done = int(row['steps_done'] or 0) + 1
@@ -749,21 +763,47 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def take_work(tx: Tx, work_id: str, steps: Any = None) -> WorkRecord:
-    """An agent takes the record's task, MAP-049: a part to be built is in progress, a broken one is being fixed, and
-    the record waits no longer. A record taken or done cannot be taken again, so two agents never hold one task."""
+def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRecord:
+    """An agent takes the record's task, MAP-049: it is in progress, keeps its kind, VIEW-035, records who took it, and
+    waits no longer. A record taken or done cannot be taken again, so two agents never hold one task."""
     row = _work_row(tx, work_id)
     condition = str(row['condition'])
     if row['done'] is not None:
         raise StoreError(f'This work record was done at {row["done"]}.', 'metaform map work open=true')
-    if condition in TAKEN.values():
+    if row['taken'] is not None:
         raise StoreError('This task is already taken.', 'metaform map work open=true')
-    if condition not in TAKEN:
+    if condition not in TICKETS:
         raise StoreError(f'A {condition or "record with no condition"} has no task to take.',
                          'metaform map work open=true')
     notices: list[Notice] = []
-    tx.db.execute('UPDATE work SET condition=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?',
-                  (TAKEN[condition], _count(steps, notices), work_id))
+    tx.db.execute('UPDATE work SET taken=?, taken_by=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?',
+                  (home.now(), _work_text(by, 'by', notices), _count(steps, notices), work_id))
+    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
+    """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
+    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again."""
+    row = _work_row(tx, work_id)
+    if column not in COLUMNS:
+        raise StoreError(f'{column!r} is not a column: backlog, todo, doing or done.', 'metaform help map work')
+    notices: list[Notice] = []
+    if column == 'done':
+        tx.db.execute('UPDATE work SET done=COALESCE(done, ?), held=0 WHERE work_id=?', (home.now(), work_id))
+    elif column == 'doing':
+        tx.db.execute('UPDATE work SET done=NULL, held=0, taken=COALESCE(taken, ?), taken_by=COALESCE(?, taken_by) '
+                      'WHERE work_id=?', (home.now(), _work_text(by, 'by', notices), work_id))
+    else:
+        tx.db.execute('UPDATE work SET done=NULL, taken=NULL, taken_by=NULL, held=? WHERE work_id=?',
+                      (int(column == 'backlog'), work_id))
+    del row
+    moved = views.work_record(tx, _work_row(tx, work_id))
+    others = [record for record in (views.work_record(tx, other) for other in tx.db.execute(
+        'SELECT * FROM work WHERE work_id<>? ORDER BY position IS NULL, position, row', (work_id,)))
+              if record.column == moved.column]
+    at = len(others) if position is None else max(0, min(len(others), int(position)))
+    for place, record in enumerate([*others[:at], moved, *others[at:]]):
+        tx.db.execute('UPDATE work SET position=? WHERE work_id=?', (place, record.work_id))
     return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 

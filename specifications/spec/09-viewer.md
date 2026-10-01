@@ -485,6 +485,22 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Relates to: VIEW-005, VIEW-016, VIEW-021, VIEW-022, VIEW-025, MAP-046.
 - Status: asked for by Rich 2026-09-28: when the nodes light up and flash they give off some glow, the ones with errors and notifications, and the chart flashes as the big one does. Rich 2026-09-29: the circles were painted on top of everything when the glow should be behind, and the glow is to be the light emission of the material, real and physical, not raw circles around things; the circles are removed. The strength is open.
 
+### VIEW-035 A ticket is a light on its node, and the agent working it walks the map to the node and circles it
+
+- Requirement: Each ticket shows on the node it is assigned to, by its kind, and how far along it is shows in the speed of that look. In the 3D map the agent working a ticket is a figure that materializes on the most primary node, makes its way through the mesh to the ticket's node, circles it while the ticket is open, and makes its way back when the ticket is closed.
+- What this means:
+  - The node an agent works at is the functionality it is assigned to. The orchestrator can tag other nodes also; they are usually references, depending on what the work is.
+  - A ticket has one of four kinds. Missing, a new implementation: the node is added as missing and drawn in random letters, VIEW-027. Broken, a trouble ticket: a flashing red light. Not broken but not right either: a flashing yellow light. Enhancement: a flashing green light. The lights are bright, with bloom, VIEW-029, and distinct from a blind-spot entry's steady tint, LAYER-015.
+  - Flashing lets the node's own color show between flashes. This is also the work order: each step filed speeds up the flashing. For missing, the speed at which the letters change shows it; when the work is done they get very fast and fade into a solid sphere.
+  - The figure materializes on the most primary node and navigates the mesh, along the map's own edges, working its way to the node. It goes onto the node and circles it, oriented the right way, and stays until the ticket is closed; then it navigates back. Even if the agent has finished, the figure still touches the node, then walks back. Each step filed speeds up the figure too.
+  - It should be really cool looking.
+- Why: Rich, 2026-10-01: "I want the agents to materialize on the most primary node and navigate the mesh to the node being worked on, and work their way to the node. Even if the agent finished I still want them to touch the node then walk back, if the agent is still working they stay there until the ticket is closed and then they navigate back, ideally this should just be really cool looking, have them go onto the node and start circling it being oriented the right way, you will see that there is speed controls, this is also going to be the work order so if there is steps each step filed the flashing or whatever the indicator is speeds up." "Flashing allows you to see the real node color and sense how far along it is by the flashing speed."
+- How it shows: A ticket taken on a node: a figure forms on the most primary node, walks the edges to the node and circles it; the node flashes in its kind's color, or its letters change, a little faster with each step filed; at done the flashing or the letters race and settle, and the figure walks back.
+- Build: The figures are `specifications/metaform-agents-3d.zip`, sixteen procedural, animated characters built in code with Three.js: `drawGlyph(id)` gives each a glyph no other active one shares, `placeAgentOnCurve(agent, curve, u, {reverse})` walks an edge, and `agent.userData.update(dt, {busy})` speeds up its own motion. The module imports `three` and `three/addons/geometries/RoundedBoxGeometry.js`, which are vendored with the page, since the page loads nothing from outside, VIEW-012. What a ticket is, its kinds as stored and who took it are D92; the rest is open, D110.
+- Acceptance: Open, D110.
+- Relates to: MAP-046, MAP-048, VIEW-020, VIEW-027, VIEW-029, LAYER-015, D92.
+- Status: asked for by Rich 2026-10-01. Which node is the most primary and whether a figure stands for a ticket or an agent are open, D110.
+
 ## Open questions
 
 1. Answered: active viewing never changes settings; a separate control applies the viewer's layer choice to the folder, VIEW-007.

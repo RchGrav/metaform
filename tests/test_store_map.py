@@ -504,5 +504,5 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '8' and kinds == {'purpose', 'subtype'}  # layout 8: every version kept in its layer, LAYER-025
+    assert version == '9' and kinds == {'purpose', 'subtype'}  # layout 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
     assert 'correction_stack' not in tables

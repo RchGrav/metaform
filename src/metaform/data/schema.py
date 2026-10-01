@@ -1,4 +1,4 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 8.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 9.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 An element is its address, name_length and role, STORE-009, and it cannot be
@@ -269,7 +269,17 @@ CREATE TABLE IF NOT EXISTS work(
   done        TEXT,
   resolution  TEXT,
   steps       INTEGER,
-  steps_done  INTEGER NOT NULL DEFAULT 0
+  steps_done  INTEGER NOT NULL DEFAULT 0,
+  taken       TEXT,
+  taken_by    TEXT,
+  position    INTEGER
+);
+CREATE TABLE IF NOT EXISTS work_links(
+  work_id     TEXT NOT NULL REFERENCES work(work_id),
+  number      INTEGER NOT NULL,
+  target_kind TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  PRIMARY KEY(work_id, number)
 );
 CREATE TABLE IF NOT EXISTS work_steps(
   row     INTEGER PRIMARY KEY,

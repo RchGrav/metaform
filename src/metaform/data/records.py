@@ -25,9 +25,11 @@ SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join hol
 PERSPECTIVES = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
 # taken its task, a part to be built being in progress and a broken one being fixed.
-CONDITIONS = ('missing', 'broken', 'exclude', 'in-progress', 'fixing')
+CONDITIONS = ('missing', 'broken', 'flawed', 'enhancement', 'exclude')
 MESSAGES = ('question', 'message')  # what an agent says to the user at a node, MAP-050; never a condition
-TAKEN = {'missing': 'in-progress', 'broken': 'fixing'}
+TICKETS = ('missing', 'broken', 'flawed', 'enhancement')  # the kinds of ticket an agent takes, VIEW-035
+TAKEN = {'missing': 'in-progress', 'broken': 'fixing'}  # how a taken one reads in open_work, VIEW-027 and VIEW-029
+COLUMNS = ('backlog', 'todo', 'doing', 'done')  # the board's columns, MAP-048
 
 T = TypeVar('T')
 
@@ -511,6 +513,14 @@ class Message(Record):
 
 
 @dataclass(frozen=True)
+class WorkLink(Record):
+    """A node a ticket links for reference: an element with its address, or a join."""
+    kind: str
+    id: str
+    address: str | None
+
+
+@dataclass(frozen=True)
 class Step(Record):
     """One step of a task an agent finished, MAP-053: its number, what the agent said of it, and when."""
     number: int
@@ -541,6 +551,15 @@ class WorkRecord(Record):
     steps: int | None = None  # the steps the agent plans, MAP-053
     steps_done: int = 0
     said: tuple[Step, ...] = ()  # what the agent said of each step it finished, in order
+    taken: str | None = None  # when it was taken
+    taken_by: str | None = None  # who took it
+    position: int | None = None  # its place in its column
+    links: tuple[WorkLink, ...] = ()  # the other nodes it links for reference
+
+    @property
+    def column(self) -> str:
+        """Its column on the board: done, doing once taken, backlog while held, and to do otherwise."""
+        return 'done' if self.done else 'doing' if self.taken else 'backlog' if self.held else 'todo'
 
 
 @dataclass(frozen=True)

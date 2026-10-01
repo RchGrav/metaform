@@ -257,11 +257,12 @@ class Store:
             return writes.edit(tx, thing, changes)
 
     def add_work(self, node: Node, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
-                 reviewed: Any = False) -> WorkRecord:
+                 reviewed: Any = False, links: Any = ()) -> WorkRecord:
         """Write the condition of an element or a join, a subtype join included, as a work record, apart from the map,
         STORE-042."""
         with self._write() as tx:
-            return writes.add_work(tx, node, condition, note=note, task=task, held=held, reviewed=reviewed)
+            return writes.add_work(tx, node, condition, note=note, task=task, held=held, reviewed=reviewed,
+                                   links=links)
 
     def edit_work(self, work_id: str, changes: Any) -> WorkRecord:
         """Change a work record's condition, note, task, held or reviewed in place, STORE-042."""
@@ -289,11 +290,16 @@ class Store:
         with self._read() as tx:
             return reads.messages(tx, node, kind, open, limit, after)
 
-    def take_work(self, work_id: str, steps: Any = None) -> WorkRecord:
+    def move_work(self, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
+        """Put a ticket in a column of the board and at a place in it, MAP-048."""
+        with self._write() as tx:
+            return writes.move_work(tx, work_id, column, position, by)
+
+    def take_work(self, work_id: str, steps: Any = None, by: Any = None) -> WorkRecord:
         """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049, with the steps it
         plans when it says them, MAP-053."""
         with self._write() as tx:
-            return writes.take_work(tx, work_id, steps)
+            return writes.take_work(tx, work_id, steps, by)
 
     def plan_work(self, work_id: str, steps: Any) -> WorkRecord:
         """The agent says how many steps it plans, or says it again when its plan changes, MAP-053."""

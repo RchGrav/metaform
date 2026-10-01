@@ -69,7 +69,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'requires'):
+                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'work_links', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
@@ -125,6 +125,7 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                     if row['item_id'] in item_ids]
     document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
     document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
+    document['work_links'] = _rows(db, 'SELECT * FROM work_links ORDER BY work_id, number')
     addresses = {row['address'] for table in ('elements', 'selections') for row in document[table]}
     needed = {prefix for address in addresses for prefix in prefixes(address)}
     document['types'] = [row for row in _rows(db, 'SELECT address, parent FROM types ORDER BY rowid')
@@ -160,7 +161,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'work')
+              *THINGS, 'challenge_states', 'plans', 'work', 'work_links')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
@@ -491,6 +492,8 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             _insert(db, 'plans', row, ignore=True)
     for row in metaform.get('work', []):  # a work record has no layer; it follows its object, STORE-042
         _insert(db, 'work', row, ignore=True)
+    for row in metaform.get('work_links', []):
+        _insert(db, 'work_links', row, ignore=True)
     for kind in versions.ORDER:
         versions.recompute(db, kind, touched[kind])
 

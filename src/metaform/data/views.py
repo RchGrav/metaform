@@ -33,6 +33,7 @@ from .records import (
     Subtype,
     Version,
     VersionRef,
+    WorkLink,
     WorkRecord,
 )
 from .rows import (
@@ -232,9 +233,14 @@ def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecor
         address = node_address(tx, kind, thing)
     said = tuple(Step(int(step['number']), step['said'], str(step['at'])) for step in tx.db.execute(
         'SELECT number, said, at FROM work_steps WHERE work_id=? ORDER BY number, row', (str(row['work_id']),)))
+    links = tuple(WorkLink(str(link['target_kind']), str(link['target_id']),
+                           node_address(tx, str(link['target_kind']), str(link['target_id'])))
+                  for link in tx.db.execute('SELECT target_kind, target_id FROM work_links WHERE work_id=? ORDER BY number',
+                                            (str(row['work_id']),)))
     return WorkRecord(str(row['work_id']), kind, thing, address, receiver, provider, str(row['condition']), row['note'],
                       row['task'], bool(row['held']), bool(row['reviewed']), str(row['created']), row['done'],
-                      row['resolution'], notices, row['steps'], int(row['steps_done'] or 0), said)
+                      row['resolution'], notices, row['steps'], int(row['steps_done'] or 0), said, row['taken'],
+                      row['taken_by'], row['position'], links)
 
 
 def message(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> Message:

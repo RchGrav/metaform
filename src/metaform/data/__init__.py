@@ -43,6 +43,7 @@ from .records import (
                       Subtype,
                       Version,
                       Where,
+                      WorkLink,
                       WorkRecord,
 )
 from .store import Store
@@ -89,7 +90,8 @@ __all__ = [
                       'Subtype',
                       'Version',
                       'Where',
-                      'WorkRecord',
+                      'WorkLink',
+    'WorkRecord',
                       'export_document',
                       'history',
                       'import_document',

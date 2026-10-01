@@ -8,6 +8,7 @@ import pytest
 
 from metaform.data import StoreError
 from metaform.data.session import open_store
+from metaform.sqlite import SCHEMA_VERSION
 
 pytestmark = [pytest.mark.kind("fixture"), pytest.mark.req("STORE-029", "LAYER-025")]
 
@@ -56,14 +57,14 @@ def test_a_layout_7_store_opens_at_layout_8_with_its_corrections_folded_into_the
         elements = db.execute('SELECT element_id, row FROM current_elements ORDER BY element_id').fetchall()
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         broken = db.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == '8'
+    assert version == SCHEMA_VERSION
     assert [tuple(layer) for layer in layers] == [(INTAKE, 'intake', 'intake'), (MEMORY, 'memory', 'memory')]
     assert [tuple(row) for row in versions] == [(1, INTAKE, 'the first purpose'), (2, INTAKE, 'the refined purpose')]
     assert current == 2
     assert [tuple(row) for row in elements] == [('E1', 1), ('E2', 2)]
     assert 'correction_stack' not in tables
     assert broken == []
-    backups = list((home / 'backups' / 'upgrade-8').glob('*/*/main.metaform.sqlite3'))
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
     kept = sqlite3.connect(backups[0])
     assert kept.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == '7'

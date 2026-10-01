@@ -13,15 +13,17 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import outline, settings
+from metaform import outline, prompt_files, settings
 from metaform.data import PERSPECTIVES, PLACE_KINDS, Node, Notice, Store
-from metaform.module import Context, Module, Noun, NounKind, Stop, Verb
+from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
+settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
+                 'keeps its own board.')
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 EF = {'type': 'string', 'enum': list(PERSPECTIVES)}
@@ -455,17 +457,19 @@ KNOWLEDGE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
-    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed'}),
-    'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed'}),
+    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
+    'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
     'done': frozenset({'id', 'resolution'}),
-    'take': frozenset({'id', 'steps'}),
+    'take': frozenset({'id', 'steps', 'by'}),
+    'move': frozenset({'id', 'column', 'position', 'by'}),
     'plan': frozenset({'id', 'steps'}),
     'step': frozenset({'id', 'said'}),
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
 WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
-                                          'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',)}
+                                          'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
+                                          'move': ('id', 'column')}
 
 
 def _work_node(value: Any) -> Node:
@@ -503,7 +507,7 @@ def work(ctx: Context) -> Any:
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
     op = str(ctx.nouns.get('op', 'list'))
     if op not in WORK_READS:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step or done.',
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move or done.',
                    'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
@@ -517,35 +521,47 @@ def work(ctx: Context) -> Any:
     if op == 'add':
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
+                                            links=[_work_node(link) for link in nouns.get('links') or ()],
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
     work_id = nouns['id']
     if op == 'take':
-        return _with_notices(store.take_work(work_id, nouns.get('steps')), notices)
+        return _with_notices(store.take_work(work_id, nouns.get('steps'), nouns.get('by')), notices)
+    if op == 'move':
+        return _with_notices(store.move_work(work_id, nouns['column'], nouns.get('position'), nouns.get('by')), notices)
     if op == 'plan':
         return _with_notices(store.plan_work(work_id, nouns['steps']), notices)
     if op == 'step':
         return _with_notices(store.step_work(work_id, nouns.get('said')), notices)
     if op == 'edit':
-        return _with_notices(store.edit_work(work_id, {name: nouns[name] for name in WORK_FIELDS if name in nouns}),
-                             notices)
+        changes = {name: nouns[name] for name in WORK_FIELDS if name in nouns}
+        if 'links' in nouns:
+            changes['links'] = [_work_node(link) for link in nouns['links'] or ()]
+        return _with_notices(store.edit_work(work_id, changes), notices)
     return _with_notices(store.finish_work(work_id, nouns.get('resolution')), notices)
 
 
 WORK_NOUNS = (
     _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
-                'how many steps the agent plans; step, which says it finished one; or done.'),
+                'how many steps the agent plans; step, which says it finished one; move, which puts it in a column '
+                'of the board; or done.'),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
                   'names an element.'),
-    _noun('condition', 'add, edit, and list as a filter: missing, in the specs and not built yet; broken; or exclude, '
-                       'material outside the intake scope or code conflicting with a superseding specification, '
-                       'with the reason and references recorded for review.'),
+    _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, in the specs and not built '
+                       'yet; broken; flawed, not broken but not right either; enhancement; or exclude, material '
+                       'outside the intake scope or code conflicting with a superseding specification, with the '
+                       'reason and references recorded for review.'),
+    _noun('links', 'add and edit: other nodes the task links for reference, a list of element:<address or id> or '
+                   'join:<id>.', 'json', {'type': 'array', 'items': {'type': 'string'}}),
+    _noun('by', 'take and move: who takes it.'),
+    _noun('column', 'move: backlog, todo, doing or done.'),
+    _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
-    _noun('id', 'edit, take, plan, step and done: the work record id.'),
+    _noun('id', 'edit, take, plan, step, move and done: the work record id.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true for records not done, false for those done.', 'bool'),
     *PAGING,
@@ -556,7 +572,7 @@ RAW = ('raw',)
 
 MODULE = Module(
     id='map',
-    status=None,
+    status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') else None),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with the receiver and its '

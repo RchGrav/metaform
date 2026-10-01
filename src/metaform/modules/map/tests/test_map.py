@@ -694,9 +694,9 @@ def test_an_agent_that_takes_a_task_marks_the_part_as_being_worked_on_until_it_i
     build = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it', held=True)
     fix = store.add_work(Node('element', 'code.timer.kitchen'), 'broken', task='fix it', held=True)
     taken = json.loads(run('map', 'work', 'op=take', f'id={build.work_id}', '--json', cwd=mapped).stdout)
-    assert (taken['condition'], taken['held']) == ('in-progress', False)
+    assert (taken['condition'], taken['held'], bool(taken['taken'])) == ('missing', False, True)  # it keeps its kind, VIEW-035
     assert json.loads(run('map', 'work', 'op=take', f'id={fix.work_id}', '--json', cwd=mapped).stdout)[
-        'condition'] == 'fixing'
+        'condition'] == 'broken'  # a broken one taken keeps its kind; the viewer reads it as fixing
     assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['in-progress']
     listed = json.loads(run('map', 'work', 'condition=in-progress', '--json', cwd=mapped).stdout)['results']
     assert [record['work_id'] for record in listed] == [build.work_id]
@@ -773,7 +773,7 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     task = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
     assert (task.steps, task.steps_done, task.said) == (None, 0, ())
     taken = j(run, 'work', 'op=take', f'id={task.work_id}', 'steps=3', cwd=mapped)
-    assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('in-progress', 3, 0, [])
+    assert (taken['condition'], taken['steps'], taken['steps_done'], taken['said']) == ('missing', 3, 0, [])
     first = j(run, 'work', 'op=step', f'id={task.work_id}', 'said=The driver is written.', cwd=mapped)
     assert (first['steps'], first['steps_done']) == (3, 1) and said(first) == []
     assert [(one['number'], one['said']) for one in first['said']] == [(1, 'The driver is written.')]
@@ -797,3 +797,17 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     untaken = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='not taken')
     early = j(run, 'work', 'op=step', f'id={untaken.work_id}', 'said=Done before it was taken.', cwd=mapped)
     assert early['steps_done'] == 1 and [where for where, _ in said(early)] == ['condition']
+
+
+@pytest.mark.req('MAP-048')
+def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(run, mapped):
+    """Rich, 2026-10-01: assign and track work via Metaform like a kanban; the ticket is on the functionality it is
+    assigned to, and links other nodes for reference. It keeps its kind in every column."""
+    made = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed', 'task=quieter tone',
+                          'links=["element:code.timer.kitchen"]', 'held=true', '--json', cwd=mapped).stdout)
+    assert ([link['address'] for link in made['links']], made['held']) == (['code.timer.kitchen'], True)
+    doing = json.loads(run('map', 'work', 'op=move', f'id={made["work_id"]}', 'column=doing', 'by=codex', '--json',
+                           cwd=mapped).stdout)
+    assert (doing['condition'], doing['taken_by'], doing['held'], bool(doing['taken'])) == ('flawed', 'codex', False, True)
+    done = json.loads(run('map', 'work', 'op=move', f'id={made["work_id"]}', 'column=done', '--json', cwd=mapped).stdout)
+    assert done['done'] and done['condition'] == 'flawed'

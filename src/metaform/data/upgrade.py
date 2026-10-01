@@ -5,6 +5,10 @@ thrown away. Layout 7 to 8, LAYER-025: a thing is no longer unique per layer, `r
 `changed_in`, and there are no correction layers, so each correction layer's versions are folded into the intake
 layer it refined, after that layer's own versions, and the intake layer is named `intake`. A copy of the file is
 kept under the home's backups before anything is changed.
+
+Layout 8 to 9, D92 and VIEW-035: a ticket keeps its kind while it is worked, so a record taken as in-progress is a
+missing one taken, and one fixing a broken one taken; a ticket records who took it and its place on the board, and
+links other nodes for reference.
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ from pathlib import Path
 
 from .. import home
 from ..errors import StoreError
+from ..sqlite import SCHEMA_VERSION
 from .schema import STORE_SCHEMA
 from .versions import KINDS, recompute
 
@@ -25,9 +30,9 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 to layout 8 in one transaction, after keeping a copy of it."""
-    if found != '7':
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only version 7.',
+    """Update a store at layout 7 or 8 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 and 8.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -39,21 +44,25 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
     db.execute('PRAGMA foreign_keys=OFF')
     db.execute('BEGIN IMMEDIATE')
     try:
-        stack = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack ORDER BY position')]
-        stack += [row[0] for row in db.execute("SELECT layer_id FROM layers WHERE kind='correction'")
-                  if row[0] not in stack]
+        stack: list[str] = []
+        if found == '7':
+            stack = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack ORDER BY position')]
+            stack += [row[0] for row in db.execute("SELECT layer_id FROM layers WHERE kind='correction'")
+                      if row[0] not in stack]
         _relayout(db, wanted)
-        for layer_id in stack:
-            _fold(db, layer_id)
-        _name_intake(db)
-        for kind in KINDS.values():
-            ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
-            recompute(db, _kind_name(kind.table), ids)
+        if found == '7':
+            for layer_id in stack:
+                _fold(db, layer_id)
+            _name_intake(db)
+            for kind in KINDS.values():
+                ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
+                recompute(db, _kind_name(kind.table), ids)
+        _tickets(db)
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
-            raise StoreError(f'{path} could not be updated to version 8: {len(problems)} references would break, '
+            raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '
                              f'the first in {problems[0][0]}. Nothing was changed.', 'metaform feedback')
-        db.execute("UPDATE meta SET value='8' WHERE key='schema_version'")
+        db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,))
         db.execute('COMMIT')
     except BaseException:
         db.execute('ROLLBACK')
@@ -64,7 +73,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
 
 
 def _backup(db: sqlite3.Connection, path: Path) -> None:
-    folder = home.home() / 'backups' / 'upgrade-8' / home.now().replace(':', '').replace('-', '') / path.parent.name
+    folder = home.home() / 'backups' / f'upgrade-{SCHEMA_VERSION}' / home.now().replace(':', '').replace('-', '') / path.parent.name
     folder.mkdir(parents=True, exist_ok=True)
     copy = sqlite3.connect(folder / path.name)
     try:
@@ -91,7 +100,8 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
         old = [row[1] for row in db.execute(f'PRAGMA table_info("{name}")')]
         db.execute(re.sub(rf'^CREATE TABLE\s+"?{name}"?\s*\(', f'CREATE TABLE "{name}__8"(', sql, count=1))
         new = [row[1] for row in db.execute(f'PRAGMA table_info("{name}__8")')]
-        sources = [RENAMED.get(name, {}).get(column, column) for column in new]
+        sources = [RENAMED.get(name, {}).get(column, column) if RENAMED.get(name, {}).get(column) in old else column
+                   for column in new]
         kept = [(column, source) for column, source in zip(new, sources) if source in old]
         db.execute(f'INSERT INTO "{name}__8"({", ".join(c for c, _ in kept)}) '
                    f'SELECT {", ".join(s for _, s in kept)} FROM "{name}"'
@@ -102,6 +112,12 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
     for kind, name, sql in wanted:
         if kind in ('index', 'trigger') and name not in present:
             db.execute(sql)
+
+
+def _tickets(db: sqlite3.Connection) -> None:
+    """A taken ticket keeps its kind: in-progress was a missing one taken, fixing a broken one taken."""
+    for shown, kind in (('in-progress', 'missing'), ('fixing', 'broken')):
+        db.execute('UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?', (kind, shown))
 
 
 def _plain(sql: str) -> str:

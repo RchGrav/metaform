@@ -59,6 +59,7 @@ def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
     run('set', '--no-web-autostart', cwd=folder)  # the web message, VIEW-015, is tested with the web module
+    run('set', '--no-tasks', cwd=folder)  # the task lines are tested below
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
     listed = '\n'.join(prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text
@@ -66,6 +67,20 @@ def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_
     assert [child.tag for child in element] == ['modules']
     expected = (element.text or '') + listed + (element[0].tail or '')
     assert run('help', 'agents', cwd=folder).stdout.strip() == expected.strip()
+
+
+@pytest.mark.req('MCP-031')
+@pytest.mark.req('MAP-048')
+def test_the_kanban_lines_are_served_only_while_tasks_is_on(run, home, tmp_path):
+    """Rich, 2026-10-01: agents assign and track work via Metaform like a kanban; a project that keeps its own board
+    turns it off, and then the instructions say nothing of it. On by default."""
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    lines = prompt(SOURCE / 'modules' / 'map' / 'resources' / 'prompts.xml', 'tasks').text.strip()
+    assert lines in run('help', 'agents', cwd=folder).stdout
+    run('set', '--no-tasks', cwd=folder)
+    assert lines not in run('help', 'agents', cwd=folder).stdout
 
 
 @pytest.mark.req('MCP-031')

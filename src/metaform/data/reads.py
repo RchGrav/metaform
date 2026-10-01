@@ -18,6 +18,7 @@ from . import rows, versions, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
 from .records import (
+    TAKEN,
     Citation,
     ContextView,
     Element,
@@ -467,7 +468,11 @@ def work(tx: Tx, node: Node | None, condition: str | None, open: bool | None, li
         if target is not None:
             where.append('target_kind=? AND target_id=?')
             params.extend(target)
-        if condition is not None:
+        shown = {taken: kind for kind, taken in TAKEN.items()}
+        if condition in shown:  # in-progress is a missing ticket taken, and fixing a broken one, VIEW-035
+            where.append('condition=? AND taken IS NOT NULL')
+            params.append(shown[condition])
+        elif condition is not None:
             where.append('condition=?')
             params.append(condition)
         if open is not None:
