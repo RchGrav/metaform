@@ -367,7 +367,7 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .legend i.dot.pulse{animation:dot-pulse 1.6s ease-in-out infinite}
 .pill.work-in-progress{color:var(--text);background:color-mix(in srgb,var(--text) 14%,transparent)}
 .pill.work-fixing{color:var(--broken);background:color-mix(in srgb,var(--broken) 14%,transparent)}
-#labels3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#labels3d{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}  /* the labels' own draw order stays inside, VIEW-038 */
 #labels3d span{position:absolute;transform:translate(-50%,calc(-100% - 8px));font:500 11px/1.15 var(--sans);color:var(--text);white-space:normal;width:max-content;max-width:9em;text-align:center;padding:1px 4px;border-radius:4px;background:color-mix(in srgb,var(--ground) 72%,transparent);text-shadow:0 0 6px var(--ground),0 0 2px var(--ground);transition:color .3s,opacity .3s}
 /* The name of a part drawn in characters stands clear above its text, VIEW-027. */
 #labels3d span.text{transform:translate(-50%,calc(-100% - 26px))}

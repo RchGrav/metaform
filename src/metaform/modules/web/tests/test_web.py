@@ -3525,6 +3525,13 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     page.click('#boardBtn')
     page.wait_for_selector('#board:not([hidden]) .card')
+    # the map's labels stay under the board, whatever their own draw order, VIEW-038
+    assert page.evaluate('''[...document.querySelectorAll("#labels3d span:not([hidden])")].map(tag => {
+        tag.style.zIndex = "1000"; tag.style.pointerEvents = "auto"; return tag; }).every(tag => {  // as on a map of many nodes, found by the pointer
+        const box = tag.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
+        const board = document.querySelector("#board").getBoundingClientRect();
+        if (x < board.left || x > board.right || y < board.top || y > board.bottom) return true;
+        return document.querySelector("#board").contains(document.elementFromPoint(x, y)); })''')
     count = lambda column: page.text_content(f'#board .column[data-column="{column}"] .tally')
     held = Store('proj').work(limit=0).results
     expected = [str(sum(record.column == column for record in held)) for column in ('backlog', 'todo', 'doing', 'done')]
