@@ -84,7 +84,7 @@ def test_address_lookup_returns_the_highest_correction(store):
 def test_only_the_top_correction_peels_and_peeling_restores_the_reads(home, store):
     _, outer, _ = small_map(store)
     first = correction(store, 'fix-1')
-    store.correct(first.name, outer.join_id, {'function': 'Counts down.'}, reason='r1')
+    store.correct(first.name, outer.join_id, {'ef': 'Counts down.'}, reason='r1')
     store.finish(first.name)
     between = reads(store)
     second = correction(store, 'fix-2')
@@ -239,8 +239,8 @@ def test_a_correction_absorbs_a_join_into_its_parents_join_and_peeling_restores_
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                function='Counts down and rings.', relation='r', observation='o')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', function='Rings.',
+                                ef='Counts down and rings.', relation='r', observation='o')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.',
                               relation='r', observation='o')
     fix = correction(store, 'fix-1')
     store.correct(fix.name, part.join_id, {'parent': parent.join_id}, reason='the alarm is part of the timer')
@@ -285,7 +285,7 @@ def test_a_corrected_ref_list_keeps_the_old_version_whole(store):
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', relation='r',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', relation='r',
                               observation='o', refs=[('path', 'a'), ('path', 'b')])
     fix = correction(store, 'fix-1')
     store.correct(fix.name, join.join_id, {'refs': [('path', 'b')]}, reason='a is stale')
@@ -301,7 +301,7 @@ def test_extension_fields_survive_a_correction_that_does_not_touch_them(store):
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', relation='r',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', relation='r',
                               observation='o', extra={'latency_budget': '5 ms'})
     fix = correction(store, 'fix-1')
     store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
@@ -337,7 +337,7 @@ def test_the_peel_preview_names_what_removing_a_correction_layer_would_change_an
     store.add_element(first.name, 'code.alarm.audible.tone', role='SE')
     store.correct(first.name, inner.join_id, {'provider': 'code.alarm.audible.tone'}, reason='it plays a tone')
     added = store.add_join(first.name, 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it.',
-                           function='Rings.', relation='The alarm tells the cook.', observation='Loud.')
+                           ef='Rings.', relation='The alarm tells the cook.', observation='Loud.')
     store.finish(first.name)
     later = knowledge(store, 'later')
     store.add_item(later.name, Node('join', added.join_id), 'rings twice')
@@ -368,24 +368,24 @@ def test_a_joins_and_a_subtypes_ef_is_kept_through_every_correction_and_move(sto
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Encounter', relation='r',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Encounter', relation='r',
                               observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='Function',
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='Function',
                                  relation='r', observation='o', role='SE')
-    assert (join.ef, tick.ef, join.notices, tick.notices) == ('Encounter', 'Function', (), ())
+    assert (join.perspective, tick.perspective, join.notices, tick.notices) == ('Encounter', 'Function', (), ())
     fix = correction(store, 'fix-1')
     store.correct(fix.name, join.join_id, {'purpose': 'q'}, reason='wording')
-    store.correct(fix.name, tick.join_id, {'ef': 'Encounter'}, reason='relabel')
+    store.correct(fix.name, tick.join_id, {'perspective': 'Encounter'}, reason='relabel')
     store.finish(fix.name)
     kept = store.joins('code.a').results[0]
-    assert (kept.purpose, kept.ef, store.subtypes(kept.join_id).results[0].ef) == ('q', 'Encounter', 'Encounter')
+    assert (kept.purpose, kept.perspective, store.subtypes(kept.join_id).results[0].perspective) == ('q', 'Encounter', 'Encounter')
     move = correction(store, 'fix-2')
     store.add_element(move.name, 'code.c', role='DE')
     store.correct(move.name, join.join_id, {'receiver': 'code.c'}, reason='moved')
     store.finish(move.name)
     moved = store.history(join.join_id).results[-1]
-    assert (moved.op, moved.fields['ef']) == ('change', 'Encounter')
-    assert [sub.ef for sub in store.subtypes(store.joins('code.c').results[0].join_id).results] == ['Encounter']
+    assert (moved.op, moved.fields['perspective']) == ('change', 'Encounter')
+    assert [sub.perspective for sub in store.subtypes(store.joins('code.c').results[0].join_id).results] == ['Encounter']
 
 
 @pytest.mark.req('MAP-020')
@@ -395,15 +395,15 @@ def test_ef_holds_only_function_or_encounter_and_any_other_word_is_kept_in_extra
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Both', relation='r',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Both', relation='r',
                               observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='function',
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='ef',
                                  relation='r', observation='o', role='SE')
-    assert (join.ef, join.extra, [notice.where for notice in join.notices]) == (None, {'ef': 'Both'}, ['ef'])
-    assert (tick.ef, tick.extra, [notice.where for notice in tick.notices]) == (None, {'ef': 'function'}, ['ef'])
+    assert (join.perspective, join.extra, [notice.where for notice in join.notices]) == (None, {'perspective': 'Both'}, ['perspective'])
+    assert (tick.perspective, tick.extra, [notice.where for notice in tick.notices]) == (None, {'perspective': 'ef'}, ['perspective'])
     stored = store.joins('code.a').results[0]
     stored_tick = store.subtypes(stored.join_id).results[0]
-    assert (stored.ef, stored.extra, stored_tick.ef, stored_tick.extra) == (None, {'ef': 'Both'}, None, {'ef': 'function'})
+    assert (stored.perspective, stored.extra, stored_tick.perspective, stored_tick.extra) == (None, {'perspective': 'Both'}, None, {'perspective': 'ef'})
 
 
 @pytest.mark.req('MAP-020')
@@ -413,9 +413,9 @@ def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_correct
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', function='f', ef='Encounter',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Encounter',
                               relation='People drive the a through the b.', verb='drive', observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', function='g', ef='Function',
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='Function',
                                  relation='The tick loop advances every countdown.', verb='advances', observation='o',
                                  role='SE')
     assert (join.verb, tick.verb, join.notices, tick.notices) == ('drive', 'advances', (), ())
@@ -444,10 +444,10 @@ def test_a_correction_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_th
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                function='Counts down and rings.', relation='r', observation='o')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', function='Rings.',
+                                ef='Counts down and rings.', relation='r', observation='o')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.',
                               relation='r', observation='o')
-        piezo = store.add_subtype(base.name, part.join_id, 'code.alarm.piezo', function='Buzzes.', role='SE',
+        piezo = store.add_subtype(base.name, part.join_id, 'code.alarm.piezo', ef='Buzzes.', role='SE',
                                   refs=[('path', 'src/piezo.c')])
     fix = correction(store, 'fix-1')
     absorbed = store.correct(fix.name, part.join_id, {'parent': parent.join_id}, reason='the alarm is the timer\'s')
@@ -456,7 +456,7 @@ def test_a_correction_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_th
     assert sorted(sub.join_id for sub in store.subtypes(parent.join_id).results) == sorted(
         [part.join_id, piezo.join_id])
     moved = {sub.join_id: sub for sub in store.subtypes(parent.join_id).results}[piezo.join_id]
-    assert (moved.parent, moved.function, [(ref.key, ref.value) for ref in moved.refs]) == (
+    assert (moved.parent, moved.ef, [(ref.key, ref.value) for ref in moved.refs]) == (
         parent.join_id, 'Buzzes.', [('path', 'src/piezo.c')])
     assert [(version.layer, version.op, version.fields['parent']) for version in store.history(piezo.join_id).results] \
         == [('intake-1', 'add', part.join_id), ('fix-1', 'change', parent.join_id)]

@@ -24,12 +24,12 @@ from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('name_length', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
+    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb',
              'observation', 'non_goal', 'extra'),  # receiver, provider and parent move it, MAP-003
     'item': ('value', 'link', 'extra'),
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'function', 'relation', 'verb', 'observation', 'non_goal', 'type', 'name')
+TEXT_COLUMNS = ('purpose', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type', 'name')
 
 Row = sqlite3.Row
 

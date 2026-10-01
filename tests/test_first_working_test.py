@@ -138,13 +138,8 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
         body, _, footer = served.partition('</process>\n')
         body += '</process>\n'
-        # The said lines come in the same block, MCP one block; nothing else is served beside the intake.
-        assert all(line.startswith(('layer: ', 'project: ', 'metaform: ', 'Notice: ')) for line in said.splitlines())
-        assert footer == ''
-        stored = SPEC.read_text(encoding='utf-8')
-        assert re.sub(r'<target [^>]*>', '<target>', body, count=1) == \
-            re.sub(r'<target [^>]*>', '<target>', stored, count=1)
-        assert re.search(r'<target [^>]*type="path"[^>]*value="[^"]*kitchen timer"', body)
+        assert footer == ''  # nothing is served beside the intake
+        assert body == SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
 
         # 7: the intake is recorded one object per call; a join missing its purpose is stored with a notice naming
         # that field, and nothing is refused.

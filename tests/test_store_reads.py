@@ -17,7 +17,7 @@ def populated(store):
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
     store.add_element(notes.name, 'code.timer.kitchen.display')
     shown = store.add_join(notes.name, 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='show time',
-                          function='reports remaining time', relation='The timer feeds the display.', observation='LCD')
+                          ef='reports remaining time', relation='The timer feeds the display.', observation='LCD')
     store.add_work(Node('element', 'code.timer.kitchen.display'), 'missing', note='not wired yet', task='wire it')
     store.add_work(Node('join', shown.join_id), 'broken', task='fix the LCD')
     store.finish(notes.name)
@@ -26,7 +26,7 @@ def populated(store):
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('element', 'code.timer.kitchen'), 'drifts under load')
     fix = correction(store, 'fix-1')
-    store.correct(fix.name, inner.join_id, {'function': 'Plays a loud tone.'}, reason='louder')
+    store.correct(fix.name, inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder')
     store.finish(fix.name)
     return layer, outer, inner
 
@@ -99,7 +99,7 @@ def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store,
             store.add_element(layer.name, f'code.r{n}')
         for n in range(100000):
             store.add_join(layer.name, f'code.r{n % 1000}', 'code.target' if n < 50 else f'code.r{(n + 1) % 1000}',
-                           purpose='p', function='f', relation='r', observation='o')
+                           purpose='p', ef='f', relation='r', observation='o')
     store.finish(layer.name)
     traced.clear()
     assert len(store.identity('code.target').results) == 50
@@ -118,12 +118,12 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
     relying = {join.receiver_address: join for join in kitchen.provides}
     assert set(relying) == {'stakeholder.cook.home', 'code.timer.kitchen.display'}
     cook = relying['stakeholder.cook.home']
-    assert (cook.join_id, cook.purpose, cook.function, cook.name, cook.layer) == (
+    assert (cook.join_id, cook.purpose, cook.ef, cook.name, cook.layer) == (
         outer.join_id, 'Know when each dish is done.', 'Counts down and rings.', 'kitchen timer', 'intake-1')
-    assert [(sub.address, sub.short_name, sub.function) for sub in cook.subtypes] == [
+    assert [(sub.address, sub.short_name, sub.ef) for sub in cook.subtypes] == [
         ('code.loop.tick', 'tick loop', 'Advances each countdown.')]
     assert relying['code.timer.kitchen.display'].layer == 'notes'
-    assert [(join.join_id, join.provider_address, join.function, join.layer) for join in kitchen.receives] == [
+    assert [(join.join_id, join.provider_address, join.ef, join.layer) for join in kitchen.receives] == [
         (inner.join_id, 'code.alarm.audible', 'Plays a loud tone.', 'fix-1')]
     assert kitchen.subtype is None and kitchen.join is None and kitchen.work == ()
     assert {group.layer: ([item.value for item in group.items], [prop.value for prop in group.properties])
@@ -160,7 +160,7 @@ def test_the_read_of_a_held_element_shows_the_subtype_join_and_the_join_it_sits_
         'subtype', held.join_id, outer.join_id, (), ())
     extra = knowledge(store, 'extra')
     store.add_element(extra.name, 'code.clock')
-    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='keep time', function='ticks',
+    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='keep time', ef='ticks',
                    relation='r', observation='o')
     store.finish(extra.name)
     tick = store.where('code.loop.tick')
@@ -190,11 +190,11 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
     assert 'provider' not in cook and cook['name'] == 'kitchen timer' and cook['layer'] == 'intake-1'
     assert cook['subtypes'] == [{'element': 'code.loop.tick', 'reading': 'tick loop code', 'short_name': 'tick loop',
                                  'name': 'tick loop', 'name_length': 2, 'role': 'SE', 'type': 'subtype',
-                                 'function': 'Advances each countdown.', 'relation': 'The tick loop drives the timer.',
+                                 'ef': 'Advances each countdown.', 'relation': 'The tick loop drives the timer.',
                                  'observation': 'One tick per second.', 'refs': [{'key': 'path', 'value': 'src/tick.c'}],
                                  'layer': 'intake-1'}]
     assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
-                                  'purpose': 'Get attention when a countdown ends.', 'function': 'Plays a loud tone.',
+                                  'purpose': 'Get attention when a countdown ends.', 'ef': 'Plays a loud tone.',
                                   'relation': 'The alarm rings for the timer.', 'observation': 'A piezo speaker.',
                                   'name': 'audible alarm', 'layer': 'fix-1'}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']
@@ -210,7 +210,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
     full = store.where('code.timer.kitchen', full=True).to_dict()
     assert full['element']['element_id'] == store.element('code.timer.kitchen').element_id
     assert [join['join_id'] for join in full['receives']] == [inner.join_id]
-    assert full['receives'][0]['ef'] is None and full['held'] is None and full['work'] == []
+    assert full['receives'][0]['perspective'] is None and full['held'] is None and full['work'] == []
     assert outer.join_id in [join['join_id'] for join in full['provides']]
 
 
@@ -236,7 +236,7 @@ def test_a_knowledge_layers_join_follows_its_toggle_and_the_receivers_mask(store
     small_map(store)
     extra = knowledge(store, 'extra')
     store.add_join(extra.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='know when to stop',
-                   function='signals the end', relation='The timer tells the alarm to stop.', observation='a pin')
+                   ef='signals the end', relation='The timer tells the alarm to stop.', observation='a pin')
     store.finish(extra.name)
     on = Store('proj', toggled=['intake-1', 'extra'])
     off = Store('proj', toggled=['intake-1'])
@@ -268,14 +268,14 @@ def test_a_new_element_with_no_join_reaches_no_in_context_read(store):
 def test_a_write_that_does_not_fit_is_stored_with_a_notice_and_text_is_never_judged(home, store):
     small_map(store)
     extra = knowledge(store, 'extra')
-    join = store.add_join(extra.name, 'code.timer.kitchen', 'code.probe.echo', purpose='p', function='f',
+    join = store.add_join(extra.name, 'code.timer.kitchen', 'code.probe.echo', purpose='p', ef='f',
                           relation='r', observation='o')
     assert [notice.where for notice in join.notices] == ['provider']
     assert 'code.probe.echo' in join.notices[0].message and extra.name in join.notices[0].message
     echo = store.element('code.probe.echo', raw=True)
     assert echo is not None and echo.layer == extra.name and echo.role is None
     plain = store.add_join(extra.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='',
-                           function='bananas are yellow', relation='', observation='')
+                           ef='bananas are yellow', relation='', observation='')
     assert plain.notices == ()
     assert plain.join_id in [found.join_id for found in store.joins('code.timer.kitchen', raw=True).results]
     odd = store.add_element(extra.name, 'Code..Engine')
@@ -312,7 +312,7 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
     assert 'code.timer.kitchen.display' not in [e.element.address for e in store.graph(selection=['intake-1']).elements]
     secret = knowledge(store, 'secret')
     store.add_element(secret.name, 'code.timer.kitchen.secret')
-    hidden = store.add_join(secret.name, 'code.timer.kitchen.secret', 'code.timer.kitchen', purpose='p', function='f',
+    hidden = store.add_join(secret.name, 'code.timer.kitchen.secret', 'code.timer.kitchen', purpose='p', ef='f',
                             relation='r', observation='o')
     store.finish(secret.name)
     store.hide(secret.name)

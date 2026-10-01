@@ -22,7 +22,7 @@ def mapped(run, tmp_path):
         store.add_element(layer.name, 'code.manager.route', name_length=2, role='DE')
         store.add_element(layer.name, 'code.probe.echo', name_length=2, role='SE')
         store.add_join(layer.name, 'code.manager.route', 'code.probe.echo', purpose='Know a route is alive.',
-                       function='Sends an echo.', relation='The probe checks the route.', observation='ICMP.')
+                       ef='Sends an echo.', relation='The probe checks the route.', observation='ICMP.')
     return folder
 
 

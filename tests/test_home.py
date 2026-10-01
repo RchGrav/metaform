@@ -241,3 +241,32 @@ def test_every_layer_names_the_metaform_that_holds_it(store):
     layer = store.layer('notes', 'test', 'Notes.', mutable=True, hideable=True,
                         provenance={'module': 'test'})
     assert layer.metaform_id == store.active_metaform().metaform_id
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.req('MAP-020')
+def test_a_store_from_before_ef_and_perspective_is_migrated_in_place_keeping_every_join(home, store):
+    """Rich, 2026-10-01: the Encounter Function is the field ef and the choice Function or Encounter is perspective.
+    A store written at version 6, with the columns function and ef, opens at the current version with each join's
+    text where it was."""
+    from storekit import small_map
+    _, outer, inner = small_map(store)
+    path = metaform_home.store_path('proj', store.active_metaform().metaform_id)
+    db = sqlite3.connect(path)
+    db.execute('ALTER TABLE joins RENAME COLUMN ef TO function')
+    db.execute('ALTER TABLE joins RENAME COLUMN perspective TO ef')
+    db.execute("UPDATE joins SET ef='Function' WHERE join_id=?", (outer.join_id,))
+    db.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+    db.commit()
+    db.close()
+    [read] = [join for join in Store('proj').joins('stakeholder.cook.home').results if join.join_id == outer.join_id]
+    assert (read.ef, read.perspective) == ('Counts down and rings.', 'Function')
+    [held] = [join for join in Store('proj').joins('code.timer.kitchen').results if join.join_id == inner.join_id]
+    assert held.ef == 'Plays a tone.'
+    db = sqlite3.connect(path)
+    columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
+    version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+    db.close()
+    assert 'function' not in columns and {'ef', 'perspective'} <= set(columns)
+    from metaform import sqlite as metaform_sqlite
+    assert version == metaform_sqlite.SCHEMA_VERSION

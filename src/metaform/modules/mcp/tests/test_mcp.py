@@ -82,7 +82,7 @@ def mapped(run, tmp_path):
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
                        purpose='Get attention.',
-                       function='Plays a tone.', relation='The alarm rings.', observation='A piezo.')
+                       ef='Plays a tone.', relation='The alarm rings.', observation='A piezo.')
     return folder
 
 
@@ -145,9 +145,9 @@ def test_a_knowledge_subtypes_own_purpose_survives_mcp_creation_and_readback(run
 
         await knowledge(op='create', variable='Alarm operation.', mutable=True, hideable=True)
         parent = await knowledge(op='add-join', receiver='code.timer.kitchen', provider='code.alarm.audible',
-                                 purpose='Get attention.', function='Plays a tone.')
+                                 purpose='Get attention.', ef='Plays a tone.')
         await knowledge(op='add-subtype', join=parent['join_id'], address='code.alarm.audible.piezo',
-                        purpose='Make the end audible.', function='Buzzes when driven.', ef='Function',
+                        purpose='Make the end audible.', ef='Buzzes when driven.', perspective='Function',
                         relation='buzzes when driven', verb='buzzes', observation='A piezo disc.')
         await knowledge(op='finish')
         result = await client.call_tool('map', {'command': 'where',
@@ -159,7 +159,7 @@ def test_a_knowledge_subtypes_own_purpose_survives_mcp_creation_and_readback(run
     parent = next(join for join in view['receives'] if join['layer'] == 'notes')
     (subtype,) = parent['subtypes']
     assert parent['purpose'] == 'Get attention.'
-    assert (subtype['purpose'], subtype['function']) == ('Make the end audible.', 'Buzzes when driven.')
+    assert (subtype['purpose'], subtype['ef']) == ('Make the end audible.', 'Buzzes when driven.')
     assert 'purpose' not in subtype.get('extra', {})
 
 
@@ -310,7 +310,7 @@ def test_map_where_over_mcp_shows_what_relies_on_an_address_and_what_it_relies_o
         return json.loads(small[-1]), json.loads(full[-1])
     small, full = session(home, mapped, call)
     assert small == cli and set(small) == {'kind', 'element', 'receives'}
-    assert [(join['provider'], join['function']) for join in small['receives']] == [('code.alarm.audible',
+    assert [(join['provider'], join['ef']) for join in small['receives']] == [('code.alarm.audible',
                                                                                      'Plays a tone.')]
     assert 'join_id' not in small['receives'][0] and full['receives'][0]['join_id']
 
@@ -491,15 +491,15 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
         named = json.loads(text(described)[-1])['notices']
         made = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
                                                       'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
-                                                      'function': 'Rings.', 'ef': 'Encounter', 'relation': 'r',
+                                                      'ef': 'Rings.', 'perspective': 'Encounter', 'relation': 'r',
                                                       'verb': 'rings', 'observation': 'o'})
         join_id = json.loads(text(made)[-1])['join_id']
         await called(client, 'intake_subtype', {'into': join_id, 'namespace_address': 'code.loop.tick',
-                                                  'function': 'Ticks.',
-                                                  'ef': 'Function', 'relation': 'r', 'verb': 'advances',
+                                                  'ef': 'Ticks.',
+                                                  'perspective': 'Function', 'relation': 'r', 'verb': 'advances',
                                                   'observation': 'o', 'role': 'SE'})
         beat = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
-                                                      'purpose': 'Keep time.', 'function': 'Beats.', 'ef': 'Function',
+                                                      'purpose': 'Keep time.', 'ef': 'Beats.', 'perspective': 'Function',
                                                       'relation': 'r', 'verb': 'beats', 'observation': 'o'})
         beat_id = json.loads(text(beat)[-1])['join_id']
         absorbed = await called(client, 'intake_absorb', {'join': beat_id, 'into': join_id})
@@ -688,7 +688,7 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
         greeted = await called(client, 'hello_greet', {'name': {'a': 1}})
         joined = await called(client, 'map_knowledge', {
             'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
-            'purpose': 12, 'function': 'f', 'relation': ['r'], 'observation': 'o'})
+            'purpose': 12, 'ef': 'f', 'relation': ['r'], 'observation': 'o'})
         observed = await called(client, 'memory_add-observations', {'node': 'element:code.timer.kitchen',
                                                                      'text': ['fine', 7]})
         return [(result.is_error, text(result)) for result in (greeted, joined, observed)]

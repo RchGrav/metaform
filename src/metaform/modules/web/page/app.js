@@ -268,12 +268,12 @@ function graphData() {
     links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id,
       work: join.open_work || []});
     links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
-      ef: join.ef, work: join.open_work || []});
+      perspective: join.perspective, work: join.open_work || []});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.join_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
       links.push({source: purpose, target: 's:' + subtype.join_id, k: 'layer', layer: subtype.layer, join: join.join_id,
-        ef: subtype.ef, work: join.open_work || []});
+        perspective: subtype.perspective, work: join.open_work || []});
     }
   }
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
@@ -1031,7 +1031,7 @@ const EF = {Function: '--function', Encounter: '--encounter'};
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
   if ((link.work || []).includes('exclude')) return css('--exclude');
-  if (EF[link.ef]) return css(EF[link.ef]);
+  if (EF[link.perspective]) return css(EF[link.perspective]);
   return layerColor(link.layer);
 }
 let G = null;
@@ -1249,7 +1249,7 @@ addEventListener('resize', resize);
 
 function renderLegend() {
   const inView = new Set([...S.elements.values()].map(entry => entry.element.layer).concat(S.joins.map(join => join.layer)));
-  const words = new Set(S.joins.flatMap(join => [join.ef, ...(join.subtypes || []).map(subtype => subtype.ef)]));
+  const words = new Set(S.joins.flatMap(join => [join.perspective, ...(join.subtypes || []).map(subtype => subtype.perspective)]));
   const rows = [['--intake', 'purpose · receiver to join', ''],
     ...(words.has('Function') ? [['--function', 'Function · the encounter of a functionality', '']] : []),
     ...(words.has('Encounter') ? [['--encounter', 'Encounter · the functionality of the encounter', '']] : []),
@@ -1335,7 +1335,7 @@ async function build2D() {
   }
   const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
-  for (const edge of edges) if (EF[edge.join.ef]) edge.path?.classList.add(`ef-${edge.join.ef.toLowerCase()}`);
+  for (const edge of edges) if (EF[edge.join.perspective]) edge.path?.classList.add(`perspective-${edge.join.perspective.toLowerCase()}`);
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
   M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
@@ -2335,7 +2335,7 @@ function addElement(id) {
   $('#element .title').textContent = `Add Element · joined to ${named(element)}`;
   $('#element .receives option[value="node"]').textContent = `${named(element)}, and the new element serves it`;
   $('#element .receives option[value="new"]').textContent = `the new element, and ${named(element)} serves it`;
-  for (const name of ['.purpose', '.function']) $('#element ' + name).value = '';
+  for (const name of ['.purpose', '.ef']) $('#element ' + name).value = '';
   // It is written on from the address of the node: a part added beside a part mostly shares its trunk.
   E.from = element.address.includes('.') ? element.address.slice(0, element.address.lastIndexOf('.') + 1) : '';
   $('#element .address').value = E.from;
@@ -2352,7 +2352,7 @@ $('#element .add').onclick = async () => {
   }
   const given = {address, node: `element:${E.node}`, receives: $('#element .receives').value,
     name_length: Number($('#element .length').value) || 1, role: $('#element .role').value,
-    purpose: $('#element .purpose').value.trim(), function: $('#element .function').value.trim(),
+    purpose: $('#element .purpose').value.trim(), ef: $('#element .ef').value.trim(),
     validate: $('#element .validate').checked};
   const response = await fetch('/api/element', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})});
@@ -2389,7 +2389,7 @@ async function renderWork(target, key, also = null) {
     record.done ? h('p', {class: 'obs'}, `Resolved: ${record.resolution || ''}`) : null)));
 }
 function efPill(thing) {
-  return EF[thing.ef] ? h('span', {class: 'pill ef', style: {'--c': `var(${EF[thing.ef]})`}}, thing.ef) : null;
+  return EF[thing.perspective] ? h('span', {class: 'pill perspective', style: {'--c': `var(${EF[thing.perspective]})`}}, thing.perspective) : null;
 }
 function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name); }
 function elementLink(id, address) {
@@ -2405,7 +2405,7 @@ function joinCard(join, side) {
       h('span', {class: 'lay', style: {'--c': `var(${colorVar(join.layer)})`}}, join.layer)),
     join.name ? h('p', {class: 'name'}, h('b', {}, join.name)) : null,
     join.purpose ? h('p', {}, join.purpose) : null,
-    join.function ? h('p', {class: 'fn'}, efPill(join), join.function) : null,
+    join.ef ? h('p', {class: 'fn'}, efPill(join), join.ef) : null,
     join.relation ? h('p', {class: 'fn'}, join.relation) : null,
     join.observation ? h('p', {class: 'obs'}, join.observation) : null,
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
@@ -2413,7 +2413,7 @@ function joinCard(join, side) {
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
       event.preventDefault(); select('s:' + subtype.join_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
       subtype.name ? h('span', {}, subtype.name, ' ') : null,
-      h('span', {class: 'refs'}, subtype.address), subtype.function ? h('div', {}, efPill(subtype), subtype.function) : null,
+      h('span', {class: 'refs'}, subtype.address), subtype.ef ? h('div', {}, efPill(subtype), subtype.ef) : null,
       subtype.observation ? h('div', {}, subtype.observation) : null, refsOf(subtype.refs))));
 }
 function itemText(value) {
@@ -2431,7 +2431,7 @@ function renderSubtype({subtype, join}) {
       (subtype.open_work || []).map(workPill), layerPill(subtype.layer)),
     h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
       elementLink(join.receiver, join.receiver_address), '.'),
-    subtype.function ? h('p', {}, subtype.function) : null,
+    subtype.ef ? h('p', {}, subtype.ef) : null,
     subtype.relation ? h('p', {class: 'fn'}, subtype.relation) : null,
     subtype.observation ? h('p', {class: 'obs'}, subtype.observation) : null,
     refsOf(subtype.refs),

@@ -17,12 +17,12 @@ FIRST = {'CQU': 0, 'AUE': 1, 'DE': 2}
 
 
 def _sentence(join: dict[str, Any], receiver: str, provider: str) -> str:
-    """A join's relation as a sentence: its subject is the provider when ef is Function, the receiver when it is
+    """A join's relation as a sentence: its subject is the provider when perspective is Function, the receiver when it is
     Encounter, MAP-020."""
     relation = str(join.get('relation') or '')
     if not relation:
         return ''
-    return f"{receiver if join.get('ef') == 'Encounter' else provider} {relation}"
+    return f"{receiver if join.get('perspective') == 'Encounter' else provider} {relation}"
 
 
 def _join_lines(join: dict[str, Any], receiver: str, provider: str) -> list[str]:

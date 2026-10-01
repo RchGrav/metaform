@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '6'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
+SCHEMA_VERSION = '7'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 _WRITERS: dict[str, threading.RLock] = {}
@@ -47,8 +47,15 @@ def memory(schema: str) -> sqlite3.Connection:
     return db
 
 
+# Each step moves a store from one version to the next in place, keeping every row, STORE-029. Version 7 names the
+# Encounter Function ef and the choice of Function or Encounter perspective, MAP-020.
+MIGRATIONS = {'6': ('7', 'ALTER TABLE joins RENAME COLUMN ef TO perspective;\n'
+                         'ALTER TABLE joins RENAME COLUMN function TO ef;')}
+
+
 @contextmanager
-def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[sqlite3.Connection, None, None]:
+def opened(path: Path, schema: str, *, write: bool, version: str,
+           migrations: dict[str, tuple[str, str]] | None = None) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to the file, opened inside the file's lock, STORE-006; the caller begins and ends
     the transaction. A write holds the lock until the block ends and creates the file when there is none. A read
     lets go of the lock once its connection is prepared, and reads a file with nothing committed yet, no file, no
@@ -62,7 +69,7 @@ def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[s
             path.parent.mkdir(parents=True, exist_ok=True)
             db = connect(path)
             try:
-                prepare(db, path, schema, create=True, version=version)
+                prepare(db, path, schema, create=True, version=version, migrations=migrations)
             except BaseException:
                 db.close()
                 raise
@@ -70,7 +77,7 @@ def opened(path: Path, schema: str, *, write: bool, version: str) -> Generator[s
             if _has_bytes(path):
                 db = connect(path)
                 try:
-                    if not prepare(db, path, schema, create=False, version=version):
+                    if not prepare(db, path, schema, create=False, version=version, migrations=migrations):
                         db.close()
                         db = None
                 except BaseException:
@@ -96,7 +103,8 @@ def _has_bytes(path: Path) -> bool:
         return False
 
 
-def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, version: str) -> bool:
+def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, version: str,
+            migrations: dict[str, tuple[str, str]] | None = None) -> bool:
     """Check the schema version, creating the schema first when the file is new and creation is allowed. False
     when the file holds no tables and creation is not allowed: another process is creating it, and nothing in it
     is committed yet, so the caller reads it as empty. `version` is the version this kind of database is at, STORE-029.
@@ -124,6 +132,11 @@ def prepare(db: sqlite3.Connection, path: Path, schema: str, *, create: bool, ve
                              f"\nINSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '{version}');"
                              '\nCOMMIT;')
             found = _version(db)
+    while found != version and found in (migrations or {}):
+        to, steps = (migrations or {})[found]
+        db.executescript('BEGIN IMMEDIATE;\n' + steps +
+                         f"\nUPDATE meta SET value='{to}' WHERE key='schema_version';\nCOMMIT;")
+        found = _version(db)
     if found != version:
         raise StoreError(f'{path} has schema version {found}; this Metaform supports version {version}.',
                          'install the Metaform release that wrote it')

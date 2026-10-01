@@ -22,7 +22,7 @@ LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory', 'correction')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
-EF_WORDS = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
+PERSPECTIVES = ('Function', 'Encounter')  # the encounter of a functionality, or the functionality of the encounter, MAP-020
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
 # taken its task, a part to be built being in progress and a broken one being fixed.
 CONDITIONS = ('missing', 'broken', 'exclude', 'in-progress', 'fixing')
@@ -148,8 +148,8 @@ class Join(Record):
     provider_address: str | None
     name: str | None  # the project's own name for the functionality, MAP-020
     purpose: str | None
-    function: str | None
     ef: str | None
+    perspective: str | None
     relation: str | None
     verb: str | None
     observation: str | None
@@ -181,8 +181,8 @@ class Subtype(Record):
     name_length: int | None
     role: str | None
     purpose: str | None
-    function: str | None
     ef: str | None
+    perspective: str | None
     relation: str | None
     verb: str | None
     observation: str | None

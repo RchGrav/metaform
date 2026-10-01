@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from metaform.data import EF_WORDS
+from metaform.data import PERSPECTIVES
 from metaform.data import ROLES as ROLE_NAMES
 from metaform.data import SUBTYPE_ROLES as SUBTYPE_ROLE_NAMES
 
 Schema = dict[str, Any]
 
-EF: Schema = {'type': 'string', 'enum': list(EF_WORDS)}
+EF: Schema = {'type': 'string', 'enum': list(PERSPECTIVES)}
 ROLE: Schema = {'type': 'string', 'enum': list(ROLE_NAMES)}
 SUBTYPE_ROLE: Schema = {'type': 'string', 'enum': list(SUBTYPE_ROLE_NAMES)}
 NAME_LENGTH: Schema = {'type': 'integer', 'minimum': 1}

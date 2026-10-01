@@ -198,20 +198,20 @@ def build(store):
         store.add_element(intake.name, 'code.gone', name_length=1, role='SE')
         outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', name='dish timer',
                                purpose='Know when food is done.',
-                               function='Counts down and rings.', ef='Function', relation='The timer tells the cook.',
+                               ef='Counts down and rings.', perspective='Function', relation='The timer tells the cook.',
                                observation='One countdown per dish.')
         store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       function='Plays a tone.', ef='Encounter', relation='The alarm rings for the timer.',
+                       ef='Plays a tone.', perspective='Encounter', relation='The alarm rings for the timer.',
                        observation='A piezo.')
-        store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
-                          ef='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
+        store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', ef='Advances each countdown.',
+                          perspective='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
                           name='one-second tick', name_length=2, role='SE')
     store.add_work(Node('element', 'code.timer.kitchen'), 'broken', note='drifts', task='hold the tick to one second')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
     store.add_element('notes', 'code.timer.kitchen.display', name_length=1)
     store.add_join('notes', 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='Show the time left.',
-                   function='Reports the time left.', relation='The timer feeds the display.', observation='LCD')
+                   ef='Reports the time left.', relation='The timer feeds the display.', observation='LCD')
     store.add_item('notes', Node('element', 'code.timer.kitchen'), 'keep the loop small')
     store.add_item('notes', Node('element', 'code.gone'), 'the loop drifts here')
     store.add_element('extra', 'code.alarm.audible.loud', name_length=1)
@@ -907,23 +907,23 @@ def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_lege
     drawn = page.evaluate('window.metaform.linkColors()')
     for join in expected['joins']:
         encounter = next(link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter')
-        if join['ef']:
-            assert encounter['color'] == color[join['ef'].lower()]
+        if join['perspective']:
+            assert encounter['color'] == color[join['perspective'].lower()]
         else:  # a knowledge join with no word keeps its layer's color, never one of the two
             assert join['layer'] == 'notes' and encounter['color'] == color['k1']
         for subtype in join['subtypes']:
             link = next(link for link in drawn if link['target'] == 's:' + subtype['join_id'])
-            assert link['color'] == color[subtype['ef'].lower()]
-    assert sorted(join['ef'] or '' for join in expected['joins']) == ['', 'Encounter', 'Function']
-    assert page.locator('#map2d svg .edgePaths path.ef-function').count() == 1
-    assert page.locator('#map2d svg .edgePaths path.ef-encounter').count() == 1
+            assert link['color'] == color[subtype['perspective'].lower()]
+    assert sorted(join['perspective'] or '' for join in expected['joins']) == ['', 'Encounter', 'Function']
+    assert page.locator('#map2d svg .edgePaths path.perspective-function').count() == 1
+    assert page.locator('#map2d svg .edgePaths path.perspective-encounter').count() == 1
     legend = page.inner_text('#legend')
     assert 'Function · the encounter of a functionality' in legend
     assert 'Encounter · the functionality of the encounter' in legend
     kitchen = next(entry['element']['element_id'] for entry in expected['elements']
                    if entry['element']['address'] == 'code.timer.kitchen')
     page.evaluate(f'window.metaform.select("{kitchen}")')
-    assert sorted(page.evaluate('[...document.querySelectorAll("#p-object .join .ef")].map(e => e.textContent)')) \
+    assert sorted(page.evaluate('[...document.querySelectorAll("#p-object .join .perspective")].map(e => e.textContent)')) \
         == ['Encounter', 'Function', 'Function']
     assert problems == []
 
@@ -1374,7 +1374,7 @@ def test_the_2d_map_opens_at_a_size_that_can_be_read_and_only_fit_changes_the_zo
     for index in range(30):  # a map far wider than the view
         store.add_element('notes', f'code.part.number{index}', name_length=2)
         store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}', purpose='Keep the timer working.',
-                       function='Does one thing.', relation='serves the timer')
+                       ef='Does one thing.', relation='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, _ = keys_of(web)
@@ -1411,7 +1411,7 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
         store.add_element('notes', f'code.part.number{index}', name_length=2)
         store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}',
                        name=f'the long name of part number {index} of the kitchen timer',
-                       purpose='Keep the timer working.', function='Does one thing.', relation='serves the timer')
+                       purpose='Keep the timer working.', ef='Does one thing.', relation='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, _ = keys_of(web)
@@ -1574,12 +1574,12 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
             big.add_element(layer.name, f'code.g{n % 20}.e{n}', role='SE')
         for n in range(600):
             join = big.add_join(layer.name, f'code.g{n % 20}.e{n}', f'code.g{(n + 1) % 20}.e{(n + 1) % 600}',
-                                purpose='p', function='f', relation='r', observation='o')
+                                purpose='p', ef='f', relation='r', observation='o')
             if n < 10:
-                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', function='f', relation='r',
+                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', ef='f', relation='r',
                                 observation='o', role='SE')
         # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
-        big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', function='g', relation='r', observation='o')
+        big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', ef='g', relation='r', observation='o')
     page, problems, _ = opened(browser, web)
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
@@ -1618,13 +1618,13 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     asked.clear()
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
     assert asked == []
-    made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'function=f',
-                          'ef=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
+    made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'ef=f',
+                          'perspective=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
     page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
     page.wait_for_timeout(300)  # the panel's reads for the selected node settle
     assert not [text for text in page.evaluate('window.toasts') if 'Nothing for' in text]  # an unfinished layer is no error
-    run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'function=f', 'ef=Function', 'relation=r',
+    run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'ef=f', 'perspective=Function', 'relation=r',
         'verb=advances', 'observation=o', 'role=SE', cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
     run('intake', 'finish', cwd=folder)
@@ -3129,7 +3129,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     page.fill('#element .length', '2')
     page.select_option('#element .receives', 'node')                  # the alarm holds the purpose; the new part serves it
     page.fill('#element .purpose', 'Tell a cook who cannot hear that the time is up.')
-    page.fill('#element .function', 'Flashes a lamp when the timer runs out.')
+    page.fill('#element .ef', 'Flashes a lamp when the timer runs out.')
     page.check('#element .validate')
     page.click('#element .add')
     page.wait_for_function('() => document.querySelector("#element").hidden')
@@ -3137,7 +3137,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     made = store.element('code.alarm.visible')
     assert made is not None and (made.layer, made.name_length, made.short_name) == ('additions', 2, 'visible alarm')
     joined = [join for join in store.joins('code.alarm.audible').results if join.provider == made.element_id]
-    assert [(join.receiver, join.layer, join.purpose, join.function) for join in joined] == [
+    assert [(join.receiver, join.layer, join.purpose, join.ef) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
     work = store.work(Node_of('code.alarm.visible'), 'missing', True).results
     assert len(work) == 1 and work[0].task == f'{VALIDATE} The element is code.alarm.visible.'
@@ -3154,7 +3154,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     page.fill('#element .address', 'code.alarm.silent')
     page.select_option('#element .receives', 'new')                   # here the new part holds the purpose
     page.fill('#element .purpose', 'Stay quiet at night.')
-    page.fill('#element .function', 'Sounds only when asked to.')
+    page.fill('#element .ef', 'Sounds only when asked to.')
     page.uncheck('#element .validate')
     page.click('#element .add')
     page.wait_for_function('() => document.querySelector("#element").hidden')

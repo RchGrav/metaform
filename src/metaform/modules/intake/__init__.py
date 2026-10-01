@@ -66,7 +66,7 @@ def _fill(tag: str, name: str, value: str) -> str:
     return tag.replace('<target', f'<target {name}="{_escape(value)}"', 1)
 
 
-def served(ctx: Context) -> str:
+def served(ctx: Context, asked: str = '') -> str:
     """The intake text exactly as stored, with its target filled, and nothing beside it, BASE-039: the intake is
     the instruction, and what is added to it competes with it."""
     store = ctx.require_store()
@@ -82,11 +82,14 @@ def served(ctx: Context) -> str:
         tag = _fill(_fill(match.group(0), 'type', record.target_type), 'value', record.target_value)
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
+    # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
+    # project, BASE-039.
+    text = text.replace('{prompt}', _escape(asked), 1)
     return text
 
 
 def prompt(ctx: Context) -> str:
-    return served(ctx)
+    return served(ctx, ctx.nouns.get('text') or '')
 
 
 
@@ -94,8 +97,8 @@ def prompt(ctx: Context) -> str:
 # Recording, one object per call ------------------------------------------------------------------------------
 
 Notices = list[dict[str, str]]
-JOIN_TEXT = ('purpose', 'function', 'ef', 'relation', 'verb', 'observation')
-SUBTYPE_TEXT = ('function', 'ef', 'relation', 'verb', 'observation')
+JOIN_TEXT = ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation')
+SUBTYPE_TEXT = ('ef', 'perspective', 'relation', 'verb', 'observation')
 ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
 ADDRESS = 'namespace_address'  # the element's address, named as in the Canonical Intake, MAP-040
 NAMED = ("An element is its address, name_length and role and holds no name: the project's name for a functionality "
@@ -431,7 +434,7 @@ def show(ctx: Context) -> Any:
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, **shown}
 
 
-JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation',
+JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation',
               'non_goal')
 
 
@@ -593,13 +596,13 @@ NOUNS = {noun.name: noun for noun in (
     Noun('refs', J('refs', ''), required=False, schema=REFS),
     Noun('extra', '', required=False, schema=EXTRA),
     Noun('type', '', required=False),
-    *(Noun(field, J(field, ''), required=False, schema=EF if field == 'ef' else None)
-      for field in ('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal')),
+    *(Noun(field, J(field, ''), required=False, schema=EF if field == 'perspective' else None)
+      for field in ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal')),
 )}
 SUBTYPE_NOUNS = (
     Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
     Noun(ADDRESS, H(ADDRESS, '')),
-    *_nouns('type', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal'),
+    *_nouns('type', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal'),
     Noun('role', H('role', ''), required=False, schema=SUBTYPE_ROLE),
     Noun('name', H('name', ''), required=False),
     Noun('name_length', H('name_length', ''), required=False, schema=NAME_LENGTH),
@@ -623,7 +626,8 @@ MODULE = Module(
             'other read sees it until finish; after finish it changes only through a correction layer. Nothing is '
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
-        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.'),
+        Verb('prompt', prompt, 'The Canonical Intake instructions for this project.',
+             nouns=(Noun('text', 'What the person asks for: a target or a task. Nothing means this project.', required=False),)),
         Verb('start', start, 'Resume the intake being recorded, or start a fresh one. If the active metaform already '
                             'has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier '
                             'one untouched. Returns its name; the existing web GUI follows it live.',
@@ -638,9 +642,9 @@ MODULE = Module(
                     NOUNS['extra'],
                     Noun('name', E('name', ''), required=False))),
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
-             nouns=(Noun('receiver', ''),
+             nouns=(Noun('receiver', J('receiver', '')),
                     Noun('provider', J('provider', '')),
-                    *_nouns('name', 'purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type',
+                    *_nouns('name', 'purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal', 'type',
                             'refs', 'extra'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join, holding an element.',
              nouns=SUBTYPE_NOUNS),
@@ -654,7 +658,7 @@ MODULE = Module(
                            'had.',
              nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
                                'included.'),
-                    *_nouns('purpose', 'function', 'ef', 'relation', 'verb', 'observation', 'non_goal', 'type'),
+                    *_nouns('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal', 'type'),
                     Noun('receiver', 'A new receiver for a join, by namespace address: the join moves and keeps its '
                                      'join_id.', required=False),
                     Noun('provider', 'A new Providing Element for a join, by namespace address.', required=False),

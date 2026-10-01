@@ -417,7 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                 held = Node.parse(anchor).id
                 receiver, provider = (held, made.element_id) if given['receives'] == 'node' else (made.element_id, held)
                 joined = store.add_join(ADDITIONS, receiver, provider, purpose=given.get('purpose') or None,
-                                        function=given.get('function') or None)
+                                        ef=given.get('ef') or None)
                 work = store.add_work(Node('element', made.element_id), 'missing', note='Added by hand in the web GUI.')
                 if given.get('validate') is True:
                     work = store.edit_work(work.work_id, {'task': validation(made.address)})

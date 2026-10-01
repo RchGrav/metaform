@@ -66,12 +66,12 @@ def record_intake(run, folder, elements, env=None, finish=()):
     for element in elements:
         for join in element.get('joins', []):
             made = call('join', element['namespace_address'], join['provider'],
-                        *_named(join, ('type', 'name', 'purpose', 'function', 'ef', 'relation', 'verb',
+                        *_named(join, ('type', 'name', 'purpose', 'ef', 'perspective', 'relation', 'verb',
                                        'observation', 'non_goal', 'refs')))
             for subtype in join.get('subtypes', []):
                 inner = subtype.get('element', {})
                 call('subtype', made['join_id'], inner['namespace_address'],
-                     *_named(subtype, ('function', 'ef', 'relation', 'verb', 'observation')),
+                     *_named(subtype, ('ef', 'perspective', 'relation', 'verb', 'observation')),
                      *_named(inner, ('role', 'name', 'name_length', 'refs')))
     return call('finish', *finish)
 
@@ -101,13 +101,13 @@ def small_map(store):
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
-                               purpose='Know when each dish is done.', function='Counts down and rings.',
+                               purpose='Know when each dish is done.', ef='Counts down and rings.',
                                relation='The timer tells the cook.', observation='One countdown per dish.',
                                refs=[('path', 'src')])
         inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
-                               purpose='Get attention when a countdown ends.', function='Plays a tone.',
+                               purpose='Get attention when a countdown ends.', ef='Plays a tone.',
                                relation='The alarm rings for the timer.', observation='A piezo speaker.')
-        store.add_subtype(layer.name, outer.join_id, 'code.loop.tick', function='Advances each countdown.',
+        store.add_subtype(layer.name, outer.join_id, 'code.loop.tick', ef='Advances each countdown.',
                           relation='The tick loop drives the timer.', observation='One tick per second.',
                           name='tick loop', name_length=2, role='SE', refs=[('path', 'src/tick.c')])
     return layer, outer, inner

@@ -28,10 +28,10 @@ def mapped(run, tmp_path):
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
                        purpose='Know when a dish is done.',
-                       function='Counts down and rings.', relation='The timer tells the cook.',
+                       ef='Counts down and rings.', relation='The timer tells the cook.',
                        observation='One countdown per dish.')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       function='Plays a tone.', relation='The alarm rings for the timer.', observation='A piezo.')
+                       ef='Plays a tone.', relation='The alarm rings for the timer.', observation='A piezo.')
     return folder
 
 
@@ -115,7 +115,7 @@ def test_a_knowledge_layer_is_built_object_by_object_then_finished(run, mapped, 
                           'value="A mistake."').stdout)
     k(run, mapped, 'op=add-element', 'layer=practices-cpp', 'address=code.watchdog')
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=practices-cpp', 'receiver=code.timer.kitchen',
-                          'provider=code.watchdog', 'purpose=Recover from a hang.', 'function=Restarts the loop.',
+                          'provider=code.watchdog', 'purpose=Recover from a hang.', 'ef=Restarts the loop.',
                           'relation=The watchdog restarts the timer.', 'observation=Not built yet.').stdout)
     k(run, mapped, 'op=edit', 'layer=practices-cpp', f'id={added["item_id"]}', 'value="Prefer steady_clock always."')
     k(run, mapped, 'op=remove', 'layer=practices-cpp', f'id={doomed["item_id"]}')
@@ -181,7 +181,7 @@ def test_a_blind_spot_is_answered_and_only_a_person_approves_it(run, mapped):
       *PROVENANCE, 'blinded=true')
     k(run, mapped, 'op=add-element', 'layer=challenge.blind', 'address=code.watchdog')
     k(run, mapped, 'op=add-join', 'layer=challenge.blind', 'receiver=code.timer.kitchen', 'provider=code.watchdog',
-      'purpose=Recover.', 'function=Restarts.', 'relation=r', 'observation=o')
+      'purpose=Recover.', 'ef=Restarts.', 'relation=r', 'observation=o')
     challenge = json.loads(k(run, mapped, 'op=add-item', 'layer=challenge.blind', 'node=element:code.watchdog',
                              'value="Nothing recovers a hung loop."').stdout)
     k(run, mapped, 'op=finish', 'layer=challenge.blind')
@@ -215,9 +215,9 @@ def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped)
     kitchen = j(run, 'where', 'code.timer.kitchen', cwd=mapped)
     assert set(kitchen) == {'kind', 'element', 'provides', 'receives'}
     assert (kitchen['element']['short_name'], kitchen['element']['role']) == ('kitchen timer', 'DE')
-    assert [(join['receiver'], join['purpose'], join['function'], join['name']) for join in kitchen['provides']] == [
+    assert [(join['receiver'], join['purpose'], join['ef'], join['name']) for join in kitchen['provides']] == [
         ('stakeholder.cook.home', 'Know when a dish is done.', 'Counts down and rings.', 'kitchen timer')]
-    assert [(join['provider'], join['function'], join['layer']) for join in kitchen['receives']] == [
+    assert [(join['provider'], join['ef'], join['layer']) for join in kitchen['receives']] == [
         ('code.alarm.audible', 'Plays a tone.', 'intake-1')]
     alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)
     assert alarm['work'] == [{'condition': 'missing', 'note': 'no speaker yet', 'task': 'wire the piezo'}]
@@ -270,7 +270,7 @@ def test_a_knowledge_layer_names_a_functionality_on_its_join_and_a_name_sent_for
     assert 'name' not in element and [notice['where'] for notice in element['notices']] == ['name']
     join = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.display.lcd',
                         'provider=code.timer.kitchen', 'name=time left', 'purpose=Show the time left.',
-                        'function=Reports the time left.', 'relation=The timer feeds the display.',
+                        'ef=Reports the time left.', 'relation=The timer feeds the display.',
                         'observation=An LCD.').stdout)
     assert (join['name'], join['extra']) == ('time left', None) and join['notices'] == []
     assert [held.name for held in Store('proj').joins('code.display.lcd', raw=True).results] == ['time left']
@@ -347,7 +347,7 @@ def test_layers_stack_and_metaforms_read_as_one_aligned_row_each(run, mapped):
     k(run, mapped, 'op=create', 'layer=fix-1', 'kind=correction', 'variable=Fixes.', 'mutable=false',
       'hideable=false', *PROVENANCE)
     join = Store('proj').joins('code.timer.kitchen').results[0]
-    k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'function=Plays a loud tone.', 'reason=r')
+    k(run, mapped, 'op=correct', 'layer=fix-1', f'id={join.join_id}', 'ef=Plays a loud tone.', 'reason=r')
     k(run, mapped, 'op=finish', 'layer=fix-1')
 
     def rows(*args):
@@ -402,7 +402,7 @@ def test_a_knowledge_write_missing_a_field_its_record_can_hold_empty_is_stored_w
 
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=bare', 'receiver=code.timer.kitchen',
                           'provider=code.alarm.audible').stdout)
-    empty = ('purpose', 'function', 'relation', 'observation')
+    empty = ('purpose', 'ef', 'relation', 'observation')
     assert said(joined) == [(field, f'{field} is missing; stored empty.') for field in empty]
     stored = {join.join_id: join for join in Store('proj').joins('code.timer.kitchen', raw=True).results}
     assert stored[joined['join_id']].layer == 'bare'
@@ -485,21 +485,21 @@ def test_add_join_and_add_subtype_keep_purpose_ef_and_verb_in_their_own_fields(r
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
                           'provider=code.alarm.audible', 'name=done alarm', 'purpose=Get attention.',
-                          'function=Plays a tone.', 'ef=Function', 'relation=rings for the timer', 'verb=rings',
+                          'ef=Plays a tone.', 'perspective=Function', 'relation=rings for the timer', 'verb=rings',
                           'observation=A piezo.').stdout)
-    assert (joined['name'], joined['ef'], joined['verb'], joined['extra'], joined['notices']) == (
+    assert (joined['name'], joined['perspective'], joined['verb'], joined['extra'], joined['notices']) == (
         'done alarm', 'Function', 'rings', None, [])
     inside = json.loads(k(run, mapped, 'op=add-subtype', 'layer=notes', f'join={joined["join_id"]}',
                           'address=code.alarm.audible.piezo', 'name=buzzer', 'purpose=Make the end audible.',
-                          'function=Buzzes.', 'ef=Encounter',
+                          'ef=Buzzes.', 'perspective=Encounter',
                           'relation=buzzes when driven', 'verb=buzzes', 'observation=A disc.').stdout)
-    assert (inside['name'], inside['purpose'], inside['ef'], inside['verb'], inside['extra'], inside['notices']) == (
+    assert (inside['name'], inside['purpose'], inside['perspective'], inside['verb'], inside['extra'], inside['notices']) == (
         'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None, [])
     store = Store('proj')
     stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
-    assert (stored.name, stored.ef, stored.verb, stored.extra) == ('done alarm', 'Function', 'rings', None)
+    assert (stored.name, stored.perspective, stored.verb, stored.extra) == ('done alarm', 'Function', 'rings', None)
     (subtype,) = store.subtypes(joined['join_id'], raw=True).results
-    assert (subtype.name, subtype.purpose, subtype.ef, subtype.verb, subtype.extra) == (
+    assert (subtype.name, subtype.purpose, subtype.perspective, subtype.verb, subtype.extra) == (
         'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None)
 
 
@@ -559,7 +559,7 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.alarm.visual')
     first = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
-                         'provider=code.alarm.visual', 'purpose=See the end.', 'function=Flashes.', 'relation=r',
+                         'provider=code.alarm.visual', 'purpose=See the end.', 'ef=Flashes.', 'relation=r',
                          'observation=o').stdout)
     moved = json.loads(k(run, mapped, 'op=edit', 'layer=notes', f'id={first["join_id"]}',
                          'receiver=stakeholder.cook.home').stdout)
@@ -581,7 +581,7 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
 def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_never_refused(run, mapped):
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
-                          'provider=code.alarm.audible', 'purpose=p', 'function=f', 'relation=r', 'observation=o',
+                          'provider=code.alarm.audible', 'purpose=p', 'ef=f', 'relation=r', 'observation=o',
                           'refs=[["path", "a.c"], ["line", 12]]').stdout)
     assert joined['refs'] == [{'key': 'path', 'value': 'a.c'}]
     assert joined['extra'] == {'refs': [['line', 12]]}
@@ -601,7 +601,7 @@ def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_
 
 @pytest.fixture
 def described(run, tmp_path):
-    """A registered project whose intake map has a non_goal, a relation for each ef, a subtype join and paths."""
+    """A registered project whose intake map has a non_goal, a relation for each perspective, a subtype join and paths."""
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -615,17 +615,17 @@ def described(run, tmp_path):
         store.add_element(layer.name, 'code.display.digit', name_length=2, role='SE',
                           refs=[('path', 'src/display.py'), ('spec', 'DISP-001')])
         store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
-                       purpose='Know when a dish is done.', function='Counts down and rings.', ef='Encounter',
+                       purpose='Know when a dish is done.', ef='Counts down and rings.', perspective='Encounter',
                        relation='learns from the timer when a dish is done', observation='One countdown per dish.')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       function='Plays a tone.', ef='Function', relation='rings for the timer',
+                       ef='Plays a tone.', perspective='Function', relation='rings for the timer',
                        observation='A piezo.')
         join = store.add_join(layer.name, 'code.timer.kitchen', 'code.display.digit', purpose='See the time left.',
-                              function='Draws four digits from a count of seconds.', ef='Function',
+                              ef='Draws four digits from a count of seconds.', perspective='Function',
                               relation='shows the time left to the timer', verb='shows',
                               observation='A seven segment panel on pin 4.', non_goal='It keeps no time itself.')
         store.add_subtype(layer.name, join.join_id, 'code.driver.segment', name_length=2, role='SE',
-                          function='Lights the segments of one digit.', relation='lights each digit',
+                          ef='Lights the segments of one digit.', relation='lights each digit',
                           observation='Multiplexed at 200 Hz.')
     return folder
 

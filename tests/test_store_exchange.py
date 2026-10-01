@@ -18,14 +18,14 @@ def filled(store):
     store.add_item(notes.name, Node('element', 'code.timer.kitchen'), {'imperative': 'keep it small'},
                    extra={'confidence': 'high'}, refs=[('path', 'src/timer.c')])
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
-    store.add_join(notes.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='stop', function='signals',
+    store.add_join(notes.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='stop', ef='signals',
                    relation='r', observation='o', extra={'latency_budget': '5 ms'})
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('join', inner.join_id), 'quiet tone')
     fix = correction(store, 'fix-1')
-    store.correct(fix.name, inner.join_id, {'function': 'Plays a loud tone.'}, reason='louder', evidence='bench')
+    store.correct(fix.name, inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder', evidence='bench')
     store.finish(fix.name)
     return outer, inner
 
@@ -101,8 +101,8 @@ def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they
     notes = knowledge(store, 'notes')
     for address in ('code.a', 'code.p', 'code.q'):
         store.add_element(notes.name, address)
-    early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', function='g', relation='r', observation='o')
-    later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', function='f', relation='r', observation='o')
+    early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', ef='g', relation='r', observation='o')
+    later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', ef='f', relation='r', observation='o')
     store.edit(early.join_id, {'parent': later.join_id})
     store.finish(notes.name)
     first = export_document(['proj'])

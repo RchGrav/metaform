@@ -14,7 +14,7 @@ def critic(store):
     layer = knowledge(store, 'challenge.blind')
     store.add_element(layer.name, 'code.watchdog')
     store.add_join(layer.name, 'code.timer.kitchen', 'code.watchdog', purpose='recover from a hang',
-                   function='restarts the loop', relation='The watchdog restarts the timer.', observation='none')
+                   ef='restarts the loop', relation='The watchdog restarts the timer.', observation='none')
     challenge = store.add_item(layer.name, Node('element', 'code.watchdog'), 'Nothing recovers a hung loop.')
     other = store.add_item(layer.name, Node('element', 'code.alarm.audible'), 'The alarm has no volume control.')
     store.finish(layer.name)
@@ -64,7 +64,7 @@ def test_a_plan_added_directly_needs_no_approval(store):
     layer = knowledge(store, 'plans')
     element = store.add_element(layer.name, 'code.logger')
     join = store.add_join(layer.name, 'code.timer.kitchen', 'code.logger', purpose='keep a record',
-                          function='writes each countdown', relation='The logger records the timer.',
+                          ef='writes each countdown', relation='The logger records the timer.',
                           observation='none yet')
     store.add_plan(layer.name, element.element_id, join.join_id)
     store.finish(layer.name)

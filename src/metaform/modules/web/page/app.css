@@ -254,7 +254,7 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .pill.work-missing{color:var(--missing);background:color-mix(in srgb,var(--missing) 14%,transparent)}
 .pill.layer{display:inline-flex;align-items:center;gap:6px;background:none;padding:2px 0;color:var(--faint)}
 .pill.layer::before,.join .lay::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
-.pill.ef{color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);margin-right:6px}
+.pill.perspective{color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);margin-right:6px}
 /* The small area above the panel and the large one change what they hold, VIEW-028. */
 .small{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);overflow:hidden;flex:none}
 #big3d{position:absolute;inset:0;background:var(--ground)}
@@ -300,8 +300,8 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.sub rect{fill:var(--node-sub)!important}
 .map2d .node.sub .nodeLabel,.map2d .node.sub text{font:500 11px var(--sans)!important;fill:var(--muted)!important}
 .map2d .node.sub.sel .nodeLabel,.map2d .node.sub.sel text{fill:var(--text)!important}
-.map2d .edgePaths path.ef-function{stroke:var(--function)!important}
-.map2d .edgePaths path.ef-encounter{stroke:var(--encounter)!important}
+.map2d .edgePaths path.perspective-function{stroke:var(--function)!important}
+.map2d .edgePaths path.perspective-encounter{stroke:var(--encounter)!important}
 .map2d marker path{fill:var(--edge)!important;stroke:none!important}
 .map2d .kbd{position:absolute;left:10px;bottom:8px;font:11px var(--mono);color:var(--faint);pointer-events:none}
 /* Each view has the same bar: what steps or moves it on the left, Fit and Swap on the right. */
