@@ -346,6 +346,19 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Relates to: LAYER-001, LAYER-011, STORE-017, STORE-034, STORE-036, BASE-039, VIEW-006, VIEW-007, VIEW-014, MCP-033.
 - Status: confirmed by Rich, 2026-10-01. Undoing a refinement is open, D108. Supersedes LAYER-011, STORE-017 and VIEW-014.
 
+### LAYER-026 Balancing the books: the metaform is collapsed into a single layer, and that becomes the data going forward
+
+- Requirement: When the metaform is right, it can be collapsed into a single layer that holds only what is true now, and that layer is the data from then on.
+- What this means:
+  - The metaform keeps every version of every thing in its layer, LAYER-025, with removals and each refinement's reason and evidence. That is right while work goes on. When everything is representative of the way things are, the person draws a line in the sand: the current state is written as one layer, each thing once, as it is now, with no superseded version, no removed thing and no refinement trail, and refining goes on from it.
+  - A map released with Metaform, BASE-048, is such a layer, never one with layers and layers of corrections on it.
+- Why: Rich, 2026-10-01: "even if we create the perfect map of the code, we can't release our database with layers and layers and layers of corrections on it. And over time, when something is perfected and you want to draw a line in the sand, I think it makes a lot of sense to be able to collapse it down into a single layer and start from there." "Even other agents reviewing our system have said, oh, but you know, over time this is just going to become a big mess. Well, our answer to that is, it's like balancing the books. Cleaning shop, spring cleaning. You can basically get it to a point where you're saying, okay, this is good, everything's good. Everything is representative of the way things are. Everything is clean, green, spring cleaned. Our house is in shape. It's time to take out the trash. Draw the map. Everybody's happy with it. And that becomes our data moving forward."
+- How it shows: Open, D111.
+- Build: Open, D111. Recommended: collapse writes the current state into a new metaform of one layer and makes it active, the old metaform kept whole with its history; element and join ids carry over, so what is attached to them still finds them.
+- Acceptance: Open, D111.
+- Relates to: LAYER-025, STORE-041, BASE-048, D102.
+- Status: asked for by Rich 2026-10-01.
+
 ## Open questions
 
 1. Answered: the module declares mutable and hideable for each layer it creates, D12.

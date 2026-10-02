@@ -71,6 +71,9 @@ Recommendation: one record per refinement run, with its provenance and tags, tha
 **D110. The tickets and the agent figures on the map.** VIEW-035. Which node is the most primary: the DE? Does a figure stand for a ticket or for an agent, given that subagents of one session share its session id and process id, 05-cli-settings? What are the stored names of the four kinds, a work record holding only missing, broken and exclude today, and who took a ticket under which harness, which a work record does not hold, D92?
 Recommendation: the DE; one figure per ticket from take to done; the shortest way along the drawn edges. Built on this recommendation 2026-10-01, Rich may overrule it; the stored names are `flawed` and `enhancement`, Rich 2026-10-01, and who took a ticket is `taken_by`, STORE-042.
 
+**D111. Collapsing the metaform into a single layer.** LAYER-026. Do the knowledge and memory layers fold into the single layer, carry over as their own layers, or stay with the old metaform? Do open tickets carry over? Does collapse write a new metaform, keeping the old one whole, or the same metaform in place?
+Recommendation: a new metaform of one layer, made active, the old one kept whole; element and join ids carry over; knowledge and memory layers carried over as their own layers; open tickets carried over, done ones left with the old metaform.
+
 ## Answered
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.
