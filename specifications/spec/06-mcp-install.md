@@ -456,7 +456,7 @@ It also defines the first working test, which exercises all three end to end.
   - A test module that declares a command, with no MCP code written for it, has it served, with its verb's nouns as its arguments.
   - When two owners declare one name, the second fails to load and says why.
 - Relates to: MCP-002, MCP-003, MCP-004, MCP-021, MCP-031, MCP-033, CLI-037, BASE-028, BASE-036, BASE-037.
-- Status: the commands are Rich's, 2026-10-01. Serving them as MCP prompts follows CLI-037 and is recommended, as is declaring each in XML with at most one verb. Not built.
+- Status: the commands are Rich's, 2026-10-01. Serving them as MCP prompts follows CLI-037 and is recommended, as is declaring each in XML with at most one verb. Built 2026-10-01: each command is a child of `<commands>` in its owner's prompts.xml, naming its verb, and other attributes are fixed arguments, as `open="true"` on `tasks`; the chassis's commands name the command line they run. `prompts/get` runs `metaform` with the command's words in the folder and serves what it prints, so the text is the command line's own. A name a second owner declares is left out of the list; refusing it at load, BASE-037, is not built.
 
 ### MCP-033 The slash commands are prompt, tasks, messages, intake, refine, correct, web, config and status
 
@@ -480,4 +480,4 @@ It also defines the first working test, which exercises all three end to end.
 - Build: One element per command in its owner's `resources/prompts.xml`, MCP-032. A command's words, where it has any, are Rich's, MCP-031; the builder writes none, and a command waiting on its words is served with its verb's result alone.
 - Acceptance: The list from a real MCP client holds the nine names when every owner is on the surface. Each settled command passes MCP-032's acceptance against its own verb. A command whose question is open is not built past what its row settles.
 - Relates to: MCP-032, CLI-005, CLI-026, VIEW-002, MAP-049, MAP-050, LAYER-011, STORE-044.
-- Status: the nine names, Rich 2026-10-01. `intake` is known. Each other row is inferred or open as the table says, D104 to D107.
+- Status: the nine names, Rich 2026-10-01. `intake` is known. Each other row is inferred or open as the table says, D104 to D107. Built 2026-10-01: intake, status, config, web, messages and tasks. Not built, their rows open: prompt, D105; refine, D107; correct, D106, whose correction layers LAYER-025 has since removed.

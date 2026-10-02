@@ -11,8 +11,11 @@ any, and one block holding the result, BASE-036.
 """
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import json
+import subprocess
+import sys
 from datetime import date
 from importlib import resources
 from pathlib import Path
@@ -27,6 +30,7 @@ from metaform.instructions import on_surface
 from metaform.module import (
     Context,
     Module,
+    Noun,
     Stop,
     Verb,
     call,
@@ -469,6 +473,72 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: s
     return False, blocks
 
 
+@dataclasses.dataclass(frozen=True)
+class Slash:
+    """One slash command, MCP-032: the command line it runs, the arguments a person gives it, and its own text."""
+    name: str
+    summary: str
+    argv: tuple[str, ...]
+    fixed: tuple[tuple[str, str], ...]
+    nouns: tuple[Noun, ...]
+    before: str
+    after: str
+    marked: bool
+    runs: bool
+
+
+def slashes(folder: Path) -> dict[str, Slash]:
+    """The slash commands of the owners on this folder's command surface, the chassis's always, MCP-032 and
+    MCP-033; a name a second owner declares again is left out."""
+    from importlib import resources
+
+    from metaform import docs
+    found: dict[str, Slash] = {}
+    owners: list[tuple[Any, Module | None]] = [(resources.files('metaform'), None)]
+    from metaform import loader
+    owners += [(loaded.path, module) for module in surface(folder) if (loaded := loader.get(module.id)) is not None]
+    for place, module in owners:
+        for name, attrs, before, after, marked in prompt_files.commands(place):
+            if name in found:
+                continue
+            given = attrs.get('verb')
+            fixed = tuple((key, value) for key, value in attrs.items() if key not in ('verb', 'summary'))
+            if module is None:
+                words = tuple((given or '').split())
+                record = docs.COMMANDS.get(words[0]) if words else None
+                summary = attrs.get('summary') or (record.summary if record is not None else '')
+                found[name] = Slash(name, summary, words, fixed, (), before, after, marked, given is not None)
+                continue
+            verb = next((one for one in module.verbs if one.name == given), None) if given else None
+            if given and verb is None:
+                continue
+            summary = verb.summary if verb is not None else attrs.get('summary', '')
+            nouns = tuple(noun for noun in verb.nouns if noun.name not in dict(fixed)) if verb is not None else ()
+            argv = (module.id, verb.name) if verb is not None else ()
+            found[name] = Slash(name, summary, argv, fixed, nouns, before, after, marked, verb is not None)
+    return found
+
+
+def slash_text(folder: Path, slash: Slash, given: dict[str, str]) -> str:
+    """The person's message a slash command puts into the conversation: its text, with the command line's output
+    where it holds `<result/>`, or that output alone, exactly as `metaform` prints it in the folder, MCP-032."""
+    if not slash.runs:
+        return (slash.before + slash.after).strip()
+    words = [*slash.argv]
+    for noun in slash.nouns:
+        value = given.get(noun.name)
+        if value is None or value == '':
+            continue
+        words.append(value if noun.required else f'{noun.name}={value}')
+    words += [f'{key}={value}' for key, value in slash.fixed]
+    done = subprocess.run([sys.executable, '-m', 'metaform', *words], cwd=folder, capture_output=True, text=True,
+                          encoding='utf-8', stdin=subprocess.DEVNULL)
+    printed = done.stdout.strip() if done.returncode == 0 else (done.stdout + done.stderr).strip()
+    if not slash.marked:
+        return ((slash.before + printed) if slash.before.strip() else printed).strip()
+    return (slash.before + printed + slash.after).strip()
+
+
 def serve(folder: Path) -> None:
     from mcp import types
     from mcp.server import Server
@@ -492,8 +562,26 @@ def serve(folder: Path) -> None:
         return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
                                     is_error=error)
 
+    async def list_prompts(ctx: Any, params: Any) -> Any:
+        found = await anyio.to_thread.run_sync(slashes, folder)
+        return types.ListPromptsResult(prompts=[
+            types.Prompt(name=slash.name, description=slash.summary or None, arguments=[
+                types.PromptArgument(name=noun.name, description=noun.help or None, required=noun.required)
+                for noun in slash.nouns]) for slash in found.values()])
+
+    async def get_prompt(ctx: Any, params: Any) -> Any:
+        from mcp.shared.exceptions import MCPError
+        found = await anyio.to_thread.run_sync(slashes, folder)
+        slash = found.get(params.name)
+        if slash is None:
+            raise MCPError(-32602, f'No slash command {params.name} on this surface.\nNext: metaform help commands')
+        said = await anyio.to_thread.run_sync(slash_text, folder, slash, dict(params.arguments or {}))
+        await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
+        return types.GetPromptResult(description=slash.summary or None, messages=[
+            types.PromptMessage(role='user', content=types.TextContent(type='text', text=said))])
+
     server = Server('metaform', version=__version__, instructions=instructions(folder), on_list_tools=list_tools,
-                    on_call_tool=call_tool)
+                    on_call_tool=call_tool, on_list_prompts=list_prompts, on_get_prompt=get_prompt)
 
     async def main() -> None:
         async with stdio_server() as (read, write):

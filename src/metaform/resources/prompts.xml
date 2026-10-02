@@ -3,6 +3,8 @@
      prompt marks where the code fills in what it names: <modules/> the surfaced modules' instructions, one per line;
      <projects/> the registered projects. -->
 <prompts>
+<!-- The slash commands the chassis declares, MCP-032 and MCP-033: each runs the command line named in verb. -->
+<commands><status verb="" summary="This folder's project, its metaform and the modules on."/><config verb="config --show"/></commands>
 <instructions>Metaform MCP server is active.
 modules available.
 <modules/>

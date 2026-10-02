@@ -750,3 +750,36 @@ def test_a_commands_arguments_sent_beside_the_command_are_taken_as_its_arguments
     wanted = json.loads(run('map', 'joins', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
     assert not beside.is_error and json.loads(text(beside)[-1]) == wanted
     assert not both.is_error and json.loads(text(both)[-1]) == wanted   # what is inside arguments is what was meant
+
+
+@pytest.mark.req('MCP-032')
+@pytest.mark.req('MCP-033')
+def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_prints(run, home, mapped):
+    """Rich, 2026-10-01: metaform still doesn't have its : commands, none for intake. Each command is an XML element
+    of its owner's prompts.xml naming the verb it runs; /metaform:intake puts into the conversation exactly what
+    metaform intake prompt prints for the same folder."""
+    async def call(client, init):
+        listed = {prompt.name: prompt for prompt in (await client.list_prompts()).prompts}
+        got = {name: await client.get_prompt(name, {}) for name in ('intake', 'tasks', 'status')}
+        return listed, {name: [message.content.text for message in result.messages] for name, result in got.items()}, \
+            {name: [message.role for message in result.messages] for name, result in got.items()}
+    listed, texts, roles = session(home, mapped, call)
+    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks'} <= set(listed)
+    assert not {'prompt', 'refine', 'correct'} & set(listed)          # open in the spec, D105 to D107
+    assert listed['intake'].description and listed['config'].description
+    assert roles == {'intake': ['user'], 'tasks': ['user'], 'status': ['user']}
+    assert texts['intake'] == [run('intake', 'prompt', cwd=mapped).stdout.strip()]
+    assert texts['tasks'] == [run('map', 'work', 'open=true', cwd=mapped).stdout.strip()]
+    assert texts['status'] == [run(cwd=mapped).stdout.strip()]
+    run('set', '--modules', 'intake,mcp', cwd=mapped)                  # map and web off the surface
+
+    async def narrowed(client, init):
+        names = {prompt.name for prompt in (await client.list_prompts()).prompts}
+        try:
+            await client.get_prompt('web', {})
+            refused = False
+        except Exception:  # noqa: BLE001  the server answers with an error
+            refused = True
+        return names, refused
+    names, refused = session(home, mapped, narrowed)
+    assert 'intake' in names and not {'web', 'tasks', 'messages'} & names and refused

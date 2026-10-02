@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- map's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
+<commands><messages verb="messages"/><tasks verb="work" open="true"/></commands>
 <instructions>Read the map before you work. Use messages to ask the user questions.</instructions>
 <tasks>Use Metaform for all task assignment. Assign and track work via Metaform like a kanban. Link the nodes a task touches; link others for reference.</tasks>
 </prompts>

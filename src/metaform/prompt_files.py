@@ -43,3 +43,20 @@ def module(identifier: str, name: str, **fills: str) -> str | None:
     from . import loader
     found = loader.get(identifier)
     return None if found is None else text(found.path, name, **fills)
+
+
+def commands(folder: Traversable) -> list[tuple[str, dict[str, str], str, str, bool]]:
+    """The slash commands this package folder declares, MCP-032: each child of `<commands>` in its prompts.xml, by
+    name, with its attributes, the verb it runs among them, its text before and after an empty `<result/>`, and
+    whether it holds one."""
+    path = folder / 'resources' / FILE
+    if not path.is_file():
+        return []
+    found = ET.fromstring(path.read_text(encoding='utf-8')).find('commands')
+    held: list[tuple[str, dict[str, str], str, str, bool]] = []
+    for element in found if found is not None else []:
+        mark = element.find('result')
+        before = element.text or ''
+        after = (mark.tail or '') if mark is not None else ''
+        held.append((element.tag, dict(element.attrib), before, after, mark is not None))
+    return held

@@ -4,5 +4,6 @@
      the intake. -->
 <prompts>
 <instructions>web is active.</instructions>
+<commands><web verb="start"/></commands>
 <autostart>Before an intake, start the web GUI with web start if it is not running.</autostart>
 </prompts>
