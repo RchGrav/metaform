@@ -769,6 +769,8 @@ def backup_project(project_id: str) -> Backup | None:
         _copied(folder / 'reports', kept / 'reports')
     else:
         (kept / 'reports').mkdir()
+    if (folder / 'modules').is_dir():  # the modules' project-level stores, which a clear keeps, STORE-045
+        _copied(folder / 'modules', kept / 'modules')
     (kept / 'rows.json').write_text(json.dumps(rows, indent=2) + '\n', encoding='utf-8')
     return Backup(project_id, name, found.metaforms, found.reports)
 

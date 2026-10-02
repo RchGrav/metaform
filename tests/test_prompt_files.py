@@ -62,8 +62,11 @@ def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_
     run('set', '--no-tasks', cwd=folder)  # the task lines are tested below
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
-    listed = '\n'.join(prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text
-                       for module in sorted(on))
+    def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
+        own = prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text
+        notice = ET.parse(SOURCE / 'modules' / module / 'resources' / 'prompts.xml').getroot().findtext('no_intake')
+        return own if notice is None else f'{own} {notice}'
+    listed = '\n'.join(line(module) for module in sorted(on))
     assert [child.tag for child in element] == ['modules']
     expected = (element.text or '') + listed + (element[0].tail or '')
     assert run('help', 'agents', cwd=folder).stdout.strip() == expected.strip()

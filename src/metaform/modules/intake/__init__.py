@@ -22,7 +22,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from metaform import settings
+from metaform import prompt_files, settings
 from metaform.data import Element, GraphPage, Join, Layer, Node, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
@@ -250,8 +250,9 @@ def _describe(rec: Recording, address: str, given: dict[str, Any], refs: list[An
               extra: dict[str, Any] | None, notices: Notices) -> str | None:
     """Record an element, or describe it again: the fields given replace the ones it had, the rest are kept.
 
-    An element is its address, name_length and role, STORE-009. A name given for it is kept in its extra with a
-    notice: the project's name for a functionality goes on the join, MAP-020 and BASE-044.
+    An element is its address, name_length and role, STORE-009. A name given for it is kept in its own name field,
+    the canonical name the project uses for it, STORE-009; the project's name for a functionality goes on the join,
+    MAP-020.
     """
     current = rec.store.element(address, raw=True)
     own = _own(current, rec.layer)
@@ -589,11 +590,13 @@ def status(ctx: Context) -> Status:
     found = _building(ctx.store)
     recording = (f'Intake: being recorded in layer {found.layer.name} of metaform {found.metaform}',) \
         if found is not None else ()
+    # The instructions agents read name an intake started and not finished, or else a project with no intake, MCP-009.
+    unfinished = prompt_files.required(resources.files(__name__), 'unfinished') if found is not None else None
     if ctx.store.has_intake():
-        return Status(lines=('Intake: complete', *recording))
+        return Status(lines=('Intake: complete', *recording), instruction=unfinished)
     if found is not None:
-        return Status(lines=recording)
-    return Status(lines=('Intake: none yet',))
+        return Status(lines=recording, instruction=unfinished)
+    return Status(lines=('Intake: none yet',), instruction=prompt_files.required(resources.files(__name__), 'no_intake'))
 
 
 def _nouns(*names: str) -> tuple[Noun, ...]:

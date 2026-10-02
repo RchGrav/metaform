@@ -1,4 +1,8 @@
-"""The data access object every module imports, STORE-023: `from metaform.data import Store, Node, StoreError`."""
+"""The data access object every module imports, STORE-023: `from metaform.data import Store, Node, StoreError`.
+
+A module declares its own tables with `Tables`, `Table`, `Column` and `Index`, and reads and writes them in the
+`TableTx` that `Store.tables()` gives it, STORE-045.
+"""
 from ..errors import StoreError
 from . import history, prompts
 from .exchange import export_document, import_document, pull_wheel
@@ -41,12 +45,14 @@ from .records import (
                       Roots,
                       Selection,
                       Subtype,
+                      Ticket,
                       Version,
                       Where,
                       WorkLink,
                       WorkRecord,
 )
 from .store import Store
+from .tables import Column, Index, Table, Tables, TableTx
 
 __all__ = [
                       'CONDITIONS',
@@ -57,11 +63,13 @@ __all__ = [
                       'Answer',
                       'ChallengeState',
                       'Citation',
+                      'Column',
                       'ContextView',
                       'Element',
                       'GraphElement',
                       'GraphJoin',
                       'GraphPage',
+                      'Index',
                       'Item',
                       'Join',
                       'Layer',
@@ -88,6 +96,10 @@ __all__ = [
                       'Store',
                       'StoreError',
                       'Subtype',
+                      'Table',
+                      'TableTx',
+                      'Tables',
+                      'Ticket',
                       'Version',
                       'Where',
                       'WorkLink',

@@ -360,8 +360,9 @@ class Where(Record):
     every join it receives with the subtype joins each holds; the subtype join holding it and the join that sits in,
     MAP-031, kind `subtype` when it is held only; its open work records, STORE-042; and what the layers in context hold
     at it, as `node` gives them; and the properties that apply at its address and those visible there, as `context`
-    gives them, LAYER-005, so one read holds what reaches the part. `to_dict()` leaves ids and empty fields out unless
-    `full`."""
+    gives them, LAYER-005, so one read holds what reaches the part. Kind `join` is the read of a join, or of a subtype
+    join with the join holding it, which a ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out
+    unless `full`, all but each ticket's work id, which an agent needs to take it."""
     kind: str
     element: Element | None = None
     subtype: Subtype | None = None
@@ -378,12 +379,18 @@ class Where(Record):
     def to_dict(self) -> dict[str, Any]:
         held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
         if self.full:
-            return {'kind': self.kind, 'element': plain(self.element), 'provides': plain(self.provides),
+            return {'kind': self.kind, 'element': plain(self.element),
+                    **({'join': plain(self.join)} if self.kind == 'join' and self.subtype is None else {}),
+                    'provides': plain(self.provides),
                     'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
                     'layers': plain(self.layers),
                     'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
                     'messages': plain(self.messages)}
-        data: dict[str, Any] = {'kind': self.kind, 'element': small(plain(self.element))}
+        data: dict[str, Any] = {'kind': self.kind}
+        if self.element is not None:
+            data['element'] = small(plain(self.element))
+        if self.kind == 'join' and self.subtype is None and self.join is not None:
+            data['join'] = self._join(plain(self.join), 'receiver', 'provider')
         if self.provides:
             data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
         if self.receives:
@@ -392,8 +399,8 @@ class Where(Record):
             data['held'] = {'subtype': self._subtype(held['subtype']),
                             'join': self._join(held['join'], 'receiver', 'provider')}
         if self.work:
-            data['work'] = small([{'condition': record.condition, 'note': record.note, 'task': record.task}
-                                  for record in self.work])
+            data['work'] = [{'work_id': record.work_id, **small({'condition': record.condition, 'note': record.note,
+                                                                 'task': record.task})} for record in self.work]
         if self.layers:
             data['layers'] = small(plain(self.layers))
         reaching = {name: [{'value': one.value, 'address': one.address, 'layer': one.layer} for one in found]
@@ -565,6 +572,24 @@ class WorkRecord(Record):
     def column(self) -> str:
         """Its column on the board: done, doing once taken, backlog while held, and to do otherwise."""
         return 'done' if self.done else 'doing' if self.taken else 'backlog' if self.held else 'todo'
+
+
+@dataclass(frozen=True)
+class Ticket(Record):
+    """One ticket read by its id with what the map holds at its node and at each node it links, MAP-048: the where
+    read of each, which carries its refs, its open work and its open questions. `at` is None when its node is not in
+    context, and so is a linked node's read. Its plain data is the ticket's own fields with `at` and `linked`."""
+    work: WorkRecord
+    at: Where | None = None
+    linked: tuple[Where | None, ...] = ()
+    notices: tuple[Notice, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        data = plain(self.work)
+        data['notices'] = [*plain(self.notices), *data.get('notices', [])]
+        data['at'] = plain(self.at)
+        data['linked'] = plain(self.linked)
+        return data
 
 
 @dataclass(frozen=True)

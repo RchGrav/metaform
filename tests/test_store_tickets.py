@@ -97,3 +97,51 @@ def test_a_layout_8_store_opens_at_layout_9_with_taken_tickets_keeping_their_kin
     assert (tickets[built.work_id].condition, tickets[built.work_id].column) == ('missing', 'doing')
     assert (tickets[fixed.work_id].condition, tickets[fixed.work_id].column) == ('broken', 'doing')
     assert list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.metaform.sqlite3'))
+
+
+def test_one_ticket_is_read_by_its_id_with_what_the_map_holds_at_its_node_and_its_linked_nodes(store):
+    """MAP-048, first piece: reading one ticket by id hands an agent the ticket with its node's where read, its refs
+    and its open questions, and the same for each node it links, so it can start without parsing the work list."""
+    _, outer, _ = small_map(store)
+    store.ask(KITCHEN, 'Is the snooze still wanted?', suggestions=['Yes', 'No'], by='critic')
+    ticket = store.add_work(KITCHEN, 'missing', task='build the snooze', links=[ALARM, Node('join', outer.join_id)])
+    store.add_work(ALARM, 'flawed', task='a ticket at the other node')
+    read = store.ticket(ticket.work_id)
+    assert (read.work.work_id, read.work.task, [link.address for link in read.work.links]) == (
+        ticket.work_id, 'build the snooze', ['code.alarm.audible', 'stakeholder.cook.home'])
+    assert read.at.element.address == 'code.timer.kitchen'
+    assert [join.receiver_address for join in read.at.provides] == ['stakeholder.cook.home']
+    assert [one.text for one in read.at.messages] == ['Is the snooze still wanted?']
+    assert [one.work_id for one in read.at.work] == [ticket.work_id]
+    alarm, joined = read.linked
+    assert alarm.element.address == 'code.alarm.audible' and [one.task for one in alarm.work] == [
+        'a ticket at the other node']
+    assert (joined.kind, joined.join.join_id, [ref.value for ref in joined.join.refs]) == ('join', outer.join_id, ['src'])
+    plain = read.to_dict()
+    assert (plain['work_id'], plain['at']['element']['address'], plain['linked'][1]['join']['receiver']) == (
+        ticket.work_id, 'code.timer.kitchen', 'stakeholder.cook.home')
+    assert plain['at']['messages'][0]['text'] == 'Is the snooze still wanted?'
+
+
+def test_a_ticket_on_a_subtype_join_reads_with_the_join_holding_it(store):
+    _, outer, _ = small_map(store)
+    tick = store.subtypes(outer.join_id).results[0]
+    ticket = store.add_work(Node('join', tick.join_id), 'broken', task='the tick drifts')
+    read = store.ticket(ticket.work_id)
+    assert (read.at.kind, read.at.subtype.join_id, read.at.join.join_id) == ('join', tick.join_id, outer.join_id)
+    assert read.to_dict()['at']['held']['subtype']['element'] == 'code.loop.tick'
+
+
+def test_reading_a_ticket_by_an_id_no_ticket_has_names_the_list(store):
+    small_map(store)
+    with pytest.raises(StoreError, match='No work record has the id nothing') as refused:
+        store.ticket('nothing')
+    assert refused.value.next_step == 'metaform map work open=true'
+
+
+def test_where_shows_each_ticket_at_the_address_with_its_work_id(store):
+    small_map(store)
+    first = store.add_work(KITCHEN, 'missing', task='build the snooze')
+    second = store.add_work(KITCHEN, 'flawed', task='quieter')
+    assert [one['work_id'] for one in store.where('code.timer.kitchen').to_dict()['work']] == [first.work_id,
+                                                                                              second.work_id]

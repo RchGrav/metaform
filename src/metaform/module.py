@@ -21,13 +21,15 @@ from typing import TYPE_CHECKING, Any, Literal
 from .errors import Stop
 
 if TYPE_CHECKING:
-    from .data import Store
+    from .data import Node, Store
+    from .data.tables import Tables
 
 __all__ = [
     'Context',
     'Handler',
     'Hook',
     'Module',
+    'NodeReadHook',
     'Noun',
     'NounKind',
     'Status',
@@ -42,6 +44,7 @@ __all__ = [
     'feedback',
     'instructions',
     'list_reports',
+    'node_reads',
     'on_this_system',
     'read_report',
     'result_json',
@@ -51,7 +54,7 @@ __all__ = [
     'tool_arguments',
 ]
 
-VERB_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
+VERB_NAME = re.compile(r'^[a-z][a-z0-9_-]*$')
 NounKind = Literal['str', 'int', 'bool', 'json']
 Surface = Literal['cli', 'mcp', 'web']  # where a call or a change was made; verbs are offered on SURFACES only
 NOUN_KINDS: tuple[NounKind, ...] = ('str', 'int', 'bool', 'json')
@@ -62,6 +65,7 @@ VerbFunction = Callable[['Context'], Any]  # returns the verb's result, BASE-036
 Handler = Callable[[dict[str, Any], 'Context'], Any]  # a subscriber: the payload and its own context, BASE-010
 Hook = Callable[['Context'], Any]  # start and stop, BASE-018
 StatusHook = Callable[['Context'], 'Status | Awaitable[Status]']  # what status and the instructions add
+NodeReadHook = Callable[['Context', 'Node'], Any]  # what a module adds to the read of a node, or None, BASE-035
 
 
 @dataclass(frozen=True)
@@ -105,7 +109,7 @@ class Verb:
 
     def __post_init__(self) -> None:
         if not VERB_NAME.fullmatch(self.name):
-            raise ValueError(f'Verb name {self.name!r} must be lowercase letters, digits and hyphens.')
+            raise ValueError(f'Verb name {self.name!r} must be lowercase letters, digits, hyphens and underscores.')
         if any(noun.many for noun in self.nouns[:-1]):
             raise ValueError(f'Verb {self.name}: only the last noun may take many words.')
         if not set(self.surfaces) <= set(SURFACES):
@@ -150,6 +154,8 @@ class Module:
     stop: Hook | None = None
     status: StatusHook | None = None
     default: str | None = None  # the verb `metaform <id>` runs when no verb follows, BASE-035
+    tables: Tables | None = None  # the module's own tables, reached through ctx.store.tables(), STORE-045
+    node_read: NodeReadHook | None = None  # what the module adds to `map where` and `map node` of a node, BASE-035
 
 
 @dataclass
@@ -252,6 +258,28 @@ def context(module: str, folder: Path, *, project: str | None = None, nouns: dic
     """A Context for one call, with the project and store resolved for its folder, BASE-028."""
     from . import context as contexts
     return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface)
+
+
+def node_reads(folder: Path, node: Node, *, project: str | None = None,
+               layers: list[str] | None = None) -> dict[str, Any]:
+    """What each module on the folder's command surface adds to the read of a node, under the module's id, in module
+    id order, BASE-035. Each hook gets a context of its own module with the call's project and toggled layers, and
+    returns plain data or None for nothing. A hook that raises adds `{'failed': '<ExceptionType>: <message>'}` and the
+    read goes on."""
+    from . import context as contexts
+    found: dict[str, Any] = {}
+    for module in surface(folder):
+        if module.node_read is None:
+            continue
+        try:
+            ctx = contexts.build(module.id, folder, project=project,
+                                 switches={'layers': list(layers)} if layers else None)
+            got = call(module.node_read, ctx, node)
+        except Exception as error:  # noqa: BLE001  a failing hook is named in the read, which goes on
+            got = {'failed': f'{type(error).__name__}: {error}'}
+        if got is not None:
+            found[module.id] = got
+    return found
 
 
 def result_json(result: Any) -> str:

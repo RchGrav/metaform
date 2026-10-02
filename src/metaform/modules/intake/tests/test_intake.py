@@ -466,6 +466,32 @@ def test_status_says_whether_there_is_an_intake_and_gives_no_intake_or_map_direc
     assert report['layer'] in run('intake', 'status', cwd=project).stdout
 
 
+@pytest.mark.req('MCP-009')
+@pytest.mark.req('MCP-031')
+def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, project):
+    """Rich, 2026-10-02: the no-intake notice is needed to onboard; and when an intake is started and aborted, the next
+    agent is told that an intake was started but aborted and still remains to be completed. A finished intake clears
+    both."""
+    import xml.etree.ElementTree as ET
+    prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
+    notice, line = (prompts.findtext(name, '').strip() for name in ('no_intake', 'unfinished'))
+    record = (ROOT / 'specifications' / 'spec' / '06-mcp-install.md').read_text(encoding='utf-8')
+    assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
+    assert notice.startswith('This project has no intake yet. Have a subagent perform it.') and notice in record
+    assert 'metaform intake prompt' in notice
+    agents = lambda: run('help', 'agents', cwd=project).stdout  # noqa: E731
+    shown = agents()
+    assert notice in shown and line not in shown
+    run('intake', 'start', cwd=project)
+    shown = agents()
+    assert line in shown and notice not in shown
+    run('intake', 'finish', cwd=project)
+    shown = agents()
+    assert line not in shown and notice not in shown
+    run('intake', 'start', cwd=project)  # a second intake, in a new metaform, while the first is finished
+    assert line in agents()
+
+
 @pytest.mark.req('MAP-041')
 @pytest.mark.req('MAP-042')
 def test_an_artifact_that_is_not_software_is_mapped_the_same_way(run, tmp_path):

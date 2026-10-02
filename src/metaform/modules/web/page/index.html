@@ -28,6 +28,7 @@
         <button id="clearBtn" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
         <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
         <button id="removeBtn" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
+        <button id="orphanBtn" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
       </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
     </div>
@@ -95,10 +96,13 @@
     </div>
     <div class="view3d">
     <div id="stage" aria-label="3D map of the metaform" tabindex="0"></div>
-    <div id="labels3d" aria-hidden="true"></div>
     <div class="tip3d" id="tip3d" hidden></div>
     <div class="legend" id="legend"></div>
     <div class="count" id="count"></div>
+    <div class="agents" id="agents" hidden aria-label="The agents deployed in this project">
+      <div class="title">Agent deployed</div>
+      <div class="list"></div>
+    </div>
     </div>
     </div>
   </main>
@@ -149,9 +153,28 @@
 <div id="notes" hidden role="dialog" aria-label="Notes">
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
   <div class="body">
-    <ul class="kept"></ul>
-    <textarea placeholder="A note for whoever works here next, a person or an agent" aria-label="A new note"></textarea>
-    <button class="add">Add note</button>
+    <p class="by"></p>
+    <textarea placeholder="A note for whoever works here next, a person or an agent" aria-label="The note"></textarea>
+    <div class="count"></div>
+    <button class="save">Save note</button>
+  </div>
+</div>
+<div id="dispatch" hidden role="dialog" aria-label="Start an agent">
+  <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
+  <div class="body">
+    <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
+    <div class="tickets"></div>
+  </div>
+</div>
+<div id="agent" hidden role="dialog" aria-label="An agent at work">
+  <div class="bar"><img class="icon" alt=""><span class="title"></span><button class="close" title="Close">Close</button></div>
+  <div class="body">
+    <p class="task"></p>
+    <div class="eyebrow">What it is doing</div>
+    <ol class="activity"></ol>
+    <div class="asked"></div>
+    <textarea class="say" placeholder="A message to the agent" aria-label="A message to the agent"></textarea>
+    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
   </div>
 </div>
 <div id="draw" aria-hidden="true"></div>

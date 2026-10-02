@@ -202,7 +202,7 @@ The shell examples use POSIX single quotes around JSON; on Windows PowerShell, q
 
 ### The earlier export in docs/examples
 
-[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 8 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 8.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
+[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 10 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 10.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
 
 ## When the first command does not do what you expect
 

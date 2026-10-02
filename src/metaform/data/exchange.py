@@ -20,7 +20,7 @@ from typing import Any
 from .. import home
 from ..errors import StoreError
 from ..sqlite import SCHEMA_VERSION
-from . import versions
+from . import tables, versions
 from .ids import as_list, as_object, prefixes
 from .schema import STORE_SCHEMA
 from .session import open_store
@@ -57,11 +57,15 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
         if metaform is not None and not metaforms:
             raise StoreError(f'No metaform {metaform} in {record.project_id}.', 'metaform list metaforms')
         active = home.active_metaform(record.project_id)
-        exported.append({
+        entry: dict[str, Any] = {
             'project': record.to_dict(),
             'metaforms': [_export_metaform(record.project_id, item, layers) for item in metaforms],
             'active_metaform': active.metaform_id if active else None,
-        })
+        }
+        modules = _export_project_modules(record.project_id)
+        if modules:  # a module's project-level tables, STORE-045
+            entry['modules'] = modules
+        exported.append(entry)
     return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'projects': exported}
 
 
@@ -75,8 +79,20 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
         _fill(db, document, layer_names)
+        modules = tables.export_modules(db)
         db.execute('COMMIT')
+    if modules:  # the modules' tables beside the map, STORE-045
+        document['modules'] = modules
     return document
+
+
+def _export_project_modules(project_id: str) -> list[dict[str, Any]]:
+    """The modules' project-level tables, each module's store read in one transaction, STORE-045."""
+    exported: list[dict[str, Any]] = []
+    for path in tables.project_stores(project_id):
+        with tables.project_transaction(path, write=False) as db:
+            exported += tables.export_modules(db)
+    return exported
 
 
 def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequence[str]) -> None:
@@ -227,6 +243,8 @@ def _validate(document: Any) -> None:
             problems.append(f'{path}: not an object')
             continue
         _record(entry.get('project'), f'{path}.project', PROJECT_KEYS, problems)
+        if 'modules' in entry:
+            tables.check(entry['modules'], f'{path}.modules', problems)
         if not _scalar(entry.get('active_metaform')):
             problems.append(f'{path}.active_metaform: not an id or null')
         metaforms = as_list(entry.get('metaforms'))
@@ -240,6 +258,8 @@ def _validate(document: Any) -> None:
                 problems.append(f'{where}: not an object')
                 continue
             _record(metaform.get('metaform'), f'{where}.metaform', HEAD_KEYS, problems)
+            if 'modules' in metaform:
+                tables.check(metaform['modules'], f'{where}.modules', problems)
             for table in ROW_TABLES:
                 rows = as_list(metaform.get(table, []))
                 if rows is None:
@@ -374,6 +394,21 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
                 opened.append(db)
                 db.execute('BEGIN IMMEDIATE')
                 _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
+            for entry in document.get('projects', []):  # the modules' project-level tables, STORE-045
+                if not entry.get('modules'):
+                    continue
+                project_id = project if project is not None else entry['project']['project_id']
+                if home.project(project_id) is None:
+                    home.register(home.Project(**entry['project']))
+                    registered.append(project_id)
+                for held in entry['modules']:
+                    path = tables.project_store(project_id, held['module'])
+                    if not path.exists():
+                        created.append(path)
+                    db = stores.enter_context(tables.open_project_store(path, write=True))
+                    opened.append(db)
+                    db.execute('BEGIN IMMEDIATE')
+                    tables.import_modules(db, [held], report, f'projects.{project_id}.modules')
             for item in planned:
                 head = item.metaform['metaform']
                 folder = home.project_folder(item.project_id)
@@ -445,6 +480,8 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             _insert(db, 'work_steps', row)
     for row in metaform.get('messages', []):
         _insert(db, 'messages', row, ignore=True)
+    # A module's rows have no layer either; each comes in once, by its key, STORE-045.
+    tables.import_modules(db, metaform.get('modules', []), report, f'metaforms.{metaform_id}.modules')
     if not fresh:
         return
     for row in metaform.get('types', []):

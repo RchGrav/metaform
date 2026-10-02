@@ -36,6 +36,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from metaform import changes, home, outline, query, results, settings
+from metaform import module as chassis
 from metaform.context import toggled_for
 from metaform.data import Node, Outcome, Store, prompts
 from metaform.data.records import COLUMNS, TICKETS, plain
@@ -159,6 +160,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.backups(query.get('project', [''])[-1])
         if url.path == '/api/markdown':
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path.startswith('/api/memory-'):
+            return self.memory_read(url.path[len('/api/memory-'):],
+                                    {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/'):
             return self.read(url.path[5:], {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/':
@@ -186,6 +190,22 @@ class Handler(BaseHTTPRequestHandler):
                              {'error': str(error), 'next': getattr(error, 'next_step', None)})
         if found is None:
             return self.send(404, {'error': f'Nothing for {name} here, in these layers.'})
+        if name == 'node':
+            found = with_modules(given, found)
+        self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def memory_read(self, name: str, given: dict[str, str]) -> None:
+        """A read of the memory module for the page, VIEW-031 and VIEW-034: `graph`, the whole graph with each join
+        saying whether its memory shows at its node in the page's layers; `orphaned`, the memory joins the map no longer
+        holds, for the orphaned menu; and `note`, a node's one note."""
+        if name not in MEMORY_READS:
+            return self.send(404, {'error': f'No read memory-{name}.'})
+        arguments = {'node': given['node']} if name == 'note' and given.get('node') else {}
+        try:
+            found = module_verb(given, 'memory', name, arguments)
+        except (Stop, StoreError) as error:
+            return self.send(404 if isinstance(error, StoreError) else 400,
+                             {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def markdown(self, given: dict[str, str]) -> None:
@@ -239,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the ten writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the fifteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -249,7 +269,10 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
                   '/api/element': self.add_part, '/api/restore': self.restore,
-                  '/api/note': self.add_note, '/api/move': self.move_ticket}
+                  '/api/note': self.add_note, '/api/move': self.move_ticket,
+                  '/api/memory': self.write_memory,
+                  '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
+                  '/api/dispatch-stop': self.dispatch_stop}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -441,23 +464,85 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, restored.to_dict())
 
     def add_note(self, given: dict[str, Any]) -> None:
-        """Write a note at a node, VIEW-034: one observation of the memory layer, where agents keep theirs, marked
-        as the user's. The layer is made on the first write, as the memory module makes it."""
+        """Write the node's one note in place of what it held, as the user's, through `memory note`, VIEW-034; empty
+        text clears it, and one over 2048 characters is refused with its length."""
         node, text = given.get('node'), given.get('text')
-        if not isinstance(text, str) or not text.strip():
-            return self.send(400, {'error': 'A note says something.'})
-        if not isinstance(node, str):
+        if not isinstance(text, str):
+            return self.send(400, {'error': 'A note is text; empty text clears it.'})
+        if not isinstance(node, str) or not node:
             return self.send(400, {'error': 'A note is written at a node.'})
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
-            with store.atomic():
-                kept = store.layers(kind='memory', limit=0).results
-                layer = kept[0].name if kept else store.layer(
-                    'memory', 'memory', MEMORY, kind='memory', mutable=True, hideable=True, ready=True).name
-                written = store.add_item(layer, Node.parse(node), text.strip(), extra={'by': 'user'})
+            written = module_verb(given, 'memory', 'note', {'node': node, 'text': text, 'by': 'user'})
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
-        self.send(200, plain(written))
+        self.send(200, written)
+
+    def write_memory(self, given: dict[str, Any]) -> None:
+        """Change the memory graph as a person manages it, VIEW-031: `steps`, each a memory command that writes and
+        its arguments, run in order through the memory module as the command line and the tools run them, stopping at
+        the first that fails. An edit is two steps, the new written before the old is deleted, so a failure loses
+        nothing."""
+        steps = given.get('steps')
+        if not isinstance(steps, list) or not steps or not all(memory_step(step) for step in cast(list[Any], steps)):
+            return self.send(400, {'error': 'A memory change is a list of steps, each a command of '
+                                            f'{", ".join(MEMORY_WRITES)} with its arguments.'})
+        done: list[Any] = []
+        for step in cast(list[dict[str, Any]], steps):
+            try:
+                done.append(module_verb(given, 'memory', step['command'], dict(step.get('arguments') or {})))
+            except (Stop, StoreError) as error:
+                return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None),
+                                       'done': done})
+        self.send(200, {'done': done})
+
+    def dispatch_start(self, given: dict[str, Any]) -> None:
+        """Start an agent on a ticket with the dispatch module's start, VIEW-039 and BASE-052."""
+        work_id, agent = given.get('work_id'), given.get('agent')
+        if not isinstance(work_id, str) or not work_id or not isinstance(agent, str) or not agent:
+            return self.send(400, {'error': 'An agent is started on a ticket: its work id and the agent.'})
+        self.dispatched(given, 'start', [work_id, agent])
+
+    def dispatch_message(self, given: dict[str, Any]) -> None:
+        """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039."""
+        work_id, text = given.get('work_id'), given.get('text')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A message goes to the agent working a ticket: its work id.'})
+        if not isinstance(text, str) or not text.strip():
+            return self.send(400, {'error': 'A message says something.'})
+        self.dispatched(given, 'message', [work_id], text.strip())
+
+    def dispatch_stop(self, given: dict[str, Any]) -> None:
+        """Stop the agent working a ticket with the dispatch module's stop, VIEW-039."""
+        work_id = given.get('work_id')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'An agent is stopped by the work id of its ticket.'})
+        self.dispatched(given, 'stop', [work_id])
+
+    def dispatched(self, given: dict[str, Any], verb: str, nouns: list[str], text: str | None = None) -> None:
+        """Run one dispatch verb as `metaform dispatch` runs it in the project's folder, and answer with its result,
+        or with its error and next step. It runs as the command line, so dispatch enabled after this server started
+        is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
+        `--`, so no text a person writes is read as a switch."""
+        project = home.project(str(given.get('project', '')))
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        command = [sys.executable, '-m', 'metaform', 'dispatch', verb, *nouns, '--json', '--project',
+                   project.project_id, *(['--', text] if text is not None else [])]
+        try:
+            done = subprocess.run(command, cwd=project.path, capture_output=True, text=True, encoding='utf-8',
+                                  stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return self.send(500, {'error': f'metaform dispatch {verb} did not finish: {error}'})
+        if done.returncode == 0:
+            try:
+                return self.send(200, json.loads(done.stdout))
+            except ValueError:
+                return self.send(200, {'said': done.stdout.strip()})
+        said = (done.stderr + done.stdout).strip().splitlines()
+        error = next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said))
+        found = next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)
+        self.send(400, {'error': error, 'next': found})
 
     def clear_project(self, given: dict[str, Any]) -> None:
         """Clear the project through the chassis's `clear_project`, as `metaform clear project --confirm` does, and
@@ -535,7 +620,10 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
 }
 
 
-MEMORY = 'What agents have noted at this node.'  # the memory layer's variable, as the memory module declares it
+DISPATCH_LIMIT = 120.0  # the one wait for a dispatch verb; its own waits for an agent are at most 30 s each
+MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
+MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
+                 'delete_relations', 'unjoin')  # the memory commands a person manages the graph with, VIEW-031
 ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033
 ADDED = {'module': 'web', 'workflow': 'add element', 'prompt': 'Written by a person in the web GUI.', 'model': 'none',
          'role': 'user', 'blinded': False}
@@ -565,6 +653,56 @@ def started_agent(folder: Path, task: str) -> str | None:
     except OSError as error:
         return f'{parts[0]} could not be started: {error.strerror or error}. {waits}'
     return None
+
+
+def memory_step(step: Any) -> bool:
+    """One step of a memory change: a memory command that writes, with its arguments as an object."""
+    if not isinstance(step, dict):
+        return False
+    found = cast(dict[str, Any], step)
+    return found.get('command') in MEMORY_WRITES and isinstance(found.get('arguments', {}), dict)
+
+
+def chosen_layers(given: dict[str, Any], folder: Path) -> list[str]:
+    """The layers the page chose, or else the folder's `--layers`."""
+    chosen = given.get('layers')
+    return [name for name in str(chosen).split(',') if name] if chosen is not None else toggled_for(folder)
+
+
+def with_modules(given: dict[str, str], found: Any) -> Any:
+    """A node's read with what the modules on the project folder's surface add to it, each under its own id, as the
+    map module's `map node` reads it, BASE-035; a field the read holds already is never replaced."""
+    project = home.project(given.get('project', ''))
+    if project is None:
+        return found
+    folder = Path(project.path)
+    added = chassis.node_reads(folder, Node.parse(given.get('target', '')), project=project.project_id,
+                               layers=chosen_layers(given, folder) or None)
+    if not added:
+        return found
+    data = cast(dict[str, Any], found.to_dict())
+    for module, value in added.items():
+        data.setdefault(module, value)
+    return data
+
+
+def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dict[str, Any]) -> Any:
+    """Run one command of a module on the project folder's surface, as a tool call runs it: its arguments checked as
+    the command line checks them, a context for the project with the page's layers, on the surface `web`. A module
+    that is not on the surface is named with its next step."""
+    project = home.project(str(given.get('project', '')))
+    if project is None:
+        raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
+    folder = Path(project.path)
+    found = next((one for one in chassis.surface(folder) if one.id == module_id), None)
+    verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
+    if verb is None:
+        raise Stop(f'{module_id} {name} is not on this project\'s surface.', f'metaform enable {module_id}')
+    nouns, switches, _ = chassis.tool_arguments(module_id, verb, arguments, folder=folder)
+    switches['layers'] = chosen_layers(given, folder)
+    ctx = chassis.context(module_id, folder, project=project.project_id, nouns=nouns, switches=switches,
+                          sink=lambda text: None, surface='web')
+    return chassis.call(verb.run, ctx)
 
 
 def opened(given: dict[str, str]) -> Store:

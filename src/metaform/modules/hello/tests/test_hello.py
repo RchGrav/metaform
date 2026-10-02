@@ -378,3 +378,43 @@ def test_read_report_reads_one_listed_file_exactly(run, hello):
     assert run('hello', 'read-report', name, cwd=hello).stdout == 'Line one.\nLine two.'
     refused = run('hello', 'read-report', 'nothing-report.md', cwd=hello, ok=False)
     assert refused.stderr.splitlines() == ['Error: No report nothing-report.md.', 'Next: metaform list reports']
+
+
+@pytest.mark.req('BASE-019')
+@pytest.mark.req('QUAL-016')
+@pytest.mark.req('STORE-045')
+def test_visit_and_note_keep_hellos_own_tables_beside_the_map_and_in_the_project_and_a_clear_keeps_the_notes(
+        run, hello, home):
+    assert run('hello', 'visit', 'ada', cwd=hello).stdout.strip() == 'ada: 1 visit'
+    assert run('hello', 'visit', 'ada', cwd=hello).stdout.strip() == 'ada: 2 visits'
+    run('hello', 'note', 'tea at four', cwd=hello)
+    run('hello', 'note', 'call bob', cwd=hello)
+    assert run('hello', 'notes', cwd=hello).stdout.splitlines() == ['tea at four', 'call bob']
+    assert (own('proj') / 'modules' / 'hello.sqlite3').is_file()
+    run('clear', 'project', 'proj', '--confirm', cwd=hello)
+    assert run('hello', 'notes', cwd=hello).stdout.splitlines() == ['tea at four', 'call bob']
+    assert run('hello', 'visit', 'ada', cwd=hello).stdout.strip() == 'ada: 1 visit'
+    files = {path.relative_to(home).parts for path in home.rglob('*') if path.is_file()}
+    allowed = [lambda parts: parts[0].startswith('metaform.sqlite3'),
+               lambda parts: parts[0] == 'backups',
+               lambda parts: parts[0] == 'projects' and (parts[-1].startswith(('project.sqlite3', 'source.txt'))
+                                                          or '.metaform.sqlite3' in parts[-1]
+                                                          or parts[-2:] == ('.metaform', 'provenance.json')
+                                                          or parts[-2:-1] == ('modules',)
+                                                          and parts[-1].startswith('hello.sqlite3'))]
+    assert [parts for parts in files if not any(rule(parts) for rule in allowed)] == []  # STORE-022, corrected
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('QUAL-016')
+def test_node_read_adds_hellos_count_to_the_read_of_its_own_element_and_nothing_elsewhere(run, hello):
+    run('hello', 'greet', 'ada', cwd=hello)
+    run('hello', 'greet', 'bob', cwd=hello)
+    read = json.loads(run('map', 'where', 'code.module.hello', '--json', cwd=hello).stdout)
+    assert read['hello'] == {'greeted': 2} and read['element']['address'] == 'code.module.hello'
+    node = json.loads(run('map', 'node', 'element:code.module.hello', '--json', cwd=hello).stdout)
+    assert node['hello'] == {'greeted': 2}
+    from metaform.data import Store
+    with Store('proj').atomic():
+        Store('proj').add_element('hello.greetings', 'code.module.other')
+    assert 'hello' not in json.loads(run('map', 'where', 'code.module.other', '--json', cwd=hello).stdout)

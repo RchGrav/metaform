@@ -15,6 +15,10 @@
             metaform <nonce> it does the step the nonce's value holds, or next or complete when named after it;
             complete closes the nonce and hands on a new one
   status    a status hook that adds one line to `metaform` status
+  visit     counts a name in hello's own table beside the map, which goes with the metaform, STORE-045
+  note      keeps a note in hello's own project-level table, which a clear of the project's metaforms keeps;
+            notes lists them in time order, through the table's index
+  node_read adds how many names hello has greeted to `map where` and `map node` of its own element, BASE-035
 
 Each public import a module can use, shown once:
   count           ctx.say, a message for a person beside the data the verb returns
@@ -37,10 +41,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from metaform import nonce, settings
-from metaform.data import Layer, Node, Store
+from metaform.data import Column, Index, Layer, Node, Store, Table, Tables
 from metaform.module import (
     Context,
     Module,
@@ -282,6 +288,53 @@ def read_one_report(ctx: Context) -> str:
     return read_report(ctx.folder, ctx.nouns['name'], project=ctx.project)
 
 
+# hello's own tables, STORE-045: the chassis creates them on first use, versions them with this version, and
+# carries them through backup, export, import and clear. `visits` is beside the map, in the metaform's store, and
+# goes with the metaform; `notes` is in the project's store for hello and stays when the metaforms are cleared.
+TABLES = Tables(version=1, tables=(
+    Table('visits', place='metaform', key=('name',),
+          columns=(Column('name', required=True), Column('times', 'int', required=True, default=0))),
+    Table('notes', place='project', key=('note_id',),
+          columns=(Column('note_id', required=True), Column('text', required=True), Column('at', required=True)),
+          indexes=(Index(('at',)),)),
+))
+
+
+def visit(ctx: Context) -> str:
+    """Count a visit in one transaction: read the name's row by its key, then add it or change it."""
+    name = ctx.nouns['name']
+    with ctx.require_store().tables() as tx:
+        held = tx.get('visits', {'name': name})
+        if held is None:
+            row = tx.insert('visits', {'name': name, 'times': 1})
+        else:
+            row = tx.update('visits', {'name': name}, {'times': held['times'] + 1}) or held
+    return f'{name}: {row["times"]} visit{"" if row["times"] == 1 else "s"}\n'
+
+
+def note(ctx: Context) -> str:
+    """Keep a note in the project-level table."""
+    with ctx.require_store().tables() as tx:
+        row = tx.insert('notes', {'note_id': uuid.uuid4().hex, 'text': ctx.nouns['text'],
+                                  'at': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ')})
+    return f'Noted ({row["note_id"]}).\n'
+
+
+def notes(ctx: Context) -> str:
+    """The notes in time order: every read goes through an index, here the one on `at`, STORE-005."""
+    with ctx.require_store().tables(write=False) as tx:
+        found = tx.rows('notes', by=('at',), limit=0).results
+    return ''.join(f'{row["text"]}\n' for row in found) or 'No notes yet. Try: metaform hello note <text>\n'
+
+
+def node_read(ctx: Context, node: Node) -> dict[str, int] | None:
+    """What hello adds to the read of a node: at its own element, how many names it has greeted; nothing elsewhere.
+    The chassis puts it under `hello` in `map where` and `map node`, BASE-035."""
+    if ctx.store is None or node != Node('element', HOLDER):
+        return None
+    return {'greeted': len(_names(ctx.store))}
+
+
 def status(ctx: Context) -> Status:
     if ctx.store is None:
         return Status()
@@ -342,10 +395,17 @@ MODULE = Module(
         Verb('reports', reports, "List this project's report, feedback and shape files. Shows list_reports."),
         Verb('read-report', read_one_report, 'Print one report file exactly. Shows read_report.',
              nouns=(Noun('name', 'The file name reports lists.'),)),
+        Verb('visit', visit, "Count a visit by a name in hello's own table beside the map. Shows Module.tables.",
+             nouns=(Noun('name', 'The name visiting.'),)),
+        Verb('note', note, "Keep a note in hello's own project-level table, which a clear keeps.",
+             nouns=(Noun('text', 'The note.'),)),
+        Verb('notes', notes, "List hello's notes in time order, read through the table's index."),
     ),
     subscriptions=(Subscription('hello.greeted', record),),
     start=start,
     stop=stop,
     status=status,
     default='history',
+    tables=TABLES,
+    node_read=node_read,
 )

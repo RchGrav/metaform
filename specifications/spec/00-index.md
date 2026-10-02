@@ -69,7 +69,7 @@ A record whose status is recommended is built as written. A record whose status 
 2. The common base and module contract changes (BASE), including the template moving to a layer.
 3. CLI and settings changes (CLI): switches as settings, boolean forms, `--`.
 4. The map and layer records and operations (MAP, LAYER), including select and mask resolution and direct reads, LAYER-007 and LAYER-008.
-5. The memory module, LAYER-012 and LAYER-013: memory at elements and joins through the reference memory interface.
+5. The memory module, LAYER-012, LAYER-013 and STORE-020: a memory graph of its own, presented at each node as the MCP reference memory server and tied to nodes by joins of type memory, with one note per node, VIEW-034.
 6. The MCP module (MCP), moved out of the chassis, with live instructions.
 7. The intake module serving its instructions by name and recording the map one object per call as it is reasoned, through `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`.
 8. The installer and the skill.

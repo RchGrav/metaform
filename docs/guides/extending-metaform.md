@@ -98,8 +98,9 @@ The declaration uses [Module, Verb, Noun, Subscription, and Status](../../src/me
 | `Module.subscriptions` | Event topics and handlers. |
 | `Module.start`, `stop`, `status` | Lifecycle and status contributions. |
 | `Module.default` | The verb invoked by the bare module command. |
+| `Module.node_read` | What the module adds to `map where` and `map node` of a node, under its id. |
 
-Required nouns are positional on the CLI; optional nouns use `name=value`. Nouns can be text, integer, boolean, or JSON. Only the last noun may accept multiple values. Verb names use lowercase letters, digits, and hyphens.
+Required nouns are positional on the CLI; optional nouns use `name=value`. Nouns can be text, integer, boolean, or JSON. Only the last noun may accept multiple values. Verb names use lowercase letters, digits, hyphens and underscores.
 
 The ordinary surfaces are `cli` and `mcp`; declarations may choose one. For example, the current `map approve` operation is CLI-only. The MCP transport's `serve` verb is a CLI transport entry rather than a tool an agent calls. This is why “declared once” does not mean every operation must be exposed identically everywhere.
 
@@ -172,6 +173,59 @@ The condition of an object is not knowledge and not a field of the object: it is
 The memory module is one consumer of node-addressed storage. Other modules can contribute their own layers without converting every finding into mutable memory. Conversely, memory's lack of revision history does not imply that refinements or prompt versions lack their own histories.
 
 Store API: [store.py](../../src/metaform/data/store.py). Reader semantics: [Working with Metaform](working-with-metaform.md#keep-a-body-of-knowledge-as-a-layer).
+
+## Keep data of the module's own in tables it declares
+
+A module that needs data of its own, which is not knowledge about a node, declares its tables and reaches them through the same data access object, STORE-045. The chassis creates them, versions them with the module's version, upgrades them, and carries them through backup, export, import and clear. The module imports no `sqlite3` and writes no SQL.
+
+```python
+from metaform.data import Column, Index, Table, Tables
+
+TABLES = Tables(version=1, tables=(
+    Table('visits', place='metaform', key=('name',),
+          columns=(Column('name', required=True), Column('times', 'int', required=True, default=0))),
+    Table('notes', place='project', key=('note_id',),
+          columns=(Column('note_id', required=True), Column('text', required=True), Column('at', required=True)),
+          indexes=(Index(('at',)),)),
+))
+
+MODULE = Module(id='hello', ..., tables=TABLES)
+```
+
+`place='metaform'` keeps a table in the metaform's store, beside the map: use it when the feature does not work without that metaform. A clear of the project removes it with the metaform, and the clear's backup holds it. `place='project'` keeps a table in `projects/<project>/modules/<module>.sqlite3`, which a clear of the project's metaforms leaves in place; memory that must outlive a new intake belongs there. A column's kind is `text`, `int`, `real`, `bool` or `json`. Every table has a key.
+
+A verb reads and writes inside one transaction:
+
+```python
+with ctx.require_store().tables() as tx:
+    held = tx.get('visits', {'name': name})
+    if held is None:
+        tx.insert('visits', {'name': name, 'times': 1})
+    else:
+        tx.update('visits', {'name': name}, {'times': held['times'] + 1})
+
+with ctx.require_store().tables(write=False) as tx:
+    page = tx.rows('notes', by=('at',), limit=50)
+```
+
+The transaction is on the store of the first table it touches. A table of the other place needs a transaction of its own; inside `store.atomic()` a metaform-level table joins the map's transaction. `get` and `update` take the whole key. `rows` and `delete` take equal values for the leading columns of the key or of a declared index, and `rows` reads in that index's order and pages on it with `after`; `by` names the index to read through. A read that no index answers is refused with the indexes declared, so every read goes straight to its answer, STORE-005. Declare the index the read needs.
+
+To change the tables, change the declaration and raise `version`. On the next transaction the chassis keeps a copy of the store under `backups/module-<id>-<version>/`, adds new tables, columns and indexes, keeps every row in the columns both versions share, runs `Tables(upgrade=...)` as `upgrade(tx, found)` once in each store that holds the tables, with `tx.place` naming it, and drops a table no longer declared. Tables changed at the same version are refused, and so is a store written by a later version. Hello's `visit`, `note` and `notes` show the capability.
+
+## Add to the read of a node
+
+An agent orients at a part with `map where <address>` and `map node <node>`. A module that keeps something about a node adds it to those reads with `node_read`, so the agent sees it without knowing the module's commands, BASE-035:
+
+```python
+def node_read(ctx: Context, node: Node) -> dict[str, int] | None:
+    if ctx.store is None or node != Node('element', HOLDER):
+        return None
+    return {'greeted': len(_names(ctx.store))}
+
+MODULE = Module(id='hello', ..., node_read=node_read)
+```
+
+The hook gets a context of its own module, with the call's project and toggled layers, and the node read: `Node('element', <address>)` from `where`, the node given to `node`. What it returns appears under the module's id, `hello: {greeted: 2}`; None adds nothing, and with nothing added the read is as it was. A field the read holds already is never replaced. A hook that raises adds `{"failed": "<ExceptionType>: <message>"}` under its id and the read goes on. The memory module adds a node's note and its memories this way, under `memory`, and leaves the memories out where the layer named memory does not reach. Hello's `node_read` shows the capability.
 
 ## Events and asynchronous work have distinct behavior
 

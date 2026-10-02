@@ -414,7 +414,7 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     refining, which keeps every version, LAYER-025."""
     if found.kind == 'memory':
         return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
-                            'delete-observations. Nothing was written.')
+                            'delete_observations. Nothing was written.')
     if found.kind in METAFORM_KINDS and found.finished:
         return Notice('id', f'{thing} belongs to {found.name}; the metaform changes by refining, which keeps every '
                             f'version: {rows.refine_step(thing)}. Nothing was written.')

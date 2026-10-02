@@ -220,7 +220,8 @@ def test_where_is_one_read_of_an_address_small_unless_full_is_asked(run, mapped)
     assert [(join['provider'], join['ef'], join['layer']) for join in kitchen['receives']] == [
         ('code.alarm.audible', 'Plays a tone.', 'intake-1')]
     alarm = j(run, 'where', 'code.alarm.audible', cwd=mapped)
-    assert alarm['work'] == [{'condition': 'missing', 'note': 'no speaker yet', 'task': 'wire the piezo'}]
+    assert alarm['work'] == [{'work_id': Store('proj').work().results[0].work_id, 'condition': 'missing',
+                              'note': 'no speaker yet', 'task': 'wire the piezo'}]
     assert 'element_id' not in alarm['element'] and 'join_id' not in alarm['provides'][0]
     full = j(run, 'where', 'code.alarm.audible', 'full=true', cwd=mapped)
     store = Store('proj')
@@ -824,3 +825,55 @@ def test_refining_a_join_changes_its_perspective_verb_and_ifd(run, mapped):
     assert not [notice for notice in refined.get('notices', []) if notice['where'] in ('perspective', 'verb', 'ifd')]
     now = next(held for held in Store('proj').joins('code.timer.kitchen').results if held.join_id == join.join_id)
     assert (now.perspective, now.verb, now.ifd) == ('Encounter', 'sounds', 'sends')
+
+
+@pytest.mark.req('MAP-048')
+@pytest.mark.req('STORE-042')
+def test_map_work_with_an_id_and_no_op_reads_that_one_ticket_with_what_the_map_holds_there(run, described):
+    """Reported 2026-10-02 by the first agent to work a ticket: `map work id=<id>` failed with a TypeError, and an
+    agent had to parse the whole work list to read its ticket. The read hands it the ticket with its node's where
+    read, its refs and its open questions, and the same for each node it links."""
+    run('map', 'ask', 'code.display.digit', 'Four digits or six?', 'suggestions=["Four", "Six"]', cwd=described)
+    made = j(run, 'work', 'op=add', 'node=code.display.digit', 'condition=flawed', 'task=dim the digits at night',
+             'links=["element:code.timer.kitchen"]', cwd=described)
+    read = run('map', 'work', f'id={made["work_id"]}', '--json', cwd=described)
+    assert read.returncode == 0 and 'TypeError' not in read.stderr
+    ticket = json.loads(read.stdout)
+    assert (ticket['work_id'], ticket['task'], ticket['condition']) == (made['work_id'], 'dim the digits at night',
+                                                                       'flawed')
+    at = ticket['at']
+    assert at['element']['address'] == 'code.display.digit'
+    assert at['element']['refs'] == [{'key': 'path', 'value': 'src/display.py'}, {'key': 'spec', 'value': 'DISP-001'}]
+    assert [(one['kind'], one['text']) for one in at['messages']] == [('question', 'Four digits or six?')]
+    assert [join['receiver'] for join in at['provides']] == ['code.timer.kitchen']
+    assert [linked['element']['address'] for linked in ticket['linked']] == ['code.timer.kitchen']
+    text = run('map', 'work', f'id={made["work_id"]}', cwd=described).stdout
+    assert 'Four digits or six?' in text and 'src/display.py' in text
+
+
+@pytest.mark.req('MAP-048')
+def test_map_work_reading_a_ticket_names_the_list_nouns_it_does_not_read_and_an_unknown_id(run, mapped):
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    read = j(run, 'work', f'id={made["work_id"]}', 'condition=broken', cwd=mapped)
+    assert read['work_id'] == made['work_id'] and [notice['where'] for notice in read['notices']] == ['condition']
+    unknown = run('map', 'work', 'id=nothing', '--json', cwd=mapped, ok=False)
+    assert unknown.returncode == 2 and 'TypeError' not in unknown.stderr
+    assert unknown.stderr.splitlines()[-1] == 'Next: metaform map work open=true'
+
+
+@pytest.mark.req('BASE-044')
+@pytest.mark.req('STORE-042')
+def test_a_work_list_given_a_noun_it_does_not_read_lists_with_a_notice(run, mapped):
+    """The TypeError behind `map work id=<id>`: a list read given a noun it does not read failed to add its notice
+    to the page."""
+    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    listed = j(run, 'work', 'said=nothing', cwd=mapped)
+    assert len(listed['results']) == 1 and [notice['where'] for notice in listed['notices']] == ['said']
+
+
+@pytest.mark.req('MAP-048')
+@pytest.mark.req('STORE-025')
+def test_map_where_shows_each_ticket_at_the_address_with_its_work_id(run, mapped):
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=missing', 'task=wire it', cwd=mapped)
+    assert [one['work_id'] for one in j(run, 'where', 'code.alarm.audible', cwd=mapped)['work']] == [made['work_id']]
+    assert made['work_id'] in run('map', 'where', 'code.alarm.audible', cwd=mapped).stdout

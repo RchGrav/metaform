@@ -179,7 +179,7 @@ def test_a_failed_proof_stops_the_server_and_keeps_its_reason(tmp_path):
 @pytest.mark.req('LAYER-007')
 @pytest.mark.req('STORE-019')
 def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path):
-    from metaform.data import Node, Store
+    from metaform.data import Store
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -189,20 +189,25 @@ def test_hidden_and_masked_memory_reaches_no_read_path(run, tmp_path):
                             provenance={'module': 'intake'}, ready=True)
         store.add_element(layer.name, 'code.manager.route', role='DE')
         store.add_element(layer.name, 'code.probe.echo', role='SE')
-    run('memory', 'add-observations', 'element:code.manager.route', 'Routes are ejected.', cwd=folder)
-    run('memory', 'create-relations', 'element:code.probe.echo', 'checks', 'element:code.manager.route', cwd=folder)
+    route, probe = 'node=element:code.manager.route', 'node=element:code.probe.echo'
+    run('memory', 'create_entities', json.dumps([{'name': 'route', 'entityType': 'part',
+                                                  'observations': ['Routes are ejected.']}]), route, cwd=folder)
+    run('memory', 'create_entities', json.dumps([{'name': 'probe', 'entityType': 'part', 'observations': []}]),
+        probe, cwd=folder)
+    run('memory', 'create_relations', json.dumps([{'from': 'probe', 'to': 'route', 'relationType': 'checks'}]),
+        cwd=folder)
 
     def reads():
-        graph = json.loads(run('memory', 'read-graph', '--json', cwd=folder).stdout)
-        found = json.loads(run('memory', 'search-nodes', 'ejected', '--json', cwd=folder).stdout)
-        opened = json.loads(run('memory', 'open-nodes', 'element:code.manager.route', '--json', cwd=folder).stdout)
-        return (graph['nodes'], found['nodes'], opened['nodes'][0]['observations'], opened['relations'],
-                store.search('ejected', 'memory').results,
-                store.links_to(Node('element', 'code.manager.route'), 'memory').results)
+        def memory(*args):
+            return json.loads(run('memory', *args, '--json', cwd=folder).stdout)
+        graph, found = memory('read_graph'), memory('search_nodes', 'ejected')
+        opened = memory('open_nodes', json.dumps(['route']))
+        node = json.loads(run('map', 'where', 'code.manager.route', '--json', cwd=folder).stdout).get('memory', {})
+        return (graph['entities'], found['entities'], opened['entities'], opened['relations'],
+                memory('read_graph', route)['entities'], node.get('entities'))
     assert all(reads())
     run('map', 'hide', 'memory', '--confirm', cwd=folder)
     assert not any(reads())
-    assert store.search('ejected', 'memory', raw=True).results
     run('map', 'unhide', 'memory', cwd=folder)
     run('map', 'mask', 'code', 'memory', cwd=folder)
     assert not any(reads())

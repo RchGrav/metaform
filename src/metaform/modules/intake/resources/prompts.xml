@@ -5,6 +5,10 @@
      intake edit. condition and note are the Canonical Intake's step 2 words, MAP-046. role is defined by its allowed values, and perspective by its allowed values as well as these words. -->
 <prompts>
 <instructions>intake is active.</instructions>
+<!-- Added to the instructions while the project has no intake and none is being recorded, MCP-009. -->
+<no_intake>This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake` tool's `prompt` command, and to follow them.</no_intake>
+<!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
+<unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
 <commands><intake verb="prompt"/></commands>
 <fields>
   <element>

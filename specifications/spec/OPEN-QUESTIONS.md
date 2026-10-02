@@ -74,6 +74,9 @@ Recommendation: the DE; one figure per ticket from take to done; the shortest wa
 **D111. Collapsing the metaform into a single layer.** LAYER-026. Do the knowledge and memory layers fold into the single layer, carry over as their own layers, or stay with the old metaform? Do open tickets carry over? Does collapse write a new metaform, keeping the old one whole, or the same metaform in place?
 Recommendation: a new metaform of one layer, made active, the old one kept whole; element and join ids carry over; knowledge and memory layers carried over as their own layers; open tickets carried over, done ones left with the old metaform.
 
+**D112. Promoting a join to an element.** MAP-054. When a join is promoted, is it rerouted through the new element, so the receiver reaches the former provider only through it, keeping the join's id and what is attached to it, or does the original join stay as it was with the new element beside it?
+Recommendation: reroute, so the map says once how the receiver is served and the join keeps its memories and work.
+
 ## Answered
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.

@@ -58,6 +58,15 @@ def project(run, tmp_path):
     return folder
 
 
+def noted(run, project, text):
+    """Write a note on the map by hand, which makes the project's first metaform when it has none. Memory did this
+    before it became a graph of its own that never touches the map, LAYER-013."""
+    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
+        'module=test', cwd=project)
+    run('map', 'knowledge', 'op=add-item', 'layer=notes', 'node=type:code.timer', f'value={json.dumps(text)}',
+        cwd=project)
+
+
 # Grammar ----------------------------------------------------------------------
 
 @pytest.mark.req('CLI-001')
@@ -491,7 +500,7 @@ def test_metaforms_are_added_listed_and_activated(run, project):
 def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_settings_and_history(
         run, project, home, tmp_path):
     (project / 'notes.txt').write_text('first\n', encoding='utf-8')
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    noted(run, project, 'Counts down.')
     run('add', 'metaform', 'fresh', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
     run('add', 'origin', cwd=project)
@@ -533,7 +542,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     assert sorted(path.name for path in project.iterdir()) == before['files']
     assert (project / 'notes.txt').read_text(encoding='utf-8') == 'first\n'
 
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down again.', cwd=project)
+    noted(run, project, 'Counts down again.')
     listed = lines(run('list', 'metaforms', cwd=project))
     assert [line.split()[0] for line in listed] == ['main'] and listed[0].endswith('(active)')
     assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
@@ -542,7 +551,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
 @pytest.mark.req('PROJ-031')
 def test_remove_project_takes_an_empty_project_off_the_list_and_deletes_nothing(run, project, home, tmp_path):
     (project / 'notes.txt').write_text('first\n', encoding='utf-8')
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    noted(run, project, 'Counts down.')
     run('feedback', 'The subtype fields did not match.', cwd=project)
     elsewhere = tmp_path / 'elsewhere'
     run('set', '--project', 'proj', cwd=elsewhere)
@@ -589,7 +598,7 @@ def test_remove_project_of_an_unregistered_id_changes_nothing(run, project):
 @pytest.mark.req('PROJ-025')
 def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what_to_do(run, project, home,
                                                                                        unremovable):
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    noted(run, project, 'Counts down.')
     run('feedback', 'The subtype fields did not match.', cwd=project)
     reports = own('proj') / 'reports'
     (stuck,) = reports.iterdir()
@@ -887,12 +896,12 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     """Rich, 2026-09-29: the clear backs it up and allows restoration easily, telling the user. What a clear removes
     cannot be made again by an intake: answers, tasks and knowledge are added to a map by hand."""
     import re
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    noted(run, project, 'Counts down.')
     run('add', 'metaform', 'fresh', cwd=project)
     run('map', 'activate', 'main', cwd=project)
     run('feedback', 'The subtype fields did not match.', cwd=project)
     before = {'metaforms': lines(run('list', 'metaforms', cwd=project)),
-              'memory': run('memory', 'read-graph', '--json', cwd=project).stdout,
+              'memory': run('map', 'layer', 'notes', '--json', cwd=project).stdout,
               'reports': sorted(path.name for path in (own('proj') / 'reports').iterdir()),
               'stores': sorted(path.name for path in own('proj').glob('*.metaform.sqlite3'))}
     assert before['stores'] and lines(run('list', 'backups', cwd=project)) == []
@@ -909,21 +918,21 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     assert lines(run('restore', 'project', cwd=project)) == [
         f'Restored proj from {name}: two metaforms, main and fresh, and one report file.']
     assert lines(run('list', 'metaforms', cwd=project)) == before['metaforms']
-    assert run('memory', 'read-graph', '--json', cwd=project).stdout == before['memory']
+    assert run('map', 'layer', 'notes', '--json', cwd=project).stdout == before['memory']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
     # restoring over a project that holds data backs that up first, so a restore loses nothing either
-    run('memory', 'add-observations', 'element:code.timer', 'Added after the restore.', cwd=project)
-    later = run('memory', 'read-graph', '--json', cwd=project).stdout
+    noted(run, project, 'Added after the restore.')
+    later = run('map', 'layer', 'notes', '--json', cwd=project).stdout
     assert later != before['memory']
     again = lines(run('restore', 'project', 'proj', name, cwd=project))
     assert again[0] == f'Restored proj from {name}: two metaforms, main and fresh, and one report file.'
-    assert again[1].startswith('What it held was backed up as ') and run('memory', 'read-graph', '--json',
+    assert again[1].startswith('What it held was backed up as ') and run('map', 'layer', 'notes', '--json',
                                                                           cwd=project).stdout == before['memory']
     names = [line.split()[0] for line in lines(run('list', 'backups', cwd=project))]
     assert len(names) == 2 and names[1] == name and names == sorted(names, reverse=True)
     run('restore', 'project', 'proj', names[0], cwd=project)
-    assert run('memory', 'read-graph', '--json', cwd=project).stdout == later
+    assert run('map', 'layer', 'notes', '--json', cwd=project).stdout == later
 
     missing = run('restore', 'project', 'proj', 'nothing', cwd=project, ok=False)
     assert missing.returncode == 2 and missing.stderr.splitlines() == [
@@ -932,7 +941,7 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
 
 @pytest.mark.req('PROJ-030')
 def test_a_clear_stops_when_the_backup_cannot_be_made_and_a_project_with_nothing_makes_none(run, project, home):
-    run('memory', 'add-observations', 'element:code.timer', 'Counts down.', cwd=project)
+    noted(run, project, 'Counts down.')
     (home / 'backups').mkdir(exist_ok=True)
     (home / 'backups' / 'clear').write_text('in the way\n', encoding='utf-8')  # a file where the folder would be
     refused = run('clear', 'project', '--confirm', cwd=project, ok=False)

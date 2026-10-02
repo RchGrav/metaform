@@ -1,0 +1,648 @@
+"""A module's own tables, declared through the public base and reached through the data access object, STORE-045.
+
+A module declares `Tables(version, tables, upgrade=None)`, each `Table` with its columns, its key, its indexes and
+its place: `metaform`, beside the map in the metaform's store, or `project`, in a store of the project that
+outlives a clear of its metaforms, `projects/<project>/modules/<module>.sqlite3`. A module table is named
+`"<module>.<table>"`; no chassis table has a dot in its name, so none is ever taken for a module's.
+
+Each store that holds a module's tables records the module's version and the declaration of the tables it holds in
+its `meta` table under `module:<id>`, so a module's change never changes the chassis store layout, STORE-029, and
+export, import and the chassis's own upgrade can carry the tables without the module loaded.
+
+`TableTx` is the one way a module reads and writes them: one transaction on the store of the first table it touches,
+STORE-006, every read through the key's index or a declared index, STORE-005.
+"""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal, cast, get_args
+
+from .. import home, sqlite
+from ..errors import StoreError
+from .paging import LIMIT
+from .records import Page
+
+Place = Literal['metaform', 'project']
+ColumnKind = Literal['text', 'int', 'real', 'bool', 'json']
+PLACES: tuple[Place, ...] = get_args(Place)
+KINDS: tuple[ColumnKind, ...] = get_args(ColumnKind)
+SQL_TYPE = {'text': 'TEXT', 'int': 'INTEGER', 'real': 'REAL', 'bool': 'INTEGER', 'json': 'TEXT'}
+NAME = re.compile(r'^[a-z][a-z0-9_]{0,62}$')
+MODULE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+META_PREFIX = 'module:'
+# A project-level module store holds only its meta table and the module's tables; its own layout, STORE-029.
+MODULE_STORE_SCHEMA = 'CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);\n'
+MODULE_STORE_VERSION = '1'
+Row = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class Column:
+    """One column of a module's table. `required` means it never holds null; `default` fills it when not given."""
+    name: str
+    kind: ColumnKind = 'text'
+    required: bool = False
+    default: Any = None
+
+    def __post_init__(self) -> None:
+        if not NAME.fullmatch(self.name):
+            raise ValueError(f'Column {self.name!r}: a name is lowercase letters, digits and _, starting with a letter.')
+        if self.kind not in KINDS:
+            raise ValueError(f'Column {self.name}: kind must be one of {", ".join(KINDS)}.')
+
+
+@dataclass(frozen=True)
+class Index:
+    """An index on columns of a table: a read with equal values for its leading columns goes through it."""
+    columns: tuple[str, ...]
+    unique: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.columns:
+            raise ValueError('An index names at least one column.')
+
+
+@dataclass(frozen=True)
+class Table:
+    """One table a module declares, with its key and indexes, kept beside the map or in the project's store."""
+    name: str
+    columns: tuple[Column, ...]
+    key: tuple[str, ...]
+    indexes: tuple[Index, ...] = ()
+    place: Place = 'metaform'
+
+    def __post_init__(self) -> None:
+        if not NAME.fullmatch(self.name):
+            raise ValueError(f'Table {self.name!r}: a name is lowercase letters, digits and _, starting with a letter.')
+        if self.place not in PLACES:
+            raise ValueError(f'Table {self.name}: place must be metaform or project.')
+        names = [column.name for column in self.columns]
+        if len(names) != len(set(names)):
+            raise ValueError(f'Table {self.name}: two columns share one name.')
+        if not self.key or any(name not in names for name in self.key) or len(set(self.key)) != len(self.key):
+            raise ValueError(f'Table {self.name}: its key names one or more of its own columns, each once.')
+        for index in self.indexes:
+            if any(name not in names for name in index.columns) or len(set(index.columns)) != len(index.columns):
+                raise ValueError(f'Table {self.name}: an index names its own columns, each once.')
+
+    def column(self, name: str) -> Column:
+        return next(column for column in self.columns if column.name == name)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The declaration as recorded in a store's meta and carried by an export."""
+        return {'name': self.name, 'place': self.place, 'key': list(self.key),
+                'columns': [[column.name, column.kind, column.required, column.default] for column in self.columns],
+                'indexes': [[list(index.columns), index.unique] for index in self.indexes]}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Table:
+        return cls(name=value['name'], place=value['place'], key=tuple(value['key']),
+                   columns=tuple(Column(name, kind, bool(required), default)
+                                 for name, kind, required, default in value['columns']),
+                   indexes=tuple(Index(tuple(columns), bool(unique)) for columns, unique in value['indexes']))
+
+
+Upgrade = Callable[['TableTx', int], Any]
+
+
+@dataclass(frozen=True)
+class Tables:
+    """Every table a module declares, at the module's own version, with what moves its data on an upgrade."""
+    version: int
+    tables: tuple[Table, ...]
+    upgrade: Upgrade | None = None
+
+    def __post_init__(self) -> None:
+        version: Any = self.version
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError('Tables: version is a whole number from 1.')
+        names = [table.name for table in self.tables]
+        if len(names) != len(set(names)):
+            raise ValueError('Tables: two tables share one name.')
+
+    def table(self, name: str) -> Table:
+        found = next((table for table in self.tables if table.name == name), None)
+        if found is None:
+            declared = ', '.join(table.name for table in self.tables) or 'none'
+            raise StoreError(f'The module declares no table {name}; it declares {declared}.',
+                             'declare it in the module\'s Tables and raise its version')
+        return found
+
+    def recorded(self, place: Place) -> dict[str, Any]:
+        """What a store of this place records for the module: its version and the tables it holds."""
+        return {'version': self.version,
+                'tables': [table.to_dict() for table in self.tables if table.place == place]}
+
+
+# ------------------------------------------------------------------------------------------------ naming and SQL
+
+def _quoted(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def physical(module: str, table: str) -> str:
+    """The table's name in its store: the module's id, a dot and the table's name."""
+    return f'{module}.{table}'
+
+
+def _index_columns(table: Table, index: Index) -> tuple[str, ...]:
+    """The columns an index is built on: a unique one on its own; any other with the key after them, so its order
+    and a page's cursor are answered by the index, STORE-005."""
+    if index.unique:
+        return index.columns
+    return index.columns + tuple(name for name in table.key if name not in index.columns)
+
+
+def _index_name(module: str, table: Table, index: Index) -> str:
+    return f'{physical(module, table.name)}:{"+".join(index.columns)}' + (':unique' if index.unique else '')
+
+
+def _literal(column: Column) -> str:
+    value = _encode(column, column.default)
+    if isinstance(value, bool):
+        return str(int(value))
+    if isinstance(value, (int, float)):
+        return repr(value)
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _create_sql(module: str, table: Table, name: str | None = None) -> str:
+    parts: list[str] = []
+    for column in table.columns:
+        part = f'{_quoted(column.name)} {SQL_TYPE[column.kind]}'
+        if column.required or column.name in table.key:
+            part += ' NOT NULL'
+        if column.default is not None:
+            part += f' DEFAULT {_literal(column)}'
+        parts.append(part)
+    parts.append(f'PRIMARY KEY({", ".join(_quoted(name) for name in table.key)})')
+    return f'CREATE TABLE {_quoted(name or physical(module, table.name))}({", ".join(parts)})'
+
+
+def _create_indexes(db: sqlite3.Connection, module: str, table: Table) -> None:
+    for index in table.indexes:
+        columns = ', '.join(_quoted(name) for name in _index_columns(table, index))
+        db.execute(f'CREATE {"UNIQUE " if index.unique else ""}INDEX IF NOT EXISTS '
+                   f'{_quoted(_index_name(module, table, index))} ON {_quoted(physical(module, table.name))}({columns})')
+
+
+def _create(db: sqlite3.Connection, module: str, table: Table) -> None:
+    db.execute(_create_sql(module, table))
+    _create_indexes(db, module, table)
+
+
+def _encode(column: Column, value: Any) -> Any:
+    if value is None:
+        return None
+    if column.kind == 'json':
+        return json.dumps(value, ensure_ascii=False)
+    if column.kind == 'bool':
+        return int(bool(value))
+    return value
+
+
+def _decode(column: Column, value: Any) -> Any:
+    if value is None:
+        return None
+    if column.kind == 'json':
+        return json.loads(value)
+    if column.kind == 'bool':
+        return bool(value)
+    return value
+
+
+# ------------------------------------------------------------------------------------------------ versions
+
+def _recorded(db: sqlite3.Connection, module: str) -> dict[str, Any] | None:
+    row = db.execute('SELECT value FROM meta WHERE key=?', (META_PREFIX + module,)).fetchone()
+    return None if row is None else cast(dict[str, Any], json.loads(row[0]))
+
+
+def _record(db: sqlite3.Connection, module: str, recorded: dict[str, Any]) -> None:
+    db.execute('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+               (META_PREFIX + module, json.dumps(recorded)))
+
+
+def state(db: sqlite3.Connection, module: str, declared: Tables, place: Place) -> Literal['absent', 'ready', 'older']:
+    """Whether a store holds the module's tables of this place at the declared version, an earlier one, or none.
+    A later version, or other tables at the same version, cannot be read and nothing is written, STORE-029."""
+    recorded = _recorded(db, module)
+    if recorded is None:
+        return 'absent'
+    found = int(recorded['version'])
+    if found > declared.version:
+        raise StoreError(f'The store holds the tables of {module} at version {found}; this {module} declares version '
+                         f'{declared.version}.', f'install the {module} release that wrote version {found}')
+    if found < declared.version:
+        return 'older'
+    if recorded['tables'] != declared.recorded(place)['tables']:
+        raise StoreError(f'The tables {module} declares differ from those its store holds at version {found}.',
+                         f'raise the version of {module}\'s Tables to {found + 1}')
+    return 'ready'
+
+
+def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
+    """Inside a write transaction: create the module's tables of this place, or upgrade them to the declared
+    version after keeping a copy of the file, STORE-045."""
+    found = state(db, module, declared, place)
+    if found == 'ready':
+        return
+    if found == 'absent':
+        for table in declared.tables:
+            if table.place == place:
+                _create(db, module, table)
+        _record(db, module, declared.recorded(place))
+        return
+    try:
+        _upgrade(db, path, module, declared, place)
+    except sqlite3.IntegrityError as error:
+        raise StoreError(f'The tables of {module} could not be brought to version {declared.version}: {error}. '
+                         'Nothing was changed.', 'give a new required column a default, or keep the key unique') from None
+
+
+def _backup(path: Path, module: str, version: int) -> None:
+    """A copy of the store as last committed, read through a connection of its own, since the connection that
+    upgrades it is already writing and SQLite refuses to copy from a connection that is writing; in WAL mode the
+    reader does not wait on that writer."""
+    folder = (home.home() / 'backups' / f'module-{module}-{version}' /
+              home.now().replace(':', '').replace('-', '') / path.parent.name)
+    folder.mkdir(parents=True, exist_ok=True)
+    source = sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)
+    copy = sqlite3.connect(folder / path.name)
+    try:
+        source.backup(copy)
+    finally:
+        copy.close()
+        source.close()
+
+
+def _upgrade(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
+    """Bring the module's tables of this place to the declared version: new tables and indexes are made, a table
+    whose columns changed is rebuilt keeping every row in the columns both have, the module's upgrade runs with the
+    version found, and a table no longer declared is dropped."""
+    recorded = _recorded(db, module)
+    assert recorded is not None
+    found = int(recorded['version'])
+    _backup(path, module, declared.version)
+    old = {value['name']: Table.from_dict(value) for value in recorded['tables']}
+    new = [table for table in declared.tables if table.place == place]
+    for table in new:
+        before = old.get(table.name)
+        if before is None:
+            _create(db, module, table)
+            continue
+        for index in before.indexes:
+            db.execute(f'DROP INDEX IF EXISTS {_quoted(_index_name(module, before, index))}')
+        if (before.columns, before.key) != (table.columns, table.key):
+            name = physical(module, table.name)
+            db.execute(_create_sql(module, table, name + '.new'))
+            shared = [column.name for column in table.columns if column.name in [c.name for c in before.columns]]
+            listed = ', '.join(_quoted(column) for column in shared)
+            db.execute(f'INSERT INTO {_quoted(name + ".new")}({listed}) SELECT {listed} FROM {_quoted(name)}')
+            db.execute(f'DROP TABLE {_quoted(name)}')
+            db.execute(f'ALTER TABLE {_quoted(name + ".new")} RENAME TO {_quoted(name)}')
+        _create_indexes(db, module, table)
+    if declared.upgrade is not None:
+        declared.upgrade(TableTx(module, declared, write=True, opener=lambda _: (db, path, True), bound=place), found)
+    for name in old:
+        if name not in [table.name for table in new]:
+            db.execute(f'DROP TABLE IF EXISTS {_quoted(physical(module, name))}')
+    _record(db, module, declared.recorded(place))
+
+
+# ------------------------------------------------------------------------------------------------ the transaction
+
+Opener = Callable[[Place], tuple[sqlite3.Connection, Path, bool]]  # a place's connection, its file, whether it holds the tables
+
+
+class TableTx:
+    """One transaction on a module's own tables, given by `Store.tables()`, STORE-045.
+
+    It is bound to the store of the first table it touches, and every read goes through the key's index or a
+    declared index, STORE-005. Rows are dicts of column name to value.
+    """
+
+    def __init__(self, module: str, declared: Tables, *, write: bool, opener: Opener,
+                 bound: Place | None = None) -> None:
+        self.module = module
+        self.declared = declared
+        self.write = write
+        self._opener = opener
+        self._place: Place | None = None
+        self._db: sqlite3.Connection | None = None
+        self._present = False
+        if bound is not None:
+            self._bind(bound)
+
+    @property
+    def place(self) -> Place | None:
+        """The store this transaction is on, `metaform` or `project`, once a table has been touched; an upgrade's
+        transaction is on the store being upgraded from the start."""
+        return self._place
+
+    def _bind(self, place: Place) -> None:
+        self._db, _, self._present = self._opener(place)
+        self._place = place
+
+    def _table(self, name: str) -> Table:
+        table = self.declared.table(name)
+        if self._place is None:
+            self._bind(table.place)
+        elif table.place != self._place:
+            raise StoreError(f'{name} is in the {table.place}-level store and this transaction is in the '
+                             f'{self._place}-level store; one transaction reaches one store, STORE-006.',
+                             f'reach {name} in a transaction of its own: with store.tables() as tx')
+        return table
+
+    def _writing(self, name: str) -> Table:
+        table = self._table(name)
+        if not self.write:
+            raise StoreError(f'This transaction reads {self.module}\'s tables and does not write them.',
+                             'write in store.tables(), which writes')
+        return table
+
+    def _execute(self, sql: str, params: Sequence[Any]) -> sqlite3.Cursor:
+        assert self._db is not None
+        try:
+            return self._db.execute(sql, tuple(params))
+        except sqlite3.IntegrityError as error:
+            raise StoreError(f'The write does not fit {self.module}\'s tables: {error}.',
+                             f'compare the row with the declaration of {self.module}\'s Tables') from None
+
+    def _known(self, table: Table, row: Mapping[str, Any], what: str) -> None:
+        unknown = [name for name in row if name not in [column.name for column in table.columns]]
+        if unknown:
+            raise StoreError(f'{table.name} has no column {unknown[0]}; its columns are '
+                             f'{", ".join(column.name for column in table.columns)}.',
+                             f'name only the columns of {table.name} in the {what}')
+
+    def _keyed(self, table: Table, key: Mapping[str, Any]) -> list[Any]:
+        if set(key) != set(table.key):
+            raise StoreError(f'A key of {table.name} names exactly {", ".join(table.key)}.',
+                             f'give the key as {{{", ".join(repr(name) + ": ..." for name in table.key)}}}')
+        return [_encode(table.column(name), key[name]) for name in table.key]
+
+    def _row(self, table: Table, row: sqlite3.Row | Sequence[Any]) -> Row:
+        return {column.name: _decode(column, row[place]) for place, column in enumerate(table.columns)}
+
+    def _select(self, table: Table) -> str:
+        return (f'SELECT {", ".join(_quoted(column.name) for column in table.columns)} '
+                f'FROM {_quoted(physical(self.module, table.name))}')
+
+    def _plan(self, table: Table, where: Mapping[str, Any],
+              by: Sequence[str] = ()) -> tuple[tuple[str, ...], tuple[str, ...], list[Any]]:
+        """The index a read or delete goes through: the key or a declared index whose leading columns are `by`,
+        when given, and of which the where gives the first ones. Returns those columns in the index's order, the rest
+        of the index and then the key, which is the order it reads in, and the where's values. A where or a `by`
+        that no index starts with is refused, STORE-005."""
+        self._known(table, where, 'where')
+        self._known(table, dict.fromkeys(by), 'by')
+        for order in [table.key] + [_index_columns(table, index) for index in table.indexes]:
+            prefix = order[:len(where)]
+            if set(prefix) == set(where) and order[:len(by)] == tuple(by):
+                rest = order[len(where):] + tuple(name for name in table.key if name not in order)
+                return prefix, rest, [_encode(table.column(name), where[name]) for name in prefix]
+        wanted = ', '.join(by) if by else ', '.join(where)
+        declared = '; '.join(', '.join(order) for order in [table.key] + [index.columns for index in table.indexes])
+        raise StoreError(f'No index of {table.name} starts with {wanted}; its indexes start with {declared}.',
+                         f'declare Index(({", ".join(repr(name) for name in (by or where))},)) on {table.name} '
+                         'and raise the version')
+
+    @staticmethod
+    def _equal(names: Sequence[str]) -> str:
+        return ' AND '.join(f'{_quoted(name)}=?' for name in names)
+
+    # ------------------------------------------------------------------ writes
+
+    def insert(self, table: str, row: Mapping[str, Any]) -> Row:
+        """Add one row; a row whose key is held already cannot be added again."""
+        declared = self._writing(table)
+        self._known(declared, row, 'row')
+        names = list(row)
+        self._execute(f'INSERT INTO {_quoted(physical(self.module, declared.name))}'
+                      f'({", ".join(_quoted(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})',
+                      [_encode(declared.column(name), row[name]) for name in names])
+        stored = self.get(table, {name: row[name] for name in declared.key})
+        assert stored is not None
+        return stored
+
+    def update(self, table: str, key: Mapping[str, Any], changes: Mapping[str, Any]) -> Row | None:
+        """Change the row with this key; returns it as changed, or None when no row has the key."""
+        declared = self._writing(table)
+        values = self._keyed(declared, key)
+        self._known(declared, changes, 'changes')
+        if changes:
+            cursor = self._execute(
+                f'UPDATE {_quoted(physical(self.module, declared.name))} SET '
+                f'{", ".join(f"{_quoted(name)}=?" for name in changes)} WHERE {self._equal(declared.key)}',
+                [_encode(declared.column(name), value) for name, value in changes.items()] + values)
+            if not cursor.rowcount:
+                return None
+        moved = {name: changes.get(name, key[name]) for name in declared.key}
+        return self.get(table, moved)
+
+    def delete(self, table: str, where: Mapping[str, Any]) -> int:
+        """Delete the rows with these equal values for the leading columns of the key or an index; returns how
+        many."""
+        declared = self._writing(table)
+        given = dict(where)
+        if not given:
+            raise StoreError(f'A delete from {declared.name} names the rows it deletes.',
+                             f'give equal values for the leading columns of the key or an index of {declared.name}')
+        prefix, _, values = self._plan(declared, given)
+        return self._execute(f'DELETE FROM {_quoted(physical(self.module, declared.name))} WHERE '
+                             f'{self._equal(prefix)}', values).rowcount
+
+    # ------------------------------------------------------------------ reads
+
+    def get(self, table: str, key: Mapping[str, Any]) -> Row | None:
+        """The row with this key, or None."""
+        declared = self._table(table)
+        values = self._keyed(declared, key)
+        if not self._present:
+            return None
+        found = self._execute(f'{self._select(declared)} WHERE '
+                              f'{self._equal(declared.key)}', values).fetchone()
+        return None if found is None else self._row(declared, found)
+
+    def rows(self, table: str, where: Mapping[str, Any] | None = None, *, by: Sequence[str] = (),
+             limit: int = LIMIT, after: str | None = None) -> Page[Row]:
+        """The rows with these equal values for the leading columns of the key or an index, in that index's order,
+        a page at a time; `by` names the leading columns of the index to read through, the key's when neither is
+        given; `limit=0` reads them all, STORE-025."""
+        declared = self._table(table)
+        given = dict(where or {})
+        prefix, rest, values = self._plan(declared, given, tuple(by))
+        if not self._present:
+            return Page((), None)
+        clauses = [self._equal(prefix)] if given else []
+        if after is not None and rest:
+            cursor = json.loads(after)
+            clauses.append(f'({", ".join(_quoted(name) for name in rest)}) > ({", ".join("?" for _ in rest)})')
+            values = values + list(cursor)
+        sql = self._select(declared) + (f' WHERE {" AND ".join(clauses)}' if clauses else '')
+        if rest:  # a where that gives the whole key, or a unique index, answers one row and has no order
+            sql += f' ORDER BY {", ".join(_quoted(name) for name in rest)}'
+        if limit:
+            sql += f' LIMIT {int(limit) + 1}'
+        found = self._execute(sql, values).fetchall()
+        more = bool(limit) and len(found) > limit
+        kept = found[:limit] if limit else found
+        results = tuple(self._row(declared, row) for row in kept)
+        if not more or not rest:
+            return Page(results, None)
+        last = kept[-1]
+        names = [column.name for column in declared.columns]
+        return Page(results, json.dumps([last[names.index(name)] for name in rest]))
+
+
+# ------------------------------------------------------------------------------------------------ the registry
+
+def declared(module: str | None) -> Tables:
+    """The tables a loaded module declares, read from its declaration, BASE-035."""
+    if not module:
+        raise StoreError('This store works for no module, so it reaches no module\'s tables.',
+                         'use ctx.store in a verb, subscriber or tool of the module')
+    from .. import loader
+    found = loader.get(module)
+    tables = None if found is None or found.module is None else found.module.tables
+    if tables is None:
+        raise StoreError(f'{module} declares no tables.',
+                         'declare them as Module(..., tables=Tables(...)), docs/guides/extending-metaform.md')
+    return tables
+
+
+# ------------------------------------------------------------------------------------------------ project stores
+
+def project_store(project_id: str, module: str) -> Path:
+    """Where a module's project-level tables live: `modules/<module>.sqlite3` in the project's folder."""
+    folder = home.project_folder(project_id)
+    if folder is None:
+        raise StoreError(f'Project {project_id} is no longer registered.', 'metaform list projects')
+    return folder / 'modules' / f'{module}.sqlite3'
+
+
+@contextmanager
+def open_project_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
+    """A prepared connection to a project-level module store, opened inside its lock like every file, STORE-006."""
+    with sqlite.opened(path, MODULE_STORE_SCHEMA, write=write, version=MODULE_STORE_VERSION) as db:
+        db.row_factory = sqlite3.Row
+        yield db
+
+
+@contextmanager
+def project_transaction(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
+    """One transaction on a project-level module store: BEGIN IMMEDIATE for a write, a deferred BEGIN for a read."""
+    with open_project_store(path, write=write) as db:
+        db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+        try:
+            yield db
+        except BaseException:
+            db.execute('ROLLBACK')
+            raise
+        db.execute('COMMIT')
+
+
+def project_stores(project_id: str) -> list[Path]:
+    folder = home.project_folder(project_id)
+    found = folder / 'modules' if folder is not None else None
+    return sorted(found.glob('*.sqlite3')) if found is not None and found.is_dir() else []
+
+
+# ------------------------------------------------------------------------------------------------ export and import
+
+def export_modules(db: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Every module's tables a store holds, with their rows in key order, STORE-027."""
+    exported: list[dict[str, Any]] = []
+    for key, value in db.execute("SELECT key, value FROM meta WHERE key >= ? AND key < ? ORDER BY key",
+                                 (META_PREFIX, META_PREFIX[:-1] + ';')).fetchall():
+        module = str(key)[len(META_PREFIX):]
+        recorded = json.loads(value)
+        rows: dict[str, list[Row]] = {}
+        for entry in recorded['tables']:
+            table = Table.from_dict(entry)
+            names = [column.name for column in table.columns]
+            found = db.execute(f'SELECT {", ".join(_quoted(name) for name in names)} FROM '
+                               f'{_quoted(physical(module, table.name))} '
+                               f'ORDER BY {", ".join(_quoted(name) for name in table.key)}').fetchall()
+            rows[table.name] = [dict(zip(names, tuple(row), strict=True)) for row in found]
+        exported.append({'module': module, 'version': recorded['version'], 'tables': recorded['tables'], 'rows': rows})
+    return exported
+
+
+def _scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
+
+def check(entries: Any, path: str, problems: list[str]) -> None:
+    """Check a document's modules list before anything is written; its names reach SQL only once checked, H8."""
+    if not isinstance(entries, list):
+        problems.append(f'{path}: not a list')
+        return
+    for number, entry in enumerate(cast(list[Any], entries)):
+        where = f'{path}[{number}]'
+        if not isinstance(entry, dict):
+            problems.append(f'{where}: not an object')
+            continue
+        fields = cast(dict[str, Any], entry)
+        if set(fields) != {'module', 'version', 'tables', 'rows'}:
+            problems.append(f'{where}: holds exactly module, version, tables and rows')
+            continue
+        if not isinstance(fields['module'], str) or not MODULE_ID.fullmatch(fields['module']):
+            problems.append(f'{where}.module: not a module id')
+        if isinstance(fields['version'], bool) or not isinstance(fields['version'], int) or fields['version'] < 1:
+            problems.append(f'{where}.version: not a whole number from 1')
+        tables: list[Table] = []
+        try:
+            tables = [Table.from_dict(value) for value in fields['tables']]
+        except (KeyError, TypeError, ValueError) as error:
+            problems.append(f'{where}.tables: not a declaration of tables: {error}')
+            continue
+        rows = fields['rows']
+        if not isinstance(rows, dict) or set(cast(dict[str, Any], rows)) != {table.name for table in tables}:
+            problems.append(f'{where}.rows: not one list of rows for each table')
+            continue
+        for table in tables:
+            names = {column.name for column in table.columns}
+            given = cast(dict[str, Any], rows)[table.name]
+            if not isinstance(given, list):
+                problems.append(f'{where}.rows.{table.name}: not a list')
+                continue
+            for place, row in enumerate(cast(list[Any], given)):
+                if not isinstance(row, dict) or set(cast(dict[str, Any], row)) != names or not all(
+                        _scalar(value) for value in cast(dict[str, Any], row).values()):
+                    problems.append(f'{where}.rows.{table.name}[{place}]: not one text, number or null for each '
+                                    'column')
+
+
+def import_modules(db: sqlite3.Connection, entries: Sequence[dict[str, Any]], report: dict[str, Any],
+                   where: str) -> None:
+    """Inside the import's transaction: create the tables a store lacks and add each row whose key it does not
+    hold. A module held at another version adds nothing, and a notice says so, BASE-044."""
+    for entry in entries:
+        module, version = str(entry['module']), int(entry['version'])
+        tables = [Table.from_dict(value) for value in entry['tables']]
+        recorded = _recorded(db, module)
+        if recorded is None:
+            for table in tables:
+                _create(db, module, table)
+            _record(db, module, {'version': version, 'tables': entry['tables']})
+        elif int(recorded['version']) != version or recorded['tables'] != entry['tables']:
+            report['notices'].append({'where': f'{where}.{module}', 'message': (
+                f'This store holds the tables of {module} at version {recorded["version"]}; the document carries '
+                f'version {version}, so none of its rows was imported. To add them, import into a home whose '
+                f'{module} is at version {version}: metaform import <file>')})
+            continue
+        for table in tables:
+            names = [column.name for column in table.columns]
+            for row in entry['rows'][table.name]:
+                cursor = db.execute(f'INSERT OR IGNORE INTO {_quoted(physical(module, table.name))}'
+                                    f'({", ".join(_quoted(name) for name in names)}) '
+                                    f'VALUES ({", ".join("?" for _ in names)})', tuple(row[name] for name in names))
+                report['things_added' if cursor.rowcount else 'things_skipped'] += 1

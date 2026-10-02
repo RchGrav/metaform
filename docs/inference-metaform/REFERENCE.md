@@ -508,7 +508,7 @@ Memory is therefore one use of the Inference Metaform's functional addressabilit
 
 The implementation supports two node kinds for memory: `element` and `join`. Elements can be addressed by namespace or identifier; joins, subtype joins included, have identifiers. An absorbed subpart is an element, and its subtype join a join. A memory observation is an item at its target. A memory relation is an item at the from-node with a link to the to-node and a relation value.
 
-The memory module exposes nine operations: create entities, create relations, add observations, delete entities, delete observations, delete relations, read graph, search nodes, and open nodes. Its `delete-entities` operation removes the memories at those nodes, not the underlying functional identities of the Metaform.
+The memory module keeps a graph of its own, the MCP reference memory server's, and exposes its nine operations with the reference's names: `create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes` and `open_nodes`. Given a node, each acts on the memories joined to that node; a memory entity is never an element of the Metaform, and deleting one never removes a functional identity.
 
 A new memory entity can establish an element that the map did not already contain. That element belongs to the memory layer and follows its selection. This permits agents to note previously unrepresented functionality without pretending that the original immutable intake already contained it.
 

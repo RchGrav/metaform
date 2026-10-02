@@ -14,6 +14,18 @@ when it did not come through one, and `current()` is that nonce, stopping
 the command when there is none. `metaform <nonce>` runs the module's
 function for it. hello's `noncedemo` shows it.
 
+A module that keeps data of its own declares its tables with `metaform.data`'s
+`Tables`, `Table`, `Column` and `Index` and sets `tables=` below; a verb reads
+and writes them in `with ctx.require_store().tables() as tx:`, STORE-045.
+`place='metaform'` keeps a table beside the map, gone with the metaform;
+`place='project'` keeps it in the project, kept by a clear. hello's `visit`,
+`note` and `notes` show it.
+
+A module adds to the read of a node, `map where` and `map node`, with
+`node_read=`: a function of the context and the node read, which returns plain
+data, shown under the module's id, or None for nothing, BASE-035. hello's
+`node_read` shows it.
+
 Every prompt an agent reads is in `resources/prompts.xml`, an element named
 for the prompt, never in Python, MCP-031. `instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
@@ -37,4 +49,6 @@ MODULE = Module(
     start=None,
     stop=None,
     status=None,
+    tables=None,
+    node_read=None,
 )

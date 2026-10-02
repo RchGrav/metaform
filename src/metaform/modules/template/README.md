@@ -16,7 +16,7 @@ The template changelog version this module started from: 0.2.0.
 
 ## Common base used
 
-Which of `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events` and `metaform.nonce` the module uses, and for what. Through `metaform.nonce` a module hands work to an agent by nonce and closes the nonce when the task is complete, BASE-050; hello's `noncedemo` shows it. Through `metaform.data` a module reads and writes the map's layers and the work records: the condition of an element or a join, a subtype join included, `missing`, `broken` or `exclude`, kept apart from the map with a note and a task, `store.add_work`, `store.edit_work`, `store.finish_work` and `store.work`, MAP-046 and STORE-042; hello's `todo` shows it.
+Which of `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events` and `metaform.nonce` the module uses, and for what. Through `metaform.nonce` a module hands work to an agent by nonce and closes the nonce when the task is complete, BASE-050; hello's `noncedemo` shows it. Through `metaform.data` a module reads and writes the map's layers and the work records: the condition of an element or a join, a subtype join included, `missing`, `broken` or `exclude`, kept apart from the map with a note and a task, `store.add_work`, `store.edit_work`, `store.finish_work` and `store.work`, MAP-046 and STORE-042; hello's `todo` shows it. Through `metaform.data` a module also declares tables of its own, `Tables`, `Table`, `Column` and `Index`, and reads and writes them in `store.tables()`, STORE-045; hello's `visit`, `note` and `notes` show it. Through `metaform.module` a module adds to the read of a node with `Module(node_read=...)`, a function of the context and the node that returns plain data, shown under the module's id in `map where` and `map node`, or None for nothing, BASE-035; hello's `node_read` shows it.
 
 ## Prompts
 
@@ -40,7 +40,7 @@ Which verbs and subscribers are coroutines.
 
 ## Layers
 
-The layers the module writes, their mutable and hideable declaration, and their provenance.
+The layers the module writes, their mutable and hideable declaration, and their provenance. The tables the module declares in `MODULE.tables`, STORE-045: each table's columns, key, indexes and place, `metaform` beside the map or `project` kept through a clear; the version, and what its `upgrade` moves at each raise; and which verbs read and write each table in `ctx.require_store().tables()`.
 
 ## Lifecycle and cleanup
 

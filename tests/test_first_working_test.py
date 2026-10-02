@@ -25,7 +25,7 @@ ROOT = Path(__file__).parents[1]
 SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
-         'intake_show', 'intake_finish', 'memory_add-observations', 'memory_open-nodes', 'map_select', 'map_mask',
+         'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
 ENTERED = ('intake', 'map', 'memory', 'web')
@@ -61,8 +61,9 @@ def last_json(result):
     return json.loads(texts(result)[-1])
 
 
-def memory_values(view, layer='memory'):
-    return [item['value'] for group in view['layers'] if group['layer'] == layer for item in group['items']]
+def memory_values(view):
+    """The observations of the memories a node read shows, LAYER-013."""
+    return [text for entity in view.get('memory', {}).get('entities', []) for text in entity['observations']]
 
 
 def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
@@ -199,19 +200,26 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         joins = last_json(asked(first, 'map_joins', {'element': 'code.timer.kitchen'}, limit=LIMIT))['results']
         join_id = joins[0]['join_id']
         assert joins[0]['receiver_address'] == 'code.timer.kitchen'
-        at_element = asked(first, 'memory_add-observations', {'node': 'element:code.timer.kitchen',
-                                                            'text': ['The countdown drifts under load.']}, limit=LIMIT)
-        at_join = asked(first, 'memory_add-observations', {'node': f'join:{join_id}',
-                                                         'text': ['The tone is too quiet in a loud kitchen.']},
-                             limit=LIMIT)
+        at_element = asked(first, 'memory_create_entities', {
+            'node': 'element:code.timer.kitchen',
+            'entities': [{'name': 'countdown drift', 'entityType': 'behavior',
+                          'observations': ['The countdown drifts under load.']}]}, limit=LIMIT)
+        at_join = asked(first, 'memory_create_entities', {
+            'node': f'join:{join_id}',
+            'entities': [{'name': 'quiet tone', 'entityType': 'behavior',
+                          'observations': ['The tone is too quiet in a loud kitchen.']}]}, limit=LIMIT)
         assert at_element.get('isError') is not True and at_join.get('isError') is not True
 
-        # 9: a second agent, on its own connection, reads both back.
+        # 9: a second agent, on its own connection, reads both back at their nodes.
         second, _ = connect()
-        opened = last_json(asked(second, 'memory_open-nodes', {'node': ['element:code.timer.kitchen',
-                                                                        f'join:{join_id}']}, limit=LIMIT))
-        assert [node['observations'] for node in opened['nodes']] == [
+        opened = [last_json(asked(second, 'memory_open_nodes', {'node': node, 'names': [name]}, limit=LIMIT))
+                  for node, name in (('element:code.timer.kitchen', 'countdown drift'),
+                                     (f'join:{join_id}', 'quiet tone'))]
+        assert [found['entities'][0]['observations'] for found in opened] == [
             ['The countdown drifts under load.'], ['The tone is too quiet in a loud kitchen.']]
+        elsewhere = last_json(asked(second, 'memory_open_nodes', {'node': 'element:code.timer.kitchen',
+                                                                   'names': ['quiet tone']}, limit=LIMIT))
+        assert elsewhere['entities'] == []  # the join's memory is not the element's
 
         # 10: a mask of the memory layer at the element's address hides it there; clearing shows it again.
         element_view = last_json(asked(second, 'map_node', {'node': 'element:code.timer.kitchen'}, limit=LIMIT))

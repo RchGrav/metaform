@@ -95,53 +95,56 @@ Commands with paged results return a cursor when more data remains. Pass that re
 
 ## Retain a finding where it matters
 
-An observation about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A note about an absorbed contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
+Memory is a graph of its own, the MCP reference memory server's: entities with a name, an entityType and observations, and relations between entities. At a node of the map it presents itself as that server, scoped to the node. A finding about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A finding about an absorbed contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
 
 ```sh
-metaform memory add-observations element:code.timer.kitchen "The countdown drifts one second an hour on the first board."
-metaform memory add-observations join:<join_id> "The cook reads the dish name from the display, not the beep."
-metaform memory open-nodes join:<join_id>
+metaform memory create_entities '[{"name":"countdown drift","entityType":"behavior","observations":["The countdown drifts one second an hour on the first board."]}]' node=element:code.timer.kitchen
+metaform memory create_entities '[{"name":"display first","entityType":"behavior","observations":["The cook reads the dish name from the display, not the beep."]}]' node=join:<join_id>
+metaform memory open_nodes '["display first"]' node=join:<join_id>
+metaform map where code.timer.kitchen
 ```
 
-The first write creates the memory layer. A subsequent agent can recover the finding by the relationship's address rather than rediscovering which free-floating note concerned this receiver's purpose.
+`create_entities` with `node` makes each entity and ties it to the node by a join of type memory, keyed by the node's namespace address. The entity never becomes an element of the map. A later agent reading `map where code.timer.kitchen` sees the memories under `memory`: the element's own, and those on the joins it receives and provides.
 
-The MCP equivalent of the second write is the tool **`memory_add-observations`** with:
+Over MCP these are the commands of the tool `memory`. The second write is:
 
 ```json
 {
-  "project": "kitchen",
-  "node": "join:<join_id>",
-  "text": ["The cook reads the dish name from the display, not the beep."]
+  "command": "create_entities",
+  "arguments": {
+    "project": "kitchen",
+    "node": "join:<join_id>",
+    "entities": [{"name": "display first", "entityType": "behavior",
+                  "observations": ["The cook reads the dish name from the display, not the beep."]}]
+  }
 }
 ```
-
-Tool names use an underscore between module and verb and retain hyphens **within** a verb. Thus `memory_add-observations` is the actual name, not `memory_add_observations`.
 
 ### Connect, locate, and remove memories
 
 ```sh
-metaform memory create-relations element:code.timer.kitchen "rings through" element:code.alarm.audible
-metaform memory search-nodes countdown
-metaform memory read-graph
+metaform memory create_relations '[{"from":"display first","to":"countdown drift","relationType":"explains"}]'
+metaform memory search_nodes countdown
+metaform memory read_graph
 ```
 
-A memory relation is an item linking two nodes, with a relation label. It is not a replacement for the functional join's Receiving Entity, Operative Purpose, and Encounter Function.
+A memory relation links two entities of the memory graph. It is not a replacement for the functional join's Receiving Entity, Operative Purpose, and Encounter Function.
 
-The module exposes nine operations:
+The nine commands carry the reference server's names, arguments and results. Each takes `node`; without it, it acts on the whole graph.
 
-| Operation | What it changes or reads |
+| Command | What it changes or reads |
 |---|---|
-| `create-entities <name> <type>` | Makes a node for an address the map does not hold yet. Existing functional nodes need no entity first. |
-| `create-relations <from> <relation> <to>` | Adds a linked memory item. |
-| `add-observations <node> <text>...` | Adds observations at the node. |
-| `delete-entities <node>...` | Deletes memory items at those nodes, **not** the underlying graph identities. |
-| `delete-observations <node> <text>...` | Removes the matching observation text. |
-| `delete-relations <from> <relation> <to>` | Removes matching linked memory items. |
-| `read-graph` | Every memory, grouped by node. |
-| `search-nodes <query>` | Nodes whose memories hold every word of the query. |
-| `open-nodes <node>...` | Each node with its observations and relations. |
+| `create_entities <entities>` | Makes each new entity; at a node, joins it to the node. An existing name is skipped and, at a node, joined to it. |
+| `create_relations <relations>` | Adds each new relation between entities the graph acted on holds. |
+| `add_observations <observations>` | Adds each observation an entity does not hold. |
+| `delete_entities <entityNames>` | Deletes each entity with its observations, its relations and its joins. The map is never touched. |
+| `delete_observations <deletions>` | Removes the named observations. |
+| `delete_relations <relations>` | Removes the named relations. |
+| `read_graph` | The graph acted on. |
+| `search_nodes <query>` | Entities whose name, type or an observation holds the query, with the relations touching them. |
+| `open_nodes <names>` | The named entities, with the relations touching them. |
 
-Memory changes in place. This build does not give memory its own revision history or provenance ledger. Its direct write path can address retained memory even when the current context masks it. The current read view still follows layer participation.
+Memory changes in place, as the reference server keeps it, with no provenance. It is kept in the project, so a clear keeps it; `metaform memory orphaned` lists the joins whose address the map no longer holds, and a new intake that holds the address reconnects them. At a node memory shows while the layer named memory reaches the node's address: `map mask <address> memory`, hiding the layer, or `--layers` without it turns it off. Each node also holds one note, at most 2048 characters, read and written with `metaform memory note <node> [text=...]`.
 
 ## Keep a body of knowledge as a layer
 

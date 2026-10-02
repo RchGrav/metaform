@@ -16,7 +16,7 @@ Started from template 0.2.0.
 
 ## Common base used
 
-`metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer and work records. `metaform.nonce` for `noncedemo`.
+`metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer, its work records and its own tables. `metaform.nonce` for `noncedemo`.
 
 ## Prompts
 
@@ -43,6 +43,9 @@ Started from template 0.2.0.
 - `feedback <text>`: saves feedback on the Metaform process with `feedback` and returns the project, the run id and the file names. Tool `hello_feedback`.
 - `reports`: returns the file names `list_reports` gives for this project, one a line. Tool `hello_reports`.
 - `read-report <name>`: returns one listed file's text exactly with `read_report`; a name that is not listed stops with `Next: metaform list reports`. Tool `hello_read-report`.
+- `visit <name>`: counts a visit by the name in hello's own table `visits`, beside the map, and returns `<name>: <n> visits`. It reads the row by its key and adds or changes it in one transaction. Tool `hello_visit`.
+- `note <text>`: keeps a note in hello's own project-level table `notes` and returns its id. Tool `hello_note`.
+- `notes`: returns the notes in time order, read through the table's index on `at`. Tool `hello_notes`.
 
 ## Settings
 
@@ -59,6 +62,10 @@ Publishes `hello.greeted` with `{"name": ...}`, from `greet` with `ctx.publish` 
 ## Work records
 
 A module keeps the condition of an object as a work record, apart from the map, MAP-046 and STORE-042: `store.add_work(Node('element', address), 'missing', task=...)`, `store.edit_work(id, {...})` and `store.finish_work(id, resolution)`. `todo` and `done` show it; the status line counts the open ones, `Hello: 1 greeted, 1 to do`; the web GUI draws the element ghostly while a missing record is open and solid once it is done. Every element and join read, a subtype join's included, carries `open_work`, the conditions of its open records.
+
+## Tables
+
+`MODULE.tables` declares hello's own tables at version 1, STORE-045. `visits(name, times)`, keyed by `name`, has `place='metaform'`: it is the table `"hello.visits"` in the metaform's store, and goes with the metaform when the project is cleared. `notes(note_id, text, at)`, keyed by `note_id` with an index on `at`, has `place='project'`: it is in `projects/<project>/modules/hello.sqlite3`, and a clear of the project's metaforms keeps it. The chassis creates both on first use and carries both through export and import. `visit`, `note` and `notes` reach them with `ctx.require_store().tables()`.
 
 ## Layers
 

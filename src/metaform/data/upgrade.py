@@ -90,7 +90,8 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
         "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL") if kind == 'table'}
     tables = {name: sql for kind, name, sql in wanted if kind == 'table'}
     for name in have:
-        if name not in tables and not name.startswith('sqlite_'):
+        # A module's own table has a dot in its name and is the module's to keep, STORE-045.
+        if name not in tables and not name.startswith('sqlite_') and '.' not in name:
             db.execute(f'DROP TABLE "{name}"')
     for name, sql in tables.items():
         if name not in have:

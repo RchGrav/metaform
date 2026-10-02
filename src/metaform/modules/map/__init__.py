@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
-from metaform.data import PERSPECTIVES, PLACE_KINDS, Node, Notice, Store
-from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb
+from metaform.data import PERSPECTIVES, PLACE_KINDS, Node, Notice, Page, Store
+from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -77,11 +77,24 @@ def roots(ctx: Context) -> Any:
     return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
 
 
+def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
+    """A node's read with what the modules on the surface add to it, each under its own id, BASE-035; a field the
+    read holds already is never replaced."""
+    added = node_reads(ctx.folder, node, project=ctx.project, layers=ctx.switches.get('layers'))
+    if found is None or not added:
+        return found
+    data = cast(dict[str, Any], found.to_dict())
+    for module, value in added.items():
+        data.setdefault(module, value)
+    return data
+
+
 def where(ctx: Context) -> Any:
     """One read of an address: what relies on it and what it relies on, STORE-025; the entry with no address."""
     if not ctx.nouns['address']:
         return roots(ctx)
-    return _store(ctx).where(ctx.nouns['address'], full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
+    found = _store(ctx).where(ctx.nouns['address'], full=bool(ctx.nouns.get('full', False)), **_reading(ctx))
+    return _with_modules(ctx, found, Node('element', ctx.nouns['address']))
 
 
 def markdown(ctx: Context) -> Any:
@@ -140,10 +153,11 @@ def layer(ctx: Context) -> Any:
 
 
 def node(ctx: Context) -> Any:
-    found = _store(ctx).node(_node(ctx.nouns['node']), **_reading(ctx))
+    target = _node(ctx.nouns['node'])
+    found = _store(ctx).node(target, **_reading(ctx))
     if found is None:
         raise Stop(f'No node {ctx.nouns["node"]} in context here.', 'metaform map node <node> --raw')
-    return found
+    return _with_modules(ctx, found, target)
 
 
 def context(ctx: Context) -> Any:
@@ -304,6 +318,8 @@ def _with_notices(result: Any, notices: list[Notice]) -> Any:
     if isinstance(result, dict):
         fields = cast(dict[str, Any], result)
         return {**fields, 'notices': [*notices, *fields.get('notices', [])]}
+    if isinstance(result, Page):  # a page of a list read is no dataclass
+        return {**result.to_dict(), 'notices': notices}
     if 'notices' not in {field.name for field in dataclasses.fields(result)}:
         return {**result.to_dict(), 'notices': notices}
     return dataclasses.replace(result, notices=(*notices, *getattr(result, 'notices', ())))
@@ -462,6 +478,7 @@ KNOWLEDGE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
+    'read': frozenset({'id'}),
     'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
     'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
     'done': frozenset({'id', 'resolution'}),
@@ -472,7 +489,7 @@ WORK_READS: dict[str, frozenset[str]] = {
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
-WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'read': ('id',), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
                                           'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
                                           'move': ('id', 'column')}
 
@@ -510,10 +527,11 @@ def messages(ctx: Context) -> Any:
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
-    op = str(ctx.nouns.get('op', 'list'))
-    if op not in WORK_READS:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move or done.',
-                   'metaform help map work')
+    # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
+    op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
+    if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move or done; with id= and '
+                   'no op, the one ticket is read.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
@@ -529,6 +547,8 @@ def work(ctx: Context) -> Any:
                                             links=[_work_node(link) for link in nouns.get('links') or ()],
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
     work_id = nouns['id']
+    if op == 'read':
+        return _with_notices(store.ticket(work_id), notices)
     if op == 'take':
         return _with_notices(store.take_work(work_id, nouns.get('steps'), nouns.get('by')), notices)
     if op == 'move':
@@ -566,7 +586,9 @@ WORK_NOUNS = (
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
-    _noun('id', 'edit, take, plan, step, move and done: the work record id.'),
+    _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
+                'ticket with the where read of its node and of each node it links: their refs, open work and open '
+                'questions.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true for records not done, false for those done.', 'bool'),
     *PAGING,
@@ -641,7 +663,7 @@ MODULE = Module(
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
         Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
-                           'or add, edit or mark one done.',
+                           'read one by its id, or add, edit or mark one done.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join, a subtype join included, and never changes '
                      'the map. Its '
@@ -651,13 +673,15 @@ MODULE = Module(
                      'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
                      'change is recorded for review. Documents, specifications, notes and working files are '
                      'preserved. Marking a record does not remove files or change gitignore. Unneeded legacy '
-                     'migration code is marked for review; a needed migration tool belongs outside the main '
-                     'program as a separate tool. It is '
+                     'migration code is marked for review. A store at an earlier layout is updated by Metaform '
+                     'when it opens it. It is '
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=missing task="build it"',
                         'Record that the alarm is in the specs and not built yet.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
+                       ('metaform map work id=<work id>', ('Read one ticket with what the map holds at its node and '
+                                                           'at each node it links.')),
 )),
         Verb('ask', ask, 'Ask the user a question at the node it concerns, with the answers you suggest.',
              nouns=(Noun('node', 'Where the question applies: element:<address or id> or join:<id>; a bare address '

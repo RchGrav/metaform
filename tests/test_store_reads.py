@@ -199,7 +199,8 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                             'link': {'kind': 'element', 'id': alarm},
                                             'refs': [{'key': 'path', 'value': 'src/timer.c'}]}]
     display = store.where('code.timer.kitchen.display').to_dict()
-    assert display['work'] == [{'condition': 'missing', 'note': 'not wired yet', 'task': 'wire it'}]
+    assert display['work'] == [{'work_id': store.work().results[0].work_id, 'condition': 'missing',
+                                'note': 'not wired yet', 'task': 'wire it'}]
     tick = store.where('code.loop.tick').to_dict()
     assert set(tick) == {'kind', 'element', 'held'} and set(tick['held']) == {'subtype', 'join'}
     assert tick['held']['join']['receiver'] == 'stakeholder.cook.home'

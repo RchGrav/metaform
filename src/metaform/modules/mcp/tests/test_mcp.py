@@ -109,8 +109,8 @@ def test_the_server_lists_each_surfaced_verb_as_a_tool(run, home, mapped):
     assert raw['type'] == 'boolean'
     assert element['description']
     assert raw['description'] and raw['description'] in run('help', 'map', 'joins', cwd=mapped).stdout
-    observations = tools['memory_add-observations'].input_schema['properties']['text']
-    assert (observations['type'], observations['items']) == ('array', {'type': 'string'}) and observations['description']
+    names = tools['memory_open_nodes'].input_schema['properties']['names']
+    assert (names['type'], names['items']) == ('array', {'type': 'string'}) and names['description']
     assert 'add-item' in tools['map_knowledge'].input_schema['properties']['op']['description']
     for name in ('feedback', 'list_reports', 'read_report', 'set'):
         undescribed = [key for key, value in tools[name].input_schema['properties'].items() if not value.get('description')]
@@ -193,7 +193,7 @@ def test_the_tool_list_follows_the_folders_command_surface(run, home, mapped):
         refused = await client.call_tool('map', {'command': 'knowledge', 'arguments': {'op': 'create', 'layer': 'x'}})
         return set(tools) | set(await listed(client)), refused.is_error, text(refused)
     names, error, message = session(home, mapped, narrowed)
-    assert 'map' not in names and 'map_knowledge' not in names and 'memory_open-nodes' in names
+    assert 'map' not in names and 'map_knowledge' not in names and 'memory_open_nodes' in names
     assert error and message[0].splitlines() == ['Error: No tool map on this surface.',
                                                  'Next: metaform help commands']
     run('unset', '--modules', cwd=mapped)
@@ -532,6 +532,8 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
 @pytest.mark.req('MCP-002')
 def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, home, mapped, tmp_path, user_module):
     log = tmp_path / 'heard.jsonl'
+    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
+        'module=test', cwd=mapped)
     user_module('watcher', f'''
         import json
         from pathlib import Path
@@ -550,8 +552,8 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
     async def call(client, init):
         await called(client, 'map_layers', {})
         read = lines()
-        await called(client, 'memory_add-observations', {'node': 'element:code.timer.kitchen',
-                                                           'text': ['The countdown drifts.']})
+        await called(client, 'map_knowledge', {'op': 'add-item', 'layer': 'notes', 'node': 'element:code.timer.kitchen',
+                                               'value': 'The countdown drifts.'})
         written = lines()
         await called(client, 'map_layers', {})  # in the same server process: a read after a write
         return read, written, lines()
@@ -689,8 +691,9 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
         joined = await called(client, 'map_knowledge', {
             'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
             'purpose': 12, 'ef': 'f', 'relation': ['r'], 'observation': 'o'})
-        observed = await called(client, 'memory_add-observations', {'node': 'element:code.timer.kitchen',
-                                                                     'text': ['fine', 7]})
+        observed = await called(client, 'memory_create_entities', {
+            'node': 'element:code.timer.kitchen',
+            'entities': [{'name': 'kitchen', 'entityType': 'part', 'observations': ['fine', 7]}]})
         return [(result.is_error, text(result)) for result in (greeted, joined, observed)]
     run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
         'module=test', cwd=mapped)
@@ -701,9 +704,10 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
                                       'Notice: relation: relation is text; what was sent was kept as its JSON text.']
     join = json.loads(joined[1])
     assert (join['purpose'], join['relation'], join['notices']) == ('12', '["r"]', [])
-    assert observed[0].splitlines() == ['Notice: text: text is text; what was sent was kept as its JSON text.']
-    store = Store('proj')
-    assert {item.value for item in store.layer_items('memory').results} >= {'fine', '7'}
+    assert json.loads(observed[-1])['notices'] == [
+        {'where': 'observations', 'message': 'observations is text; what was sent was kept as its JSON text.'}]
+    graph = json.loads(run('memory', 'read_graph', '--json', cwd=mapped).stdout)
+    assert graph['entities'][0]['observations'] == ['fine', '7']
 
 
 @pytest.mark.req('CLI-037')

@@ -36,11 +36,18 @@ function put(node, children, replace = true) {
   return node;
 }
 const fill = (node, ...children) => put(node, children);
+/* Fill a node with these children, leaving in place each one already there in its place, so a text being typed into
+ * keeps its text, its cursor and the focus. */
+function keepFill(node, kids) {
+  for (const child of [...node.childNodes]) if (!kids.includes(child)) child.remove();
+  kids.forEach((kid, index) => { if (node.childNodes[index] !== kid) node.insertBefore(kid, node.childNodes[index] || null); });
+}
 
 /* ---------- reads ---------- */
 const S = {
   projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
-  elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0,
+  elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
+  memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},  // LAYER-013
 };
 /* The memory network open in both views, VIEW-031: the node it belongs to, what is drawn of it, and what the map was
  * when it gave way, to go back to: the levels entered in 2D and where each node of the 3D map stood. */
@@ -281,6 +288,22 @@ function graphData() {
     const to = keyOf(thing.item.link);
     if (to && drawnIds.has(to)) links.push({source: thing.key, target: to, k: 'relation', layer: thing.layer});
   }
+  // Every memory shown at a node is its own node, hung from each node it is kept at, and each relation between two
+  // memories drawn is a link, LAYER-013 and VIEW-017.
+  const memory = memoryLayer();
+  for (const [key, names] of S.memory.at) {
+    if (!drawnIds.has(key)) continue;
+    for (const name of names) {
+      if (!drawnIds.has(memoryKey(name))) {
+        nodes.push({id: memoryKey(name), t: 'item', layer: memory, text: name});
+        drawnIds.add(memoryKey(name));
+      }
+      links.push({source: key, target: memoryKey(name), k: 'item', layer: memory});
+    }
+  }
+  for (const relation of S.memory.relations) if (drawnIds.has(memoryKey(relation.from)) && drawnIds.has(memoryKey(relation.to)))
+    links.push({source: memoryKey(relation.from), target: memoryKey(relation.to), k: 'relation', layer: memory,
+      relation: relation.relationType});
   return {nodes, links};
 }
 /* A selection is an element's id, a subtype as 's:<id>' by its subtype join's id, or a join as 'p:<id>', the same
@@ -303,7 +326,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   curves: () => G ? G.graphData().links.map(link => ({k: link.k, curve: accessed(G.linkCurvature(), link)})) : [],
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
-  loaded: () => !S.loading, editor: () => P.editor, live: () => LIVE.layer,
+  loaded: () => !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer, changes: () => LIVE.done,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
   // The memory network of a node, VIEW-031: opened as the menu's entry opens it, and what both views draw of it, or
@@ -364,14 +387,20 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
       return {source: from.id, target: to.id, x: box.left + point.x, y: box.top + point.y};
     });
   },
-  labels3d: () => [...tags].map(([id, tag]) => { const box = tag.getBoundingClientRect();
-    return {id, text: tag.textContent, hidden: tag.hidden, z: Number(tag.style.zIndex || 0), under: tag.classList.contains('under'),
-      left: box.left, right: box.right, top: box.top, bottom: box.bottom}; }),
+  // Each label of the 3D map: its text and lines, where it is on the page, its rank by depth, higher nearer, whether it
+  // is under a nearer node or label, its color and its opacity, and whether it is in the scene and drawn with the depth
+  // test and writing depth, which is what orders it with the nodes and the other labels, VIEW-038.
+  labels3d: () => { const area = $('#stage').getBoundingClientRect();
+    return [...tags.values()].map(tag => ({id: tag.id, text: tag.text, lines: tag.lines, hidden: tag.hidden, z: tag.z,
+      under: tag.under, color: tag.color.toLowerCase(), opacity: tag.sprite.material.opacity, scene: tag.sprite.parent?.parent === G.scene(),
+      depthTest: tag.sprite.material.depthTest, depthWrite: tag.sprite.material.depthWrite, left: area.left + (tag.rect?.left ?? 0), right: area.left + (tag.rect?.right ?? 0),
+      top: area.top + (tag.rect?.top ?? 0), bottom: area.top + (tag.rect?.bottom ?? 0)})); },
+  showLabels3d: on => { LABELS.on = Boolean(on); if (LABELS.group) LABELS.group.visible = LABELS.on; },
   hover3d: id => { const node = G?.graphData().nodes.find(item => item.id === id); hovered = node || null;
     $('#tip3d').hidden = !hovered; if (hovered) { fill($('#tip3d'), tipFor(hovered)); placeTip(); } },
   figures: () => [...ROAM.figures.values()].map(figure => ({work_id: figure.id, glyph: figure.glyph, stage: figure.stage,
     target: figure.target, home: figure.home, x: figure.mesh.position.x, y: figure.mesh.position.y, z: figure.mesh.position.z,
-    scale: figure.mesh.scale.x})),
+    scale: figure.mesh.scale.x, angle: figure.angle, clock: figure.clock, px: onScreen(figure.mesh)})),
   at3d: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
     return node && node.x !== undefined ? {x: node.x, y: node.y, z: node.z, r: Math.cbrt(nodeSize(node)) * 3} : null; },
   ground: () => G ? G.backgroundColor() : null};
@@ -379,6 +408,16 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
 /* How a node is drawn for its condition, MAP-046, readable by a browser check: its open work, the 2D group's work
  * classes, computed opacity and whether its box is animating, and the 3D sphere's material opacity and whether it is
  * red at this frame. */
+const BOX = new THREE.Box3();
+function onScreen(mesh) {  // how many pixels a figure spans in the 3D view, across or up, VIEW-035
+  BOX.setFromObject(mesh);
+  const xs = [], ys = [];
+  for (const x of [BOX.min.x, BOX.max.x]) for (const y of [BOX.min.y, BOX.max.y]) for (const z of [BOX.min.z, BOX.max.z]) {
+    const point = G.graph2ScreenCoords(x, y, z);
+    xs.push(point.x); ys.push(point.y);
+  }
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+}
 const toHex = color => { const found = (color || '').match(/\d+/g);
   return found ? '#' + found.slice(0, 3).map(part => Number(part).toString(16).padStart(2, '0')).join('') : null; };
 function look(id) {
@@ -411,7 +450,7 @@ function look(id) {
 
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
     color3d: material ? '#' + material.color.getHexString() : null,
-    label3d: [...(tags.get(id)?.classList || [])].filter(name => name.startsWith('work-')),
+    label3d: (tags.get(id)?.classes || []).filter(name => name.startsWith('work-')),
     stroke2d: box ? toHex(getComputedStyle(box).stroke) : null,
     exclude3d: material ? '#' + material.color.getHexString() === css('--exclude').toLowerCase() : false};
 }
@@ -420,18 +459,27 @@ function look(id) {
 const CONDITIONS = ['missing', 'in-progress', 'broken', 'fixing', 'flawed', 'enhancement', 'exclude', 'question', 'message'];
 /* The agents at work, VIEW-035: a figure for each ticket an agent works, from the moment it is taken until it is
  * closed. It materializes on the most primary node, the DE, makes its way along the map's own edges to the ticket's
- * node, goes onto it and circles it, facing the way it moves, faster as steps are filed, until the ticket is closed;
- * then it makes its way back and is gone. A ticket that was finished before its figure got there is still touched,
- * and then the figure walks back. A figure is one of the sixteen characters of agents3d.js, drawn so that no two at
- * work look alike. With reduced motion it stands at the node. */
-const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6, orbit: 1.5, lap: 4.5, recent: 120,
-  appear: 0.8, touch: 0.9, vanish: 0.6};
+ * node, goes onto it and circles it slowly, facing the way it moves, at one steady pace until the ticket is closed;
+ * then it makes its way back and is gone. Steps filed never speed it up: the node's flashing, or its text for a part
+ * not built, shows how far along the work is. A figure is big enough to see what it is with the whole map in view:
+ * its size is a share of the drawn map's span, and never less than ROAM.size. A ticket that was finished before its
+ * figure got there is still touched, and then the figure walks back. A figure is one of the sixteen characters of
+ * agents3d.js, drawn so that no two at work look alike. With reduced motion it stands at the node. */
+const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6, share: 0.11, orbit: 1.5, lap: 12,
+  recent: 120, appear: 0.8, touch: 0.9, vanish: 0.6};
 const nodeById = (data, id) => data.nodes.find(node => node.id === id);
 const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE') || data.nodes.find(node => node.t === 'el');
 const ticketNode = ticket => ticket.kind === 'join' ? 'p:' + ticket.id : ticket.id;
-const busyOf = ticket => { const planned = ticket.steps || 0, filed = ticket.steps_done || 0;
-  return planned ? Math.min(1, filed / planned) : filed ? 1 - 1 / (1 + FLASH.step * filed) : 0; };
 const ballOf = node => Math.cbrt(nodeSize(node)) * 3;
+function sizeOf(data) {  // a figure's size: a share of half the drawn map's widest side
+  const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+  for (const node of data.nodes) {
+    if (node.x === undefined) continue;
+    [node.x, node.y, node.z].forEach((at, axis) => { low[axis] = Math.min(low[axis], at); high[axis] = Math.max(high[axis], at); });
+  }
+  const half = Math.max(0, ...high.map((top, axis) => (top - low[axis]) / 2).filter(Number.isFinite));
+  return Math.max(ROAM.size, ROAM.share * half);
+}
 function routeOf(data, from, to) {  // the fewest edges of the drawn map from one node to another
   const near = new Map(), add = (one, two) => { if (!near.has(one)) near.set(one, []); near.get(one).push(two); };
   for (const link of data.links) { add(endOf(link.source), endOf(link.target)); add(endOf(link.target), endOf(link.source)); }
@@ -452,7 +500,7 @@ function figures(tickets) {  // the figures the tickets call for, VIEW-035
   const now = Date.now();
   for (const ticket of tickets) {
     const figure = ROAM.figures.get(ticket.work_id), target = ticketNode(ticket);
-    if (figure) { Object.assign(figure, {done: Boolean(ticket.done), busy: busyOf(ticket)}); continue; }
+    if (figure) { figure.done = Boolean(ticket.done); continue; }
     const working = Boolean(ticket.taken && !ticket.done);
     const finished = Boolean(ticket.taken && ticket.done) && now - Date.parse(ticket.done) < ROAM.recent * 1000;
     if ((working || finished) && !ROAM.seen.has(ticket.work_id) && nodeById(data, target)) {
@@ -462,7 +510,7 @@ function figures(tickets) {  // the figures the tickets call for, VIEW-035
       ROAM.seen.add(ticket.work_id);
       ROAM.figures.set(ticket.work_id, {id: ticket.work_id, glyph, mesh, home: home.id, target, stage: 'arriving',
         path: routeOf(data, home.id, target), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
-        done: Boolean(ticket.done), busy: busyOf(ticket)});
+        done: Boolean(ticket.done)});
     }
   }
   for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.work_id === id)) figure.done = true;
@@ -471,8 +519,9 @@ const AHEAD = new THREE.Vector3();
 function roam3d(data) {
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM.last || now)));
   ROAM.last = now;
+  const size = ROAM.figures.size ? sizeOf(data) : ROAM.size;
   for (const [id, figure] of ROAM.figures) {
-    const {mesh} = figure, size = ROAM.size;
+    const {mesh} = figure;
     const gone = () => { G.scene().remove(mesh); releaseGlyph(id); ROAM.figures.delete(id); };
     figure.clock += passed;
     const target = nodeById(data, figure.target), home = nodeById(data, figure.home);
@@ -509,10 +558,10 @@ function roam3d(data) {
           Object.assign(figure, {clock: 0, stage: figure.stage === 'returning' ? 'leaving' : figure.done ? 'touching' : 'circling'});
         }
       }
-    } else if (figure.stage === 'circling') {  // on the node, around it, faster with each step filed
+    } else if (figure.stage === 'circling') {  // on the node, around it, slowly at one steady pace
       const out = Math.min(1, figure.clock / 0.6), eased = 1 - Math.pow(1 - out, 3);  // it spirals out onto its orbit
       const reach = (ballOf(target) + size * ROAM.orbit) * eased;
-      figure.angle += passed * (2 * Math.PI / ROAM.lap) * (1 + 2 * figure.busy);
+      figure.angle += passed * 2 * Math.PI / ROAM.lap;
       const turn = figure.angle;
       mesh.position.set(target.x + Math.cos(turn) * reach, target.y + Math.sin(turn * 2) * reach * 0.18 + size * 0.3,
         target.z + Math.sin(turn) * reach);
@@ -529,7 +578,7 @@ function roam3d(data) {
       mesh.scale.setScalar(size * Math.max(0.001, 1 - faded));
       if (faded >= 1) { gone(); continue; }
     }
-    mesh.userData.update(passed, {busy: figure.stage === 'circling' ? figure.busy : 0});
+    mesh.userData.update(passed);
   }
 }
 /* A ticket's light, VIEW-035: broken flashes red, flawed yellow and enhancement green. Flashing lets the node's own
@@ -1273,48 +1322,155 @@ function placeTip() {
   tip.style.transform = `translate(-${Math.min(100, Math.max(0, point.x / box.width * 100))}%, ${above ? '-100%' : '0'})`;
 }
 const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
-const tags = new Map();
-/* The labels keep the draw order of what they name, VIEW-038: a nearer node's label is drawn over a farther one's, and
- * a label that falls on a nearer node's sphere, or on a label that matters more, goes under it in the quieter color.
- * Every element keeps its label, VIEW-005, and none is faded toward the background, VIEW-023. What matters more: the
- * selected node, its neighbors, a node lit by a reach or a ticket, then the nearer node. Positions are written before
- * any is read, so the page is laid out once a frame. */
-function layered(box) {
-  const camera = G.camera(), area = box.getBoundingClientRect();
-  const scale = area.height / 2 / Math.tan(camera.fov * Math.PI / 360);
-  const away = node => Math.hypot(camera.position.x - node.x, camera.position.y - node.y, camera.position.z - node.z);
-  const spheres = [];
+/* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
+ * breaks, painted on a canvas and shown as a sprite that faces the camera and keeps one size on the screen. Each
+ * stands at its node's depth just above the node's sphere, and is drawn with the depth test as the nodes are, so the
+ * depth buffer orders labels and nodes together: a node nearer the eye hides the part of a label behind it, a label
+ * behind a glass node is seen through the glass as the material lets it through, VIEW-025, since what is behind the
+ * glass is drawn with the labels in it, and a nearer label is drawn over a farther one. Nothing ranks over depth, the
+ * selected node, its neighbors and a lit or blinking node included. A label that falls on a nearer node's sphere or
+ * on a nearer label keeps its own color: what is in front hides it by depth or shows it through the glass, Rich
+ * 2026-10-02. Every element keeps its label, VIEW-005; the text is in the theme's
+ * text color on a box of the background, and none is faded toward the background, VIEW-023. A label is painted again
+ * only when what it shows changes. */
+const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 4, padY: 1, gap: 8, written: 18, box: 0.72};
+const tags = new Map();   // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
+const LABELS = {group: null, on: true, pen: null, measured: new Map()};
+const UP = new THREE.Vector3(), AT = new THREE.Vector3();
+const fontOf = look => `${look.weight} ${look.size}px ${look.family}`;
+/* The name in lines no wider than the label's width, broken only between words, as the page wraps text; a word longer
+ * than the width keeps its own line whole. */
+function wrapped(text, look) {
+  const key = fontOf(look) + '\n' + text;
+  if (LABELS.measured.has(key)) return LABELS.measured.get(key);
+  LABELS.pen = LABELS.pen || document.createElement('canvas').getContext('2d');
+  LABELS.pen.font = fontOf(look);
+  const most = LABEL.wide * look.size, lines = [];
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const joined = lines.length ? lines.at(-1) + ' ' + word : null;
+    if (joined !== null && LABELS.pen.measureText(joined).width <= most) lines[lines.length - 1] = joined;
+    else lines.push(word);
+  }
+  if (!lines.length) lines.push('');
+  const widest = Math.max(...lines.map(line => LABELS.pen.measureText(line).width));
+  const made = {lines, width: Math.ceil(widest) + 2 * LABEL.padX, height: Math.ceil(lines.length * look.size * LABEL.line) + 2 * LABEL.padY};
+  LABELS.measured.set(key, made);
+  return made;
+}
+function painted(tag, look, ratio) {
+  const shape = wrapped(tag.text, look), canvas = tag.texture.image, pen = canvas.getContext('2d');
+  canvas.width = Math.ceil(shape.width * ratio); canvas.height = Math.ceil(shape.height * ratio);
+  pen.scale(ratio, ratio);
+  pen.globalAlpha = LABEL.box;
+  pen.fillStyle = look.ground;
+  pen.beginPath(); pen.roundRect(0, 0, shape.width, shape.height, 4); pen.fill();
+  pen.globalAlpha = 1;
+  pen.font = fontOf(look); pen.textAlign = 'center'; pen.textBaseline = 'middle';
+  const step = look.size * LABEL.line;
+  for (const blur of [...look.glow, 0]) {   // the text's glow of the background under it, then the text itself
+    pen.shadowColor = blur ? look.ground : 'transparent'; pen.shadowBlur = blur * ratio;
+    pen.fillStyle = look.color;
+    shape.lines.forEach((line, index) => pen.fillText(line, shape.width / 2, LABEL.padY + step * (index + 0.5)));
+  }
+  tag.texture.dispose();                    // the canvas may have changed size
+  tag.texture.needsUpdate = true;
+  Object.assign(tag, {lines: shape.lines, width: shape.width, height: shape.height, color: look.color});
+}
+function labelFor(node) {
+  let tag = tags.get(node.id);
+  if (tag) return tag;
+  if (!LABELS.group) {
+    LABELS.group = new THREE.Group();
+    G.scene().add(LABELS.group);
+    // Measured and painted again once the page's face is there.
+    Promise.all([500, 600].map(weight => document.fonts.load(`${weight} ${LABEL.size}px ${css('--sans')}`))).then(() => {
+      LABELS.measured.clear();
+      for (const each of tags.values()) each.key = '';
+    }, () => {});
+  }
+  const texture = new THREE.CanvasTexture(document.createElement('canvas'));
+  Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    generateMipmaps: false});
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, sizeAttenuation: false, depthTest: true,
+    depthWrite: true, transparent: true, alphaTest: 0.02, toneMapped: false}));
+  sprite.center.set(0.5, 0);                // it stands on the point above the node
+  sprite.raycast = () => {};                // a label is never picked in place of the node
+  LABELS.group.add(sprite);
+  tag = {id: node.id, text: node.name || '', sprite, texture, key: '', classes: [], lines: [], width: 0, height: 0,
+    under: false, z: 0, hidden: true, rect: null, color: ''};
+  tags.set(node.id, tag);
+  return tag;
+}
+function dropLabel(id) {
+  const tag = tags.get(id);
+  if (!tag) return;
+  LABELS.group?.remove(tag.sprite);
+  tag.texture.dispose(); tag.sprite.material.dispose();
+  tags.delete(id);
+}
+/* What a label shows from its classes, as the page's own styles would give it. */
+function lookOf(classes, palette) {
+  const is = name => classes.includes(name);
+  const chosen = is('sel'), reach = is('reach');
+  const color = is('work-exclude') ? palette.exclude : is('work-broken') || is('work-fixing') ? palette.broken
+    : reach ? palette.text : is('dim') ? palette.muted : chosen ? palette.signal : palette.text;
+  return {size: chosen ? LABEL.chosen : LABEL.size, weight: chosen || reach ? 600 : 500, family: palette.sans, color,
+    ground: palette.ground, glow: reach ? [10, 6, 3] : [6, 2]};
+}
+/* Each frame: every label is put above its node at the node's depth and sized for the screen, and the labels that
+ * fall on a nearer sphere or a nearer label are marked under. */
+function layered() {
+  const camera = G.camera(), area = $('#stage').getBoundingClientRect(), height = area.height || 1;
+  const spread = camera.projectionMatrix.elements[5], ratio = G.renderer().getPixelRatio();
+  const perPixel = depth => 2 * depth / (spread * height);   // world units a pixel spans at a depth
+  const depthOf = node => -AT.set(node.x, node.y, node.z).applyMatrix4(camera.matrixWorldInverse).z;
+  UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  const palette = {text: css('--text'), muted: css('--muted'), signal: css('--signal'), broken: css('--broken'),
+    exclude: css('--exclude'), ground: css('--ground'), sans: css('--sans')};  // read once a frame, not once a label
+  if (LABELS.group) LABELS.group.visible = LABELS.on;
+  const spheres = [], shown = [];
   for (const node of G.graphData().nodes) {
     if (node.x === undefined) continue;
-    const point = G.graph2ScreenCoords(node.x, node.y, node.z), far = away(node);
-    spheres.push({id: node.id, x: point.x, y: point.y, far, r: Math.cbrt(nodeSize(node)) * 3 / far * scale});
+    const point = G.graph2ScreenCoords(node.x, node.y, node.z), depth = depthOf(node);
+    spheres.push({id: node.id, x: point.x, y: point.y, far: depth, r: Math.cbrt(nodeSize(node)) * 3 / perPixel(depth)});
   }
-  const rank = tag => tag.classList.contains('sel') ? 0 : tag.classList.contains('near') ? 1
-    : [...tag.classList].some(name => name === 'reach' || name.startsWith('work-')) ? 2 : 3;
-  const shown = [];
   for (const node of G.graphData().nodes) {
-    const tag = tags.get(node.id);
-    if (!tag || tag.hidden || node.x === undefined) continue;
-    const rect = tag.getBoundingClientRect();
-    shown.push({tag, far: away(node), id: node.id, rank: rank(tag), left: rect.left - area.left, right: rect.right - area.left,
-      top: rect.top - area.top, bottom: rect.bottom - area.top});
+    if (node.t !== 'el') continue;
+    const tag = labelFor(node);
+    tag.text = node.name || '';
+    tag.hidden = node.x === undefined;
+    tag.sprite.visible = !tag.hidden;
+    if (tag.hidden) continue;
+    tag.classes = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
+      ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '',
+      node.__threeObj?.userData.written ? 'text' : ''].filter(Boolean);
+    const look = lookOf(tag.classes, palette), shape = wrapped(tag.text, look);
+    const depth = depthOf(node), unit = perPixel(Math.max(depth, 1e-3)), radius = Math.cbrt(nodeSize(node)) * 3;
+    const lift = Math.max(radius, tag.classes.includes('text') ? LABEL.written * unit : 0) + LABEL.gap * unit;
+    tag.sprite.position.set(node.x, node.y, node.z).addScaledVector(UP, lift);
+    tag.sprite.scale.set(shape.width * 2 / (spread * height), shape.height * 2 / (spread * height), 1);
+    const anchor = G.graph2ScreenCoords(tag.sprite.position.x, tag.sprite.position.y, tag.sprite.position.z);
+    tag.rect = {left: anchor.x - shape.width / 2, right: anchor.x + shape.width / 2, top: anchor.y - shape.height, bottom: anchor.y};
+    shown.push({tag, far: depth, look});
   }
-  shown.sort((one, two) => one.rank - two.rank || one.far - two.far);
-  const placed = [];
+  shown.sort((one, two) => one.far - two.far);
   shown.forEach((label, index) => {
-    const behind = label.rank > 0 && spheres.some(sphere => sphere.id !== label.id && sphere.far < label.far &&
-      Math.hypot(Math.max(label.left, Math.min(sphere.x, label.right)) - sphere.x,
-                 Math.max(label.top, Math.min(sphere.y, label.bottom)) - sphere.y) < sphere.r);
-    const covered = label.rank > 0 && placed.some(other => !(label.right <= other.left || other.right <= label.left ||
-      label.bottom <= other.top || other.bottom <= label.top));
-    if (!behind && !covered) placed.push(label);
-    label.tag.style.zIndex = String(shown.length - index);
-    label.tag.classList.toggle('under', behind || covered);
+    const box = label.tag.rect;
+    const behind = spheres.some(sphere => sphere.id !== label.tag.id && sphere.far < label.far &&
+      Math.hypot(Math.max(box.left, Math.min(sphere.x, box.right)) - sphere.x,
+                 Math.max(box.top, Math.min(sphere.y, box.bottom)) - sphere.y) < sphere.r);
+    const covered = shown.slice(0, index).some(({tag: other}) => !(box.right <= other.rect.left ||
+      other.rect.right <= box.left || box.bottom <= other.rect.top || other.rect.bottom <= box.top));
+    const tag = label.tag;
+    tag.under = behind || covered;
+    tag.z = shown.length - index;
+    if (tag.under) tag.classes.push('under');
+    const look = lookOf(tag.classes, palette), key = [tag.text, fontOf(look), look.color, look.ground, look.glow, ratio].join('|');
+    if (key !== tag.key) { painted(tag, look, ratio); tag.key = key; }
   });
 }
 function labels() {
   if (G) {
-    const box = $('#labels3d');
     // A glass node is colored by the page, since the graph colors only the nodes it draws itself.
     for (const node of G.graphData().nodes) if (isGlass(node) && node.__threeObj?.material && !node.__threeObj.material.userData.pulsed)
       colored(node.__threeObj.material, dimmed(node) ? dim(colorOf(node)) : colorOf(node));
@@ -1326,20 +1482,8 @@ function labels() {
     for (const node of G.graphData().nodes) {
       if ((node.work && node.work.length) || node.__threeObj?.material?.userData.lit) paint3d(node);
       signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
-      if (node.t !== 'el') continue;
-      let tag = tags.get(node.id);
-      if (!tag) { tag = h('span', {}, node.name); box.append(tag); tags.set(node.id, tag); }  // whole, wrapped, VIEW-038
-      tag.hidden = node.x === undefined;
-      if (tag.hidden) continue;
-      const point = G.graph2ScreenCoords(node.x, node.y, node.z);
-      tag.style.left = point.x + 'px';
-      tag.style.top = point.y + 'px';
-      tag.className = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
-        ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : '',
-        node.__threeObj?.userData.written ? 'text' : '']
-        .filter(Boolean).join(' ');
     }
-    layered(box);
+    layered();
     // The bloom runs while a reach is lit and while any part has a record that gives off light, VIEW-029, for as long
     // as the record is open and not only at the moments of its flash: the glass's highlights are over full brightness
     // too, and a pass switched with each flash would make them blink with it.
@@ -1361,7 +1505,7 @@ function draw3D(previous = null) {
       fx: known.fx, fy: known.fy, fz: known.fz});
   }
   const named = new Set(data.nodes.filter(node => node.t === 'el').map(node => node.id));
-  for (const [id, tag] of tags) if (!named.has(id)) { tag.remove(); tags.delete(id); }
+  for (const id of [...tags.keys()]) if (!named.has(id)) dropLabel(id);
   if (hovered) hovered = data.nodes.find(node => node.id === hovered.id) || null;
   $('#tip3d').hidden = !hovered;
   // A memory network is laid out before it is shown, so it opens settled and whole in view; the map keeps its own
@@ -1677,6 +1821,26 @@ async function drawInside(arriving = false) {
     const to = keyOf(thing.item.link);
     if (to) edges.push(`${ids.get(thing.key)} --> ${add(to, nameOf(to, thing.item.link.id), 'stub')}`);
   }
+  // The memories kept at the node, in memory's group; each relation of theirs runs to the memory it names, and a memory
+  // kept elsewhere leads on to the nodes it is kept at, LAYER-013. A subtype shows those of the element it holds too.
+  const kept = [...new Set([...memoriesAt(key), ...(held ? memoriesAt(keyOf({kind: 'element', id: held})) : [])])];
+  if (kept.length) {
+    const gid = `g${groups.size}`;
+    groups.set(gid, memoryLayer());
+    lines.push(`subgraph ${gid} ["memory"]`, 'direction TB');
+    for (const name of kept) add(memoryKey(name), name, 'item', memoryThing(memoryKey(name)));
+    lines.push('end');
+    edges.push(`${center} --- ${gid}`);
+    const there = name => [...S.memory.at].filter(([, names]) => names.includes(name)).map(([at]) => at);
+    for (const relation of S.memory.relations) {
+      if (!kept.includes(relation.from) && !kept.includes(relation.to)) continue;
+      for (const name of [relation.from, relation.to]) if (!ids.has(memoryKey(name))) {
+        add(memoryKey(name), name, 'item', memoryThing(memoryKey(name)));
+        for (const at of there(name)) if (at !== key) edges.push(`${ids.get(memoryKey(name))} --> ${add(at, nameOf(at), 'stub')}`);
+      }
+      edges.push(`${ids.get(memoryKey(relation.from))} -->|"${label2d(relation.relationType)}"| ${ids.get(memoryKey(relation.to))}`);
+    }
+  }
   const coming = incoming.filter(item => !ids.has('i:' + item.item_id));
   if (coming.length) {
     const gid = `g${groups.size}`;
@@ -1734,6 +1898,10 @@ function renderCrumbs() {
 async function enter(key) {
   const level = IN.at(-1), thing = level?.things?.get(key);
   if (key.startsWith('m:')) { level.more[key.slice(2)] = (level.more[key.slice(2)] || GROUP) + GROUP; return drawInside(); }
+  if (key.startsWith('e:')) {  // a memory has no inside; Enter goes to the node it is kept at, as an item's link does
+    const at = [...S.memory.at].find(([, names]) => names.includes(memoryName(key)))?.[0];
+    return at && at !== level?.key ? enter(at) : undefined;
+  }
   if (thing && (thing.kind === 'item' || thing.kind === 'property')) {
     const to = keyOf(thing.item.link);
     if (!to) return;
@@ -1761,6 +1929,7 @@ async function goTo(depth) {
 }
 function renderThing(thing) {
   const pane = $('#p-object');
+  if (thing.kind === 'memory') return renderEntity(thing.name);
   if (thing.kind === 'item' || thing.kind === 'property') {
     const link = keyOf(thing.item.link);
     fill(pane,
@@ -1776,24 +1945,64 @@ function renderThing(thing) {
     h('p', {class: 'meta'}, thing.kind === 'more' ? 'Enter shows the next ones.' : 'Enter goes inside it.'));
 }
 
-/* ---------- the memories of a node, a graph of their own in both views, VIEW-031 ----------
- * The memories kept at a node are those the memory module reads for it: its observations, the relations it holds and
- * the relations held toward it, STORE-020. Their entities, the node and the nodes those relations name, and the
- * relations between those entities are the nodes and links of the graph. They are the memory layer's items as the page
- * holds them, read in context with the layers in view as the 3D map draws them, VIEW-004 and VIEW-017. */
-function networkOf(key) {
-  const memories = [...S.items.values()].filter(thing => thing.layerKind === 'memory' && thing.kind === 'item');
-  const from = thing => keyOf(thing.item.target), to = thing => keyOf(thing.item.link);
-  const kept = memories.filter(thing => from(thing) === key || (thing.item.link && to(thing) === key));
-  const entities = new Set([key]);
-  for (const thing of kept) if (thing.item.link) for (const end of [from(thing), to(thing)]) if (end) entities.add(end);
-  const relations = memories.filter(thing => thing.item.link && entities.has(from(thing)) && entities.has(to(thing)))
-    .map(thing => ({key: thing.key, from: from(thing), to: to(thing), type: itemText(thing.value), layer: thing.layer}));
-  return {key, memories, kept, entities: [...entities], relations};
+/* ---------- the memory graph, LAYER-013: a graph of its own, tied to the map's nodes by joins of type memory ----------
+ * Read whole from the memory module's `graph`, each join saying whether its memory shows at its node in the layers in
+ * view, VIEW-031. A memory is drawn as `e:<name>`, at each node it shows
+ * at; a join the map no longer holds is orphaned and listed in the orphaned menu. */
+const emptyMemory = () => ({entities: new Map(), relations: [], joins: [], at: new Map(), orphaned: 0});
+const memoryLayer = () => S.layers.find(layer => layer.kind === 'memory')?.name || 'memory';
+const memoryKey = name => 'e:' + name;
+const memoryName = key => key.slice(2);
+/* The node of the map a memory join names: an element by its address, the element a subtype join holds at its subtype,
+ * a map join by its receiver's and provider's addresses, and a subtype join by its parent's receiver and the element
+ * it holds, STORE-020. */
+function nodeAt(join) {
+  const addressOf = id => S.elements.get(id)?.element.address;
+  if (join.address !== undefined) {
+    const found = [...S.elements.values()].find(entry => entry.element.address === join.address);
+    if (found) return found.element.element_id;
+    for (const [key, {subtype}] of subtypeOf) if (subtype.address === join.address) return key;
+    return null;
+  }
+  const parent = S.joins.find(one => addressOf(one.receiver) === join.receiver && addressOf(one.provider) === join.provider);
+  if (parent) return 'p:' + parent.join_id;
+  for (const [key, {subtype, join: held}] of subtypeOf)
+    if (addressOf(held.receiver) === join.receiver && subtype.address === join.provider) return key;
+  return null;
 }
-/* Each entity is drawn as the map draws that node: an element as its glass, a join as its purpose, a subtype as a
- * subtype. */
+async function memoryOf() {
+  let whole;
+  try { whole = await read('memory-graph', viewLayers()); } catch (error) { return emptyMemory(); }
+  const at = new Map(), joins = whole.joins.map(join => ({...join, key: join.orphaned ? null : nodeAt(join)}));
+  for (const join of joins) {
+    if (!join.shows || !join.key) continue;
+    if (!at.has(join.key)) at.set(join.key, []);
+    if (!at.get(join.key).includes(join.entity)) at.get(join.key).push(join.entity);
+  }
+  return {entities: new Map(whole.entities.map(entity => [entity.name, entity])), relations: whole.relations, joins, at,
+    orphaned: joins.filter(join => join.orphaned).length};
+}
+/* The memories shown at a node, and a memory as the panel and the inside of a node take it. */
+const memoriesAt = key => S.memory.at.get(key) || [];
+function memoryThing(key) {
+  if (!key?.startsWith('e:') || !S.memory.entities.has(memoryName(key))) return null;
+  return {kind: 'memory', key, name: memoryName(key), value: memoryName(key), layer: memoryLayer(), layerKind: 'memory'};
+}
+/* The memory network of a node, VIEW-031: the memories kept at it, the memories their relations name, and every
+ * relation between those; a relation one of them holds to a memory outside them is not drawn. */
+function networkOf(key) {
+  const own = memoriesAt(key), names = new Set(own);
+  for (const relation of S.memory.relations) if (own.includes(relation.from) || own.includes(relation.to)) {
+    names.add(relation.from); names.add(relation.to);
+  }
+  const relations = S.memory.relations.filter(relation => names.has(relation.from) && names.has(relation.to))
+    .map(relation => ({from: memoryKey(relation.from), to: memoryKey(relation.to), type: relation.relationType}));
+  return {key, own, entities: [key, ...[...names].map(memoryKey)], relations};
+}
+/* The node is drawn as the map draws it: an element as its glass, a join as its purpose, a subtype as a subtype; each
+ * memory as a memory is drawn in the map. */
 function entityNode(key) {
+  if (key.startsWith('e:')) return {id: key, t: 'item', layer: memoryLayer(), text: memoryName(key), work: []};
   const element = S.elements.get(key)?.element;
   if (element) return {id: key, t: 'el', name: element.short_name || element.address, address: element.address,
     role: element.role, work: element.open_work || [], layer: element.layer};
@@ -1805,9 +2014,11 @@ function entityNode(key) {
   return {id: key, t: 'el', name: key, address: key, work: []};  // a node the layers in view do not draw
 }
 function memoryData() {
-  const network = MEM.network = networkOf(MEM.key);
-  return {nodes: network.entities.map(entityNode), links: network.relations.map(relation => ({source: relation.from,
-    target: relation.to, k: 'relation', layer: relation.layer, relation: relation.type, item: relation.key}))};
+  const network = MEM.network = networkOf(MEM.key), layer = memoryLayer();
+  return {nodes: network.entities.map(entityNode), links: [
+    ...network.own.map(name => ({source: network.key, target: memoryKey(name), k: 'item', layer, relation: null})),
+    ...network.relations.map(relation => ({source: relation.from, target: relation.to, k: 'relation', layer,
+      relation: relation.type}))]};
 }
 /* The view zooms into the node as the map gives way to it: each camera goes up to the node while its view fades
  * toward the background. With reduced motion the views change at once. */
@@ -1828,7 +2039,7 @@ function into2d(key) {
   if (node) moveCam(into(node));
   return fade(M.svg, 0);
 }
-const shown3d = to => Promise.all([fade($('#stage'), to), fade($('#labels3d'), to)]);
+const shown3d = to => fade($('#stage'), to);  // the labels are drawn in the 3D view, VIEW-038
 /* The whole memory network in the 3D view, once the graph has taken its nodes. */
 async function whole3d() {
   if (!G) return;
@@ -1883,17 +2094,20 @@ async function leaveMemories(depth = null) {
 function dropMemories() {
   MEM.generation++;
   Object.assign(MEM, {key: null, network: null, drawn: false, levels: [], positions: null});
-  for (const part of [$('#stage'), $('#labels3d')]) Object.assign(part.style, {transition: '', opacity: ''});
+  Object.assign($('#stage').style, {transition: '', opacity: ''});
 }
-/* The memory network in 2D: each entity by its name, each relation a line from the node that holds it to the node it
- * names, with its relation type on it. `hidden` puts it in place unseen, to fade in with the 3D view. */
+/* The memory network in 2D: the node, each memory by its name, a dotted line from the node to each memory kept at it,
+ * and each relation a line in memory's color from the memory that holds it to the memory it names, with its relation
+ * type on it. `hidden` puts it in place unseen, to fade in with the 3D view. */
 async function drawMemory2d(hidden = false) {
   const network = MEM.network = networkOf(MEM.key);
   const generation = ++insideGen;  // a render still running for a level left is dropped
   const vertical = M.base ? M.base.vertical : true;
   const ids = new Map(network.entities.map((key, index) => [key, `v${index}`]));
+  const label = key => key.startsWith('e:') ? memoryName(key) : nameOf(key);
   const lines = [vertical ? 'flowchart TB' : 'flowchart LR',
-    ...network.entities.map(key => `${ids.get(key)}["${label2d(nameOf(key))}"]:::${key === network.key ? 'center' : 'entity'}`),
+    ...network.entities.map(key => `${ids.get(key)}["${label2d(label(key))}"]:::${key === network.key ? 'center' : 'entity'}`),
+    ...network.own.map(name => `${ids.get(network.key)} -.- ${ids.get(memoryKey(name))}`),
     ...network.relations.map((relation, index) =>
       `${ids.get(relation.from)} e${index}@-->|"${label2d(relation.type)}"| ${ids.get(relation.to)}`),
     ...['center', 'entity'].map(kind => `classDef ${kind} font-size:11px`)];
@@ -1907,7 +2121,7 @@ async function drawMemory2d(hidden = false) {
   for (const [key, id] of ids) {
     const group = svg.querySelector(`[id*="-flowchart-${id}-"]`);
     if (!group) continue;
-    placeIn(nodes, key, group, S.elements.get(key)?.element.address || nameOf(key), entityNode(key).work);
+    placeIn(nodes, key, group, S.elements.get(key)?.element.address || label(key), entityNode(key).work);
     group.classList.add(key === network.key ? 'in-center' : 'in-entity');
   }
   network.relations.forEach((relation, index) => svg.querySelector(`path[data-id="e${index}"]`)?.classList.add('relation'));
@@ -1921,27 +2135,167 @@ async function drawMemory2d(hidden = false) {
   }
   renderCrumbs();
 }
-/* In a memory network the panel shows the selected node as the memory module reads it: its observations, and the
- * relations it holds and those held toward it, each with the node it names, VIEW-009 and STORE-020. */
+/* In a memory network the panel shows the node with the memories kept at it, each with its observations and its
+ * relations, or the memory selected, as the memory module reads them, VIEW-009 and STORE-020. */
 function renderMemories(id) {
-  const network = MEM.network || networkOf(MEM.key);
-  const from = thing => keyOf(thing.item.target), to = thing => keyOf(thing.item.link);
-  const observed = network.memories.filter(thing => !thing.item.link && from(thing) === id);
-  const related = network.memories.filter(thing => thing.item.link && (from(thing) === id || to(thing) === id));
-  const called = key => network.entities.includes(key) && key !== id
-    ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(key, true); }}, nameOf(key))
-    : h('b', {}, nameOf(key));
-  const kept = thing => ({class: 'item', style: {'--c': `var(${colorVar(thing.layer)})`}});
+  if (id.startsWith('e:')) return renderEntity(memoryName(id));
+  const own = memoriesAt(id), kept = {class: 'item', style: {'--c': `var(${colorVar(memoryLayer())})`}};
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Memories'),
     h('h2', {}, nameOf(id)),
     S.elements.has(id) ? h('div', {class: 'addr'}, S.elements.get(id).element.address) : null,
-    observed.length ? [h('div', {class: 'eyebrow'}, 'Observations'),
-      observed.map(thing => h('div', kept(thing), itemText(thing.value), refsOf(thing.item.refs)))] : null,
-    related.length ? [h('div', {class: 'eyebrow'}, 'Relations'),
-      related.map(thing => h('div', kept(thing), called(from(thing)), ` ${itemText(thing.value)} `, called(to(thing))))] : null,
-    observed.length || related.length ? null : h('p', {class: 'empty'}, 'No memories are kept here in the layers in view.'));
+    own.length ? own.map(name => {
+      const entity = S.memory.entities.get(name);
+      const related = S.memory.relations.filter(relation => relation.from === name || relation.to === name);
+      return h('div', kept, h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(name), true); }}, name),
+        entity ? h('small', {}, ` · ${entity.entityType}`) : null,
+        (entity?.observations || []).map(one => h('p', {class: 'itemtext'}, one.content)),
+        related.map(relation => h('p', {class: 'meta'}, `${relation.from} ${relation.relationType} ${relation.to}`)));
+    }) : h('p', {class: 'empty'}, 'No memories are kept here in the layers in view.'));
 }
+/* ---------- managing the memories, VIEW-031: Rich, 2026-10-02, "memories can be fricking poison to a project" ----------
+ * A memory in the panel, as the memory module keeps it: its type, its observations, its relations and the nodes it is
+ * joined to, each edited or deleted in place. Every change is written with the memory module's commands through
+ * /api/memory; an edit writes the new before it deletes the old, so a failure loses nothing. The page is told of the
+ * change by map.changed, VIEW-018, and reads the memories again. */
+async function memoryWrite(...steps) {
+  return wrote('/api/memory', {steps: steps.map(([command, args]) => ({command, arguments: args}))});
+}
+/* What is typed in the panel's editors survives the panel drawn again, with the focus, VIEW-018. */
+function keepDrafts(pane, draw) {
+  const drafts = new Map([...pane.querySelectorAll('[data-draft]')].map(field => [field.dataset.draft, field.value]));
+  const focused = document.activeElement?.closest('[data-draft]')?.dataset.draft;
+  draw();
+  for (const field of pane.querySelectorAll('[data-draft]')) if (drafts.has(field.dataset.draft)) field.value = drafts.get(field.dataset.draft);
+  if (focused) pane.querySelector(`[data-draft="${CSS.escape(focused)}"]`)?.focus();
+}
+const EDITING = new Set();  // the editors open in the memory panel, kept open when it is drawn again
+function joinPlace(join) {
+  return join.address !== undefined ? join.address : `${join.receiver} → ${join.provider}`;
+}
+function renderEntity(name, pane = $('#p-object')) {
+  const entity = S.memory.entities.get(name);
+  if (!entity) return fill(pane, h('div', {class: 'eyebrow'}, 'Memory'), h('p', {class: 'empty'}, `No memory named ${name}.`));
+  const joins = S.memory.joins.filter(join => join.entity === name);
+  const related = S.memory.relations.filter(relation => relation.from === name || relation.to === name);
+  const others = [...S.memory.entities.keys()].filter(other => other !== name);
+  const color = {'--c': `var(${colorVar(memoryLayer())})`};
+  const draft = key => `${name}\u0000${key}`;
+  const observation = one => {
+    const row = h('div', {class: 'item obs', style: color}), editing = draft('obs:' + one.content);
+    const show = () => { EDITING.delete(editing); fill(row, h('p', {class: 'itemtext'}, one.content),
+      h('div', {class: 'acts'}, h('button', {class: 'edit', onclick: edit}, 'Edit'),
+        h('button', {class: 'delete', onclick: () => memoryWrite(['delete_observations',
+          {deletions: [{entityName: name, observations: [one.content]}]}])}, 'Delete'))); };
+    const edit = () => {
+      EDITING.add(editing);
+      const text = h('textarea', {'data-draft': editing}, one.content);  // its text, so the row is found by it
+      fill(row, text, h('div', {class: 'acts'}, h('button', {class: 'save', onclick: async () => {
+        const changed = text.value.trim();
+        if (!changed || changed === one.content) return show();
+        EDITING.delete(editing);
+        await memoryWrite(['add_observations', {observations: [{entityName: name, contents: [changed]}]}],
+          ['delete_observations', {deletions: [{entityName: name, observations: [one.content]}]}]);
+      }}, 'Save'), h('button', {class: 'cancel', onclick: show}, 'Cancel')));
+    };
+    if (EDITING.has(editing)) edit(); else show();
+    return row;
+  };
+  const relation = one => h('div', {class: 'item rel', style: color},
+    one.from === name ? h('b', {}, name) : h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(one.from), true); }}, one.from),
+    ` ${one.relationType} `,
+    one.to === name ? h('b', {}, name) : h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(one.to), true); }}, one.to),
+    h('div', {class: 'acts'}, h('button', {class: 'delete', onclick: () => memoryWrite(['delete_relations',
+      {relations: [{from: one.from, to: one.to, relationType: one.relationType}]}])}, 'Delete')));
+  const joined = one => h('div', {class: 'item join', style: color},
+    one.key ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(one.key); }}, nameOf(one.key))
+      : h('b', {}, joinPlace(one)),
+    one.orphaned ? h('small', {}, ' · orphaned, the map no longer holds it') : one.key ? h('small', {}, '; Enter goes there.') : null,
+    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.join_id}])}, 'Take away')));
+  const renaming = draft('rename');
+  const naming = h('div', {class: 'naming', hidden: !EDITING.has(renaming)},
+    h('input', {class: 'name', 'data-draft': draft('name'), value: name, 'aria-label': 'Name'}),
+    h('input', {class: 'type', 'data-draft': draft('type'), value: entity.entityType, 'aria-label': 'Type'}),
+    h('button', {class: 'save-entity', onclick: () => renameEntity(name, naming.querySelector('.name').value.trim(),
+      naming.querySelector('.type').value.trim())}, 'Save'),
+    h('button', {class: 'cancel', onclick: () => { EDITING.delete(renaming); naming.hidden = true; }}, 'Cancel'));
+  const adding = h('textarea', {class: 'add-obs', 'data-draft': draft('add'), placeholder: 'A new observation'});
+  const relating = h('input', {class: 'add-rel-type', 'data-draft': draft('reltype'), placeholder: 'relation, in active voice'});
+  const target = h('select', {class: 'add-rel-to', 'aria-label': 'To'}, others.map(other => h('option', {value: other}, other)));
+  keepDrafts(pane, () => fill(pane,
+    h('div', {class: 'eyebrow'}, 'Memory'),
+    h('h2', {}, name),
+    h('div', {class: 'pills'}, h('span', {class: 'pill'}, entity.entityType), layerPill(memoryLayer())),
+    h('div', {class: 'acts'}, h('button', {class: 'rename', onclick: () => { EDITING.add(renaming); naming.hidden = false; naming.querySelector('.name').focus(); }}, 'Rename or retype'),
+      h('button', {class: 'forget', onclick: () => memoryWrite(['delete_entities', {entityNames: [name]}])}, 'Delete memory')),
+    naming,
+    h('div', {class: 'eyebrow'}, 'Observations'),
+    entity.observations.length ? entity.observations.map(observation) : h('p', {class: 'empty'}, 'No observations.'),
+    adding, h('button', {class: 'add-obs', onclick: async () => {
+      const text = adding.value.trim();
+      if (!text) return;
+      adding.value = '';  // emptied before the write, so the panel drawn again for it does not keep it
+      if (!await memoryWrite(['add_observations', {observations: [{entityName: name, contents: [text]}]}])) adding.value = text;
+    }}, 'Add observation'),
+    h('div', {class: 'eyebrow'}, 'Relations'),
+    related.length ? related.map(relation) : h('p', {class: 'empty'}, 'No relations.'),
+    others.length ? h('div', {class: 'add-rel'}, relating, target, h('button', {class: 'add-rel', onclick: async () => {
+      const type = relating.value.trim();
+      if (!type) return;
+      relating.value = '';
+      if (!await memoryWrite(['create_relations', {relations: [{from: name, to: target.value, relationType: type}]}])) relating.value = type;
+    }}, 'Add relation')) : null,
+    h('div', {class: 'eyebrow'}, 'Kept at'),
+    joins.length ? joins.map(joined) : h('p', {class: 'empty'}, 'Joined to no node.')));
+}
+/* A memory renamed or retyped: the reference server has no command for it, so it is made again under its new name and
+ * type with its observations, joined again to each node of the map it was joined to, its relations made again, and the
+ * old one deleted. A join the map no longer holds cannot be made again. */
+async function renameEntity(name, next, type) {
+  const entity = S.memory.entities.get(name);
+  EDITING.delete(`${name}\u0000rename`);
+  if (!entity || !next || !type || (next === name && type === entity.entityType)) return renderEntity(name);
+  const made = {name: next, entityType: type, observations: entity.observations.map(one => one.content)};
+  const again = S.memory.joins.filter(join => join.entity === name && join.key)
+    .map(join => ['create_entities', {entities: [made], node: targetOf(join.key)}]);
+  const swap = value => value === name ? next : value;
+  const related = S.memory.relations.filter(relation => relation.from === name || relation.to === name)
+    .map(relation => ({from: swap(relation.from), to: swap(relation.to), relationType: relation.relationType}));
+  const steps = [['create_entities', {entities: [made]}], ...again,
+    ...(related.length ? [['create_relations', {relations: related}]] : [])];
+  const gone = ['delete_entities', {entityNames: [name]}];
+  if (next === name ? await memoryWrite(gone, ...steps) : await memoryWrite(...steps, gone)) S.selected = memoryKey(next);
+}
+/* ---------- the orphaned menu, LAYER-013: Rich, 2026-10-02, "the memory chains can just show what they were attached
+ * to, like through an orphaned menu" ----------
+ * The memory joins the map no longer holds, from `memory orphaned`, each with what it was attached to, and the memories
+ * joined to no node at all; a join is taken away or its memory deleted from here. */
+const O = {open: false};
+async function orphans() {
+  let lost;
+  try { lost = (await read('memory-orphaned')).joins; } catch (error) { toast(error.message); return; }
+  Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
+  O.open = true;
+  const loose = [...S.memory.entities.keys()].filter(name => !S.memory.joins.some(join => join.entity === name));
+  $('#float .title').textContent = 'Orphaned memories';
+  fill($('#float .body'),
+    lost.length ? lost.map(join => h('div', {class: 'ticket orphan'}, h('b', {}, join.entity),
+      h('p', {class: 'note'}, `was attached to ${joinPlace(join)}`),
+      h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: async () => {
+        if (await memoryWrite(['unjoin', {id: join.join_id}])) orphans(); }}, 'Take away the join'),
+        h('button', {class: 'forget', onclick: async () => {
+          if (await memoryWrite(['delete_entities', {entityNames: [join.entity]}])) orphans(); }}, 'Delete memory'))))
+      : h('p', {class: 'empty'}, 'No memory join is orphaned.'),
+    loose.length ? [h('div', {class: 'eyebrow'}, 'Joined to no node'), loose.map(name => h('div', {class: 'ticket loose'},
+      h('b', {}, name), h('div', {class: 'acts'}, h('button', {class: 'forget', onclick: async () => {
+        if (await memoryWrite(['delete_entities', {entityNames: [name]}])) orphans(); }}, 'Delete memory'))))] : null);
+  $('#float').hidden = false;
+}
+function renderOrphans() {
+  $('#orphanBtn').textContent = `Orphaned memories ${S.memory.orphaned}`;
+  if (O.open && !$('#float').hidden && $('#float .title').textContent === 'Orphaned memories') orphans();
+}
+$('#orphanBtn').onclick = () => { showAdmin(false); orphans(); };
 function aspect() { const box = $('#viewport').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
   let {x, y, w, h: height} = box; const a = aspect();
@@ -2157,12 +2511,15 @@ document.addEventListener('keydown', event => {
   }
 });
 
-/* ---------- selection: both views move together; the long text goes in the panel ---------- */
-function select(id, fly, keepTrail = false, stepping = false) {
+/* ---------- selection: both views move together; the long text goes in the panel ----------
+ * A selection made as the map is loaded or read again, again, leaves open the tab of the panel the person has open,
+ * such as the prompt being edited. */
+function select(id, fly, keepTrail = false, stepping = false, again = false) {
   if (!id) return;
   const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
   const entity = Boolean(MEM.network?.entities.includes(id));  // a node of the memory network open, VIEW-031
-  const known = subtype || join || S.elements.has(id) || entity, thing = IN.at(-1)?.things?.get(id) || S.items.get(id);
+  const known = subtype || join || S.elements.has(id) || entity,
+    thing = IN.at(-1)?.things?.get(id) || S.items.get(id) || memoryThing(id);
   if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
   const path = IN.map(({key, label}) => ({key, label})), last = S.history[S.at];
@@ -2172,7 +2529,7 @@ function select(id, fly, keepTrail = false, stepping = false) {
   showSteps();
   S.selected = id;
   setReach(id);
-  if (!known) { S.neighbors = new Set(); focus2D(id, fly); showTab('object'); renderThing(thing); return; }
+  if (!known) { S.neighbors = new Set(); focus2D(id, fly); if (!again) showTab('object'); renderThing(thing); return; }
   S.neighbors = MEM.key ? new Set([id, ...(MEM.network?.relations || []).flatMap(relation =>
       relation.from === id ? [relation.to] : relation.to === id ? [relation.from] : [])])
     : subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
@@ -2185,8 +2542,9 @@ function select(id, fly, keepTrail = false, stepping = false) {
     if (fly && node) fly3d(id);
   }
   focus2D(id, fly);
-  showTab('object');
-  if (MEM.key) renderMemories(id); else if (subtype) renderSubtype(subtype); else if (join) renderJoin(join); else renderObject(id);
+  if (!again) showTab('object');
+  // The panel's reads are returned, so a load waits for them before it says it is loaded.
+  return MEM.key ? renderMemories(id) : subtype ? renderSubtype(subtype) : join ? renderJoin(join) : renderObject(id);
 }
 
 function refsOf(refs) {
@@ -2196,9 +2554,9 @@ function refsOf(refs) {
  * and its resolution once done; read from /api/work for the node and written into the panel's work box. */
 function workPill(condition) { return h('span', {class: `pill work-${condition}`}, condition); }
 /* A question at the node, MAP-050 and VIEW-021: open, it takes the answer here; answered, the answer stays beside it. */
-function asked(record) {
+function asked(record, metaform = S.metaform) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Your answer'});
-  const written = text => wrote('/api/answer', {id: record.message_id, answer: text});
+  const written = text => wrote('/api/answer', {id: record.message_id, answer: text, metaform});
   const send = h('button', {class: 'answer', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
@@ -2249,27 +2607,30 @@ async function renderMessages() {
     select(id, true);
     show(id, 'unread');
   };
-  if (F.id) show(F.id, F.which, true);
+  if (F.id) await show(F.id, F.which, true);
 }
 /* The menu of a node, opened by a right-click in either view. Each entry says how many it holds, and one that holds
  * none cannot be chosen. It is where further acts on a node are added. */
 async function menu(id, x = null, y = null) {
-  let found = {unread: [], past: []}, notes = [], tickets = [];
-  try { found = await messagesOf(id); notes = await notesOf(id); tickets = await ticketsOf(id); }
+  let found = {unread: [], past: []}, note = null, tickets = [];
+  try { found = await messagesOf(id); note = await noteOf(id); tickets = await ticketsOf(id); }
   catch (error) { toast(error.message); }
   const box = $('#menu');
   const entry = (which, text, count) => h('button', {class: which, disabled: !count, role: 'menuitem',
     onclick: () => { box.hidden = true; show(id, which); }}, text + ' ', h('b', {}, String(count)));
-  const kept = networkOf(id).kept.length;  // the memories at the node, VIEW-031
+  const kept = networkOf(id).own.length;  // the memories kept at the node, VIEW-031
   fill(box, entry('unread', 'Unread messages', found.unread.length), entry('past', 'Past messages', found.past.length),
     h('button', {class: 'memories', disabled: !kept, role: 'menuitem', onclick: () => { box.hidden = true; memories(id); }},
       'Memories ', h('b', {}, String(kept))),
     h('button', {class: 'notes', role: 'menuitem', onclick: () => { box.hidden = true; notesAt(id); }}, 'Notes ',
-      h('b', {}, String(notes.length))),
+      h('b', {}, note ? '1' : '0')),
     h('button', {class: 'history', disabled: !tickets.length, role: 'menuitem',
       onclick: () => { box.hidden = true; history(id); }}, 'Work history ', h('b', {}, String(tickets.length))),
     h('button', {class: 'task', role: 'menuitem', onclick: () => { box.hidden = true; giveWork(id); }}, 'Add Task'),
-    h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'));
+    h('button', {class: 'element', role: 'menuitem', onclick: () => { box.hidden = true; addElement(id); }}, 'Add Element'),
+    h('button', {class: 'agent', disabled: !tickets.some(waiting), role: 'menuitem', onclick: () => { box.hidden = true;
+      startWindow(`Start an agent · ${calledOf(id)}`, tickets.filter(waiting)); }}, 'Start agent ',
+      h('b', {}, String(tickets.filter(waiting).length))));
   box.hidden = false;
   if (x === null && G) {  // asked for with no pointer: beside the node in the 3D map
     const node = G.graphData().nodes.find(item => item.id === id), stage = $('#stage').getBoundingClientRect();
@@ -2325,7 +2686,9 @@ function card(ticket) {
       ...(ticket.links || []).map(link => nodeChip(link, 'ref'))),
     steps || filed ? h('div', {class: 'progress'}, h('span', {style: {width: `${Math.min(100, 100 * filed / Math.max(steps, filed, 1))}%`}}),
       h('small', {}, `${filed}/${steps || filed}`)) : null,
-    ticket.resolution ? h('div', {class: 'resolution'}, ticket.resolution) : null);
+    ticket.resolution ? h('div', {class: 'resolution'}, ticket.resolution) : null,
+    waiting(ticket) ? h('button', {class: 'start', title: 'Start an agent on this ticket', onclick: event => {
+      event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null);
   box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.work_id); box.classList.add('dragging'); });
   box.addEventListener('dragend', () => box.classList.remove('dragging'));
   return box;
@@ -2377,7 +2740,7 @@ async function ticketsOf(id) { return (await read('work', {node: targetOf(id), l
 async function history(id) {
   let tickets;
   try { tickets = await ticketsOf(id); } catch (error) { toast(error.message); return; }
-  Object.assign(F, {id: null, which: null, ids: new Set()});
+  Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
   $('#float .title').textContent = `Work history · ${calledOf(id)}`;
   fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => h('div', {class: 'ticket'},
     h('div', {class: 'head'}, h('span', {class: `kind kind-${ticket.condition}`}, ticket.condition || 'ticket'),
@@ -2393,19 +2756,27 @@ async function history(id) {
   $('#float').hidden = false;
 }
 /* The floating window, VIEW-030. It shows the messages it was opened with, each as it is now, so a question answered
- * in it shows its answer and a note read in it stays in sight until the window is closed. */
-const F = {id: null, which: null, ids: new Set()};
+ * in it shows its answer and a note read in it stays in sight until the window is closed. Shown again as the map
+ * changes, a message that has not changed keeps the part of the window drawn for it, with whatever is typed there. */
+const F = {id: null, which: null, ids: new Set(), drawn: new Map(), metaform: null};
 async function show(id, which, again = false) {
+  // Its messages are those of the metaform it was opened in; while another is shown it is left as it is.
+  if (again && F.metaform !== S.metaform) return;
   let found;
   try { found = await messagesOf(id); } catch (error) { toast(error.message); return; }
-  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.message_id))});
+  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.message_id)), drawn: new Map(),
+    metaform: S.metaform});
   if (F.id !== id) return;
   const shown = found.all.filter(record => F.ids.has(record.message_id));
   $('#float .title').textContent = `${which === 'unread' ? 'Unread' : 'Past'} messages · ${calledOf(id)}`;
-  fill($('#float .body'), shown.length ? shown.map(record => h('div', {},
-    h('div', {class: 'when'}, record.created.replace('T', ' ').replace('Z', '')),
-    record.kind === 'question' ? asked(record) : noted(record)))
-    : h('p', {class: 'empty'}, 'No messages here.'));
+  const drawn = new Map(shown.map(record => {
+    const state = JSON.stringify([record.closed, record.answer, record.text, record.suggestions]), had = F.drawn.get(record.message_id);
+    return [record.message_id, had && had.state === state ? had : {state, node: h('div', {},
+      h('div', {class: 'when'}, record.created.replace('T', ' ').replace('Z', '')),
+      record.kind === 'question' ? asked(record, F.metaform) : noted(record))}];
+  }));
+  F.drawn = drawn;
+  keepFill($('#float .body'), shown.length ? [...drawn.values()].map(one => one.node) : [h('p', {class: 'empty'}, 'No messages here.')]);
   $('#float').hidden = false;
   for (const record of shown) if (record.kind === 'message' && !record.closed) wrote('/api/read', {id: record.message_id});
 }
@@ -2437,6 +2808,104 @@ function movable(box) {
     event.preventDefault();
   });
 }
+/* ---------- agents dispatched on tickets, VIEW-039 ----------
+ * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
+ * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
+const AGENT_NAMES = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};  // as the dispatch module names them
+const DOING = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user_message_chunk: 'was told',
+  tool_call: 'ran', tool_call_update: 'ran', plan: 'plan', turn: 'turn', failed: 'failed'};
+const D = {sessions: [], notes: [], work: null, drawn: new Map()};
+const waiting = ticket => !ticket.done && !ticket.taken;  // a ticket an agent can be started on
+const held = item => item.extra || {};
+const ticketOf = workId => (S.tickets || []).find(ticket => ticket.work_id === workId);
+function ticketPart(ticket) {
+  const element = ticket?.address ? partAt(ticket.address) : null;
+  return element ? named(element) : ticket ? calledOf(ticketNode(ticket)) : 'its ticket';
+}
+const glyphOf = workId => `/page/agent-glyphs/${drawGlyph(workId)}.svg`;  // the character its 3D figure is, VIEW-035
+const agentName = agent => AGENT_NAMES[agent] || agent || 'An agent';
+/* The window an agent is started from: the tickets, and the agent chosen once for the window. */
+function startWindow(title, tickets) {
+  $('#dispatch .title').textContent = title;
+  fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.work_id},
+    h('span', {class: 'kind'}, ticket.condition || 'ticket'),
+    h('button', {class: 'start', title: 'Start the agent chosen above on this ticket', onclick: async event => {
+      const agent = $('#dispatch select.agent').value;
+      event.target.disabled = true;
+      if (await wrote('/api/dispatch-start', {work_id: ticket.work_id, agent})) {
+        $('#dispatch').hidden = true;
+        toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed once its session is made.`);
+      } else event.target.disabled = false;
+    }}, 'Start'),
+    h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
+  $('#dispatch').hidden = false;
+}
+$('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; };
+movable($('#dispatch'));
+/* The agent deployed box: each agent running in the project, its flat icon and in words what it is. */
+async function renderAgents() {
+  let items = [];
+  // There is no dispatch layer until an agent first starts, and a read expected to find nothing is not made.
+  if (!noMetaform() && S.layers.some(layer => layer.name === 'dispatch')) {
+    try { items = (await read('layer-items', {layer: 'dispatch', limit: 0})).results || []; }
+    catch (error) { toast(error.message); }
+  }
+  D.sessions = items.filter(item => held(item).dispatch === 'session');
+  D.notes = items.filter(item => held(item).dispatch === 'note');
+  const running = D.sessions.filter(item => held(item).state === 'running');
+  fill($('#agents .list'), running.map(item => {
+    const {work_id: workId, agent} = held(item);
+    return h('button', {class: 'agent', 'data-id': workId, title: String(item.value || ''), onclick: () => agentAt(workId)},
+      h('img', {src: glyphOf(workId), alt: drawGlyph(workId)}), h('b', {}, agentName(agent)),
+      h('small', {}, `on ${ticketPart(ticketOf(workId))}`));
+  }));
+  $('#agents').hidden = !running.length;
+  if (D.work) await drawAgent();
+}
+function agentAt(workId) {
+  if (D.work !== workId) { $('#agent .say').value = ''; D.drawn = new Map(); }
+  D.work = workId;
+  $('#agent').hidden = false;
+  drawAgent();
+}
+/* One agent's window: what its session wrote on the dispatch layer, in order, its open questions, answered as every
+ * question is, VIEW-021, a message to send it, and Stop. The text being written is part of the page and is never
+ * drawn again, so a map change keeps it, VIEW-018. */
+async function drawAgent() {
+  const work = D.work, session = D.sessions.filter(item => held(item).work_id === work).at(-1);
+  const {agent, session_id: sessionId, state} = session ? held(session) : {};
+  const ticket = ticketOf(work);
+  $('#agent .icon').src = glyphOf(work);
+  $('#agent .icon').alt = drawGlyph(work);
+  $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)}${state && state !== 'running' ? ' · ended' : ''}`;
+  $('#agent .task').textContent = ticket ? ticket.task || ticket.note || '' : '';
+  fill($('#agent .activity'), D.notes.filter(item => held(item).work_id === work && (!sessionId || held(item).session_id === sessionId))
+    .map(item => h('li', {}, h('small', {}, DOING[held(item).update] || held(item).update || ''), String(item.value ?? ''))));
+  let open = [];
+  if (ticket && sessionId) {
+    try { open = (await messagesOf(ticketNode(ticket))).unread.filter(record => record.kind === 'question' && record.by === `${agent} ${sessionId}`); }
+    catch (error) { toast(error.message); }
+  }
+  if (D.work !== work) return;
+  const drawn = new Map(open.map(record => [record.message_id, D.drawn.get(record.message_id) || asked(record)]));
+  D.drawn = drawn;
+  keepFill($('#agent .asked'), [...drawn.values()]);
+  $('#agent .send').disabled = $('#agent .stop').disabled = state !== 'running';
+}
+$('#agent .send').onclick = async () => {
+  const text = $('#agent .say').value.trim();
+  if (!text) { toast('A message says something.'); return; }
+  $('#agent .send').disabled = true;
+  if (await wrote('/api/dispatch-message', {work_id: D.work, text})) { $('#agent .say').value = ''; toast('Sent to the agent.'); }
+  $('#agent .send').disabled = false;
+};
+$('#agent .stop').onclick = async () => {
+  $('#agent .stop').disabled = true;
+  if (await wrote('/api/dispatch-stop', {work_id: D.work})) toast('The agent was stopped.');
+  else $('#agent .stop').disabled = false;
+};
+$('#agent .close').onclick = () => { $('#agent').hidden = true; D.work = null; };
+movable($('#agent'));
 /* Giving work, VIEW-032: the task is written as a person writes, the nodes it concerns are linked to it, and a node
  * inserted into the text reads there as its proper noun and carries its address. */
 const K = {nodes: [], chosen: null, at: null};
@@ -2603,30 +3072,34 @@ $('#task .put').onclick = async () => {
   }
 };
 $('#task .close').onclick = () => { $('#task').hidden = true; };
-/* Notes, VIEW-034: what a person and what an agent know about a part, kept in one place at the node, the memory
- * layer. A note asks for nothing: it is not a message, it does not glow, and it stays. */
+/* Notes, VIEW-034: Rich, 2026-10-02, "Allow one single note not a list, limit its characters to 2048, make it so you
+ * can edit the note and so can the user". One note at the node, kept by the memory module and read and written with
+ * `memory note`, whatever layers are in view. Writing it replaces what it held, and writing it empty clears it. A note
+ * asks for nothing: it is not a message, it does not glow, and it stays. */
 const N = {node: null};
-async function notesOf(id) {
-  // Every note kept at the node, whatever layers are in view: a note a person wrote is not hidden from them by a
-  // choice of layers made for reading the map.
-  const view = await read('node', {target: targetOf(id), raw: true});
-  return (view.layers || []).filter(group => group.kind === 'memory').flatMap(group => group.items || [])
-    .filter(item => !item.link && typeof item.value === 'string');
+const NOTE_LIMIT = 2048;
+async function noteOf(id) { return (await read('memory-note', {node: targetOf(id)})).note; }
+function noteBy(note) {
+  if (!note) return 'No note here yet.';
+  return `Written by ${note.by === 'user' ? 'you' : note.by || 'an agent'}, ${when(note.at)}`;
 }
+function noteCount() { $('#notes .count').textContent = `${$('#notes textarea').value.length} / ${NOTE_LIMIT}`; }
 async function notesAt(id) {
   N.node = id;
   $('#notes .title').textContent = `Notes · ${calledOf(id)}`;
-  let kept = [];
-  try { kept = await notesOf(id); } catch (error) { toast(error.message); }
+  let note = null;
+  try { note = await noteOf(id); } catch (error) { toast(error.message); }
   if (N.node !== id) return;
-  fill($('#notes .kept'), kept.map(item => h('li', {}, item.value, item.extra?.by === 'user' ? h('small', {}, 'you') : null)));
+  $('#notes .by').textContent = noteBy(note);
+  $('#notes textarea').value = note ? note.text : '';
+  noteCount();
   $('#notes').hidden = false;
 }
-$('#notes .add').onclick = async () => {
-  const text = $('#notes textarea').value.trim();
-  if (!text) { toast('A note says something.'); return; }
+$('#notes textarea').setAttribute('maxlength', String(NOTE_LIMIT));
+$('#notes textarea').addEventListener('input', noteCount);
+$('#notes .save').onclick = async () => {
+  const text = $('#notes textarea').value.trim() ? $('#notes textarea').value : '';
   if (!await wrote('/api/note', {node: targetOf(N.node), text})) return;
-  $('#notes textarea').value = '';
   await notesAt(N.node);
 };
 $('#notes .close').onclick = () => { $('#notes').hidden = true; N.node = null; };
@@ -2678,7 +3151,7 @@ $('#element .close').onclick = () => { $('#element').hidden = true; };
 movable($('#element'));
 movable($('#task'));
 movable($('#float'));
-$('#float .close').onclick = () => { $('#float').hidden = true; Object.assign(F, {id: null, which: null, ids: new Set()}); };
+$('#float .close').onclick = () => { $('#float').hidden = true; O.open = false; Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()}); };
 async function renderWork(target, key, also = null) {
   let records = [];
   try {
@@ -2790,6 +3263,18 @@ async function renderObject(id) {
         ...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''), style: {'--c': `var(${colorVar(group.layer)})`}},
           itemText(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
     }
+    // What the memory module adds to the node's read, as `map node` gives it, BASE-035: its one note, and while memory
+    // shows here, the memories kept at it and those on the joins it receives and provides, LAYER-013 and VIEW-034.
+    const memory = node.memory || {}, color = {'--c': `var(${colorVar(memoryLayer())})`};
+    const remembered = entity => h('div', {class: 'item', style: color},
+      h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(memoryKey(entity.name), true); }}, entity.name),
+      h('small', {}, ` · ${entity.entityType}`), entity.observations.map(text => h('p', {class: 'itemtext'}, text)));
+    if (memory.note) box.append(h('div', {class: 'eyebrow'}, 'Note'), h('div', {class: 'item note', style: color},
+      h('p', {class: 'itemtext'}, memory.note.text), h('small', {}, noteBy(memory.note))));
+    if ((memory.entities || []).length) box.append(h('div', {class: 'eyebrow'}, 'Memory'), ...memory.entities.map(remembered),
+      ...(memory.relations || []).map(relation => h('p', {class: 'meta'}, `${relation.from} ${relation.relationType} ${relation.to}`)));
+    for (const join of memory.joins || []) box.append(h('div', {class: 'eyebrow'}, `Memory on ${join.receiver} → ${join.provider}`),
+      ...join.entities.map(remembered));
     const context = await read('context', {address: element.address, limit: 0, ...viewLayers()});
     if (S.selected !== id) return;
     for (const [title, found] of [['Properties that apply here', context.applying], ['Properties attached toward the leaves', context.visible]]) {
@@ -2923,7 +3408,7 @@ function toast(message) { const box = $('#toast'); box.textContent = message; bo
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
-const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false};
+const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false, done: 0};
 const following = () => LIVE.layer !== null && S.metaform === LIVE.metaform;
 async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -2938,7 +3423,7 @@ async function loadLive() {
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
-  if (start) select(start, false);
+  if (start) select(start, false, false, false, true);
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
 /* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it is no longer being
@@ -2990,7 +3475,7 @@ async function changed(event) {
       }
       await renderBoard();
     } while (LIVE.again);
-  } catch (error) { toast(error.message); } finally { LIVE.busy = false; }
+  } catch (error) { toast(error.message); } finally { LIVE.busy = false; LIVE.done++; }
 }
 function listen() {
   const source = new EventSource('/api/events');
@@ -3035,7 +3520,14 @@ async function progressOf() {
   }
   return found;
 }
-async function loadGraph() {
+/* A load counts as opening from its first read until the panel of what it selects has been read, so loaded() is not
+ * true while the page still reads what it loads. */
+async function opening(work) {
+  S.opening++;
+  try { return await work(); } finally { S.opening--; }
+}
+function loadGraph() { return opening(readGraph); }
+async function readGraph() {
   if (following()) { LIVE.seen = ''; S.loading = 0; return loadLive(); }
   const generation = ++S.loading;
   S.elements = new Map(); S.joins = [];
@@ -3053,6 +3545,10 @@ async function loadGraph() {
     const items = await itemsOf(generation);
     if (generation !== S.loading) return;
     S.items = items;
+    const memory = await memoryOf();
+    if (generation !== S.loading) return;
+    S.memory = memory;
+    renderOrphans();
     S.progress = await progressOf();
     figures(S.tickets || []);
   } catch (error) { toast(error.message); }
@@ -3060,17 +3556,18 @@ async function loadGraph() {
   S.loading = 0;
   draw3D();
   renderLegend();
-  renderMessages();
+  const told = Promise.all([renderMessages(), renderAgents()]);  // read beside the 2D map; the load ends when they are
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)
-    || MEM.network?.entities.includes(S.selected)) ? S.selected : null;
+    || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
   const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
   else {
-    select(start, false);
     if (!keep) setTimeout(() => { if (G) fit3d(800, 60); }, 2200);
+    await select(start, false, false, false, true);
   }
+  await told;
 }
 async function loadMetaform() {
   S.view = null; S.selected = null; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
@@ -3079,7 +3576,8 @@ async function loadMetaform() {
   if ($('#p-prov').hidden === false) renderProv();
   await loadGraph();
 }
-async function loadProject(wanted = null) {
+function loadProject(wanted = null) { return opening(() => readProject(wanted)); }
+async function readProject(wanted) {
   const metaforms = (await read('metaforms', {limit: 0})).results;
   S.metaforms = metaforms;
   const active = metaforms.find(item => item.metaform_id === wanted) || metaforms.find(item => item.active) || metaforms[0];

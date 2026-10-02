@@ -19,14 +19,14 @@ from __future__ import annotations
 import dataclasses
 import sqlite3
 from collections.abc import Generator, Iterable, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from .. import home
+from .. import changes, home
 from ..errors import StoreError
-from . import challenges, history, layering, reads, rows, views, writes
+from . import challenges, history, layering, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
     ChallengeState,
@@ -53,12 +53,14 @@ from .records import (
     Roots,
     Selection,
     Subtype,
+    Ticket,
     Version,
     Where,
     WorkRecord,
 )
 from .selection import Resolver
 from .session import Session, Tx
+from .tables import Place, Tables, TableTx
 
 REPORT_KINDS = ('report', 'feedback', 'shape')
 
@@ -348,6 +350,82 @@ class Store:
         with self._write() as tx:
             return challenges.add_plan(tx, layer, element, join)
 
+    # ------------------------------------------------------- a module's own tables
+
+    @contextmanager
+    def tables(self, *, write: bool = True) -> Generator[TableTx, None, None]:
+        """One transaction on the tables the store's module declares, STORE-045: on the store of the first table it
+        touches, the metaform's or the project's, created or upgraded to the module's version when first reached.
+        Inside `atomic()` a metaform-level table joins the map's transaction."""
+        declared = tables.declared(self.module)
+        module = cast(str, self.module)
+        with ExitStack() as stack:
+            def opener(place: Place) -> tuple[sqlite3.Connection, Path, bool]:
+                if place == 'metaform':
+                    return self._metaform_tables(stack, module, declared, write)
+                return self._project_tables(stack, module, declared, write)
+            yield TableTx(module, declared, write=write, opener=opener)
+
+    def _metaform_tables(self, stack: ExitStack, module: str, declared: Tables,
+                         write: bool) -> tuple[sqlite3.Connection, Path, bool]:
+        def path(tx: Tx) -> Path:
+            return home.store_path(self.project_id, tx.metaform_id) if tx.metaform_id else Path()
+        if write:
+            tx = stack.enter_context(self._write())
+            tables.ensure(tx.db, path(tx), module, declared, 'metaform')
+            return tx.db, path(tx), True
+        reading = ExitStack()
+        try:
+            tx = reading.enter_context(self._read())
+            found = tables.state(tx.db, module, declared, 'metaform')
+            if found == 'older':  # an upgrade is a write, made before the read begins
+                reading.close()
+                with self._write() as upgrading:
+                    tables.ensure(upgrading.db, path(upgrading), module, declared, 'metaform')
+                tx = reading.enter_context(self._read())
+                found = tables.state(tx.db, module, declared, 'metaform')
+        except BaseException:
+            reading.close()
+            raise
+        stack.enter_context(reading)
+        return tx.db, path(tx), found == 'ready'
+
+    @contextmanager
+    def _project_write(self, path: Path) -> Generator[sqlite3.Connection, None, None]:
+        """A write transaction on a project-level module store, noted after its commit when it changed rows, as a
+        metaform store's write is, so the chassis announces it when the command ends, VIEW-018. The project's map
+        presents what a module keeps for the project, such as the memories at its nodes, so the change is noted for
+        the active metaform, or for the project's metaforms when it has none."""
+        with tables.project_transaction(path, write=True) as db:
+            yield db
+            changed = db.total_changes
+        if changed:
+            active = home.active_metaform(self.project_id)
+            changes.note(self.project_id, active.metaform_id if active is not None else None)
+
+    def _project_tables(self, stack: ExitStack, module: str, declared: Tables,
+                        write: bool) -> tuple[sqlite3.Connection, Path, bool]:
+        path = tables.project_store(self.project_id, module)
+        if write:
+            db = stack.enter_context(self._project_write(path))
+            tables.ensure(db, path, module, declared, 'project')
+            return db, path, True
+        reading = ExitStack()
+        try:
+            db = reading.enter_context(tables.project_transaction(path, write=False))
+            found = tables.state(db, module, declared, 'project')
+            if found == 'older':
+                reading.close()
+                with tables.project_transaction(path, write=True) as upgrading:
+                    tables.ensure(upgrading, path, module, declared, 'project')
+                db = reading.enter_context(tables.project_transaction(path, write=False))
+                found = tables.state(db, module, declared, 'project')
+        except BaseException:
+            reading.close()
+            raise
+        stack.enter_context(reading)
+        return db, path, found == 'ready'
+
     # ================================================================== reads
 
     def element(self, ref: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Element | None:
@@ -489,6 +567,12 @@ class Store:
         STORE-042."""
         with self._read() as tx:
             return reads.work(tx, node, condition, open, limit, after)
+
+    def ticket(self, work_id: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Ticket:
+        """One ticket by its id with what the map holds at its node and at each node it links: the where read of
+        each, with its refs, its open work and its open questions, MAP-048."""
+        with self._read() as tx:
+            return reads.ticket(tx, self._resolver(tx, selection), raw, work_id)
 
     # --------------------------------------------------------------- reports
 

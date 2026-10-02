@@ -3,8 +3,8 @@
 LAYER-007 and STORE-019: effective = (incoming & mask) | select, walked from
 trunk to leaf, starting from the toggled layers, LAYER-019. Hidden layers,
 and every layer built from a hidden layer, are removed at the end, STORE-013.
-Building layers are never selected, STORE-032. Correction layers take no part:
-they are always applied, LAYER-011. Every read resolves layers through one
+Building layers are never selected, STORE-032. There are no correction
+layers, LAYER-025. Every read resolves layers through one
 `Resolver`, so no path lets an excluded layer through.
 """
 from __future__ import annotations

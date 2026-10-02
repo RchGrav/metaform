@@ -7,7 +7,7 @@
 
 This record describes the local command exercise used to check instructions in the guides. It is separate from the author's original model work and from the supplied September 26 project intake.
 
-It records the source of that day. Since then the intake is recorded one object per call and `intake submit` is gone, correction layers, the correction stack and `map stack` are gone, the metaform changes by refining in the one `intake` layer, and the store is at schema version 8, which does not import the version 1 export this exercise imported. The guides now use the kitchen timer's map recorded by hand in [Getting started](../guides/getting-started.md#record-a-small-map-by-hand).
+It records the source of that day. Since then the intake is recorded one object per call and `intake submit` is gone, correction layers, the correction stack and `map stack` are gone, the metaform changes by refining in the one `intake` layer, and the store is at schema version 10, which does not import the version 1 export this exercise imported. The guides now use the kitchen timer's map recorded by hand in [Getting started](../guides/getting-started.md#record-a-small-map-by-hand).
 
 ## Environment and inputs
 

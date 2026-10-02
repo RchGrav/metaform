@@ -102,8 +102,8 @@ The current `map answer` operation stores state, an optional link, and time. It 
 After examining the source, an agent can leave an observation at the precise receiving relationship:
 
 ```sh
-metaform memory add-observations join:d14bd3498b614dfbaf0754c99b28dba3 "Module settings persistence is supplied by the chassis; declarations appear in settings.py and are retained through home.py."
-metaform memory open-nodes join:d14bd3498b614dfbaf0754c99b28dba3
+metaform memory create_entities '[{"name":"settings persistence","entityType":"fact","observations":["Module settings persistence is supplied by the chassis; declarations appear in settings.py and are retained through home.py."]}]' node=join:d14bd3498b614dfbaf0754c99b28dba3
+metaform memory open_nodes '["settings persistence"]' node=join:d14bd3498b614dfbaf0754c99b28dba3
 ```
 
 These commands create a local example memory; the sentence is not present in the supplied original export. A subsequent agent can retrieve it at the join that gives it meaning. A general conclusion intended to participate in several tasks can instead be recorded in a purpose-named knowledge layer, with source/provenance associations.

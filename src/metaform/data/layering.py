@@ -165,7 +165,7 @@ def discard(tx: Tx, layer: str) -> Outcome:
                                         f'changes by refining: {rows.refine_step()}. Nothing changed.'),))
     if found.kind == 'memory':
         return Outcome((Notice('layer', f'{found.name} is memory and is never discarded; remove memories with '
-                                        'metaform memory delete-entities <node>. Nothing changed.'),))
+                                        'metaform memory delete_entities <entityNames>. Nothing changed.'),))
     db = tx.db
     layer_id = found.layer_id
     notices: list[Notice] = []

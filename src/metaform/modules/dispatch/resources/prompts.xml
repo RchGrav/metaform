@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- dispatch's prompts, MCP-031. What is between an element's tags is what is served; an empty element inside one is
+     filled with the value of its name. -->
+<prompts>
+<instructions>dispatch is active.</instructions>
+<handoff>Your ticket is work <work_id/> on Metaform's map, and it is taken for you. Read it with `metaform map work id=<work_id/>` and work it. Say how many steps you plan with `metaform map work op=plan id=<work_id/> steps=&lt;n&gt;`, report each step as you finish it with `metaform map work op=step id=<work_id/> said="&lt;one sentence&gt;"`, and when it is done close it with `metaform map work op=done id=<work_id/> resolution="&lt;what you found or changed&gt;"`.</handoff>
+<nodes>The namespace nodes of this work, as the map holds them:</nodes>
+<handed>Give this to the agent you hand the work to, to run: `metaform <nonce/>`</handed>
+</prompts>

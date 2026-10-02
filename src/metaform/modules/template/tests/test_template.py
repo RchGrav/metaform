@@ -45,3 +45,16 @@ def test_a_copy_of_template_loads_once_enabled(run, home, module_row):
     assert module_row('mine')[1] == 'off'
     run('enable', 'mine')
     assert module_row('mine')[1] == 'on'
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('QUAL-016')
+def test_template_declares_node_read_empty_and_hello_demonstrates_it(home):
+    def keywords(name):
+        tree = ast.parse((MODULES / name / '__init__.py').read_text(encoding='utf-8'))
+        call = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == 'MODULE' for target in node.targets))
+        return {keyword.arg: keyword.value for keyword in call.keywords}
+    written = keywords('template')
+    assert isinstance(written.get('node_read'), ast.Constant) and written['node_read'].value is None
+    assert 'node_read' in keywords('hello') and declaration('hello').MODULE.node_read is not None

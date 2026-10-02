@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import socket
 import time
 from pathlib import Path
@@ -332,8 +333,11 @@ def test_the_graph_pages_every_visible_element_and_join_once_with_its_nearest_pa
 @pytest.mark.req('VIEW-011')
 @pytest.mark.req('VIEW-002')
 def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gui_itself(run, home, web, mapped):
+    remember(run, mapped, 'create_entities', [entity('drift', 'Drifts under load.')], 'element:code.timer.kitchen')
+    run('memory', 'note', 'element:code.timer.kitchen', 'text=Keep the loop small.', cwd=mapped)
     started(run)
     stores = sorted((home / 'projects').rglob('*.sqlite3')) + [home / 'metaform.sqlite3']
+    assert any(path.name == 'memory.sqlite3' for path in stores)  # the memory module's store, with rows, is read too
     before = [path.read_bytes() for path in stores]
     shown = run('config', '--show', '--json', cwd=mapped).stdout
     for path in ('/api/projects', '/api/metaforms?project=proj', '/api/roots?project=proj',
@@ -341,8 +345,10 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
                  '/api/children?project=proj&address=code', '/api/node?project=proj&target=element:code.timer.kitchen',
                  '/api/joins?project=proj&element=code.timer.kitchen', '/api/layers?project=proj',
                  '/api/work?project=proj', '/api/search?project=proj&text=loop',
-                 '/api/provenance?project=proj&layer=notes'):
+                 '/api/provenance?project=proj&layer=notes', '/api/memory-graph?project=proj',
+                 '/api/memory-orphaned?project=proj', '/api/memory-note?project=proj&node=element:code.timer.kitchen'):
         assert request(web, path)[0] == 200, path
+    assert sorted((home / 'projects').rglob('*.sqlite3')) + [home / 'metaform.sqlite3'] == stores
     assert [path.read_bytes() for path in stores] == before
     assert run('config', '--show', '--json', cwd=mapped).stdout == shown
     own = f'http://127.0.0.1:{web}'
@@ -490,10 +496,10 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
     elements = {entry['element']['element_id'] for entry in expected['elements']}
     drawn_as_paths(graph, expected)
-    page.wait_for_function('([count]) => document.querySelectorAll("#labels3d span:not([hidden])").length === count',
+    page.wait_for_function('([count]) => window.metaform.labels3d().filter(label => !label.hidden).length === count',
                            arg=[len(elements)])
     names = {entry['element'].get('short_name') or entry['element']['address'] for entry in expected['elements']}
-    assert set(page.evaluate('[...document.querySelectorAll("#labels3d span")].map(s => s.textContent)')) == names
+    assert {label['text'] for label in page.evaluate('window.metaform.labels3d()')} == names
     assert page.locator('#map2d svg g.node').count() == len(elements)
     assert page.locator('#map2d svg .edgePaths path').count() == len(expected['joins'])
     assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
@@ -1047,6 +1053,16 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     assert problems == []
 
 
+def remember(run, folder, command, value, node=None):
+    """An agent's memory, written with the memory module's commands, LAYER-013: `value` is the command's one JSON
+    argument, and `node` the map node it is written at."""
+    return run('memory', command, json.dumps(value), *([f'node={node}'] if node else []), cwd=folder)
+
+
+def entity(name, *observations, kind='behavior'):
+    return {'name': name, 'entityType': kind, 'observations': list(observations)}
+
+
 def click_node(page, title):
     """A real click on the 2D node whose full text is this title."""
     box = box_of(page, title)
@@ -1128,9 +1144,11 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     """Rich, 2026-09-26: any node can be entered, whether or not it holds subtypes; going inside a node replaces the map
     with another graph, and the other layers show only what is attached to the node being viewed, as busy as the
     layers turned on; the base map stays the project's current shape."""
-    run('memory', 'add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.', cwd=mapped)
-    run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
-        cwd=mapped)
+    remember(run, mapped, 'create_entities', [entity('countdown drift', 'The countdown drifts under load.')],
+             'element:code.timer.kitchen')
+    remember(run, mapped, 'create_entities', [entity('quiet tone', 'Too quiet in a loud kitchen.')],
+             'element:code.alarm.audible')
+    remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'quiet tone', 'relationType': 'drives'}])
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, subtypes = keys_of(web)
@@ -1159,22 +1177,24 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{kitchen}") && '
-                           'window.metaform.inside().some(key => key.startsWith("i:"))')
+                           'window.metaform.inside().some(key => key.startsWith("e:"))')
     keys, crumbs = inside(page)
     assert [part.strip() for part in crumbs.split('›')] == ['map', 'kitchen timer']
-    assert subtypes['code.loop.tick'] in keys and alarm in keys  # its subtype, and the node its memory relates to
+    # its subtype, its memory, the memory that memory relates to, and the node that one is kept at
+    assert {subtypes['code.loop.tick'], 'e:countdown drift', 'e:quiet tone', alarm} <= set(keys)
     words = page.evaluate('document.querySelector("#map2d svg").textContent')
-    assert 'keep the loop small' in words and 'The countdown drifts' in words and 'louder is better' not in words
-    click_node(page, 'The countdown drifts under load.')  # selecting a memory shows it whole in the panel
+    assert 'keep the loop small' in words and 'countdown drift' in words and 'louder is better' not in words
+    assert 'drives' in words  # the relation, on its line
+    click_node(page, 'countdown drift')  # selecting a memory shows it whole in the panel
     page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("under load.")')
     assert page.text_content('#p-object .eyebrow') == 'Memory'
 
     set_layer(page, 'notes', False)  # turning a layer off takes its group away inside
     page.keyboard.press('Escape')
     page.wait_for_function('() => !document.querySelector("#map2d svg").textContent.includes("keep the loop small")')
-    assert 'The countdown drifts' in page.evaluate('document.querySelector("#map2d svg").textContent')
+    assert 'countdown drift' in page.evaluate('document.querySelector("#map2d svg").textContent')
 
-    click_node(page, 'drives')  # the memory relation; its panel links across to the alarm
+    click_node(page, 'quiet tone')  # the memory it relates to; its panel links across to the alarm it is kept at
     page.click('#p-object a.link:has-text("audible alarm")')
     page.wait_for_function('() => window.metaform.inside().length && '
                            'document.querySelector("#crumbs").textContent.includes("audible alarm")')
@@ -1407,11 +1427,12 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     kitchen, alarm = at['code.timer.kitchen'], at['code.alarm.audible']
     to_alarm = next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
     tick = subtypes['code.loop.tick']
-    run('memory', 'add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.', cwd=mapped)
-    run('memory', 'create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible',
-        cwd=mapped)
-    run('memory', 'add-observations', f'join:{to_alarm}', 'The tone is too quiet.', cwd=mapped)
-    run('memory', 'add-observations', f'join:{tick[2:]}', 'One tick can be lost.', cwd=mapped)
+    remember(run, mapped, 'create_entities', [entity('countdown drift', 'The countdown drifts under load.')],
+             'element:code.timer.kitchen')
+    remember(run, mapped, 'create_entities', [entity('alarm pitch', 'Two kilohertz.')], 'element:code.alarm.audible')
+    remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'alarm pitch', 'relationType': 'drives'}])
+    remember(run, mapped, 'create_entities', [entity('quiet tone', 'The tone is too quiet.')], f'join:{to_alarm}')
+    remember(run, mapped, 'create_entities', [entity('lost tick', 'One tick can be lost.')], f'join:{tick[2:]}')
     Store('proj').add_property('notes', 'code.timer.kitchen', 'ticks at 1 Hz')
     page, problems, _ = opened(browser, web)
     items = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item")')
@@ -1427,15 +1448,14 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
                            'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 4')
     graph = page.evaluate('window.metaform.graph()')
     memory = {node['text']: node['id'] for node in graph['nodes'] if node['t'] == 'item' and node['layer'] == 'memory'}
-    assert sorted(memory) == ['One tick can be lost.', 'The countdown drifts under load.', 'The tone is too quiet.',
-                              'drives']
+    assert sorted(memory) == ['alarm pitch', 'countdown drift', 'lost tick', 'quiet tone']  # each memory its own node
     edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
-    assert {(kitchen, memory['The countdown drifts under load.'], 'item'), (kitchen, memory['drives'], 'item'),
-            ('p:' + to_alarm, memory['The tone is too quiet.'], 'item'),
-            (tick, memory['One tick can be lost.'], 'item')} <= edges  # from the element, the join and the subtype
-    assert (memory['drives'], alarm, 'relation') in edges
+    assert {(kitchen, memory['countdown drift'], 'item'), (alarm, memory['alarm pitch'], 'item'),
+            ('p:' + to_alarm, memory['quiet tone'], 'item'),
+            (tick, memory['lost tick'], 'item')} <= edges  # from the element, the join and the subtype
+    assert (memory['countdown drift'], memory['alarm pitch'], 'relation') in edges  # a relation is a link
     page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
-    page.evaluate(f'window.metaform.click3d("{memory["The countdown drifts under load."]}")')
+    page.evaluate(f'window.metaform.click3d("{memory["countdown drift"]}")')
     assert page.text_content('#p-object .eyebrow') == 'Memory'
     assert 'The countdown drifts under load.' in page.inner_text('#p-object')
     set_layer(page, 'memory', False)
@@ -1499,10 +1519,9 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     page.wait_for_timeout(2500)
     page.click('#pauseBtn')  # hold the layout still so the node stays where the pointer goes
     stage = page.locator('#stage').bounding_box()
-    kitchen = page.evaluate('(() => { const tag = [...document.querySelectorAll("#labels3d span")]'
-                            '.find(span => span.textContent === "kitchen timer");'
-                            ' return {x: parseFloat(tag.style.left), y: parseFloat(tag.style.top)}; })()')
-    x, y = stage['x'] + kitchen['x'], stage['y'] + kitchen['y']
+    kitchen = page.evaluate('(() => { const tag = window.metaform.labels3d().find(label => label.text === "kitchen timer");'
+                            ' return window.metaform.screen3d(tag.id); })()')
+    x, y = kitchen['x'], kitchen['y']
     page.mouse.move(x - 40, y - 40)
     page.mouse.move(x, y, steps=4)
     tip = page.locator('#tip3d')
@@ -1801,7 +1820,7 @@ def test_a_new_metaform_an_activation_and_a_memory_reach_the_open_page_without_a
                            timeout=3000)
     page.wait_for_function(f'() => window.metaform.loaded() && window.metaform.drawn().nodes === {whole}',
                            timeout=5000)  # the whole map again, redrawn from the reads
-    run('memory', 'add-observations', 'element:code.timer.kitchen', 'Drifts under load.', cwd=mapped)
+    remember(run, mapped, 'create_entities', [entity('drift', 'Drifts under load.')], 'element:code.timer.kitchen')
     page.click('#layersBtn')
     page.wait_for_selector('#layerlist input[data-layer="memory"]', timeout=3000)
     assert problems == []
@@ -1891,8 +1910,8 @@ def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element
     tick = subtypes['code.loop.tick']
     held = Store('proj').element('code.loop.tick').element_id
     assert held not in at.values()  # the element a subtype join holds is no node of the outer map
-    run('memory', 'add-observations', f'join:{tick[2:]}', 'The tick is its own interrupt.', cwd=mapped)
-    run('memory', 'add-observations', 'element:code.loop.tick', 'One loop serves every timer.', cwd=mapped)
+    remember(run, mapped, 'create_entities', [entity('own interrupt', 'The tick is its own interrupt.')], f'join:{tick[2:]}')
+    remember(run, mapped, 'create_entities', [entity('one loop', 'One loop serves every timer.')], 'element:code.loop.tick')
     Store('proj').add_work(Node('element', 'code.loop.tick'), 'missing', task='count in milliseconds')
     page, problems, _ = opened(browser, web)
     set_layer(page, 'memory', True)
@@ -1902,15 +1921,14 @@ def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element
     graph = page.evaluate('window.metaform.graph()')
     memory = {node['text']: node['id'] for node in graph['nodes'] if node['t'] == 'item' and node['layer'] == 'memory'}
     edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
-    assert {(tick, memory['The tick is its own interrupt.'], 'item'),
-            (tick, memory['One loop serves every timer.'], 'item')} <= edges
+    assert {(tick, memory['own interrupt'], 'item'), (tick, memory['one loop'], 'item')} <= edges
     page.evaluate(f'window.metaform.select("{tick}")')
     page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("count in milliseconds")')
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{tick}") && '
-                           'window.metaform.inside().filter(key => key.startsWith("i:")).length === 2')
+                           'window.metaform.inside().filter(key => key.startsWith("e:")).length === 2')
     words = page.evaluate('document.querySelector("#map2d svg").textContent')
-    assert 'The tick is its own interrupt.' in words and 'One loop serves every timer.' in words
+    assert 'own interrupt' in words and 'one loop' in words
     assert problems == []
 
 
@@ -2011,7 +2029,7 @@ def test_the_page_reads_the_commands_caution_and_a_clear_without_confirm_or_from
 @pytest.mark.req('VIEW-018')
 def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_page_is_told(run, home, web, mapped,
                                                                                        tmp_path):
-    run('memory', 'add-observations', 'element:code.timer.kitchen', 'Drifts under load.', cwd=mapped)
+    remember(run, mapped, 'create_entities', [entity('drift', 'Drifts under load.')], 'element:code.timer.kitchen')
     run('add', 'metaform', 'fresh', cwd=mapped)
     run('feedback', 'The subtype fields did not match.', cwd=mapped)
     run('add', 'origin', cwd=mapped)
@@ -2046,6 +2064,12 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
     assert first.wait(5)
     time.sleep(0.5)  # a second event, if one were sent, arrives within this
     assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+    # the memory graph is the project's, kept by the clear as the command keeps it, its join orphaned, STORE-020
+    kept = json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)
+    assert [(one['name'], [seen['content'] for seen in one['observations']]) for one in kept['entities']] == [
+        ('drift', ['Drifts under load.'])]
+    lost = json.loads(run('memory', 'orphaned', '--json', cwd=mapped).stdout)['joins']
+    assert [(one['entity'], one['address']) for one in lost] == [('drift', 'code.timer.kitchen')]
 
 
 @pytest.mark.req('VIEW-019')
@@ -2389,8 +2413,10 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
     # with a node selected, the others are quieter in color and none is faded toward the background
     assert page.evaluate('window.metaform.selected()') and page.evaluate('''() => {
       const faded = node => Number(getComputedStyle(node).opacity) < 1;
-      const others = [...document.querySelectorAll('#map2d svg g.node:not(.sel):not(.near), #map2d .edgePaths path, #labels3d span')];
-      return others.length > 0 && !others.some(node => !/work-/.test(node.getAttribute('class') || '') && faded(node)); }''')
+      const others = [...document.querySelectorAll('#map2d svg g.node:not(.sel):not(.near), #map2d .edgePaths path')];
+      const labels = window.metaform.labels3d();
+      return others.length > 0 && !others.some(node => !/work-/.test(node.getAttribute('class') || '') && faded(node))
+        && labels.length > 0 && labels.every(label => label.opacity === 1); }''')
     assert before['ground'] == themes()['space']['--ground']
     # the 2D map is drawn in a holder of no size, so drawing it adds nothing to the page and no scrollbar shows
     page.evaluate('''() => { window.added = [];
@@ -2405,6 +2431,10 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
         assert token('--ground') == colors['--ground'] == page.evaluate('window.metaform.ground()')
         drawn = page.evaluate('window.metaform.linkColors()')
         assert {link['color'] for link in drawn if link['k'] == 'tree'} == {colors['--tree']}
+        # the 3D labels are painted again in the theme's own colors, VIEW-038
+        palette = [colors[token].lower() for token in ('--text', '--muted', '--signal', '--broken', '--exclude')]
+        page.wait_for_function('palette => window.metaform.labels3d().every(label => label.hidden '
+                               '|| palette.includes(label.color))', arg=palette, timeout=3000)
         assert page.evaluate(box) != before['box']
     assert page.evaluate('window.added') == []
     assert page.evaluate('[document.documentElement.scrollWidth, document.documentElement.scrollHeight]') == [1280, 800]
@@ -2607,14 +2637,39 @@ def pixels(page, points):
 def staged(page, places, camera):
     """Stop the layout, put the named nodes where given, point the camera, and hide the names drawn over the nodes,
     so a picture of the 3D map can be read at known points. It waits first for the page's own fit of the whole map,
-    which comes 2.2 seconds after it has loaded."""
-    page.wait_for_timeout(2600)
+    which starts 2.2 seconds after the page selects its first node, once the 2D map is drawn, and takes 0.8 seconds."""
+    page.wait_for_function('() => window.metaform.selected()')
+    page.wait_for_timeout(3300)
     page.click('#pauseBtn')
     for node, (x, y, z) in places.items():
         page.evaluate(f'window.metaform.pin3d("{node}", {x}, {y}, {z})')
     page.evaluate(f'window.metaform.view3d({json.dumps(camera[0])}, {json.dumps(camera[1])})')
-    page.evaluate('document.querySelector("#labels3d").style.visibility = "hidden"')
+    labels_shown(page, False)
     page.wait_for_timeout(800)
+
+
+def labels_shown(page, on):
+    """Show or hide the 3D map's labels, so a picture of the map can be read with them and without them."""
+    page.evaluate('on => window.metaform.showLabels3d(on)', on)
+
+
+def changed(page, one, two, box):
+    """How much two screenshots differ inside a box of the page, read pixel by pixel: the change of each pixel is the
+    largest change of its three channels, and the 50th and 90th percentiles of those changes are returned."""
+    import base64
+    shots = [base64.b64encode(shot).decode() for shot in (one, two)]
+    return page.evaluate("""async ([shots, box]) => {
+        const read = async shot => { const image = new Image(); image.src = 'data:image/png;base64,' + shot;
+          await image.decode(); const canvas = document.createElement('canvas');
+          canvas.width = image.width; canvas.height = image.height;
+          const pen = canvas.getContext('2d', {willReadFrequently: true}); pen.drawImage(image, 0, 0);
+          return pen.getImageData(Math.round(box.left), Math.round(box.top), Math.round(box.right - box.left),
+            Math.round(box.bottom - box.top)).data; };
+        const [a, b] = await Promise.all(shots.map(read)), changes = [];
+        for (let at = 0; at < a.length; at += 4)
+          changes.push(Math.max(Math.abs(a[at] - b[at]), Math.abs(a[at + 1] - b[at + 1]), Math.abs(a[at + 2] - b[at + 2])));
+        changes.sort((x, y) => x - y);
+        return [changes[Math.floor(changes.length * 0.5)], changes[Math.floor(changes.length * 0.9)]]; }""", [shots, box])
 
 
 @pytest.mark.req('VIEW-029')
@@ -2903,7 +2958,8 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     GIVE = (['memories', 'Memories 0', True],                           # the first of the further acts, VIEW-031
             ['notes', 'Notes 0', False], ['history', 'Work history 0', True],  # VIEW-034, VIEW-036
             ['task', 'Add Task', False],                                # from the same menu, VIEW-032
-            ['element', 'Add Element', False])                          # and VIEW-033
+            ['element', 'Add Element', False],                          # and VIEW-033
+            ['agent', 'Start agent 0', True])                           # no open ticket waits here, VIEW-039
     # the 2D map: a right-click on the node's own box
     page.evaluate(f'window.metaform.select("{alarm}")')              # the chart goes to the node, at a size to read
     page.wait_for_timeout(1200)
@@ -3169,35 +3225,111 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
 
 @pytest.mark.req('VIEW-034')
 def test_a_person_and_an_agent_keep_their_notes_at_a_node_in_one_place(run, web, mapped, browser):
-    """Rich, 2026-09-29: notes where both he and an agent put notes in place."""
+    """Rich, 2026-09-29: notes where both he and an agent put notes in place. Rich, 2026-10-02: "Allow one single note
+    not a list, limit its characters to 2048, make it so you can edit the note and so can the user, its not protected,
+    it doesnt expire, they dont build up." The fixture's folder leaves memory out, and the note shows all the same."""
     from metaform.data import Store
     alarm = Store('proj').element('code.alarm.audible').element_id
-    run('memory', 'add-observations', 'element:code.alarm.audible', 'The tone is 2 kHz.', cwd=mapped)  # an agent's
+    noted = lambda: json.loads(run('memory', 'note', 'element:code.alarm.audible', '--json', cwd=mapped).stdout)['note']
+    run('memory', 'note', 'element:code.alarm.audible', 'text=The tone is 2 kHz.', 'by=agent', cwd=mapped)  # an agent's
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     page.evaluate(f'window.metaform.menu("{alarm}")')
     assert page.text_content('#menu button.notes') == 'Notes 1'
     page.click('#menu button.notes')
-    page.wait_for_selector('#notes:not([hidden]) .kept li')
-    assert page.locator('#notes .kept li').all_inner_texts() == ['The tone is 2 kHz.']
-    page.click('#notes .add')                                          # a note with no text is not written
-    page.wait_for_timeout(400)
-    assert page.locator('#notes .kept li').count() == 1
-    page.fill('#notes textarea', 'Too quiet in a loud kitchen. Ask before changing the pitch.')
-    page.click('#notes .add')
-    page.wait_for_function('() => document.querySelectorAll("#notes .kept li").length === 2')
-    assert page.locator('#notes .kept li').all_inner_texts() == [
-        'The tone is 2 kHz.', 'Too quiet in a loud kitchen. Ask before changing the pitch.\nyou']
-    assert page.input_value('#notes textarea') == ''
-    # read raw, since the fixture's folder names its layers and memory is not among them
-    read = json.loads(run('map', 'node', 'element:code.alarm.audible', '--raw', '--json', cwd=mapped).stdout)
-    kept = [item for group in read['layers'] if group['kind'] == 'memory' for item in group['items']]
-    assert [(item['value'], (item['extra'] or {}).get('by')) for item in kept] == [
-        ('The tone is 2 kHz.', None), ('Too quiet in a loud kitchen. Ask before changing the pitch.', 'user')]
+    page.wait_for_selector('#notes:not([hidden])')
+    assert page.input_value('#notes textarea') == 'The tone is 2 kHz.' and 'agent' in page.inner_text('#notes .by')
+    assert page.get_attribute('#notes textarea', 'maxlength') == '2048'
+    page.fill('#notes textarea', 'The tone is 2 kHz. Too quiet in a loud kitchen; ask before changing the pitch.')
+    assert page.inner_text('#notes .count') == '78 / 2048'
+    page.click('#notes .save')                                        # the person edits the agent's note in place
+    page.wait_for_function('() => document.querySelector("#notes .by").textContent.includes("you")')
+    assert (noted()['text'], noted()['by']) == (
+        'The tone is 2 kHz. Too quiet in a loud kitchen; ask before changing the pitch.', 'user')
     page.click('#notes .close')
     page.evaluate(f'window.metaform.menu("{alarm}")')
-    assert page.text_content('#menu button.notes') == 'Notes 2'
+    assert page.text_content('#menu button.notes') == 'Notes 1'      # one note, never a list
+    page.keyboard.press('Escape')
+    run('memory', 'note', 'element:code.alarm.audible', 'text=Raised to 3 kHz.', 'by=agent', cwd=mapped)  # and the agent
+    page.evaluate(f'window.metaform.note("{alarm}")')
+    page.wait_for_function('() => document.querySelector("#notes textarea").value === "Raised to 3 kHz."')
+    page.fill('#notes textarea', '')
+    page.click('#notes .save')                                        # empty, it is cleared
+    page.wait_for_function('() => document.querySelector("#notes .by").textContent.includes("No note")')
+    assert noted() is None
+    page.click('#notes .close')
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.text_content('#menu button.notes') == 'Notes 0'
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-030')
+@pytest.mark.req('VIEW-034')
+@pytest.mark.req('VIEW-032')
+@pytest.mark.req('VIEW-033')
+@pytest.mark.req('VIEW-013')
+def test_a_map_change_keeps_every_open_write_window_and_editor_open_with_its_text(run, web, mapped, browser):
+    """Rich, 2026-10-02: "Every time the screen updates it closes the message you are typing and you lose what you
+    wrote". Each write window is opened and typed into, a map change reaches the page, and each is still open with
+    what was typed in it."""
+    from metaform.data import Node, Store, prompts
+    store = Store('proj')
+    store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?', suggestions=['Yes', 'No'])
+    alarm = store.element('code.alarm.audible').element_id
+    prompts.add_prompt('practices', 'markdown', 'one\n')
+    notes = store.layer_ref('notes')
+    prompts.record_use(prompts.prompt_version('practices').version_id, 'proj', notes.metaform_id, notes.layer_id)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    # the prompt editor, VIEW-013
+    page.click('#t-prov')
+    page.click('#p-prov .layerlist button:has-text("notes")')
+    page.click('#p-prov button.open-prompt')
+    page.wait_for_function('() => window.metaform.editor() && window.metaform.editor().getValue() === "one\\n"')
+    page.evaluate('window.metaform.editor().setValue("one, edited\\n")')
+    # answering at a node, VIEW-021 and VIEW-030: typed under Other
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.unread')
+    page.wait_for_selector('#float button.other')
+    page.click('#float button.other')
+    page.fill('#float textarea.answer', 'Keep it, but ask the cook.')
+    # Notes, VIEW-034; Add Element, VIEW-033; Add Task, VIEW-032, typed into last
+    page.evaluate(f'window.metaform.note("{alarm}")')
+    page.wait_for_selector('#notes:not([hidden])')
+    page.fill('#notes textarea', 'The tone is too quiet.')
+    page.evaluate(f'window.metaform.element("{alarm}")')
+    page.fill('#element .address', 'code.alarm.audible.chime')
+    page.fill('#element .purpose', 'Ring a softer tone.')
+    page.evaluate(f'window.metaform.task("{alarm}")')
+    page.focus('#task .text')                                          # the windows overlap; it opens focused
+    page.keyboard.type('Make the alarm louder')
+    kept = '''() => { const $ = s => document.querySelector(s), shown = s => Boolean($(s)?.checkVisibility());
+        return {open: ['#float', '#notes', '#element', '#task', '#p-prompt'].filter(shown),
+            answer: $('#float textarea.answer')?.value ?? null, answering: shown('#float textarea.answer'),
+            note: $('#notes textarea').value, address: $('#element .address').value, purpose: $('#element .purpose').value,
+            task: $('#task .text').innerText.trim(), prompt: window.metaform.editor().getValue(),
+            typing: $('#task .text').contains(document.activeElement)}; }'''
+    typed = {'open': ['#float', '#notes', '#element', '#task', '#p-prompt'],
+             'answer': 'Keep it, but ask the cook.', 'answering': True, 'note': 'The tone is too quiet.',
+             'address': 'code.alarm.audible.chime', 'purpose': 'Ring a softer tone.',
+             'task': 'Make the alarm louder', 'prompt': 'one, edited\n', 'typing': True}
+    # a map change reaches the page: an agent asks another question at the node the answer is being written at
+    before = page.evaluate('window.metaform.changes()')
+    run('map', 'ask', 'element:code.alarm.audible', 'Is the tone too high?', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.changes() > {before}', timeout=10000)  # read and drawn again
+    assert page.inner_text('#messages').strip() == 'Messages 2'
+    assert page.evaluate(kept) == typed
+    # and one that shows another metaform, read as on opening
+    before = page.evaluate('window.metaform.changes()')
+    run('add', 'metaform', 'fresh', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.changes() > {before}', timeout=10000)
+    assert page.evaluate('[...document.querySelectorAll("#mf option")].find(o => o.selected).textContent') == 'fresh · active'
+    assert page.evaluate(kept) == typed
+    page.keyboard.type(' now')
+    assert page.inner_text('#task .text').strip() == 'Make the alarm louder now'
     assert problems == []
 
 
@@ -3227,23 +3359,28 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     """Rich, 2026-09-29: the menu of a node has an entry for its memories; choosing it, in the 2D map or the 3D map,
     shows the memory network of that node in both views; the view zooms into the node as the map gives way to it and
     opens with the whole memory network in view; going back returns to the map."""
-    remember = lambda *given: run('memory', *given, cwd=mapped)
-    remember('add-observations', 'element:code.timer.kitchen', 'The countdown drifts under load.')
-    remember('create-relations', 'element:code.timer.kitchen', 'drives', 'element:code.alarm.audible')     # it holds
-    remember('create-relations', 'element:exterior.cook', 'waits on', 'element:code.timer.kitchen')        # held toward it
-    remember('create-relations', 'element:code.alarm.audible', 'wakes', 'element:exterior.cook')           # between two of
-    # its entities; and one of the alarm's own, to a node the kitchen timer's memories do not name
-    remember('create-relations', 'element:code.alarm.audible', 'shown on', 'element:code.timer.kitchen.display')
+    for name, observation, node in (('countdown drift', 'The countdown drifts under load.', 'code.timer.kitchen'),
+                                    ('quiet tone', 'Too quiet.', 'code.alarm.audible'),
+                                    ('cook waits', 'The cook waits at the stove.', 'exterior.cook'),
+                                    ('display glow', 'The display glows.', 'code.timer.kitchen.display')):
+        remember(run, mapped, 'create_entities', [entity(name, observation)], f'element:{node}')
+    remember(run, mapped, 'create_relations', [
+        {'from': 'countdown drift', 'to': 'quiet tone', 'relationType': 'drives'},      # one the kitchen's memory holds
+        {'from': 'cook waits', 'to': 'countdown drift', 'relationType': 'waits on'},    # one held toward it
+        {'from': 'quiet tone', 'to': 'cook waits', 'relationType': 'wakes'},           # between two it names
+        # and one of the tone's own, to a memory the kitchen timer's memory does not name
+        {'from': 'quiet tone', 'to': 'display glow', 'relationType': 'shown on'}])
+    drift, tone, waits = 'e:countdown drift', 'e:quiet tone', 'e:cook waits'
     started(run)
     page, problems, _ = opened(browser, web)
     expected, at, _ = keys_of(web)
-    kitchen, alarm, cook = at['code.timer.kitchen'], at['code.alarm.audible'], at['exterior.cook']
+    kitchen, cook = at['code.timer.kitchen'], at['exterior.cook']
     outer = next(join['join_id'] for join in expected['joins'] if join['receiver'] == cook)
     page.wait_for_timeout(2400)  # the page fits the whole 3D map into view once, a moment after it opens
     set_layer(page, 'memory', True)  # the fixture's folder leaves memory out; it is turned on in this view
     page.keyboard.press('Escape')
     page.wait_for_function('() => window.metaform.loaded() && '
-                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 5 && '
+                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 4 && '
                            'document.querySelector("#p-object").textContent.includes("The countdown drifts")')
     entries = lambda: page.eval_on_selector_all(
         '#menu button', 'found => found.map(one => [one.className, one.textContent, one.disabled])')
@@ -3258,7 +3395,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     box = page.evaluate(f'window.metaform.box2d("{kitchen}")')
     page.mouse.click(box['left'] + 6, box['top'] + 6, button='right')  # its own box, clear of the tick loop inside it
     page.wait_for_selector('#menu:not([hidden])')
-    assert entries()[2] == ['memories', 'Memories 3', False]  # its observation, the relation it holds, one held toward it
+    assert entries()[2] == ['memories', 'Memories 1', False]  # the one memory kept at it
     page.evaluate(SAMPLE_BOTH, kitchen)
     page.click('#menu button.memories')
     page.wait_for_function(f'() => window.metaform.memory() && window.metaform.memory().key === "{kitchen}"')
@@ -3277,12 +3414,13 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
 
     # the memory network: the node's entities and the relations between them, and nothing else, in both views
     drawn = network()
-    assert sorted(drawn['nodes']) == sorted([kitchen, alarm, cook]) == sorted(drawn['nodes2d'])
+    assert sorted(drawn['nodes']) == sorted([kitchen, drift, tone, waits]) == sorted(drawn['nodes2d'])
     assert sorted((link['source'], link['relation'], link['target']) for link in drawn['links']) == sorted(
-        [(kitchen, 'drives', alarm), (cook, 'waits on', kitchen), (alarm, 'wakes', cook)])
+        [(kitchen, None, drift),  # the memory join that ties its memory to it
+         (drift, 'drives', tone), (waits, 'waits on', drift), (tone, 'wakes', waits)])
     words = page.evaluate('document.querySelector("#map2d svg").textContent')
     assert all(word in words for word in ('drives', 'waits on', 'wakes')) and 'shown on' not in words
-    assert '3 nodes shown' in page.inner_text('#count')
+    assert '4 nodes shown' in page.inner_text('#count')
     assert not page.query_selector('#map2d svg[data-base]')  # the map gave way to it
     # it opens with the whole of it in view, in both views
     stage, view = rect_of(page, '#stage'), rect_of(page, '#viewport')
@@ -3295,11 +3433,11 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     assert selected() == kitchen
     panel = page.inner_text('#p-object')
     assert 'The countdown drifts under load.' in panel and 'drives' in panel and 'waits on' in panel
-    page.evaluate(f'window.metaform.click3d("{alarm}")')
-    assert selected() == alarm and 'wakes' in page.inner_text('#p-object')
-    box = page.evaluate(f'window.metaform.box2d("{cook}")')
+    page.evaluate(f'window.metaform.click3d("{tone}")')
+    assert selected() == tone and 'wakes' in page.inner_text('#p-object')
+    box = page.evaluate(f'window.metaform.box2d("{waits}")')
     page.mouse.click((box['left'] + box['right']) / 2, (box['top'] + box['bottom']) / 2)
-    assert selected() == cook and network()['key'] == kitchen  # a click in it selects, and stays in it
+    assert selected() == waits and network()['key'] == kitchen  # a click in it selects, and stays in it
 
     # going back returns to the map, the same 2D map, never laid out again, and the whole 3D map
     page.keyboard.press('Escape')
@@ -3312,7 +3450,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     page.evaluate(f'window.metaform.menu("{kitchen}")')
     page.click('#menu button.memories')
     page.wait_for_function(f'() => window.metaform.memory() && window.metaform.memory().key === "{kitchen}"')
-    assert sorted(network()['nodes']) == sorted([kitchen, alarm, cook])
+    assert sorted(network()['nodes']) == sorted([kitchen, drift, tone, waits])
     page.click('#crumbs a')
     page.wait_for_function('() => !window.metaform.memory() && document.querySelector("#map2d svg[data-base]")')
     page.evaluate(f'window.metaform.memories("{kitchen}")')
@@ -3435,6 +3573,37 @@ def test_remove_project_in_the_administration_menu_names_what_a_project_holds_th
     assert problems == [] and remote == []
 
 
+@pytest.mark.req('VIEW-018')
+def test_the_page_says_it_is_loaded_only_once_it_has_read_what_it_loads(run, web, mapped, browser):
+    """Found 2026-10-02: choosing a project in the selector started a load whose first read came before the page
+    counted itself as loading, and the panel's node read came after it said it was loaded, so a command run once
+    loaded() was true could clear the map under the page's own reads. Every read the page makes is held back here, so
+    the page is loading from the choice until each read of the load, the panel's node read among them, has answered."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.evaluate("""() => {
+        window.held = {asked: 0, answered: 0};
+        const fetched = window.fetch;
+        window.fetch = async (url, ...rest) => {
+            if (!String(url).startsWith('/api/') || String(url).startsWith('/api/events')) return fetched(url, ...rest);
+            const node = String(url).startsWith('/api/node?');
+            window.held.asked++;
+            if (node) window.held.nodes = (window.held.nodes || 0) + 1;
+            await new Promise(done => setTimeout(done, node ? 800 : 150));
+            const response = await fetched(url, ...rest);
+            window.held.answered++;
+            return response;
+        };
+    }""")
+    page.select_option('#proj', 'proj')
+    assert page.evaluate('window.metaform.loaded()') is False
+    page.wait_for_function('() => window.metaform.loaded()')
+    held = page.evaluate('window.held')
+    assert held.get('nodes', 0) >= 1 and held['answered'] == held['asked']
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-032')
 @pytest.mark.req('VIEW-008')
 def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_text(run, web, mapped, browser):
@@ -3528,9 +3697,8 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     page.click('#boardBtn')
     page.wait_for_selector('#board:not([hidden]) .card')
     # the map's labels stay under the board, whatever their own draw order, VIEW-038
-    assert page.evaluate('''[...document.querySelectorAll("#labels3d span:not([hidden])")].map(tag => {
-        tag.style.zIndex = "1000"; tag.style.pointerEvents = "auto"; return tag; }).every(tag => {  // as on a map of many nodes, found by the pointer
-        const box = tag.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
+    assert page.evaluate('''window.metaform.labels3d().filter(label => !label.hidden).every(label => {
+        const x = (label.left + label.right) / 2, y = (label.top + label.bottom) / 2;
         const board = document.querySelector("#board").getBoundingClientRect();
         if (x < board.left || x > board.right || y < board.top || y > board.bottom) return true;
         return document.querySelector("#board").contains(document.elementFromPoint(x, y)); })''')
@@ -3616,7 +3784,7 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     figure = next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == worked.work_id)
     node = page.evaluate(f'window.metaform.at3d("{alarm}")')
     away = sum((figure[axis] - node[axis]) ** 2 for axis in 'xyz') ** 0.5
-    assert node['r'] < away < node['r'] + 12, (away, node)            # on the node and around it
+    assert node['r'] < away < node['r'] + 2.5 * figure['scale'], (away, node, figure)  # on the node and around it
     page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{quick.work_id}")', timeout=20000)
     seen = page.evaluate(f'[...window.stages["{quick.work_id}"] || []]')
     assert 'touching' in seen and 'circling' not in seen, seen        # finished: it touched the node and went back
@@ -3626,29 +3794,92 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     assert cook and problems == []
 
 
+@pytest.mark.req('VIEW-035')
+@pytest.mark.req('VIEW-027')
+def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_circles_at_one_slow_pace_as_steps_are_filed(
+        run, web, mapped, browser):
+    """Rich, 2026-10-02: "its so tint", "Its too fast to even see what it is", "the agent doesnt speed up the nodes
+    flashing or text is supposed to", "sloyly moving around it should be much bigger though I couldnt even see it and I
+    was watching it closely". The map is spread to hundreds of units, as a real map is, and seen whole: each figure
+    stands tall enough on screen to see what it is, and circles its node slowly at one pace while steps are filed,
+    while the node's flashing, and the text of a part not built, quicken."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    cook = store.element('exterior.cook').element_id
+    far = store.element('code.timer.kitchen.display').element_id
+    flawed = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
+    store.take_work(flawed.work_id, steps=4, by='codex')
+    missing = store.add_work(Node('element', 'exterior.cook'), 'missing', task='a second recipe')
+    store.take_work(missing.work_id, steps=4, by='claude')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2'
+                           ' && window.metaform.figures().every(one => one.stage === "circling")', timeout=30000)
+    page.wait_for_timeout(2600)                                       # the page's own fit of the whole map
+    page.click('#pauseBtn')
+    page.evaluate(f'window.metaform.pin3d("{far}", 600, 0, 0)')       # a map that spans hundreds of units
+    page.evaluate('window.metaform.view3d({x: 300, y: 0, z: 900}, {x: 300, y: 0, z: 0})')  # seen whole
+    page.wait_for_timeout(800)
+    assert 0 < page.evaluate(f'window.metaform.screen3d("{far}").x') < page.evaluate('innerWidth')
+    for figure in page.evaluate('window.metaform.figures()'):
+        assert figure['px'] >= 40, figure                             # big enough to see what it is
+
+    def lap(work_id):  # seconds for one turn around the node, on the figure's own clock, whatever the frame rate
+        turned = page.evaluate(f'''async () => {{ const one = () => window.metaform.figures()
+            .find(figure => figure.work_id === "{work_id}"); const from = one();
+            await new Promise(done => setTimeout(done, 2000));
+            const to = one(); return [to.angle - from.angle, to.clock - from.clock]; }}''')
+        return 2 * math.pi * turned[1] / turned[0]
+    before = {work_id: lap(work_id) for work_id in (flawed.work_id, missing.work_id)}
+    pace = page.evaluate(f'window.metaform.look("{alarm}").pace')
+    turns = page.evaluate(f'window.metaform.look("{cook}").turns')
+    for said in ('Found the gain.', 'Lowered it.'):
+        run('map', 'work', 'op=step', f'id={flawed.work_id}', f'said={said}', cwd=mapped)
+        run('map', 'work', 'op=step', f'id={missing.work_id}', f'said={said}', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.look("{alarm}").pace < {pace}', timeout=6000)  # the flashing quickens
+    page.wait_for_function(f'() => window.metaform.look("{cook}").turns > {turns}', timeout=6000)  # so does the text
+    after = {work_id: lap(work_id) for work_id in (flawed.work_id, missing.work_id)}
+    for work_id in before:
+        assert before[work_id] >= 10, before                          # slowly around its node
+        assert abs(after[work_id] - before[work_id]) < 0.1 * before[work_id], (before, after)  # one pace, never faster
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-038')
 def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does(run, web, mapped, browser):
     """Rich, 2026-10-01: make these labels actually useful and respect the draw order; word wrap rather than cut off;
-    the hover said the name, then the name again, then the name in reverse; the data is in the joins."""
+    the hover said the name, then the name again, then the name in reverse; the data is in the joins. Rich,
+    2026-10-02: "I never said that I was like what the fuck maybe try observing the depth order": the alarm is
+    selected, and its label still goes under the nearer timer's."""
     from metaform.data import Store
     store = Store('proj')
     kitchen = store.element('code.timer.kitchen').element_id
     alarm = store.element('code.alarm.audible').element_id
+    store.add_element('notes', 'code.controller.address.fallback', name_length=3)
+    long = store.element('code.controller.address.fallback').element_id
     started(run)
     page, problems, _ = opened(browser, web)
-    staged(page, {kitchen: (2000, 0, 0), alarm: (2000, 0, -150)},
-           ({'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}))
-    page.evaluate('document.querySelector("#labels3d").style.visibility = ""')
+    page.wait_for_function(f'() => window.metaform.labels3d().some(label => label.id === "{long}" && !label.hidden)')
+    camera, target = {'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}
+    staged(page, {kitchen: (2000, 0, 0), alarm: (2000, 0, -150)}, (camera, target))
+    page.evaluate('id => window.metaform.select(id)', alarm)
+    page.wait_for_timeout(1200)                                       # the camera's flight to it ends
+    page.evaluate(f'window.metaform.view3d({json.dumps(camera)}, {json.dumps(target)})')
+    labels_shown(page, True)
     page.wait_for_timeout(900)
+    assert page.evaluate('window.metaform.selected()') == alarm
     labels = {label['id']: label for label in page.evaluate('window.metaform.labels3d()')}
     near, far = labels[kitchen], labels[alarm]
     assert near['z'] > far['z'] and not near['under'] and far['under'], (near, far)
-    shown = page.evaluate(f'''(() => {{ const tag = [...document.querySelectorAll("#labels3d span")]
-        .find(span => span.textContent === {json.dumps(far['text'])}); const style = getComputedStyle(tag);
-        return [style.opacity, style.whiteSpace, style.color]; }})()''')
-    assert shown[0] == '1' and shown[1] == 'normal'                   # never faded; it wraps
+    signal = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--signal").trim()')
+    assert far['color'] == signal, far                                # under, it keeps the selected label's color
+    in_depth_order(page, camera, target)
+    assert far['opacity'] == 1 and far['scene'] and far['depthTest']  # never faded; in the scene, ordered by depth
     names = {node['id']: node.get('name') for node in page.evaluate('window.metaform.graph().nodes') if node['t'] == 'el'}
     assert all(label['text'] == names[id] for id, label in labels.items() if id in names)  # whole, never cut off
+    assert all(' '.join(label['lines']) == label['text'] for label in labels.values() if not label['hidden'])
+    assert len(labels[long]['lines']) > 1, labels[long]               # a long name wraps at word breaks
     strong = [label for label in labels.values() if not label['under'] and not label['hidden']]
     for index, one in enumerate(strong):
         for two in strong[index + 1:]:
@@ -3659,4 +3890,478 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     tip.wait_for(state='visible')
     assert 'kitchen timer' in tip.inner_text() and 'The timer tells the cook.' in tip.inner_text()
     assert 'code.timer.kitchen' not in tip.inner_text()               # the address is the name read the other way
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-038')
+@pytest.mark.req('VIEW-025')
+def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped, browser):
+    """Rich, 2026-10-02: "The labels are in depth order but they are in front of the nodes". The alarm's label is
+    read on the screen first with nothing in front of it, then with the cook's glass node set between the camera and
+    it. With nothing in front, showing the labels changes those pixels; with the node in front, the label is behind
+    the node and is seen only as the glass lets it through, blurred, so showing the labels hardly changes them; with
+    the glass made clear, the label is seen through it."""
+    from metaform.data import Store
+    store = Store('proj')
+    cook = store.element('exterior.cook').element_id
+    alarm = store.element('code.alarm.audible').element_id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.emulate_media(reduced_motion='reduce')                       # nothing moves between two pictures
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
+    camera, target = {'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}
+    staged(page, {cook: (5000, 0, 0), alarm: (2000, 0, -150)}, (camera, target))
+
+    def label_change():
+        labels_shown(page, True)
+        page.wait_for_timeout(600)
+        label = next(label for label in page.evaluate('window.metaform.labels3d()') if label['id'] == alarm)
+        inner = {'left': label['left'] + 3, 'right': label['right'] - 3, 'top': label['top'] + 2,
+                 'bottom': label['bottom'] - 2}
+        shown = page.screenshot()
+        labels_shown(page, False)
+        page.wait_for_timeout(600)
+        return label, inner, changed(page, shown, page.screenshot(), inner)
+
+    label, inner, open_change = label_change()
+    text = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--text").trim()')
+    assert not label['under'] and label['color'] == text, label          # its own color, with nothing in front
+    assert inner['right'] - inner['left'] > 20 and inner['bottom'] - inner['top'] > 6, label
+    assert open_change[1] > 60, open_change                           # the label is drawn there
+    page.evaluate(f'window.metaform.pin3d("{cook}", 2000, 0, 250)')   # between the camera and the alarm's label
+    page.wait_for_timeout(800)
+    front = page.evaluate(f'window.metaform.screen3d("{cook}")')
+    for x in (inner['left'], inner['right']):
+        for y in (inner['top'], inner['bottom']):
+            assert math.dist((x, y), (front['x'], front['y'])) < front['r'] * 0.9, (front, inner)  # all of it behind
+    covered, _, covered_change = label_change()
+    assert covered_change[1] < open_change[1] / 3, (covered_change, open_change)  # hidden behind the node
+    # Rich, 2026-10-02, at code.gui.web: "Drop the quieter color: a covered label keeps its own color, and whatever
+    # is in front hides it by depth or shows it through the glass"
+    assert covered['under'] and covered['color'] == label['color'], (covered, label)
+    # with the glass made clear, letting all the light through, with no frosting, absorption, bending or light of its
+    # own, the label behind the node is seen through it: the glass shows what is behind it, labels included
+    page.evaluate('window.metaform.glass(true, {transmission: 1, emissiveIntensity: 0, clearcoat: 0, roughness: 0, '
+                  'thickness: 0, attenuationDistance: Infinity, anisotropicBlur: 0, chromaticAberration: 0, distortion: 0})')
+    page.wait_for_timeout(600)
+    _, _, clear_change = label_change()
+    assert clear_change[1] > open_change[1] / 3, (clear_change, open_change)
+    assert problems == []
+
+
+def in_depth_order(page, camera, target):
+    """Every pair of labels in the 3D map, VIEW-038: the label of the node nearer the camera is drawn over the farther
+    one's, and a label whose box falls on a nearer one's goes under it. Nothing is ranked over depth. Nearer is
+    measured along the camera's view, from the camera toward what it looks at, as the depth buffer measures it."""
+    labels = [label for label in page.evaluate('window.metaform.labels3d()') if not label['hidden']]
+    # the rank is the page's own count; what draws a nearer label over a farther one, and a nearer node over a label,
+    # is the depth buffer, so every label is in the scene, tested against it and written into it
+    for label in labels:
+        assert label['scene'] and label['depthTest'] and label['depthWrite'], label
+    view = [target[axis] - camera[axis] for axis in 'xyz']
+    length = math.hypot(*view)
+    away = {}
+    for label in labels:
+        at = page.evaluate('id => window.metaform.at3d(id)', label['id'])
+        away[label['id']] = sum((at[axis] - camera[axis]) * view[index] / length for index, axis in enumerate('xyz'))
+    for one in labels:
+        for two in labels:
+            if away[one['id']] < away[two['id']] - 1e-6:
+                assert one['z'] > two['z'], (one, two)                # nearer over farther, always
+                if not (one['right'] <= two['left'] or two['right'] <= one['left'] or one['bottom'] <= two['top']
+                        or two['bottom'] <= one['top']):
+                    assert two['under'], (one, two)                   # the farther one goes under the nearer
+
+
+@pytest.mark.req('VIEW-038')
+@pytest.mark.parametrize('case', ['missing', 'selected', 'neighbor', 'broken', 'question', 'reach'])
+def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, mapped, browser, case):
+    """Rich, 2026-10-02: "Text labels need to be depth sorted"; "Not if somethning is in front of it of something is
+    blinking you spin the map the more nodes there are the worse it looks its literally a terrible thing to not
+    observe depth ordering"; on keeping the selected node and its neighbors on top: "How is that physically possible
+    to happen I would rather have a true navigation surface... its not a benefit, it surfaces as a bug and bad
+    design". The alarm stands behind the cook, who carries nothing, and is in turn: a missing record, which lights
+    nothing; the selected node; a neighbor of the selected node; broken, blinking; asked a question, glowing; reached by
+    a property. Each time the cook's label is drawn over the alarm's, and the alarm's goes under it where they meet."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    cook = store.element('exterior.cook').element_id
+    alarm = store.element('code.alarm.audible').element_id
+    display = store.element('code.timer.kitchen.display').element_id
+    store.add_element('notes', 'code.bell', name_length=1)
+    bell = store.element('code.bell').element_id
+    store.add_join('notes', 'code.bell', 'code.alarm.audible', purpose='Ring.', ef='Rings the bell.',
+                   relation='The alarm rings the bell.', observation='A hammer.')
+    if case == 'missing':
+        store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='a second tone')
+    elif case == 'broken':
+        store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a cracked tone')
+    elif case == 'question':
+        store.ask(Node('element', 'code.alarm.audible'), 'Still wanted?')
+    elif case == 'reach':
+        key = 'r:' + store.add_property('notes', 'code.alarm.audible', 'rings at 2 kHz').property_id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    if case == 'reach':
+        page.wait_for_function(f'() => window.metaform.graph().nodes.some(node => node.id === "{key}")', timeout=5000)
+    camera, target = {'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}
+    staged(page, {cook: (2000, 0, 0), alarm: (2000, 0, -150)}, (camera, target))
+    # neither the cook nor the alarm is the display's neighbor; the alarm is the bell's, and the cook is not
+    chosen = {'selected': alarm, 'neighbor': bell, 'reach': key if case == 'reach' else None}.get(case, display)
+    page.evaluate('id => window.metaform.select(id)', chosen)
+    page.wait_for_timeout(1200)                                       # the camera's flight to it ends
+    page.evaluate(f'window.metaform.view3d({json.dumps(camera)}, {json.dumps(target)})')
+    labels_shown(page, True)
+    page.wait_for_timeout(900)
+    assert page.evaluate('window.metaform.selected()') == chosen
+    if case == 'reach':
+        assert 'code.alarm.audible' in page.evaluate('window.metaform.reach()')['elements']
+        assert 'exterior.cook' not in page.evaluate('window.metaform.reach()')['elements']
+    if case in ('broken', 'question'):
+        assert case in page.evaluate('id => window.metaform.look(id)', alarm)['work'], case
+    labels = {label['id']: label for label in page.evaluate('window.metaform.labels3d()')}
+    near, far = labels[cook], labels[alarm]
+    assert near['z'] > far['z'], (near, far)                          # nearer over farther
+    assert not near['under'], (near, far)
+    if case != 'missing':  # a part not built is drawn as text, its label set higher, clear of the cook's
+        assert far['under'], (near, far)                              # on the nearer label, so under it
+    in_depth_order(page, camera, target)
+    assert problems == []
+
+
+FAKE_AGENT = Path(__file__).parents[2] / 'dispatch' / 'tests' / 'fake_agent.py'  # dispatch's ACP agent, no model
+AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp', 'comet', 'beetle', 'slime',
+                'plane', 'puffer', 'owl', 'cubebot', 'mushroom')
+
+
+def logged_by(log, check, limit=60):
+    """The first entry of the fake agent's log that `check` accepts, waited for up to `limit` seconds."""
+    deadline = time.monotonic() + limit
+    while True:
+        entries = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines() if line.strip()] \
+            if log.exists() else []
+        found = next((entry for entry in entries if check(entry)), None)
+        if found is not None:
+            return found
+        assert time.monotonic() < deadline, f'not in the agent\'s log within {limit} s'
+        time.sleep(0.1)
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-011')
+def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_next(run, web, mapped):
+    import re
+    from metaform.data import Node, Store
+    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
+    started(run)
+    own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
+    given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
+             '/api/dispatch-message': {'work_id': work, 'text': 'also run the tests'},
+             '/api/dispatch-stop': {'work_id': work}}
+    for path, body in given.items():
+        sent = json.dumps({'project': 'proj', **body})
+        assert request(web, path, method='POST', body=sent,
+                       headers={**as_json, 'Origin': 'http://rebound.example'})[0] == 403, path
+    for path, body in given.items():                                   # dispatch ships disabled
+        status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
+                           body=json.dumps({'project': 'proj', **body}))
+        assert status == 400 and said['next'] == 'metaform enable dispatch', (path, said)
+    run('enable', 'dispatch')
+    status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
+                       body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
+    assert status == 400 and 'claude, codex, gemini' in said['error'], said
+    for path in ('/api/dispatch-message', '/api/dispatch-stop'):
+        status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
+                           body=json.dumps({'project': 'proj', **given[path]}))
+        assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
+    assert Store('proj').ticket(work).work.taken is None
+    # every figure's flat icon is served with the page, VIEW-003
+    names = re.search(r'export const GLYPHS = \[(.*?)\]', (Path(__file__).parents[1] / 'page' / 'agents3d.js')
+                      .read_text(encoding='utf-8'), re.DOTALL).group(1)
+    assert tuple(re.findall(r"'(\w+)'", names)) == AGENT_GLYPHS
+    for name in AGENT_GLYPHS:
+        status, body, headers = request(web, f'/page/agent-glyphs/{name}.svg')
+        assert status == 200 and headers['Content-Type'] == 'image/svg+xml' and body.startswith('<svg'), name
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('VIEW-003')
+def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_page(run, web, mapped, browser,
+                                                                                     tmp_path):
+    """Rich, 2026-10-02: "agents complete their work, memory server created, acp controls implemented"; "Maybe
+    onscreen if it had a box someplace that said agent deployed and showed the agent icon ... and the harness"; "This
+    little box is supposed to tell you that not the color"; "or whatever the agent is"; "every other system I know
+    allows monitoring and sending messages to agents this way you can see if they are doing the task right"."""
+    import sys
+    from metaform.data import Item, Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
+    other = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').work_id
+    store.ask(Node('element', 'code.alarm.audible'), 'Is the tone too high?')  # a question of no agent, at the same node
+    log = tmp_path / 'fake.jsonl'
+    run('enable', 'dispatch')
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask', 'FAKE_ACP_WORK': work})
+    page, problems, remote = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    # started from the node's menu, choosing the agent
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    assert page.text_content('#menu button.agent') == 'Start agent 1'
+    page.click('#menu button.agent')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    assert page.eval_on_selector_all('#dispatch select.agent option', 'found => found.map(one => [one.value, one.textContent])') \
+        == [['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini CLI']]
+    assert page.eval_on_selector_all('#dispatch .ticket', 'found => found.map(one => one.dataset.id)') == [work]
+    page.select_option('#dispatch select.agent', 'codex')               # not the first, so the choice is what starts
+    page.click(f'#dispatch .ticket[data-id="{work}"] button.start')
+    # the agent deployed box: the agent's flat icon, the same character as its 3D figure, and in words what it is
+    page.wait_for_selector('#agents:not([hidden]) .agent', timeout=60000)
+    assert page.is_hidden('#dispatch')
+    shown = page.inner_text('#agents')
+    assert 'Agent deployed' in shown and 'Codex' in shown and 'on audible alarm' in shown, shown
+    assert Store('proj').ticket(work).work.taken_by == 'codex fake-session-1'
+    page.evaluate(f'window.metaform.menu("{alarm}")')                   # a taken ticket waits for no agent
+    page.wait_for_selector('#menu:not([hidden])')
+    assert page.text_content('#menu button.agent') == 'Start agent 0' and page.is_disabled('#menu button.agent')
+    page.keyboard.press('Escape')
+    icon = page.get_attribute('#agents .agent img', 'src')
+    glyph = icon.rsplit('/', 1)[-1].removesuffix('.svg')
+    assert icon == f'/page/agent-glyphs/{glyph}.svg' and glyph in AGENT_GLYPHS, icon
+    page.wait_for_function('() => document.querySelector("#agents .agent img").naturalWidth > 0')
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
+    assert next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == work)['glyph'] == glyph
+    # its live activity, from the dispatch layer at the ticket's node, and its permission question
+    page.click('#agents .agent')
+    page.wait_for_selector('#agent:not([hidden])')
+    page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("Hello from fake")',
+                           timeout=30000)
+    activity = page.inner_text('#agent .activity')
+    assert -1 < activity.find('Thinking it over') < activity.find('Hello from fake') < activity.find('Read file (completed)'), \
+        activity                                                       # in the order written
+    page.wait_for_selector('#agent button.suggestion', timeout=30000)
+    assert page.eval_on_selector_all('#agent button.suggestion', 'found => found.map(one => one.textContent)') \
+        == ['Allow once', 'Reject']
+    assert 'Is the tone too high?' not in page.inner_text('#agent .asked')  # only the questions this agent asked
+    page.click('#agent button.suggestion >> nth=0')                   # answered as every question is
+    assert logged_by(log, lambda entry: 'permission' in entry)['permission']['outcome'] \
+        == {'outcome': 'selected', 'optionId': 'allow'}
+    # a message to it, kept while it is written as the map changes, VIEW-018
+    page.fill('#agent textarea.say', 'also run the tests')
+    page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
+    before = page.evaluate('window.metaform.changes()')
+    run('map', 'ask', 'element:code.timer.kitchen', 'Is one second right?', cwd=mapped)
+    page.wait_for_function(f'() => window.metaform.changes() > {before}', timeout=10000)
+    assert page.inner_text('#messages').strip() == 'Messages 2'
+    assert page.is_visible('#agent') and page.input_value('#agent textarea.say') == 'also run the tests'
+    page.click('#agent button.send')
+    logged_by(log, lambda entry: entry.get('message', {}).get('method') == 'session/prompt'
+              and entry['message']['params']['prompt'][0].get('text') == 'also run the tests')
+    page.wait_for_function('() => document.querySelector("#agent textarea.say").value === ""')  # sent, so cleared
+    # stopping it
+    page.click('#agent button.stop')
+    page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=30000)
+    sessions = [item for item in Store('proj').layer_items('dispatch', limit=0).results
+                if isinstance(item, Item) and (item.extra or {}).get('dispatch') == 'session']
+    assert [(item.extra or {}).get('state') for item in sessions] == ['ended']
+    # started from the board: a ticket not taken has the control, one taken has not
+    page.click('#boardBtn')
+    page.wait_for_selector(f'#board .card[data-id="{other}"]')
+    assert page.locator(f'#board .card[data-id="{work}"] button.start').count() == 0
+    page.click(f'#board .card[data-id="{other}"] button.start')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    assert page.eval_on_selector_all('#dispatch .ticket', 'found => found.map(one => one.dataset.id)') == [other]
+    assert problems == [] and remote == []
+
+
+# ---------- the memory graph in the web GUI, VIEW-031, VIEW-034 and LAYER-012 ----------
+
+def memory_write(port, *steps, project='proj', origin=None):
+    """The page's write of the memory graph: steps, each a memory command and its arguments, VIEW-011."""
+    return api(port, '/api/memory', method='POST', body=json.dumps({'project': project, 'steps': [
+        {'command': command, 'arguments': arguments} for command, arguments in steps]}),
+        headers={'Content-Type': 'application/json', 'Origin': origin or f'http://127.0.0.1:{port}'})
+
+
+def note_write(port, node, text, project='proj'):
+    return api(port, '/api/note', method='POST', body=json.dumps({'project': project, 'node': node, 'text': text}),
+               headers=own_write(port))
+
+
+@pytest.mark.req('VIEW-031')
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('LAYER-013')
+@pytest.mark.req('BASE-035')
+def test_the_page_reads_the_memory_graph_and_writes_it_through_the_memory_commands(run, web, mapped):
+    """Rich, 2026-10-02: "The user can show the memories in the graph, and manage them memories can be fricking poison
+    to a project", and "the memory chains can just show what they were attached to, like through an orphaned menu".
+    The page reads the whole graph with whether each join's memory shows at its node in the page's layers, the
+    orphaned joins, and a node's read with what the modules add, as `map node` gives it; it writes through the memory
+    commands, from its own page only."""
+    started(run)
+    kitchen = 'element:code.timer.kitchen'
+    status, said = memory_write(web, ('create_entities', {'entities': [
+        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}], 'node': kitchen}),
+        ('create_entities', {'entities': [{'name': 'tone', 'entityType': 'behavior', 'observations': []}],
+                             'node': 'element:code.alarm.audible'}),
+        ('create_relations', {'relations': [{'from': 'drift', 'to': 'tone', 'relationType': 'delays'}]}))
+    assert status == 200 and said['done'][0] == {'entities': [
+        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}]}
+    assert memory_write(web, ('create_entities', {'entities': []}), origin='http://rebound.example')[0] == 403
+    status, said = memory_write(web, ('read_graph', {}))
+    assert status == 400 and 'create_entities' in said['error']  # only the commands that write
+    status, said = memory_write(web, ('add_observations', {'observations': [{'entityName': 'nobody', 'contents': ['x']}]}))
+    assert status == 400 and said['error'] == 'Entity with name nobody not found'
+    # steps run in order and stop at the first that fails, saying what the ones before it did; an edit is written
+    # new before old, so the old is still there when the second step fails
+    status, said = memory_write(web, ('add_observations', {'observations': [{'entityName': 'drift', 'contents': ['Hot.']}]}),
+                                ('add_observations', {'observations': [{'entityName': 'nobody', 'contents': ['x']}]}),
+                                ('delete_observations', {'deletions': [{'entityName': 'drift', 'observations': ['Drifts under load.']}]}))
+    assert status == 400 and said['done'] == [{'results': [{'entityName': 'drift', 'addedObservations': ['Hot.']}]}]
+    held = next(one for one in json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)['entities']
+                if one['name'] == 'drift')
+    assert [one['content'] for one in held['observations']] == ['Drifts under load.', 'Hot.']
+    # the whole graph, each join saying whether it shows at its node in the page's layers
+    on = ','.join([*TOGGLED, 'memory'])
+    status, whole = api(web, f'/api/memory-graph?project=proj&layers={on}')
+    assert status == 200 and [one['name'] for one in whole['entities']] == ['drift', 'tone']
+    assert sorted(whole) == ['entities', 'joins', 'relations']  # the memory module's graph as it gives it
+    assert whole['entities'][1] == {'name': 'tone', 'entityType': 'behavior', 'observations': []}
+    assert [(one['from'], one['relationType'], one['to']) for one in whole['relations']] == [('drift', 'delays', 'tone')]
+    assert {one['entity']: (one['address'], one['shows'], one['orphaned']) for one in whole['joins']} == {
+        'drift': ('code.timer.kitchen', True, False), 'tone': ('code.alarm.audible', True, False)}
+    folder = {one['entity']: one['shows'] for one in api(web, '/api/memory-graph?project=proj')[1]['joins']}
+    assert folder == {'drift': False, 'tone': False}  # the folder's layers leave memory out
+    # a node's read carries what memory adds to it, as map node does
+    status, node = api(web, f'/api/node?project=proj&target={kitchen}&layers={on}')
+    assert status == 200 and node['memory']['entities'] == [
+        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.', 'Hot.']}]
+    assert 'memory' not in api(web, f'/api/node?project=proj&target={kitchen}')[1]
+    # the orphaned menu: a join whose address the map no longer holds
+    assert api(web, '/api/memory-orphaned?project=proj')[1] == {'joins': []}
+    run('clear', 'project', '--confirm', cwd=mapped)
+    lost = api(web, '/api/memory-orphaned?project=proj')[1]['joins']
+    assert sorted((one['entity'], one['address']) for one in lost) == [('drift', 'code.timer.kitchen'),
+                                                                     ('tone', 'code.alarm.audible')]
+    status, said = memory_write(web, ('unjoin', {'id': lost[0]['join_id']}))
+    assert status == 200 and said == {'done': [{'deleted': 1}]}
+    assert len(api(web, '/api/memory-orphaned?project=proj')[1]['joins']) == 1
+    assert [one['name'] for one in api(web, '/api/memory-graph?project=proj')[1]['entities']] == ['drift', 'tone']
+
+
+@pytest.mark.req('VIEW-034')
+@pytest.mark.req('VIEW-011')
+def test_the_page_writes_a_nodes_one_note_through_memory_note(run, web, mapped):
+    """Rich, 2026-10-02: "Allow one single note not a list, limit its characters to 2048, make it so you can edit the
+    note and so can the user". The page's note is the node's one note, written in place as the user's."""
+    started(run)
+    alarm = 'element:code.alarm.audible'
+    status, said = note_write(web, alarm, 'Too quiet in a loud kitchen.')
+    assert status == 200 and said['note']['text'] == 'Too quiet in a loud kitchen.' and said['note']['by'] == 'user'
+    note_write(web, alarm, 'Ask before changing the pitch.')
+    read = json.loads(run('memory', 'note', alarm, '--json', cwd=mapped).stdout)['note']
+    assert (read['text'], read['by']) == ('Ask before changing the pitch.', 'user')  # replaced, not added to
+    assert api(web, f'/api/memory-note?project=proj&node={alarm}')[1]['note']['text'] == 'Ask before changing the pitch.'
+    # the next agent reads it at the node, with memory left out by the folder's layers, VIEW-034
+    shown = json.loads(run('map', 'node', alarm, '--json', cwd=mapped).stdout)['memory']['note']
+    assert (shown['text'], shown['by']) == ('Ask before changing the pitch.', 'user')
+    assert note_write(web, alarm, 'x' * 2048)[0] == 200
+    status, said = note_write(web, alarm, 'x' * 2049)
+    assert status == 400 and '2049' in said['error']
+    assert json.loads(run('memory', 'note', alarm, '--json', cwd=mapped).stdout)['note']['text'] == 'x' * 2048
+    assert note_write(web, alarm, '')[1]['note'] is None  # empty text clears it
+    assert json.loads(run('memory', 'note', alarm, '--json', cwd=mapped).stdout)['note'] is None
+    assert 'memory' not in json.loads(run('map', 'node', alarm, '--json', cwd=mapped).stdout)
+
+
+@pytest.mark.req('VIEW-031')
+@pytest.mark.req('LAYER-012')
+@pytest.mark.req('LAYER-013')
+@pytest.mark.req('VIEW-018')
+def test_a_person_shows_and_manages_the_memories_in_the_graph_and_finds_the_orphaned_ones(run, web, mapped, browser):
+    """Rich, 2026-10-02: memory "shows as a layer in the gui called memory", "The user can show the memories in the
+    graph, and manage them memories can be fricking poison to a project", and "the memory chains can just show what
+    they were attached to, like through an orphaned menu"."""
+    remember(run, mapped, 'create_entities', [entity('countdown drift', 'Drifts under load.', 'Worse when hot.')],
+             'element:code.timer.kitchen')
+    remember(run, mapped, 'create_entities', [entity('quiet tone', 'Too quiet.')], 'element:code.alarm.audible')
+    remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'quiet tone', 'relationType': 'drives'}])
+    remember(run, mapped, 'create_entities', [entity('old tone', 'Long ago.')], 'element:code.alarm.audible')
+    whole = lambda: json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)
+    observed = lambda name: next(one for one in whole()['entities'] if one['name'] == name)['observations']
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    # the memory layer in the layer list, turned on
+    set_layer(page, 'memory', True)
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           'window.metaform.graph().nodes.some(node => node.id === "e:old tone")')
+    remember(run, mapped, 'delete_entities', ['old tone'])
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           '!window.metaform.graph().nodes.some(node => node.id === "e:old tone")', timeout=10000)
+    # an agent's memory reaches the open page at once
+    page.evaluate('window.metaform.select("e:countdown drift")')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("Worse when hot.")')
+    assert page.text_content('#p-object .eyebrow') == 'Memory'
+    remember(run, mapped, 'add_observations', [{'entityName': 'countdown drift', 'contents': ['Seen at noon.']}])
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("Seen at noon.")',
+                           timeout=10000)
+    # an observation edited, one deleted and one added
+    row = '#p-object .obs:has-text("{}")'
+    page.click(row.format('Worse when hot.') + ' button.edit')
+    page.fill(row.format('Worse when hot.') + ' textarea', 'Worse above 40 C.')
+    page.click(row.format('Worse when hot.') + ' button.save')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("Worse above 40 C.")')
+    assert 'Worse when hot.' not in page.inner_text('#p-object')
+    assert sorted(one['content'] for one in observed('countdown drift')) == [
+        'Drifts under load.', 'Seen at noon.', 'Worse above 40 C.']
+    page.click(row.format('Seen at noon.') + ' button.delete')
+    page.wait_for_function('() => !document.querySelector("#p-object").textContent.includes("Seen at noon.")')
+    page.fill('#p-object textarea.add-obs', 'Fine at night.')
+    page.click('#p-object button.add-obs')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("Fine at night.")')
+    assert [one['content'] for one in observed('countdown drift')] == [
+        'Drifts under load.', 'Worse above 40 C.', 'Fine at night.']
+    # renamed and retyped, keeping its observations, its relation and its join
+    page.click('#p-object button.rename')
+    page.fill('#p-object input.name', 'tick drift')
+    page.fill('#p-object input.type', 'fault')
+    page.click('#p-object button.save-entity')
+    page.wait_for_function('() => window.metaform.selected() === "e:tick drift"')
+    drift = next(one for one in whole()['entities'] if one['name'] == 'tick drift')
+    assert drift['entityType'] == 'fault' and [one['content'] for one in drift['observations']] == [
+        'Drifts under load.', 'Worse above 40 C.', 'Fine at night.']
+    assert [(one['from'], one['relationType'], one['to']) for one in whole()['relations']] == [
+        ('tick drift', 'drives', 'quiet tone')]
+    assert [(one['entity'], one['address']) for one in whole()['joins'] if one['entity'] == 'tick drift'] == [
+        ('tick drift', 'code.timer.kitchen')]
+    assert 'countdown drift' not in [one['name'] for one in whole()['entities']]
+    # its relation deleted, and its memory join taken away
+    page.wait_for_selector('#p-object .rel:has-text("drives")')
+    page.click('#p-object .rel:has-text("drives") button.delete')
+    page.wait_for_function('() => !document.querySelector("#p-object .rel")')
+    assert whole()['relations'] == []
+    page.click('#p-object .join:has-text("kitchen timer") button.unjoin')
+    page.wait_for_function('() => window.metaform.loaded() && '
+                           '!window.metaform.graph().nodes.some(node => node.id === "e:tick drift")')
+    assert [one for one in whole()['joins'] if one['entity'] == 'tick drift'] == []
+    # the orphaned menu: what the memories were attached to, once the map no longer holds it
+    assert page.text_content('#orphanBtn') == 'Orphaned memories 0'
+    run('clear', 'project', '--confirm', cwd=mapped)
+    page.wait_for_function('() => document.querySelector("#orphanBtn").textContent === "Orphaned memories 1"',
+                           timeout=10000)
+    page.click('#adminBtn')                                            # in the Administration menu
+    page.click('#orphanBtn')
+    page.wait_for_selector('#float:not([hidden]) .orphan')
+    assert page.locator('#float .orphan').all_inner_texts()[0].startswith('quiet tone')
+    assert 'code.alarm.audible' in page.inner_text('#float .orphan')
+    assert 'tick drift' in page.inner_text('#float .loose')  # joined to no node at all
+    page.click('#float .loose:has-text("tick drift") button.forget')  # deleted from the graph
+    page.wait_for_function('() => !document.querySelector("#float .loose")')
+    page.click('#float .orphan button.unjoin')                         # its join taken away, the memory kept
+    page.wait_for_function('() => document.querySelector("#orphanBtn").textContent === "Orphaned memories 0"')
+    assert [one['name'] for one in whole()['entities']] == ['quiet tone'] and whole()['joins'] == []
     assert problems == []

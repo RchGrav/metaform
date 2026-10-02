@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">
+    <g><animateTransform attributeName="transform" type="translate" values="0 2;0 -3;0 2" dur="2.2s" repeatCount="indefinite"/>
+      <g><animateTransform attributeName="transform" type="rotate" values="-4 32 32;4 32 32;-4 32 32" dur="2.2s" repeatCount="indefinite"/>
+        <polygon points="6,30 58,12 26,40" fill="#e8eefc" stroke="#101a3a" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="26,40 58,12 34,54" fill="#b9c6ea" stroke="#101a3a" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="26,40 30,50 34,54" fill="#8b9bc9" stroke="#101a3a" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="30" cy="28" r="2" fill="#101a3a"/><circle cx="37" cy="25" r="2" fill="#101a3a"/>
+      </g>
+    </g>
+  </svg>

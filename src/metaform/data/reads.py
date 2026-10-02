@@ -41,6 +41,7 @@ from .records import (
     Roots,
     Selection,
     Subtype,
+    Ticket,
     Version,
     Where,
     WorkRecord,
@@ -142,6 +143,45 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
         (found.element_id,)))
     return Where(kind, found, held, holding, with_subtypes('provider'), with_subtypes('receiver'), open_work,
                  () if at is None else at.layers, full, reaching.applying, reaching.visible, waiting)
+
+
+def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
+    """The where read of a node a ticket is on or links, MAP-048: an element's is `where` of its address; a join's is
+    the join, or a subtype join with the join holding it, with its open work, what the layers in context hold at it
+    and its open questions and messages. None when the node is not current or not in context."""
+    if target.kind == 'element':
+        address = rows.address_of(tx, target.id)
+        return None if address is None else where(tx, res, raw, address, False)
+    row = rows.current_join(tx, target.id)
+    if row is None:
+        return None
+    context = None if raw else res
+    if row['parent'] is None:
+        held, holding = None, views.visible_join(tx, row, context)
+    else:
+        held = views.visible_subtype(tx, row, context)
+        parent = rows.current_join(tx, str(row['parent']))
+        holding = None if held is None or parent is None else views.visible_join(tx, parent, context)
+    if holding is None:
+        return None
+    open_work = tuple(views.work_record(tx, one) for one in tx.db.execute(
+        "SELECT * FROM work WHERE target_kind='join' AND target_id=? AND done IS NULL ORDER BY row", (target.id,)))
+    at = node(tx, res, Node('join', target.id), raw)
+    waiting = tuple(views.message(tx, one) for one in tx.db.execute(
+        "SELECT * FROM messages WHERE target_kind='join' AND target_id=? AND closed IS NULL ORDER BY row",
+        (target.id,)))
+    return Where('join', None, held, holding, work=open_work, layers=() if at is None else at.layers,
+                 messages=waiting)
+
+
+def ticket(tx: Tx, res: Resolver, raw: bool, work_id: str) -> Ticket:
+    """One ticket by its id with the where read of its node and of each node it links, MAP-048."""
+    row = tx.db.execute('SELECT * FROM work WHERE work_id=?', (work_id,)).fetchone()
+    if row is None:
+        raise StoreError(f'No work record has the id {work_id}.', 'metaform map work open=true')
+    record = views.work_record(tx, row)
+    return Ticket(record, node_where(tx, res, raw, Node.of(record.kind, record.id)),
+                  tuple(node_where(tx, res, raw, Node.of(link.kind, link.id)) for link in record.links))
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
