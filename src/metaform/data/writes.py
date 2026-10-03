@@ -24,7 +24,6 @@ from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .records import (
     CONDITIONS,
     MESSAGES,
-    PERSPECTIVES,
     ROLES,
     COLUMNS,
     TICKETS,
@@ -139,8 +138,7 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 
 
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-             ef: Any = None, perspective: Any = None, relation: Any = None, verb: Any = None, observation: Any = None,
-             non_goal: Any = None, type: Any = 'purpose',
+             ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose',
              refs: Iterable[Any] = (), extra: Any = None, ifd: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
     for the functionality it names, MAP-020."""
@@ -148,13 +146,11 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     found = rows.layer(tx, layer)
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('name', name), ('purpose', purpose), ('ef', ef), ('relation', relation), ('verb', verb),
-        ('observation', observation), ('non_goal', non_goal))}
+        ('name', name), ('purpose', purpose), ('ef', ef), ('verb', verb), ('non_goal', non_goal))}
     kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, 'the join', notices)
     split += more
-    perspective, kept_extra = _perspective(perspective, kept_extra, "the join's", notices)
     receiver_id = rows.element_at(tx, receiver, found, 'receiver', notices)
     provider_id = rows.element_at(tx, provider, found, 'provider', notices)
     if receiver_id == provider_id:
@@ -165,11 +161,10 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, ef, perspective, ifd, relation, '
-        'verb, observation, non_goal, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, ef, ifd, verb, non_goal, '
+        'extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (join_id, found.layer_id, kind, receiver_id, provider_id, texts['name'], texts['purpose'], texts['ef'],
-         perspective, _ifd(ifd, notices), texts['relation'], texts['verb'], texts['observation'], texts['non_goal'],
-         encode_extra(kept_extra, 'the join')))
+         _ifd(ifd, notices), texts['verb'], texts['non_goal'], encode_extra(kept_extra, 'the join')))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
                   (join_id, row, receiver_id, provider_id))
@@ -179,8 +174,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     return _with(record, notices)
 
 
-def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, perspective: Any = None,
-                relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
+def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, verb: Any = None,
+                non_goal: Any = None,
                 name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
                 extra: Any = None, purpose: Any = None, ifd: Any = None, element_name: Any = None) -> Subtype | Outcome:
     """Write a subtype join inside its parent join, holding the element at `address`, with its own purpose, the
@@ -199,10 +194,8 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     kept_extra, split = rows.extra_fields(extra, 'the subtype join', notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, 'the subtype join', notices)
     split += more
-    perspective, kept_extra = _perspective(perspective, kept_extra, "the subtype join's", notices)
     texts = {field: rows.text(value, field, notices) for field, value in (
-        ('purpose', purpose), ('ef', ef), ('relation', relation), ('verb', verb), ('observation', observation),
-        ('non_goal', non_goal), ('name', name))}
+        ('purpose', purpose), ('ef', ef), ('verb', verb), ('non_goal', non_goal), ('name', name))}
     element_id = _held_element(tx, found, address, name_length, role, notices, element_name)
     for other in rows.holding(tx, element_id):
         notices.append(Notice('address', f'{address} is already held by subtype join {other}; a part serving two '
@@ -211,11 +204,10 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
-        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, perspective, ifd, "
-        "relation, verb, observation, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (join_id, found.layer_id, parent, element_id, texts['name'], texts['purpose'], texts['ef'], perspective,
-         _ifd(ifd, notices), texts['relation'],
-         texts['verb'], texts['observation'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
+        "INSERT INTO joins(join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, ifd, "
+        "verb, non_goal, extra) VALUES (?, ?, 'subtype', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (join_id, found.layer_id, parent, element_id, texts['name'], texts['purpose'], texts['ef'],
+         _ifd(ifd, notices), texts['verb'], texts['non_goal'], encode_extra(kept_extra, 'the subtype join')))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
                   (join_id, row, parent, element_id))
@@ -257,15 +249,6 @@ def _held_element(tx: Tx, found: LayerRow, address: str, name_length: Any, role:
             notices.append(Notice(field, f'{record.address} is already element {element_id} of layer {record.layer}, '
                                          f'which keeps its own {field}; the {field} given here was not applied.'))
     return element_id
-
-
-def _perspective(perspective: Any, extra: dict[str, Any] | None, owner: str,
-        notices: list[Notice]) -> tuple[str | None, dict[str, Any] | None]:
-    """The EF's word, Function or Encounter; any other value is kept in the extra and named, MAP-020."""
-    if perspective is None or perspective in PERSPECTIVES:
-        return perspective, extra
-    notices.append(Notice('perspective', f"{perspective!r} is not Function or Encounter; it was kept in {owner} extra."))
-    return None, {**(extra or {}), 'perspective': perspective}
 
 
 def _parent_of(tx: Tx, join: Any, found: LayerRow) -> str:
@@ -523,9 +506,6 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             aside.update(kept)
             if key not in kept:
                 columns[key] = length if key == 'name_length' else role
-        elif key == 'perspective' and value is not None and value not in PERSPECTIVES:
-            aside['perspective'] = value
-            notices.append(Notice('perspective', f'{value!r} is not Function or Encounter; it was kept in the extra.'))
         elif key in rows.TEXT_COLUMNS:
             columns[key] = rows.text(value, key, notices)
         else:

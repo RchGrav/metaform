@@ -199,20 +199,18 @@ class Store:
                                                   extra=extra, name=name), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-                 ef: Any = None, perspective: Any = None, relation: Any = None, verb: Any = None,
-                 observation: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
+                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
                  extra: Any = None, ifd: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010, with the project's name for
         the functionality it names, MAP-020."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_join(tx, named, receiver, provider, name=name, purpose=purpose,
-                                               ef=ef, perspective=perspective, relation=relation, verb=verb,
-                                               observation=observation, non_goal=non_goal, type=type, refs=refs,
+                                               ef=ef, verb=verb, non_goal=non_goal, type=type, refs=refs,
                                                extra=extra, ifd=ifd), notice)
 
-    def add_subtype(self, layer: str | None, join: Any, address: Any, *, ef: Any = None, perspective: Any = None,
-                    relation: Any = None, verb: Any = None, observation: Any = None, non_goal: Any = None,
+    def add_subtype(self, layer: str | None, join: Any, address: Any, *, ef: Any = None, verb: Any = None,
+                    non_goal: Any = None,
                     name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
                     extra: Any = None, purpose: Any = None, ifd: Any = None,
                     element_name: Any = None) -> Subtype | Outcome:
@@ -220,8 +218,8 @@ class Store:
         it carries its own purpose, the share of its parent's it serves, STORE-011 and MAP-030."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_subtype(tx, named, join, address, ef=ef, perspective=perspective, relation=relation,
-                                                  verb=verb, observation=observation, non_goal=non_goal, name=name,
+            return self._noted(writes.add_subtype(tx, named, join, address, ef=ef, verb=verb, non_goal=non_goal,
+                                                  name=name,
                                                   name_length=name_length, role=role, refs=refs, extra=extra,
                                                   purpose=purpose, ifd=ifd, element_name=element_name), notice)
 

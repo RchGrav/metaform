@@ -40,7 +40,7 @@ class Switch:
 
 COMMANDS: dict[str, Command] = {}
 SWITCHES: dict[str, Switch] = {}
-ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'read')
+ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'read', 'instructions')
 
 
 def command(record: Command) -> Command:

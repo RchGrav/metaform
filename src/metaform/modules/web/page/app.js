@@ -267,12 +267,12 @@ function graphData() {
     links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id,
       work: join.open_work || []});
     links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
-      perspective: join.perspective, work: join.open_work || []});
+      work: join.open_work || []});
     for (const subtype of join.subtypes || []) {
       nodes.push({id: 's:' + subtype.join_id, t: 'sub', join: join.join_id, layer: subtype.layer,
         name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
       links.push({source: purpose, target: 's:' + subtype.join_id, k: 'layer', layer: subtype.layer, join: join.join_id,
-        perspective: subtype.perspective, work: join.open_work || []});
+        work: join.open_work || []});
     }
   }
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
@@ -1208,12 +1208,10 @@ function paint3d(node) {
   object.material.userData.lit = true;
 }
 
-/* An encounter takes the color of its EF's word, Function or Encounter; one with no word keeps its layer's color. */
-const EF = {Function: '--function', Encounter: '--encounter'};
+/* An encounter takes its layer's color. */
 function linkColor(link) {
   if (link.k === 'tree') return css('--tree');
   if ((link.work || []).includes('exclude')) return css('--exclude');
-  if (EF[link.perspective]) return css(EF[link.perspective]);
   return layerColor(link.layer);
 }
 let G = null;
@@ -1297,14 +1295,11 @@ function tipFor(node) {
   if (node.t === 'purpose') return [join?.name ? h('b', {}, join.name) : null, h('span', {}, join?.purpose || 'purpose')];
   return [h('b', {}, node.name || ''), node.joinName ? h('span', {}, node.joinName) : null];
 }
-/* What an element does, which its label does not say, VIEW-038: the relation of each join it provides, the join's
- * sentence, whose subject is the provider for a Function and the receiver, named, for an Encounter, MAP-020. Its
- * address is not shown, since that is its name read the other way. */
+/* What an element does, which its label does not say, VIEW-038: the ef of each join it provides, as written, with
+ * no subject chosen, MAP-020. Its address is not shown, since that is its name read the other way. */
 function servedBy(node) {
-  const names = new Map(G.graphData().nodes.map(other => [other.id, other.name]));
-  return S.joins.filter(join => join.provider === node.id && (join.relation || join.purpose)).slice(0, 3).map(join =>
-    h('span', {class: 'why'}, join.perspective === 'Encounter' ? h('i', {}, (names.get(join.receiver) || '') + ' ') : null,
-      short(join.relation || join.purpose, 160)));
+  return S.joins.filter(join => join.provider === node.id && (join.ef || join.purpose)).slice(0, 3).map(join =>
+    h('span', {class: 'why'}, short(join.ef || join.purpose, 160)));
 }
 /* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
  * below the node only where it would leave the top of the view. */
@@ -1575,10 +1570,7 @@ addEventListener('resize', resize);
 
 function renderLegend() {
   const inView = new Set([...S.elements.values()].map(entry => entry.element.layer).concat(S.joins.map(join => join.layer)));
-  const words = new Set(S.joins.flatMap(join => [join.perspective, ...(join.subtypes || []).map(subtype => subtype.perspective)]));
   const rows = [['--intake', 'purpose · receiver to join', ''],
-    ...(words.has('Function') ? [['--function', 'Function · the encounter of a functionality', '']] : []),
-    ...(words.has('Encounter') ? [['--encounter', 'Encounter · the functionality of the encounter', '']] : []),
     ['--tree', 'namespace', ''], ...[...inView].map(name => [colorVar(name), name, ''])];
   const legend = $('#legend');
   fill(legend, ...rows.map(([color, text, kind]) =>
@@ -1661,7 +1653,6 @@ async function build2D() {
   }
   const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
-  for (const edge of edges) if (EF[edge.join.perspective]) edge.path?.classList.add(`perspective-${edge.join.perspective.toLowerCase()}`);
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
   M.base = {svg, nodes, edges, fit: fitOf(svg), vertical, cam: null};
@@ -1744,7 +1735,7 @@ const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·'
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
 /* An element's and a subtype's name is its short name, its address read through name_length, MAP-012; a join's is the
  * project's own name for the functionality, MAP-020, or its purpose when it has none. */
-const joinLabel = join => join.name || join.purpose || join.relation || 'join';
+const joinLabel = join => join.name || join.purpose || join.ef || 'join';
 function nameOf(key, fallback = key) {
   if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.short_name || found.address : fallback; }
   if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
@@ -3167,9 +3158,6 @@ async function renderWork(target, key, also = null) {
     record.task ? h('p', {class: 'fn'}, record.task) : null,
     record.done ? h('p', {class: 'obs'}, `Resolved: ${record.resolution || ''}`) : null)));
 }
-function efPill(thing) {
-  return EF[thing.perspective] ? h('span', {class: 'pill perspective', style: {'--c': `var(${EF[thing.perspective]})`}}, thing.perspective) : null;
-}
 function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name); }
 function elementLink(id, address) {
   const entry = S.elements.get(id);
@@ -3184,16 +3172,14 @@ function joinCard(join, side) {
       h('span', {class: 'lay', style: {'--c': `var(${colorVar(join.layer)})`}}, join.layer)),
     join.name ? h('p', {class: 'name'}, h('b', {}, join.name)) : null,
     join.purpose ? h('p', {}, join.purpose) : null,
-    join.ef ? h('p', {class: 'fn'}, efPill(join), join.ef) : null,
-    join.relation ? h('p', {class: 'fn'}, join.relation) : null,
-    join.observation ? h('p', {class: 'obs'}, join.observation) : null,
+    join.ef ? h('p', {class: 'fn'}, join.ef) : null,
     join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
     refsOf(join.refs),
     (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
       event.preventDefault(); select('s:' + subtype.join_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
       subtype.name ? h('span', {}, subtype.name, ' ') : null,
-      h('span', {class: 'refs'}, subtype.address), subtype.ef ? h('div', {}, efPill(subtype), subtype.ef) : null,
-      subtype.observation ? h('div', {}, subtype.observation) : null, refsOf(subtype.refs))));
+      h('span', {class: 'refs'}, subtype.address), subtype.ef ? h('div', {}, subtype.ef) : null,
+      refsOf(subtype.refs))));
 }
 function itemText(value) {
   if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
@@ -3206,13 +3192,11 @@ function renderSubtype({subtype, join}) {
     h('h2', {}, subtype.short_name || subtype.address),
     h('div', {class: 'addr'}, subtype.address),
     subtype.name ? h('p', {class: 'name'}, h('b', {}, subtype.name)) : null,
-    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null, efPill(subtype),
+    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null,
       (subtype.open_work || []).map(workPill), layerPill(subtype.layer)),
     h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
       elementLink(join.receiver, join.receiver_address), '.'),
     subtype.ef ? h('p', {}, subtype.ef) : null,
-    subtype.relation ? h('p', {class: 'fn'}, subtype.relation) : null,
-    subtype.observation ? h('p', {class: 'obs'}, subtype.observation) : null,
     refsOf(subtype.refs),
     h('div', {id: 'work'}),
     h('div', {class: 'eyebrow'}, 'The join it sits in'),
@@ -3222,7 +3206,7 @@ function renderSubtype({subtype, join}) {
 function renderJoin(join) {
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Join'),
-    h('h2', {}, join.name || join.relation || `${join.receiver_address} receives from ${join.provider_address}`),
+    h('h2', {}, join.name || join.ef || `${join.receiver_address} receives from ${join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
       elementLink(join.provider, join.provider_address), '.'),
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,

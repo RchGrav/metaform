@@ -56,7 +56,7 @@ metaform install claude
 
 The supplied installer has configured adapters for **Claude Code** (`claude`), **Codex** (`codex`), **Gemini CLI** (`gemini`), **Cursor** (`cursor`), and **VS Code** (`vscode`). Its entries for Copilot CLI, Factory, Antigravity, and Claude Desktop are marked unverified and do not provide the same installation path. This is the adapter set in the documented source snapshot, not a claim about every current client version.
 
-Installation reports the files it changes, makes backups, registers the server, and probes the server's initialize and tools/list exchange. Where the adapter supplies a skill location, it also copies the skill material. Server probing and copying a skill are distinct from proving that the client's native skill loader has used it.
+Installation reports the files it changes, makes backups, registers the server, and probes the server's server/discover and tools/list exchange in MCP 2026-07-28. Where the adapter supplies a skill location, it also copies the skill material. Server probing and copying a skill are distinct from proving that the client's native skill loader has used it.
 
 The registered transport is **stdio**. Its command shape is:
 

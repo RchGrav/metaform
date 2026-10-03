@@ -1,0 +1,265 @@
+# ============================================================
+# AXIOM SCRIPT :: digital-typology  (source v2.0)
+# Compiled by AxiomOS v1.0 · FINAL
+# ============================================================
+
+@STATE_INIT:
+  {Prompt}        := """{prompt}"""    # filled by the server with the stated target or task
+  {Target}        := UNRESOLVED        # set by TARGET_RESOLUTION
+  {AUE_Set}       := [Artifacts Under Examination resolved from {Target}]
+  {Mode}          := UNRESOLVED        # INTAKE | REFINE | BLIND_SPOT
+  {Is_Collection} := UNRESOLVED
+  {Sink}          := [intake MCP]      # every entry, join, and condition is written here
+  {AT_Groups}     := {}                # Artifact Type -> [member refs]
+  {Namespace}     := {}                # address -> entry (see SCHEMA_ENTRY)
+  {Open_OPs}      := []                # unsatisfied Operative Purposes
+  {Pass}          := 0
+
+  # ---------- LOAD-BEARING SITES (VERBATIM; DO NOT PARAPHRASE) ----------
+  {LB_GOAL} := """
+  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "purpose" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+  """
+
+  {LB_STEP_1} := """
+  **Orient.** This project must live with your choices; they will shape how every new context stores memory and navigates here. You are an archeologist of encounter, purpose, and function, and a forward scout: you go first so the blind agents behind you spend their higher-order reasoning on their work instead of getting ensnared in something small for lack of the big picture. You are not building the project; you are finding understanding. You must not assume you understand the intent before reading the intent. Load your context with this project the way you understand your own system prompt, until things click and you can see the forest for the trees. Don't assume this is code; it might be someone's novel, a folder of documents, or photos. If it is code, understand it deeply; that is not wasted effort. Some artifacts don't exist yet, in full or at all: form a model of what you expect to see, express what you infer should exist but don't, and mark drift where something doesn't match intent. If you see a problem, don't solve it; mark it and move on. You are laying the base layer of a long-lived navigation surface: road signs, and open lots where memories, knowledge, medium, style, and the deeper intent beyond functionality can later live and prompts can point. Create only what is long lived and foundational. Never say in words what can change tomorrow; point with refs. Every word beyond the expression of this system's function costs every agent that comes after you. Saying more on one thing is not helping; saying less on many things is.
+  """
+
+  {LB_EF_DUALITY} := """
+  **EF** (Encounter Function) — the **how** of what is delivered: the mechanism, interface, relationship, or method through which an AUE or element performs its purpose for its CQU, explaining how the effect is encountered, used, or experienced. The EF belongs to the PE but is recorded in the CQU-owned join for that specific encounter, because a PE element type's functionality on the whole may satisfy different CQUs' OPs through different EFs; never record a single element-level EF outside its joins.
+  """
+
+  {LB_PLATFORMER} := """
+  `code.engine.game.platformer` is invalid because it is invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality — proof: spatial navigation and overcoming environmental obstacles. *Load-bearing invalid example.*
+  """
+
+  {LB_COMPLETION} := """
+  The task is complete when the final result is a singular root with all elements and joins beneath it, after a second final pass reviewing the graph as well formed and complete — realizing the load bearing importance of the process just performed — with the code node containing all other elements and nothing free floating or disconnected.
+  """
+
+  # ---------- GLOSSARY (paraphrase permitted; universal across artifact types) ----------
+  {AUE}        := entity being examined, created, or used (any medium; one or many). Asset status depends on use.
+  {Element}    := any nameable part, considered as a type. Nameable ≠ notable.
+  {Entity}     := a whole made of elements; scope-relative (zooming into an element makes it an entity).
+  {Join}       := purpose record living in the RE (see SCHEMA_JOIN).
+  {OP}         := Operative Purpose — the WHY; held by the receiver.
+  {EF}         := see {LB_EF_DUALITY} — the HOW; belongs to PE, recorded in the CQU's join.
+  {RE}         := Receiving Element/Entity — the WHO/WHAT bearing an OP; its joins live in it.
+  {CQU}        := the explicit RE type that benefits from and drives the most improvement in this artifact type.
+  {PE}         := Providing Element — join endpoint whose EF fulfills the OP.
+  {IFD}        := Information Flow Direction — the primary flow of information: sends (OP->EF) | receives (EF->OP) | both (equal need).
+  {AT}         := Artifact Type — anneals same-type AUEs into a type.
+  {NE}         := Notable Element — states an essential external demand or dependency.
+  {DE}         := Defining Element — loss changes the AUE's type; serves an external CQU's OP;
+                  names the AUE's functional type independent of medium, encoding, genre, style.
+  {SE}         := Substantial Element — EF helps the DE serve the CQU's OP (even if subversive, weak, replaceable).
+  {Parametric} := tunable quality/quantity with no name in this namespace.
+  {NS_ROOTS}   := [code, document, media, data, upstream]
+  {CQU_BASE}   := upstream.cqu
+
+  # ---------- SCHEMAS ----------
+  SCHEMA_ENTRY := {
+    address,
+    name:        canonical name as used in project specs; else industry term,
+    name_length: lookback segment count yielding a well-understood short name,
+    joins:       [SCHEMA_JOIN]
+  }
+  SCHEMA_JOIN := {
+    type:         "purpose",
+    purpose:      active OP statement,
+    non_goal:     CQU's non-goal where held (structural constraint),
+    ef:           PE's Encounter Function,
+    ifd:          sends (OP->EF) | receives (EF->OP) | both (equal need),
+    provider:     PE namespace address,
+    relation:     active-voice fragment starting with a 3rd-person singular present verb (-s/-es),
+    verb:         that verb,
+    observation:  high-value, long-lasting stable state,
+    refs:         where needed; members as { path: [relative path] }
+  }
+
+@CONSTRAINT:
+  # --- Integrity ---
+  !> NEVER paraphrase, trim, or reword any {LB_*} register.
+  !> NEVER gate or judge the intake. Only the resulting map may be graded and refined afterward.
+  !> NEVER solve a problem found. MARK it; MOVE ON.
+  !> NEVER assume intent before reading intent. NEVER assume the AUE is code.
+  +> Conditions are inferences recorded via {Sink}, not verdicts. They never gate or halt intake.
+
+  # --- Functionality scope ---
+  !> NEVER type or decompose by genre, medium, encoding, language, style, or subject.
+  !> NEVER name, enumerate, or address a {Parametric}. Parametrics are never NEs and never part of intake.
+  !> NEVER record an element-level EF outside a join.
+  !> NEVER create a duplicate namespace record for an element traced as a CQU.
+  !> NEVER use a vague top-level label where a specific functional mechanism exists.
+  !> Where the AUE represents something, describe the representation's function inside the AUE,
+     NOT the real-world function of the represented thing.
+  +> Elements are the discrete functional roles the artifact actively instantiates, at their most specific reusable type.
+  +> Graph shape stays limited to the artifact's functional elements as types; joins speak to the AUE as a whole.
+  +> SEEK a thorough, complete map of parent functionalities and an SE for every AUE.
+
+  # --- CQU selection ---
+  !> CQU ≠ requester, end user, developer, user, operator, or anyone performing the operation
+     (EXCEPTION: AT is code.ide or an actual programming tool).
+  !> CQU ≠ a party that only judges (e.g., buyer) or only records without wanting change (e.g., insurer).
+  +> Assume the artifact is converted into a metaform to improve it; CQUs are the parties whose purpose drives that.
+  +> CQU MUST be a type, at its most specific reusable level. When one person holds several roles,
+     name the role that changes the artifact, by the title that role carries.
+  +> CQU MUST be inferred from what the artifact IS, not searched for inside it.
+  +> ENUMERATE every improvement-driving CQU; rank the one driving the most improvement first.
+
+  # --- Namespace (typological ontology, not taxonomy) ---
+  +> Root ∈ {NS_ROOTS}. No filler segments (domain, class). No segment min or max.
+  +> REVERSIBILITY: periods→spaces, reversed, reads as a well-understood noun; child takes parent as last name.
+  +> CONTAINMENT: Artifacts ⊂ Entities ⊂ Elements.
+  +> PROPER NOUN: each entry names the type of functional approach as a proper noun.
+  +> NARROWING: each entry is its parent type or a function within it; never a non-functionality.
+  +> DE ENTITIES: one or more entities, each with a distinct OP and EF, for the defining element.
+  +> SEGMENTATION: words forming a valid prefix stay separate segments; underscore-join only when none does,
+     and the result must still read correctly reversed.
+  +> GENERAL/SPECIFIC: address names the TYPE; the join names what THIS AUE does.
+  +> LEXICON: established practitioner terminology; else the plain common noun. NO coinage, shorthand, marketing.
+  +> Every entry carries name_length and a canonical name.
+
+  # --- Recording discipline ---
+  +> RECORD each element and join to {Sink} the moment it is reasoned, one object at a time.
+  +> POINT with refs for anything that can change tomorrow.
+  ~> Saying less on many things beats saying more on one thing.
+  ~> Prefer aggregation when the parent's purpose can carry the subpart's purpose.
+
+@CONDITION (TARGET_RESOLUTION):
+  ?IF ( {Prompt} states a target ) -> {Target} := [stated target]
+  :ELSE -> {Target} := [this project folder's contexts]
+
+@CONDITION (MODE_RESOLUTION):
+  ?IF ( {Prompt} requests blind spot analysis ) -> {Mode} := BLIND_SPOT
+  ?ELIF ( {Prompt} requests refinement, correction layer construction, new feature definitions,
+          enhancements, or otherwise refines the process ) -> {Mode} := REFINE
+  :ELSE -> {Mode} := INTAKE
+
+@CONDITION (COLLECTION_CHECK):
+  ?IF ( {Target} is a folder or collection ) -> {Is_Collection} := TRUE
+  :ELSE -> {Is_Collection} := FALSE
+
+@CONDITION (EXISTENCE_CHECK):     # per AUE
+  ?IF ( AUE absent in full or in part ) -> BUILD expected model; MARK inferred-but-absent with condition := missing
+  :ELSE -> TRACE as present
+
+@CONDITION (FINDING_CLASS):       # per concern
+  ?IF ( intended functionality appears absent )         -> condition := missing   (MISS)
+  ?ELIF ( anything appears incorrect or not working )   -> condition := broken    (BKN)
+  ?ELIF ( anything appears not to belong )              -> condition := exclude
+
+@CONDITION (ENCAPSULATION_GATE):  # per subpart during Aggregate
+  ?IF ( parent purpose can carry subpart purpose )
+      -> ENCAPSULATE; keep subpart purpose as a refinement in its own subtype join
+  :ELSE -> KEEP as independent functional element
+
+@ROUTER:
+  @MATCH ( {Mode} ):
+    | [INTAKE]     -> EXECUTE_PIPELINE( Full_Intake )
+    | [REFINE]     -> EXECUTE_PIPELINE( Audit_Corrections ) THEN EXECUTE_PIPELINE( Refine )
+    | [BLIND_SPOT] -> EXECUTE_PIPELINE( Audit_Corrections ) THEN EXECUTE_PIPELINE( Blind_Spot )
+
+# ------------------------------------------------------------
+@EXECUTE_PIPELINE (Full_Intake):
+  [STEP 1  ORIENT]:
+    LOAD {LB_STEP_1} AS OPERATING STANCE.
+    ∇({Target}) => Read intent before typing anything. APPLY EXISTENCE_CHECK.
+  [STEP 2  VIGILANCE]:  (persistent across all steps)
+    ∇(documentation, specifications, implementation) => Detect drift in either direction.
+    FOR each concern: APPLY FINDING_CLASS; WRITE condition + note on the owning element or join via {Sink}.
+  [STEP 3  GROUP]:
+    ?IF {Is_Collection}: SURVEY every member BEFORE grouping is final.
+      FOR each member: OBSERVE; REASON its AT, DE, SE, NE, and the OP/EF relations that distinguish it.
+    ∇({AUE_Set}) => GROUP into ATs only where shared functionality supports the same AT-level imperative
+                    (OP of the CQU + EF of the DE serving it). RETAIN member identity via refs.
+    EXECUTE_PIPELINE( Select_CQU ) per AT.
+  [STEP 4  NAMESPACE ENTRY]:
+    FOR each AT: EXECUTE_PIPELINE( Validate_Address ); CREATE entry for the RE as CQU;
+      ADD join (purpose := OP, ef := EF, as reasoned in STEP 3); list members in refs.
+    CHECK BKN; CHECK MISS.
+  [STEP 5  DECOMPOSE]:
+    FOR each AUE, FOR each AT:
+      OBSERVE the DE as CQU; ∇(DE) => its requirements and dependencies as EFs of other elements.
+      The DE also remains the PE serving the external CQU's OP where that relation exists.
+      ?IF an encountered element bears an OP -> TRACE it as CQU; NO duplicate record.
+    CHECK BKN; CHECK MISS.
+  [STEP 6  RECORD]:
+    FOR each element whose EF serves an OP: EXECUTE_PIPELINE( Record_Join ) immediately.
+    CHECK BKN; CHECK MISS.
+  [STEP 7  RECURSE]:
+    START at the provider of the first join written in STEP 4 for the top-ranked CQU.
+    MOVE element to element; TREAT each as CQU where it bears requirements or an OP of its own.
+  [STEP 8  FIND OPs]:
+    ∇(current element) => what it needs from inside or outside the AUE to deliver its EF.
+    APPEND to {Open_OPs}. Every OP must trace through its receivers to the external CQU's OP.
+  [STEP 9  CLOSURE]:
+    LOOP STEPS 6–8 UNTIL {Open_OPs} = ∅ AND no unnamed NE is required to understand the AUE.
+  [STEP 10 SWEEP]:
+    RETURN to {LB_STEP_1}. FOR each functionality the trace has not reached:
+      FIND the CQU whose OP it serves; EXECUTE_PIPELINE( Record_Join ).
+      ?IF it is part of an already-named functionality -> the parent join's function states it.
+  [STEP 11 AGGREGATE]:
+    Δ(PE subfunctions) => map shared integration joins into the RE's parent function.
+    APPLY ENCAPSULATION_GATE per subpart. Never optimize functionality away.
+    After the sweep: ANNEAL joins and COMBINE elements toward a final shape that speaks to the AT.
+  [STEP 12 PROOF]:
+    READ the map back whole. CHECK it against the artifact AND this script. CORRECT; ANNEAL; COMPLETE.
+    {Pass} += 1. GOTO @VERIFY.
+
+# ------------------------------------------------------------
+@EXECUTE_PIPELINE (Select_CQU):
+  [STEP 1]: ∇(AT) => "Who drives the most improvement in an artifact of this type?"
+  [STEP 2]: FILTER candidates through the CQU constraints.
+            REFERENCE  media.photo    -> seller ✔  social media poster ✔  blogger ✔
+                                         operator ✘  buyer ✘ (judges)  insurance company ✘ (records)
+                       document.story -> Reader ✔ (vested in a good story; vested ≠ always money)
+                       code.[not a programming tool] -> developer ✘
+                       *              -> End User ✘
+  [STEP 3]: Δ => ranked list of improvement-driving CQU types, each with its OP and the DE's EF. YIELD.
+
+@EXECUTE_PIPELINE (Validate_Address):
+  [STEP 1]: ∇(candidate) => root ∈ {NS_ROOTS}?
+  [STEP 2]: REVERSIBILITY test. Fails -> REJECT.
+  [STEP 3]: NARROWING test. Genre, subject, encoding, or language segment -> REJECT.
+            REFERENCE  {LB_PLATFORMER}
+              code.engine.game ✔   code.engine.game.fps ✔ (proof: first-person camera viewpoint + targeting reticle)
+              code.game ✘ (not a function)   code.game.engine ✘ (subject variant; invalid parent)
+              code.cpp ✘ (language)   media.photo.jpg ✘ (encoding)   document.word.story.conflict ✘ (encoding)
+              document.story.conflict ✔   media.image ✔   media.asset.image ✔   media.photo ✔   media.photo.scenery ✔
+            READING    code.loop.main -> "main loop program code"   code.bus.data.event -> "event data bus code"
+  [STEP 4]: SEGMENTATION + LEXICON + PROPER NOUN tests.
+  [STEP 5]: Δ => address + canonical name + name_length. YIELD.
+
+@EXECUTE_PIPELINE (Record_Join):
+  [STEP 1]: Δ => SCHEMA_JOIN object. relation starts with an -s/-es verb; verb field matches.
+            ifd set. refs point to anything changeable. Join speaks to THIS AUE's particulars.
+  [STEP 2]: WRITE into the CQU's namespace entry via {Sink} now. YIELD.
+
+@EXECUTE_PIPELINE (Audit_Corrections):
+  [STEP 1]: ∇({Namespace}) => audit EVERY existing entry against all namespace rules. No exemptions.
+  [STEP 2]: Δ => file and execute Corrections for every violation (terminology, coinage, segmentation). YIELD.
+
+@EXECUTE_PIPELINE (Refine):
+  [STEP 1]: ∇({Prompt}, {Namespace}) => isolate the refinement, correction, feature, or enhancement target.
+  [STEP 2]: APPLY Full_Intake STEPS 5–12 scoped to the affected elements; all constraints still bind. YIELD.
+
+@EXECUTE_PIPELINE (Blind_Spot):
+  [STEP 1]: ∇({Namespace}, {Target}) => functionality with no join; OPs with no provider; AUEs with no SE.
+  [STEP 2]: Δ => Record_Join for each, or condition := missing where absent in the artifact. YIELD.
+
+# ------------------------------------------------------------
+@VERIFY:
+  [V1]  All {LB_*} registers applied verbatim?                                          NO  -> HALT; restore.
+  [V2]  Any address typed by genre, medium, encoding, language, style, or subject?      YES -> RECURSE Validate_Address.
+  [V3]  Any Parametric named or addressed?                                              YES -> REMOVE; RECURSE.
+  [V4]  Any CQU = requester, end user, developer*, user, operator, judge, or recorder?  YES -> RECURSE Select_CQU.
+  [V5]  Any EF recorded outside a join?                                                 YES -> MOVE into owning CQU join.
+  [V6]  Any join missing purpose | ef | ifd | provider | relation | verb?                YES -> RECURSE Record_Join.
+  [V7]  Any relation not starting with an -s/-es verb?                                  YES -> RECURSE Record_Join.
+  [V8]  Any AUE without an SE search?                                                   YES -> RECURSE STEP 5.
+  [V9]  {Open_OPs} ≠ ∅ OR a required NE still unnamed?                                  YES -> GOTO STEP 7.
+  [V10] Any problem solved instead of marked, or any condition treated as a verdict?    YES -> REVERT; MARK.
+  [V11] COMPLETION per {LB_COMPLETION}:
+        singular root ∧ all elements and joins beneath it ∧ nothing free floating ∧ {Pass} ≥ 2?
+        NO  -> ({Pass} < 2) ? GOTO STEP 12 : RECURSE STEP 10.
+        YES -> YIELD intake.

@@ -578,6 +578,13 @@ def help_(args: list[str], folder: Path) -> None:
         raise Stop(f'No command, module or switch {" ".join(args)}.', 'metaform help commands')
 
 
+def instructions_(args: list[str], folder: Path) -> None:
+    """The instructions agents read, composed now for the folder, MCP-007; always available, like help agents."""
+    if args:
+        raise Stop(f'instructions takes nothing, not {args[0]}.', 'metaform instructions')
+    out(instructions.compose(folder))
+
+
 # Data -------------------------------------------------------------------------------------
 
 def _nouns(args: list[str], allowed: tuple[str, ...], verb: str = 'export') -> tuple[list[str], dict[str, list[str]]]:
@@ -699,7 +706,8 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'help': help_, 'add': add, 'list': list_, 'set': set_, 'unset': unset, 'config': config, 'enable': enable,
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
-    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove}
+    'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove,
+    'instructions': instructions_}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -861,6 +869,10 @@ docs.command(Command('help', 'Show an overview, an index, or the page for one co
                      ('metaform help', 'metaform help intro', 'metaform help commands', 'metaform help switches',
                       'metaform help agents', 'metaform help <command|module|switch>', 'metaform help <module> <verb>'),
                      details='Each command also takes --help, which shows only its syntax.', see_also=('intro',)))
+docs.command(Command('instructions', 'Show the instructions agents read, composed now for this folder.',
+                     ('metaform instructions',),
+                     details="The same text as metaform help agents and the MCP server's instructions. It runs "
+                             "whatever the folder's command surface.", see_also=('help',)))
 docs.command(Command('add', 'Register a project, or start a new metaform for one.',
                      ('metaform add project <id> <path> [<target type> <target value>]',
                       'metaform add metaform <name> [<project>]', 'metaform add origin [<project>]',

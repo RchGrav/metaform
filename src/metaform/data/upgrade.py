@@ -9,6 +9,16 @@ kept under the home's backups before anything is changed.
 Layout 8 to 9, D92 and VIEW-035: a ticket keeps its kind while it is worked, so a record taken as in-progress is a
 missing one taken, and one fixing a broken one taken; a ticket records who took it and its place on the board, and
 links other nodes for reference.
+
+Layout 10 to 11, Rich 2026-10-02: "drop perspective drop the duality , EF infers fine". The joins' perspective column
+is taken out; every other field of every join is kept as it was.
+
+Layout 11 to 12, Rich 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was
+relation"; "by placing permanent implementation details into the fucking metaform, you're fucking it all up". The
+metaform is a map that points to the code, never documentation. Every current join and subtype join takes its old
+relation text as its ef, written as its newest version, so its earlier versions keep the old ef; then the relation and
+observation columns are removed. The old ef text and the old observation text go into no field: they remain only in
+the store's version history and in the backup made first.
 """
 from __future__ import annotations
 
@@ -30,9 +40,9 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 or 8 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8', '9'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7, 8 and 9.',
+    """Update a store at layout 7 to 11 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8', '9', '10', '11'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 11.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -49,6 +59,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
             stack = [row[0] for row in db.execute('SELECT layer_id FROM correction_stack ORDER BY position')]
             stack += [row[0] for row in db.execute("SELECT layer_id FROM layers WHERE kind='correction'")
                       if row[0] not in stack]
+        _ef_from_relation(db)
         _relayout(db, wanted)
         if found == '7':
             for layer_id in stack:
@@ -57,8 +68,9 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
             for kind in KINDS.values():
                 ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
                 recompute(db, _kind_name(kind.table), ids)
-        _tickets(db)
-        _fields(db)
+        if int(found) < 10:  # a layout 10 or 11 store already holds these
+            _tickets(db)
+            _fields(db)
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
             raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '
@@ -114,6 +126,32 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
     for kind, name, sql in wanted:
         if kind in ('index', 'trigger') and name not in present:
             db.execute(sql)
+
+
+EF_REASON = ('Layout 12, Rich 2026-10-02: ef takes the old relation text; relation and observation are removed, '
+             'since the metaform is a map that points to the code, never documentation.')
+
+
+def _ef_from_relation(db: sqlite3.Connection) -> None:
+    """Layout 12: each current join and subtype join whose ef is not its relation gets a newest version, its ef the
+    old relation text and every other field as it was, with its refs; the current row moves to it. Run before the
+    relation column is removed; a removed join gets no version, and a store with no relation column has nothing to
+    move."""
+    if 'relation' not in [row[1] for row in db.execute('PRAGMA table_info(joins)')]:
+        return
+    for table in ('current_joins', 'current_subtypes'):
+        for join_id, current in db.execute(f'SELECT join_id, row FROM {table} ORDER BY row').fetchall():
+            base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
+            if base['ef'] == base['relation']:
+                continue
+            columns = {key: base[key] for key in base.keys() if key != 'row'}
+            columns.update(ef=base['relation'], op='change', reason=EF_REASON, evidence=None)
+            cursor = db.execute(f'INSERT INTO joins({", ".join(columns)}) VALUES ({", ".join("?" for _ in columns)})',
+                                tuple(columns.values()))
+            row = int(cursor.lastrowid or 0)
+            db.execute("INSERT INTO refs(owner, owner_row, position, key, value) SELECT owner, ?, position, key, value "
+                       "FROM refs WHERE owner='join' AND owner_row=? ORDER BY position", (row, current))
+            db.execute(f'UPDATE {table} SET row=? WHERE join_id=?', (row, join_id))
 
 
 def _tickets(db: sqlite3.Connection) -> None:

@@ -9,7 +9,6 @@ from .exchange import export_document, import_document, pull_wheel
 from .names import reading, roots, short_name
 from .records import (
                       CONDITIONS,
-                      PERSPECTIVES,
                       PLACE_KINDS,
                       ROLES,
                       SUBTYPE_ROLES,
@@ -56,7 +55,6 @@ from .tables import Column, Index, Table, Tables, TableTx
 
 __all__ = [
                       'CONDITIONS',
-                      'PERSPECTIVES',
                       'PLACE_KINDS',
                       'ROLES',
                       'SUBTYPE_ROLES',

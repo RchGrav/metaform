@@ -26,13 +26,13 @@ from metaform import prompt_files, settings
 from metaform.data import Element, GraphPage, Join, Layer, Node, Notice, Store, Subtype
 from metaform.module import Context, Module, Noun, Status, Stop, Verb, save_report
 
-from .schema import EF, EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
+from .schema import EXTRA, NAME_LENGTH, REFS, ROLE, SUBTYPE_ROLE
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = resources.files(__name__) / 'resources' / 'Canonical_Intake.xml'
+RESOURCE = resources.files(__name__) / 'resources' / 'Intake_2.0.md'  # Intake 2.0, the served intake, Rich 2026-10-02
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -66,8 +66,8 @@ def _fill(tag: str, name: str, value: str) -> str:
 
 
 def served(ctx: Context, asked: str = '') -> str:
-    """The intake text exactly as stored, with its target filled, and nothing beside it, BASE-039: the intake is
-    the instruction, and what is added to it competes with it."""
+    """The intake text exactly as stored, with its prompt slot filled, and its target where an intake file has one, and
+    nothing beside it, BASE-039: the intake is the instruction, and what is added to it competes with it."""
     store = ctx.require_store()
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
@@ -82,8 +82,9 @@ def served(ctx: Context, asked: str = '') -> str:
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
     # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
-    # project, BASE-039.
-    text = text.replace('{prompt}', _escape(asked), 1)
+    # project, BASE-039. Intake 2.0 is not XML, so it gets the words exactly as written; an XML intake file, which
+    # intake_file can name, gets them escaped as an attribute value is.
+    text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
     return text
 
 
@@ -96,9 +97,9 @@ def prompt(ctx: Context) -> str:
 # Recording, one object per call ------------------------------------------------------------------------------
 
 Notices = list[dict[str, str]]
-JOIN_TEXT = ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation')
+JOIN_TEXT = ('purpose', 'ef', 'verb')
 IFD = {'type': 'string', 'enum': ['sends', 'receives', 'both']}  # Information Flow Direction, the primary flow of information
-SUBTYPE_TEXT = ('ef', 'perspective', 'relation', 'verb', 'observation')
+SUBTYPE_TEXT = ('ef', 'verb')
 ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
 ADDRESS = 'namespace_address'  # the element's address, named as in the Canonical Intake, MAP-040
 UNMOVED = ("An element cannot be moved: its namespace_address is its identity, and another address is a different "
@@ -447,8 +448,7 @@ def show(ctx: Context) -> Any:
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, **shown}
 
 
-JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
-              'non_goal')
+JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal')
 
 
 def _edit_element(ctx: Context, found: Recording | None, target: Store, current: Element,
@@ -614,13 +614,12 @@ NOUNS = {noun.name: noun for noun in (
     Noun('condition', E('condition', ''), required=False),
     Noun('note', E('note', ''), required=False),
     Noun('ifd', J('ifd', ''), required=False, schema=IFD),
-    *(Noun(field, J(field, ''), required=False, schema=EF if field == 'perspective' else None)
-      for field in ('purpose', 'ef', 'perspective', 'relation', 'verb', 'observation', 'non_goal')),
+    *(Noun(field, J(field, ''), required=False) for field in ('purpose', 'ef', 'verb', 'non_goal')),
 )}
 SUBTYPE_NOUNS = (
     Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
     Noun(ADDRESS, H(ADDRESS, '')),
-    *_nouns('type', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal'),
+    *_nouns('type', 'purpose', 'ef', 'ifd', 'verb', 'non_goal'),
     Noun('role', H('role', ''), required=False, schema=SUBTYPE_ROLE),
     Noun('name', H('name', ''), required=False),
     Noun('name_length', H('name_length', ''), required=False, schema=NAME_LENGTH),
@@ -639,7 +638,7 @@ MODULE = Module(
     purpose='Serves the Canonical Intake instructions, records the intake as it is reasoned, and tracks whether this '
             'project has an intake. The intake is agent work: a subagent reads its instructions with the command prompt '
             'and follows them. Details: metaform help intake.',
-    details='The intake text is served unchanged except for its filled target. The intake is recorded as it is '
+    details='The intake text is served as stored, with its prompt slot filled. The intake is recorded as it is '
             'reasoned, one element, join or subtype join per call, into one building intake layer, annealed with '
             'absorb, read back with show, whole or one receiver at a time, and corrected with edit and remove. No '
             'other read sees it until finish; after finish the metaform changes by refining, metaform map knowledge '
@@ -666,7 +665,7 @@ MODULE = Module(
         Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
              nouns=(Noun('receiver', J('receiver', '')),
                     Noun('provider', J('provider', '')),
-                    *_nouns('name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal', 'type',
+                    *_nouns('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type',
                             'refs', 'extra', 'condition', 'note'))),
         Verb('subtype', subtype, 'Record one subtype join inside its parent join, holding an element.',
              nouns=SUBTYPE_NOUNS),
@@ -680,7 +679,7 @@ MODULE = Module(
                            'had.',
              nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
                                'included.'),
-                    *_nouns('purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation', 'non_goal', 'type'),
+                    *_nouns('purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type'),
                     Noun('receiver', 'A new receiver for a join, by namespace address: the join moves and keeps its '
                                      'join_id.', required=False),
                     Noun('provider', 'A new Providing Element for a join, by namespace address.', required=False),

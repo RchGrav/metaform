@@ -18,7 +18,8 @@ Every design decision goes into this spec when it is decided, in the record that
 
 - `../REQUIREMENTS.md` with `../REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
 - `../SETTLED.md`: design settled in conversation, now carried by the records here.
-- `../Canonical_Intake.xml`: the current intake procedure, the tested version. `../Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../Canonical_Intake_old.xml` is the previous version, reference only.
+- `../Intake_2.0.md`: the current intake procedure, Intake 2.0, served by the intake module, BASE-039. Rich, 2026-10-02, asked whether Intake 2.0 should become the served intake: "I think that".
+- `../Canonical_Intake.xml`: the previous intake procedure, no longer served. `../Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../Canonical_Intake_old.xml` is the previous version, reference only.
 - `../metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
 - `../code_quality_standards.md`: the quality bar, carried by section 7.
 

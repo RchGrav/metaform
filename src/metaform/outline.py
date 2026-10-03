@@ -2,8 +2,8 @@
 
 One writer for the command `metaform map markdown` and for the web GUI's export, VIEW-024, so the two give the same
 document. It reads through `roots` and `where`, STORE-025, so select, mask and hiding hold. The document holds what a
-reader finds its way by: each element's name, address, role and paths, and each join's receiver, provider, relation,
-purpose and non_goal. A join's function and observation stay in the files its paths name.
+reader finds its way by: each element's name, address, role and paths, and each join's receiver, provider, ef,
+purpose and non_goal.
 """
 from __future__ import annotations
 
@@ -16,26 +16,17 @@ from .errors import Stop
 FIRST = {'CQU': 0, 'AUE': 1, 'DE': 2}
 
 
-def _sentence(join: dict[str, Any], receiver: str, provider: str) -> str:
-    """A join's relation as a sentence: its subject is the provider when perspective is Function, the receiver when it is
-    Encounter, MAP-020."""
-    relation = str(join.get('relation') or '')
-    if not relation:
-        return ''
-    return f"{receiver if join.get('perspective') == 'Encounter' else provider} {relation}"
-
-
 def _join_lines(join: dict[str, Any], receiver: str, provider: str) -> list[str]:
-    """One join: who receives from whom, the relation, the purpose and the non_goal, and each subtype join as one
-    line."""
+    """One join: who receives from whom, the ef as written, the purpose and the non_goal, and each subtype join as
+    one line."""
     lines = [f'### {receiver} receives from {provider}', '']
-    for text in (_sentence(join, receiver, provider),
+    for text in (str(join.get('ef') or ''),
                  f"Why: {join['purpose']}" if join.get('purpose') else '',
                  f"Not: {join['non_goal']}" if join.get('non_goal') else ''):
         if text:
             lines += [text, '']
     held = [': '.join(part for part in (str(subtype.get('short_name') or subtype.get('element') or ''),
-                                        str(subtype.get('relation') or '')) if part)
+                                        str(subtype.get('ef') or '')) if part)
             for subtype in cast(list[dict[str, Any]], join.get('subtypes') or [])]
     return lines + ([f'- {line}' for line in held] + [''] if held else [])
 

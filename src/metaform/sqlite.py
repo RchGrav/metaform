@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .errors import StoreError
 
-SCHEMA_VERSION = '10'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
+SCHEMA_VERSION = '12'  # the metaform store's layout; the base, history and prompt databases keep their own, STORE-029
 BUSY_SECONDS = 30  # how long a write waits for another process's write to finish, STORE-006
 
 Upgrade = Callable[[sqlite3.Connection, Path, str], None]  # brings a file at an earlier version up to date

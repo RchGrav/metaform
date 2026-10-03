@@ -150,10 +150,19 @@ def test_a_registration_that_cannot_start_fails_its_proof(run, machine):
 
 @pytest.mark.req('MCP-017')
 def test_the_probe_passes_a_server_that_answers(tmp_path):
+    """MCP 2026-07-28: the proof sends server/discover and tools/list, each with the per-request _meta, and no
+    initialize handshake; the fake server answers only that."""
     from metaform.probe import probe
     launcher = server(tmp_path / 'bin', 'fake-server')
     passed = probe([str(launcher)], cwd=tmp_path)
-    assert passed.ok and passed.tools == 2
+    assert passed.ok and passed.tools == 2 and passed.instructions == 'Fake instructions.'
+    sent = [json.loads(line) for line in (tmp_path / 'bin' / 'fake-server.requests').read_text().splitlines()]
+    assert [message['method'] for message in sent] == ['server/discover', 'tools/list']
+    for message in sent:
+        meta = message['params']['_meta']
+        assert meta['io.modelcontextprotocol/protocolVersion'] == '2026-07-28'
+        assert meta['io.modelcontextprotocol/clientCapabilities'] == {}
+        assert meta['io.modelcontextprotocol/clientInfo']['name'] == 'metaform-install'
     failed = probe([str(tmp_path / 'missing-server')], cwd=tmp_path)
     assert not failed.ok and failed.reason
 

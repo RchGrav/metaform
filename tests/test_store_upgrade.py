@@ -8,6 +8,7 @@ import pytest
 
 from metaform.data import StoreError
 from metaform.data.session import open_store
+from metaform.data.upgrade import EF_REASON
 from metaform.sqlite import SCHEMA_VERSION
 
 pytestmark = [pytest.mark.kind("fixture"), pytest.mark.req("STORE-029", "LAYER-025")]
@@ -104,3 +105,199 @@ def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_in
         joined = opened.execute('SELECT ifd, extra FROM joins WHERE row=1').fetchone()
     assert (element[0], element[1]) == ('kitchen timer daemon', '{"colour":"red"}')
     assert (joined[0], joined[1]) == ('receives', None)
+
+
+LAYOUT_10 = (Path(__file__).parent / 'fixtures' / 'store-v10.sql').read_text(encoding='utf-8')
+
+
+def layout_10_store(path: Path) -> None:
+    """A layout 10 store whose join and subtype join carry a perspective and every other field of a join."""
+    db = sqlite3.connect(path)
+    db.executescript(LAYOUT_10)
+    db.executescript(f"""
+        INSERT INTO meta(key, value) VALUES ('schema_version', '10');
+        INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, kind, created, ready)
+          VALUES ('{INTAKE}', 'M', 'intake', 'intake', 'v', 0, 0, 'intake', '2026-10-01', '2026-10-01');
+        INSERT INTO types(address) VALUES ('code'), ('code.engine'), ('code.loop.tick');
+        INSERT INTO element_ids(element_id) VALUES ('E1'), ('E2'), ('E3');
+        INSERT INTO elements(row, element_id, layer_id, address) VALUES (1, 'E1', '{INTAKE}', 'code'),
+                                                                         (2, 'E2', '{INTAKE}', 'code.engine'),
+                                                                         (3, 'E3', '{INTAKE}', 'code.loop.tick');
+        INSERT INTO current_elements(element_id, row, address) VALUES ('E1', 1, 'code'), ('E2', 2, 'code.engine'),
+                                                                      ('E3', 3, 'code.loop.tick');
+        INSERT INTO address_elements(address, element_id) VALUES ('code', 'E1'), ('code.engine', 'E2'),
+                                                                 ('code.loop.tick', 'E3');
+        INSERT INTO join_ids(join_id) VALUES ('J1'), ('J2');
+        INSERT INTO joins(row, join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, perspective, ifd,
+                          relation, verb, observation, non_goal, extra, op, reason, evidence)
+          VALUES (1, 'J1', '{INTAKE}', 'purpose', NULL, 'E1', 'E2', 'engine', 'Run it.', 'Runs each frame.', 'Encounter',
+                  'receives', 'runs the code each frame', 'runs', 'One loop.', 'No threads.', '{{"colour": "red"}}', 'add',
+                  NULL, NULL),
+                 (2, 'J2', '{INTAKE}', 'subtype', 'J1', NULL, 'E3', 'tick', 'Keep time.', 'Ticks.', 'Function', 'sends',
+                  'ticks once a frame', 'ticks', 'One interrupt.', NULL, NULL, 'change', 'it was wrong', 'the code');
+        INSERT INTO current_joins(join_id, row, receiver, provider) VALUES ('J1', 1, 'E1', 'E2');
+        INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES ('J2', 2, 'J1', 'E3');
+        INSERT INTO refs(owner, owner_row, position, key, value) VALUES ('join', 1, 0, 'path', 'src/engine.c');
+    """)
+    db.commit()
+    db.close()
+
+
+@pytest.mark.req('MAP-020')
+def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_every_join_kept(home: Path, tmp_path: Path):
+    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". The update takes the joins' perspective
+    column out, keeps every other field of every join and backs the store up first."""
+    path = tmp_path / 'main.metaform.sqlite3'
+    layout_10_store(path)
+    raw = sqlite3.connect(path)
+    raw.row_factory = sqlite3.Row
+    before = [{key: row[key] for key in row.keys() if key not in ('perspective', 'relation', 'observation')}
+              for row in raw.execute('SELECT * FROM joins ORDER BY row')]
+    raw.close()
+    with open_store(path, write=False) as db:
+        version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
+        after = [{key: row[key] for key in row.keys()} for row in db.execute('SELECT * FROM joins ORDER BY row')]
+        current = (db.execute('SELECT join_id, row FROM current_joins').fetchall(),
+                   db.execute('SELECT join_id, row, parent FROM current_subtypes').fetchall())
+        refs = db.execute("SELECT owner, owner_row, key, value FROM refs").fetchall()
+        broken = db.execute('PRAGMA foreign_key_check').fetchall()
+    assert version == SCHEMA_VERSION
+    assert 'perspective' not in columns
+    assert after[:2] == before  # layout 12 adds each join's newest version, its ef the old relation, MAP-020
+    assert [row['ef'] for row in after[2:]] == ['runs the code each frame', 'ticks once a frame']
+    moving = ('row', 'ef', 'op', 'reason', 'evidence')
+    for base, newest in zip(before, after[2:]):
+        assert {key: value for key, value in newest.items() if key not in moving} == \
+            {key: value for key, value in base.items() if key not in moving}
+    assert [[tuple(row) for row in rows] for rows in current] == [[('J1', 3)], [('J2', 4, 'J1')]]
+    assert [tuple(row) for row in refs] == [('join', 1, 'path', 'src/engine.c'), ('join', 3, 'path', 'src/engine.c')]
+    assert broken == []
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
+    assert len(backups) == 1
+    kept = sqlite3.connect(backups[0])
+    assert kept.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == '10'
+    assert kept.execute('SELECT perspective FROM joins ORDER BY row').fetchall() == [('Encounter',), ('Function',)]
+    kept.close()
+
+
+LAYOUT_11 = (Path(__file__).parent / 'fixtures' / 'store-v11.sql').read_text(encoding='utf-8')
+
+
+def layout_11_store(path: Path) -> None:
+    """A layout 11 store holding a join refined once, a subtype join, a removed join, a ticket, a question and a
+    memory item, with every field of a join filled."""
+    db = sqlite3.connect(path)
+    db.executescript(LAYOUT_11)
+    db.executescript(f"""
+        INSERT INTO meta(key, value) VALUES ('schema_version', '11');
+        INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, kind, created, ready)
+          VALUES ('{INTAKE}', 'M', 'intake', 'intake', 'v', 0, 0, 'intake', '2026-10-01', '2026-10-01'),
+                 ('{MEMORY}', 'M', 'memory', 'memory', 'v', 1, 1, 'memory', '2026-10-02', '2026-10-02');
+        INSERT INTO types(address) VALUES ('code'), ('code.engine'), ('code.loop.tick'), ('code.old');
+        INSERT INTO element_ids(element_id) VALUES ('E1'), ('E2'), ('E3'), ('E4');
+        INSERT INTO elements(row, element_id, layer_id, address, name_length, name, role)
+          VALUES (1, 'E1', '{INTAKE}', 'code', 1, 'code', 'DE'), (2, 'E2', '{INTAKE}', 'code.engine', 1, 'engine', 'SE'),
+                 (3, 'E3', '{INTAKE}', 'code.loop.tick', 2, 'tick', 'SE'), (4, 'E4', '{INTAKE}', 'code.old', 1, NULL, 'SE');
+        INSERT INTO current_elements(element_id, row, address, role)
+          VALUES ('E1', 1, 'code', 'DE'), ('E2', 2, 'code.engine', 'SE'), ('E3', 3, 'code.loop.tick', 'SE'),
+                 ('E4', 4, 'code.old', 'SE');
+        INSERT INTO address_elements(address, element_id)
+          VALUES ('code', 'E1'), ('code.engine', 'E2'), ('code.loop.tick', 'E3'), ('code.old', 'E4');
+        INSERT INTO join_ids(join_id) VALUES ('J1'), ('J2'), ('J3');
+        INSERT INTO identities(id, kind) VALUES ('J1', 'join'), ('J2', 'join'), ('J3', 'join');
+        INSERT INTO joins(row, join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, ifd,
+                          relation, verb, observation, non_goal, extra, op, reason, evidence)
+          VALUES (1, 'J1', '{INTAKE}', 'purpose', NULL, 'E1', 'E2', 'engine', 'Run it.', 'Runs the frame loop.', 'receives',
+                  'runs the code each frame', 'runs', 'One loop.', 'No threads.', '{{"colour": "red"}}', 'add', NULL, NULL),
+                 (2, 'J1', '{INTAKE}', 'purpose', NULL, 'E1', 'E2', 'engine', 'Run it now.', 'Runs each frame in C.',
+                  'receives', 'runs the code each frame', 'runs', 'One loop, in engine.c.', 'No threads.',
+                  '{{"colour": "red"}}', 'change', 'it was wrong', 'the code'),
+                 (3, 'J2', '{INTAKE}', 'subtype', 'J1', NULL, 'E3', 'tick', 'Keep time.', 'Ticks from the timer ISR.',
+                  'sends', 'ticks once a frame', 'ticks', 'One interrupt.', NULL, NULL, 'add', NULL, NULL),
+                 (4, 'J3', '{INTAKE}', 'purpose', NULL, 'E1', 'E4', NULL, 'Gone.', 'Did a thing.', NULL,
+                  'did a thing', 'did', 'Removed.', NULL, NULL, 'add', NULL, NULL),
+                 (5, 'J3', '{INTAKE}', 'purpose', NULL, 'E1', 'E4', NULL, 'Gone.', 'Did a thing.', NULL,
+                  'did a thing', 'did', 'Removed.', NULL, NULL, 'remove', 'not there', NULL);
+        INSERT INTO current_joins(join_id, row, receiver, provider) VALUES ('J1', 2, 'E1', 'E2');
+        INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES ('J2', 3, 'J1', 'E3');
+        INSERT INTO refs(owner, owner_row, position, key, value)
+          VALUES ('join', 1, 0, 'path', 'src/engine.c'), ('join', 2, 0, 'path', 'src/engine.c'),
+                 ('join', 2, 1, 'spec', 'MAP-020'), ('join', 3, 0, 'path', 'src/tick.c');
+        INSERT INTO item_ids(item_id, layer_id) VALUES ('I1', '{MEMORY}');
+        INSERT INTO items(row, item_id, layer_id, target_kind, target_id, value)
+          VALUES (1, 'I1', '{MEMORY}', 'join', 'J1', '"the loop drifts"');
+        INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id)
+          VALUES ('I1', 1, '{MEMORY}', 'join', 'J1');
+        INSERT INTO work(work_id, target_kind, target_id, condition, note, created)
+          VALUES ('W1', 'join', 'J1', 'broken', 'drifts', '2026-10-02');
+        INSERT INTO messages(message_id, target_kind, target_id, kind, text, created)
+          VALUES ('Q1', 'join', 'J2', 'question', 'Is the tick one second?', '2026-10-02');
+    """)
+    db.commit()
+    db.close()
+
+
+@pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-029')
+def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relation_or_observation(home: Path,
+                                                                                                 tmp_path: Path):
+    """Rich, 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was relation"; "by
+    placing permanent implementation details into the fucking metaform, you're fucking it all up". Every join and
+    subtype join takes its old relation text as its ef, as its newest version, so its earlier versions keep the old
+    ef; then the relation and observation columns are removed. The old observation text is kept only in the backup
+    made first. Every element, join id, ticket, memory and question stays."""
+    path = tmp_path / 'main.metaform.sqlite3'
+    layout_11_store(path)
+    raw = sqlite3.connect(path)
+    raw.row_factory = sqlite3.Row
+    before = [{key: row[key] for key in row.keys() if key not in ('relation', 'observation')}
+              for row in raw.execute('SELECT * FROM joins ORDER BY row')]
+    raw.close()
+    with open_store(path, write=False) as db:
+        version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
+        rows = [{key: row[key] for key in row.keys()} for row in db.execute('SELECT * FROM joins ORDER BY row')]
+        current = (db.execute('SELECT join_id, row FROM current_joins').fetchall(),
+                   db.execute('SELECT join_id, row, parent FROM current_subtypes').fetchall())
+        refs = db.execute("SELECT owner_row, position, key, value FROM refs WHERE owner='join' "
+                          'ORDER BY owner_row, position').fetchall()
+        elements = db.execute('SELECT element_id, row FROM current_elements ORDER BY element_id').fetchall()
+        kept = (db.execute('SELECT work_id, target_id FROM work').fetchall(),
+                db.execute('SELECT message_id, target_id FROM messages').fetchall(),
+                db.execute('SELECT item_id, target_id FROM current_items').fetchall())
+        join_ids = (db.execute('SELECT join_id FROM join_ids ORDER BY join_id').fetchall(),
+                    db.execute("SELECT id FROM identities WHERE kind='join' ORDER BY id").fetchall())
+        texts = [str(value) for table, in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+                 for row in db.execute(f'SELECT * FROM "{table}"').fetchall() for value in row if isinstance(value, str)]
+        broken = db.execute('PRAGMA foreign_key_check').fetchall()
+    assert version == SCHEMA_VERSION == '12'
+    assert [[row[0] for row in held] for held in join_ids] == [['J1', 'J2', 'J3'], ['J1', 'J2', 'J3']]
+    for observation in ('One loop.', 'One loop, in engine.c.', 'One interrupt.', 'Removed.'):
+        assert not any(observation in text for text in texts), observation  # kept only in the backup
+    assert 'relation' not in columns and 'observation' not in columns and 'ef' in columns and 'verb' in columns
+    assert rows[:5] == before  # every earlier version is kept, the old ef in it
+    newest = {row['join_id']: row for row in rows[5:]}
+    assert sorted(newest) == ['J1', 'J2']  # the removed join gets no new version
+    assert (newest['J1']['ef'], newest['J2']['ef']) == ('runs the code each frame', 'ticks once a frame')
+    for join_id, base in (('J1', before[1]), ('J2', before[2])):
+        assert {key: value for key, value in newest[join_id].items() if key not in ('row', 'ef', 'op', 'reason',
+                                                                                    'evidence')} == \
+            {key: value for key, value in base.items() if key not in ('row', 'ef', 'op', 'reason', 'evidence')}
+        assert (newest[join_id]['op'], newest[join_id]['reason']) == ('change', EF_REASON)
+    assert [[tuple(row) for row in held] for held in current] == [
+        [('J1', newest['J1']['row'])], [('J2', newest['J2']['row'], 'J1')]]
+    assert [tuple(ref) for ref in refs] == [
+        (1, 0, 'path', 'src/engine.c'), (2, 0, 'path', 'src/engine.c'), (2, 1, 'spec', 'MAP-020'), (3, 0, 'path', 'src/tick.c'),
+        *sorted([(newest['J1']['row'], 0, 'path', 'src/engine.c'), (newest['J1']['row'], 1, 'spec', 'MAP-020'),
+                 (newest['J2']['row'], 0, 'path', 'src/tick.c')])]
+    assert [tuple(row) for row in elements] == [('E1', 1), ('E2', 2), ('E3', 3), ('E4', 4)]
+    assert [[tuple(row) for row in table] for table in kept] == [[('W1', 'J1')], [('Q1', 'J2')], [('I1', 'J1')]]
+    assert broken == []
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
+    assert len(backups) == 1
+    copy = sqlite3.connect(backups[0])
+    assert copy.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == '11'
+    assert copy.execute('SELECT relation, observation FROM joins WHERE row=3').fetchone() == (
+        'ticks once a frame', 'One interrupt.')
+    copy.close()

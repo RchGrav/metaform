@@ -2,22 +2,28 @@
 
 Tools are computed on every request from the live module declarations and the
 folder's command surface, MCP-003 and MCP-004, plus the chassis tools that
-always run, `set`, `feedback`, `list_reports` and `read_report`, CLI-022 and
-BASE-045. Each call gets its own Context, BASE-028, with its arguments checked
-as the command line checks them, MCP-005: a coroutine verb is awaited in the
-server's loop, so the host's cancellation reaches it; a plain function runs in
-a worker thread. The result is one text block of `say` lines, when there are
+always run, `set`, `feedback`, `list_reports`, `read_report` and
+`instructions`, CLI-022 and BASE-045. Opening a tool lists its commands with
+their summaries; a command's arguments come when it is asked for with `help`,
+CLI-037. The instructions are composed again for each request that carries
+them, and a change to the tools or slash commands is announced where the
+protocol allows, MCP-007 and MCP-004. Each call gets its own Context, BASE-028,
+with its arguments checked as the command line checks them, MCP-005: a
+coroutine verb is awaited in the server's loop, so the host's cancellation
+reaches it; a plain function runs in a worker thread. The result is one text block of `say` lines, when there are
 any, and one block holding the result, BASE-036.
 """
 from __future__ import annotations
 
 import dataclasses
+import functools
 import inspect
 import json
 import subprocess
 import sys
 from datetime import date
 from importlib import resources
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -145,6 +151,9 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
     'read_report': ('Read one report, feedback or shape file exactly. Always available.',
                     {'type': 'object', 'required': ['name'], 'additionalProperties': False,
                      'properties': {'name': _text('The file name, as list_reports gives it.'), 'project': PROJECT}}),
+    'instructions': (('The instructions agents read, composed now for this folder, as metaform help agents prints '
+                      'them. Always available.'),
+                     {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
 # The clear_project prompts, MCP-031; clear_project checks its confirmation against the statement.
@@ -265,7 +274,8 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
 
 
 def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
-    """`feedback`, `list_reports` and `read_report`: always on the surface, so an agent can always report."""
+    """`feedback`, `list_reports`, `read_report` and `instructions`: always on the surface, so an agent can always
+    report and read what it is to do."""
     notices: list[str] = []
     try:
         given = _checked(name, arguments, CHASSIS[name][1], notices)
@@ -274,6 +284,8 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
             result = result_json(feedback(folder, given.pop('text'), project=project, **given))
         elif name == 'list_reports':
             result = result_json(list_reports(folder, project=project, **given))
+        elif name == 'instructions':
+            result = instructions(folder, project)
         else:
             result = read_report(folder, given['name'], project=project)
     except Stop as stop:
@@ -370,26 +382,33 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
 
 
 OWN = 'metaform'  # the tool that holds the chassis's own commands
-COMMAND = 'The command to run. Leave it out to list the commands of this tool and what each takes.'
-ARGUMENTS = "The command's arguments, by name, as the list of commands gives them."
-Commands = dict[str, tuple[str, dict[str, Any]]]
+COMMAND = 'The command to run. Leave it out for the commands and their summaries.'
+ARGUMENTS = "The command's arguments, by name, as help gives them."
+HELP = "A command's name, sent without command, for what it takes."
+Commands = dict[str, tuple[str, Callable[[], dict[str, Any]]]]
+
+
+def _fixed(schema: dict[str, Any]) -> Callable[[], dict[str, Any]]:
+    return lambda: schema
 
 
 def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
     """The tools the server lists, CLI-037: one for each module on the surface, named for the module, and one for
-    the chassis's own commands. Each holds its commands, with the summary and the arguments of each; a command is
-    `<module> <command>` on the command line, and over MCP the tool's name and its `command`."""
+    the chassis's own commands. Each holds its commands, with the summary of each and what builds its arguments'
+    schema; a command is `<module> <command>` on the command line, and over MCP the tool's name and its `command`.
+    Opening a tool shows the summaries; a command's arguments are built and read with `help`."""
     found: dict[str, tuple[str, Commands]] = {}
     for module in surface(folder):
         commands: Commands = {verb.name: (verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''),
-                                          verb_schema(verb, folder))
+                                          functools.partial(verb_schema, verb, folder))
                               for verb in module.verbs if _here(verb)}
         if commands:
             found[module.id] = (module.summary, commands)
-    own: Commands = {'set': ("Save settings for the server's folder, as metaform set does.", set_schema(folder)),
-                     **CHASSIS}
+    own: Commands = {'set': ("Save settings for the server's folder, as metaform set does.",
+                             functools.partial(set_schema, folder)),
+                     **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()}}
     if on_surface('chassis', folder):
-        own.update(SURFACED)
+        own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()})
     found[OWN] = ("Metaform's own commands: settings, feedback and reports, and the project's history and prompts.",
                   own)
     return found
@@ -398,11 +417,12 @@ def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
 def entry_schema(commands: Commands) -> dict[str, Any]:
     return {'type': 'object', 'additionalProperties': False,
             'properties': {'command': {'type': 'string', 'enum': list(commands), 'description': COMMAND},
-                           'arguments': {'type': 'object', 'description': ARGUMENTS}}}
+                           'arguments': {'type': 'object', 'description': ARGUMENTS},
+                           'help': {'type': 'string', 'description': HELP}}}
 
 
 def entry_description(summary: str, commands: Commands) -> str:
-    return f'{summary} Commands: {", ".join(commands)}. Call it with no command for what each takes.'
+    return f'{summary} Commands: {", ".join(commands)}. Call it with help and a command for what it takes.'
 
 
 def inner(tool: str, command: str) -> str:
@@ -417,12 +437,20 @@ def said(tool: str, command: str) -> str:
 
 async def enter(folder: Path, tool: str, given: dict[str, Any]) -> Outcome:
     """A call to one of the listed tools. With no command it enters the tool: it returns the tool's commands with
-    what each takes. With a command it runs it with its arguments."""
+    the summary of each. With help and no command it returns what that one command takes, CLI-037. With a command it
+    runs it with its arguments."""
     known = await anyio.to_thread.run_sync(entries, folder)
     if tool not in known:
         return True, [f'Error: No tool {tool} on this surface.\nNext: metaform help commands']
     summary, commands = known[tool]
-    unread = sorted(key for key in given if key not in ('command', 'arguments'))
+    asked = given.get('help')
+    if asked is not None and 'command' not in given:
+        if not isinstance(asked, str) or asked not in commands:
+            return True, [f'Error: {tool} has no command {asked}.\nNext: call {tool} with no command for its commands']
+        described, schema = commands[asked]
+        built = await anyio.to_thread.run_sync(schema)
+        return False, [result_json({'tool': tool, 'command': asked, 'summary': described, 'arguments': built})]
+    unread = sorted(key for key in given if key not in ('command', 'arguments', 'help'))
     if unread and isinstance(given.get('command'), str) and isinstance(given.get('arguments') or {}, dict):
         # The command's arguments sent beside the command are its arguments; what is inside arguments wins.
         given = {'command': given['command'],
@@ -433,13 +461,14 @@ async def enter(folder: Path, tool: str, given: dict[str, Any]) -> Outcome:
     command, arguments = given.get('command'), given.get('arguments')
     if command is None:
         return False, [result_json({'tool': tool, 'summary': summary,
-                                    'commands': [{'command': name, 'summary': described, 'arguments': schema}
-                                                 for name, (described, schema) in commands.items()]})]
+                                    'commands': [{'command': name, 'summary': described}
+                                                 for name, (described, _) in commands.items()],
+                                    'next': f"call {tool} with help and a command's name for what it takes"})]
     if not isinstance(command, str) or command not in commands:
         return True, [f'Error: {tool} has no command {command}.\nNext: call {tool} with no command for its commands']
     if arguments is not None and not isinstance(arguments, dict):
         return True, [f'Error: arguments is an object of the command\'s arguments by name.\n'
-                      f'Next: call {tool} with no command for what {command} takes']
+                      f'Next: call {tool} with help {command} for what it takes']
     return await run_tool(folder, inner(tool, command), cast(dict[str, Any], arguments or {}), said(tool, command))
 
 
@@ -542,7 +571,9 @@ def slash_text(folder: Path, slash: Slash, given: dict[str, str]) -> str:
 def serve(folder: Path) -> None:
     from mcp import types
     from mcp.server import Server
+    from mcp.server.lowlevel import NotificationOptions
     from mcp.server.stdio import stdio_server
+    from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, PromptsListChanged, ToolsListChanged
 
     from metaform import __version__
 
@@ -551,23 +582,53 @@ def serve(folder: Path) -> None:
                            input_schema=entry_schema(commands))
                 for name, (summary, commands) in entries(folder).items()]
 
+    def build_prompts() -> list[Any]:
+        return [types.Prompt(name=slash.name, description=slash.summary or None, arguments=[
+                    types.PromptArgument(name=noun.name, description=noun.help or None, required=noun.required)
+                    for noun in slash.nouns]) for slash in slashes(folder).values()]
+
+    # What this session was last shown, so a change made since, by any process, is announced, MCP-004: on the
+    # connection to a client that connected with initialize, and on the subscriptions/listen streams of a
+    # 2026-07-28 client, which is the only way that revision allows. The SDK drops whichever does not apply.
+    # Both lists follow from the modules on the folder's surface and whether the chassis is on it, CLI-022.
+    bus = InMemorySubscriptionBus()
+    shown: dict[str, Any] = {'tools': None, 'prompts': None}
+
+    def current() -> tuple[tuple[str, ...], bool]:
+        return tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
+
+    async def announce(ctx: Any) -> None:
+        now = await anyio.to_thread.run_sync(current)
+        for kind in ('tools', 'prompts'):
+            if shown[kind] is None:
+                shown[kind] = now
+            elif shown[kind] != now:
+                shown[kind] = now
+                if kind == 'tools':
+                    await bus.publish(ToolsListChanged())
+                    await ctx.session.send_tool_list_changed()
+                else:
+                    await bus.publish(PromptsListChanged())
+                    await ctx.session.send_prompt_list_changed()
+
     async def list_tools(ctx: Any, params: Any) -> Any:
-        return types.ListToolsResult(tools=await anyio.to_thread.run_sync(build))
+        tools = await anyio.to_thread.run_sync(build)
+        shown['tools'] = await anyio.to_thread.run_sync(current)
+        return types.ListToolsResult(tools=tools)
 
     async def call_tool(ctx: Any, params: Any) -> Any:
         try:
             error, blocks = await enter(folder, params.name, params.arguments or {})
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018
             await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
+        await announce(ctx)
         return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
                                     is_error=error)
 
     async def list_prompts(ctx: Any, params: Any) -> Any:
-        found = await anyio.to_thread.run_sync(slashes, folder)
-        return types.ListPromptsResult(prompts=[
-            types.Prompt(name=slash.name, description=slash.summary or None, arguments=[
-                types.PromptArgument(name=noun.name, description=noun.help or None, required=noun.required)
-                for noun in slash.nouns]) for slash in found.values()])
+        found = await anyio.to_thread.run_sync(build_prompts)
+        shown['prompts'] = await anyio.to_thread.run_sync(current)
+        return types.ListPromptsResult(prompts=found)
 
     async def get_prompt(ctx: Any, params: Any) -> Any:
         from mcp.shared.exceptions import MCPError
@@ -577,13 +638,26 @@ def serve(folder: Path) -> None:
             raise MCPError(-32602, f'No slash command {params.name} on this surface.\nNext: metaform help commands')
         said = await anyio.to_thread.run_sync(slash_text, folder, slash, dict(params.arguments or {}))
         await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
+        await announce(ctx)
         return types.GetPromptResult(description=slash.summary or None, messages=[
             types.PromptMessage(role='user', content=types.TextContent(type='text', text=said))])
 
-    server = Server('metaform', version=__version__, instructions=instructions(folder), on_list_tools=list_tools,
-                    on_call_tool=call_tool, on_list_prompts=list_prompts, on_get_prompt=get_prompt)
+    server = Server('metaform', version=__version__, on_list_tools=list_tools, on_call_tool=call_tool,
+                    on_list_prompts=list_prompts, on_get_prompt=get_prompt,
+                    on_subscriptions_listen=ListenHandler(bus))
+
+    async def live(ctx: Any, call_next: Any) -> Any:
+        """The instructions, composed for the folder as this request is answered, MCP-007: `initialize` for a client
+        that connects with it, and `server/discover` on the 2026-07-28 wire, each time it is asked."""
+        result = await call_next(ctx)
+        if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
+            composed = await anyio.to_thread.run_sync(instructions, folder)
+            result = {**cast(dict[str, Any], result), 'instructions': composed}
+        return result
+    server.middleware.append(live)
 
     async def main() -> None:
         async with stdio_server() as (read, write):
-            await server.run(read, write, server.create_initialization_options())
+            await server.run(read, write, server.create_initialization_options(
+                NotificationOptions(prompts_changed=True, tools_changed=True)))
     anyio.run(main)

@@ -12,7 +12,7 @@ from pathlib import Path
 from metaform.module import Context, Module, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
-DEPENDENCIES = ('mcp>=2.2',)
+DEPENDENCIES = ('mcp>=2.2,<3',)
 SHIPS_DISABLED = False
 
 

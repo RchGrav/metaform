@@ -1,6 +1,7 @@
 """Storage of the map: identity, types, elements, joins, subtypes and refs."""
 from __future__ import annotations
 
+import dataclasses
 import re
 import sqlite3
 
@@ -19,8 +20,7 @@ def test_adding_one_ref_to_a_join_with_a_thousand_writes_one_row(home, store):
     layer = knowledge(store, 'refs')
     store.add_element(layer.name, 'code.a')
     store.add_element(layer.name, 'code.b')
-    join = store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f', relation='r',
-                          observation='o', refs=[('path', f'file{n}.c') for n in range(1000)])
+    join = store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f', refs=[('path', f'file{n}.c') for n in range(1000)])
     before = dump(store_file(home, store))
     store.add_ref(join.join_id, 'path', 'one-more.c')
     assert diff(before, dump(store_file(home, store))) == {'refs': (1, 0)}
@@ -92,8 +92,7 @@ def test_an_element_recorded_again_at_its_address_is_the_same_element_with_its_j
     layer = knowledge(store, 'again')
     first = store.add_element(layer.name, 'code.engine')
     store.add_element(layer.name, 'code.loop.main')
-    join = store.add_join(layer.name, 'code.loop.main', 'code.engine', purpose='p', ef='f',
-                          relation='runs the engine.', observation='o')
+    join = store.add_join(layer.name, 'code.loop.main', 'code.engine', purpose='p', ef='f')
     store.remove(first.element_id)
     assert store.joins('code.engine', as_='provider', raw=True).results == ()
     again = store.add_element(layer.name, 'code.engine')
@@ -199,10 +198,8 @@ def test_a_join_carries_the_projects_name_for_its_functionality(home, store):
     layer = knowledge(store, 'named')
     store.add_element(layer.name, 'code.a')
     store.add_element(layer.name, 'code.b')
-    named = store.add_join(layer.name, 'code.a', 'code.b', name='the b service', purpose='p', ef='f',
-                           relation='B serves A.', observation='o')
-    plain = store.add_join(layer.name, 'code.b', 'code.a', purpose='q', ef='g', relation='A serves B.',
-                           observation='o')
+    named = store.add_join(layer.name, 'code.a', 'code.b', name='the b service', purpose='p', ef='f')
+    plain = store.add_join(layer.name, 'code.b', 'code.a', purpose='q', ef='g')
     assert (named.name, plain.name) == ('the b service', None)
     assert [join.name for join in store.joins('code.a', raw=True).results] == ['the b service']
     assert [join.name for join in store.joins('code.a', as_='provider', raw=True).results] == [None]
@@ -219,10 +216,8 @@ def test_two_elements_may_each_receive_from_the_other(store):
     layer = knowledge(store, 'mutual')
     store.add_element(layer.name, 'code.a')
     store.add_element(layer.name, 'code.b')
-    ab = store.add_join(layer.name, 'code.a', 'code.b', purpose='A needs B', ef='B serves A',
-                        relation='B serves A.', observation='o1')
-    ba = store.add_join(layer.name, 'code.b', 'code.a', purpose='B needs A', ef='A serves B',
-                        relation='A serves B.', observation='o2')
+    ab = store.add_join(layer.name, 'code.a', 'code.b', purpose='A needs B', ef='B serves A')
+    ba = store.add_join(layer.name, 'code.b', 'code.a', purpose='B needs A', ef='A serves B')
     owned = store.joins('code.a', raw=True).results
     provided = store.joins('code.a', as_='provider', raw=True).results
     assert [join.join_id for join in owned] == [ab.join_id]
@@ -239,12 +234,10 @@ def test_a_subtype_join_is_never_a_join_end_and_the_element_it_holds_is_an_ordin
     layer = knowledge(store, 'ends')
     before = dump(store_file(home, store))
     with pytest.raises(StoreError) as refused:
-        store.add_join(layer.name, 'code.timer.kitchen', subtype.join_id, purpose='p', ef='f',
-                       relation='r', observation='o')
+        store.add_join(layer.name, 'code.timer.kitchen', subtype.join_id, purpose='p', ef='f')
     assert refused.value.next_step
     assert dump(store_file(home, store)) == before
-    stored = store.add_join(layer.name, 'code.timer.kitchen', 'code.loop.tick', purpose='p', ef='f',
-                            relation='r', observation='o')
+    stored = store.add_join(layer.name, 'code.timer.kitchen', 'code.loop.tick', purpose='p', ef='f')
     assert stored.notices == () and stored.provider == subtype.element_id
     assert store.element('code.loop.tick', raw=True).layer == 'intake-1'
 
@@ -328,8 +321,7 @@ def test_refs_keep_their_order_and_are_found_by_key_and_value(store):
     extra = knowledge(store, 'group')
     store.add_element(extra.name, 'code.x')
     store.add_element(extra.name, 'code.y')
-    grouped = store.add_join(extra.name, 'code.x', 'code.y', purpose='p', ef='f', relation='r',
-                             observation='o', refs=[('path', 'c.c'), ('path', 'a.c'), ('path', 'b.c')])
+    grouped = store.add_join(extra.name, 'code.x', 'code.y', purpose='p', ef='f', refs=[('path', 'c.c'), ('path', 'a.c'), ('path', 'b.c')])
     assert [ref.value for ref in store.joins('code.x', raw=True).results[0].refs] == ['c.c', 'a.c', 'b.c']
     cited = store.citing('path', 'src/tick.c').results
     tick = store.subtypes(outer.join_id).results[0]
@@ -342,13 +334,47 @@ def test_a_join_reads_back_every_field_as_written(store):
     layer = knowledge(store, 'full')
     store.add_element(layer.name, 'code.a')
     store.add_element(layer.name, 'code.b')
-    store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='the why', ef='the how',
-                   relation='B serves A.', observation='what is there', non_goal='not this',
-                   refs=[('path', 'a.c'), ('doc', 'README')])
+    store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='the why', ef='serves a', verb='serves',
+                   ifd='receives', non_goal='not this', refs=[('path', 'a.c'), ('doc', 'README')])
     join = store.joins('code.a', raw=True).results[0]
-    assert (join.type, join.name, join.purpose, join.ef, join.relation, join.observation, join.non_goal) == (
-        'purpose', 'b', 'the why', 'the how', 'B serves A.', 'what is there', 'not this')
+    assert (join.type, join.name, join.purpose, join.ef, join.verb, join.ifd, join.non_goal) == (
+        'purpose', 'b', 'the why', 'serves a', 'serves', 'receives', 'not this')
     assert [(ref.key, ref.value) for ref in join.refs] == [('path', 'a.c'), ('doc', 'README')]
+
+
+@pytest.mark.req('MAP-020')
+def test_a_join_and_a_subtype_join_hold_no_relation_and_no_observation(store):
+    """Rich, 2026-10-02: "observation was not my design. I didn't ask for observation"; "Neither was relation". The
+    metaform is a map that points to the code, never documentation: neither field is stored, read or taken."""
+    from metaform.data import Join, Subtype
+    from metaform.data.schema import STORE_SCHEMA
+    fields = {field.name for record in (Join, Subtype) for field in dataclasses.fields(record)}
+    assert not {'relation', 'observation'} & fields
+    assert 'relation' not in STORE_SCHEMA and 'observation' not in STORE_SCHEMA
+    layer = knowledge(store, 'full')
+    store.add_element(layer.name, 'code.a')
+    store.add_element(layer.name, 'code.b')
+    for name in ('relation', 'observation'):
+        with pytest.raises(TypeError):
+            store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f', **{name: 'text'})
+    join = store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f')
+    for name in ('relation', 'observation'):
+        with pytest.raises(TypeError):
+            store.add_subtype(layer.name, join.join_id, 'code.a.part', ef='f', **{name: 'text'})
+
+
+@pytest.mark.req('MAP-014')
+def test_the_roots_are_intake_2_1s():
+    """The roots are Intake 2.1's {NS_ROOTS}, each read as its own name, D56."""
+    from pathlib import Path
+
+    from metaform.data import roots
+    spec = (Path(__file__).parents[1] / 'specifications' / 'Intake_2.1.md').read_text(encoding='utf-8')
+    found = re.search(r'\{NS_ROOTS\}\s*:= \[([^\]]*)\]', spec)
+    assert found is not None
+    names = [name.strip() for name in found.group(1).split(',')]
+    assert names == ['code', 'document', 'media', 'data', 'upstream', 'downstream']
+    assert [(root['name'], root['reading']) for root in roots()] == [(name, name) for name in names]
 
 
 @pytest.mark.req('STORE-033')
@@ -372,15 +398,12 @@ def failsafe(store, name='notes'):
     for address in ('code.daemon', 'code.failsafe.gateway', 'code.probe.echo', 'code.alarm'):
         store.add_element(layer.name, address, name_length=1)
     parent = store.add_join(layer.name, 'code.daemon', 'code.failsafe.gateway', name='gateway failsafe',
-                            purpose='Catch a dead gateway.', ef='Probes the gateway and fails over.',
-                            relation='The failsafe watches the gateway.', observation='Two probes.')
+                            purpose='Catch a dead gateway.', ef='Probes the gateway and fails over.')
     probe = store.add_join(layer.name, 'code.daemon', 'code.probe.echo', name='echo probe',
-                           purpose='Know the gateway answers.', ef='Sends an echo each second.', perspective='Function',
-                           relation='The echo probe pings the gateway.', verb='pings', observation='ICMP echo.',
+                           purpose='Know the gateway answers.', ef='Sends an echo each second.', verb='pings',
                            non_goal='Measure latency.', refs=[('path', 'src/echo.c')])
     other = store.add_join(layer.name, 'code.alarm', 'code.probe.echo', purpose='Hear a dead gateway.',
-                           ef='Reports a lost echo.', relation='The echo probe tells the alarm.',
-                           observation='One report per loss.')
+                           ef='Reports a lost echo.')
     return layer, parent, probe, other
 
 
@@ -391,8 +414,7 @@ def test_a_join_moved_to_another_receiver_keeps_its_id_and_its_memory(store):
     layer = knowledge(store, 'notes')
     for address in ('code.a', 'code.b', 'code.c'):
         store.add_element(layer.name, address)
-    join = store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='p', ef='f', relation='r',
-                          observation='o')
+    join = store.add_join(layer.name, 'code.a', 'code.b', name='b', purpose='p', ef='f')
     notes = memory(store)
     store.add_item(notes.name, Node('join', join.join_id), 'watch this one')
     moved = store.edit(join.join_id, {'receiver': 'code.c'})
@@ -416,10 +438,9 @@ def test_absorbing_a_join_makes_it_a_subtype_join_with_its_id_its_fields_and_wha
     held = store.subtypes(parent.join_id, raw=True).results
     assert [sub.join_id for sub in held] == [probe.join_id]
     sub = held[0]
-    assert (sub.parent, sub.type, sub.element_id, sub.address, sub.name, sub.ef, sub.perspective, sub.relation, sub.verb,
-            sub.observation, sub.non_goal) == (
+    assert (sub.parent, sub.type, sub.element_id, sub.address, sub.name, sub.ef, sub.verb, sub.non_goal) == (
         parent.join_id, 'subtype', element.element_id, 'code.probe.echo', 'echo probe', 'Sends an echo each second.',
-        'Function', 'The echo probe pings the gateway.', 'pings', 'ICMP echo.', 'Measure latency.')
+        'pings', 'Measure latency.')
     assert [(ref.key, ref.value) for ref in sub.refs] == [('path', 'src/echo.c')]
     assert sub.purpose == 'Know the gateway answers.' and sub.extra is None  # absorbed, it keeps its purpose
     assert [join.join_id for join in store.joins('code.daemon', raw=True).results] == [parent.join_id]
@@ -447,8 +468,7 @@ def test_an_element_held_only_by_subtype_joins_is_no_root_and_no_node_of_the_out
         'subtype', tick.element_id, sub.join_id, outer.join_id)
     extra = knowledge(store, 'extra')
     store.add_element(extra.name, 'code.clock')
-    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='p', ef='f', relation='r',
-                   observation='o')
+    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='p', ef='f')
     store.finish(extra.name)
     assert 'code.loop.tick' in [placed.element.address for placed in store.graph().elements]
     tick_now = store.where('code.loop.tick')
@@ -477,8 +497,8 @@ def test_absorbing_a_join_that_holds_a_subtype_join_passes_that_one_to_the_new_p
     layer = knowledge(store, 'notes')
     for address in ('code.a', 'code.p', 'code.q', 'code.t'):
         store.add_element(layer.name, address)
-    parent = store.add_join(layer.name, 'code.a', 'code.p', purpose='p', ef='f', relation='r', observation='o')
-    part = store.add_join(layer.name, 'code.a', 'code.q', purpose='q', ef='g', relation='r', observation='o')
+    parent = store.add_join(layer.name, 'code.a', 'code.p', purpose='p', ef='f')
+    part = store.add_join(layer.name, 'code.a', 'code.q', purpose='q', ef='g')
     inner = store.add_subtype(layer.name, part.join_id, 'code.t', ef='h')
     absorbed = store.edit(part.join_id, {'parent': parent.join_id})
     assert inner.join_id in ' '.join(notice.message for notice in absorbed.notices)
@@ -505,5 +525,31 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '10' and kinds == {'purpose', 'subtype'}  # layout 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
+    assert version == '12' and kinds == {'purpose', 'subtype'}  # layout 12: no relation or observation, 11: no perspective, MAP-020; 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
     assert 'correction_stack' not in tables
+
+
+@pytest.mark.req('MAP-020')
+def test_a_join_has_no_perspective_field_anywhere_in_the_store(home, store):
+    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". No column, record field, editable field
+    or word list holds it; a perspective given to a refinement is not a field of a join, so it is named and not
+    applied, as any other unknown key is, STORE-034."""
+    import dataclasses
+
+    import metaform.data as data
+    from metaform.data import Join, Subtype, rows
+    _, outer, _ = small_map(store)
+    db = sqlite3.connect(store_file(home, store))
+    try:
+        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
+    finally:
+        db.close()
+    assert 'perspective' not in columns
+    assert not hasattr(data, 'PERSPECTIVES')
+    assert all('perspective' not in {field.name for field in dataclasses.fields(kind)} for kind in (Join, Subtype))
+    assert 'perspective' not in rows.EDITABLE['join']
+    assert 'perspective' not in store.where('code.timer.kitchen', full=True).to_dict()['provides'][0]
+    refined = store.refine(outer.join_id, {'perspective': 'Encounter', 'purpose': 'Know when it is done.'}, reason='r')
+    assert [notice.where for notice in refined.notices] == ['perspective']
+    kept = next(join for join in store.joins('stakeholder.cook.home').results if join.join_id == outer.join_id)
+    assert (kept.purpose, kept.extra) == ('Know when it is done.', None)

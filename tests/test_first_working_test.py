@@ -22,7 +22,7 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'specifications' / 'Canonical_Intake.xml'
+SPEC = ROOT / 'specifications' / 'Intake_2.0.md'  # the served intake, Rich 2026-10-02
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
@@ -137,10 +137,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
-        body, _, footer = served.partition('</process>\n')
-        body += '</process>\n'
-        assert footer == ''  # nothing is served beside the intake
-        assert body == SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
+        assert served == SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)  # nothing is served beside it
 
         # 7: the intake is recorded one object per call; a join missing its purpose is stored with a notice naming
         # that field, and nothing is refused.

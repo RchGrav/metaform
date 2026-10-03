@@ -31,20 +31,31 @@ state.write_text(json.dumps(names))
 '''
 
 SERVER = '''
-import json, sys
+import json, sys, pathlib
+# MCP 2026-07-28 only: no initialize handshake, and every request carries the per-request _meta. Each line read is kept.
+log = pathlib.Path(__file__).with_suffix('.requests')
+KEYS = ('io.modelcontextprotocol/protocolVersion', 'io.modelcontextprotocol/clientCapabilities')
 for line in sys.stdin:
+    with log.open('a', encoding='utf-8') as out:
+        out.write(line)
     message = json.loads(line)
     if 'id' not in message:
         continue
-    if message['method'] == 'initialize':
-        result = {'protocolVersion': message['params']['protocolVersion'], 'capabilities': {'tools': {}},
-                  'serverInfo': {'name': 'fake', 'version': '0'}}
+    meta = (message.get('params') or {}).get('_meta') or {}
+    if message['method'] not in ('server/discover', 'tools/list', 'ping'):
+        reply = {'error': {'code': -32601, 'message': 'Method not found'}}
+    elif any(key not in meta for key in KEYS) or meta[KEYS[0]] != '2026-07-28':
+        reply = {'error': {'code': -32602, 'message': 'Invalid request parameters'}}
+    elif message['method'] == 'server/discover':
+        reply = {'result': {'resultType': 'complete', 'supportedVersions': ['2026-07-28'],
+                            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'fake', 'version': '0'},
+                            'instructions': 'Fake instructions.'}}
     elif message['method'] == 'tools/list':
-        result = {'tools': [{'name': 'one', 'inputSchema': {'type': 'object'}},
-                            {'name': 'two', 'inputSchema': {'type': 'object'}}]}
+        reply = {'result': {'resultType': 'complete', 'tools': [{'name': 'one', 'inputSchema': {'type': 'object'}},
+                                                               {'name': 'two', 'inputSchema': {'type': 'object'}}]}}
     else:
-        result = {}
-    print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result}), flush=True)
+        reply = {'result': {'resultType': 'complete'}}
+    print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], **reply}), flush=True)
 '''
 
 

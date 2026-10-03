@@ -97,7 +97,8 @@ def test_web_ships_on_and_with_it_off_the_rest_of_metaform_works(run, module_row
     stopped = run('web', ok=False)
     assert stopped.returncode != 0 and 'Next: metaform enable web' in stopped.stderr
     assert 'Intake: none yet' in run(cwd=folder).stdout
-    assert run('intake', 'prompt', cwd=folder).stdout.startswith('<')
+    served = Path(__file__).parents[5] / 'specifications' / 'Intake_2.0.md'  # the served intake, BASE-039
+    assert run('intake', 'prompt', cwd=folder).stdout.startswith(served.read_text(encoding='utf-8').splitlines()[0])
     assert run('map', 'roots', cwd=folder).returncode == 0
     assert not any(line.startswith('web') for line in run('help', 'commands').stdout.splitlines())
 
@@ -199,20 +200,17 @@ def build(store):
         store.add_element(intake.name, 'code.gone', name_length=1, role='SE')
         outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', name='dish timer',
                                purpose='Know when food is done.',
-                               ef='Counts down and rings.', perspective='Function', relation='The timer tells the cook.',
-                               observation='One countdown per dish.')
+                               ef='Counts down and rings.')
         store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       ef='Plays a tone.', perspective='Encounter', relation='The alarm rings for the timer.',
-                       observation='A piezo.')
+                       ef='Plays a tone.')
         store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', ef='Advances each countdown.',
-                          perspective='Function', relation='The tick loop drives the timer.', observation='One tick a second.',
                           name='one-second tick', name_length=2, role='SE')
     store.add_work(Node('element', 'code.timer.kitchen'), 'broken', note='drifts', task='hold the tick to one second')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
     store.add_element('notes', 'code.timer.kitchen.display', name_length=1)
     store.add_join('notes', 'code.timer.kitchen.display', 'code.timer.kitchen', purpose='Show the time left.',
-                   ef='Reports the time left.', relation='The timer feeds the display.', observation='LCD')
+                   ef='Reports the time left.')
     store.add_item('notes', Node('element', 'code.timer.kitchen'), 'keep the loop small')
     store.add_item('notes', Node('element', 'code.gone'), 'the loop drifts here')
     store.add_element('extra', 'code.alarm.audible.loud', name_length=1)
@@ -842,7 +840,7 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
     cook, purpose = store.element('exterior.cook').element_id, 'p:' + join.join_id
     exclude = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--exclude").trim().toLowerCase()')
     others = page.evaluate("""() => { const style = getComputedStyle(document.documentElement);
-        return ['--broken', '--missing', '--function', '--encounter', '--signal', '--de', '--intake', '--memory',
+        return ['--broken', '--missing', '--signal', '--de', '--intake', '--memory',
                 '--danger', '--tree', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
             .map(name => style.getPropertyValue(name).trim().toLowerCase()); }""")
     assert exclude and exclude not in others
@@ -861,36 +859,31 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
 @pytest.mark.req('VIEW-006')
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('VIEW-012')
-def test_each_encounter_is_colored_by_its_ef_in_both_views_and_named_in_the_legend_and_panel(run, web, mapped,
-                                                                                           browser):
+def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(run, web, mapped, browser):
+    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". An encounter link and a subtype's link
+    take their layer's color in both views; the legend and the panel name no Function or Encounter word."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     color = {name: page.evaluate(f'getComputedStyle(document.documentElement).getPropertyValue("--{name}").trim()')
-             for name in ('function', 'encounter', 'k1')}
-    assert color['function'] != color['encounter']
+             for name in ('intake', 'k1')}
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
     drawn = page.evaluate('window.metaform.linkColors()')
     for join in expected['joins']:
+        assert 'perspective' not in join
         encounter = next(link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter')
-        if join['perspective']:
-            assert encounter['color'] == color[join['perspective'].lower()]
-        else:  # a knowledge join with no word keeps its layer's color, never one of the two
-            assert join['layer'] == 'notes' and encounter['color'] == color['k1']
+        assert encounter['color'] == color['k1' if join['layer'] == 'notes' else 'intake'], join
         for subtype in join['subtypes']:
+            assert 'perspective' not in subtype
             link = next(link for link in drawn if link['target'] == 's:' + subtype['join_id'])
-            assert link['color'] == color[subtype['perspective'].lower()]
-    assert sorted(join['perspective'] or '' for join in expected['joins']) == ['', 'Encounter', 'Function']
-    assert page.locator('#map2d svg .edgePaths path.perspective-function').count() == 1
-    assert page.locator('#map2d svg .edgePaths path.perspective-encounter').count() == 1
+            assert link['color'] == color['intake']
+    assert page.locator('#map2d svg .edgePaths path[class*="perspective-"]').count() == 0
     legend = page.inner_text('#legend')
-    assert 'Function · the encounter of a functionality' in legend
-    assert 'Encounter · the functionality of the encounter' in legend
+    assert 'Function ·' not in legend and 'Encounter ·' not in legend
     kitchen = next(entry['element']['element_id'] for entry in expected['elements']
                    if entry['element']['address'] == 'code.timer.kitchen')
     page.evaluate(f'window.metaform.select("{kitchen}")')
-    assert sorted(page.evaluate('[...document.querySelectorAll("#p-object .join .perspective")].map(e => e.textContent)')) \
-        == ['Encounter', 'Function', 'Function']
+    assert page.locator('#p-object .join .perspective').count() == 0
     assert problems == []
 
 
@@ -1354,7 +1347,7 @@ def test_the_2d_map_opens_at_a_size_that_can_be_read_and_only_fit_changes_the_zo
     for index in range(30):  # a map far wider than the view
         store.add_element('notes', f'code.part.number{index}', name_length=2)
         store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}', purpose='Keep the timer working.',
-                       ef='Does one thing.', relation='serves the timer')
+                       ef='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, _ = keys_of(web)
@@ -1391,7 +1384,7 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
         store.add_element('notes', f'code.part.number{index}', name_length=2)
         store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}',
                        name=f'the long name of part number {index} of the kitchen timer',
-                       purpose='Keep the timer working.', ef='Does one thing.', relation='serves the timer')
+                       purpose='Keep the timer working.', ef='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
     _, at, _ = keys_of(web)
@@ -1553,12 +1546,11 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
             big.add_element(layer.name, f'code.g{n % 20}.e{n}', role='SE')
         for n in range(600):
             join = big.add_join(layer.name, f'code.g{n % 20}.e{n}', f'code.g{(n + 1) % 20}.e{(n + 1) % 600}',
-                                purpose='p', ef='f', relation='r', observation='o')
+                                purpose='p', ef='f')
             if n < 10:
-                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', ef='f', relation='r',
-                                observation='o', role='SE')
+                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', ef='f', role='SE')
         # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
-        big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', ef='g', relation='r', observation='o')
+        big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', ef='g')
     page, problems, _ = opened(browser, web)
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
@@ -1598,13 +1590,12 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
     assert asked == []
     made = json.loads(run('intake', 'join', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'ef=f',
-                          'perspective=Function', 'relation=r', 'verb=tells', 'observation=o', '--json', cwd=folder).stdout)
+                          'verb=tells', '--json', cwd=folder).stdout)
     page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
     page.wait_for_timeout(300)  # the panel's reads for the selected node settle
     assert not [text for text in page.evaluate('window.toasts') if 'Nothing for' in text]  # an unfinished layer is no error
-    run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'ef=f', 'perspective=Function', 'relation=r',
-        'verb=advances', 'observation=o', 'role=SE', cwd=folder)
+    run('intake', 'subtype', made['join_id'], 'code.loop.tick', 'ef=f', 'verb=advances', 'role=SE', cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
     run('intake', 'finish', cwd=folder)
     page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
@@ -2339,8 +2330,8 @@ def contrast(one, other):
 
 LAYER_COLORS = ['--intake', '--memory', '--k1', '--k2', '--k3', '--k4', '--k5', '--k6']
 NODE_COLORS = ['--de', '--signal', '--text', '--exclude', '--broken', *LAYER_COLORS]
-LINK_COLORS = ['--tree', '--function', '--encounter', *LAYER_COLORS]
-LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--function', '--encounter', '--broken', '--exclude',
+LINK_COLORS = ['--tree', *LAYER_COLORS]
+LINES_2D = ['--node-line', '--edge', '--signal', '--intake', '--broken', '--exclude',
             *LAYER_COLORS]
 LABELS_3D = ['--text', '--muted', '--faint', '--signal']
 LABELS_2D = [('--text', '--node'), ('--text', '--node-sel'), ('--text', '--node-broken'), ('--text', '--group'),
@@ -3888,8 +3879,14 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     page.evaluate(f'window.metaform.hover3d("{kitchen}")')
     tip = page.locator('#tip3d')
     tip.wait_for(state='visible')
-    assert 'kitchen timer' in tip.inner_text() and 'The timer tells the cook.' in tip.inner_text()
+    assert 'kitchen timer' in tip.inner_text() and 'Counts down and rings.' in tip.inner_text()
     assert 'code.timer.kitchen' not in tip.inner_text()               # the address is the name read the other way
+    # Rich, 2026-10-02: no subject rule; each ef is shown as written, where the relation was, with no receiver or
+    # provider put before it.
+    page.evaluate(f'window.metaform.hover3d("{alarm}")')
+    page.wait_for_function('() => document.querySelector("#tip3d").textContent.includes("Plays a tone")')
+    assert page.evaluate('[...document.querySelectorAll("#tip3d .why")].map(e => e.textContent)') == [
+        'Plays a tone.']
     assert problems == []
 
 
@@ -3991,8 +3988,7 @@ def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, 
     display = store.element('code.timer.kitchen.display').element_id
     store.add_element('notes', 'code.bell', name_length=1)
     bell = store.element('code.bell').element_id
-    store.add_join('notes', 'code.bell', 'code.alarm.audible', purpose='Ring.', ef='Rings the bell.',
-                   relation='The alarm rings the bell.', observation='A hammer.')
+    store.add_join('notes', 'code.bell', 'code.alarm.audible', purpose='Ring.', ef='Rings the bell.')
     if case == 'missing':
         store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='a second tone')
     elif case == 'broken':

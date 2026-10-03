@@ -162,8 +162,7 @@ def test_discarding_a_layer_leaves_the_work_records_of_its_objects_in_place(home
     small_map(store)
     layer = knowledge(store, 'draft')
     store.add_element(layer.name, 'code.draft.probe')
-    join = store.add_join(layer.name, 'code.timer.kitchen', 'code.draft.probe', purpose='p', ef='f',
-                          relation='r', observation='o')
+    join = store.add_join(layer.name, 'code.timer.kitchen', 'code.draft.probe', purpose='p', ef='f')
     on_element = store.add_work(Node('element', 'code.draft.probe'), 'exclude', note='old probe')
     on_join = store.add_work(Node('join', join.join_id), 'broken')
     on_intake = store.add_work(Node('element', 'code.alarm.audible'), 'missing')

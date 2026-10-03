@@ -77,6 +77,12 @@ Recommendation: a new metaform of one layer, made active, the old one kept whole
 **D112. Promoting a join to an element.** MAP-054. When a join is promoted, is it rerouted through the new element, so the receiver reaches the former provider only through it, keeping the join's id and what is attached to it, or does the original join stay as it was with the new element beside it?
 Recommendation: reroute, so the map says once how the receiver is served and the join keeps its memories and work.
 
+**D113. Linking across repositories under upstream.** MAP-014. How does an address under `upstream` link to a node in another registered project's map: by matching the address beneath upstream to that project's own address, by naming the project, or both?
+Recommendation: name the project and match the address, so the link is exact and survives either map being refined.
+
+**D114. How Intake 2.0 receives a project's target.** MAP-041, MAP-043. Intake 2.0 is the served intake, BASE-039, and has no `<target>` element, so nothing fills the project's target. Its TARGET_RESOLUTION takes the target the prompt states, and otherwise this project folder's contexts. When the project's target is not its folder, a url, an artifact, inline content or inferred, MAP-041, how does 2.0 receive it?
+Recommendation: when the person asks for nothing, the server fills `{prompt}` with the project's target when that target is not the project's folder, since 2.0 says its `{Prompt}` is "filled by the server with the stated target or task"; when the person asks for something, their words are served as given. Not built; Rich decides.
+
 ## Answered
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.

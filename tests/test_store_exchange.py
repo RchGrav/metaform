@@ -19,7 +19,7 @@ def filled(store):
                    extra={'confidence': 'high'}, refs=[('path', 'src/timer.c')])
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
     store.add_join(notes.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='stop', ef='signals',
-                   relation='r', observation='o', extra={'latency_budget': '5 ms'})
+                   extra={'latency_budget': '5 ms'})
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
     notes_memory = memory(store)
@@ -58,6 +58,19 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
             for version in moved.history(outer.join_id).results] == versions  # every version, with its own refs
     assert len(versions) == 3
     assert moved.joins('stakeholder.cook.home').results[0].purpose == 'Serve each dish on time.'  # the newest is current
+
+
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('MAP-020')
+def test_an_exported_join_carries_no_relation_and_no_observation_and_a_document_with_them_is_refused(home, store):
+    """Rich, 2026-10-02: relation and observation are removed from export and import with the store."""
+    filled(store)
+    document = export_document(['proj'])
+    rows = document['projects'][0]['metaforms'][0]['joins']
+    assert rows and all('relation' not in row and 'observation' not in row and 'ef' in row for row in rows)
+    rows[0]['relation'] = 'r'
+    with pytest.raises(StoreError, match='relation: not a field here'):
+        import_document(json.loads(json.dumps(document)))
 
 
 @pytest.mark.req('STORE-027')
@@ -104,8 +117,8 @@ def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they
     notes = knowledge(store, 'notes')
     for address in ('code.a', 'code.p', 'code.q'):
         store.add_element(notes.name, address)
-    early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', ef='g', relation='r', observation='o')
-    later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', ef='f', relation='r', observation='o')
+    early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', ef='g')
+    later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', ef='f')
     store.edit(early.join_id, {'parent': later.join_id})
     store.finish(notes.name)
     first = export_document(['proj'])

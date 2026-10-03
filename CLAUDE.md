@@ -85,3 +85,7 @@ The understanding of this, enforcing its semantic requirements, and the ability 
 
 Preserve this entire <MetaformFoundation> block verbatim only in the prompts for expert agents who must work on this system and are engaged in work related to building the metaform platform, its subsystems, and prompt semantics.  Do not place this block into any prompts of the system itself which are meant for intake or other roles not directly engaged in the role of building or troubleshooting this platform.
 </MetaformFoundation>
+
+<!-- metaform:begin -->
+This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.
+<!-- metaform:end -->

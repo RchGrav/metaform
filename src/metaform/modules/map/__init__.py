@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
-from metaform.data import PERSPECTIVES, PLACE_KINDS, Node, Notice, Page, Store
+from metaform.data import PLACE_KINDS, Node, Notice, Page, Store
 from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -26,10 +26,9 @@ settings.boolean('tasks', True, help='Assign and track work on the map like a ka
                  'keeps its own board.')
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
-EF = {'type': 'string', 'enum': list(PERSPECTIVES)}
-# What edit and refine change; perspective, ifd and verb among them, which were dropped before, an intake found.
-FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'perspective', 'ifd', 'relation',
-          'verb', 'observation', 'non_goal', 'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+# What edit and refine change; ifd and verb among them, which were dropped before, an intake found.
+FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
+          'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
 
 
 def _node(text: str) -> Node:
@@ -266,9 +265,9 @@ READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
     'add-element': frozenset({'address', 'name_length', 'name', 'role', 'refs', 'extra'}),
-    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb',
-                           'observation', 'non_goal', 'type', 'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
+    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type',
+                           'refs', 'extra'}),
+    'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'ifd', 'verb',
                               'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
@@ -370,14 +369,12 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
         return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role', 'refs', 'extra'),
                                  name=nouns.get('name'))
     if op == 'add-join':
-        purpose, ef, relation, observation = _empty(ctx, notices, 'purpose', 'ef', 'relation',
-                                                          'observation')
+        purpose, ef = _empty(ctx, notices, 'purpose', 'ef')
         return store.add_join(name, nouns['receiver'], nouns['provider'], purpose=purpose, ef=ef,
-                              relation=relation, observation=observation,
-                              **_optional(ctx, 'name', 'perspective', 'ifd', 'verb', 'non_goal', 'type', 'refs', 'extra'))
+                              **_optional(ctx, 'name', 'ifd', 'verb', 'non_goal', 'type', 'refs', 'extra'))
     if op == 'add-subtype':
         return store.add_subtype(name, nouns['join'], nouns['address'],
-                                 **_optional(ctx, 'purpose', 'ef', 'perspective', 'ifd', 'relation', 'verb', 'observation',
+                                 **_optional(ctx, 'purpose', 'ef', 'ifd', 'verb',
                                              'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'),
                                  element_name=nouns.get('name'))
     if op == 'add-property':
@@ -451,14 +448,10 @@ KNOWLEDGE_NOUNS = (
                     'it, keeping its purpose.'),
     _noun('purpose', 'add-join and add-subtype: the Operative Purpose; a subtype join keeps its own purpose.'),
     _noun('ef', "add-join and add-subtype: the Encounter Function."),
-    _noun('perspective', 'add-join and add-subtype: Function if it is the encounter of a functionality, Encounter if it is the '
-                'functionality of the encounter.', schema=EF),
     _noun('ifd', 'add-join and add-subtype: IFD, Information Flow Direction, the primary flow of information. sends: OP to '
                  'EF. receives: EF to OP. both: equal need.', schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
-    _noun('relation', 'add-join and add-subtype: the relation in active voice.'),
-    _noun('verb', 'add-join and add-subtype: the third-person singular present-tense active verb of the relation, '
-                  'ending in -s or -es.'),
-    _noun('observation', 'add-join and add-subtype: what is actually there.'),
+    _noun('verb', 'add-join and add-subtype: the verb ef opens with, third-person singular present tense, ending in '
+                  '-s or -es.'),
     _noun('non_goal', 'add-join and add-subtype: what the receiver does not seek.'),
     _noun('type', 'add-join: the join type, purpose by default.'),
     _noun('join', 'add-subtype: the id of the join the subtype join sits in; add-plan: the join id.'),

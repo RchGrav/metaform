@@ -19,7 +19,6 @@
   --ground:#020408; --panel:#070b11; --panel-2:#10151c; --line:#20262d; --line-2:#3c4249;
   --text:#f5f7fa; --muted:#9aa2ad; --faint:#787f8a;
   --signal:#00fdea; --de:#ffffff; --dim-keep:0.65; --tree:#717f91; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -31,7 +30,6 @@
   --ground:#02041f; --panel:#060d2a; --panel-2:#0f1836; --line:#1e2949; --line-2:#3a4668;
   --text:#f3f7ff; --muted:#93a5d4; --faint:#7182af;
   --signal:#00dbfe; --de:#ffffff; --dim-keep:0.65; --tree:#657cbb; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -43,7 +41,6 @@
   --ground:#0f0f0f; --panel:#191919; --panel-2:#242424; --line:#353535; --line-2:#525252;
   --text:#f7f7f7; --muted:#afafaf; --faint:#8a8a8a;
   --signal:#fead00; --de:#ffffff; --dim-keep:0.65; --tree:#7e8288; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -55,7 +52,6 @@
   --ground:#0f0113; --panel:#19061e; --panel-2:#241029; --line:#36213b; --line-2:#543d59;
   --text:#fcf3fe; --muted:#b999c0; --faint:#95779c;
   --signal:#ff58b4; --de:#ffffff; --dim-keep:0.65; --tree:#996ea3; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff31e2;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -67,7 +63,6 @@
   --ground:#000a04; --panel:#001409; --panel-2:#061f13; --line:#173023; --line-2:#334d3f;
   --text:#f0f9f4; --muted:#8aad99; --faint:#698b78;
   --signal:#87fe00; --de:#ffffff; --dim-keep:0.65; --tree:#55896d; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff41e3;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -79,7 +74,6 @@
   --ground:#120200; --panel:#1d0902; --panel-2:#281309; --line:#3b2419; --line-2:#594034;
   --text:#fef4f0; --muted:#bf9c8c; --faint:#9c7b6c;
   --signal:#ff8505; --de:#ffffff; --dim-keep:0.65; --tree:#a2725c; --link-opacity:0.8;
-  --function:#00fdea; --encounter:#ff3ae2;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5799; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -91,7 +85,6 @@
   --ground:#352d1c; --panel:#403827; --panel-2:#4d4433; --line:#5f5644; --line-2:#706755;
   --text:#fef6e7; --muted:#b6aea0; --faint:#90897b;
   --signal:#fead00; --de:#ffffff; --dim-keep:0.72; --tree:#8d8678; --link-opacity:0.85;
-  --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
   --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
@@ -103,7 +96,6 @@
   --ground:#1f303b; --panel:#2a3c47; --panel-2:#364854; --line:#485a66; --line-2:#596b78;
   --text:#f0f9ff; --muted:#a3b2bc; --faint:#7e8c96;
   --signal:#fead00; --de:#ffffff; --dim-keep:0.72; --tree:#7b8993; --link-opacity:0.85;
-  --function:#00fdea; --encounter:#ff48e3;
   --intake:#53a0ff; --memory:#b17eff; --danger:#fe711e;
   --k1:#fead00; --k2:#00fd49; --k3:#fc679e; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
   --missing:#feca00; --broken:#fc6d68; --exclude:#beff3d; --question:#ff8ad8;
@@ -253,7 +245,6 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .pill.work-missing{color:var(--missing);background:color-mix(in srgb,var(--missing) 14%,transparent)}
 .pill.layer{display:inline-flex;align-items:center;gap:6px;background:none;padding:2px 0;color:var(--faint)}
 .pill.layer::before,.join .lay::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
-.pill.perspective{color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);margin-right:6px}
 /* The small area above the panel and the large one change what they hold, VIEW-028. */
 .small{position:relative;height:clamp(240px,38vh,380px);border-bottom:1px solid var(--line);overflow:hidden;flex:none}
 #big3d{position:absolute;inset:0;background:var(--ground)}
@@ -304,8 +295,6 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.sub rect{fill:var(--node-sub)!important}
 .map2d .node.sub .nodeLabel,.map2d .node.sub text{font:500 11px var(--sans)!important;fill:var(--muted)!important}
 .map2d .node.sub.sel .nodeLabel,.map2d .node.sub.sel text{fill:var(--text)!important}
-.map2d .edgePaths path.perspective-function{stroke:var(--function)!important}
-.map2d .edgePaths path.perspective-encounter{stroke:var(--encounter)!important}
 .map2d marker path{fill:var(--edge)!important;stroke:none!important}
 .map2d .kbd{position:absolute;left:10px;bottom:8px;font:11px var(--mono);color:var(--faint);pointer-events:none}
 /* Each view has the same bar: what steps or moves it on the left, Fit and Swap on the right. */

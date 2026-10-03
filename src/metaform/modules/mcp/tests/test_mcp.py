@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
@@ -21,15 +22,22 @@ def own(project_id):
 pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
-CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report'}
+CHASSIS_TOOLS = {'set', 'feedback', 'list_reports', 'read_report', 'instructions'}
 
 
-def session(home, folder, fn):
+def session(home, folder, fn, heard=None):
+    """A real MCP client on `metaform mcp serve` in the folder; the methods of the notifications it hears go in
+    `heard`."""
     params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(folder),
                                    env={**os.environ, 'METAFORM_HOME': str(home)})
 
+    async def hear(message):
+        method = getattr(message, 'method', None)
+        if heard is not None and method:
+            heard.append(method)
+
     async def go():
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as client:
+        async with stdio_client(params) as (read, write), ClientSession(read, write, message_handler=hear) as client:
             init = await client.initialize()
             return await fn(client, init)
     return asyncio.run(go())
@@ -52,13 +60,14 @@ async def listed(client):
 
 async def tool_names(client):
     """Every command the server offers, by the name it runs under, `<module>_<command>` or the chassis's own name,
-    read as an agent reads them: by entering each tool, CLI-037."""
+    read as an agent reads them: by entering each tool, then asking for each command, CLI-037."""
     found = {}
     for tool in await listed(client):
         entered = json.loads(text(await client.call_tool(tool, {}))[-1])
         for one in entered['commands']:
             name = one['command'] if tool == 'metaform' else f"{tool}_{one['command']}"
-            found[name] = Command(one['summary'], one['arguments'])
+            read = json.loads(text(await client.call_tool(tool, {'help': one['command']}))[-1])
+            found[name] = Command(read['summary'], read['arguments'])
     return found
 
 
@@ -82,7 +91,7 @@ def mapped(run, tmp_path):
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
                        purpose='Get attention.',
-                       ef='Plays a tone.', relation='The alarm rings.', observation='A piezo.')
+                       ef='Plays a tone.')
     return folder
 
 
@@ -147,8 +156,7 @@ def test_a_knowledge_subtypes_own_purpose_survives_mcp_creation_and_readback(run
         parent = await knowledge(op='add-join', receiver='code.timer.kitchen', provider='code.alarm.audible',
                                  purpose='Get attention.', ef='Plays a tone.')
         await knowledge(op='add-subtype', join=parent['join_id'], address='code.alarm.audible.piezo',
-                        purpose='Make the end audible.', ef='Buzzes when driven.', perspective='Function',
-                        relation='buzzes when driven', verb='buzzes', observation='A piezo disc.')
+                        purpose='Make the end audible.', ef='Buzzes when driven.', verb='buzzes')
         await knowledge(op='finish')
         result = await client.call_tool('map', {'command': 'where',
                                                 'arguments': {'address': 'code.timer.kitchen'}})
@@ -491,16 +499,13 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
         named = json.loads(text(described)[-1])['notices']
         made = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
                                                       'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
-                                                      'ef': 'Rings.', 'perspective': 'Encounter', 'relation': 'r',
-                                                      'verb': 'rings', 'observation': 'o'})
+                                                      'ef': 'Rings.',
+                                                      'verb': 'rings'})
         join_id = json.loads(text(made)[-1])['join_id']
         await called(client, 'intake_subtype', {'into': join_id, 'namespace_address': 'code.loop.tick',
-                                                  'ef': 'Ticks.',
-                                                  'perspective': 'Function', 'relation': 'r', 'verb': 'advances',
-                                                  'observation': 'o', 'role': 'SE'})
+                                                  'ef': 'Ticks.', 'verb': 'advances', 'role': 'SE'})
         beat = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
-                                                      'purpose': 'Keep time.', 'ef': 'Beats.', 'perspective': 'Function',
-                                                      'relation': 'r', 'verb': 'beats', 'observation': 'o'})
+                                                      'purpose': 'Keep time.', 'ef': 'Beats.', 'verb': 'beats'})
         beat_id = json.loads(text(beat)[-1])['join_id']
         absorbed = await called(client, 'intake_absorb', {'join': beat_id, 'into': join_id})
         moved = json.loads(text(absorbed)[-1])
@@ -690,7 +695,7 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
         greeted = await called(client, 'hello_greet', {'name': {'a': 1}})
         joined = await called(client, 'map_knowledge', {
             'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
-            'purpose': 12, 'ef': 'f', 'relation': ['r'], 'observation': 'o'})
+            'purpose': 12, 'ef': 'f', 'verb': ['r']})
         observed = await called(client, 'memory_create_entities', {
             'node': 'element:code.timer.kitchen',
             'entities': [{'name': 'kitchen', 'entityType': 'part', 'observations': ['fine', 7]}]})
@@ -701,9 +706,9 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
     assert not greet_error and not join_error and not observe_error
     assert greeted == ['Notice: name: name is text; what was sent was kept as its JSON text.\nhello, {"a": 1}\n']
     assert joined[0].splitlines() == ['Notice: purpose: purpose is text; what was sent was kept as its JSON text.',
-                                      'Notice: relation: relation is text; what was sent was kept as its JSON text.']
+                                      'Notice: verb: verb is text; what was sent was kept as its JSON text.']
     join = json.loads(joined[1])
-    assert (join['purpose'], join['relation'], join['notices']) == ('12', '["r"]', [])
+    assert (join['purpose'], join['verb'], join['notices']) == ('12', '["r"]', [])
     assert json.loads(observed[-1])['notices'] == [
         {'where': 'observations', 'message': 'observations is text; what was sent was kept as its JSON text.'}]
     graph = json.loads(run('memory', 'read_graph', '--json', cwd=mapped).stdout)
@@ -729,12 +734,13 @@ def test_the_server_lists_one_tool_for_each_module_and_a_module_is_entered_for_i
     assert size < 6000                                                   # what an agent is handed at the start
     for name, tool in tools.items():
         properties = tool.input_schema['properties']
-        assert set(properties) == {'command', 'arguments'} and tool.input_schema['additionalProperties'] is False
+        assert set(properties) == {'command', 'arguments', 'help'} and tool.input_schema['additionalProperties'] is False
+        assert properties['help']['type'] == 'string' and properties['help']['description'], name
         assert all(command in tool.description for command in properties['command']['enum']), name
     assert 'joins' in tools['map'].input_schema['properties']['command']['enum']
     commands = {one['command']: one for one in json.loads(text(entered)[-1])['commands']}
     assert not entered.is_error and set(commands) == set(tools['map'].input_schema['properties']['command']['enum'])
-    assert commands['joins']['arguments']['required'] == ['element'] and commands['joins']['summary']
+    assert set(commands['joins']) == {'command', 'summary'} and commands['joins']['summary']
     assert unknown.is_error and text(unknown)[0].splitlines() == [
         'Error: map has no command nothing.', 'Next: call map with no command for its commands']
     assert stray.is_error and 'takes command and arguments' in text(stray)[0]
@@ -787,3 +793,131 @@ def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_
         return names, refused
     names, refused = session(home, mapped, narrowed)
     assert 'intake' in names and not {'web', 'tasks', 'messages'} & names and refused
+
+
+def help_agents(run, folder):
+    return run('help', 'agents', cwd=folder).stdout
+
+
+@pytest.mark.req('CLI-037')
+@pytest.mark.req('MCP-003')
+def test_opening_a_tool_gives_each_commands_summary_and_a_command_is_read_alone(run, home, mapped):
+    """Rich, 2026-10-02: organize the context flow so an agent pays for what it needs when it needs it. Opening a tool
+    lists its commands with their one-line summaries; a command's arguments, descriptions and schemas come when that
+    command is asked for, from the same declarations."""
+    async def check(client, init):
+        tools = await listed(client)
+        opened = {name: await client.call_tool(name, {}) for name in tools}
+        joins = await client.call_tool('map', {'help': 'joins'})
+        element = await client.call_tool('intake', {'help': 'element'})
+        unknown = await client.call_tool('map', {'help': 'nothing'})
+        wrong = await client.call_tool('map', {'command': 'joins', 'arguments': 'element'})
+        return opened, joins, element, unknown, wrong
+    opened, joins, element, unknown, wrong = session(home, mapped, check)
+    page = run('help', 'map', 'joins', cwd=mapped).stdout
+    for name, result in opened.items():
+        listing = json.loads(text(result)[-1])
+        assert not result.is_error and set(listing) >= {'tool', 'summary', 'commands'}, name
+        assert all(set(one) == {'command', 'summary'} for one in listing['commands']), name
+        assert '"properties"' not in text(result)[-1], name             # no argument is sent ahead of need
+    read = json.loads(text(joins)[-1])
+    assert not joins.is_error and (read['tool'], read['command']) == ('map', 'joins')
+    assert read['arguments']['required'] == ['element'] and read['arguments']['additionalProperties'] is False
+    assert read['arguments']['properties']['raw']['description'] in page
+    summaries = {one['command']: one['summary'] for one in json.loads(text(opened['map'])[-1])['commands']}
+    assert read['summary'] == summaries['joins']
+    fields = json.loads(text(element)[-1])['arguments']['properties']
+    assert fields['role']['enum'] and fields['namespace_address']['type'] == 'string'
+    assert unknown.is_error and text(unknown)[0].splitlines() == [
+        'Error: map has no command nothing.', 'Next: call map with no command for its commands']
+    assert wrong.is_error and text(wrong)[0].splitlines()[-1] == 'Next: call map with help joins for what it takes'
+
+
+@pytest.mark.req('MCP-007')
+@pytest.mark.req('MCP-031')
+@pytest.mark.req('CLI-029')
+def test_the_instructions_are_composed_for_each_request_and_read_with_the_instructions_command(run, home, mapped):
+    """The server composed its instructions once, at process start, so a session kept a stale snapshot. Each request
+    that carries them composes them again, and the always-available instructions command, on the command line and
+    over MCP, returns what metaform help agents prints at that moment."""
+    from metaform.probe import Session, discover
+    before = help_agents(run, mapped)
+    assert run('instructions', cwd=mapped).stdout == before
+    july = Session([sys.executable, '-m', 'metaform', 'mcp', 'serve'], cwd=mapped,
+                   env={**os.environ, 'METAFORM_HOME': str(home)})
+    try:
+        run('set', '--debug', cwd=mapped)                               # changed after the server started
+        after = help_agents(run, mapped)
+        assert after != before
+        assert discover(july)['instructions'].strip() == after.strip()
+    finally:
+        july.close()
+    run('set', '--no-debug', cwd=mapped)
+
+    async def check(client, init):
+        first = text(await client.call_tool('metaform', {'command': 'instructions'}))
+        run('set', '--debug', cwd=mapped)
+        second = text(await client.call_tool('metaform', {'command': 'instructions'}))
+        return init.instructions, first, second
+    started, first, second = session(home, mapped, check)
+    assert started.strip() == before.strip()
+    assert [block.strip() for block in first] == [before.strip()] and [block.strip() for block in second] == [after.strip()]
+    run('set', '--modules', 'intake', cwd=mapped)                     # the chassis off the surface
+    assert run('instructions', cwd=mapped).stdout == help_agents(run, mapped)
+
+
+@pytest.mark.req('MCP-004')
+@pytest.mark.req('MCP-007')
+def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run, home, mapped):
+    """Enabling a module did not reach a running session: the tool list was announced as unchanging. Where the
+    protocol allows, a session is told when its tools or slash commands change, at its next request."""
+    heard = []
+
+    async def check(client, init):
+        listed_before = set(await listed(client))
+        await client.list_prompts()
+        run('set', '--modules', 'intake,map,mcp', cwd=mapped)         # web and memory leave the surface
+        await client.call_tool('map', {})
+        await client.call_tool('map', {})                             # nothing changed since: nothing more is said
+        return init.capabilities, listed_before, set(await listed(client))
+    capabilities, before, after = session(home, mapped, check, heard)
+    assert capabilities.tools.list_changed is True and capabilities.prompts.list_changed is True
+    assert 'web' in before and 'web' not in after
+    assert heard.count('notifications/tools/list_changed') == 1
+    assert heard.count('notifications/prompts/list_changed') == 1
+
+
+@pytest.mark.req('MCP-002')
+@pytest.mark.req('MCP-004')
+def test_on_the_july_wire_a_listen_stream_hears_the_list_change(run, home, mapped):
+    """MCP 2026-07-28 has no connection to announce on: change notifications ride a subscriptions/listen stream."""
+    from metaform.probe import Session, discover
+    july = Session([sys.executable, '-m', 'metaform', 'mcp', 'serve'], cwd=mapped,
+                   env={**os.environ, 'METAFORM_HOME': str(home)})
+    try:
+        found = discover(july)
+        assert found['capabilities']['tools']['listChanged'] is True
+        assert '2026-07-28' in found['supportedVersions']
+        listen = july.open('subscriptions/listen', {'notifications': {'toolsListChanged': True}})
+        assert july.call('map', {})['resultType'] == 'complete'
+        run('set', '--modules', 'intake,map,mcp', cwd=mapped)
+        july.call('map', {})
+
+        def changed():
+            return [notice['params']['_meta']['io.modelcontextprotocol/subscriptionId'] for notice in july.notices
+                    if notice['method'] == 'notifications/tools/list_changed']
+        deadline = time.monotonic() + 10                                # the stream is written by its own task
+        while not changed() and time.monotonic() < deadline:
+            july.request('ping', {}, deadline=deadline)
+        assert changed() == [listen]
+    finally:
+        july.close()
+
+
+@pytest.mark.req('MCP-017')
+def test_the_install_proof_passes_the_real_server_on_the_july_wire(home, mapped):
+    from metaform.probe import probe
+    proof = probe([sys.executable, '-m', 'metaform', 'mcp', 'serve'], cwd=mapped,
+                  env={**os.environ, 'METAFORM_HOME': str(home)})
+    assert proof.ok and proof.tools >= 2, proof.reason
+    assert proof.instructions.startswith('Metaform MCP server is active.')

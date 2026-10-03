@@ -23,7 +23,7 @@ def intake(store):
         store.add_element(layer.name, 'code.manager.route', name_length=2, role='DE')
         store.add_element(layer.name, 'code.probe.echo', name_length=2, role='SE')
         store.add_join(layer.name, 'code.manager.route', 'code.probe.echo', purpose='Know a route is alive.',
-                       ef='Sends an echo.', relation='The probe checks the route.', observation='ICMP.')
+                       ef='Sends an echo.')
 
 
 @pytest.fixture

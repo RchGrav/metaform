@@ -27,8 +27,8 @@ Started from template 0.2.0.
 - `prompt`: the stored intake text with the project's target filled, then the recording lines: always how to record with the intake tools and the rule to stop and submit a trouble report with `feedback` instead of retrying; the report request when `--report` is on; the feedback request when `--debug` is on. Takes `--report` and `--debug` for one call. Tool `intake_prompt`.
 - `start`: opens the building intake layer, with the model, role, blinded flag and result id the agent gives, or resumes the one being recorded. When the active metaform already has an intake, the new one is recorded in a new metaform `intake-<UTC timestamp>`, which becomes active at the finish. Tool `intake_start`.
 - `element <namespace_address>`: records one element, with optional `role`, `name_length`, `refs` and `extra`, and returns its `element_id`. An element is its address, name_length and role; its name is its address read through name_length. A `name` sent here is kept in the element's `extra` with a notice, since the project's name for a functionality goes on the join. Recording an address again describes it again: the fields given replace the ones it had. Tool `intake_element`.
-- `join <receiver> <provider>`: records one join, with optional `name`, the project's own name for the functionality, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `type`, `refs` and `extra`. Returns its `join_id`. Tool `intake_join`.
-- `subtype <into> <namespace_address>`: records one subtype join inside the parent join `into`, holding the element at `namespace_address`, which it records, or describes again with the `role` and `name_length` given, as `element` does: the absorbed part stays one element record, MAP-030. Optional `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `name`, the subtype join's name, `refs`, the subtype join's, `purpose`, kept in its `extra`, and `extra`. Returns the subtype join's `join_id`, its `parent` and the `element_id` it holds. Tool `intake_subtype`.
+- `join <receiver> <provider>`: records one join, with optional `name`, the project's own name for the functionality, `purpose`, `function`, `ef`, `verb`, `non_goal`, `type`, `refs` and `extra`. Returns its `join_id`. Tool `intake_join`.
+- `subtype <into> <namespace_address>`: records one subtype join inside the parent join `into`, holding the element at `namespace_address`, which it records, or describes again with the `role` and `name_length` given, as `element` does: the absorbed part stays one element record, MAP-030. Optional `function`, `ef`, `verb`, `non_goal`, `name`, the subtype join's name, `refs`, the subtype join's, `purpose`, kept in its `extra`, and `extra`. Returns the subtype join's `join_id`, its `parent` and the `element_id` it holds. Tool `intake_subtype`.
 - `absorb <join> <into>`: anneals: makes the join where an element provides a subtype join inside the parent's purpose join `into`, with the same `join_id` and every field, its purpose among them, and any other join that still names the element is listed in a notice and left as it is. An element whose only joins are subtype joins is no root and no node of the outer map. Tool `intake_absorb`.
 - `show`: the intake being recorded: whole, every element under `element_id` and `namespace_address`, every join under `join_id` with the subtype joins it holds under `subtypes`, and the addresses recorded only as the end of a join and never described; with `receiver=<namespace_address>`, only that receiver's joins, what they hold and the elements they name. Tool `intake_show`.
 - `edit <id>` and `remove <id>`: change or remove one recorded element, by `namespace_address` or `element_id`, or join, by `join_id`, a subtype join's included, while the intake is building. `receiver` and `provider` move a join, which keeps its `join_id`. An element cannot be moved: `namespace_address` given for an element is not applied, and the notice says to record the element at the new address and move its joins; on a subtype join it gives the join another element to hold, and `role` and `name_length` describe the element it holds. After the finish they write nothing and name `metaform map knowledge op=refine`, which changes the metaform in the same layer and keeps every version, LAYER-025. Tools `intake_edit` and `intake_remove`.
@@ -69,7 +69,7 @@ Linux, macOS and Windows.
 
 ## Resources owned
 
-`resources/Canonical_Intake.xml`, a byte copy of `specifications/Canonical_Intake.xml`; a repository test fails when they differ.
+`resources/Intake_2.0.md`, a byte copy of `specifications/Intake_2.0.md`, Intake 2.0, the served intake; a repository test fails when they differ.
 
 ## Installed and direct wheel
 
@@ -82,8 +82,8 @@ metaform intake prompt
 metaform intake start model=opus role="intake agent" id=my-result
 metaform intake element stakeholder.cook.home role=VE name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2
-metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish."
-metaform intake subtype <the join_id intake join returned> code.loop.tick role=SE name_length=2 name="ticker" function="Subtracts one second from each running countdown." ef=Function relation="advances every running countdown" verb=advances
+metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef="tells the cook when a dish is done" verb=tells
+metaform intake subtype <the join_id intake join returned> code.loop.tick role=SE name_length=2 name="ticker" function="Subtracts one second from each running countdown." ef="advances every running countdown" verb=advances
 metaform intake absorb <the join_id of a part's join> <the join_id of its parent's join>
 metaform intake show receiver=stakeholder.cook.home
 metaform intake finish report="The alarm pin is unconnected."

@@ -3,5 +3,6 @@
   {"name": "document", "reading": "document"},
   {"name": "media", "reading": "media"},
   {"name": "data", "reading": "data"},
-  {"name": "stakeholder", "reading": "stakeholder"}
+  {"name": "upstream", "reading": "upstream"},
+  {"name": "downstream", "reading": "downstream"}
 ]

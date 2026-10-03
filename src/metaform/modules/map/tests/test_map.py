@@ -28,10 +28,9 @@ def mapped(run, tmp_path):
         store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
                        purpose='Know when a dish is done.',
-                       ef='Counts down and rings.', relation='The timer tells the cook.',
-                       observation='One countdown per dish.')
+                       ef='Counts down and rings.')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       ef='Plays a tone.', relation='The alarm rings for the timer.', observation='A piezo.')
+                       ef='Plays a tone.')
     return folder
 
 
@@ -115,8 +114,7 @@ def test_a_knowledge_layer_is_built_object_by_object_then_finished(run, mapped, 
                           'value="A mistake."').stdout)
     k(run, mapped, 'op=add-element', 'layer=practices-cpp', 'address=code.watchdog')
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=practices-cpp', 'receiver=code.timer.kitchen',
-                          'provider=code.watchdog', 'purpose=Recover from a hang.', 'ef=Restarts the loop.',
-                          'relation=The watchdog restarts the timer.', 'observation=Not built yet.').stdout)
+                          'provider=code.watchdog', 'purpose=Recover from a hang.', 'ef=Restarts the loop.').stdout)
     k(run, mapped, 'op=edit', 'layer=practices-cpp', f'id={added["item_id"]}', 'value="Prefer steady_clock always."')
     k(run, mapped, 'op=remove', 'layer=practices-cpp', f'id={doomed["item_id"]}')
 
@@ -181,7 +179,7 @@ def test_a_blind_spot_is_answered_and_only_a_person_approves_it(run, mapped):
       *PROVENANCE, 'blinded=true')
     k(run, mapped, 'op=add-element', 'layer=challenge.blind', 'address=code.watchdog')
     k(run, mapped, 'op=add-join', 'layer=challenge.blind', 'receiver=code.timer.kitchen', 'provider=code.watchdog',
-      'purpose=Recover.', 'ef=Restarts.', 'relation=r', 'observation=o')
+      'purpose=Recover.', 'ef=Restarts.')
     challenge = json.loads(k(run, mapped, 'op=add-item', 'layer=challenge.blind', 'node=element:code.watchdog',
                              'value="Nothing recovers a hung loop."').stdout)
     k(run, mapped, 'op=finish', 'layer=challenge.blind')
@@ -269,8 +267,7 @@ def test_a_knowledge_layer_names_an_element_and_a_functionality_on_its_join(run,
     assert element['notices'] == []
     join = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.display.lcd',
                         'provider=code.timer.kitchen', 'name=time left', 'purpose=Show the time left.',
-                        'ef=Reports the time left.', 'relation=The timer feeds the display.',
-                        'observation=An LCD.').stdout)
+                        'ef=Reports the time left.').stdout)
     assert (join['name'], join['extra']) == ('time left', None) and join['notices'] == []
     assert [held.name for held in Store('proj').joins('code.display.lcd', raw=True).results] == ['time left']
 
@@ -410,11 +407,11 @@ def test_a_knowledge_write_missing_a_field_its_record_can_hold_empty_is_stored_w
 
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=bare', 'receiver=code.timer.kitchen',
                           'provider=code.alarm.audible').stdout)
-    empty = ('purpose', 'ef', 'relation', 'observation')
+    empty = ('purpose', 'ef')
     assert said(joined) == [(field, f'{field} is missing; stored empty.') for field in empty]
     stored = {join.join_id: join for join in Store('proj').joins('code.timer.kitchen', raw=True).results}
     assert stored[joined['join_id']].layer == 'bare'
-    assert [getattr(stored[joined['join_id']], field) for field in empty] == [None, None, None, None]
+    assert [getattr(stored[joined['join_id']], field) for field in empty] == [None, None]
 
     item = json.loads(k(run, mapped, 'op=add-item', 'layer=bare', 'node=element:code.timer.kitchen').stdout)
     held = json.loads(k(run, mapped, 'op=add-property', 'layer=bare', 'element=code.timer.kitchen').stdout)
@@ -489,22 +486,20 @@ def test_add_join_and_add_subtype_keep_purpose_ef_and_verb_in_their_own_fields(r
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
                           'provider=code.alarm.audible', 'name=done alarm', 'purpose=Get attention.',
-                          'ef=Plays a tone.', 'perspective=Function', 'relation=rings for the timer', 'verb=rings',
-                          'observation=A piezo.').stdout)
-    assert (joined['name'], joined['perspective'], joined['verb'], joined['extra'], joined['notices']) == (
-        'done alarm', 'Function', 'rings', None, [])
+                          'ef=Plays a tone.', 'verb=rings').stdout)
+    assert (joined['name'], joined['verb'], joined['extra'], joined['notices']) == (
+        'done alarm', 'rings', None, [])
     inside = json.loads(k(run, mapped, 'op=add-subtype', 'layer=notes', f'join={joined["join_id"]}',
                           'address=code.alarm.audible.piezo', 'name=buzzer', 'purpose=Make the end audible.',
-                          'ef=Buzzes.', 'perspective=Encounter',
-                          'relation=buzzes when driven', 'verb=buzzes', 'observation=A disc.').stdout)
-    assert (inside['name'], inside['purpose'], inside['perspective'], inside['verb'], inside['extra'], inside['notices']) == (
-        'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None, [])
+                          'ef=Buzzes.', 'verb=buzzes').stdout)
+    assert (inside['name'], inside['purpose'], inside['verb'], inside['extra'], inside['notices']) == (
+        'buzzer', 'Make the end audible.', 'buzzes', None, [])
     store = Store('proj')
     stored = {join.join_id: join for join in store.joins('code.timer.kitchen', raw=True).results}[joined['join_id']]
-    assert (stored.name, stored.perspective, stored.verb, stored.extra) == ('done alarm', 'Function', 'rings', None)
+    assert (stored.name, stored.verb, stored.extra) == ('done alarm', 'rings', None)
     (subtype,) = store.subtypes(joined['join_id'], raw=True).results
-    assert (subtype.name, subtype.purpose, subtype.perspective, subtype.verb, subtype.extra) == (
-        'buzzer', 'Make the end audible.', 'Encounter', 'buzzes', None)
+    assert (subtype.name, subtype.purpose, subtype.verb, subtype.extra) == (
+        'buzzer', 'Make the end audible.', 'buzzes', None)
 
 
 @pytest.mark.req('BASE-038')
@@ -563,8 +558,7 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     k(run, mapped, 'op=add-element', 'layer=notes', 'address=code.alarm.visual')
     first = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
-                         'provider=code.alarm.visual', 'purpose=See the end.', 'ef=Flashes.', 'relation=r',
-                         'observation=o').stdout)
+                         'provider=code.alarm.visual', 'purpose=See the end.', 'ef=Flashes.').stdout)
     moved = json.loads(k(run, mapped, 'op=edit', 'layer=notes', f'id={first["join_id"]}',
                          'receiver=stakeholder.cook.home').stdout)
     assert moved['notices'] == []
@@ -585,7 +579,7 @@ def test_knowledge_edit_moves_a_join_by_its_receiver_and_absorbs_it_by_its_paren
 def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_never_refused(run, mapped):
     k(run, mapped, 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true', *PROVENANCE)
     joined = json.loads(k(run, mapped, 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen',
-                          'provider=code.alarm.audible', 'purpose=p', 'ef=f', 'relation=r', 'observation=o',
+                          'provider=code.alarm.audible', 'purpose=p', 'ef=f',
                           'refs=[["path", "a.c"], ["line", 12]]').stdout)
     assert joined['refs'] == [{'key': 'path', 'value': 'a.c'}]
     assert joined['extra'] == {'refs': [['line', 12]]}
@@ -605,7 +599,7 @@ def test_a_ref_that_is_not_a_key_and_a_value_both_text_is_kept_in_the_extra_and_
 
 @pytest.fixture
 def described(run, tmp_path):
-    """A registered project whose intake map has a non_goal, a relation for each perspective, a subtype join and paths."""
+    """A registered project whose intake map has a non_goal, relations, a subtype join and paths."""
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -619,24 +613,21 @@ def described(run, tmp_path):
         store.add_element(layer.name, 'code.display.digit', name_length=2, role='SE',
                           refs=[('path', 'src/display.py'), ('spec', 'DISP-001')])
         store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
-                       purpose='Know when a dish is done.', ef='Counts down and rings.', perspective='Encounter',
-                       relation='learns from the timer when a dish is done', observation='One countdown per dish.')
+                       purpose='Know when a dish is done.', ef='learns from the timer when a dish is done')
         store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
-                       ef='Plays a tone.', perspective='Function', relation='rings for the timer',
-                       observation='A piezo.')
+                       ef='rings for the timer')
         join = store.add_join(layer.name, 'code.timer.kitchen', 'code.display.digit', purpose='See the time left.',
-                              ef='Draws four digits from a count of seconds.', perspective='Function',
-                              relation='shows the time left to the timer', verb='shows',
-                              observation='A seven segment panel on pin 4.', non_goal='It keeps no time itself.')
+                              ef='shows the time left to the timer', verb='shows',
+                              non_goal='It keeps no time itself.')
         store.add_subtype(layer.name, join.join_id, 'code.driver.segment', name_length=2, role='SE',
-                          ef='Lights the segments of one digit.', relation='lights each digit',
-                          observation='Multiplexed at 200 Hz.')
+                          ef='lights each digit')
     return folder
 
 
 @pytest.mark.req('MAP-052')
 def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, described):
-    """The document holds what a reader finds its way by, and none of the function or observation text."""
+    """The document holds what a reader finds its way by: each join's ef where it showed the relation, Rich
+    2026-10-02, and the purpose and non_goal."""
     text = run('map', 'markdown', cwd=described).stdout
     for address in ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible', 'code.display.digit'):
         assert f'`{address}`' in text
@@ -645,14 +636,15 @@ def test_the_markdown_document_orients_and_leaves_the_detail_in_the_files(run, d
     assert 'DE' in text and 'CQU' in text
     assert 'Paths: src/display.py' in text and 'DISP-001' not in text
     assert 'kitchen timer receives from digit display' in text
-    assert 'digit display shows the time left to the timer' in text
-    assert 'home cook learns from the timer when a dish is done' in text
+    # Rich, 2026-10-02: no subject rule; ef is shown as written, where the relation was.
+    lines = text.splitlines()
+    assert 'shows the time left to the timer' in lines and 'learns from the timer when a dish is done' in lines
+    assert 'digit display shows' not in text and 'home cook learns' not in text
     assert 'Why: See the time left.' in text and 'Why: Know when a dish is done.' in text
     assert 'Not: It keeps no time itself.' in text
-    assert 'segment driver' in text and 'lights each digit' in text
-    for left_out in ('Draws four digits', 'seven segment panel', 'Counts down and rings', 'One countdown per dish',
-                     'Lights the segments', 'Multiplexed', 'A piezo'):
-        assert left_out not in text
+    assert '- segment driver: lights each digit' in lines and 'rings for the timer' in lines
+    assert text.index('## kitchen timer') < text.index('rings for the timer') < \
+        text.index('shows the time left to the timer') < text.index('## audible alarm')  # each ef under its own join
     assert text.index('home cook') < text.index('## kitchen timer') < text.index('## audible alarm')
 
 
@@ -815,16 +807,26 @@ def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(
 
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('MAP-020')
-def test_refining_a_join_changes_its_perspective_verb_and_ifd(run, mapped):
-    """An intake of Metaform found that knowledge edit and refine dropped perspective and verb, Rich 2026-10-01: if you
-    see issues you can fix them. They change with the rest of a join's fields, and so does its IFD."""
+def test_refining_a_join_changes_its_verb_and_ifd(run, mapped):
+    """An intake of Metaform found that knowledge edit and refine dropped verb, Rich 2026-10-01: if you see issues you
+    can fix them. It changes with the rest of a join's fields, and so does its IFD."""
     from metaform.data import Store
     join = Store('proj').joins('code.timer.kitchen').results[0]
-    refined = json.loads(k(run, mapped, 'op=refine', f'id={join.join_id}', 'perspective=Encounter', 'verb=sounds',
+    refined = json.loads(k(run, mapped, 'op=refine', f'id={join.join_id}', 'verb=sounds',
                            'ifd=sends', 'reason=The alarm is what the timer encounters.').stdout)
-    assert not [notice for notice in refined.get('notices', []) if notice['where'] in ('perspective', 'verb', 'ifd')]
+    assert not [notice for notice in refined.get('notices', []) if notice['where'] in ('verb', 'ifd')]
     now = next(held for held in Store('proj').joins('code.timer.kitchen').results if held.join_id == join.join_id)
-    assert (now.perspective, now.verb, now.ifd) == ('Encounter', 'sounds', 'sends')
+    assert (now.verb, now.ifd) == ('sounds', 'sends')
+
+
+@pytest.mark.req('MAP-020')
+def test_the_map_knowledge_tool_takes_no_perspective():
+    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". Neither add-join, add-subtype, edit
+    nor refine takes one."""
+    from metaform.modules.map import FIELDS, MODULE, READS
+    knowledge = next(verb for verb in MODULE.verbs if verb.name == 'knowledge')
+    assert 'perspective' not in {noun.name for noun in knowledge.nouns}
+    assert 'perspective' not in FIELDS and all('perspective' not in reads for reads in READS.values())
 
 
 @pytest.mark.req('MAP-048')

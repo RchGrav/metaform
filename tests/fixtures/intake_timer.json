@@ -12,10 +12,7 @@
           "provider": "code.timer.kitchen",
           "purpose": "Know when each dish is done without watching the clock.",
           "ef": "The timer counts down each named dish and rings when one reaches zero.",
-          "perspective": "Function",
-          "relation": "The kitchen timer tells the cook when a dish is done.",
           "verb": "tells",
-          "observation": "A kitchen timer counts down a set time.",
           "non_goal": "Plan the meal.",
           "refs": [
             {
@@ -43,10 +40,7 @@
           "provider": "code.alarm.audible",
           "purpose": "Get the cook's attention the moment a countdown ends.",
           "ef": "The alarm plays a tone on the speaker until the cook presses stop.",
-          "perspective": "Encounter",
-          "relation": "The alarm rings for the timer.",
           "verb": "rings",
-          "observation": "A piezo speaker driven by one GPIO pin.",
           "refs": [
             {
               "key": "path",
@@ -61,10 +55,7 @@
             {
               "provider": "code.loop.tick",
               "ef": "tick_all subtracts one second from each running countdown.",
-              "perspective": "Function",
-              "relation": "The tick loop advances every running countdown.",
               "verb": "advances",
-              "observation": "One timer interrupt per second.",
               "element": {
                 "namespace_address": "code.loop.tick",
                 "name_length": 2,

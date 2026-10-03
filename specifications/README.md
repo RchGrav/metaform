@@ -17,7 +17,8 @@
 
 - `REQUIREMENTS.md` and `REQUIREMENTS-corrections.md`: the source requirements, mapped into the spec by `spec/TRACE.md`.
 - `SETTLED.md`: design settled in conversation, carried into the spec.
-- `Canonical_Intake.xml`: the intake procedure, the tested version. The intake module serves a byte copy of it, `src/metaform/modules/intake/resources/Canonical_Intake.xml`, and a test fails when the two differ.
+- `Intake_2.0.md`: the intake procedure, Intake 2.0, the served intake. The intake module serves a byte copy of it, `src/metaform/modules/intake/resources/Intake_2.0.md`, and a test fails when the two differ. Rich, 2026-10-02, asked whether Intake 2.0 should become the served intake: "I think that".
+- `Canonical_Intake.xml`: the previous intake procedure, kept as the previous version and no longer served, BASE-039.
 - `Canonical_Intake_test.xml`: identical to the Canonical Intake until `ef` was added to the Canonical Intake on 2026-09-26, and left as it was then.
 - `Canonical_Intake_old.xml`: the version before, reference only.
 - `Sonnet_Intake.xml`: an intake result used as a reference.

@@ -32,7 +32,7 @@ def build(store) -> World:
     k = knowledge(store, 'k')
     store.add_element(k.name, 'code.k.a')
     store.add_element(k.name, 'code.k.b')
-    k_join = store.add_join(k.name, 'code.k.a', 'code.k.b', purpose='p', ef='f', relation='r', observation='o')
+    k_join = store.add_join(k.name, 'code.k.a', 'code.k.b', purpose='p', ef='f')
     item = store.add_item(k.name, Node('element', 'code.k.a'), 'a note')
     prop = store.add_property(k.name, 'code.k.b', 'a property')
     done = knowledge(store, 'done')
@@ -43,7 +43,7 @@ def build(store) -> World:
     critic = knowledge(store, 'critic')
     store.add_element(critic.name, 'code.watchdog')
     store.add_join(critic.name, 'code.timer.kitchen', 'code.watchdog', purpose='recover from a hang',
-                   ef='restarts the loop', relation='The watchdog restarts the timer.', observation='none yet')
+                   ef='restarts the loop')
     challenge = store.add_item(critic.name, Node('element', 'code.watchdog'), 'Nothing recovers a hung loop.')
     store.finish(critic.name)
     work = store.add_work(Node('element', 'code.k.a'), 'missing', task='build a')
@@ -77,8 +77,7 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
         {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0),
          'address_elements': (1, 0), 'types': (1, 0), 'refs': (1, 0)}),
     'add_join': (lambda s, w: None,
-                 lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f', relation='r',
-                                            observation='o', refs=[('path', 'x')]),
+                 lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f', refs=[('path', 'x')]),
                  {'join_ids': (1, 0), 'identities': (1, 0), 'joins': (1, 0), 'current_joins': (1, 0),
                   'refs': (1, 0)}),
     'add_subtype': (lambda s, w: None,
@@ -93,8 +92,7 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
                       lambda s, w, c: s.edit(w.k_join.join_id, {'receiver': 'code.k.c'}),
                       {'joins': (1, 1), 'current_joins': (1, 1)}),
     'edit parent': (lambda s, w: (s.add_element('k', 'code.k.c'),
-                                  s.add_join('k', 'code.k.a', 'code.k.c', purpose='p', ef='f', relation='r',
-                                             observation='o'))[1],
+                                  s.add_join('k', 'code.k.a', 'code.k.c', purpose='p', ef='f'))[1],
                     lambda s, w, c: s.edit(w.k_join.join_id, {'parent': c.join_id}),
                     {'joins': (1, 1), 'current_joins': (0, 1), 'current_subtypes': (1, 0)}),
     'add_ref': (lambda s, w: None, lambda s, w, c: s.add_ref(w.k_join.join_id, 'path', 'y'), {'refs': (1, 0)}),
@@ -183,7 +181,7 @@ ERRORS: dict[str, tuple[Callable, Callable]] = {
     'add_element unknown layer': (lambda s, w: None, lambda s, w: s.add_element('ghost', 'code.x')),
     'add_join an end that is no element id': (lambda s, w: None,
                                               lambda s, w: s.add_join('k', 'code.k.a', '0' * 32, purpose='p',
-                                                                      ef='f', relation='r', observation='o')),
+                                                                      ef='f')),
     'add_subtype unknown join': (lambda s, w: None,
                                  lambda s, w: s.add_subtype('k', '0' * 32, 'code.k.part', ef='f')),
     'add_subtype inside a subtype join': (
@@ -356,12 +354,10 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'add_element malformed': (lambda s, w: None, lambda s, w: s.add_element('k', 'code..x'), True,
                               lambda s, w, got, before: s.where('code..x', raw=True) is not None),
     'add_join unknown end': (lambda s, w: None,
-                             lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', ef='f',
-                                                     relation='r', observation='o'), True,
+                             lambda s, w: s.add_join('k', 'code.k.a', 'code.nothing', purpose='p', ef='f'), True,
                              lambda s, w, got, before: s.element('code.nothing', raw=True).layer == 'k'),
     'add_join to itself': (lambda s, w: None,
-                           lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', ef='f',
-                                                   relation='r', observation='o'), True,
+                           lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', ef='f'), True,
                            lambda s, w, got, before: got.receiver == got.provider),
     'add_subtype malformed': (lambda s, w: None,
                               lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', ef='f'), True,
@@ -375,7 +371,6 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                                  True, lambda s, w, got, before: _odd_refs(got, [['line', 12]], ('path', 'c.c'))),
     'add_join ref not text': (lambda s, w: None,
                               lambda s, w: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f',
-                                                      relation='r', observation='o',
                                                       refs=[('line', 12), 'loose'], extra={'a': 1}),
                               True, lambda s, w, got, before: _odd_refs(got, [['line', 12], 'loose'], a=1)
                               and 'two were not' in got.notices[0].message),

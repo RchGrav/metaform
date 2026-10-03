@@ -181,9 +181,8 @@ def test_a_refinement_absorbs_a_join_into_its_parents_join(store):
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                ef='Counts down and rings.', relation='r', observation='o')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.',
-                              relation='r', observation='o')
+                                ef='Counts down and rings.')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.')
     store.refine(part.join_id, {'parent': parent.join_id}, reason='the alarm is part of the timer')
     assert [join.join_id for join in store.joins('stakeholder.cook').results] == [parent.join_id]
     held = store.subtypes(parent.join_id).results
@@ -219,7 +218,7 @@ def test_the_finished_metaform_takes_new_joins_and_their_refs(store):
     small_map(store)
     before = layer_names(store)
     added = store.add_join('intake-1', 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it.',
-                           ef='Rings.', relation='The alarm tells the cook.', observation='Loud.')
+                           ef='Rings.')
     assert added.notices == () and added.layer == 'intake-1'
     store.add_ref(added.join_id, 'path', 'src/alarm.c')
     found = {join.join_id: join for join in store.joins('stakeholder.cook.home').results}[added.join_id]
@@ -248,8 +247,7 @@ def test_a_refined_ref_list_keeps_the_old_version_whole(store):
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', relation='r',
-                              observation='o', refs=[('path', 'a'), ('path', 'b')])
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', refs=[('path', 'a'), ('path', 'b')])
     store.refine(join.join_id, {'refs': [('path', 'b')]}, reason='a is stale')
     assert [(ref.key, ref.value) for ref in store.joins('code.a').results[0].refs] == [('path', 'b')]
     first = store.history(join.join_id).results[0]
@@ -263,8 +261,7 @@ def test_extension_fields_survive_a_refinement_that_does_not_touch_them(store):
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', relation='r',
-                              observation='o', extra={'latency_budget': '5 ms'})
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', extra={'latency_budget': '5 ms'})
     store.refine(join.join_id, {'purpose': 'q'}, reason='wording')
     assert store.joins('code.a').results[0].extra == {'latency_budget': '5 ms'}
 
@@ -286,56 +283,13 @@ def test_a_refinement_marks_the_layers_built_from_what_it_changed(store):
 
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('MAP-020')
-def test_a_joins_and_a_subtypes_perspective_is_kept_through_every_refinement_and_move(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'code.a', role='DE')
-        store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Encounter', relation='r',
-                              observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='Function',
-                                 relation='r', observation='o', role='SE')
-    assert (join.perspective, tick.perspective, join.notices, tick.notices) == ('Encounter', 'Function', (), ())
-    store.refine(join.join_id, {'purpose': 'q'}, reason='wording')
-    store.refine(tick.join_id, {'perspective': 'Encounter'}, reason='relabel')
-    kept = store.joins('code.a').results[0]
-    assert (kept.purpose, kept.perspective, store.subtypes(kept.join_id).results[0].perspective) == ('q', 'Encounter', 'Encounter')
-    store.add_element('intake-1', 'code.c', role='DE')
-    store.refine(join.join_id, {'receiver': 'code.c'}, reason='moved')
-    moved = store.history(join.join_id).results[-1]
-    assert (moved.op, moved.fields['perspective']) == ('change', 'Encounter')
-    assert [sub.perspective for sub in store.subtypes(store.joins('code.c').results[0].join_id).results] == ['Encounter']
-
-
-@pytest.mark.req('MAP-020')
-@pytest.mark.req('BASE-044')
-def test_ef_holds_only_function_or_encounter_and_any_other_word_is_kept_in_extra_with_a_notice(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'code.a', role='DE')
-        store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Both', relation='r',
-                              observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='ef',
-                                 relation='r', observation='o', role='SE')
-    assert (join.perspective, join.extra, [notice.where for notice in join.notices]) == (None, {'perspective': 'Both'}, ['perspective'])
-    assert (tick.perspective, tick.extra, [notice.where for notice in tick.notices]) == (None, {'perspective': 'ef'}, ['perspective'])
-    stored = store.joins('code.a').results[0]
-    stored_tick = store.subtypes(stored.join_id).results[0]
-    assert (stored.perspective, stored.extra, stored_tick.perspective, stored_tick.extra) == (None, {'perspective': 'Both'}, None, {'perspective': 'ef'})
-
-
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('MAP-020')
 def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_refinements_and_moves(store):
     with store.atomic():
         base = intake(store)
         store.add_element(base.name, 'code.a', role='DE')
         store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', perspective='Encounter',
-                              relation='People drive the a through the b.', verb='drive', observation='o')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', perspective='Function',
-                                 relation='The tick loop advances every countdown.', verb='advances', observation='o',
+        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', verb='drive')
+        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', verb='advances',
                                  role='SE')
     assert (join.verb, tick.verb, join.notices, tick.notices) == ('drive', 'advances', (), ())
     store.refine(join.join_id, {'purpose': 'q'}, reason='wording')
@@ -358,9 +312,8 @@ def test_a_refinement_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_th
         store.add_element(base.name, 'code.timer', role='DE')
         store.add_element(base.name, 'code.alarm', role='SE')
         parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                ef='Counts down and rings.', relation='r', observation='o')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.',
-                              relation='r', observation='o')
+                                ef='Counts down and rings.')
+        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.')
         piezo = store.add_subtype(base.name, part.join_id, 'code.alarm.piezo', ef='Buzzes.', role='SE',
                                   refs=[('path', 'src/piezo.c')])
     absorbed = store.refine(part.join_id, {'parent': parent.join_id}, reason='the alarm is the timer\'s')
