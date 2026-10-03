@@ -1203,9 +1203,9 @@
        "name": "Canonical Intake",
        "name_length": 2,
        "role": "NE",
-       "function": "Instructs the performing agent through the Digital Typology method: the vested entity rules, the namespace rules with valid and invalid examples, the steps from surveying every member to annealing, and the response schema with ef, nested subtype joins and refs.",
+       "function": "Instructs the performing agent through the Digital Typology method: the CQU entity rules, the namespace rules with valid and invalid examples, the steps from surveying every member to annealing, and the response schema with ef, nested subtype joins and refs.",
        "ef": "Encounter",
-       "relation": "The Canonical Intake tells the intake agent how to find the VE, the DE, the joins and the namespace of the artifact it examines.",
+       "relation": "The Canonical Intake tells the intake agent how to find the CQU, the DE, the joins and the namespace of the artifact it examines.",
        "verb": null,
        "observation": "It is served unchanged except the target element's type and value and any {project_id} placeholder, followed by the submit lines: always the submit and stop-and-report rule, the report request while --report is on, the feedback request while --debug is on. The copy in specifications and the module resource are byte copies; a test fails when they differ.",
        "extra": null,
@@ -1671,7 +1671,7 @@
        "layer_id": "2f6b86ffc49c4575bfdbf0ad2ac712f7",
        "target_kind": "element",
        "target_id": "1ed78de522724bd5ac8a7a8dbe5ec986",
-       "value": "{\"descriptor\": {\"name\": \"agent orchestrator\", \"name_length\": 2, \"role\": \"VE\"}}",
+       "value": "{\"descriptor\": {\"name\": \"agent orchestrator\", \"name_length\": 2, \"role\": \"CQU\"}}",
        "link_kind": null,
        "link_id": null,
        "extra": null,
@@ -1684,7 +1684,7 @@
        "layer_id": "2f6b86ffc49c4575bfdbf0ad2ac712f7",
        "target_kind": "element",
        "target_id": "7a38671345314f36be45fc1bad9bca29",
-       "value": "{\"descriptor\": {\"name\": \"module author\", \"name_length\": 2, \"role\": \"VE\"}}",
+       "value": "{\"descriptor\": {\"name\": \"module author\", \"name_length\": 2, \"role\": \"CQU\"}}",
        "link_kind": null,
        "link_id": null,
        "extra": null,
@@ -2707,12 +2707,12 @@
       {
        "element_id": "1ed78de522724bd5ac8a7a8dbe5ec986",
        "layer_id": "2f6b86ffc49c4575bfdbf0ad2ac712f7",
-       "role": "VE"
+       "role": "CQU"
       },
       {
        "element_id": "7a38671345314f36be45fc1bad9bca29",
        "layer_id": "2f6b86ffc49c4575bfdbf0ad2ac712f7",
-       "role": "VE"
+       "role": "CQU"
       },
       {
        "element_id": "11e6634fce1840b4ad0b593679a14cd4",

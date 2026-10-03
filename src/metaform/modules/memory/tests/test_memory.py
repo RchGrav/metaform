@@ -82,7 +82,7 @@ def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_s
         'delete_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
         'read_graph': {}, 'search_nodes': {'query': text}, 'open_nodes': {'names': texts}}
-    chassis = {'node', 'project', 'layers'}
+    chassis = {'node', 'receiver', 'provider', 'address', 'project', 'layers'}
     assert {name: {key: bare(value) for key, value in shape.items() if key not in chassis}
             for name, shape in shapes.items()} == reference
     assert shapes['create_entities']['entities']['items']['required'] == ['name', 'entityType', 'observations']
@@ -311,8 +311,6 @@ def memory_v1():
 def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_and_note(run, mapped):
     """The memory module's tables change through the public table API's version and upgrade, STORE-045, and every
     memory, relation, join and note written at version 1 is kept."""
-    import sqlite3
-
     from metaform.data.tables import TableTx, ensure, project_store, project_transaction
     declared = memory_v1()
     path = project_store('proj', 'memory')
@@ -339,13 +337,10 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'] == [entity('route', 'part', 'Drifts.', 'Holds.')]
     noted = mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']
     assert (noted['text'], noted['by']) == ('Ask Rich first.', 'user')
-    db = sqlite3.connect(path)
-    try:
+    with project_transaction(path, write=False) as db:  # read through the public table API, never sqlite3, STORE-045
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    finally:
-        db.close()
     assert recorded['version'] == 2
     assert held == {'entities': ['name', 'entity_type', 'seq'], 'observations': ['entity', 'content', 'seq'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
@@ -404,6 +399,50 @@ def test_the_whole_graph_says_of_each_join_whether_its_memory_shows_at_its_node_
     run('clear', 'project', '--confirm', cwd=mapped)  # a join the map no longer holds is orphaned and shows nowhere
     assert {one['entity']: (one['orphaned'], one['shows']) for one in mj(run, 'graph', cwd=mapped)['joins']} == {
         'old': (True, False), 'new': (True, False), 'echo': (True, False)}
+
+
+@pytest.mark.req('STORE-005')
+def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whatever_the_number_of_projects(
+        run, mapped, home, tmp_path, monkeypatch, capsys):
+    """The web page reads the whole graph on every reload. A read's cost follows its answer, STORE-005, so the home's
+    project databases it opens do not grow with the number of projects the home holds: finding one project's folder
+    does not open every other project's database."""
+    from metaform import cli
+    from metaform import home as metaform_home
+    from metaform import sqlite as metaform_sqlite
+    store = Store('proj')
+    join_id = store.joins('code.manager.route').results[0].join_id
+    with store.atomic():
+        store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
+        held = store.add_subtype('intake-1', join_id, 'code.probe.echo.timer', purpose='Time the echo.')
+    for number, node in enumerate((ROUTE, PROBE, f'node=join:{join_id}', f'node=join:{held.join_id}')):
+        mj(run, 'create_entities', J([entity(f'fact {number}', 'fact')]), node, cwd=mapped)
+    opened: list[str] = []
+    real = metaform_sqlite.connect
+
+    def connect(path):
+        if str(path).endswith(metaform_home.PROJECT_DB):
+            opened.append(str(path))
+        return real(path)
+    monkeypatch.setattr(metaform_sqlite, 'connect', connect)  # every chassis database is opened through it
+    monkeypatch.chdir(mapped)
+
+    def graph():
+        opened.clear()
+        assert cli.main(['memory', 'graph', '--json']) == 0
+        said = json.loads(capsys.readouterr().out)
+        return said, len(opened)
+    graph()  # the process's first command also resolves the folder's settings, once
+    alone, few = graph()
+    assert len(alone['joins']) == 4
+    assert few > 0  # the count sees the project's own database, so an equal count is not two zeros
+    for number in range(11):
+        other = tmp_path / f'other-{number}'
+        other.mkdir()
+        metaform_home.add_project(f'other-{number}', other)
+    among, many = graph()
+    assert among == alone
+    assert many == few, f'{few} opens with one project, {many} with twelve'
 
 
 @pytest.mark.req('VIEW-034')
@@ -486,9 +525,11 @@ def test_what_the_memory_layer_held_carries_into_the_graph_and_the_notes_once(ru
                        link=Node('element', 'code.probe.echo'))
         store.add_item(layer, Node('element', 'code.manager.route'), 'Ask Rich before changing it.',
                        extra={'by': 'user'})
+    mj(run, 'create_entities', J([entity('echo timing', 'fact', 'Echoes answer in a second.')]), PROBE, cwd=mapped)
     graph = mj(run, 'read_graph', cwd=mapped)
     assert graph == {'entities': [entity('code.manager.route', 'element', 'Routes drift under load.'),
-                                  entity('code.probe.echo', 'element')],
+                                  entity('code.probe.echo', 'element'),
+                                  entity('echo timing', 'fact', 'Echoes answer in a second.')],
                      'relations': [{'from': 'code.manager.route', 'to': 'code.probe.echo',
                                     'relationType': 'depends_on'}]}
     assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask Rich before changing it.'
@@ -496,3 +537,200 @@ def test_what_the_memory_layer_held_carries_into_the_graph_and_the_notes_once(ru
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'] == [entity('code.manager.route', 'element',
                                                                            'Routes drift under load.')]
     assert len(Store('proj').layer_items('memory', limit=0).results) == 3
+    mj(run, 'delete_observations', J([{'entityName': 'code.manager.route', 'observations': [
+        'Routes drift under load.']}]), cwd=mapped)
+    mj(run, 'create_entities', J([entity('later', 'fact')]), PROBE, cwd=mapped)
+    assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'] == [entity('code.manager.route', 'element')]
+
+
+CARRYING = (('create_entities', J([entity('echo timing', 'fact')]), PROBE),
+            ('create_relations', J([{'from': 'echo seed', 'to': 'echo seed', 'relationType': 'repeats'}])),
+            ('add_observations', J([{'entityName': 'echo seed', 'contents': ['Echoes answer in a second.']}])),
+            ('delete_entities', J(['nothing'])),
+            ('delete_observations', J([{'entityName': 'echo seed', 'observations': ['nothing']}])),
+            ('delete_relations', J([{'from': 'echo seed', 'to': 'echo seed', 'relationType': 'nothing'}])),
+            ('note', 'element:code.probe.echo', 'text=Echo the route.'))
+
+
+@pytest.mark.req('VIEW-011')
+@pytest.mark.req('STORE-020')
+@pytest.mark.parametrize('write', CARRYING, ids=[one[0] for one in CARRYING])
+def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_carries(run, mapped, home, write):
+    mj(run, 'create_entities', J([entity('echo seed', 'fact')]), PROBE, cwd=mapped)
+    store = Store('proj')
+    layer = store.layers(kind='memory').results[0].name
+    with store.atomic():
+        store.add_item(layer, Node('element', 'code.manager.route'), 'Routes drift under load.')
+        store.add_item(layer, Node('element', 'code.manager.route'), 'Ask Rich before changing it.',
+                       extra={'by': 'user'})
+    stores = sorted((home / 'projects').rglob('*.sqlite3'))
+    assert any(path.name == 'memory.sqlite3' for path in stores)
+    before = [path.read_bytes() for path in stores]
+    for verb, *args in (('read_graph',), ('read_graph', ROUTE), ('search_nodes', 'query=drift'),
+                        ('open_nodes', J(['code.manager.route'])), ('joins',), ('joins', ROUTE), ('orphaned',),
+                        ('graph',), ('note', 'element:code.manager.route')):
+        m(run, verb, *args, cwd=mapped)
+    assert sorted((home / 'projects').rglob('*.sqlite3')) == stores
+    assert [path.read_bytes() for path in stores] == before
+    mj(run, *write, cwd=mapped)
+    assert mj(run, 'open_nodes', J(['code.manager.route']), cwd=mapped)['entities'] == [
+        entity('code.manager.route', 'element', 'Routes drift under load.')]
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask Rich before changing it.'
+
+
+REQUIREMENT =('receiver=code.manager.route', 'provider=code.probe.echo')
+
+
+@pytest.mark.req('LAYER-013')
+@pytest.mark.req('MAP-005')
+def test_memory_names_a_requirement_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
+    """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
+    are internal. An agent names a requirement by its receiver and provider, as refine does, and never handles
+    join:<id>."""
+    store = Store('proj')
+    join_id = store.joins('code.manager.route').results[0].join_id
+    with store.atomic():
+        store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
+        part = store.add_subtype('intake-1', join_id, 'code.probe.echo.timer', purpose='Time the echo.')
+        store.add_element('intake-1', 'code.manager.table', name_length=2, role='SE')
+        tabled = store.add_join('intake-1', 'code.manager.route', 'code.manager.table', purpose='Keep the routes.')
+        store.add_element('intake-1', 'code.manager.table.row', name_length=3, role='SE')
+        store.add_subtype('intake-1', tabled.join_id, 'code.manager.table.row', purpose='Hold one route.')
+    # The route manager holds two requirements, so the provider, not the order they are held in, picks one.
+    table = ('receiver=code.manager.route', 'provider=code.manager.table')
+    mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), *REQUIREMENT, cwd=mapped)
+    beside = mj(run, 'create_entities', J([entity('table size', 'fact')]), *table, PROBE, cwd=mapped)
+    assert beside['notices'] == [{'where': 'node', 'message': 'receiver, provider and address name the node; node '
+                                                              'was not read.'}]
+    mj(run, 'create_entities', J([entity('timer drift', 'fact')]), *REQUIREMENT, 'address=code.probe.echo.timer',
+       cwd=mapped)
+    elsewhere = m(run, 'create_entities', J([entity('x', 'fact')]), *REQUIREMENT, 'address=code.manager.table.row',
+                  cwd=mapped, ok=False)
+    assert elsewhere.returncode == 2 and 'code.manager.table.row is not a part inside' in elsewhere.stderr
+    mj(run, 'create_entities', J([entity('route cost', 'fact')]), 'address=code.manager.route', cwd=mapped)
+    assert mj(run, 'read_graph', *REQUIREMENT, cwd=mapped) == mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)
+    assert [one['name'] for one in mj(run, 'read_graph', *REQUIREMENT, cwd=mapped)['entities']] == ['echo timeout']
+    assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{tabled.join_id}', cwd=mapped)['entities']] == [
+        'table size']
+    assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{part.join_id}', cwd=mapped)['entities']] == [
+        'timer drift']
+    assert [one['name'] for one in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities']] == ['route cost']
+    assert [one['name'] for one in mj(run, 'read_graph', PROBE, cwd=mapped)['entities']] == []
+    assert [one['entity'] for one in mj(run, 'joins', *REQUIREMENT, cwd=mapped)['joins']] == ['echo timeout']
+    # note takes node first, Rich 2026-10-03: provider beside it names the requirement node holds as its receiver.
+    written = mj(run, 'note', 'element:code.manager.route', 'provider=code.probe.echo',
+                 'text=The echo is the only liveness check.', cwd=mapped)
+    assert (written['receiver'], written['provider']) == ('code.manager.route', 'code.probe.echo')
+    assert mj(run, 'note', f'join:{join_id}', cwd=mapped)['note']['text'] == 'The echo is the only liveness check.'
+    timed = mj(run, 'note', 'code.manager.route', 'provider=code.probe.echo', 'address=code.probe.echo.timer',
+               'text=Drifts warm.', cwd=mapped)
+    assert (timed['receiver'], timed['provider']) == ('code.manager.route', 'code.probe.echo.timer')
+    assert mj(run, 'note', f'join:{part.join_id}', cwd=mapped)['note']['text'] == 'Drifts warm.'
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note'] is None
+    alone = mj(run, 'note', 'element:code.manager.route', 'address=code.probe.echo.timer', cwd=mapped)
+    assert (alone['address'], alone['note'], alone['notices']) == ('code.manager.route', None, [
+        {'where': 'address', 'message': 'address names a part only with provider; it was not read.'}])
+
+
+@pytest.mark.req('LAYER-013')
+@pytest.mark.req('MAP-005')
+def test_a_requirement_the_map_does_not_hold_or_cannot_tell_apart_is_refused_by_its_addresses(run, mapped):
+    """Nothing is written when the receiver and provider name no requirement, or several with the same two ends; the
+    refusal names them by address and, for several, by their purposes."""
+    unheld = m(run, 'create_entities', J([entity('x', 'fact')]), 'receiver=code.manager.route',
+               'provider=code.nosuch.node', cwd=mapped, ok=False)
+    assert unheld.returncode == 2 and 'code.manager.route has no requirement served by code.nosuch.node' in unheld.stderr
+    half = m(run, 'create_entities', J([entity('x', 'fact')]), 'receiver=code.manager.route', cwd=mapped, ok=False)
+    assert half.returncode == 2 and 'provider' in half.stderr
+    store = Store('proj')
+    with store.atomic():
+        store.add_join('intake-1', 'code.manager.route', 'code.probe.echo', purpose='Measure the route delay.')
+    twice = m(run, 'create_entities', J([entity('x', 'fact')]), *REQUIREMENT, cwd=mapped, ok=False)
+    assert twice.returncode == 2 and 'Know a route is alive.' in twice.stderr and 'Measure the route delay.' in twice.stderr
+    assert mj(run, 'read_graph', cwd=mapped)['entities'] == []
+
+
+@pytest.mark.req('MAP-005')
+def test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id(run, mapped):
+    """What an agent reads of a command: its help on the command line, its MCP schema, which carries each noun's
+    help, a required one's included, and the refusal of a node written wrong. Every command that takes node also takes
+    receiver, provider and address."""
+    from metaform.modules.mcp.server import verb_schema
+    from metaform.modules.memory import MODULE
+    for verb in MODULE.verbs:
+        if verb.name == 'unjoin':  # a memory join's own id, which joins and orphaned give
+            continue
+        assert 'join:<id>' not in run('help', 'memory', verb.name, cwd=mapped).stdout, verb.name
+        schema = verb_schema(verb, mapped)
+        assert 'join:<id>' not in json.dumps(schema), verb.name
+        if 'node' in schema['properties']:
+            named = {'provider', 'address'} if verb.name == 'note' else {'receiver', 'provider', 'address'}
+            assert named <= set(schema['properties']), verb.name
+    wrong = m(run, 'read_graph', 'node=join:', cwd=mapped, ok=False)
+    assert wrong.returncode == 2 and 'join:<id>' not in wrong.stderr
+
+
+@pytest.mark.req('STORE-020')
+@pytest.mark.req('LAYER-013')
+@pytest.mark.parametrize('old_missing', [False, True])
+def test_rekey_transfers_exact_addresses_at_both_ends_and_preserves_the_graph(run, mapped, old_missing):
+    old, new = 'code.manager.route', 'code.manager.table'
+    store = Store('proj', module='memory')
+    with store.atomic():
+        store.add_element('intake-1', new, name_length=2, role='DE')
+        store.add_join('intake-1', new, 'code.probe.echo', purpose='Know the table is alive.')
+    mj(run, 'create_entities', J([entity('routing fact', 'fact', 'Routes drift.')]), ROUTE, cwd=mapped)
+    before_graph = mj(run, 'read_graph', cwd=mapped)
+    keys = [(old, ''), (old, 'code.probe.echo'), ('code.probe.echo', old), (old, old), (old + '.child', '')]
+    with store.tables() as tx:
+        for number, (receiver, provider) in enumerate(keys):
+            if number:
+                tx.insert('joins', {'join_id': str(number), 'entity': 'routing fact',
+                                    'receiver': receiver, 'provider': provider})
+            tx.insert('notes', {'receiver': receiver, 'provider': provider, 'text': f'Note {number}',
+                                'by': 'user', 'at': '2026-10-02T00:00:00Z'})
+    with store.tables(write=False) as tx:
+        before = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}
+    if old_missing:
+        store.refine(store.element(old, raw=True).element_id, remove=True, reason='Replace the old address.')
+        assert any(one.get('address') == old for one in mj(run, 'orphaned', cwd=mapped)['joins'])
+    result = mj(run, 'rekey', old, new, cwd=mapped)
+    assert result == {'old': old, 'new': new, 'joins': 4, 'notes': 4}
+    with store.tables(write=False) as tx:
+        after = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}
+    for table, rows in before.items():
+        expected = [{**row, **{end: new if row[end] == old else row[end] for end in ('receiver', 'provider')}}
+                    for row in rows]
+        def sort_key(row):
+            return row['receiver'], row['provider']
+        assert sorted(after[table], key=sort_key) == sorted(expected, key=sort_key)
+    assert mj(run, 'read_graph', cwd=mapped) == before_graph
+    assert mj(run, 'read_graph', f'address={new}', cwd=mapped) == before_graph
+    assert not any(one.get('address') == old for one in mj(run, 'joins', cwd=mapped)['joins'])
+    assert mj(run, 'read_graph', f'receiver={new}', 'provider=code.probe.echo', cwd=mapped) == before_graph
+    assert mj(run, 'note', f'element:{new}', cwd=mapped)['note'] == {
+        'text': 'Note 0', 'by': 'user', 'at': '2026-10-02T00:00:00Z'}
+    assert where(run, new, mapped)['memory']['note']['text'] == 'Note 0'
+    assert mj(run, 'rekey', old, new, cwd=mapped)['joins'] == 0
+    assert mj(run, 'rekey', new, new, cwd=mapped) == {
+        'old': new, 'new': new, 'joins': 0, 'notes': 0}
+
+
+@pytest.mark.req('STORE-020')
+@pytest.mark.req('STORE-024')
+@pytest.mark.parametrize('collision', ['joins', 'notes'])
+def test_rekey_rolls_back_all_attachments_and_notes_on_a_destination_collision(run, mapped, collision):
+    old, new = 'code.manager.route', 'code.probe.echo'
+    mj(run, 'create_entities', J([entity('routing fact', 'fact')]), ROUTE, cwd=mapped)
+    mj(run, 'note', f'element:{old}', 'text=Keep the old note.', cwd=mapped)
+    if collision == 'joins':
+        mj(run, 'create_entities', J([entity('routing fact', 'fact')]), PROBE, cwd=mapped)
+    else:
+        mj(run, 'note', f'element:{new}', 'text=Keep the destination note.', cwd=mapped)
+    store = Store('proj', module='memory')
+    with store.tables(write=False) as tx:
+        before = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}
+    refused = m(run, 'rekey', old, new, cwd=mapped, ok=False)
+    assert refused.returncode == 2 and 'UNIQUE constraint failed' in refused.stderr
+    with store.tables(write=False) as tx:
+        assert {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')} == before

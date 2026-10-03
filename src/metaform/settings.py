@@ -327,7 +327,9 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
 def describe(folder: Path) -> list[dict[str, Any]]:
     return [{'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
              'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
-             'state': state(key, folder), 'help': setting.help}
+             'state': state(key, folder), 'help': setting.help,
+             **({'choices': list(setting.choices)} if setting.kind == 'select' and isinstance(setting.choices, list)
+                else {})}
             for key, setting in SCHEMA.items()]
 
 

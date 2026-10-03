@@ -106,6 +106,23 @@ def test_feedback_and_reports_run_whatever_the_surface(run, project, user_module
 
 
 @pytest.mark.req('BASE-045')
+@pytest.mark.req('BASE-046')
+def test_public_report_files_remain_usable_with_map_disabled(run, project):
+    first = json.loads(run('feedback', 'Before disabling map.', '--json', cwd=project).stdout)
+    run('disable', 'map', cwd=project)
+    second = json.loads(run('feedback', 'Map is disabled.', 'report=Still report.',
+                            '--json', cwd=project).stdout)
+    names = first['files'] + second['files']
+    assert {row['name'] for row in listed(run, project)} == set(names)
+    assert [row['name'] for row in listed(run, project, 'kind=report')] == [second['files'][1]]
+    for name, content in zip(names, ('Before disabling map.', 'Map is disabled.', 'Still report.'), strict=True):
+        assert run('read', 'report', name, cwd=project).stdout == content
+    missing = run('read', 'report', 'unknown-report.md', cwd=project, ok=False)
+    assert missing.returncode == 2
+    assert missing.stderr.splitlines() == ['Error: No report unknown-report.md.', 'Next: metaform list reports']
+
+
+@pytest.mark.req('BASE-045')
 def test_writes_to_one_file_at_the_same_time_all_survive(home):
     # Eight writers released at once; on Windows, where an append is not one step, sections were lost without a lock.
     import threading

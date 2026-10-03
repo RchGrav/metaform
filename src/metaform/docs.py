@@ -40,7 +40,7 @@ class Switch:
 
 COMMANDS: dict[str, Command] = {}
 SWITCHES: dict[str, Switch] = {}
-ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'read', 'instructions')
+ALWAYS = ('help', 'set', 'unset', 'config', 'feedback', 'read', 'instructions', 'provision')
 
 
 def command(record: Command) -> Command:
@@ -174,7 +174,8 @@ def _here(verb: Verb) -> bool:
     return 'cli' in verb.surfaces and on_this_system(verb)
 
 
-def commands_index(visible: Callable[[str], bool]) -> str:
+def commands_index(visible: Callable[[str], bool], aliases: dict[str, list[str]] | None = None) -> str:
+    """Every command shown here by owner, then each alias as one line naming its modules, CLI-039."""
     from . import loader
     found = [(record.name, record.summary) for record in COMMANDS.values()
              if visible('chassis') or record.name in ALWAYS]
@@ -184,6 +185,8 @@ def commands_index(visible: Callable[[str], bool]) -> str:
             continue
         verbs = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs if _here(verb)]
         lines += [f'{module.id}: {module.summary}', *rows(verbs), '']
+    if aliases:
+        lines += ['Aliases', *rows((name, ', '.join(modules)) for name, modules in aliases.items()), '']
     lines.append("Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.")
     return '\n'.join(lines) + '\n'
 

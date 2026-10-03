@@ -23,15 +23,24 @@ export const HARNESS_RING = {
   hermes: 0x38e0a0, opencode: 0xf5c542, crush: 0xa78bfa, other: 0x7d88b0,
 };
 
-// ---------------------------------------------------------------- random draw
+// ---------------------------------------------------------------- drawn from the id
 
+// A ticket's character comes from its id, so it is the same on every load of the page; two at work at once never
+// share one, the second taking the next free character after its own.
+function spread(text) {
+  let hash = 0x811c9dc5;  // FNV-1a
+  for (const char of String(text)) { hash ^= char.codePointAt(0); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash;
+}
 const assigned = new Map();
-export function drawGlyph(sessionId) {
+// A ticket assigned to an agent's glyph, VIEW-040, is drawn as that glyph; tickets sharing it are one agent's.
+export function drawGlyph(sessionId, own = null) {
+  if (GLYPHS.includes(own)) { assigned.set(sessionId, own); return own; }
   if (assigned.has(sessionId)) return assigned.get(sessionId);
   const inUse = new Set(assigned.values());
-  const free = GLYPHS.filter((g) => !inUse.has(g));
-  const pool = free.length ? free : GLYPHS;
-  const g = pool[Math.floor(Math.random() * pool.length)];
+  const start = spread(sessionId) % GLYPHS.length;
+  const order = GLYPHS.map((_, step) => GLYPHS[(start + step) % GLYPHS.length]);
+  const g = order.find((name) => !inUse.has(name)) ?? order[0];
   assigned.set(sessionId, g);
   return g;
 }

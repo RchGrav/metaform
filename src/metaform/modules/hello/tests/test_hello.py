@@ -418,3 +418,30 @@ def test_node_read_adds_hellos_count_to_the_read_of_its_own_element_and_nothing_
     with Store('proj').atomic():
         Store('proj').add_element('hello.greetings', 'code.module.other')
     assert 'hello' not in json.loads(run('map', 'where', 'code.module.other', '--json', cwd=hello).stdout)
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('STORE-045')
+@pytest.mark.req('QUAL-016')
+def test_work_read_shows_hellos_own_field_on_its_work_record_and_the_store_layout_is_unchanged(run, hello):
+    """Work f6adbefd, 2026-10-03: a module keeps its own fields on a work record, such as a dispatched agent's
+    session id, without changing the store layout. hello keeps how many names it had greeted when a task was written,
+    in its own table keyed by the work id, and `map work id=<id>` shows it under `hello`."""
+    from metaform.data import Node, Store
+    run('hello', 'greet', 'ada', cwd=hello)
+    run('hello', 'greet', 'bob', cwd=hello)
+    said = run('hello', 'todo', 'greet in every language', cwd=hello).stdout.strip()
+    work_id = said.rsplit('(', 1)[1].rstrip(')')
+    run('hello', 'greet', 'cy', cwd=hello)
+    ticket = json.loads(run('map', 'work', f'id={work_id}', '--json', cwd=hello).stdout)
+    assert ticket['work_id'] == work_id and ticket['hello'] == {'greeted': 2}
+    assert 'hello: {"greeted":2}' in run('map', 'work', f'id={work_id}', cwd=hello).stdout.splitlines()
+    with Store('proj', module='hello').tables(write=False) as tx:
+        assert tx.get('todos', {'work_id': work_id}) == {'work_id': work_id, 'greeted': 2}
+    other = Store('proj').add_work(Node('element', 'code.module.hello'), 'flawed', task='not hello\'s own')
+    assert 'hello' not in json.loads(run('map', 'work', f'id={other.work_id}', '--json', cwd=hello).stdout)
+    from metaform.modules.map import TABLES
+    work_table = TABLES.table('work').schema.split('CREATE TABLE IF NOT EXISTS work(')[1].split(');')[0]
+    assert [line.split()[0] for line in work_table.strip().splitlines()] == [
+        'row', 'work_id', 'target_kind', 'target_id', 'condition', 'note', 'task', 'held', 'reviewed', 'created',
+        'done', 'resolution', 'steps', 'steps_done', 'taken', 'taken_by', 'position'], 'the work record layout is unchanged'

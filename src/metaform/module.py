@@ -21,8 +21,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from .errors import Stop
 
 if TYPE_CHECKING:
-    from .data import Node, Store
+    from .data.operations import Data
+    from .data import Node, Store, WorkRecord
     from .data.tables import Tables
+    from .relay import Listener
 
 __all__ = [
     'Context',
@@ -39,6 +41,7 @@ __all__ = [
     'Surface',
     'Verb',
     'VerbFunction',
+    'WorkReadHook',
     'call',
     'context',
     'feedback',
@@ -52,6 +55,7 @@ __all__ = [
     'setting_value',
     'surface',
     'tool_arguments',
+    'work_reads',
 ]
 
 VERB_NAME = re.compile(r'^[a-z][a-z0-9_-]*$')
@@ -66,6 +70,7 @@ Handler = Callable[[dict[str, Any], 'Context'], Any]  # a subscriber: the payloa
 Hook = Callable[['Context'], Any]  # start and stop, BASE-018
 StatusHook = Callable[['Context'], 'Status | Awaitable[Status]']  # what status and the instructions add
 NodeReadHook = Callable[['Context', 'Node'], Any]  # what a module adds to the read of a node, or None, BASE-035
+WorkReadHook = Callable[['Context', 'WorkRecord'], Any]  # what a module keeps on a work record, or None, BASE-035
 
 
 @dataclass(frozen=True)
@@ -155,7 +160,9 @@ class Module:
     status: StatusHook | None = None
     default: str | None = None  # the verb `metaform <id>` runs when no verb follows, BASE-035
     tables: Tables | None = None  # the module's own tables, reached through ctx.store.tables(), STORE-045
+    data: Data | None = None  # module-owned DAO operations, record contributions and cleanup
     node_read: NodeReadHook | None = None  # what the module adds to `map where` and `map node` of a node, BASE-035
+    work_read: WorkReadHook | None = None  # what the module keeps on a work record, shown in `map work id=`, BASE-035
 
 
 @dataclass
@@ -201,6 +208,12 @@ class Context:
         """Publish from an async verb; subscribers run without blocking this loop, BASE-009."""
         from . import events
         return await events.publish_async(topic, payload or {}, self)
+
+    def listen(self, handler: Callable[[dict[str, Any]], Any]) -> Listener:
+        """Hear each `map.changed` published in another process of this home, in this module's long-running process;
+        the handler runs in the listener's own thread. Close the listener when the process is done, BASE-053."""
+        from . import relay
+        return relay.listen(self.module, handler)
 
     def spawn(self, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Start a task owned by this module; unload, reload and shutdown cancel it, BASE-018."""
@@ -275,6 +288,26 @@ def node_reads(folder: Path, node: Node, *, project: str | None = None,
             ctx = contexts.build(module.id, folder, project=project,
                                  switches={'layers': list(layers)} if layers else None)
             got = call(module.node_read, ctx, node)
+        except Exception as error:  # noqa: BLE001  a failing hook is named in the read, which goes on
+            got = {'failed': f'{type(error).__name__}: {error}'}
+        if got is not None:
+            found[module.id] = got
+    return found
+
+
+def work_reads(folder: Path, record: WorkRecord, *, project: str | None = None) -> dict[str, Any]:
+    """What each module on the folder's command surface keeps on one work record, under the module's id, in module
+    id order, BASE-035. A module keeps its fields in its own tables keyed by the work id, STORE-045, so the work
+    table's layout never changes for them. Each hook gets a context of its own module with the call's project and
+    returns plain data or None for nothing. A hook that raises adds `{'failed': '<ExceptionType>: <message>'}` and
+    the read goes on."""
+    from . import context as contexts
+    found: dict[str, Any] = {}
+    for module in surface(folder):
+        if module.work_read is None:
+            continue
+        try:
+            got = call(module.work_read, contexts.build(module.id, folder, project=project), record)
         except Exception as error:  # noqa: BLE001  a failing hook is named in the read, which goes on
             got = {'failed': f'{type(error).__name__}: {error}'}
         if got is not None:

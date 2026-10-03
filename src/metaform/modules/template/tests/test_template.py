@@ -58,3 +58,5 @@ def test_template_declares_node_read_empty_and_hello_demonstrates_it(home):
     written = keywords('template')
     assert isinstance(written.get('node_read'), ast.Constant) and written['node_read'].value is None
     assert 'node_read' in keywords('hello') and declaration('hello').MODULE.node_read is not None
+    assert isinstance(written.get('work_read'), ast.Constant) and written['work_read'].value is None
+    assert 'work_read' in keywords('hello') and declaration('hello').MODULE.work_read is not None

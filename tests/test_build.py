@@ -74,6 +74,8 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
 
 @pytest.mark.req('BASE-042')
 @pytest.mark.req('BASE-024')
+@pytest.mark.req('BASE-025')
+@pytest.mark.req('STORE-030')
 def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
     folder = tmp_path / 'proj'
@@ -84,10 +86,16 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     (tmp_path / 'user').mkdir()
     status = subprocess.run([sys.executable, '-I', str(wheel)], cwd=folder, env=env, capture_output=True, text=True, encoding='utf-8')
     assert status.returncode == 0, status.stderr
-    wheel_home = tmp_path / 'user' / '.metaform' / 'wheels'
-    assert f'Home: {wheel_home}' in status.stdout
+    normal = tmp_path / 'user' / '.metaform'
+    assert f'Home: {normal}' in status.stdout.splitlines()
     subprocess.run([sys.executable, '-I', str(wheel), 'add', 'project', 'proj', str(folder)], cwd=folder, env=env,
                    check=True, capture_output=True)
+    # Metaform as installed in this environment, run without the wheel, reads the same data folder.
+    installed = subprocess.run([sys.executable, '-m', 'metaform', 'list', 'projects'], cwd=tmp_path, env=env,
+                               capture_output=True, text=True, encoding='utf-8')
+    assert installed.returncode == 0, installed.stderr
+    assert 'proj' in installed.stdout.split()
+    assert not (normal / 'wheels').exists()
     layers = subprocess.run([sys.executable, '-I', str(wheel), 'query', 'layers'], cwd=folder, env=env,
                             capture_output=True, text=True, encoding='utf-8')
     assert layers.returncode == 0, layers.stderr
@@ -110,6 +118,59 @@ def test_the_wheel_installs_with_pip(run, tmp_path):
     assert result.returncode == 0, result.stderr
     version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8')
     assert version.stdout.startswith('metaform ')
+
+
+@pytest.mark.req('BASE-041')
+def test_a_build_names_the_copy_it_packs(run):
+    _, out = build(run)
+    import metaform
+    assert f'Packed from: {Path(metaform.__file__).parent}' in out.splitlines()
+
+
+@pytest.mark.req('BASE-041')
+def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(run, home, tmp_path):
+    wheel, _ = build(run, 'mcp', 'memory', 'intake', 'web')
+    environment = tmp_path / 'venv'
+    subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
+    python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
+    result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
+                            capture_output=True, text=True, encoding='utf-8')
+    assert result.returncode == 0, result.stderr
+    installed = Path(subprocess.run([str(python), '-c', 'import metaform; print(metaform.__file__)'],
+                                    capture_output=True, text=True, encoding='utf-8', check=True).stdout.strip()).parent
+    checkout = tmp_path / 'checkout'
+    (checkout / 'src').mkdir(parents=True)
+    (checkout / 'pyproject.toml').write_text('[project]\nname = "metaform"\n', encoding='utf-8')
+    import shutil
+    # A checkout as it is in the repository: no _vendor, a tests folder in each module, and modules not carried.
+    shutil.copytree(installed, checkout / 'src' / 'metaform', ignore=shutil.ignore_patterns('__pycache__', '_vendor'))
+    inside = checkout / 'src' / 'metaform' / 'modules'
+    (inside / 'map' / 'tests').mkdir()
+    (inside / 'map' / 'tests' / 'test_map.py').write_text('# a test the wheel never carries\n', encoding='utf-8')
+    (inside / 'web').mkdir()
+    (inside / 'web' / '__init__.py').write_text('# a module this build does not carry\n', encoding='utf-8')
+
+    def installed_build():
+        done = subprocess.run([str(python), '-m', 'metaform', 'build'], cwd=inside, capture_output=True, text=True,
+                              encoding='utf-8', env={**os.environ, 'METAFORM_HOME': str(home)})
+        assert done.returncode == 0, done.stdout + done.stderr
+        lines = done.stdout.splitlines()
+        wheels = [Path(line.split(':', 1)[1].strip()) for line in lines if line.startswith('Wheel:')]
+        assert len(wheels) == 1, done.stdout
+        return lines, wheels[0]
+
+    lines, _ = installed_build()
+    assert f'Packed from: {installed}' in lines
+    assert not [line for line in lines if line.startswith('Not packed:')]
+    (checkout / 'src' / 'metaform' / 'cli.py').write_text('# changed in the checkout\n', encoding='utf-8')
+    (inside / 'map' / 'added.py').write_text('', encoding='utf-8')
+    lines, wheel = installed_build()
+    assert f'Packed from: {installed}' in lines
+    assert (f'Not packed: the checkout at {checkout} differs from that copy in 2 files. '
+            f'To pack the checkout, run uv run metaform build in {checkout}.') in lines
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.read('metaform/cli.py') == (installed / 'cli.py').read_bytes()
+        assert 'metaform/modules/map/added.py' not in archive.namelist()
 
 
 @pytest.mark.req('BASE-041')

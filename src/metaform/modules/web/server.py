@@ -8,7 +8,10 @@ URL as `?t=`, then in a cookie the page load sets, or in the
 `X-Metaform-Token` header. The server writes its record to `run/web.json`
 once it listens, then says so on the pipe `metaform web` gave it as standard
 output, and its loop waits in `select` with no timeout, waking only for a
-connection; the stop signal ends the process, QUAL-015.
+connection; the stop signal ends the process, QUAL-015. It hears each
+`map.changed` published in another process through the base's listener, and
+each of its own writes' changes from `changes.announce`, and pushes both to
+every open page, BASE-053 and VIEW-018.
 """
 from __future__ import annotations
 
@@ -16,12 +19,10 @@ import argparse
 import base64
 import hashlib
 import hmac
-import ipaddress
 import json
 import os
 import queue
 import re
-import shlex
 import socket
 import socketserver
 import subprocess
@@ -35,10 +36,10 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
-from metaform import changes, home, outline, query, results, settings
+from metaform import changes, home, loader, outline, query, relay, results, settings
 from metaform import module as chassis
 from metaform.context import toggled_for
-from metaform.data import Node, Outcome, Store, prompts
+from metaform.data import Node, Outcome, Page, Store, WorkRecord, prompts
 from metaform.data.records import COLUMNS, TICKETS, plain
 from metaform.errors import Stop, StoreError
 
@@ -99,6 +100,13 @@ class Server(ThreadingHTTPServer):
             return host.rsplit(':', 1)[-1] == str(self.port) and ':' in host
         return host in self.hosts
 
+    def changed(self, payload: dict[str, Any]) -> int:
+        """Push one `map.changed` to every open page, VIEW-018 and BASE-053; a change to a project no longer registered,
+        such as the removal of one, is not pushed, since a page has nothing of it to read."""
+        if home.project(str(payload.get('project', ''))) is None:
+            return 0
+        return self.push({'topic': 'map.changed', 'payload': payload})
+
     def push(self, event: dict[str, Any]) -> int:
         """Hand one event to every open page's stream, VIEW-018."""
         with self.listening:
@@ -141,8 +149,6 @@ class Handler(BaseHTTPRequestHandler):
         given = self.given_token(query)
         if self.gui.token is not None and not (given and hmac.compare_digest(given, self.gui.token)):
             return self.send(403, {'error': 'This request needs the token that metaform web prints.'})
-        if method == 'POST' and url.path == '/api/notify':
-            return self.notify()
         if method == 'POST':
             return self.write(url.path)
         if url.path == '/api/events':
@@ -158,6 +164,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.remove_preview(query.get('project', [''])[-1])
         if url.path == '/api/backups':
             return self.backups(query.get('project', [''])[-1])
+        if url.path == '/api/dispatch-sessions':
+            return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/dispatch-prompts':
+            return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/markdown':
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
@@ -192,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': f'Nothing for {name} here, in these layers.'})
         if name == 'node':
             found = with_modules(given, found)
+        if name == 'work':
+            found = with_glyphs(given, found)
         self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def memory_read(self, name: str, given: dict[str, str]) -> None:
@@ -217,21 +229,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404 if isinstance(error, StoreError) else 400,
                              {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.reply(200, text.encode('utf-8'), 'text/markdown; charset=utf-8', {'Cache-Control': 'no-store'})
-
-    def notify(self) -> None:
-        """A module's event, handed over by the web module's subscriber in the publishing process, VIEW-018. Only
-        a process on this machine holding the server's nonce, which is in its run file, can hand one over."""
-        data = self.rfile.read(int(self.headers.get('Content-Length') or 0))
-        if not local(self.client_address[0]) or not hmac.compare_digest(self.headers.get('X-Metaform-Nonce') or '',
-                                                                        self.gui.nonce):
-            return self.send(403, {'error': "Events are taken only from this machine, with the server's nonce."})
-        try:
-            event: Any = json.loads(data or b'null')
-        except ValueError:
-            return self.send(400, {'error': 'The event is not JSON.'})
-        if not isinstance(event, dict):
-            return self.send(400, {'error': 'An event is a JSON object with its topic and payload.'})
-        self.send(200, {'pages': self.gui.push(cast(dict[str, Any], event))})
 
     def events(self) -> None:
         """One open page's stream of what modules publish, held open. Its thread sleeps until an event comes and
@@ -259,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.listeners.discard(waiting)
 
     def write(self, path: str) -> None:
-        """One of the fifteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
+        """One of the eighteen writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         origin = self.headers.get('Origin')
         if origin is None or origin.lower() != f'http://{self.headers.get("Host", "")}'.lower():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
@@ -267,12 +264,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
-                  '/api/answer': self.answer_question, '/api/read': self.read_note, '/api/task': self.give_work,
+                  '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work,
                   '/api/element': self.add_part, '/api/restore': self.restore,
-                  '/api/note': self.add_note, '/api/move': self.move_ticket,
+                  '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/dispatch-stop': self.dispatch_stop}
+                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -282,10 +279,14 @@ class Handler(BaseHTTPRequestHandler):
         given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
         try:
             writes[path](given)
-        finally:  # announced as a command's write is: map.changed on the module event bus, VIEW-018 and BASE-010.
-            # The web module's own subscriber hands it back to this server, which pushes it to every open page.
+        finally:  # announced as a command's write is: map.changed on the module event bus, VIEW-018 and BASE-010,
+            # and pushed to every open page from what was announced; a change made in another process reaches this
+            # server through the base's listener instead, BASE-053. A module enabled or disabled since this server
+            # started is loaded or dropped first.
+            loader.follow_enabled()
             project = home.project(str(given.get('project', '')))
-            changes.announce(Path(project.path) if project is not None else home.home(), 'web')
+            for payload in changes.announce(Path(project.path) if project is not None else home.home(), 'web'):
+                self.gui.changed(dict(payload))
 
     def save_prompt(self, given: dict[str, Any]) -> None:
         """Save an edited prompt as its next version, edited from `parent`; no version ever changes, VIEW-013."""
@@ -362,6 +363,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, plain(done))
 
+    def reopen_question(self, given: dict[str, Any]) -> None:
+        """Reopen a question the person answered by mistake, so it waits again with its suggestions, MAP-050 and
+        VIEW-021. Only an answered question is reopened from the page."""
+        record = str(given.get('id', ''))
+        try:
+            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            with store.atomic():
+                answered = [found for found in store.messages(None, 'question', False, limit=0).results
+                            if found.message_id == record]
+                if not answered:
+                    return self.send(400, {'error': 'This is not an answered question.'})
+                done = store.reopen(record)
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.send(200, plain(done))
+
     def read_note(self, given: dict[str, Any]) -> None:
         """Mark a note read, which ends its record, VIEW-030. Only an unread note is read from the page."""
         record = str(given.get('id', ''))
@@ -411,17 +428,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
         self.send(200, {'results': plain([moved])})
 
+    def distribute_tickets(self, given: dict[str, Any]) -> None:
+        """Give the tickets not done and not taken the glyphs of N agents, in turn, VIEW-040, with the map module's
+        `map work op=distribute`, which keeps them in its own table, STORE-045, and refuses an N it has no glyphs
+        for."""
+        agents = given.get('agents')
+        if not isinstance(agents, int) or isinstance(agents, bool):
+            return self.send(400, {'error': 'Work is distributed over a whole number of agents.'})
+        try:
+            given_out = module_verb(given, 'map', 'work', {'op': 'distribute', 'agents': agents}, chosen=True)
+        except (Stop, StoreError) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.reply(200, results.as_json(given_out).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
     def add_part(self, given: dict[str, Any]) -> None:
         """Add an element a person describes and join it to a node, in the layer of what people add by hand, and
-        start an agent to validate it when asked to, VIEW-033. The element is on the map at once, as a part not
-        built, with the validation as its open task."""
+        make its validation ticket when asked to, VIEW-033. The page starts that ticket through ACP dispatch. The
+        element is on the map at once, as a part not built, with the validation as its open task."""
         address, anchor = given.get('address'), given.get('node')
         if not isinstance(address, str) or not address.strip():
             return self.send(400, {'error': 'An element has an address.'})
         if not isinstance(anchor, str) or given.get('receives') not in ('node', 'new'):
             return self.send(400, {'error': 'An element is joined to a node, and one of the two holds the purpose.'})
-        project = home.project(str(given.get('project', '')))
-        notices: list[dict[str, str]] = []
         try:
             store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
             with store.atomic():
@@ -440,11 +468,7 @@ class Handler(BaseHTTPRequestHandler):
                     work = store.edit_work(work.work_id, {'task': validation(made.address)})
         except (Stop, StoreError) as error:
             return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
-        if given.get('validate') is True and project is not None and work.task:
-            told = started_agent(Path(project.path), work.task)
-            if told:
-                notices.append({'where': 'agent', 'message': told})
-        self.send(200, {'element': plain(made), 'join': plain(joined), 'work': plain(work), 'notices': notices})
+        self.send(200, {'element': plain(made), 'join': plain(joined), 'work': plain(work)})
 
     def backups(self, project: str) -> None:
         """The project's backups, the newest first, PROJ-030."""
@@ -517,6 +541,56 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'An agent is stopped by the work id of its ticket.'})
         self.dispatched(given, 'stop', [work_id])
+
+    def dispatch_sessions(self, given: dict[str, str]) -> None:
+        """The agent sessions and their threads, from the dispatch module's own tables, VIEW-039 and VIEW-036. With
+        dispatch not enabled there are none."""
+        try:
+            nouns: dict[str, Any] = {'id': given['id']} if given.get('id') else {}
+            if given.get('thread') == 'false':
+                nouns['thread'] = False
+            found = module_verb(given, 'dispatch', 'sessions', nouns)
+        except Stop:
+            return self.send(200, {'sessions': [], 'lines': []})
+        except StoreError as error:
+            return self.send(404, {'error': str(error), 'next': error.next_step})
+        self.reply(200, results.as_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def dispatch_prompts(self, project_id: str) -> None:
+        """How agents' permission prompts are answered, as the settings hold it, with its choices, VIEW-039: read from
+        `metaform config` in the project's folder, so dispatch enabled after this server started is found."""
+        project = home.project(project_id)
+        if project is None:
+            return self.send(404, {'error': f'No project {project_id} is registered.', 'next': 'metaform list projects'})
+        done = subprocess.run([sys.executable, '-m', 'metaform', 'config', '--json'], cwd=project.path,
+                              capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
+                              timeout=DISPATCH_LIMIT)
+        try:
+            found = next((entry for entry in json.loads(done.stdout) if entry.get('key') == 'dispatch_prompts'), None)
+        except ValueError:
+            found = None
+        if found is None:
+            return self.send(400, {'error': 'Agent prompts are a setting of the dispatch module, which is not enabled.',
+                                   'next': 'metaform enable dispatch'})
+        self.send(200, {'value': found['value'], 'choices': found.get('choices', [])})
+
+    def set_dispatch_prompts(self, given: dict[str, Any]) -> None:
+        """Set how agents' permission prompts are answered, as `metaform set --dispatch-prompts` sets it, so the choice
+        is kept in the settings and every agent reads it at its next prompt, VIEW-039 and BASE-052."""
+        project, value = home.project(str(given.get('project', ''))), given.get('value')
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        if not isinstance(value, str) or not value:
+            return self.send(400, {'error': 'Agent prompts are set to one of their choices.'})
+        done = subprocess.run([sys.executable, '-m', 'metaform', 'set', f'--dispatch-prompts={value}'], cwd=project.path,
+                              capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
+                              timeout=DISPATCH_LIMIT)
+        if done.returncode == 0:
+            return self.send(200, {'value': value})
+        said = (done.stderr + done.stdout).strip().splitlines()
+        self.send(400, {'error': next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said)),
+                        'next': next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)})
 
     def dispatched(self, given: dict[str, Any], verb: str, nouns: list[str], text: str | None = None) -> None:
         """Run one dispatch verb as `metaform dispatch` runs it in the project's folder, and answer with its result,
@@ -595,16 +669,6 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
 
-def local(address: str) -> bool:
-    """Whether a client address is this machine's loopback, an IPv4 one seen through an IPv6 socket included."""
-    try:
-        found = ipaddress.ip_address(address.split('%', 1)[0])
-    except ValueError:
-        return False
-    mapped = getattr(found, 'ipv4_mapped', None)
-    return (mapped or found).is_loopback
-
-
 def _versions(given: dict[str, str]) -> dict[str, Any]:
     """Every version of a prompt, newest first, each with the layers it made."""
     return {'versions': [{**cast(dict[str, Any], plain(version)),
@@ -635,24 +699,6 @@ VALIDATE = ('Orient yourself only enough to validate the coherence of this eleme
 
 def validation(address: str) -> str:
     return f'{VALIDATE} The element is {address}.'
-
-
-def started_agent(folder: Path, task: str) -> str | None:
-    """Start the agent the `agent_command` setting names, in the project's folder, with the task as its last
-    argument, and do not wait for it. Returns what to tell the person when it could not be started."""
-    command = str(settings.value('agent_command', folder) or '').strip()
-    waits = 'The task waits on the element for an agent to take it.'
-    if not command:
-        return f'No agent command is set. {waits}'
-    parts = shlex.split(command, posix=os.name != 'nt')
-    apart: dict[str, Any] = ({'creationflags': getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)} if os.name == 'nt'
-                             else {'start_new_session': True})
-    try:
-        subprocess.Popen([*parts, task], cwd=folder, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, **apart)
-    except OSError as error:
-        return f'{parts[0]} could not be started: {error.strerror or error}. {waits}'
-    return None
 
 
 def memory_step(step: Any) -> bool:
@@ -686,14 +732,42 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
     return data
 
 
-def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dict[str, Any]) -> Any:
+def with_glyphs(given: dict[str, str], found: Any) -> Any:
+    """A work read's records, each with the glyph the map module keeps on it under `map`, as `map work` shows it,
+    VIEW-040 and BASE-035: one `map work` list of the metaform's tickets, run through the map module, which keeps the
+    glyphs in its own table, STORE-045. With map not on the surface the records are returned as they are. A field a
+    record holds already is never replaced."""
+    if not isinstance(found, Page):
+        return found
+    page = cast(Page[WorkRecord], found)
+    try:
+        listed = plain(module_verb(given, 'map', 'work', {'limit': 0}, chosen=True))
+    except (Stop, StoreError):
+        return page
+    held = {one['work_id']: one['map'] for one in listed['results'] if 'map' in one}
+    if not held:
+        return page
+    shown: list[dict[str, Any]] = []
+    for record in page.results:
+        data = record.to_dict()
+        if record.work_id in held:
+            data.setdefault('map', held[record.work_id])
+        shown.append(data)
+    return {**page.to_dict(), 'results': shown}
+
+
+def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dict[str, Any], *,
+                chosen: bool = False) -> Any:
     """Run one command of a module on the project folder's surface, as a tool call runs it: its arguments checked as
-    the command line checks them, a context for the project with the page's layers, on the surface `web`. A module
-    that is not on the surface is named with its next step."""
+    the command line checks them, a context for the project with the page's layers, on the surface `web`; with
+    chosen, on the metaform the page chose, as `opened` reads it. A module that is not on the surface is named with
+    its next step. A module enabled or disabled since this server started is loaded or dropped first, so a read follows
+    the surface as the command line left it, VIEW-040."""
     project = home.project(str(given.get('project', '')))
     if project is None:
         raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
     folder = Path(project.path)
+    loader.follow_enabled()
     found = next((one for one in chassis.surface(folder) if one.id == module_id), None)
     verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
     if verb is None:
@@ -702,6 +776,9 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
     switches['layers'] = chosen_layers(given, folder)
     ctx = chassis.context(module_id, folder, project=project.project_id, nouns=nouns, switches=switches,
                           sink=lambda text: None, surface='web')
+    if chosen and given.get('metaform'):
+        ctx.store = Store(project.project_id, toggled=switches['layers'], metaform=str(given['metaform']),
+                          module=module_id)
     return chassis.call(verb.run, ctx)
 
 
@@ -729,8 +806,10 @@ def main(argv: list[str] | None = None) -> int:
               f'{host_port(given.bind, given.port)}: {error}', file=sys.stderr, flush=True)
         return 1
     server.record()
+    # Each map.changed published in another process, a command, the MCP server or a runner, reaches every open page.
+    listener = relay.listen('web', server.changed)
     ready(server)
-    with server:
+    with server, listener:
         # Wakes only for a connection, QUAL-015; the stop signal ends the process, so nothing checks for shutdown.
         # The stubs type poll_interval as float; the standard library hands it to select, where None is no timeout.
         server.serve_forever(poll_interval=None)  # type: ignore[arg-type]

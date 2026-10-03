@@ -12,7 +12,8 @@ from metaform.data.schema import STORE_SCHEMA
 # version's op, reason and evidence, and extra.
 DESIGN = {'type', 'parent', 'receiver', 'provider', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal'}
 STORE_OWN = {'row', 'join_id', 'layer_id', 'extra', 'op', 'reason', 'evidence'}
-TOOL_OWN = {'into', 'namespace_address', 'role', 'name_length', 'refs', 'extra', 'condition', 'note'}
+TOOL_OWN = {'parent_receiver', 'parent_provider', 'namespace_address', 'role', 'name_length', 'refs', 'extra', 'condition',
+            'note'}
 
 
 @pytest.mark.kind('fixture')
@@ -24,6 +25,6 @@ def test_a_join_has_only_the_fields_the_design_names():
     assert columns - STORE_OWN == DESIGN, f'join columns beyond the design: {sorted(columns - STORE_OWN - DESIGN)}'
     from metaform.modules.intake import MODULE
     for verb in MODULE.verbs:
-        if verb.name in ('join', 'subtype'):
+        if verb.name in ('add_requirement', 'subtype'):
             fields = {noun.name for noun in verb.nouns} - TOOL_OWN
             assert fields <= DESIGN, f'intake {verb.name} takes fields beyond the design: {sorted(fields - DESIGN)}'

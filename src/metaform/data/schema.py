@@ -1,4 +1,4 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 12.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 16.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 An element is its address, name_length and role, STORE-009, and it cannot be
@@ -9,9 +9,8 @@ every address the store has held, so an element recorded again at its address is
 the same element, STORE-009. A join's identity holds only its id, so it can be
 moved, MAP-003. A subtype join is a row of `joins` with a parent join, and its
 current row is in `current_subtypes`, never in `current_joins`, which every read of
-the element graph uses, STORE-011. `work` holds the work records, the condition of
-an object kept apart from the map and attached to no layer, STORE-042. One index
-is added beyond the section's own: `elements_by_address`, for the history of one
+the element graph uses, STORE-011. Feature tables are declared by their modules.
+One index is added beyond the section's own: `elements_by_address`, for the history of one
 address, STORE-005. A thing keeps every version it was given in its layer, so the
 metaform is refined in its own intake layer, LAYER-025: no thing is unique per
 layer, and `<table>_by_id` reads a thing's versions in order.
@@ -115,7 +114,7 @@ CREATE TABLE IF NOT EXISTS joins(
   row         INTEGER PRIMARY KEY,
   join_id     TEXT NOT NULL REFERENCES join_ids(join_id),
   layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-  type        TEXT NOT NULL DEFAULT 'purpose',
+  type        TEXT NOT NULL DEFAULT 'require',
   parent      TEXT REFERENCES join_ids(join_id),
   receiver    TEXT REFERENCES element_ids(element_id),
   provider    TEXT NOT NULL REFERENCES element_ids(element_id),
@@ -177,7 +176,9 @@ CREATE TABLE IF NOT EXISTS items(
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
-  evidence    TEXT
+  evidence    TEXT,
+  read_first  INTEGER NOT NULL DEFAULT 0,
+  always_show INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS items_by_id ON items(item_id, row);
 CREATE TABLE IF NOT EXISTS current_items(
@@ -236,85 +237,4 @@ CREATE TABLE IF NOT EXISTS selections(
 );
 CREATE INDEX IF NOT EXISTS selections_by_layer ON selections(layer_id);
 
-CREATE TABLE IF NOT EXISTS challenge_states(
-  item_id   TEXT PRIMARY KEY,
-  state     TEXT NOT NULL CHECK(state IN ('A','B','C','plan')),
-  link_kind TEXT CHECK(link_kind IN ('element','join')),
-  link_id   TEXT,
-  answered  TEXT NOT NULL,
-  approved  TEXT
-);
-CREATE INDEX IF NOT EXISTS challenge_states_by_state ON challenge_states(state);
-CREATE TABLE IF NOT EXISTS plans(
-  element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
-  join_id    TEXT REFERENCES join_ids(join_id),
-  layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
-  source     TEXT NOT NULL CHECK(source IN ('direct','approved')),
-  item_id    TEXT
-);
-CREATE INDEX IF NOT EXISTS plans_by_layer ON plans(layer_id);
-
-CREATE TABLE IF NOT EXISTS work(
-  row         INTEGER PRIMARY KEY,
-  work_id     TEXT NOT NULL UNIQUE,
-  target_kind TEXT NOT NULL,
-  target_id   TEXT NOT NULL,
-  condition   TEXT NOT NULL,
-  note        TEXT,
-  task        TEXT,
-  held        INTEGER NOT NULL DEFAULT 0,
-  reviewed    INTEGER NOT NULL DEFAULT 0,
-  created     TEXT NOT NULL,
-  done        TEXT,
-  resolution  TEXT,
-  steps       INTEGER,
-  steps_done  INTEGER NOT NULL DEFAULT 0,
-  taken       TEXT,
-  taken_by    TEXT,
-  position    INTEGER
-);
-CREATE TABLE IF NOT EXISTS work_links(
-  work_id     TEXT NOT NULL REFERENCES work(work_id),
-  number      INTEGER NOT NULL,
-  target_kind TEXT NOT NULL,
-  target_id   TEXT NOT NULL,
-  PRIMARY KEY(work_id, number)
-);
-CREATE TABLE IF NOT EXISTS work_steps(
-  row     INTEGER PRIMARY KEY,
-  work_id TEXT NOT NULL REFERENCES work(work_id),
-  number  INTEGER NOT NULL,
-  said    TEXT,
-  at      TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS work_steps_by_work ON work_steps(work_id, number);
-CREATE TABLE IF NOT EXISTS messages(
-  row         INTEGER PRIMARY KEY,
-  message_id  TEXT NOT NULL UNIQUE,
-  target_kind TEXT NOT NULL,
-  target_id   TEXT NOT NULL,
-  kind        TEXT NOT NULL,
-  text        TEXT,
-  suggestions TEXT,
-  by          TEXT,
-  created     TEXT NOT NULL,
-  closed      TEXT,
-  answer      TEXT
-);
-CREATE INDEX IF NOT EXISTS messages_by_target ON messages(target_kind, target_id, row);
-CREATE INDEX IF NOT EXISTS messages_by_closed ON messages(closed, row);
-CREATE INDEX IF NOT EXISTS work_by_target ON work(target_kind, target_id, row);
-CREATE INDEX IF NOT EXISTS work_by_condition ON work(condition, row);
-CREATE INDEX IF NOT EXISTS work_by_done ON work(done, row);
-
-CREATE TABLE IF NOT EXISTS reports(
-  report_id TEXT PRIMARY KEY,
-  run_id    TEXT NOT NULL,
-  layer_id  TEXT REFERENCES layers(layer_id),
-  kind      TEXT NOT NULL CHECK(kind IN ('report','feedback','shape')),
-  created   TEXT NOT NULL,
-  size      INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS reports_by_layer ON reports(layer_id, kind);
-CREATE INDEX IF NOT EXISTS reports_by_time ON reports(created, report_id);
 """

@@ -8,8 +8,10 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Generic, Literal, NamedTuple, TypeVar, cast
 
+from .. import home
 from ..errors import StoreError
 
 NodeKind = Literal['element', 'join', 'type']
@@ -206,6 +208,8 @@ class Item(Record):
     extra: dict[str, Any] | None = None
     state: str | None = None
     orphaned: bool = False
+    read_first: bool = False
+    always_show: bool = False
     notices: tuple[Notice, ...] = ()
 
 
@@ -355,7 +359,8 @@ class Where(Record):
     at it, as `node` gives them; and the properties that apply at its address and those visible there, as `context`
     gives them, LAYER-005, so one read holds what reaches the part. Kind `join` is the read of a join, or of a subtype
     join with the join holding it, which a ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out
-    unless `full`, all but each ticket's work id, which an agent needs to take it."""
+    unless `full`, all but each ticket's work id, which an agent needs to take it, and each open message's message id,
+    which an agent needs to answer it."""
     kind: str
     element: Element | None = None
     subtype: Subtype | None = None
@@ -368,6 +373,7 @@ class Where(Record):
     applying: tuple[Property, ...] = ()
     visible: tuple[Property, ...] = ()
     messages: tuple[Message, ...] = ()  # the open questions and unread messages at it, MAP-050
+    past_work: tuple[PastWork, ...] = ()  # references only; the log is read by work id, MAP-051
 
     def to_dict(self) -> dict[str, Any]:
         held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
@@ -378,7 +384,7 @@ class Where(Record):
                     'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
                     'layers': plain(self.layers),
                     'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
-                    'messages': plain(self.messages)}
+                    'messages': plain(self.messages), 'past_work': plain(self.past_work)}
         data: dict[str, Any] = {'kind': self.kind}
         if self.element is not None:
             data['element'] = small(plain(self.element))
@@ -393,7 +399,12 @@ class Where(Record):
                             'join': self._join(held['join'], 'receiver', 'provider')}
         if self.work:
             data['work'] = [{'work_id': record.work_id, **small({'condition': record.condition, 'note': record.note,
-                                                                 'task': record.task})} for record in self.work]
+                                                                 'task': record.task, 'taken': record.taken,
+                                                                 'taken_by': record.taken_by,
+                                                                 'age_seconds': record.age_seconds})}
+                            for record in self.work]
+        if self.past_work:
+            data['past_work'] = plain(self.past_work)
         if self.layers:
             data['layers'] = small(plain(self.layers))
         reaching = {name: [{'value': one.value, 'address': one.address, 'layer': one.layer} for one in found]
@@ -401,8 +412,9 @@ class Where(Record):
         if reaching:
             data['properties'] = reaching
         if self.messages:
-            data['messages'] = [small({'kind': one.kind, 'text': one.text, 'suggestions': list(one.suggestions),
-                                       'by': one.by}) for one in self.messages]
+            data['messages'] = [{'message_id': one.message_id, **small({'kind': one.kind, 'text': one.text,
+                                                                       'suggestions': list(one.suggestions),
+                                                                       'by': one.by})} for one in self.messages]
         return data
 
     @staticmethod
@@ -533,6 +545,21 @@ class Step(Record):
     at: str
 
 
+def _age(at: str) -> int:
+    """Seconds since a stored UTC timestamp, calculated on read rather than stored."""
+    return max(0, int((datetime.fromisoformat(home.now()) - datetime.fromisoformat(at)).total_seconds()))
+
+
+@dataclass(frozen=True)
+class PastWork(Record):
+    """A completed ticket's reference and age; reading it by work_id retrieves its log, MAP-051."""
+    work_id: str
+    done: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), 'age_seconds': _age(self.done)}
+
+
 @dataclass(frozen=True)
 class WorkRecord(Record):
     """The condition of one object, apart from the map, STORE-042: an element with its address, or a join with its
@@ -566,20 +593,32 @@ class WorkRecord(Record):
         """Its column on the board: done, doing once taken, backlog while held, and to do otherwise."""
         return 'done' if self.done else 'doing' if self.taken else 'backlog' if self.held else 'todo'
 
+    @property
+    def age_seconds(self) -> int | None:
+        """Age since completion for past work, or since take for a task still held, MAP-049 and MAP-051."""
+        at = self.done or self.taken
+        return None if at is None else _age(at)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), 'age_seconds': self.age_seconds}
+
 
 @dataclass(frozen=True)
 class Ticket(Record):
     """One ticket read by its id with what the map holds at its node and at each node it links, MAP-048: the where
     read of each, which carries its refs, its open work and its open questions. `at` is None when its node is not in
-    context, and so is a linked node's read. Its plain data is the ticket's own fields with `at` and `linked`."""
+    context, and so is a linked node's read. `read_first` holds the items flagged read_first those reads show, read
+    before the task, LAYER-021. Its plain data is the ticket's own fields with `read_first`, `at` and `linked`."""
     work: WorkRecord
     at: Where | None = None
     linked: tuple[Where | None, ...] = ()
     notices: tuple[Notice, ...] = ()
+    read_first: tuple[Item, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         data = plain(self.work)
         data['notices'] = [*plain(self.notices), *data.get('notices', [])]
+        data['read_first'] = plain(self.read_first)
         data['at'] = plain(self.at)
         data['linked'] = plain(self.linked)
         return data

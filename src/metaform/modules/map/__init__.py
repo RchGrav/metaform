@@ -8,14 +8,19 @@ in context. `knowledge` is the one read-write verb for layers, LAYER-018.
 """
 from __future__ import annotations
 
+import re
+
 import dataclasses
 import json
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
-from metaform.data import PLACE_KINDS, Node, Notice, Page, Store
-from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads
+from metaform.data import PLACE_KINDS, Column, Node, Notice, Page, Store, Table, Tables, WorkRecord
+from metaform.data.records import TICKETS
+from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads, work_reads
+
+from .storage import DATA, FEATURE_TABLES, legacy_fold, legacy_upgrade
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -28,7 +33,7 @@ settings.boolean('tasks', True, help='Assign and track work on the map like a ka
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 # What edit and refine change; ifd and verb among them, which were dropped before, an intake found.
 FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
-          'name', 'name_length', 'role', 'value', 'link', 'element', 'refs')
+          'name', 'name_length', 'role', 'value', 'link', 'element', 'refs', 'read_first', 'always_show')
 
 
 def _node(text: str) -> Node:
@@ -83,6 +88,19 @@ def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
     if found is None or not added:
         return found
     data = cast(dict[str, Any], found.to_dict())
+    for module, value in added.items():
+        data.setdefault(module, value)
+    return data
+
+
+def _with_work_modules(ctx: Context, found: Any) -> Any:
+    """A ticket's read with modules' memories at its nodes and their fields on the work record, MAP-048 and
+    BASE-035; a field the read holds already is never replaced."""
+    added = work_reads(ctx.folder, found.work, project=ctx.project)
+    data = cast(dict[str, Any], found.to_dict())
+    data['at'] = _with_modules(ctx, found.at, Node.of(found.work.kind, found.work.id))
+    data['linked'] = [_with_modules(ctx, read, Node.of(link.kind, link.id))
+                      for link, read in zip(found.work.links, found.linked)]
     for module, value in added.items():
         data.setdefault(module, value)
     return data
@@ -235,7 +253,8 @@ def _need(ctx: Context, *names: str, verb: str = 'knowledge') -> None:
     missing = [name for name in names if name not in ctx.nouns]
     if missing:
         op = ctx.nouns.get('op')
-        raise Stop(f'{verb} op={op} needs {", ".join(missing)}.', f'metaform help map {verb}')
+        said = f'{verb} op={op}' if op is not None else verb
+        raise Stop(f'{said} needs {", ".join(missing)}.', f'metaform help map {verb}')
 
 
 def _empty(ctx: Context, notices: list[Notice], *names: str, empty: Any = None) -> list[Any]:
@@ -270,12 +289,11 @@ READS: dict[str, frozenset[str]] = {
     'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'ifd', 'verb',
                               'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
-    'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra'}),
+    'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra', 'read_first', 'always_show', 'task', 'condition'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
     'add-plan': frozenset({'element', 'join'}),
     'edit': frozenset({'id', *FIELDS}),
     'remove': frozenset({'id'}),
-    'refine': frozenset({'id', 'reason', 'evidence', 'remove', *FIELDS}),
     'finish': frozenset(),
     'discard': frozenset(),
 }
@@ -285,7 +303,7 @@ READS: dict[str, frozenset[str]] = {
 NEEDS: dict[str, tuple[str, ...]] = {
     'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'provider'),
     'add-subtype': ('join', 'address'), 'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
-    'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',), 'refine': ('id',),
+    'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',),
     'finish': ('layer',), 'discard': ('layer',),
 }
 # The operations that name their thing by id, so a missing layer is named in a notice and the call goes ahead.
@@ -324,9 +342,119 @@ def _with_notices(result: Any, notices: list[Notice]) -> Any:
     return dataclasses.replace(result, notices=(*notices, *getattr(result, 'notices', ())))
 
 
+STORE_ID = re.compile(r'\b[0-9a-f]{32}\b')
+REFINE_FIELDS = ('name', 'name_length', 'role', 'refs', 'extra', 'purpose', 'ef', 'ifd', 'verb', 'non_goal')
+NAMING = ('receiver', 'provider', 'address')
+
+
+def _said_as(store: Store, thing: str) -> str:
+    """What an agent calls a thing the store names by id: an element by its address, a requirement by the element that
+    requires and the element that serves it, a part by its address inside its requirement."""
+    found = store.element(thing, raw=True)
+    if found is not None:
+        return found.address
+    versions = store.history(thing, limit=0).results
+    fields = versions[-1].fields if versions else {}
+    def at(ref: Any) -> str:
+        element = store.element(str(ref), raw=True) if ref else None
+        return element.address if element is not None else str(ref)
+    if fields.get('parent'):
+        return f"{at(fields.get('provider'))} inside {_said_as(store, str(fields['parent']))}"
+    if fields.get('receiver'):
+        return f"the requirement of {at(fields['receiver'])} served by {at(fields.get('provider'))}"
+    return thing
+
+
+def _in_words(store: Store, value: Any) -> Any:
+    """A result with every store id said as the agent names the thing, MAP-005."""
+    if isinstance(value, str):
+        return STORE_ID.sub(lambda match: _said_as(store, match.group(0)), value)
+    if isinstance(value, dict):
+        return {key: _in_words(store, item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_in_words(store, item) for item in value]
+    return value
+
+
+def _requirements(store: Store, receiver: Any, provider: Any) -> list[Any]:
+    owner = store.element(str(receiver), raw=True)
+    if owner is None:
+        return []
+    return [held for held in store.joins(owner.element_id, limit=0).results if held.provider_address == provider]
+
+
+def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = False) -> Any:
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        notices.append(Notice('requirement', f'There is no {what} in the metaform; nothing was changed.'))
+    else:
+        named = '; '.join(repr(item.purpose) for item in found) if purposes else str(len(found))
+        notices.append(Notice('requirement', f'{len(found)} of {what} cannot be told apart by their addresses, '
+                                             f'with the purposes {named}; nothing was changed.'))
+    return None
+
+
+def refine(ctx: Context) -> Any:
+    """Refine the metaform: one element, requirement or part changed or removed as its newest version in the
+    metaform's own layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an
+    element by its address, a requirement by the element that requires and the element that serves it, and a part by
+    its address inside that requirement, MAP-005. It is a verb of its own, apart from knowledge, because it changes the
+    metaform and no knowledge layer. Nothing is refused for its content, BASE-044."""
+    nouns = ctx.nouns
+    if not any(name in nouns for name in NAMING):
+        raise Stop('refine needs address, or receiver and provider, to name what it changes.',
+                   'metaform help map refine')
+    store = _store(ctx)
+    notices: list[Notice] = []
+    (reason,) = _empty(ctx, notices, 'reason')
+    changes: dict[str, Any] = {name: nouns[name] for name in REFINE_FIELDS if name in nouns}
+    thing: str | None = None
+    if 'receiver' in nouns or 'provider' in nouns:
+        said = f"the requirement of {nouns.get('receiver')} served by {nouns.get('provider')}"
+        held = _one(_requirements(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
+        if held is not None and 'address' in nouns:
+            parts = [item for item in store.subtypes(held.join_id, limit=0).results if item.address == nouns['address']]
+            part = _one(parts, f"{nouns['address']} inside {said}", notices)
+            thing = part.join_id if part is not None else None
+            if 'to_address' in nouns:
+                changes['provider'] = nouns['to_address']
+        elif held is not None:
+            thing = held.join_id
+            changes.update({column: nouns[noun] for noun, column in (('to_receiver', 'receiver'),
+                                                                     ('to_provider', 'provider')) if noun in nouns})
+            if 'parent_receiver' in nouns or 'parent_provider' in nouns:
+                parent = _one(_requirements(store, nouns.get('parent_receiver'), nouns.get('parent_provider')),
+                              f"the requirement of {nouns.get('parent_receiver')} served by "
+                              f"{nouns.get('parent_provider')}", notices, purposes=True)
+                thing = thing if parent is not None else None
+                if parent is not None:
+                    changes['parent'] = parent.join_id
+    else:
+        element = store.element(str(nouns['address']), raw=True)
+        if element is None:
+            notices.append(Notice('address', f"{nouns['address']} is not an element of the metaform; nothing was "
+                                             'changed.'))
+        else:
+            thing = element.element_id
+            if 'to_address' in nouns:
+                changes['address'] = nouns['to_address']
+    named = {name: nouns[name] for name in NAMING if name in nouns}
+    if thing is None:
+        return {**named, 'notices': [notice.to_dict() for notice in notices]}
+    made = store.refine(thing, changes, remove=bool(nouns.get('remove')), reason=reason,
+                        evidence=nouns.get('evidence'))
+    told = [*notices, *getattr(made, 'notices', ())]
+    told = [Notice('to_address' if notice.where == 'address' and 'to_address' in nouns else notice.where,
+                   notice.message) for notice in told]
+    fields = cast(dict[str, Any], getattr(made, 'fields', {}))
+    kept = {key: value for key, value in fields.items() if key not in ('join_id', 'element_id', 'layer_id', 'row')}
+    return _in_words(store, {**named, 'op': getattr(made, 'op', None), 'layer': getattr(made, 'layer', None),
+                             'fields': kept, 'notices': [notice.to_dict() for notice in told]})
+
+
 def knowledge(ctx: Context) -> Any:
-    """Create, build, edit and finish a knowledge layer, and refine the metaform, one object per call, LAYER-018 and
-    LAYER-025. Nothing is
+    """Create, build, edit and finish a knowledge layer, one object per call, LAYER-018. Nothing is
     refused for its content; only a field in NEEDS stops a call, before anything is written, BASE-038 and BASE-044."""
     op = ctx.nouns.get('op')
     if op is None:
@@ -383,7 +511,8 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'add-item':
         (value,) = _empty(ctx, notices, 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
-        return store.add_item(name, _node(nouns['node']), value, link=link, **_optional(ctx, 'refs', 'extra'))
+        return store.add_item(name, _node(nouns['node']), value, link=link,
+                              **_optional(ctx, 'refs', 'extra', 'read_first', 'always_show', 'task', 'condition'))
     if op == 'add-ref':
         key, value = _empty(ctx, notices, 'key', 'value', empty='')
         if not isinstance(value, str):
@@ -397,10 +526,6 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'remove':
         thing = nouns['id']
         return store.remove(int(thing) if str(thing).isdigit() else thing)
-    if op == 'refine':
-        (reason,) = _empty(ctx, notices, 'reason')
-        return store.refine(nouns['id'], _changes(ctx), remove=bool(nouns.get('remove')), reason=reason,
-                            evidence=nouns.get('evidence'))
     if op == 'finish':
         return store.finish(name)
     if op == 'discard':
@@ -414,7 +539,7 @@ def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] |
 
 KNOWLEDGE_NOUNS = (
     _noun('op', 'create, add-element, add-join, add-subtype, add-property, add-item, add-ref, add-plan, edit, remove, '
-                'refine, finish or discard.'),
+                'finish or discard.'),
     _noun('layer', 'The layer this call works on, by name or id. An object added without one goes to a new layer '
                    'named unnamed-<time>.'),
     _noun('variable', 'create: the one question the layer answers.'),
@@ -432,7 +557,7 @@ KNOWLEDGE_NOUNS = (
                   'the element, the one a subtype join holds included.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
     _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
-                     'the subtype join holds. An element cannot be moved: edit and refine do not apply it.'),
+                     'the subtype join holds. An element cannot be moved: edit does not apply it.'),
     _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element. '
                   "add-join: the project's own name for the functionality the join names. add-subtype: both, for the "
                   'subtype join and the element it holds.'),
@@ -440,11 +565,11 @@ KNOWLEDGE_NOUNS = (
           'int'),
     _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
     _noun('extra', 'A JSON object of further fields.', 'json', {'type': 'object'}),
-    _noun('receiver', 'add-join: the element that holds the purpose; edit and refine: another receiver, which moves '
+    _noun('receiver', 'add-join: the element that holds the purpose; edit: another receiver, which moves '
                       'the join.'),
-    _noun('provider', 'add-join: the element whose function serves it; edit and refine: another provider, or on a '
+    _noun('provider', 'add-join: the element whose function serves it; edit: another provider, or on a '
                       'subtype join another element to hold.'),
-    _noun('parent', 'edit and refine: the id of a join held by a receiver; the join becomes a subtype join inside '
+    _noun('parent', 'edit: the id of a join held by a receiver; the join becomes a subtype join inside '
                     'it, keeping its purpose.'),
     _noun('purpose', 'add-join and add-subtype: the Operative Purpose; a subtype join keeps its own purpose.'),
     _noun('ef', "add-join and add-subtype: the Encounter Function."),
@@ -453,38 +578,98 @@ KNOWLEDGE_NOUNS = (
     _noun('verb', 'add-join and add-subtype: the verb ef opens with, third-person singular present tense, ending in '
                   '-s or -es.'),
     _noun('non_goal', 'add-join and add-subtype: what the receiver does not seek.'),
-    _noun('type', 'add-join: the join type, purpose by default.'),
+    _noun('type', 'add-join: the join type, require by default.'),
     _noun('join', 'add-subtype: the id of the join the subtype join sits in; add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
     _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
     _noun('node', 'add-item: element:<address or id> or join:<id>, a subtype join being a join.'),
     _noun('link', 'add-item: a node the item links to.'),
+    _noun('read_first', 'add-item and edit: the item is read before the task.', 'bool'),
+    _noun('always_show', 'add-item and edit: the item is always shown.', 'bool'),
+    _noun('task', 'add-item: the item is a task; it adds a ticket at its node, and the flag is not stored on the item.',
+          'bool'),
+    _noun('condition', "add-item with task: the ticket's kind, missing, broken, flawed or enhancement."),
     _noun('owner', 'add-ref: the id of the thing the ref belongs to.'),
     _noun('key', 'add-ref: the ref key.'),
-    _noun('id', 'edit, remove and refine: the id of the thing.'),
-    _noun('reason', 'refine: why.'),
-    _noun('evidence', 'refine: what shows it.'),
-    _noun('remove', 'refine: remove the thing from the metaform instead of changing it; its versions are kept.',
-          'bool'),
+    _noun('id', 'edit and remove: the id of the thing.'),
+)
+# What each field means when refine changes it, apart from the knowledge operations that write it first.
+REFINE_WORDS = {
+    'address': "An element's address cannot change: given for an element, it is not applied.",
+    'name': "The project's own name for the element or the join's functionality.",
+    'name_length': "How many trailing segments form the element's short name.",
+    'role': 'DE, SE, NE, CQU or AUE.',
+    'refs': 'A JSON list of [key, value] pairs, in order.',
+    'extra': 'A JSON object of further fields.',
+    'receiver': 'Another receiver, which moves the join.',
+    'provider': 'Another provider, or on a subtype join another element to hold.',
+    'parent': 'The id of a join held by a receiver; the join becomes a subtype join inside it, keeping its purpose.',
+    'purpose': 'The Operative Purpose.',
+    'ef': 'The Encounter Function.',
+    'ifd': 'IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. receives: EF to OP. '
+           'both: equal need.',
+    'verb': 'The verb ef opens with, third-person singular present tense, ending in -s or -es.',
+    'non_goal': 'What the receiver does not seek.',
+    'type': 'The join type.',
+    'element': 'The element, by address or id.',
+    'value': 'The value, as JSON.',
+    'link': 'A node the item links to.',
+}
+
+
+def _refined_noun(noun: Noun) -> Noun:
+    return Noun(noun.name, REFINE_WORDS[noun.name], kind=noun.kind, required=False, schema=noun.schema)
+
+
+REFINE_NOUNS = (
+    _noun('receiver', 'A requirement: the element that requires it, by address.'),
+    _noun('provider', 'A requirement: the element that serves it, by address.'),
+    _noun('address', 'An element, by address; with receiver and provider, the part at that address inside the '
+                     'requirement.'),
+    _noun('reason', 'Why.'),
+    _noun('evidence', 'What shows it.'),
+    _noun('remove', 'Remove it from the metaform instead of changing it; its versions are kept.', 'bool'),
+    _noun('to_receiver', 'A requirement: its new receiver, by address; it moves and stays the same requirement.'),
+    _noun('to_provider', 'A requirement: its new provider, by address.'),
+    _noun('to_address', 'A part: another element for it to hold, by address. An element cannot be moved: given for an '
+                        'element, it is not applied.'),
+    _noun('parent_receiver', 'A requirement placed inside another: the receiver of the requirement it goes inside.'),
+    _noun('parent_provider', 'A requirement placed inside another: the provider of the requirement it goes inside.'),
+    *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
 )
 
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
-    'list': frozenset({'node', 'condition', 'open', 'limit', 'after'}),
+    'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'open', 'limit', 'after'}),
     'read': frozenset({'id'}),
-    'add': frozenset({'node', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
-    'edit': frozenset({'id', 'condition', 'note', 'task', 'held', 'reviewed', 'links'}),
+    'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held', 'reviewed',
+                      'links'}),
+    'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held',
+                       'reviewed', 'glyph', 'links'}),
     'done': frozenset({'id', 'resolution'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
     'plan': frozenset({'id', 'steps'}),
     'step': frozenset({'id', 'said'}),
+    'distribute': frozenset({'agents'}),
 }
-WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
+WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')  # the chassis work record's own, STORE-042
+
+# The agent glyphs a ticket is assigned to, VIEW-040: the sixteen characters the page draws, in the order of GLYPHS in
+# the web page's agents3d.js. Tickets with the same glyph signify one agent doing them one at a time.
+AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp', 'comet', 'beetle', 'slime',
+                'plane', 'puffer', 'owl', 'cubebot', 'mushroom')
+
+# The map module's own tables, STORE-045: `glyphs` keeps the agent glyph each ticket is assigned to, keyed by the work
+# id, beside the map as the work records are, so the chassis work table holds no glyph, BASE-046 and ticket 90430bba.
+TABLES = Tables(version=2, legacy_upgrade=legacy_upgrade, legacy_fold=legacy_fold, tables=(*FEATURE_TABLES,
+    Table('glyphs', place='metaform', key=('work_id',),
+          columns=(Column('work_id', required=True), Column('glyph', required=True))),
+))
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
-WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'read': ('id',), 'add': ('node',), 'edit': ('id',), 'done': ('id',),
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'read': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
                                           'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
-                                          'move': ('id', 'column')}
+                                          'move': ('id', 'column'), 'distribute': ('agents',)}
 
 
 def _work_node(value: Any) -> Node:
@@ -494,15 +679,52 @@ def _work_node(value: Any) -> Node:
     return Node('element', str(value))
 
 
+def _named(store: Store, given: dict[str, Any], notices: list[Notice]) -> Node | None:
+    """The node a call names by address, MAP-005: a requirement by its receiver and provider, a part by its address
+    inside it, an element by its address; or the node noun as written. A node noun given beside them is named in a
+    notice as not read."""
+    if 'receiver' in given or 'provider' in given or 'address' in given:
+        if 'node' in given:
+            notices.append(Notice('node', 'receiver, provider and address name the node; node was not read.'))
+        if 'receiver' in given or 'provider' in given:
+            return store.requirement(given.get('receiver'), given.get('provider'), given.get('address'))
+        return Node('element', str(given['address']))
+    return _work_node(given['node']) if 'node' in given else None
+
+
+def _link(store: Store, value: Any) -> Node:
+    """A node a ticket links: written as a node, or as an object of receiver, provider and address."""
+    if isinstance(value, dict):
+        found = _named(store, cast(dict[str, Any], value), [])
+        if found is not None:
+            return found
+    return _work_node(value)
+
+
+def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
+    """The node ask and tell name, node first, Rich 2026-10-03: an element by its address, or with provider beside it
+    the requirement it holds as receiver, and with address the part at that address inside it, MAP-005."""
+    if 'provider' not in nouns:
+        if 'address' in nouns:
+            notices.append(Notice('address', 'address names a part only with provider; it was not read.'))
+        return _work_node(nouns['node'])
+    node = str(nouns['node'])
+    receiver = node.partition(':')[2] if node.startswith('element:') else node
+    return store.requirement(receiver, nouns['provider'], nouns.get('address'))
+
+
 def ask(ctx: Context) -> Any:
     """Ask the user a question at a node, in plain words, with the answers you suggest, MAP-050."""
-    return _store(ctx).ask(_work_node(ctx.nouns['node']), ctx.nouns['question'],
-                           suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by'))
+    store, notices = _store(ctx), list[Notice]()
+    return _with_notices(store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'],
+                                   suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by')), notices)
 
 
 def tell(ctx: Context) -> Any:
     """Leave the user a message at a node, which asks for nothing and waits to be read, MAP-050."""
-    return _store(ctx).tell(_work_node(ctx.nouns['node']), ctx.nouns['message'], by=ctx.nouns.get('by'))
+    store, notices = _store(ctx), list[Notice]()
+    return _with_notices(store.tell(_held(store, ctx.nouns, notices), ctx.nouns['message'], by=ctx.nouns.get('by')),
+                         notices)
 
 
 def reply(ctx: Context) -> Any:
@@ -510,20 +732,39 @@ def reply(ctx: Context) -> Any:
     return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'))
 
 
+def reopen(ctx: Context) -> Any:
+    """Reopen a question answered by mistake, so it waits again with its suggestions, MAP-050."""
+    return _store(ctx).reopen(ctx.nouns['id'])
+
+
 def messages(ctx: Context) -> Any:
-    """The questions and messages left for the user, oldest first, MAP-050."""
+    """List questions and messages, or move one to another node, preserving its answer and state, MAP-050."""
     nouns = ctx.nouns
+    op = str(nouns.get('op', 'list'))
+    if op not in ('list', 'move'):
+        raise Stop(f'{op!r} is not a messages operation: op=list or move.', 'metaform help map messages')
+    store, notices = _store(ctx), list[Notice]()
+    reads = ({'id', 'node', 'provider', 'address'} if op == 'move'
+             else {'node', 'kind', 'open', 'limit', 'after'})
+    for name in sorted(nouns):
+        if name != 'op' and name not in reads:
+            notices.append(Notice(name, f'op={op} does not read {name}; it was ignored.'))
+    if op == 'move':
+        _need(ctx, 'id', 'node', verb='messages')
+        return _with_notices(store.move_message(nouns['id'], _held(store, nouns, notices)), notices)
     node = _work_node(nouns['node']) if 'node' in nouns else None
-    return _store(ctx).messages(node, nouns.get('kind'), nouns.get('open'), **_paging(ctx))
+    return _with_notices(store.messages(node, nouns.get('kind'), nouns.get('open'), **_paging(ctx)), notices)
 
 
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
-    op=list, the default, reads them; add, edit and done write one each. Any agent, at any time."""
+    op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
+    write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. Any agent, at any time."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move or done; with id= and '
+        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move, distribute or done; '
+                   'with id= and '
                    'no op, the one ticket is read.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
@@ -532,67 +773,175 @@ def work(ctx: Context) -> Any:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
     if op == 'list':
-        node = _work_node(nouns['node']) if 'node' in nouns else None
-        return _with_notices(store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx)), notices)
+        node = _named(store, nouns, notices)
+        # An element's list holds the tickets on the joins it receives or provides too, so an agent told its node
+        # finds its ticket, ticket dd2a9caf.
+        return _with_notices(_glyphed(store, store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx),
+                                                        joins=True)), notices)
     if op == 'add':
+        node = _named(store, nouns, notices)
+        if node is None:
+            raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
-        return _with_notices(store.add_work(_work_node(nouns['node']), nouns.get('condition'),
-                                            links=[_work_node(link) for link in nouns.get('links') or ()],
+        return _with_notices(store.add_work(node, nouns.get('condition'),
+                                            links=[_link(store, link) for link in nouns.get('links') or ()],
                                             **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
+    if op == 'distribute':
+        return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = nouns['id']
     if op == 'read':
-        return _with_notices(store.ticket(work_id), notices)
+        return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
-        return _with_notices(store.take_work(work_id, nouns.get('steps'), nouns.get('by')), notices)
+        return _with_notices(_glyphed(store, store.take_work(work_id, nouns.get('steps'), nouns.get('by'))), notices)
     if op == 'move':
-        return _with_notices(store.move_work(work_id, nouns['column'], nouns.get('position'), nouns.get('by')), notices)
+        return _with_notices(_glyphed(store, store.move_work(work_id, nouns['column'], nouns.get('position'),
+                                                             nouns.get('by'))), notices)
     if op == 'plan':
-        return _with_notices(store.plan_work(work_id, nouns['steps']), notices)
+        return _with_notices(_glyphed(store, store.plan_work(work_id, nouns['steps'])), notices)
     if op == 'step':
-        return _with_notices(store.step_work(work_id, nouns.get('said')), notices)
+        return _with_notices(_glyphed(store, store.step_work(work_id, nouns.get('said'))), notices)
     if op == 'edit':
         changes = {name: nouns[name] for name in WORK_FIELDS if name in nouns}
+        node = _named(store, nouns, notices)
+        if node is not None:
+            changes['node'] = node
         if 'links' in nouns:
-            changes['links'] = [_work_node(link) for link in nouns['links'] or ()]
-        return _with_notices(store.edit_work(work_id, changes), notices)
-    return _with_notices(store.finish_work(work_id, nouns.get('resolution')), notices)
+            changes['links'] = [_link(store, link) for link in nouns['links'] or ()]
+        with store.atomic():
+            edited = store.edit_work(work_id, changes)
+            if 'glyph' in nouns:
+                _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
+        return _with_notices(_glyphed(store, edited), notices)
+    return _with_notices(_glyphed(store, store.finish_work(work_id, nouns.get('resolution'))), notices)
+
+
+def _glyph(value: Any, notices: list[Notice]) -> str | None:
+    """A ticket's agent glyph, VIEW-040: one of the sixteen the page draws, or none; any other name is stored as given
+    with a notice, BASE-044."""
+    if value is None or value in AGENT_GLYPHS:
+        return value
+    notices.append(Notice('glyph', f'{value!r} is not one of the agent glyphs, {", ".join(AGENT_GLYPHS)}; it was stored '
+                                   'as given.'))
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def _assign(store: Store, glyphs: dict[str, str | None]) -> None:
+    """Give each ticket its glyph in the map module's own table, STORE-045; None takes its glyph away."""
+    with store.tables() as tx:
+        for work_id, glyph in glyphs.items():
+            if glyph is None:
+                tx.delete('glyphs', {'work_id': work_id})
+            elif tx.update('glyphs', {'work_id': work_id}, {'glyph': glyph}) is None:
+                tx.insert('glyphs', {'work_id': work_id, 'glyph': glyph})
+
+
+def _glyphs(store: Store, work_ids: list[str]) -> dict[str, str]:
+    """The glyph each of these tickets is assigned to, read in one transaction; a ticket with none is left out."""
+    with store.tables(write=False) as tx:
+        found = {work_id: tx.get('glyphs', {'work_id': work_id}) for work_id in work_ids}
+    return {work_id: row['glyph'] for work_id, row in found.items() if row is not None}
+
+
+def _glyphed(store: Store, result: Any) -> Any:
+    """A work operation's record, or page of records, with the glyph the map module keeps on each under `map`, as
+    work_read shows it in `map work id=<id>`, BASE-035; a record with no glyph is returned as it is."""
+    page = cast(Page[WorkRecord], result) if isinstance(result, Page) else None
+    records = list(page.results) if page is not None else [cast(WorkRecord, result)]
+    held = _glyphs(store, [record.work_id for record in records])
+    if not held:
+        return page if page is not None else records[0]
+
+    def one(record: WorkRecord) -> Any:
+        if record.work_id not in held:
+            return record
+        data = record.to_dict()
+        data.setdefault('map', {'glyph': held[record.work_id]})
+        return data
+    if page is not None:
+        return {**page.to_dict(), 'results': [one(record) for record in records]}
+    return one(records[0])
+
+
+def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
+    """Distribute the work over N agents, VIEW-040: the first N glyphs, given in turn to the tickets not done and not
+    taken, To do first and then Backlog, each in its board order. A ticket taken or done keeps its glyph, so an agent
+    at work never changes character; an exclude record is no ticket."""
+    if isinstance(agents, bool) or not isinstance(agents, int) or not 1 <= agents <= len(AGENT_GLYPHS):
+        raise Stop(f'Work is distributed over 1 to {len(AGENT_GLYPHS)} agents, one glyph each; {agents!r} is not one of '
+                   'those.', 'metaform map work op=distribute agents=<n>')
+    with store.atomic():
+        waiting = [record for record in store.work(open=True, limit=0).results
+                   if not record.taken and (not record.condition or record.condition in TICKETS)]
+        # the board's order: To do before Backlog, each by its place, a ticket with none after, then as written
+        waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
+        _assign(store, {record.work_id: AGENT_GLYPHS[place % agents] for place, record in enumerate(waiting)})
+    return Page(tuple(waiting), None)
+
+
+def work_read(ctx: Context, record: WorkRecord) -> dict[str, str] | None:
+    """The agent glyph the map module keeps on a work record, VIEW-040; nothing when it keeps none. The chassis puts
+    it under `map` in `map work id=<id>`, BASE-035."""
+    if ctx.store is None:
+        return None
+    held = _glyphs(ctx.store, [record.work_id]).get(record.work_id)
+    return None if held is None else {'glyph': held}
 
 
 WORK_NOUNS = (
     _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
                 'how many steps the agent plans; step, which says it finished one; move, which puts it in a column '
-                'of the board; or done.'),
+                'of the board; distribute, which gives the open tickets the glyphs of N agents; or done.'),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
-    _noun('node', 'list and add: element:<address or id> or join:<id>, a subtype join being a join; a bare address '
-                  'names an element.'),
+    _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
+                  'list gives its own records and those on the joins it receives or provides, subtype joins included.'),
+    _noun('receiver', 'list, add and edit: a requirement, by the address of the element that requires it, with provider.'),
+    _noun('provider', 'list, add and edit: a requirement, by the address of the element that serves it, with receiver.'),
+    _noun('address', 'list, add and edit: an element, by address; with receiver and provider, the part at that address '
+                     'inside the requirement.'),
     _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, in the specs and not built '
                        'yet; broken; flawed, not broken but not right either; enhancement; or exclude, material '
                        'outside the intake scope or code conflicting with a superseding specification, with the '
                        'reason and references recorded for review.'),
-    _noun('links', 'add and edit: other nodes the task links for reference, a list of element:<address or id> or '
-                   'join:<id>.', 'json', {'type': 'array', 'items': {'type': 'string'}}),
+    _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
+                   'objects of receiver and provider, with address for a part inside, each naming a requirement.',
+          'json', {'type': 'array', 'items': {'anyOf': [
+              {'type': 'string'},
+              {'type': 'object', 'properties': {'receiver': {'type': 'string'}, 'provider': {'type': 'string'},
+                                                'address': {'type': 'string'}}}]}}),
     _noun('by', 'take and move: who takes it.'),
-    _noun('column', 'move: backlog, todo, doing or done.'),
+    _noun('column', 'move: backlog, todo, doing or done. todo puts a taken task back on the queue, keeping its log.'),
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
+    _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
+                   'done one at a time.'),
+    _noun('agents', 'distribute: how many agents, from 1 to 16; the tickets not done and not taken are given the first '
+                    'that many glyphs in turn, To do first and then Backlog.', 'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
-                'questions.'),
+                'questions, knowledge layers and modules\' memories. Review the knowledge layers first; other '
+                'agents\' memories are attached there, and record your own memories at the nodes you work on. '
+                'past_work lists completed tickets with their age; read one with id= to see its log.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
     _noun('open', 'list: true for records not done, false for those done.', 'bool'),
     *PAGING,
 )
 
 RAW = ('raw',)
+# ask and tell take node first; these beside it name the requirement it holds, Rich 2026-10-03, MAP-005.
+HELD = (_noun('provider', 'A requirement node holds as its receiver: the address of the element that serves it.'),
+        _noun('address', 'With provider: the part at that address inside the requirement.'))
 
 
 MODULE = Module(
     id='map',
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') else None),
+    tables=TABLES,
+    data=DATA,
+    work_read=work_read,
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with the receiver and its '
@@ -656,7 +1005,8 @@ MODULE = Module(
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
         Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
-                           'read one by its id, or add, edit or mark one done.',
+                           'read one by its id, add or edit one, take one, plan its steps and report each, move it '
+                           'on the board, or mark it done.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join, a subtype join included, and never changes '
                      'the map. Its '
@@ -672,42 +1022,65 @@ MODULE = Module(
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=missing task="build it"',
                         'Record that the alarm is in the specs and not built yet.'),
+                       ('metaform map work op=edit id=<work id> node=code.alarm.audible',
+                        'Move a ticket to the alarm, keeping its progress and reference links.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
                        ('metaform map work id=<work id>', ('Read one ticket with what the map holds at its node and '
                                                            'at each node it links.')),
 )),
         Verb('ask', ask, 'Ask the user a question at the node it concerns, with the answers you suggest.',
-             nouns=(Noun('node', 'Where the question applies: element:<address or id> or join:<id>; a bare address '
-                                 'names an element.'),
+             nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the requirement '
+                                 'it holds as receiver.'),
                     Noun('question', 'The question, in plain words a person who has not read your context can answer.'),
+                    *HELD,
                     _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
                                          'user answers with one click on one of them, or types another.', 'json'),
                     _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.')),
              details='Ask, and carry on with what does not depend on the answer. The user answers in the web GUI, '
                      'where the node glows until they do, and the answer is kept at the node for the agent that '
-                     'works there next. Read the answers with metaform map messages.',
+                     'works there next. Read the answers with metaform map messages. If the user answers you another '
+                     'way, record that answer with metaform map reply <id> answer="...", so the node stops glowing.',
              examples=(('metaform map ask code.alarm.audible "Is the quiet tone still wanted?" '
                         'suggestions=\'["Yes, keep it", "No, make it louder"]\'', 'Ask the user at the alarm.'),)),
         Verb('tell', tell, 'Leave the user a message at a node, which asks for nothing and waits to be read.',
-             nouns=(Noun('node', 'Where the message applies: element:<address or id> or join:<id>.'),
+             nouns=(Noun('node', 'Where the message applies: an element, by address; with provider, the requirement '
+                                 'it holds as receiver.'),
                     Noun('message', 'What the user should know, in plain words.'),
+                    *HELD,
                     _noun('by', 'Who says it: your role or your name.'))),
         Verb('reply', reply, 'Answer a question, or mark a message read.',
              nouns=(Noun('id', 'The id of the question or the message.'),
                     _noun('answer', 'The answer to a question.')),
              examples=(('metaform map reply <id> answer="No, make it louder"', 'Answer a question.'),)),
-        Verb('messages', messages, 'The questions and messages left for the user, oldest first.',
-             nouns=(_noun('node', 'Only those at this node.'), _noun('kind', 'question or message.'),
-                    _noun('open', 'true for those that still wait, false for those answered or read.', 'bool'),
-                    *PAGING)),
-        Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge layer, and refine the metaform.',
+        Verb('reopen', reopen, 'Reopen a question answered by mistake, so it waits again with its suggestions.',
+             nouns=(Noun('id', 'The id of the question.'),),
+             examples=(('metaform map reopen <id>', 'Clear the answer; the question waits again.'),),
+             surfaces=('cli',)),
+        Verb('messages', messages, 'List the questions and messages left for the user, or move one to another node.',
+             nouns=(_noun('op', 'list, the default, oldest first; move changes one record\'s node, keeping its answer '
+                               'and closed state.'),
+                    _noun('id', 'move: the id of the question or message.'),
+                    _noun('node', 'list: only those at this node. move: the destination element, by address; with '
+                                 'provider, the requirement it holds as receiver.'),
+                    *HELD, _noun('kind', 'list: question or message.'),
+                    _noun('open', 'list: true for those that still wait, false for those answered or read.', 'bool'),
+                    *PAGING),
+             examples=(('metaform map messages op=move id=<message id> node=code.alarm.audible',
+                        'Move a question or message to the alarm, keeping its suggestions and answer.'),)),
+        Verb('knowledge', knowledge, 'Create, build, edit and finish a knowledge layer.',
              nouns=KNOWLEDGE_NOUNS,
-             details='Every call but op=refine names its layer with layer=. op=create makes the layer; the add, edit '
-                     'and remove operations change one object each; op=finish marks it ready. op=refine changes or '
-                     'removes one thing of the metaform as its newest version in the metaform\'s own layer, keeping '
-                     'every earlier one; the metaform grows by the add operations with layer=intake.',
+             details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
+                     'operations change one object each; op=finish marks it ready. The metaform grows by the add '
+                     'operations with layer=intake; it changes by refine.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),)),
+        Verb('refine', refine, 'Refine the metaform: change or remove one of its elements or joins as a new version, '
+                               'keeping every earlier one.',
+             nouns=REFINE_NOUNS,
+             details='The change is written in the metaform\'s own layer, never in a new one, LAYER-025; history '
+                     'shows every version.',
+             examples=(('metaform map refine id=<join id> purpose="Know when each dish is done." '
+                        'reason="the old purpose named the clock"', 'Refine one join\'s purpose.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
         Verb('mask', mask, 'Stop a layer flowing into an address and every address toward the leaves from it.',

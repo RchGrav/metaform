@@ -3,7 +3,8 @@
 Each subscriber gets its own Context, built from the publisher's folder and
 project, and its outcome comes back to the publisher: completed with its
 result, failed with its error, or cancelled. One subscriber's failure never
-hides the others. The bus announces and delivers; it runs no workflow.
+hides the others. The bus announces and delivers; it runs no workflow. `map.changed` is also handed to every
+listener of another process of the home, one more delivery each, BASE-053.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import copy
 import inspect
 from typing import Any
 
-from . import loader
+from . import loader, relay
 from .module import Context, call
 
 
@@ -40,7 +41,7 @@ def publish(topic: str, payload: dict[str, Any], source: Context) -> list[dict[s
                 deliveries.append({'module': module.id, 'status': 'cancelled'})
             except Exception as error:  # A subscriber's failure is reported to the publisher, never raised.
                 deliveries.append({'module': module.id, 'status': 'failed', 'error': f'{type(error).__name__}: {error}'})
-    return deliveries
+    return deliveries + relay.deliver(topic, payload)
 
 
 async def publish_async(topic: str, payload: dict[str, Any], source: Context) -> list[dict[str, Any]]:
@@ -67,5 +68,4 @@ async def publish_async(topic: str, payload: dict[str, Any], source: Context) ->
                 deliveries.append({'module': module.id, 'status': 'cancelled'})
             except Exception as error:  # A subscriber's failure is reported to the publisher, never raised.
                 deliveries.append({'module': module.id, 'status': 'failed', 'error': f'{type(error).__name__}: {error}'})
-    return deliveries
-
+    return deliveries + await asyncio.to_thread(relay.deliver, topic, payload)

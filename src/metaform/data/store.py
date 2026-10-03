@@ -9,9 +9,9 @@ STORE-019.
 
 `Store` is the one public door. Each method opens its transaction and calls one
 operation of the internal modules, which each take that `Tx`: `writes` for the
-map's objects, `layering` for layers and refining the metaform, `challenges` for
-challenge states and plans, `reads` for every read. No write is refused for its
-content, BASE-044 and STORE-026: what does not fit is stored as given and named
+map's objects, `layering` for layers and refining the metaform, `reads` for
+native reads, and module declarations for feature operations. No write is refused
+for its content, BASE-044 and STORE-026: what does not fit is stored as given and named
 in the result's `notices`.
 """
 from __future__ import annotations
@@ -26,10 +26,9 @@ from typing import Any, TypeVar, cast
 
 from .. import changes, home
 from ..errors import StoreError
-from . import challenges, history, layering, reads, rows, tables, views, writes
+from . import history, layering, operations, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
-    ChallengeState,
     Citation,
     ContextView,
     Element,
@@ -37,32 +36,25 @@ from .records import (
     Item,
     Join,
     Layer,
-    Message,
     Node,
     NodeView,
     Notice,
     Outcome,
     Page,
-    Plan,
     Property,
     Provenance,
     Record,
     Recording,
     Ref,
-    Report,
     Roots,
     Selection,
     Subtype,
-    Ticket,
     Version,
     Where,
-    WorkRecord,
 )
 from .selection import Resolver
 from .session import Session, Tx
 from .tables import Place, Tables, TableTx
-
-REPORT_KINDS = ('report', 'feedback', 'shape')
 
 RecordT = TypeVar('RecordT', bound=Record)
 
@@ -86,6 +78,16 @@ class Store:
 
     # ------------------------------------------------------------------ plumbing
 
+    def __getattr__(self, name: str) -> Any:
+        """An enabled module's operation, run by the DAO in one transaction."""
+        found = operations.operation(name)
+        if found is None:
+            raise AttributeError(name)
+        def run(*args: Any, **kwargs: Any) -> Any:
+            with (self._write() if found.write else self._read()) as tx:
+                return operations.invoke(tx, name, *args, **kwargs)
+        return run
+
     @property
     def project_id(self) -> str:
         return self._record.project_id
@@ -100,6 +102,7 @@ class Store:
     def _write(self) -> Generator[Tx, None, None]:
         try:
             with self._session.write() as tx:
+                tx.toggled = self.toggled
                 yield tx
         except sqlite3.IntegrityError as error:
             raise StoreError(f'The write does not fit the store: {error}.', 'metaform help map knowledge') from None
@@ -107,6 +110,7 @@ class Store:
     @contextmanager
     def _read(self) -> Generator[Tx, None, None]:
         with self._session.read() as tx:
+            tx.toggled = self.toggled
             yield tx
 
     def _resolver(self, tx: Tx, selection: Sequence[str] | None) -> Resolver:
@@ -199,7 +203,7 @@ class Store:
                                                   extra=extra, name=name), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
+                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'require', refs: Iterable[Any] = (),
                  extra: Any = None, ifd: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010, with the project's name for
         the functionality it names, MAP-020."""
@@ -229,11 +233,15 @@ class Store:
             return writes.add_ref(tx, owner, key, value)
 
     def add_item(self, layer: str | None, target: Node, value: Any, *, link: Node | None = None,
-                 refs: Iterable[Any] = (), extra: Any = None) -> Item | Outcome:
-        """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015."""
+                 refs: Iterable[Any] = (), extra: Any = None, read_first: Any = False, always_show: Any = False,
+                 task: Any = False, condition: Any = None) -> Item | Outcome:
+        """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015; an
+        item flagged task adds a ticket at its node instead of storing the flag, LAYER-021."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_item(tx, named, target, value, link=link, refs=refs, extra=extra), notice)
+            return self._noted(writes.add_item(tx, named, target, value, link=link, refs=refs, extra=extra,
+                                               read_first=read_first, always_show=always_show, task=task,
+                                               condition=condition), notice)
 
     def add_property(self, layer: str | None, element: Any, value: Any, *, refs: Iterable[Any] = (),
                      extra: Any = None) -> Property | Outcome:
@@ -257,65 +265,6 @@ class Store:
         with self._write() as tx:
             return writes.edit(tx, thing, changes)
 
-    def add_work(self, node: Node, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
-                 reviewed: Any = False, links: Any = ()) -> WorkRecord:
-        """Write the condition of an element or a join, a subtype join included, as a work record, apart from the map,
-        STORE-042."""
-        with self._write() as tx:
-            return writes.add_work(tx, node, condition, note=note, task=task, held=held, reviewed=reviewed,
-                                   links=links)
-
-    def edit_work(self, work_id: str, changes: Any) -> WorkRecord:
-        """Change a work record's condition, note, task, held or reviewed in place, STORE-042."""
-        with self._write() as tx:
-            return writes.edit_work(tx, work_id, changes)
-
-    def ask(self, node: Node, text: Any, *, suggestions: Any = None, by: Any = None) -> Message:
-        """Ask the user a question at a node, with the answers suggested, the one recommended first, MAP-050."""
-        with self._write() as tx:
-            return writes.add_message(tx, node, 'question', text, suggestions=suggestions, by=by)
-
-    def tell(self, node: Node, text: Any, *, by: Any = None) -> Message:
-        """Leave the user a message at a node, which asks for nothing and waits to be read, MAP-050."""
-        with self._write() as tx:
-            return writes.add_message(tx, node, 'message', text, by=by)
-
-    def reply(self, message_id: str, answer: Any = None) -> Message:
-        """The user's answer to a question, or that a message was read; the first is kept, MAP-050."""
-        with self._write() as tx:
-            return writes.close_message(tx, message_id, answer)
-
-    def messages(self, node: Node | None = None, kind: str | None = None, open: bool | None = None, *,
-                 limit: int = LIMIT, after: str | None = None) -> Page[Message]:
-        """The questions and messages, oldest first, by node, kind or whether they still wait, MAP-050."""
-        with self._read() as tx:
-            return reads.messages(tx, node, kind, open, limit, after)
-
-    def move_work(self, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
-        """Put a ticket in a column of the board and at a place in it, MAP-048."""
-        with self._write() as tx:
-            return writes.move_work(tx, work_id, column, position, by)
-
-    def take_work(self, work_id: str, steps: Any = None, by: Any = None) -> WorkRecord:
-        """An agent takes the record's task: in progress or fixing, and no longer waiting, MAP-049, with the steps it
-        plans when it says them, MAP-053."""
-        with self._write() as tx:
-            return writes.take_work(tx, work_id, steps, by)
-
-    def plan_work(self, work_id: str, steps: Any) -> WorkRecord:
-        """The agent says how many steps it plans, or says it again when its plan changes, MAP-053."""
-        with self._write() as tx:
-            return writes.plan_work(tx, work_id, steps)
-
-    def step_work(self, work_id: str, said: Any = None) -> WorkRecord:
-        """The agent finished a step and says what it did, MAP-053."""
-        with self._write() as tx:
-            return writes.step_work(tx, work_id, said)
-
-    def finish_work(self, work_id: str, resolution: Any = None) -> WorkRecord:
-        """Mark a work record done, its resolution kept beside it, STORE-042."""
-        with self._write() as tx:
-            return writes.finish_work(tx, work_id, resolution)
 
     def remove(self, thing: str | int) -> Outcome:
         """Delete a row a knowledge layer or a building intake wrote, with its refs, STORE-032."""
@@ -331,22 +280,6 @@ class Store:
         with self._write() as tx:
             return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence)
 
-    # ------------------------------------------------------------- challenges
-
-    def answer(self, item_id: str, state: Any, link: Node | None = None) -> ChallengeState | Outcome:
-        """Record a challenge's answer beside the critic's layer, STORE-040."""
-        with self._write() as tx:
-            return challenges.answer(tx, item_id, state, link)
-
-    def approve(self, item_id: str) -> ChallengeState:
-        """A person approves a B answer; it becomes a plan, STORE-040."""
-        with self._write() as tx:
-            return challenges.approve(tx, item_id)
-
-    def add_plan(self, layer: str, element: Any, join: str | None) -> Plan:
-        """An agent adds a plan directly; it needs no approval, STORE-040."""
-        with self._write() as tx:
-            return challenges.add_plan(tx, layer, element, join)
 
     # ------------------------------------------------------- a module's own tables
 
@@ -447,6 +380,39 @@ class Store:
         """The subtype joins in a join, each with the element it holds, STORE-011."""
         with self._read() as tx:
             return reads.subtypes(tx, None if raw else self._resolver(tx, selection), join, limit, after)
+
+    def join_ends(self, join: str) -> tuple[str, str] | None:
+        """One join's receiver and provider by address, read from every stored layer as a work record reads them; a
+        subtype join's are its parent join's receiver and the element it holds, STORE-010. None for no current join."""
+        with self._read() as tx:
+            return reads.join_ends(tx, join)
+
+    def requirement(self, receiver: Any, provider: Any, address: Any = None) -> Node:
+        """The node an agent names by address, MAP-005: the requirement of `receiver` served by `provider`, or with
+        `address` the part at that address inside it, read from every stored layer as refine reads them. It stops
+        when the map holds none, or several that their addresses cannot tell apart, naming their purposes."""
+        said = f'the requirement of {receiver} served by {provider}'
+        if receiver is None or provider is None:
+            raise StoreError(f'{said}: a requirement is named by its receiver and its provider together.',
+                             'metaform map where <receiver>')
+        owner = self.element(str(receiver), raw=True)
+        if owner is None:
+            raise StoreError(f'{receiver} is not an element of the map here.', f'metaform map where {receiver}')
+        found = [held for held in self.joins(owner.element_id, raw=True, limit=0).results
+                 if held.provider_address == provider]
+        if not found:
+            raise StoreError(f'{receiver} has no requirement served by {provider}.', f'metaform map where {receiver}')
+        if len(found) > 1:
+            purposes = '; '.join(repr(held.purpose) for held in found)
+            raise StoreError(f'{receiver} has {len(found)} requirements served by {provider}, which their addresses '
+                             f'cannot tell apart, with the purposes {purposes}.', f'metaform map where {receiver}')
+        if address is None:
+            return Node('join', found[0].join_id)
+        parts = [part for part in self.subtypes(found[0].join_id, raw=True, limit=0).results if part.address == address]
+        if len(parts) != 1:
+            raise StoreError(f'{address} is {"not a part" if not parts else "held more than once"} inside {said}.',
+                             f'metaform map where {receiver}')
+        return Node('join', parts[0].join_id)
 
     def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False,
               full: bool = False) -> Where | None:
@@ -559,37 +525,6 @@ class Store:
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 
-    def work(self, node: Node | None = None, condition: str | None = None, open: bool | None = None, *,
-             limit: int = LIMIT, after: str | None = None) -> Page[WorkRecord]:
-        """The work records, by node, condition or whether open, each with its object's address or its join's ends,
-        STORE-042."""
-        with self._read() as tx:
-            return reads.work(tx, node, condition, open, limit, after)
-
-    def ticket(self, work_id: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Ticket:
-        """One ticket by its id with what the map holds at its node and at each node it links: the where read of
-        each, with its refs, its open work and its open questions, MAP-048."""
-        with self._read() as tx:
-            return reads.ticket(tx, self._resolver(tx, selection), raw, work_id)
-
-    # --------------------------------------------------------------- reports
-
-    def save_report(self, name: str, run_id: str, kind: str, size: int, layer: str | None = None) -> Report:
-        """Record one report, feedback or shape file, or its new size after an append, STORE-043."""
-        if kind not in REPORT_KINDS:
-            raise StoreError(f'{kind!r} is not report, feedback or shape.', 'metaform help feedback')
-        with self._write() as tx:
-            return reads.save_report(tx, name, run_id, kind, size, layer)
-
-    def reports(self, kind: str | None = None, layer: str | None = None, *, limit: int = LIMIT,
-                after: str | None = None) -> Page[Report]:
-        """The report, feedback and shape files of this metaform, oldest first, STORE-043."""
-        with self._read() as tx:
-            return reads.reports(tx, kind, layer, limit, after)
-
-    def report(self, name: str) -> Report | None:
-        with self._read() as tx:
-            return reads.report(tx, name)
 
     # -------------------------------------------------------------- metaforms
 

@@ -65,11 +65,11 @@ def record_intake(run, folder, elements, env=None, finish=()):
              *_named(element, ('role', 'name', 'name_length', 'refs')))
     for element in elements:
         for join in element.get('joins', []):
-            made = call('join', element['namespace_address'], join['provider'],
-                        *_named(join, ('type', 'name', 'purpose', 'ef', 'verb', 'non_goal', 'refs')))
+            call('add_requirement', element['namespace_address'], join['provider'],
+                 *_named(join, ('name', 'purpose', 'ef', 'verb', 'non_goal', 'refs')))
             for subtype in join.get('subtypes', []):
                 inner = subtype.get('element', {})
-                call('subtype', made['join_id'], inner['namespace_address'],
+                call('subtype', element['namespace_address'], join['provider'], inner['namespace_address'],
                      *_named(subtype, ('ef', 'verb')),
                      *_named(inner, ('role', 'name', 'name_length', 'refs')))
     return call('finish', *finish)

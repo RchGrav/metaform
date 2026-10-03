@@ -207,13 +207,13 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 ### QUAL-016 A capability added for a feature reaches every module author
 
 - Requirement: Any capability added to support a feature, or anything not thought of before, updates the template module and the module services authors read, and gets a demonstration in hello.
-- What this means: Rich, 2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in hello. The template's README and changelog, BASE-019 and QUAL-013, and the "Extending Metaform" guide say what the capability is and how a module uses it; hello uses it once, with a test, so it is shown working from a module that is not built in.
+- What this means: Any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in hello. The template's README and changelog, BASE-019 and QUAL-013, and the "Extending Metaform" guide say what the capability is and how a module uses it; hello uses it once, with a test, so it is shown working from a module that is not built in.
 - Why: Modules are the extension point. A capability only the built-in modules know is invisible to anyone writing one, and can break for them unnoticed.
 - How it shows: The `map.changed` topic of VIEW-018 is in the template README's Events section and the extending guide, and hello's greeting appears live in the web GUI.
 - Build: The critic review under QUAL-008 checks each new capability for the three.
 - Acceptance: checked in the critic review, QUAL-008, and by hello's test of each demonstration.
 - Relates to: BASE-019, QUAL-008, QUAL-013.
-- Status: confirmed 2026-09-26.
+- Status: confirmed 2026-09-26. Rich, 2026-09-26: any capability added to support a feature, or anything not thought of before, updates the template module and the module services and gets a demonstration in hello.
 
 ### QUAL-017 Removing needs the same permission as building
 

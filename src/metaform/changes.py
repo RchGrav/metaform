@@ -32,12 +32,17 @@ def take() -> dict[str, set[str]]:
     return found
 
 
-def announce(folder: Path, surface: Surface) -> None:
+def announce(folder: Path, surface: Surface) -> list[dict[str, str | None]]:
     """Fire `map.changed` for each metaform the command changed; a metaform id of None means the project's metaforms
-    changed, such as one added, removed or made active. A subscriber's failure never reaches the command, BASE-032."""
+    changed, such as one added, removed or made active. A subscriber's failure never reaches the command, BASE-032.
+    Returns the payloads fired, so a long-running process can follow its own changes, BASE-053."""
     from . import events
     from .module import Context
+    fired: list[dict[str, str | None]] = []
     for project, metaforms in sorted(take().items()):
         source = Context(module='chassis', folder=folder, project=project, surface=surface)
         for metaform in sorted(metaforms):
-            events.publish('map.changed', {'project': project, 'metaform_id': metaform or None}, source)
+            payload: dict[str, str | None] = {'project': project, 'metaform_id': metaform or None}
+            events.publish('map.changed', dict(payload), source)
+            fired.append(payload)
+    return fired

@@ -28,6 +28,7 @@
         <button id="clearBtn" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
         <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
         <button id="removeBtn" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
+        <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
         <button id="orphanBtn" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
       </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
@@ -114,7 +115,8 @@
   <div class="body"></div>
 </div>
 <div id="board" hidden role="dialog" aria-label="Board">
-  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><div class="distribute" role="group" aria-label="Distribute the work"><label>Agents <input type="number" min="1" max="16" value="1"></label><button title="Give the tickets not done and not taken the glyphs of this many agents, in turn">Distribute</button></div><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <p class="guidance">Move cards up to prioritize work. Agents take their next ticket from To do before Backlog, higher cards first.</p>
   <div class="columns"></div>
 </div>
 <div id="task" hidden role="dialog" aria-label="Add a task">
@@ -125,6 +127,8 @@
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
       <div class="eyebrow">Nodes of this task: the first is the one assigned, the others are for reference</div>
       <div class="linked"></div>
+      <div class="kindrow"><label><input type="checkbox" class="start-agent"> Start an agent now</label>
+        <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label></div>
       <button class="put" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
       <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole" title="The whole chart in view">Fit</button></div>
     </div>
@@ -147,6 +151,7 @@
     <label>Purpose <textarea class="purpose" placeholder="What the one that holds the purpose needs this for"></textarea></label>
     <label>Function <textarea class="ef" placeholder="What the one that serves does"></textarea></label>
     <label class="check"><input type="checkbox" class="validate" checked> Have an agent validate it</label>
+    <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
     <button class="add">Add element</button>
   </div>
 </div>
@@ -164,6 +169,14 @@
   <div class="body">
     <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
     <div class="tickets"></div>
+  </div>
+</div>
+<div id="prompts" hidden role="dialog" aria-label="Agent prompts">
+  <div class="bar"><span class="title">Agent prompts</span><button class="close" title="Close">Close</button></div>
+  <div class="body">
+    <p>How an agent's permission prompts are answered. It is kept in the settings, and every agent reads it at its next prompt, so a change reaches agents already running.</p>
+    <div class="choices"></div>
+    <p class="saved"></p>
   </div>
 </div>
 <div id="agent" hidden role="dialog" aria-label="An agent at work">

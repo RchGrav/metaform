@@ -208,11 +208,11 @@ Inspected tests include [join-addressed memory](../../src/metaform/modules/memor
 <a id="corrections"></a>
 ## 7. Refining the metaform and re-examination
 
-The metaform changes by refining. There are no correction layers, no correction stack and no peeling. The finished intake is one layer, named `intake`, and a refinement writes a new version of one thing in it, as `Store.refine` in [layering.py](../../src/metaform/data/layering.py), reached by `metaform map knowledge op=refine id=<id> <field>=<value> reason=<why> [evidence=<what>] [remove=true]` with no layer named. Every version of a thing is kept, and `Store.history`, `metaform map history <id>`, reads them in the order written. The thing's current row is its newest unless that row is a removal. [versions.py](../../src/metaform/data/versions.py) holds the version tables. A finished intake also takes additions: `op=add-element`, `op=add-join` and the other add operations with `layer=intake`.
+The metaform changes by refining. There are no correction layers, no correction stack and no peeling. The finished intake is one layer, named `intake`, and a refinement writes a new version of one thing in it, as `Store.refine` in [layering.py](../../src/metaform/data/layering.py), reached by `metaform map refine id=<id> <field>=<value> reason=<why> [evidence=<what>] [remove=true]` with no layer named. Every version of a thing is kept, and `Store.history`, `metaform map history <id>`, reads them in the order written. The thing's current row is its newest unless that row is a removal. [versions.py](../../src/metaform/data/versions.py) holds the version tables. A finished intake also takes additions: `op=add-element`, `op=add-join` and the other add operations with `layer=intake`.
 
-A finished intake and memory are protected from in-place `edit`: `writes.unchangeable` names `op=refine` for the first and the memory operations for the second. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. A refinement of a thing that belongs to a knowledge layer writes nothing and names `op=edit` instead.
+A finished intake and memory are protected from in-place `edit`: `writes.unchangeable` names `map refine` for the first and the memory operations for the second. Ordinary knowledge records can be edited in place, including after finish; this guard does not treat their declared `mutable` value as a universal immutability switch. A refinement of a thing that belongs to a knowledge layer writes nothing and names `op=edit` instead.
 
-An element cannot be moved: a refinement's `address` for an element is not applied and is named in a notice. A join can be moved: a refinement's `receiver`, `provider` or `parent` is a change of the same join, which keeps its id and everything attached to it; with `parent` it becomes a subtype join, and the subtype joins it held pass to its new parent. A removal orphans everything current that still depends on the removed thing and names each in its result; nothing is refused. An element recorded again at the same address is the same element, so what was attached to it returns with it. `op=refine` reads `ef` and does not read `verb`, [C01](#c01).
+An element cannot be moved: a refinement's `address` for an element is not applied and is named in a notice. A join can be moved: a refinement's `receiver`, `provider` or `parent` is a change of the same join, which keeps its id and everything attached to it; with `parent` it becomes a subtype join, and the subtype joins it held pass to its new parent. A removal orphans everything current that still depends on the removed thing and names each in its result; nothing is refused. An element recorded again at the same address is the same element, so what was attached to it returns with it. `map refine` reads `ef` and does not read `verb`, [C01](#c01).
 
 The source marks layers built from the metaform for re-examination when a refinement changes what they were built on, and `metaform map reexamined <layer>` clears the mark. It does not implement an unspecified universal transitive semantic invalidation algorithm. The hidden-layer source closure and re-examination are different mechanisms.
 
@@ -329,7 +329,7 @@ A per-call project or layer choice and a stored folder setting are separate inpu
 
 ### Read and write encounters
 
-`code.api.map` connects Store operations to verbs and tools. Its reads cover entry roots, the one read of an address, elements, receiving/provider joins, identity, subtypes, children, node content, property context, links, refs, history, search, layers, and work records. Knowledge operations create and populate layers, write records and plans, and refine the metaform with `op=refine`; `work` adds, edits, lists and finishes work records. Nothing is refused for its content: only a field a record cannot be stored without stops a call, and every other missing field is stored empty with a notice. Selection and challenge operations are additional explicit verbs.
+`code.api.map` connects Store operations to verbs and tools. Its reads cover entry roots, the one read of an address, elements, receiving/provider joins, identity, subtypes, children, node content, property context, links, refs, history, search, layers, and work records. Knowledge operations create and populate layers, write records and plans, and refine the metaform with `map refine`; `work` adds, edits, lists and finishes work records. Nothing is refused for its content: only a field a record cannot be stored without stops a call, and every other missing field is stored empty with a notice. Selection and challenge operations are additional explicit verbs.
 
 `code.gui.web` supplies graph and record inspection over these stored operations. [server.py](../../src/metaform/modules/web/server.py) exposes named reads and ten writes, accepted only from the GUI's own page: apply layers to the project folder, save a prompt version, answer a question, mark a note read, give a task, add an element, add a note, restore a backup, remove an empty project, and clear the selected project through the same `clear_project` that `metaform clear project --confirm` calls, with its caution read first from `/api/clear-preview`. After a write that changed the map it fires `map.changed` on the module event bus, as a command does. It holds one server-sent events stream per open page and writes each `map.changed` to all of them; its loop waits for a connection with no timeout, and nothing in it polls. [app.js](../../src/metaform/modules/web/page/app.js) and the page resources render the functional graph, purpose relationships, inspector, and prompt editing. They do not imply that every possible graph edit is a browser operation.
 
@@ -362,7 +362,7 @@ These entries preserve both the described semantics and the supplied source. The
 <a id="c01"></a>
 ### C01. The map knowledge interface cannot change a join's `verb`
 
-**Source-inspected.** Intake and Store support `ef` and `verb` on joins and subtype joins. The map module's `op=add-join` and `op=add-subtype` read both and write them to the dedicated fields. Its `FIELDS`, which `op=edit` and `op=refine` read, include `ef` and omit `verb`: a value given for `verb` there is named in a notice, `op=refine does not read verb; it was ignored.`, and nothing is written for it. `intake edit` changes both while an intake is building, and `Store.edit` and `Store.refine` take both.
+**Source-inspected.** Intake and Store support `ef` and `verb` on joins and subtype joins. The map module's `op=add-join` and `op=add-subtype` read both and write them to the dedicated fields. Its `FIELDS`, which `op=edit` and `map refine` read, include `ef` and omit `verb`: a value given for `verb` there is named in a notice, `op=refine does not read verb; it was ignored.`, and nothing is written for it. `intake edit` changes both while an intake is building, and `Store.edit` and `Store.refine` take both.
 
 Sources: [map fields](../../src/metaform/modules/map/__init__.py#L27-L28), [operation reads and dispatch](../../src/metaform/modules/map/__init__.py#L239-L384), [intake recording](../../src/metaform/modules/intake/__init__.py#L287-L318), [Store add methods](../../src/metaform/data/store.py#L185-L218), [editable fields](../../src/metaform/data/rows.py#L25-L31).
 
@@ -384,7 +384,7 @@ The author's broader account attaches language Encounters such as `code.c` and a
 <a id="c03"></a>
 ### C03. A broad stored provider and the single-EF semantic Type are different levels of description
 
-**Author definition plus literal source representation.** The exact identity definition uses one `e` per semantic Type at its represented resolution. The intake's EF definition at [line 18](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L18) says that a PE type on the whole can serve different VEs through different Encounter Functions, each recorded in its receiving join. Stored providers accordingly have several receiver-specific descriptions.
+**Author definition plus literal source representation.** The exact identity definition uses one `e` per semantic Type at its represented resolution. The intake's EF definition at [line 18](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L18) says that a PE type on the whole can serve different CQUs through different Encounter Functions, each recorded in its receiving join. Stored providers accordingly have several receiver-specific descriptions.
 
 **Correspondence:** no complete formal mapping from those broad provider records to the resolution-specific Type is supplied. `Store.identity` retrieves those relationships; it does not resolve the semantic correspondence by proving equivalence. The exact definition is retained without inventing a canonicalization rule, subtype split, or runtime approval mechanism.
 
@@ -518,8 +518,8 @@ Descriptions in this index are the snapshot's own wording; they name a correctio
 <!-- Generated from the September 26 project export. -->
 | Functional address | Project name | Role |
 |---|---|---|
-| `stakeholder.orchestrator.agent` | agent orchestrator | VE |
-| `stakeholder.author.module` | module author | VE |
+| `stakeholder.orchestrator.agent` | agent orchestrator | CQU |
+| `stakeholder.author.module` | module author | CQU |
 | `code.graph.knowledge` | Metaform | AUE |
 | `code.chassis` | chassis | DE |
 | `code.store.graph` | data access object and metaform store | SE |

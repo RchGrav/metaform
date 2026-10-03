@@ -83,7 +83,7 @@ def write(project_id: str | None, run: str, kind: str, text: str, *, store: Stor
         # section. On Windows an append is not one step, so the lock is what keeps them apart, BASE-045.
         stream.seek(0, os.SEEK_END)
         stream.write((text if stream.tell() == 0 else f'\n\n## {home.now()}\n\n{text}').encode('utf-8'))
-    if store is not None:
+    if store is not None and hasattr(store, 'save_report'):
         store.save_report(name, run, kind, target.stat().st_size, layer)
     return name
 
@@ -133,9 +133,9 @@ def list_reports(where: Path, *, project: str | None = None, kind: str | None = 
                  limit: int = 500, after: str | None = None) -> Page[Report]:
     """The report, feedback and shape files for the folder's project, or the home's when it has none."""
     project_id = context.project_for(where, project)
-    if project_id is not None:
+    if project_id is not None and hasattr(Store(project_id), 'reports'):
         return Store(project_id).reports(kind, layer, limit=limit, after=after)
-    rows = tuple(row for row in _loose(None) if kind is None or row.kind == kind)
+    rows = tuple(row for row in _loose(project_id) if kind is None or row.kind == kind)
     start = int(after or 0)
     end = start + limit if limit else len(rows)
     return Page(rows[start:end], str(end) if end < len(rows) else None)
@@ -147,7 +147,7 @@ def read_report(where: Path, name: str, *, project: str | None = None) -> str:
     missing = Stop(f'No report {name}.', 'metaform list reports')
     if Path(name).name != name or NAME.fullmatch(name) is None:
         raise missing
-    if project_id is not None and Store(project_id).report(name) is None:
+    if project_id is not None and hasattr(Store(project_id), 'report') and Store(project_id).report(name) is None:
         raise missing
     target = folder(project_id) / name
     if not target.is_file():

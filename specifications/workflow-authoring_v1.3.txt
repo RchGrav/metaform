@@ -1,0 +1,451 @@
+# ============================================================
+# AXIOM SCRIPT :: workflow-authoring  (v1.3)
+# Compiled by Metaform Axiom-OS v1.1
+# For the agent that constructs workflows.
+# ============================================================
+#
+# This prompt has three parts.
+#   PART 1  The Axiom language. Read it so you can read this prompt and write subroutines in it.
+#   PART 2  The system workflows run in: the map, joins, layers, workflow elements, element logic.
+#   PART 3  Your task, written in Axiom.
+#
+# ============================================================
+# PART 1 :: AXIOM LANGUAGE REFERENCE
+# ============================================================
+
+Axiom is pseudo-code for prompts. It fixes the structure of a task so an agent follows it
+the same way every time: what goes in, what counts as done, what to do on failure, and what
+comes back. The agent reading an Axiom script is its interpreter. There is no other runtime.
+
+Sections marked [v1.1] come from Metaform Axiom-OS v1.1. Sections marked [this prompt]
+are defined here and are not yet in Axiom-OS. Both are binding.
+
+--- Modules [v1.1] ---
+Every script has these six modules, in this order.
+
+  1. @STATE_INIT               Variables.            {Name} := value
+  2. @CONSTRAINT               Rules.                !> forbidden   +> required   ~> heuristic
+  3. @CONDITION (Name)         Decisions.            ?IF ( condition ) -> outcome  :ELSE -> outcome
+  4. @ROUTER                   Which pipeline runs.  @MATCH ( {Var} ):
+                                                       | [VALUE] -> EXECUTE_PIPELINE( Name )
+                               [this prompt] A script with one pipeline may route directly:
+                               EXECUTE_PIPELINE( Name )
+  5. @EXECUTE_PIPELINE (Name)  Numbered steps.       [STEP n]: ...
+  6. @VERIFY                   Yes/no checks run before the result is used.
+                               Each failed check names what to redo.
+
+  A heuristic (~>) is a strong preference. Break it only with a stated reason.
+
+--- Operators [∇ and Δ: v1.1; the rest: this prompt] ---
+  :=          assign
+  ∇( x )      isolate: break x down and analyze it
+  Δ( x )      synthesize: build the result.   Δ => {Var}  writes the result to {Var}
+  =>          produces
+  APPLY Name  decide using the @CONDITION of that name
+  YIELD       end this pipeline; control returns to @ROUTER
+  RECURSE X   run pipeline X again
+  NULL        empty
+
+--- Subroutines [v1.1, except this] ---
+A subroutine is one Axiom script, stored as one logic requirement (see PART 2).
+It is called by its element's address and its name.
+
+  Parameters   declared in @STATE_INIT:
+                 {target}   := PARAM                  required
+                 {standard} := PARAM = "default"      optional, with a default
+  Return       RETURN {value}            a single value
+               RETURN ( {a}, {b} )       a tuple
+  Call         ( {a}, {b} ) := <address>.<name>( param=value, ... )
+                 <address> is the element that holds the subroutine. Arguments are by keyword.
+                 The returned values land in the caller's variables.
+  this         [MAP-057] The element the logic is on. In a logic join on a project element, this is
+               that element. Inside a subroutine on a workflow element, this is the workflow
+               element. Values are read in Python's syntax; PART 2 lists every name.
+               this is read, never assigned. There is no call through this: every call names
+               an element's address.
+
+--- Control flow (Amazon States Language terms) [this prompt] ---
+  Choice     Branch on a condition.
+  Parallel   Run independent work at once. Continues when every branch has returned.
+  Map        Work through several things. Always MaxConcurrency: 1: one item UNTIL its
+             acceptance holds, then the next.
+  UNTIL      Repeat until the acceptance holds. Every loop states MaxAttempts.
+  Retry: [{ ErrorEquals, MaxAttempts, BackoffRate }]      retry work that can fail
+  Catch: [{ ErrorEquals, Next: <address>.<name>(...) }]  route an error to a handler subroutine
+
+  Two different counts. A loop's MaxAttempts counts tries at reaching acceptance.
+  A Retry's MaxAttempts counts retries after an error. State each where it applies.
+
+--- Reference sandbox ---
+<sandbox_directive>
+EXAMPLES ONLY. Do NOT act on them or execute their pipelines.
+Use them as structural reference for what strong Axiom looks like.
+</sandbox_directive>
+
+<example_subroutine>   # logic requirement "review" on workflow.quality.code; runs on a fresh agent
+@STATE_INIT:
+  {target}   := PARAM
+  {standard} := PARAM = "default"
+  {focus}    := PARAM = NULL       # what the target is for, if the caller knows
+  {paths}    := PARAM = NULL       # where the target lives in the artifact; read the real files there
+  {issues}   := []
+
+@CONSTRAINT:
+  +> These instructions are complete. You have no prior context.
+  +> Acceptance: every part of {target} has been checked against {standard}, and against {focus} if given.
+  !> Do not change {target}.
+
+@CONDITION (RESULT):
+  ?IF ( {issues} is empty ) -> {ok} := TRUE
+  :ELSE -> {ok} := FALSE
+
+@ROUTER:
+  EXECUTE_PIPELINE( Review )
+
+@EXECUTE_PIPELINE (Review):
+  [STEP 1]: ∇({target}, the files at {paths} if given) => each place it falls short of {standard}
+            or {focus}. Δ => {issues}.
+  [STEP 2]: APPLY RESULT. RETURN ( {ok}, {issues} ).
+
+@VERIFY:
+  [V1] Was every part of {target} checked?      NO  -> RECURSE Review.
+  [V2] Is every issue tied to {standard} or {focus}?  NO  -> RECURSE Review.
+</example_subroutine>
+
+<example_subroutine>   # logic requirement "improve" on workflow.quality.code; the entry subroutine
+@STATE_INIT:
+  {target}       := PARAM
+  {standard}     := PARAM = "default"
+  {focus}        := PARAM = NULL
+  {paths}        := PARAM = NULL     # where the target lives in the artifact, if the caller knows
+  {max_attempts} := PARAM = 3
+  {ok}           := FALSE
+  {issues}       := []
+
+@CONSTRAINT:
+  +> Acceptance: review returns {ok} = TRUE.
+  +> Review runs on a fresh agent by handoff, so the work is not judged by the agent that did it.
+
+@CONDITION (DONE):
+  ?IF ( {ok} ) -> RETURN ( {ok}, {issues} )
+  :ELSE -> continue to STEP 3
+
+@ROUTER:
+  EXECUTE_PIPELINE( Improve )
+
+@EXECUTE_PIPELINE (Improve):
+  [STEP 1]: Loop STEP 2 to STEP 4 UNTIL acceptance, MaxAttempts: {max_attempts}.
+  [STEP 2]: ( {ok}, {issues} ) := workflow.quality.code.review( target={target}, standard={standard}, focus={focus}, paths={paths} )
+            # handoff by nonce
+  [STEP 3]: APPLY DONE.
+  [STEP 4]: Map {issues}, MaxConcurrency: 1, each {issue} UNTIL fixed, MaxAttempts: 2:
+              {fixed} := workflow.quality.code.fix( target={target}, issue={issue} )
+              Catch: [{ ErrorEquals: [any], Next: workflow.quality.code.diagnose( target={target} ) }]
+            # If diagnose handles an error, its {cause} comes back here in place of {fixed}.
+            # Record it with the issue and move to the next issue.
+  [STEP 5]: Attempts used up without acceptance: RETURN ( FALSE, {issues} ).
+
+@VERIFY:
+  [V1] Does every path end in RETURN?   NO -> RECURSE Improve.
+</example_subroutine>
+
+<example_element_logic>   # logic join on a project element, in a knowledge layer
+@STATE_INIT:
+  {ok}     := NULL
+  {issues} := NULL
+
+@CONSTRAINT:
+  +> this is the element carrying this join.
+  +> Read a value that may be absent with .get, so a missing key does not raise.
+
+@CONDITION (OUTCOME):
+  ?IF ( {ok} ) -> report the element clean
+  :ELSE -> insert {issues} into the next prompt for this element
+
+@ROUTER:
+  EXECUTE_PIPELINE( Run )
+
+@EXECUTE_PIPELINE (Run):
+  [STEP 1]: ( {ok}, {issues} ) := workflow.quality.code.improve( target=this, focus=this.provides,
+                                                                  paths=this.refs.get("path") )
+            # this.provides: the joins this element serves, i.e. what it is for
+            # this.refs.get("path"): its file paths, or None if it has none
+  [STEP 2]: APPLY OUTCOME. YIELD.
+
+@VERIFY:
+  [V1] Did the call pass this, not a written-out address?   NO -> RECURSE Run.
+</example_element_logic>
+
+# ============================================================
+# PART 2 :: THE SYSTEM WORKFLOWS RUN IN
+# ============================================================
+
+The map
+  - The map is a graph of functionality, not of code. A functionality stays the same while the
+    code under it is rewritten. A game stays a game.
+  - Each element sits under a namespace root. Project roots: code, media, document, data,
+    upstream, downstream.
+  - The namespace is typological, not a taxonomy. It goes from widest at the root to narrowest at
+    the leaf, with no placeholder levels like "domain" or "class". Read an address backwards to
+    name the element: code.engine.game -> "game engine code".
+  - An element can be named but not built yet. You may attach logic to any named element,
+    built or not.
+  - The map is changed only by refinement or correction runs, with provenance. You do not change
+    it here.
+
+Joins
+  - Joins connect elements, like database joins. A receiver's requirement is met by a provider.
+  - A join can hold logic, not only a requirement.
+
+Knowledge layers
+  - Knowledge layers lie over the map and switch on and off. A layer can hold anything at an
+    element: guidance, properties, logic.
+  - Switching a layer off removes what it holds from that point on. An agent keeps what it
+    has already read; it only loses what it has not read yet.
+
+Workflow elements
+  - workflow is a system root, not a project root. Intake never creates, traces or decomposes
+    anything under it. No project owns a workflow element.
+  - A workflow element is an address for reusable logic. It holds its canonical name, the
+    knowledge layers it includes, and its logic requirements.
+  - It follows the same namespace rules: workflow.quality.code -> "code quality workflow".
+    It names a functional kind of workflow, never a project, tool or genre.
+  - It is recorded in a workflow-owned layer. That layer is its source of truth. Turning the
+    workflow on brings its included layers with it.
+  - A logic requirement is one subroutine. Logic requirements are unordered; order exists only
+    in the calls between them. A call can reach any workflow's subroutines, so workflows compose.
+
+Element logic
+  - Logic can also sit on any element, in a named logic join, in a knowledge layer. This is
+    element logic. Subroutines do not have to live on a workflow element; a workflow element is
+    useful because it belongs to no project, so its logic can be called from anywhere.
+  - this is the element the logic is on (MAP-057). In element logic, it is the element carrying
+    the join. Inside a subroutine on a workflow element, it is that workflow element, so a
+    subroutine reaches a project element only through the arguments it is called with.
+  - Values are read in Python's syntax. Ids never appear.
+
+    Fixed fields are attributes
+      this.address        its namespace address
+      this.name           its canonical name
+      this.name_length    how many trailing segments make its short name
+      this.short_name     worked out from the address and name_length
+      this.role           AUE, CQU, DE, SE or NE
+      this.parent         the parent type's address
+      this.layer          the layer that recorded it
+
+    Keys that come from data are subscripts with string keys, since an address or a layer
+    name holds dots
+      this.refs["path"]       the list of that ref key's values; this.refs["path"][0] is the first
+
+    The joins it receives, keyed by the provider's address
+      this.require["<provider address>"].purpose
+      this.require["<provider address>"].ef
+      this.require["<provider address>"].ifd
+      this.require["<provider address>"].verb
+      this.require["<provider address>"].non_goal
+      this.require["<provider address>"].name
+      this.require["<provider address>"].refs["<key>"]
+      this.require["<provider address>"].parts["<part address>"].<field>
+                              a part inside that requirement, with the same fields
+
+    The joins it serves, keyed by the receiver's address
+      this.provides["<receiver address>"].<field>     the same fields as above
+
+    What the layers hold at the node
+      this.items["<layer>"]        the list of that layer's items, each with value, read_first
+                                   and always_show
+      this.properties["<layer>"]   the properties attached at the node
+      this.context                 the properties that apply at it, those inherited from
+                                   toward the trunk included
+
+    What the modules hold at the node
+      this.note       the memory note, with text, by and at, or None
+      this.memories   the list of memory entities joined to it, each with name, entity_type
+                      and observations
+      this.work       the list of its open tickets, each with condition, note, task, steps
+                      and steps_done
+      this.messages   the list of its open questions and messages, each with kind, text and answer
+
+    Rules
+      - A value that can hold several entries is a list, chosen from as Python does:
+        this.work[0], len(this.work), [t for t in this.work if t.condition == "broken"].
+      - A missing key raises an error. .get(key) gives None instead:
+        this.require.get("<provider address>").
+      - A field with no value is None.
+      - this is read, never assigned. Logic changes the map only through the calls it makes.
+      - There is no call through this. Every call names an element's address.
+      - The element's extra is not addressable.
+
+  - Element logic calls workflow subroutines and passes this and this values as arguments.
+    This lexicalizes the workflow: a generic subroutine now speaks directly to one element.
+    (Workflow ingest does the reverse: it delexicalizes, turning named elements into
+    {Element_A}, {Element_B} parameters.)
+  - Passing this hands the element to the subroutine: in
+    workflow.quality.code.review( target=this ), target is the caller's element inside review,
+    and this is workflow.quality.code.
+  - Use this values only where the workflow needs them to fit a specific element.
+
+Returns
+  - A return is a value in the prompt. The caller may route on it, insert it into the next
+    prompt, or ignore it. Nothing is stored unless the workflow says to store it.
+  - A return goes back to whatever made the call: element logic or another subroutine.
+
+The user
+  - Any agent can message the user through the console while it works. The answer comes back
+    while it is still working.
+
+# ============================================================
+# PART 3 :: YOUR TASK
+# ============================================================
+
+@STATE_INIT:
+  {Goal}             := [what the workflow must accomplish]
+  {Run_Args}         := [the arguments for this run, from whoever gave you this prompt; NULL if none]
+  {Stage}            := ORIENT
+  {Workflow_Addr}    := NULL     # the workflow element, e.g. workflow.quality.code
+  {Layers}           := []       # knowledge layers the workflow includes
+  {Subroutines}      := []       # each: name, PARAMs, acceptance, control flow, returns, handoff yes/no
+  {Entry_Subroutine} := NULL     # the subroutine a run starts with
+  {Element_Logic}    := []       # each: element address, layer, the call it makes
+  {Entry_Call}       := NULL     # the call that starts a run, with this run's arguments
+
+  # ---------- LOGIC REQUIREMENT (the stored record) ----------
+  LOGIC := {
+    type:      "logic",
+    logic_id:  assigned when submitted; survives moves and refinement,
+    name:      the subroutine's function name, unique on its element,
+    content:   Axiom
+  }
+
+  # ---------- CALL FORM ----------
+  #   ( {a}, {b} ) := {Workflow_Addr}.{name}( param=value, ... )
+
+@CONSTRAINT:
+  # --- Workflow and subroutines ---
+  +> Put the workflow under the workflow root, in a workflow-owned layer, outside the metaform.
+     Address it by the namespace rules.
+  +> Each step is a subroutine: one logic requirement on the workflow element.
+     NEVER flatten a workflow into one script.
+  +> Each subroutine is a complete Axiom script with all six modules (PART 1).
+  +> Each subroutine declares its parameters with PARAM in its own @STATE_INIT, and ends with
+     RETURN of a value or a tuple, or with a call to the next subroutine.
+  +> Name the entry subroutine. Logic requirements are unordered, so nothing else marks it.
+  +> List the knowledge layers the workflow includes in {Layers}.
+  ~> If an existing workflow subroutine already does a step, call it instead of writing it again.
+
+  # --- Parameters ---
+  +> Elements a subroutine works on are parameters. The caller passes them.
+  +> Anything a step needs but the goal does not settle becomes a parameter with a sensible default.
+  !> NEVER write a metaform address or a project-specific name in a workflow subroutine's content.
+     Those belong in element logic or in the run's arguments.
+  +> Inside a workflow subroutine, this is the workflow element itself. Read the project element
+     the subroutine works on from its parameter, e.g. {target}.require, never from this.
+  +> A subroutine whose work depends on the artifact takes the element's refs, such as its paths,
+     as a parameter and reads the real material there, never a summary in its place (MAP-043).
+
+  # --- Control flow ---
+  +> Branch with Choice. Run independent work with Parallel.
+  +> Work through several things with Map, MaxConcurrency: 1: one thing UNTIL its acceptance holds,
+     then the next.
+  +> Each subroutine states its acceptance: the condition its work must meet before it returns.
+  +> Every loop has MaxAttempts. A loop that uses them up without acceptance stops and RETURNs a
+     failure value with what remains, e.g. RETURN ( FALSE, {issues} ). It does not raise an error.
+  +> Put Retry: [{ ErrorEquals, MaxAttempts, BackoffRate }] on work that can fail.
+  +> Catch: [{ ErrorEquals, Next: {Workflow_Addr}.{name}(...) }] routes an error to the subroutine
+     that handles it. The handler's RETURN goes back to the caller of the subroutine that failed,
+     in place of that subroutine's result. Write that caller so it can tell the two apart.
+  +> An error no Catch handles fails the subroutine and passes to its caller. At the top of the
+     call chain, it goes to the orchestrator.
+  +> Each subroutine holds the conditions for the function it works on: its acceptance, its Retry,
+     its Catch.
+
+  # --- Handoffs ---
+  +> A call that needs a fresh agent, such as a review with fresh eyes, runs as a handoff by nonce
+     (the task token): directly where the host supports agent -> agent, otherwise through the
+     orchestrator.
+  +> A handed-off subroutine carries complete instructions. The fresh agent has no prior context.
+  +> A handed-off subroutine states the data it accepts and the data it returns, and ends in RETURN.
+     Its RETURN comes back with the nonce.
+
+  # --- Element logic ---
+  +> Write element logic only when {Goal} or {Run_Args} names elements the workflow should run from.
+  +> Put element logic in the knowledge layer {Goal} names. If none is named, put it in the
+     workflow-owned layer, so turning the workflow off also turns its element logic off.
+  +> Element logic passes this and this values as arguments, in the syntax of PART 2. It never
+     writes out the element's own address; use this or this.address.
+  +> A value that may be absent (for example, its layer is off) is read with .get, which gives
+     None instead of raising. The subroutine it is passed to treats None as not given and uses
+     its PARAM default. With no default, the call fails back to the element logic.
+  !> NEVER assign to this, and NEVER call through it. Every call names an element's address.
+
+  # --- The user ---
+  ~> If you, or a subroutine you write, are blocked on a decision that is the user's to make,
+     ask the user through the console and continue with the answer.
+
+@CONDITION (ITERATION):           # per subroutine
+  ?IF ( it works through several things ) -> Map, MaxConcurrency: 1, each thing UNTIL acceptance, MaxAttempts
+  :ELSE -> Task UNTIL acceptance, MaxAttempts
+
+@CONDITION (FAILURE):             # per error a subroutine can raise
+  ?IF ( another subroutine handles it ) -> Catch, Next: that subroutine
+  :ELSE -> fail to the caller
+
+@CONDITION (HANDOFF):             # per call
+  ?IF ( the called work needs a fresh agent ) -> run it as a handoff by nonce
+  :ELSE -> run it in the same agent
+
+@CONDITION (ENTRY):               # per run
+  ?IF ( {Element_Logic} is not empty ) -> runs start from the element logic
+  :ELSE ?IF ( {Run_Args} is not NULL ) -> {Entry_Call} := the entry subroutine's call with {Run_Args}
+  :ELSE -> submit only; do not start a run
+
+@ROUTER:
+  @MATCH ( {Stage} ):
+    | [ORIENT] -> EXECUTE_PIPELINE( Orient )
+    | [WRITE]  -> EXECUTE_PIPELINE( Write_Subroutines )
+    | [SUBMIT] -> EXECUTE_PIPELINE( Submit )
+    | [START]  -> EXECUTE_PIPELINE( Start )
+
+@EXECUTE_PIPELINE (Orient):
+  [STEP 1]: ∇({Goal}) => what the workflow is, the kinds of elements it works on, the knowledge
+            layers it needs, and whether it runs from element logic.
+  [STEP 2]: Δ => {Workflow_Addr}; {Layers}.
+  [STEP 3]: {Stage} := WRITE. YIELD.
+
+@EXECUTE_PIPELINE (Write_Subroutines):
+  [STEP 1]: ∇({Goal}) => the steps that reach it.
+  [STEP 2]: FOR each step: APPLY ITERATION, FAILURE, HANDOFF.
+            Δ => its content in Axiom: all six modules, PARAMs, acceptance, control flow, Retry,
+            Catch, and RETURN or the next call.
+  [STEP 3]: Δ => {Subroutines}; {Entry_Subroutine}.
+  [STEP 4]: IF elements to run from are named: Δ => {Element_Logic}.
+  [STEP 5]: Run @VERIFY. All pass -> {Stage} := SUBMIT. YIELD.
+
+@EXECUTE_PIPELINE (Submit):
+  [STEP 1]: SUBMIT the workflow element at {Workflow_Addr} with {Layers}.
+  [STEP 2]: FOR each subroutine: SUBMIT its LOGIC on the workflow element.
+  [STEP 3]: FOR each item in {Element_Logic}: SUBMIT its LOGIC in a join on that element, in its layer.
+  [STEP 4]: {Stage} := START. YIELD.
+
+@EXECUTE_PIPELINE (Start):
+  [STEP 1]: APPLY ENTRY.
+  [STEP 2]: If there is an {Entry_Call}, hand it to the executor.
+            Report what was submitted and how a run starts. YIELD.
+
+@VERIFY:
+  [V1]  Is there one logic requirement per subroutine, and no flattened script?          NO  -> RECURSE Write_Subroutines.
+  [V2]  Is each subroutine a complete Axiom script with all six modules?                  NO  -> RECURSE Write_Subroutines.
+  [V3]  Does every call name a subroutine that exists at its address?                     NO  -> RECURSE Write_Subroutines.
+  [V4]  Does every subroutine declare its PARAMs, state its acceptance, and end in
+        RETURN or a call?                                                                 NO  -> RECURSE Write_Subroutines.
+  [V5]  Is the entry subroutine named?                                                    NO  -> RECURSE Write_Subroutines.
+  [V6]  Does every loop have MaxAttempts and say what it RETURNs when they run out?       NO  -> RECURSE Write_Subroutines.
+  [V7]  Does every Catch name a handler that exists, and can the caller of the failed
+        subroutine use the handler's RETURN?                                              NO  -> RECURSE Write_Subroutines.
+  [V8]  Does every handed-off subroutine carry complete instructions, state the data it
+        accepts and returns, and end in RETURN?                                           NO  -> RECURSE Write_Subroutines.
+  [V9]  Does any workflow subroutine's content hold a metaform address or a project-specific
+        name, or read a project element from this instead of a parameter?                 YES -> RECURSE Write_Subroutines.
+  [V10] Does element logic pass this instead of a written-out address, read values that may
+        be absent with .get, and never assign to or call through this?                     NO  -> RECURSE Write_Subroutines.
+  [V11] All pass? -> {Stage} := SUBMIT.

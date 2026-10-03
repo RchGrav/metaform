@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .. import changes, home, sqlite
 from ..errors import StoreError
@@ -29,6 +30,55 @@ class Tx:
     writing: bool
     created: set[str] = field(default_factory=set[str])
     named: bool = False
+    toggled: tuple[str, ...] = ()
+    module: str | None = None
+
+    def execute(self, statement: str, values: Any = ()) -> sqlite3.Cursor:
+        """Issue SQL through the DAO inside this operation's transaction."""
+        return self.db.execute(statement, values)
+
+    @property
+    def rows(self) -> Any:
+        from . import rows
+        from .operations import Access
+        return Access(self, rows)
+
+    @property
+    def views(self) -> Any:
+        from . import views
+        from .operations import Access
+        return Access(self, views)
+
+    @property
+    def reads(self) -> Any:
+        from . import reads
+        from .operations import Access
+        return Access(self, reads)
+
+    def operation(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        from .operations import invoke
+        return invoke(self, name, *args, **kwargs)
+
+    def tables(self) -> Any:
+        """The operation owner's metaform tables on this same transaction."""
+        from . import tables
+        declared = tables.declared(self.module)
+        assert self.module is not None
+        module = self.module
+        path = home.store_path(self.project_id, self.metaform_id) if self.metaform_id else Path()
+        def opener(place: tables.Place) -> tuple[sqlite3.Connection, Path, bool]:
+            if place != 'metaform':
+                raise StoreError('A map transaction reaches metaform-level tables.',
+                                 'use Store.tables() for a project-level transaction')
+            if self.writing:
+                tables.ensure(self.db, path, module, declared, place)
+                return self.db, path, True
+            return self.db, path, tables.state(self.db, module, declared, place) == 'ready'
+        return tables.TableTx(module, declared, write=self.writing, opener=opener)
+
+    def layers(self) -> Any:
+        from .selection import all_layers
+        return all_layers(self.db)
 
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
@@ -39,6 +89,15 @@ def open_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None
     """A prepared connection to one store file, opened inside its lock, STORE-006."""
     with sqlite.opened(path, STORE_SCHEMA, write=write, version=sqlite.SCHEMA_VERSION, upgrade=upgrade) as db:
         db.row_factory = sqlite3.Row
+        from . import tables
+        if not tables.extensions_ready(db):
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                tables.ensure_extensions(db, path)
+                db.execute('COMMIT')
+            except BaseException:
+                db.execute('ROLLBACK')
+                raise
         yield db
 
 
@@ -71,7 +130,7 @@ class Session:
         metaform = self._metaform(create=True)
         if metaform is None:
             raise StoreError(f'Project {self.project_id} has no metaform {self.metaform_id}.', 'metaform list metaforms')
-        path = home.store_path(self.project_id, metaform.metaform_id)
+        path = home.store_file(self.project_id, metaform.name)
         with open_store(path, write=True) as db:
             db.execute('BEGIN IMMEDIATE')
             try:
@@ -93,12 +152,14 @@ class Session:
         if metaform is None:
             db = sqlite.memory(STORE_SCHEMA)
             db.row_factory = sqlite3.Row
+            from . import tables
+            tables.ensure_extensions(db, Path())
             try:
                 yield Tx(db, None, self.project_id, False)
             finally:
                 db.close()
             return
-        with open_store(home.store_path(self.project_id, metaform.metaform_id), write=False) as db:
+        with open_store(home.store_file(self.project_id, metaform.name), write=False) as db:
             db.execute('BEGIN')
             try:
                 yield Tx(db, metaform.metaform_id, self.project_id, False)

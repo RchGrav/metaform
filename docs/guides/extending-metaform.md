@@ -166,7 +166,7 @@ The example's history read directly addresses its layer. General knowledge inten
 
 A module that records functional structure writes the same records the intake does. An element is its address, `name_length` and role: `store.add_element(layer, address, name_length=2, role='SE')`. The project's name for a functionality goes on the join: `store.add_join(layer, receiver, provider, name=..., purpose=..., function=..., ef='Function', relation=..., verb=...)`. A subtype join sits inside a parent join and holds an ordinary element: `store.add_subtype(layer, join_id, address, ...)`. `store.where(address)` reads one address with what relies on it and what it relies on. An element never moves; `store.edit` and `store.correct` move a join with `receiver`, `provider` or `parent`. Nothing is refused for its content: what does not fit is stored as given and the result carries `notices`.
 
-`Store.edit` and `Store.refine` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `op=refine` read `ef` and do not read `verb`. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
+`Store.edit` and `Store.refine` change a join's `ef` and `verb`; the `map knowledge` interface's `op=edit` and `map refine` read `ef` and do not read `verb`. [C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the source correspondence.
 
 The condition of an object is not knowledge and not a field of the object: it is a work record, apart from the map, MAP-046. A module records an intended part that is not built as `missing`, a malfunction as `broken`, and material outside intake scope or code conflicting with a superseding specification as `exclude`. It writes `store.add_work(Node('element', address), condition, note='what and where', task='what it needs')`, using the condition that describes the finding. An exclusion note links the affected material and the scope reason or superseding specification for review. The module changes the record with `store.edit_work` and resolves it with `store.finish_work(id, resolution)`; `store.work(node=..., condition=..., open=True)` lists records, and every element and join read, a subtype join's included, carries `open_work`. The web GUI draws a node ghostly while a `missing` record is open and flashes it red while a `broken` one is. Hello's `todo` and `done` verbs show it.
 
@@ -176,7 +176,7 @@ Store API: [store.py](../../src/metaform/data/store.py). Reader semantics: [Work
 
 ## Keep data of the module's own in tables it declares
 
-A module that needs data of its own, which is not knowledge about a node, declares its tables and reaches them through the same data access object, STORE-045. The chassis creates them, versions them with the module's version, upgrades them, and carries them through backup, export, import and clear. The module imports no `sqlite3` and writes no SQL.
+A module that needs data of its own, which is not knowledge about a node, declares its tables and reaches them through the same data access object, STORE-045. The chassis creates them, versions them with the module's version, upgrades them, and carries them through backup, export, import and clear. Ordinary tables use the declared columns and indexed table methods. Composite operations can use the transaction services described below.
 
 ```python
 from metaform.data import Column, Index, Table, Tables
@@ -210,7 +210,39 @@ with ctx.require_store().tables(write=False) as tx:
 
 The transaction is on the store of the first table it touches. A table of the other place needs a transaction of its own; inside `store.atomic()` a metaform-level table joins the map's transaction. `get` and `update` take the whole key. `rows` and `delete` take equal values for the leading columns of the key or of a declared index, and `rows` reads in that index's order and pages on it with `after`; `by` names the index to read through. A read that no index answers is refused with the indexes declared, so every read goes straight to its answer, STORE-005. Declare the index the read needs.
 
-To change the tables, change the declaration and raise `version`. On the next transaction the chassis keeps a copy of the store under `backups/module-<id>-<version>/`, adds new tables, columns and indexes, keeps every row in the columns both versions share, runs `Tables(upgrade=...)` as `upgrade(tx, found)` once in each store that holds the tables, with `tx.place` naming it, and drops a table no longer declared. Tables changed at the same version are refused, and so is a store written by a later version. Hello's `visit`, `note` and `notes` show the capability.
+To change the tables, change the declaration and raise `version`. On the next transaction the chassis keeps a copy of the store under `backups/module-<id>-<version>/`, adds new tables, columns and indexes, keeps every row in the columns both versions share, runs `Tables(upgrade=...)` as `upgrade(tx, found)` once in each store that holds the tables, with `tx.place` naming it, and drops a table no longer declared. Inside the upgrade, `tx.found_rows(table)` reads the rows as the version found held them, a column the new version drops included, so the upgrade can carry what that column held into a new one before it goes. Tables changed at the same version are refused, and so is a store written by a later version. Hello's `visit`, `note` and `notes` show the capability.
+
+## Own DAO operations and existing table layouts
+
+A feature declares its storage and operations in its module. `Module.data` takes
+`Data` from `metaform.data`; `Data.operations` maps method names to
+`Operation(handler, write=True)` for writes or `Operation(handler)` for reads.
+Calling `store.<name>(...)` gives that handler a `DataTx` followed by its
+arguments. The DAO opens the transaction, and a call inside `Store.atomic()`
+joins the native map writes. With the owner disabled, its operations are absent.
+
+Hello's `count_visit` backs the existing `visit` verb. The handler uses
+`tx.tables()` to get its declared metaform tables on that same transaction.
+`Store.tables()` remains the interface for standalone metaform or project table
+transactions. A composite handler can use `tx.rows`, `tx.views` and `tx.reads`
+for native DAO services, or `tx.execute(statement, values)` for its SQL in the
+current transaction. `Data.decorate(tx, record)` contributes to native record
+reads, and `Data.item_write(tx, target, values, fields, notices)` contributes to
+item writes. These callbacks are module code.
+
+`Table.from_sql(name, schema, exchange=True, on_remove=())` imports an existing
+table definition and its indexes, constraints and physical name. Existing rows
+stay in place and their declaration is recorded as module-owned. This is how
+map's storage adopts work, messages, challenges, plans and report records.
+`on_remove` holds `(native_kind, column, action)` rules, where action is `delete`
+or `null`. Those rules are stored with the declaration, so native deletion can
+apply them even when the module is absent. A module version upgrade uses the
+same backup and transaction handling as other declared tables.
+
+Historical chassis layouts use the module's optional `Tables.legacy_upgrade`
+and `Tables.legacy_fold` callbacks. The core carries no feature layout. Exports
+carry existing-name declarations in `extensions` alongside their compatible
+exchange keys, so import and export can preserve the data without its owner.
 
 ## Add to the read of a node
 
@@ -252,7 +284,7 @@ def changed(payload, ctx):
 MODULE = Module(..., subscriptions=(Subscription('map.changed', changed),))
 ```
 
-The web module subscribes and hands each event to its running server, which pushes it to every open page over a server-sent events stream, so the page redraws at once; with no server running, nothing happens. Work a module does outside a command, in a task it spawned, is announced only when the module publishes `map.changed` itself. The web GUI's server fires it the same way after each of the page's own writes that changed the map, so a subscriber hears a clear made on the page as it hears one from the command line. hello's greeting shows it: with the page open, each greeting appears in the 3D view as it is recorded, and hello has no code for it. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
+The web GUI's server hears each event published in another process through the base's listener and pushes it to every open page over a server-sent events stream, so the page redraws at once; with no server running, nothing listens. The chassis fires it when the command ends, so writes a module makes outside a command, in a task it spawned, and writes made inside a verb that runs on for a long time, such as `dispatch run` or a server run in the foreground, reach an open web GUI while it runs only when the module publishes `map.changed` itself after each write, with the project and the id of the metaform it wrote to: `ctx.publish('map.changed', {'project': ..., 'metaform_id': ...})`, or `await ctx.publish_async(...)` from a coroutine. The chassis still fires it once for the command when the command ends. dispatch's runner shows it, publishing after each write it makes. A module whose own process runs on, such as a server or a runner, hears `map.changed` published in other processes with `listener = ctx.listen(handler)`, BASE-053: the handler gets each payload in the listener's own thread, so code on a loop hands it over with `loop.call_soon_threadsafe`, and `listener.close()` ends it. Its own process's changes reach it through its own code, not the listener. hello's `follow` shows it. The web GUI's server fires it the same way after each of the page's own writes that changed the map, so a subscriber hears a clear made on the page as it hears one from the command line. hello's greeting shows it: with the page open, each greeting appears in the 3D view as it is recorded, and hello has no code for it. Nothing in Metaform polls for a change; a timer, a sleep in a loop or a repeated read waiting for something is a defect unless it is shown there is no other way.
 
 Separate owned asynchronous work uses `ctx.spawn(coroutine)` inside an active event loop. The loader tracks the task as belonging to the module and cancels it during unload/reset/shutdown. That facility is distinct from publication. A one-shot asynchronous CLI verb owns a transient loop; its spawned work is cleaned up when the invocation ends, not converted into an independent daemon.
 
@@ -262,7 +294,7 @@ Source: [events.py](../../src/metaform/events.py), [loader.py](../../src/metafor
 
 ## Discovery, enablement, and lifecycle
 
-The loader searches the system module directory, `<Metaform home>/modules`, and the `metaform.modules` entry-point group. Earlier discoveries retain a duplicate ID; a later conflicting candidate is reported rather than loaded a second time. Chassis command names are reserved.
+The loader searches the system module directory, `<Metaform home>/modules`, the `metaform.modules` entry-point group, and then the project place, `.metaform/modules/` in the folder of the active selected project. You create the project place yourself. Its modules load only where that project is selected, and Metaform only reads them, writing no bytecode or anything else into the project folder. Earlier discoveries retain a duplicate ID; a later conflicting candidate is reported rather than loaded a second time. Chassis command names are reserved.
 
 `metaform list modules` identifies origin and load state. Unsupported platforms, absent declared dependencies, disabled modules, and import failures are distinguishable conditions. Enablement determines whether a module loads; the folder's `modules` selection determines whether a loaded module appears on that folder's command surface.
 

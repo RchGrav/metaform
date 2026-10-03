@@ -12,13 +12,11 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from .. import home
 from ..errors import StoreError
-from . import rows, versions, views
+from . import operations, rows, versions, views
 from .ids import is_id, prefixes
 from .paging import LIMIT, paged, sliced
 from .records import (
-    TAKEN,
     Citation,
     ContextView,
     Element,
@@ -29,22 +27,18 @@ from .records import (
     Join,
     Layer,
     LayerGroup,
-    Message,
     Node,
     NodeView,
     Page,
     Property,
     Provenance,
-    Report,
     RootElement,
     RootEntry,
     Roots,
     Selection,
     Subtype,
-    Ticket,
     Version,
     Where,
-    WorkRecord,
 )
 from .selection import Resolver, all_layers
 from .session import Tx
@@ -84,6 +78,13 @@ def joins(tx: Tx, res: Resolver | None, ref: str, as_: str, limit: int, after: s
                              f'WHERE c.{as_}=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
                              (element_id, cursor or '', count)).fetchall()
     return paged(fetch, lambda row: views.visible_join(tx, row, res), limit, after)
+
+
+def join_ends(tx: Tx, join: str) -> tuple[str, str] | None:
+    """One current join's receiver and provider by address, a subtype join's its parent join's receiver and the
+    element it holds, STORE-010."""
+    receiver, provider = views.join_ends(tx, join)
+    return None if receiver is None or provider is None else (receiver, provider)
 
 
 def subtypes(tx: Tx, res: Resolver | None, join: str, limit: int, after: str | None) -> Page[Subtype]:
@@ -133,16 +134,11 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
             placed.append(GraphJoin(**fields, subtypes=subtypes(tx, context, join.join_id, 0, None).results))
         return tuple(placed)
 
-    open_work = tuple(views.work_record(tx, row) for row in tx.db.execute(
-        "SELECT * FROM work WHERE target_kind='element' AND target_id=? AND done IS NULL ORDER BY row",
-        (found.element_id,)))
     at = node(tx, res, Node('element', found.element_id), raw)
     reaching = reaching_at(tx, res, address)
-    waiting = tuple(views.message(tx, row) for row in tx.db.execute(
-        "SELECT * FROM messages WHERE target_kind='element' AND target_id=? AND closed IS NULL ORDER BY row",
-        (found.element_id,)))
-    return Where(kind, found, held, holding, with_subtypes('provider'), with_subtypes('receiver'), open_work,
-                 () if at is None else at.layers, full, reaching.applying, reaching.visible, waiting)
+    return operations.decorate(tx, Where(kind, found, held, holding, with_subtypes('provider'),
+                 with_subtypes('receiver'), layers=() if at is None else at.layers,
+                 full=full, applying=reaching.applying, visible=reaching.visible))
 
 
 def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
@@ -164,24 +160,8 @@ def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
         holding = None if held is None or parent is None else views.visible_join(tx, parent, context)
     if holding is None:
         return None
-    open_work = tuple(views.work_record(tx, one) for one in tx.db.execute(
-        "SELECT * FROM work WHERE target_kind='join' AND target_id=? AND done IS NULL ORDER BY row", (target.id,)))
     at = node(tx, res, Node('join', target.id), raw)
-    waiting = tuple(views.message(tx, one) for one in tx.db.execute(
-        "SELECT * FROM messages WHERE target_kind='join' AND target_id=? AND closed IS NULL ORDER BY row",
-        (target.id,)))
-    return Where('join', None, held, holding, work=open_work, layers=() if at is None else at.layers,
-                 messages=waiting)
-
-
-def ticket(tx: Tx, res: Resolver, raw: bool, work_id: str) -> Ticket:
-    """One ticket by its id with the where read of its node and of each node it links, MAP-048."""
-    row = tx.db.execute('SELECT * FROM work WHERE work_id=?', (work_id,)).fetchone()
-    if row is None:
-        raise StoreError(f'No work record has the id {work_id}.', 'metaform map work open=true')
-    record = views.work_record(tx, row)
-    return Ticket(record, node_where(tx, res, raw, Node.of(record.kind, record.id)),
-                  tuple(node_where(tx, res, raw, Node.of(link.kind, link.id)) for link in record.links))
+    return operations.decorate(tx, Where('join', None, held, holding, layers=() if at is None else at.layers))
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
@@ -285,7 +265,9 @@ def node(tx: Tx, res: Resolver, target: Node, raw: bool) -> NodeView | None:
     groups: dict[str, tuple[list[Item], list[Property]]] = {}
     for row in tx.db.execute('SELECT i.* FROM current_items c JOIN items i ON i.row = c.row '
                              'WHERE c.target_kind=? AND c.target_id=? ORDER BY c.row', (kind, thing_id)):
-        if raw or res.reaches(str(row['layer_id']), address):
+        # An always_show item of a finished layer shows whether or not its layer reaches the node, LAYER-021.
+        if (raw or res.reaches(str(row['layer_id']), address)
+                or (row['always_show'] and res.layers[str(row['layer_id'])].finished)):
             groups.setdefault(str(row['layer_id']), ([], []))[0].append(views.item(tx, row, res.layers))
     if kind == 'element':
         for row in tx.db.execute('SELECT p.* FROM current_properties c JOIN properties p ON p.row = c.row '
@@ -496,86 +478,9 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
     return Roots(tuple(entry), page.results, page.next)
 
 
-def work(tx: Tx, node: Node | None, condition: str | None, open: bool | None, limit: int,
-         after: str | None) -> Page[WorkRecord]:
-    """The work records, in row order, by node, condition or whether open, STORE-042; not a context read, since a
-    work record has no layer."""
-    target = rows.work_target(tx, node, []) if node is not None else None
-
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        where: list[str] = ['row > ?']
-        params: list[Any] = [int(cursor or 0)]
-        if target is not None:
-            where.append('target_kind=? AND target_id=?')
-            params.extend(target)
-        shown = {taken: kind for kind, taken in TAKEN.items()}
-        if condition in shown:  # in-progress is a missing ticket taken, and fixing a broken one, VIEW-035
-            where.append('condition=? AND taken IS NOT NULL')
-            params.append(shown[condition])
-        elif condition is not None:
-            where.append('condition=?')
-            params.append(condition)
-        if open is not None:
-            where.append('done IS NULL' if open else 'done IS NOT NULL')
-        return tx.db.execute(f'SELECT row AS key, * FROM work WHERE {" AND ".join(where)} ORDER BY row LIMIT ?',
-                             (*params, count)).fetchall()
-
-    return paged(fetch, lambda row: views.work_record(tx, row), limit, after)
-
-
-def messages(tx: Tx, node: Node | None, kind: str | None, open: bool | None, limit: int,
-             after: str | None) -> Page[Message]:
-    """The questions and messages, oldest first, by node, kind or whether they still wait, MAP-050; not a context
-    read, since a message has no layer."""
-    target = rows.work_target(tx, node, []) if node is not None else None
-
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        where: list[str] = ['row > ?']
-        params: list[Any] = [int(cursor or 0)]
-        if target is not None:
-            where.append('target_kind=? AND target_id=?')
-            params.extend(target)
-        if kind is not None:
-            where.append('kind=?')
-            params.append(kind)
-        if open is not None:
-            where.append('closed IS NULL' if open else 'closed IS NOT NULL')
-        return tx.db.execute(f'SELECT row AS key, * FROM messages WHERE {" AND ".join(where)} ORDER BY row LIMIT ?',
-                             (*params, count)).fetchall()
-
-    return paged(fetch, lambda row: views.message(tx, row), limit, after)
-
-
-def reports(tx: Tx, kind: str | None, layer: str | None, limit: int, after: str | None) -> Page[Report]:
-    """The report, feedback and shape files of this metaform, oldest first, STORE-043."""
-    if layer is not None:
-        layer_id = rows.layer(tx, layer).layer_id
-        found = tuple(views.report(tx, row) for row in tx.db.execute(
-            'SELECT * FROM reports WHERE layer_id=? ORDER BY kind, report_id', (layer_id,))
-            if kind is None or row['kind'] == kind)
-        return sliced(found, limit, after)
-
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        created, _, name = (cursor or '|').partition('|')
-        return tx.db.execute("SELECT created || '|' || report_id AS key, * FROM reports "
-                             'WHERE (created, report_id) > (?, ?) ORDER BY created, report_id LIMIT ?',
-                             (created, name, count)).fetchall()
-    return paged(fetch, lambda row: views.report(tx, row) if kind is None or row['kind'] == kind else None,
-                 limit, after)
-
-
-def report(tx: Tx, name: str) -> Report | None:
-    row = tx.db.execute('SELECT * FROM reports WHERE report_id=?', (name,)).fetchone()
-    return None if row is None else views.report(tx, row)
-
-
-def save_report(tx: Tx, name: str, run_id: str, kind: str, size: int, layer: str | None) -> Report:
-    """Record one report, feedback or shape file, or its new size after an append, STORE-043."""
-    layer_id = rows.layer(tx, layer).layer_id if layer else None
-    tx.db.execute('INSERT INTO reports(report_id, run_id, layer_id, kind, created, size) VALUES (?, ?, ?, ?, ?, ?) '
-                  'ON CONFLICT(report_id) DO UPDATE SET size=MAX(size, excluded.size)',
-                  (name, run_id, layer_id, kind, home.now(), size))
-    return views.report(tx, tx.db.execute('SELECT * FROM reports WHERE report_id=?', (name,)).fetchone())
+# The joins an element receives or provides, ticket dd2a9caf: those it receives and the subtype joins inside them,
+# whose receiver is their parent's, those it provides, and the subtype joins holding it. A subtype join is never
+# placed inside another, so one level is all there is.
 
 
 def has_intake(tx: Tx) -> bool:

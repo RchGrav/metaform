@@ -19,11 +19,15 @@
   note      keeps a note in hello's own project-level table, which a clear of the project's metaforms keeps;
             notes lists them in time order, through the table's index
   node_read adds how many names hello has greeted to `map where` and `map node` of its own element, BASE-035
+  work_read todo keeps how many names hello had greeted when the task was written, in hello's own table keyed by the
+            work id, and work_read shows it on that work record in `map work id=<id>`, BASE-035; the work table's
+            layout is unchanged, STORE-045
 
 Each public import a module can use, shown once:
   count           ctx.say, a message for a person beside the data the verb returns
   welcome         ctx.publish_async, publishing from an async verb
   later           ctx.spawn, a task hello owns that the chassis cancels when the process ends or hello unloads
+  follow          ctx.listen, map.changed from another process heard in this one, BASE-053
   greet-favorite  Stop, a user error with the one command to run next
   uptime          start and stop, the hooks that run when hello loads and unloads
   history         Module.default, what `metaform hello` runs with no verb
@@ -46,7 +50,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from metaform import nonce, settings
-from metaform.data import Column, Index, Layer, Node, Store, Table, Tables
+from metaform.data import Column, Data, DataTx, Index, Layer, Node, Operation, Store, Table, Tables, WorkRecord
 from metaform.module import (
     Context,
     Module,
@@ -166,6 +170,8 @@ def todo(ctx: Context) -> str:
     store = ctx.require_store()
     _own_element(store)
     record = store.add_work(Node('element', HOLDER), 'missing', note='hello has more to do', task=ctx.nouns['task'])
+    with store.tables() as tx:  # hello's own field on the record, in its own table, STORE-045
+        tx.insert('todos', {'work_id': record.work_id, 'greeted': len(_names(store))})
     return f'To do: {ctx.nouns["task"]} ({record.work_id})\n'
 
 
@@ -219,6 +225,21 @@ async def later(ctx: Context) -> str:
     ctx.spawn(_greet_after(ctx, name, seconds))
     return f'Greeting {name} in {seconds} s from a task hello owns; the chassis cancels the task if the process ends ' \
            'first.\n'
+
+
+async def follow(ctx: Context) -> dict[str, Any]:
+    """ctx.listen hears each map.changed published in another process of this home, BASE-053: the handler runs in the
+    listener's own thread, so it hands the payload to this loop. hello waits for the next change and shows it."""
+    loop = asyncio.get_running_loop()
+    heard: asyncio.Future[dict[str, Any]] = loop.create_future()
+
+    def told(payload: dict[str, Any]) -> None:
+        loop.call_soon_threadsafe(lambda: heard.done() or heard.set_result(payload))
+    with ctx.listen(told):
+        ctx.say('Waiting for the next change to the map made in another process.')
+        payload = await heard
+    ctx.say(f'{payload.get("project")} changed, metaform {payload.get("metaform_id") or "list"}.')
+    return {'changed': [payload]}
 
 
 def greet_favorite(ctx: Context) -> str:
@@ -291,25 +312,32 @@ def read_one_report(ctx: Context) -> str:
 # hello's own tables, STORE-045: the chassis creates them on first use, versions them with this version, and
 # carries them through backup, export, import and clear. `visits` is beside the map, in the metaform's store, and
 # goes with the metaform; `notes` is in the project's store for hello and stays when the metaforms are cleared.
-TABLES = Tables(version=1, tables=(
+# `todos` keeps hello's own field on each work record todo writes, keyed by the work id, beside the map as the work
+# records are; version 2 added it.
+TABLES = Tables(version=2, tables=(
     Table('visits', place='metaform', key=('name',),
           columns=(Column('name', required=True), Column('times', 'int', required=True, default=0))),
+    Table('todos', place='metaform', key=('work_id',),
+          columns=(Column('work_id', required=True), Column('greeted', 'int', required=True))),
     Table('notes', place='project', key=('note_id',),
           columns=(Column('note_id', required=True), Column('text', required=True), Column('at', required=True)),
           indexes=(Index(('at',)),)),
 ))
 
 
-def visit(ctx: Context) -> str:
+def count_visit(tx: DataTx, name: str) -> str:
     """Count a visit in one transaction: read the name's row by its key, then add it or change it."""
-    name = ctx.nouns['name']
-    with ctx.require_store().tables() as tx:
-        held = tx.get('visits', {'name': name})
-        if held is None:
-            row = tx.insert('visits', {'name': name, 'times': 1})
-        else:
-            row = tx.update('visits', {'name': name}, {'times': held['times'] + 1}) or held
+    tables = tx.tables()
+    held = tables.get('visits', {'name': name})
+    if held is None:
+        row = tables.insert('visits', {'name': name, 'times': 1})
+    else:
+        row = tables.update('visits', {'name': name}, {'times': held['times'] + 1}) or held
     return f'{name}: {row["times"]} visit{"" if row["times"] == 1 else "s"}\n'
+
+
+def visit(ctx: Context) -> str:
+    return ctx.require_store().count_visit(ctx.nouns['name'])
 
 
 def note(ctx: Context) -> str:
@@ -333,6 +361,16 @@ def node_read(ctx: Context, node: Node) -> dict[str, int] | None:
     if ctx.store is None or node != Node('element', HOLDER):
         return None
     return {'greeted': len(_names(ctx.store))}
+
+
+def work_read(ctx: Context, record: WorkRecord) -> dict[str, int] | None:
+    """What hello keeps on a work record todo wrote: how many names it had greeted then; nothing on any other
+    record. The chassis puts it under `hello` in `map work id=<id>`, BASE-035."""
+    if ctx.store is None:
+        return None
+    with ctx.store.tables(write=False) as tx:
+        row = tx.get('todos', {'work_id': record.work_id})
+    return None if row is None else {'greeted': row['greeted']}
 
 
 def status(ctx: Context) -> Status:
@@ -380,6 +418,11 @@ MODULE = Module(
              details='The task runs on after the verb returns for as long as the process runs, as the MCP server '
                      'does. The chassis cancels it when the process ends or hello unloads, so from the command line '
                      'the name is not greeted.'),
+        Verb('follow', follow, 'Wait for the next map change made in another process and show it. Shows ctx.listen.',
+             surfaces=('cli',),
+             details='Run it in one terminal and change the map in another, such as with metaform map ask; it prints '
+                     'the change and ends. A module whose process runs on, such as the web GUI\'s server, listens '
+                     'the same way for as long as it runs.'),
         Verb('greet-favorite', greet_favorite, 'Greet the favorite name. Shows Stop when none is set.'),
         Verb('uptime', uptime, 'How long ago hello started in this process. Shows the start and stop hooks.'),
         Verb('repeat', repeat, 'Say the greeting --times times. Shows a number setting.',
@@ -407,5 +450,7 @@ MODULE = Module(
     status=status,
     default='history',
     tables=TABLES,
+    data=Data(operations={'count_visit': Operation(count_visit, write=True)}),
     node_read=node_read,
+    work_read=work_read,
 )

@@ -18,7 +18,7 @@ from ..errors import StoreError
 from ..wording import odd_refs_notice
 from . import versions
 from .ids import ADDRESS, as_list, as_object, encode_extra, encode_value, is_id, new_id, prefixes
-from .records import TAKEN, Node, Notice, Ref
+from .records import Node, Notice, Ref
 from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
@@ -26,7 +26,7 @@ EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('name_length', 'name', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
     'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
              'extra'),  # receiver, provider and parent move it, MAP-003
-    'item': ('value', 'link', 'extra'),
+    'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }
 TEXT_COLUMNS = ('purpose', 'ef', 'verb', 'non_goal', 'type', 'name', 'ifd')
@@ -35,7 +35,7 @@ Row = sqlite3.Row
 
 
 def refine_step(thing: str = '<id>') -> str:
-    return f'metaform map knowledge op=refine id={thing} <field>=<value> reason=<why>'
+    return f'metaform map refine id={thing} <field>=<value> reason=<why>'
 
 
 # Values that do not fit -----------------------------------------------------------------------------------------
@@ -319,54 +319,22 @@ def node_at(tx: Tx, node: Any, found: LayerRow, what: str, notices: list[Notice]
     return 'join', node.id
 
 
-# Work records and items -------------------------------------------------------------------------------------
-
-def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
-    """The conditions of an object's open work records, in row order, STORE-042; one lookup on `work_by_target`."""
-    conditions = tuple(TAKEN.get(str(row[0]), str(row[0])) if row[1] else str(row[0]) for row in tx.db.execute(
-        'SELECT condition, taken FROM work WHERE target_kind=? AND target_id=? AND done IS NULL ORDER BY row',
-        (kind, thing_id)))
-    # What waits for the user at the object is open at it too: a question not answered, a message not read, MAP-050.
-    waiting = tuple(str(row[0]) for row in tx.db.execute(
-        'SELECT kind FROM messages WHERE target_kind=? AND target_id=? AND closed IS NULL ORDER BY row', (kind, thing_id)))
-    return conditions + waiting
-
-
-def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
-    """The kind and identity id a work record attaches to: the current element at an address, or the object with the
-    id given, a subtype join being a join. A node that names no current object is kept as written, with a notice,
-    BASE-044."""
-    if not isinstance(node, Node):
-        raise StoreError(f'{node!r} is not a node: write element:<address or id> or join:<id>.',
-                         'metaform help map work')
-    kind, ident = node.kind, node.id
-    if kind == 'type':
-        notices.append(Notice('node', f'{node} is a type address, which no work record attaches to; it was stored as '
-                                      'given, as an element node.'))
-        kind = 'element'
-    if kind == 'element':
-        current = current_element(tx, ident)
-        if current is not None:
-            return kind, str(current['element_id'])
-    elif target_current(tx, 'join', ident):
-        return kind, ident
-    notices.append(Notice('node', f'No current {kind} is at {ident}; the work record was stored as given and will '
-                                  'show once one is recorded there.'))
-    return kind, ident
+# Items ------------------------------------------------------------------------------------------------------
 
 
 def insert_item(tx: Tx, found: LayerRow, target_kind: str, target_id: str, value: Any, link_kind: str | None,
-                link_id: str | None, pairs: list[tuple[str, str]], extra: dict[str, Any] | None) -> str:
-    """One item row with its identity and refs, current at once."""
+                link_id: str | None, pairs: list[tuple[str, str]], extra: dict[str, Any] | None,
+                read_first: Any = False, always_show: Any = False) -> str:
+    """One item row with its identity, refs and flags, LAYER-021, current at once."""
     encoded = encode_value(value, f'{target_kind}:{target_id}')
     encoded_extra = encode_extra(extra, 'the item')
     item_id = new_id()
     tx.db.execute('INSERT INTO item_ids(item_id, layer_id) VALUES (?, ?)', (item_id, found.layer_id))
     identity(tx, item_id, 'item')
     cursor = tx.db.execute('INSERT INTO items(item_id, layer_id, target_kind, target_id, value, link_kind, link_id, '
-                           'extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                           'extra, read_first, always_show) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                            (item_id, found.layer_id, target_kind, target_id, encoded, link_kind, link_id,
-                            encoded_extra))
+                            encoded_extra, int(bool(read_first)), int(bool(always_show))))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id, link_kind, '
                   'link_id) VALUES (?, ?, ?, ?, ?, ?, ?)',

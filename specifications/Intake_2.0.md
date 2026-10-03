@@ -17,7 +17,7 @@
 
   # ---------- LOAD-BEARING SITES (VERBATIM; DO NOT PARAPHRASE) ----------
   {LB_GOAL} := """
-  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "purpose" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "require" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
   """
 
   {LB_STEP_1} := """
@@ -64,15 +64,13 @@
     joins:       [SCHEMA_JOIN]
   }
   SCHEMA_JOIN := {
-    type:         "purpose",
+    type:         "require",
     purpose:      active OP statement,
     non_goal:     CQU's non-goal where held (structural constraint),
-    ef:           PE's Encounter Function,
+    ef:           active-voice fragment starting with a 3rd-person singular present verb (-s/-es),
     ifd:          sends (OP->EF) | receives (EF->OP) | both (equal need),
     provider:     PE namespace address,
-    relation:     active-voice fragment starting with a 3rd-person singular present verb (-s/-es),
     verb:         that verb,
-    observation:  high-value, long-lasting stable state,
     refs:         where needed; members as { path: [relative path] }
   }
 
@@ -231,7 +229,7 @@
   [STEP 5]: Δ => address + canonical name + name_length. YIELD.
 
 @EXECUTE_PIPELINE (Record_Join):
-  [STEP 1]: Δ => SCHEMA_JOIN object. relation starts with an -s/-es verb; verb field matches.
+  [STEP 1]: Δ => SCHEMA_JOIN object. ef starts with an -s/-es verb; verb field matches.
             ifd set. refs point to anything changeable. Join speaks to THIS AUE's particulars.
   [STEP 2]: WRITE into the CQU's namespace entry via {Sink} now. YIELD.
 
@@ -254,8 +252,8 @@
   [V3]  Any Parametric named or addressed?                                              YES -> REMOVE; RECURSE.
   [V4]  Any CQU = requester, end user, developer*, user, operator, judge, or recorder?  YES -> RECURSE Select_CQU.
   [V5]  Any EF recorded outside a join?                                                 YES -> MOVE into owning CQU join.
-  [V6]  Any join missing purpose | ef | ifd | provider | relation | verb?                YES -> RECURSE Record_Join.
-  [V7]  Any relation not starting with an -s/-es verb?                                  YES -> RECURSE Record_Join.
+  [V6]  Any join missing purpose | ef | ifd | provider | verb?                           YES -> RECURSE Record_Join.
+  [V7]  Any ef not starting with an -s/-es verb?                                        YES -> RECURSE Record_Join.
   [V8]  Any AUE without an SE search?                                                   YES -> RECURSE STEP 5.
   [V9]  {Open_OPs} ≠ ∅ OR a required NE still unnamed?                                  YES -> GOTO STEP 7.
   [V10] Any problem solved instead of marked, or any condition treated as a verdict?    YES -> REVERT; MARK.

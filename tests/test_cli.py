@@ -276,6 +276,110 @@ def test_a_worker_folder_is_narrowed_from_the_orchestrators_folder(run, toggles,
     assert shown(run, cwd=worker)['modules']['value'] == ['toggles']
 
 
+def entered(run, *modules, cwd=None):
+    """What entering each module prints, in order: the listing an alias of those modules gives, CLI-039."""
+    return '\n'.join(run(module, '--help', cwd=cwd).stdout for module in modules)
+
+
+@pytest.mark.req('CLI-039')
+def test_an_alias_is_one_name_at_the_top_that_lists_the_commands_of_its_modules(run):
+    """Rich, 2026-10-03, question 16: its own chassis command, metaform alias <name> <module> <module>..."""
+    assert lines(run('alias', 'mapping', 'map', 'memory')) == ['Success: mapping stands for map, memory']
+    assert run('mapping').stdout == run('help', 'mapping').stdout == entered(run, 'map', 'memory')
+    assert run('mapping', '--help').stdout == run('mapping', '-h').stdout == entered(run, 'map', 'memory')
+    index = lines(run('help', 'commands'))
+    found = [number for number, line in enumerate(index) if 'mapping' in line]
+    assert len(found) == 1 and index[found[0] - 1] == 'Aliases'      # one line, none of its commands
+    assert re.fullmatch(r'\s+mapping\s+map, memory', index[found[0]])
+    refused = run('mapping', 'where', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform mapping'
+    run('alias', 'mapping', 'map', 'intake')                        # defining a name again replaces it
+    assert run('mapping').stdout == entered(run, 'map', 'intake')
+    assert any(re.fullmatch(r'\s+mapping\s+map, intake', line) for line in lines(run('help', 'commands')))
+    assert lines(run('alias', 'both', 'map', 'memory', 'map')) == ['Success: both stands for map, memory']
+    assert run('both').stdout == entered(run, 'map', 'memory')      # a module named twice counts once
+
+
+@pytest.mark.req('CLI-039')
+def test_an_alias_stands_for_two_or_more_real_modules_under_a_free_name(run):
+    count = ['Error: alias needs a name and two or more modules.', 'Next: metaform help alias']
+    naming = ['Error: An alias is named with a lowercase letter, then letters, digits, - or _.',
+              'Next: metaform help alias']
+    for args, err in ((('solo', 'map'), count), (('twice', 'map', 'map'), count), ((), count),
+                      (('mapping', 'map', 'ghost'), ['Error: No module ghost.', 'Next: metaform list modules']),
+                      (('list', 'map', 'memory'), ['Error: list is already a command.', 'Next: metaform help commands']),
+                      (('map', 'map', 'memory'), ['Error: map is already a command.', 'Next: metaform help commands']),
+                      (('chassis', 'map', 'memory'),
+                       ['Error: chassis is already a command.', 'Next: metaform help commands']),
+                      (('metaform', 'map', 'memory'),                 # the chassis's own tool over MCP, CLI-037
+                       ['Error: metaform is already a command.', 'Next: metaform help commands']),
+                      (('1234567', 'map', 'memory'), naming), (('Mapping', 'map', 'memory'), naming)):
+        refused = run('alias', *args, ok=False)
+        assert refused.returncode == 2 and refused.stderr.splitlines() == err, args
+    assert run('mapping', ok=False).stderr.splitlines()[0] == 'Error: Unknown command: mapping.'
+    assert run('solo', ok=False).returncode == 2
+    assert 'Aliases' not in lines(run('help', 'commands'))           # nothing refused was stored
+
+
+@pytest.mark.req('CLI-039')
+def test_a_module_of_an_aliases_name_comes_before_the_alias(run, user_module):
+    run('alias', 'mapping', 'map', 'memory')
+    user_module('mapping', f'''
+        from metaform.module import Module, Verb
+        {OS}
+        MODULE = Module(id='mapping', summary='Mapping.', purpose='Mapping. Details: metaform help mapping.',
+                        verbs=(Verb('show', lambda ctx: 'shown', 'Show.'),))
+    ''')
+    assert run('mapping', 'show').stdout == 'shown'
+    assert run('help', 'mapping').stdout.startswith('mapping: Mapping.')
+    assert 'Aliases' not in lines(run('help', 'commands'))
+
+
+@pytest.mark.req('CLI-039')
+@pytest.mark.req('CLI-038')
+def test_an_alias_is_defined_for_a_worker_folder_and_holds_below_it(run, tmp_path):
+    worker, orchestrator = tmp_path / 'worker', tmp_path / 'orchestrator'
+    (worker / 'deep').mkdir(parents=True)
+    orchestrator.mkdir()
+    out = lines(run('alias', 'mapping', 'map', 'memory', f'folder={worker}', cwd=orchestrator))
+    assert out == [f'Success: in {worker.resolve()}, mapping stands for map, memory']
+    assert run('mapping', cwd=orchestrator, ok=False).returncode == 2
+    assert run('mapping', cwd=worker / 'deep').stdout == entered(run, 'map', 'memory')
+    run('alias', 'mapping', 'map', 'intake', cwd=worker / 'deep')   # the nearest folder's definition wins
+    assert run('mapping', cwd=worker / 'deep').stdout == entered(run, 'map', 'intake')
+    assert run('mapping', cwd=worker).stdout == entered(run, 'map', 'memory')
+
+
+@pytest.mark.req('CLI-039')
+def test_an_alias_is_stored_with_its_folder_in_the_database_that_holds_the_folder(run, home, project):
+    """Rich, 2026-10-03: stored per folder in the folder table."""
+    folder = (project / 'src').resolve()
+    run('alias', 'mapping', 'map', 'memory', cwd=folder)
+    key = os.path.normcase(str(folder))
+    with sqlite3.connect(own('proj') / 'project.sqlite3') as db:
+        assert db.execute('SELECT path FROM folders WHERE path_key=?', (key,)).fetchone() == (str(folder),)
+        assert db.execute('SELECT name, module FROM aliases WHERE path_key=? ORDER BY position',
+                          (key,)).fetchall() == [('mapping', 'map'), ('mapping', 'memory')]
+    with sqlite3.connect(home / 'metaform.sqlite3') as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert 'aliases' not in tables or not db.execute('SELECT 1 FROM aliases').fetchall()
+
+
+@pytest.mark.req('CLI-039')
+@pytest.mark.req('CLI-022')
+def test_an_alias_shows_only_what_the_folders_command_surface_shows(run):
+    run('alias', 'mapping', 'map', 'memory')
+    run('set', '--modules', 'chassis,map')
+    assert run('mapping').stdout == entered(run, 'map')
+    run('set', '--modules', 'chassis,intake')
+    refused = run('mapping', ok=False)
+    assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform unset --modules'
+    assert not any('mapping' in line for line in lines(run('help', 'commands')))
+    run('unset', '--modules')
+    run('disable', 'memory')                                         # off is not loaded: only map is listed
+    assert run('mapping').stdout == entered(run, 'map')
+
+
 @pytest.mark.req('CLI-030')
 def test_the_context_settings_accept_only_real_names(run, toggles):
     ids = sorted(line.split()[0] for line in lines(run('list', 'modules')))
@@ -353,7 +457,7 @@ def test_help_intro_names_the_home(run, home):
 @pytest.mark.req('CLI-007')
 @pytest.mark.req('CLI-029')
 @pytest.mark.parametrize('command', ['help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable',
-                                     'activate', 'export', 'import', 'query'])
+                                     'activate', 'export', 'import', 'query', 'alias'])
 def test_every_chassis_command_has_a_page_and_a_separate_syntax(run, command):
     page = run('help', command).stdout
     syntax = run(command, '--help').stdout

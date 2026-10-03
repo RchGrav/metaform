@@ -13,7 +13,7 @@ import json
 import sqlite3
 from typing import Any, cast
 
-from . import prompts, versions
+from . import operations, prompts, versions
 from .ids import decode_extra
 from .names import reading, short_name
 from .records import (
@@ -21,26 +21,18 @@ from .records import (
     Item,
     Join,
     Layer,
-    Message,
     Node,
-    Notice,
     Op,
     Property,
     Provenance,
-    Ref,
-    Report,
-    Step,
     Subtype,
     Version,
     VersionRef,
-    WorkLink,
-    WorkRecord,
 )
 from .rows import (
     address_of,
     layer_name,
     node_address,
-    open_work,
     owner_address,
     read_refs,
     target_current,
@@ -73,11 +65,10 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     if res is not None and not element_shows(res, str(current['layer_id']), address):
         return None
     length = current['name_length'] if whole_number(current['name_length']) else None
-    plan = tx.db.execute('SELECT 1 FROM plans WHERE element_id=?', (element_id,)).fetchone()
-    return Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
+    return operations.decorate(tx, Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
                    reading(address), short_name(address, length), length, current['role'],
                    read_refs(tx.db, 'element', current['row']), decode_extra(current['extra']),
-                   state='plan' if plan else None, open_work=open_work(tx, 'element', element_id), name=current['name'])
+                   name=current['name']))
 
 
 def join_orphaned(tx: Tx, row: Row) -> bool:
@@ -89,17 +80,11 @@ def join_orphaned(tx: Tx, row: Row) -> bool:
 
 
 def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
-    plan = None
-    for end in (row['provider'], row['receiver']):
-        found = tx.db.execute('SELECT join_id FROM plans WHERE element_id=?', (end,)).fetchone()
-        if found is not None and found[0] == row['join_id']:
-            plan = 'plan'
     receiver_address = address_of(tx, str(row['receiver']))
-    return Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
+    return operations.decorate(tx, Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
                 row['name'], row['purpose'], row['ef'], row['verb'], row['non_goal'],
-                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), plan, orphaned,
-                open_work(tx, 'join', str(row['join_id'])), ifd=row['ifd'])
+                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), None, orphaned, ifd=row['ifd']))
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
@@ -123,13 +108,13 @@ def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:
                              'LIMIT 1', (element_id,)).fetchone()
     address = None if held is None else str(held['address'])
     length = held['name_length'] if held is not None and whole_number(held['name_length']) else None
-    return Subtype(str(row['join_id']), str(row['parent']), str(row['layer_id']), layers[row['layer_id']].name,
+    return operations.decorate(tx, Subtype(str(row['join_id']), str(row['parent']), str(row['layer_id']), layers[row['layer_id']].name,
                    str(row['type']), element_id, address, reading(address) if address else '',
                    short_name(address, length) if address else '', row['name'], length,
                    None if held is None else held['role'], row['purpose'], row['ef'], row['verb'], row['non_goal'],
                    read_refs(tx.db, 'join', row['row']),
-                   decode_extra(row['extra']), join_orphaned(tx, row), open_work(tx, 'join', str(row['join_id'])),
-                   ifd=row['ifd'], element_name=None if held is None else held['name'])
+                   decode_extra(row['extra']), join_orphaned(tx, row),
+                   ifd=row['ifd'], element_name=None if held is None else held['name']))
 
 
 def visible_subtype(tx: Tx, row: Row, res: Resolver | None) -> Subtype | None:
@@ -148,13 +133,12 @@ def visible_subtype(tx: Tx, row: Row, res: Resolver | None) -> Subtype | None:
 
 
 def item(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Item:
-    state_row = tx.db.execute('SELECT state FROM challenge_states WHERE item_id=?', (row['item_id'],)).fetchone()
     orphaned = not target_current(tx, str(row['target_kind']), str(row['target_id']))
-    return Item(str(row['item_id']), str(row['layer_id']), layers[row['layer_id']].name,
+    return operations.decorate(tx, Item(str(row['item_id']), str(row['layer_id']), layers[row['layer_id']].name,
                 Node.of(str(row['target_kind']), str(row['target_id'])), json.loads(str(row['value'])),
                 Node.of(str(row['link_kind']), str(row['link_id'])) if row['link_kind'] else None,
                 read_refs(tx.db, 'item', row['row']), decode_extra(row['extra']),
-                str(state_row[0]) if state_row else None, orphaned)
+                None, orphaned, bool(row['read_first']), bool(row['always_show'])))
 
 
 def item_by_id(tx: Tx, item_id: str) -> Item:
@@ -177,12 +161,10 @@ def provenance(tx: Tx, layer_id: str) -> Provenance | None:
     row = tx.db.execute('SELECT * FROM provenance WHERE layer_id=?', (layer_id,)).fetchone()
     if row is None:
         return None
-    refs = tuple(Ref(str(ref[0]), str(ref[1])) for ref in tx.db.execute(
-        'SELECT kind, report_id FROM reports WHERE layer_id=? ORDER BY kind, report_id', (layer_id,)))
     used = prompts.use_of(tx.project_id, tx.metaform_id, layer_id) if tx.metaform_id else None
-    return Provenance(str(row['layer_id']), str(row['module']), row['workflow'], row['prompt'], row['model'],
-                      row['role'], None if row['blinded'] is None else bool(row['blinded']), refs,
-                      VersionRef(used.name, used.number, used.version_id) if used else None)
+    return operations.decorate(tx, Provenance(str(row['layer_id']), str(row['module']), row['workflow'], row['prompt'], row['model'],
+                      row['role'], None if row['blinded'] is None else bool(row['blinded']), (),
+                      VersionRef(used.name, used.number, used.version_id) if used else None))
 
 
 def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hidden: set[str] | None = None,
@@ -212,61 +194,20 @@ def version(tx: Tx, kind: str, row: Row) -> Version:
         fields['extra'] = decode_extra(fields['extra'])
     if 'value' in fields and fields['value'] is not None:
         fields['value'] = json.loads(str(fields['value']))
+    if kind == 'item':
+        fields.update(read_first=bool(fields['read_first']), always_show=bool(fields['always_show']))
     return Version(str(row[spec.id_column]), kind, str(row['layer_id']), layer_name(tx, str(row['layer_id'])),
                    cast(Op, row['op']), row['reason'], row['evidence'], fields,
                    read_refs(tx.db, kind, row['row']))
 
 
-def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecord:
-    """One work row as a record, with its object's address, or its join's two ends, when the object is current: a
-    subtype join's receiver is its parent join's."""
-    kind, thing = str(row['target_kind']), str(row['target_id'])
-    address = receiver = provider = None
-    if kind == 'join':
-        ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (thing,)).fetchone()
-        held = tx.db.execute('SELECT provider FROM current_subtypes WHERE join_id=?', (thing,)).fetchone()
-        if ends is not None:
-            receiver, provider = address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
-        elif held is not None:
-            receiver, provider = node_address(tx, 'join', thing), address_of(tx, str(held[0]))
-    elif kind == 'element':
-        address = node_address(tx, kind, thing)
-    said = tuple(Step(int(step['number']), step['said'], str(step['at'])) for step in tx.db.execute(
-        'SELECT number, said, at FROM work_steps WHERE work_id=? ORDER BY number, row', (str(row['work_id']),)))
-    links = tuple(WorkLink(str(link['target_kind']), str(link['target_id']),
-                           node_address(tx, str(link['target_kind']), str(link['target_id'])))
-                  for link in tx.db.execute('SELECT target_kind, target_id FROM work_links WHERE work_id=? ORDER BY number',
-                                            (str(row['work_id']),)))
-    return WorkRecord(str(row['work_id']), kind, thing, address, receiver, provider, str(row['condition']), row['note'],
-                      row['task'], bool(row['held']), bool(row['reviewed']), str(row['created']), row['done'],
-                      row['resolution'], notices, row['steps'], int(row['steps_done'] or 0), said, row['taken'],
-                      row['taken_by'], row['position'], links)
-
-
-def message(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> Message:
-    """One message row as a record, with its object's address or its join's two ends, as a work record has."""
-    kind, thing = str(row['target_kind']), str(row['target_id'])
-    address = receiver = provider = None
-    if kind == 'join':
-        ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (thing,)).fetchone()
-        held = tx.db.execute('SELECT provider FROM current_subtypes WHERE join_id=?', (thing,)).fetchone()
-        if ends is not None:
-            receiver, provider = address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
-        elif held is not None:
-            receiver, provider = node_address(tx, 'join', thing), address_of(tx, str(held[0]))
-    elif kind == 'element':
-        address = node_address(tx, kind, thing)
-    try:
-        read: Any = json.loads(row['suggestions']) if row['suggestions'] else []
-    except ValueError:
-        read = []
-    suggested = tuple(str(one) for one in cast(list[Any], read)) if isinstance(read, list) else ()
-    return Message(str(row['message_id']), str(row['kind']), kind, thing, address, receiver, provider, row['text'],
-                   suggested, row['by'], str(row['created']), row['closed'], row['answer'], notices)
-
-
-def report(tx: Tx, row: Row) -> Report:
-    layer_id = row['layer_id']
-    return Report(str(row['report_id']), str(row['run_id']), layer_id,
-                  layer_name(tx, str(layer_id)) if layer_id else None, str(row['kind']), str(row['created']),
-                  int(row['size']))
+def join_ends(tx: Tx, join_id: str) -> tuple[str | None, str | None]:
+    """A current join's two ends by address; a subtype join's are its parent join's receiver and the element it holds,
+    STORE-010."""
+    ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (join_id,)).fetchone()
+    if ends is not None:
+        return address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
+    held = tx.db.execute('SELECT provider FROM current_subtypes WHERE join_id=?', (join_id,)).fetchone()
+    if held is not None:
+        return node_address(tx, 'join', join_id), address_of(tx, str(held[0]))
+    return None, None

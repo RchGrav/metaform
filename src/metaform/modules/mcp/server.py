@@ -29,7 +29,7 @@ from typing import Any, cast
 
 import anyio
 
-from metaform import changes, home, prompt_files, settings
+from metaform import aliases, changes, home, loader, prompt_files, settings
 from metaform.context import project_for
 from metaform.data import Store, StoreError, prompts
 from metaform.instructions import on_surface
@@ -404,6 +404,13 @@ def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
                               for verb in module.verbs if _here(verb)}
         if commands:
             found[module.id] = (module.summary, commands)
+    for name, held in aliases.shown(folder).items():
+        # An alias is one more tool, CLI-039; its commands are written as the command line writes them.
+        ids = [module.id for module in held if module.id in found]
+        if ids and name not in found and name != OWN:
+            found[name] = (f'An alias for {", ".join(ids)}: their commands under one name.',
+                           {f'{module} {command}': listed for module in ids
+                            for command, listed in found[module][1].items()})
     own: Commands = {'set': ("Save settings for the server's folder, as metaform set does.",
                              functools.partial(set_schema, folder)),
                      **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()}}
@@ -426,8 +433,11 @@ def entry_description(summary: str, commands: Commands) -> str:
 
 
 def inner(tool: str, command: str) -> str:
-    """The name a command runs under: the chassis's own by its name, a module's as `<module>_<command>`."""
-    return command if tool == OWN else f'{tool}_{command}'
+    """The name a command runs under: the chassis's own by its name, a module's as `<module>_<command>`. An alias's
+    command is written `<module> <command>`, and runs as that module's, CLI-039."""
+    if tool == OWN:
+        return command
+    return command.replace(' ', '_', 1) if ' ' in command else f'{tool}_{command}'
 
 
 def said(tool: str, command: str) -> str:
@@ -594,16 +604,19 @@ def serve(folder: Path) -> None:
     bus = InMemorySubscriptionBus()
     shown: dict[str, Any] = {'tools': None, 'prompts': None}
 
-    def current() -> tuple[tuple[str, ...], bool]:
-        return tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
+    def current() -> dict[str, Any]:
+        """What each list follows: the tools also follow the folder's aliases, CLI-039."""
+        both = tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
+        named = tuple((name, tuple(module.id for module in held)) for name, held in aliases.shown(folder).items())
+        return {'tools': (*both, named), 'prompts': both}
 
     async def announce(ctx: Any) -> None:
         now = await anyio.to_thread.run_sync(current)
         for kind in ('tools', 'prompts'):
             if shown[kind] is None:
-                shown[kind] = now
-            elif shown[kind] != now:
-                shown[kind] = now
+                shown[kind] = now[kind]
+            elif shown[kind] != now[kind]:
+                shown[kind] = now[kind]
                 if kind == 'tools':
                     await bus.publish(ToolsListChanged())
                     await ctx.session.send_tool_list_changed()
@@ -613,14 +626,19 @@ def serve(folder: Path) -> None:
 
     async def list_tools(ctx: Any, params: Any) -> Any:
         tools = await anyio.to_thread.run_sync(build)
-        shown['tools'] = await anyio.to_thread.run_sync(current)
+        shown['tools'] = (await anyio.to_thread.run_sync(current))['tools']
         return types.ListToolsResult(tools=tools)
+
+    def followed() -> None:
+        loader.follow_enabled()
+        changes.announce(folder, 'mcp')
 
     async def call_tool(ctx: Any, params: Any) -> Any:
         try:
             error, blocks = await enter(folder, params.name, params.arguments or {})
-        finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018
-            await anyio.to_thread.run_sync(changes.announce, folder, 'mcp')
+        finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
+            # disabled since this server started is loaded or dropped first, BASE-037
+            await anyio.to_thread.run_sync(followed)
         await announce(ctx)
         return types.CallToolResult(content=[types.TextContent(type='text', text=block) for block in blocks],
                                     is_error=error)

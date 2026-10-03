@@ -22,7 +22,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from . import _build_info, home
+from . import _build_info, harness, home
 from .errors import Stop
 from .probe import probe
 
@@ -321,6 +321,10 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
                              f'metaform install {tool.name}')
         # Recorded as soon as it is registered, so a later failure never hides it from the next run, MCP-019.
         _record(tool.name, wheel, folder / 'metaform' / 'SKILL.md' if folder else None)
+        # The harness of the binary that registered it never sees the first-run notice, D96; a merged config
+        # names no binary, so it records none.
+        if not tool.merge and tool.add is not None and (binary := shutil.which(tool.add(command)[0])):
+            harness.done(binary)
     for path in skill_files:
         _backup(path, backups)
         path.parent.mkdir(parents=True, exist_ok=True)

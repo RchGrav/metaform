@@ -10,10 +10,14 @@ import pytest
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    """An isolated Metaform home; nothing touches ~/.metaform."""
+    """An isolated Metaform home; nothing touches ~/.metaform. The loader's cache of modules found, with each one's
+    enabled state, starts and ends empty, so the modules one test's home enabled never reach the next."""
+    from metaform import loader
+    loader.reset()
     path = tmp_path / 'home'
     monkeypatch.setenv('METAFORM_HOME', str(path))
-    return path
+    yield path
+    loader.reset()
 
 
 @pytest.fixture
@@ -30,6 +34,59 @@ def run(home, tmp_path):
                                  f'{result.stdout}{result.stderr}')
         return result
     return invoke
+
+
+@pytest.fixture
+def dispatch_runners(run):
+    """Detached test launches, recorded before assertions; Stop and verify they end even when the test fails."""
+    import json
+    import time
+
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import alive
+
+    runners = []
+    yield runners
+    for started, folder, log in runners:
+        pid = started['pid']
+        try:
+            # A start reply precedes session registration, so an early failure can reach Stop before the session.
+            deadline = time.monotonic() + 10
+            while alive(pid) and time.monotonic() < deadline:
+                stopped = run('dispatch', 'stop', started['work_id'], cwd=folder, ok=False)
+                if stopped.returncode == 0:
+                    break
+                time.sleep(0.05)
+            deadline = time.monotonic() + 5
+            while alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+        finally:
+            # The fake agent has its own group; killing just the runner would leave its children behind.
+            forced = alive(pid)
+            if forced:
+                end_group(pid)
+            children = set()
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    if log.exists():
+                        for line in log.read_text(encoding='utf-8').splitlines():
+                            try:
+                                entry = json.loads(line)
+                            except json.JSONDecodeError:  # teardown can meet a line the agent is still writing
+                                continue
+                            children.update(entry[key] for key in ('pid', 'grandchild') if key in entry)
+                finally:
+                    for child in children:
+                        if alive(child):
+                            end_group(child)
+                if not forced or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.05)  # a child already spawned can publish its PID after the runner is killed
+            deadline = time.monotonic() + 5
+            while any(alive(one) for one in [pid, *children]) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert not any(alive(one) for one in [pid, *children]), 'a detached test runner or its children survived'
 
 
 @pytest.fixture

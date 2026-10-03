@@ -4,7 +4,7 @@
 
 An Inference Metaform is a representation of **what a workpiece is doing**. Its addresses organize functional meaning; its joins explain receiving purposes and how providers serve them. It is not a source-file hierarchy or a call graph with more descriptive labels.
 
-This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 10 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 purpose joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 10 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 require joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
 
 The export was written by the store of that day, and three of its record shapes have changed since. The project's name for a functionality was a descriptor item at the element; it is now the join's `name`. A subtype was its own row; it is now a join of type `subtype` inside its parent join, holding an ordinary element. The condition of an object was a finding with a `flag`; it is now a work record, apart from the map. The export also predates `verb`, so its joins and subtypes record `verb` as null, and its relations are whole sentences.
 
@@ -129,12 +129,12 @@ The module-author join contains:
 
 ```mermaid
 graph TB
-    join["code.system.plugin serves stakeholder.author.module<br/>purpose join d14bd3498b614dfbaf0754c99b28dba3"]
+    join["code.system.plugin serves stakeholder.author.module<br/>require join d14bd3498b614dfbaf0754c99b28dba3"]
     join -.holds.-> template["code.template.module<br/>template"]
     join -.holds.-> example["code.module.example<br/>helloworld"]
 ```
 
-`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent purpose join**, each in a subtype join, a join of type `subtype` that names the element it holds. Each stays one ordinary element record at its own address; an element whose only joins are subtype joins is no root and no node of the outer map. They do not receive independent copies of that purpose merely because they can be named.
+`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent require join**, each in a subtype join, a join of type `subtype` that names the element it holds. Each stays one ordinary element record at its own address; an element whose only joins are subtype joins is no root and no node of the outer map. They do not receive independent copies of that purpose merely because they can be named.
 
 ```sh
 metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3

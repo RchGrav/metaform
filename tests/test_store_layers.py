@@ -253,7 +253,7 @@ def test_a_finished_knowledge_layer_stays_editable_and_the_intake_does_not(home,
     kitchen = store.element('code.timer.kitchen')
     before = dump(store_file(home, store))
     untouched = store.edit(kitchen.element_id, {'role': 'SE'})
-    assert 'op=refine' in untouched.notices[0].message
+    assert 'metaform map refine' in untouched.notices[0].message
     assert dump(store_file(home, store)) == before
 
 

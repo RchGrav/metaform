@@ -18,7 +18,6 @@ import sys
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,6 +59,17 @@ CREATE TABLE IF NOT EXISTS glue(
   PRIMARY KEY(scope, owner, key)
 );
 """
+# The aliases of each folder, CLI-039: one row per module an alias stands for, beside the folder's row. A database made
+# before aliases existed is given the table on the first alias written to it.
+ALIASES = """CREATE TABLE IF NOT EXISTS aliases(
+  path_key TEXT NOT NULL,
+  name     TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  module   TEXT NOT NULL,
+  PRIMARY KEY(path_key, name, position)
+);
+"""
+SETTINGS_SCHEMA += ALIASES
 BASE_SCHEMA = NONCES + """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """ + SETTINGS_SCHEMA + """
@@ -110,25 +120,9 @@ PROJECT_DB = 'project.sqlite3'
 STORE_SUFFIX = '.metaform.sqlite3'  # a metaform's store is <metaform name>.metaform.sqlite3, STORE-003
 
 
-_AT: ContextVar[Path | None] = ContextVar('metaform_home_at', default=None)
-
-
 def home() -> Path:
     """The Metaform home: METAFORM_HOME when set, otherwise ~/.metaform, STORE-001."""
-    chosen = _AT.get()
-    if chosen is not None:
-        return chosen
     return Path(os.environ.get('METAFORM_HOME') or Path.home() / '.metaform').expanduser()
-
-
-@contextmanager
-def at(folder: Path) -> Generator[None, None, None]:
-    """Read another home, such as a directly run wheel's data folder, for the length of the block, BASE-025."""
-    token = _AT.set(folder)
-    try:
-        yield
-    finally:
-        _AT.reset(token)
 
 
 def base_path() -> Path:
@@ -245,9 +239,30 @@ def _folder_at(path: Path | str) -> Path | None:
     return None
 
 
+_FOUND: dict[tuple[str, str], Path] = {}  # (the home's projects folder, a project id): the folder last found for it
+
+
+def _registration(project_id: str) -> tuple[Path, Project] | None:
+    """A registered project's folder with its registration. The folder last found for the id is asked first, so
+    finding one project opens its own database and no other's; when that folder no longer holds the project, every
+    folder is asked again."""
+    key = (str(projects_dir()), project_id)
+    known = _FOUND.get(key)
+    record = _record_in(known) if known is not None else None
+    if known is not None and record is not None and record.project_id == project_id:
+        return known, record
+    found = next(((folder, held) for folder, held in _registered() if held.project_id == project_id), None)
+    if found is None:
+        _FOUND.pop(key, None)
+    else:
+        _FOUND[key] = found[0]
+    return found
+
+
 def project_folder(project_id: str) -> Path | None:
     """The folder of a registered project, PROJ-026."""
-    return next((folder for folder, record in _registered() if record.project_id == project_id), None)
+    found = _registration(project_id)
+    return None if found is None else found[0]
 
 
 def _folder_of_project(project_id: str) -> Path:
@@ -262,7 +277,8 @@ def projects() -> tuple[Project, ...]:
 
 
 def project(project_id: str) -> Project | None:
-    return next((record for _, record in _registered() if record.project_id == project_id), None)
+    found = _registration(project_id)
+    return None if found is None else found[1]
 
 
 def add_project(project_id: str, path: Path | str, target_type: str | None = None,
@@ -412,6 +428,30 @@ def set_glue(scope: str, owner: str, key: str, on: bool, *, folder: Path | None 
             db.execute('DELETE FROM glue WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
 
 
+def aliases_at(scope: str) -> dict[str, list[str]]:
+    """The aliases defined at one folder, each with the modules it stands for in order, CLI-039."""
+    with settings_db(scope) as db:
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='aliases'").fetchone() is None:
+            return {}
+        rows = db.execute('SELECT name, module FROM aliases WHERE path_key=? ORDER BY name, position',
+                          (scope,)).fetchall()
+    found: dict[str, list[str]] = {}
+    for name, module in rows:
+        found.setdefault(name, []).append(module)
+    return found
+
+
+def save_alias(folder: Path, name: str, modules: list[str]) -> None:
+    """Define an alias at a folder, replacing what the name stood for there. The folder row is written with it."""
+    scope = path_key(folder)
+    with settings_db(scope, write=True) as db:
+        db.execute(ALIASES)
+        db.execute('INSERT OR IGNORE INTO folders(path_key, path) VALUES (?, ?)', (scope, str(folder)))
+        db.execute('DELETE FROM aliases WHERE path_key=? AND name=?', (scope, name))
+        db.executemany('INSERT INTO aliases(path_key, name, position, module) VALUES (?, ?, ?, ?)',
+                       [(scope, name, position, module) for position, module in enumerate(modules)])
+
+
 # Module state -----------------------------------------------------------------
 
 def module_state(module_id: str) -> bool | None:
@@ -470,9 +510,10 @@ def _metaforms_db(project_id: str, write: bool = False) -> Generator[sqlite3.Con
 
 
 def metaforms(project_id: str) -> tuple[Metaform, ...]:
-    if project_folder(project_id) is None:
+    folder = project_folder(project_id)
+    if folder is None:
         return ()
-    with _metaforms_db(project_id) as db:
+    with project_db(folder) as db:
         active = db.execute('SELECT metaform_id FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
         rows = db.execute('SELECT metaform_id, name, created FROM metaforms WHERE project_id=? ORDER BY rowid',
                           (project_id,)).fetchall()
@@ -481,9 +522,10 @@ def metaforms(project_id: str) -> tuple[Metaform, ...]:
 
 
 def active_metaform(project_id: str) -> Metaform | None:
-    if project_folder(project_id) is None:
+    folder = project_folder(project_id)
+    if folder is None:
         return None
-    with _metaforms_db(project_id) as db:
+    with project_db(folder) as db:
         row = db.execute(_ACTIVE, (project_id,)).fetchone()
     return None if row is None else Metaform(row[0], project_id, row[1], row[2], True)
 
@@ -533,9 +575,10 @@ def add_metaform(project_id: str, name: str, *, activate: bool = True) -> Metafo
 
 
 def metaform_by_id(project_id: str, metaform_id: str) -> Metaform | None:
-    if project_folder(project_id) is None:
+    folder = project_folder(project_id)
+    if folder is None:
         return None
-    with _metaforms_db(project_id) as db:
+    with project_db(folder) as db:
         row = db.execute('SELECT metaform_id, name, created FROM metaforms WHERE metaform_id=? AND project_id=?',
                          (metaform_id, project_id)).fetchone()
         active = db.execute('SELECT metaform_id FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
@@ -573,26 +616,15 @@ def import_metaform(project_id: str, metaform_id: str, name: str, created: str, 
 
 
 def import_metaform_in(db: sqlite3.Connection, project_id: str, metaform_id: str, name: str, created: str, *,
-                       activate: bool, never_active: bool = False) -> bool:
+                       activate: bool) -> bool:
     """Record an imported metaform inside an open transaction on its project's database, unless its id exists. It
-    becomes active when asked, or when its project has no active metaform, unless it must never be made active,
-    BASE-025."""
+    becomes active when asked, or when its project has no active metaform."""
     if db.execute('SELECT 1 FROM metaforms WHERE metaform_id=?', (metaform_id,)).fetchone() is not None:
         return False
     has_active = db.execute('SELECT 1 FROM active_metaforms WHERE project_id=?', (project_id,)).fetchone()
     _create_metaform(db, project_id, name, metaform_id, created,
-                     activate=not never_active and (activate or has_active is None))
+                     activate=activate or has_active is None)
     return True
-
-
-def free_name(db: sqlite3.Connection, project_id: str, name: str, taken: set[str] | None = None) -> str:
-    """The name, or it with `-2` or the next free number, so no two metaforms of a project share one, STORE-041."""
-    chosen, number = name, 1
-    while chosen in (taken or set()) or db.execute('SELECT 1 FROM metaforms WHERE project_id=? AND name=?',
-                                                  (project_id, chosen)).fetchone():
-        number += 1
-        chosen = f'{name}-{number}'
-    return chosen
 
 
 def metaform_owner(metaform_id: str) -> str | None:

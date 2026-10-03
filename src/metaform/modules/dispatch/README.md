@@ -15,31 +15,33 @@ The template changelog version this module started from: the Unreleased contract
 - `SUPPORTED_OS = ('linux', 'macos', 'windows')`. Process handling is per system: see Systems supported.
 - `DEPENDENCIES = ('agent-client-protocol>=0.12.1,<0.13',)`, the official ACP Python SDK, imported as `acp`. Its API has changed between minor versions before 1.0, so the minor version is pinned. The chassis gains no dependency.
 - `SHIPS_DISABLED = True`. Enable it with `metaform enable dispatch`.
-- `MODULE`: the verbs below, one `map.changed` subscription, no `start`, `stop` or `status` hook.
+- `MODULE`: the verbs below, no subscription, no `start`, `stop` or `status` hook.
 
 ## Common base used
 
-- `metaform.module` for the declaration, `Context`, `Stop` and the verb context's `publish_async`.
+- `metaform.module` for the declaration, `Context`, `Stop`, the verb context's `publish_async`, and `work_reads`, through which it reads a ticket's agent glyph as the map module shows it under `map`, BASE-035.
 - `metaform.settings` for the three start commands.
 - `metaform.data` for the work record (`ticket`, `take_work`), the questions (`ask`, `messages`), and the `dispatch` layer (`layer`, `add_item`, `edit`, `layer_items`).
-- `metaform.events` through `ctx.publish_async('map.changed', ...)` after each write the runner makes, and the module's own subscription.
+- `metaform.events` through `ctx.publish_async('map.changed', ...)` after each write the runner makes, and `ctx.listen`, the base's listener for `map.changed` published in other processes, BASE-053.
 - `metaform.nonce` to request the agent's nonce and an agent's hand-off nonce, read it in `handoff` through `nonce.reached()`, and close a session's nonce when the session ends.
+- `metaform.prompt_files` to read its own `resources/prompts.xml`.
 
-The runner also imports `acp`, the SDK, and nothing else outside the standard library. The module reads its own `resources/prompts.xml` with the standard library, because the prompt reader is not part of the public base.
+The runner also imports `acp`, the SDK, and nothing else outside the standard library.
 
 ## Prompts
 
 `resources/prompts.xml`:
 
 - `instructions`: `dispatch is active.`, listed under "modules available." in the instructions agents read.
+- `answered`: what the agent is sent when a question it asked itself is answered: the question's id, its text and the answer.
 - `nodes`: the line before the namespace nodes in what `metaform <nonce>` prints.
 - `handed`: what `handoff id=<work id>` prints, the nonce to give the next agent.
 - `handoff`: the one prompt the agent is sent. It tells the agent its ticket is taken for it, to read it with `metaform map work id=<id>` and work it, and how to plan, report each step and close it. `metaform <nonce>` serves the same text, then the `nodes` line and the nodes.
 
 ## Verbs
 
-- `start <id> <agent>`, tool `dispatch` command `start`: starts `run` as a process detached from the terminal and returns at once with `state: starting`, the work id, the agent, the runner's pid and its log file. It refuses a ticket that is done or taken, and a start command not found on this system.
-- `run <id> <agent>`, CLI only: the ACP session for one ticket in this process, until it ends. A person may run it in a terminal to watch it.
+- `start <id> <agent>`, tool `dispatch` command `start`: starts `run` as a process detached from the terminal and returns at once with `state: starting`, the work id, the agent, the runner's pid and its log file. It refuses a ticket that is done or taken, a ticket whose agent glyph's agent is at work on another ticket, VIEW-040, and a start command not found on this system.
+- `run <id> <agent>`, CLI only: the ACP session for one ticket in this process, until it ends. A person may run it in a terminal to watch it. On a ticket with an agent glyph, VIEW-040, once the ticket is done it runs a session for the glyph's next ticket not done and not taken, in board order, To do before Backlog, each by its place, and so on until the glyph has none waiting or a session ends with its ticket open; its result then adds `glyph` and `worked`, the work ids in the order worked. It refuses what `start` refuses.
 - `message <id> <text>...`: sends the text to the running agent as `session/prompt`; returns `sent: true`.
 - `stop <id>`: sends `session/cancel`, answers every waiting permission request as cancelled, closes the agent's input and ends its process group; returns `stopped: true`.
 - `handoff`: run through a nonce, `metaform <nonce>`, the hand-off prompt followed by the namespace nodes of the work, the where read of the ticket's node and of each node it links. Run as `handoff id=<work id>`, it makes a new nonce for that ticket and prints `metaform <nonce>` for the agent the work is handed to; it takes nothing. A nonce made this way is not closed by the module.
@@ -57,11 +59,11 @@ The runner also imports `acp`, the SDK, and nothing else outside the standard li
 ## Events
 
 - Publishes `map.changed` after each write the runner makes, since those writes are made inside one long command and would otherwise be announced only when it ends.
-- Subscribes to `map.changed`. The subscriber runs in whichever process changed the map: a command, the MCP server or the web server. It finds the project's running sessions on the `dispatch` layer and sends each runner `changed` over its loopback control port, and the runner reads the questions it asked. This is how an answer given from the web GUI, the CLI or MCP reaches the agent without polling, QUAL-015. In a runner process the subscriber does nothing.
+- The runner listens for `map.changed` through the base, `ctx.listen`, BASE-053: each one published in another process, a command, the MCP server, the web server or another runner, for the runner's project, makes it read the questions it asked and those its agent asked itself. This is how an answer given from the web GUI, the CLI or MCP reaches the agent without polling, QUAL-015. The runner's own writes do not reach its listener. The control port takes only `message` and `stop`.
 
 ## Sync and async
 
-`run` is a coroutine, as are the runner's ACP handlers. `start`, `message`, `stop`, `handoff` and the subscriber are plain functions. The runner makes each store call in a worker thread, so its loop is never held by a write.
+`run` is a coroutine, as are the runner's ACP handlers. `start`, `message`, `stop` and `handoff` are plain functions, and the listener hands each change to the runner's loop with `call_soon_threadsafe`. The runner makes each store call in a worker thread, so its loop is never held by a write.
 
 ## Layers
 
@@ -78,7 +80,7 @@ No `start` or `stop` hook. A runner owns one agent process group, one loopback l
 
 ## Modules relied on
 
-None by import. The agent reaches Metaform through `mcp`'s server, `python -m metaform mcp serve` with the runner's own Python, and through the command line.
+None by import. A ticket's agent glyph comes from the map module's `work_read` through the base's `work_reads`; with the map module off the surface no ticket has a glyph and each is worked alone. The agent reaches Metaform through `mcp`'s server, `python -m metaform mcp serve` with the runner's own Python, and through the command line.
 
 ## Systems supported
 

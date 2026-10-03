@@ -17,7 +17,7 @@
 
   # ---------- LOAD-BEARING SITES (VERBATIM; DO NOT PARAPHRASE) ----------
   {LB_GOAL} := """
-  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "purpose" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "require" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
   """
 
   {LB_STEP_1} := """
@@ -68,7 +68,6 @@
     joins:       [SCHEMA_JOIN]
   }
   SCHEMA_JOIN := {
-    type:         "purpose",
     purpose:      the RE's OP: why it needs this encounter,
     non_goal:     the RE's non-goal where held (structural constraint),
     ef:           active-voice fragment starting with a 3rd-person singular present verb (-s/-es),
@@ -144,10 +143,6 @@
   +> RECORD each element and join to {Sink} the moment it is reasoned, one object at a time.
   +> POINT with refs for anything that can change tomorrow.
 
-@CONDITION (SINK_CHECK):
-  ?IF ( {Sink} unavailable ) -> SAY so in one line; HALT
-  :ELSE -> CONTINUE
-
 @CONDITION (TARGET_RESOLUTION):
   ?IF ( {Prompt} states a target ) -> {Target} := [stated target]
   :ELSE -> {Target} := [this project folder's contexts]
@@ -183,7 +178,7 @@
   :ELSE -> KEEP as independent functional element
 
 @ROUTER:
-  APPLY SINK_CHECK; APPLY TARGET_RESOLUTION; APPLY MODE_RESOLUTION.
+  APPLY TARGET_RESOLUTION; APPLY MODE_RESOLUTION.
   @MATCH ( {Mode} ):
     | [INTAKE]     -> EXECUTE_PIPELINE( Full_Intake )
     | [REFINE]     -> EXECUTE_PIPELINE( Audit_Corrections ) THEN EXECUTE_PIPELINE( Refine )
@@ -247,7 +242,7 @@
 # ------------------------------------------------------------
 @EXECUTE_PIPELINE (Create_Entry):
   [STEP 1]: EXECUTE_PIPELINE( Validate_Address ).
-  [STEP 2]: ?IF the address already exists in {Namespace} or {Sink} -> REUSE it
+  [STEP 2]: ?IF the address already exists in {Namespace} -> REUSE it
             :ELSE -> CREATE via {Sink}; ADD to {Namespace}. YIELD.
 
 @EXECUTE_PIPELINE (Select_CQU):

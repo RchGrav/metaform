@@ -69,6 +69,12 @@ Apparent contradictions in Metaform’s authored text may be deliberate and empi
 
 When Rich asks for specifications, design documentation, or an explanation of his system, capture the design he states faithfully, preserving its assertions, mechanisms, definitions, and degree of certainty. This is an authoring task, not an invitation to adjudicate whether his design deserves to be stated. Do not insert hedges, disclaimers, demands for proof, or substitute interpretations because the agent has not personally witnessed the reported work. Do not weaken the authored claims through paraphrase. If a concrete contradiction or ambiguity affects faithful documentation, address that specific issue with Rich outside the authored text. Independent evaluation or critique is a separate task when requested; never fabricate evidence or present the agent as having verified work it has not examined.
 
+## Testing
+
+Do not write tests for reversible, low-impact changes that mirror the implementation. If you do choose to verify your work with tests, make sure that the tests are meaningful and necessary to verify implementation.
+
+Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
+
 ## These instructions concern collaboration on the project. Keep them separate from the behavior authored into Metaform's prompts. Runtime onboarding and workflow instructions belong in Metaform's context-aware interface.
 
 <MetaformFoundation> This MetaformFoundation defines the minimum core of expertise an expert agent must internalize for understanding, constructing, applying, preserving, and troubleshooting in the metaform system along with the understanding that functional testing and correctness are not the same as semantic correctness for a particular purpose.

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <result id="intake-metaform-chassis-20260924-s5">
     <elements>
-        <element namespace_address="stakeholder.orchestrator.agent" name_length="2" role="VE">
+        <element namespace_address="stakeholder.orchestrator.agent" name_length="2" role="CQU">
             <name>Agent orchestrator</name>
             <joins>
                 <join type="purpose" provider="code.chassis.module"
@@ -64,7 +64,7 @@
             </joins>
         </element>
 
-        <element namespace_address="stakeholder.author.module" name_length="2" role="VE">
+        <element namespace_address="stakeholder.author.module" name_length="2" role="CQU">
             <name>Module author</name>
             <joins>
                 <join type="purpose" provider="code.registry.module"
@@ -192,7 +192,7 @@
             </joins>
         </element>
 
-        <element namespace_address="stakeholder.harness.agent" name_length="2" role="VE">
+        <element namespace_address="stakeholder.harness.agent" name_length="2" role="CQU">
             <name>Agent harness</name>
             <joins>
                 <join type="purpose" provider="code.runner.harness"
@@ -210,7 +210,7 @@
             </joins>
         </element>
 
-        <element namespace_address="stakeholder.reader.person" name_length="2" role="VE">
+        <element namespace_address="stakeholder.reader.person" name_length="2" role="CQU">
             <name>Person reading the project</name>
             <joins>
                 <join type="purpose" provider="code.server.web"
@@ -229,7 +229,7 @@
             </joins>
         </element>
 
-        <element namespace_address="stakeholder.recipient.project" name_length="2" role="VE">
+        <element namespace_address="stakeholder.recipient.project" name_length="2" role="CQU">
             <name>Project recipient</name>
             <joins>
                 <join type="purpose" provider="code.builder.wheel"

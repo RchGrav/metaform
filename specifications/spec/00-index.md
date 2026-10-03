@@ -18,8 +18,9 @@ Every design decision goes into this spec when it is decided, in the record that
 
 - `../REQUIREMENTS.md` with `../REQUIREMENTS-corrections.md`: the requirements drawn from Rich's design. TRACE.md maps every one of them to the records here.
 - `../SETTLED.md`: design settled in conversation, now carried by the records here.
-- `../Intake_2.0.md`: the current intake procedure, Intake 2.0, served by the intake module, BASE-039. Rich, 2026-10-02, asked whether Intake 2.0 should become the served intake: "I think that".
+- `../Intake_2.1.md`: the current intake procedure, Intake 2.1, served by the intake module, BASE-039, with its notes in `../Intake_2.1_notes.md`. `../Intake_2.0.md` is the previous version, not served.
 - `../Canonical_Intake.xml`: the previous intake procedure, no longer served. `../Canonical_Intake_test.xml` was identical to it until `ef` was added to the Canonical Intake, 2026-09-26. `../Canonical_Intake_old.xml` is the previous version, reference only.
+- `../Workflow_Root_and_Workflow_Layers.md`: Rich's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs by nonce, workflow layers, ingest and authoring, and what is left to build. With it, `../Metaform_Axiom-OS.md`, the Axiom compiler v1.1, and the two workflow prompts it compiled, `../workflow-ingest.md` and `../workflow-authoring.md`.
 - `../metaprompting_element_segments_example.md`: how an address and its prefixes carry inference.
 - `../code_quality_standards.md`: the quality bar, carried by section 7.
 
@@ -72,7 +73,7 @@ A record whose status is recommended is built as written. A record whose status 
 4. The map and layer records and operations (MAP, LAYER), including select and mask resolution and direct reads, LAYER-007 and LAYER-008.
 5. The memory module, LAYER-012, LAYER-013 and STORE-020: a memory graph of its own, presented at each node as the MCP reference memory server and tied to nodes by joins of type memory, with one note per node, VIEW-034.
 6. The MCP module (MCP), moved out of the chassis, with live instructions.
-7. The intake module serving its instructions by name and recording the map one object per call as it is reasoned, through `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`.
+7. The intake module serving its instructions by name and recording the map one object per call as it is reasoned, through `intake_start`, `intake_element`, `intake_add_requirement`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`.
 8. The installer and the skill.
 9. The first working test scenario in section 6, end to end, including a memory written at a node and read back by another agent, and a layer selection that changes what that read returns.
 

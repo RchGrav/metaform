@@ -107,12 +107,17 @@ def test_a_base_database_of_an_unknown_schema_version_is_refused_and_not_written
 def test_a_home_written_before_the_stores_layout_changed_still_opens(home, tmp_path):
     """Rich, 2026-09-27: the metaform store's layout changed and his whole home was refused, the registry of projects
     and settings included, whose own layout had not changed. Each kind of database keeps its own version."""
+    from metaform import settings
     from metaform.data import history, prompts
     folder = tmp_path / 'p'
     folder.mkdir()
     metaform_home.add_project('p', folder)
     history.add_origin('p')
     prompts.prompts()
+    settings.assign('debug', True, folder)
+    db = sqlite3.connect(own('p') / 'project.sqlite3')
+    assert db.execute("SELECT count(*) FROM settings WHERE key='debug'").fetchone()[0] == 1
+    db.close()
     for path in (own('p') / 'project.sqlite3', own('p') / 'history.sqlite3'):
         db = sqlite3.connect(path)
         db.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
@@ -120,6 +125,7 @@ def test_a_home_written_before_the_stores_layout_changed_still_opens(home, tmp_p
         db.close()
     assert metaform_home.project('p') is not None
     assert len(history.origins('p')) == 1
+    assert settings.value('debug', folder) is True
     metaform_home.add_project('q', tmp_path)
     assert {record.project_id for record in metaform_home.projects()} == {'p', 'q'}
 

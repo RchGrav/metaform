@@ -17,7 +17,7 @@ from typing import Any
 
 from .. import home
 from ..errors import StoreError
-from . import rows, versions, views, writes
+from . import operations, rows, versions, views, writes
 from .ids import LAYER_NAME, TAG, is_id, new_id, refs_fit
 from .records import Layer, Notice, Outcome, Version
 from .selection import LAYER_COLUMNS, LayerRow, all_layers, layer_row
@@ -186,15 +186,15 @@ def discard(tx: Tx, layer: str) -> Outcome:
             db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
             versions.drop_current(db, owner, 'row', row[0])
             if owner == 'item':
-                db.execute('DELETE FROM challenge_states WHERE item_id=?', (row[1],))
+                operations.cleanup(tx, 'item', str(row[1]))
             db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row[0],))
             if owner == 'item':
                 # item_ids names the item's layer, so it goes with the layer; identities keeps the id.
                 db.execute('DELETE FROM item_ids WHERE item_id=? AND layer_id=?', (row[1], layer_id))
-    for table in ('plans', 'selections', 'hidden_layers', 'layer_tags',
+    for table in ('selections', 'hidden_layers', 'layer_tags',
                   'layer_fields', 'provenance', 'layer_sources', 'reexamine'):
         db.execute(f'DELETE FROM {table} WHERE layer_id=?', (layer_id,))
-    db.execute('UPDATE reports SET layer_id=NULL WHERE layer_id=?', (layer_id,))
+    operations.cleanup(tx, 'layer', layer_id)
     db.execute('DELETE FROM layer_sources WHERE source_layer_id=?', (layer_id,))
     for other in all_layers(db):
         db.execute('DELETE FROM reexamine WHERE layer_id=? AND changed_in=?', (other, layer_id))

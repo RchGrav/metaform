@@ -1,9 +1,14 @@
 """runner: one ACP session for one ticket, BASE-052, run by `metaform dispatch run`.
 
-Metaform is the ACP client. The agent's ACP adapter runs as a child process in its own process group, in the
+Metaform is the ACP client. A runner started on a ticket with an agent glyph, VIEW-040, works the glyph's tickets one
+after another in board order, a session for each, the next taken when the one before is done. The agent's ACP adapter runs as a child process in its own process group, in the
 project's folder, with the person's environment unchanged; ACP goes over its standard input and output as bytes,
-through the official SDK, `acp`. The runner listens on a loopback port for `message`, `stop` and `changed`, the last
-sent by the module's `map.changed` subscriber in whichever process changed the map, QUAL-015.
+through the official SDK, `acp`. The runner listens on a loopback port for `message` and `stop`, and hears each
+`map.changed` published in another process through the base's listener, QUAL-015 and BASE-053.
+
+A question the agent asks itself, with `map ask` through the MCP server or the command line, is known by its id in
+the output of the agent's own tool call, made no earlier than that call began, so a question it only read is not
+taken for its own. When the person answers it, the agent is told the answer as a prompt.
 """
 from __future__ import annotations
 
@@ -11,8 +16,10 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import secrets
 import sys
+import time
 from collections.abc import Callable, Coroutine
 from importlib import metadata
 from typing import Any, cast
@@ -31,15 +38,35 @@ from acp.schema import (
 )
 
 from metaform import nonce
-from metaform.data import Item, Node, Store, WorkRecord
+from metaform.data import Message, Node, Store, WorkRecord
 from metaform.module import Context, Stop
 
-from . import AGENTS, LAYER, REPLY_LIMIT, RUNNER, VARIABLE, agent_named, argv, end_group, group_options, prompt, ticket
+from . import (
+    AGENTS,
+    READS,
+    REPLY_LIMIT,
+    agent_named,
+    argv,
+    end_group,
+    glyph_of,
+    group_options,
+    next_ticket,
+    prompt,
+    startable,
+    ticket,
+)
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
+STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
+IDS = re.compile(r'\b[0-9a-f]{32}\b')  # a message id, as a tool call's output shows it
+
+
+def stamp() -> str:
+    """The time as the store writes it, to the second."""
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
 
 
 class Exits(asyncio.subprocess.SubprocessStreamProtocol):
@@ -56,17 +83,31 @@ class Exits(asyncio.subprocess.SubprocessStreamProtocol):
 
 
 async def dispatch(ctx: Context) -> dict[str, Any]:
-    """`metaform dispatch run <id> <agent>`: the session for one ticket, until it ends."""
+    """`metaform dispatch run <id> <agent>`: the session for one ticket, until it ends. When the ticket is done and has an
+    agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
+    has none waiting or a session ends with its ticket not done."""
     store = ctx.require_store()
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
     record = ticket(store, work_id)
-    if record.done:
-        raise Stop(f'Work {work_id} was done at {record.done}.', 'metaform map work open=true')
-    if record.taken:
-        raise Stop(f'Work {work_id} is already taken by {record.taken_by or "an agent"}.', 'metaform map work open=true')
+    startable(ctx, store, record)
     command = argv(str(ctx.setting(f'dispatch_{agent}')))
-    RUNNER['pid'] = os.getpid()
-    return await Session(ctx, store, record, agent, command).run()
+    worked: list[str] = []
+    while True:
+        ended = await Session(ctx, store, record, agent, command).run()
+        worked.append(record.work_id)
+        record = await asyncio.to_thread(ticket, store, record.work_id)
+        glyph = await asyncio.to_thread(glyph_of, ctx, record)  # read again, so a glyph given while it ran counts
+        if glyph is None:
+            return ended if len(worked) == 1 else {**ended, 'worked': worked}
+        found = await asyncio.to_thread(next_ticket, ctx, store, glyph) if record.done else None
+        if found is not None:
+            try:  # an agent of the glyph started on another of its tickets meanwhile has it now
+                await asyncio.to_thread(startable, ctx, store, found)
+            except Stop:
+                found = None
+        if found is None:
+            return {**ended, 'glyph': glyph, 'worked': worked}
+        record = found
 
 
 def choose(options: list[PermissionOption], answer: str | None) -> str | None:
@@ -104,12 +145,19 @@ class Session:
         self.process: asyncio.subprocess.Process | None = None
         self.exited = asyncio.Event()  # the agent's process has ended
         self.conn: Any = None
-        self.record_item: str | None = None
-        self.notes: dict[str, str] = {}  # what a note is kept for, such as one tool call, and its item
+        self.recorded = False  # the session's row is written
+        self.took = False  # this session took the ticket, so it gives it back if it ends with the ticket open
+        self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
+        self.lines = 0
         self.tools: dict[str, dict[str, Any]] = {}
         self.flow_kind: str | None = None
         self.flow_text = ''
+        self.flow_key: str | None = None  # the note the text being written grows in
+        self.flow_at = 0.0
+        self.flows = 0
         self.asked: dict[str, tuple[asyncio.Future[str | None], list[PermissionOption], str]] = {}
+        self.theirs: dict[str, Message] = {}  # the open questions the agent asked itself, told to it when answered
+        self.heard = stamp()  # the last session update or prompt, the earliest a tool call first seen next began
         self.turns = 0
         self.idle = asyncio.Event()
         self.idle.set()
@@ -134,11 +182,27 @@ class Session:
     async def write(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """One write through the store, off the loop, then `map.changed`, so an open web GUI shows it at once."""
         result = await asyncio.to_thread(function, *args, **kwargs)
+        await self.changed()
+        return result
+
+    async def table(self, change: Callable[[Any], Any]) -> Any:
+        """One write to this module's own tables, off the loop, then `map.changed` naming the dispatch tables, so an
+        open agent window shows it at once and an open page reads only its agents again, not the map, STORE-045."""
+        def done() -> Any:
+            with self.store.tables() as tx:
+                return change(tx)
+        result = await asyncio.to_thread(done)
+        await self.changed(tables='dispatch')
+        return result
+
+    async def changed(self, tables: str | None = None) -> None:
         if self.metaform_id is None:
             active = await asyncio.to_thread(self.store.active_metaform)
             self.metaform_id = active.metaform_id if active is not None else None
-        await self.ctx.publish_async('map.changed', {'project': self.store.project_id, 'metaform_id': self.metaform_id})
-        return result
+        payload: dict[str, Any] = {'project': self.store.project_id, 'metaform_id': self.metaform_id}
+        if tables:
+            payload['tables'] = tables
+        await self.ctx.publish_async('map.changed', payload)
 
     def extra(self, state: str) -> dict[str, Any]:
         return {'dispatch': 'session', 'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id,
@@ -149,45 +213,61 @@ class Session:
         return f'{self.name} session {self.session_id} on work {self.work_id}: {state}'
 
     async def note(self, key: str | None, kind: str, text: str) -> None:
-        """A note at the ticket's node: a new one, or the one kept for `key` changed in place."""
-        held = self.notes.get(key) if key else None
-        if held is not None:
-            await self.write(self.store.edit, held, {'value': text})
+        """A line of the session's thread, in this module's tables and never on the map: a new one, or the one kept
+        for `key` changed in place."""
+        if self.session_id is None:
             return
-        made = await self.write(self.store.add_item, LAYER, self.node, text,
-                                extra={'dispatch': 'note', 'work_id': self.work_id, 'agent': self.agent,
-                                       'session_id': self.session_id, 'update': kind})
-        if key and isinstance(made, Item):
-            self.notes[key] = made.item_id
+        session_id = self.session_id
+        if key and key in self.named:
+            await self.table(lambda tx: tx.update('lines', {'session_id': session_id, 'name': key}, {'text': text}))
+            return
+        self.lines += 1
+        seq = self.lines
+        name = key or f'line:{seq}'
+        if key:
+            self.named.add(key)
+        await self.table(lambda tx: tx.insert('lines', {'session_id': session_id, 'name': name, 'work_id': self.work_id,
+                                                        'kind': kind, 'text': text, 'seq': seq}))
 
     async def flush(self) -> None:
-        """The message or thought text gathered so far, as one note."""
-        kind, text = self.flow_kind, self.flow_text
-        self.flow_kind, self.flow_text = None, ''
+        """The message or thought text gathered so far, as one note: the note it has grown in while it was written."""
+        kind, text, key = self.flow_kind, self.flow_text, self.flow_key
+        self.flow_kind, self.flow_text, self.flow_key = None, '', None
         if kind is not None and text:
-            await self.note(None, kind, text)
+            await self.note(key, kind, text)
 
     # ------------------------------------------------------------------ the ACP client, called by the SDK
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
         data: dict[str, Any] = update.model_dump(mode='json', by_alias=True, exclude_none=True)
         kind = str(data.get('sessionUpdate', ''))
+        heard, self.heard = self.heard, stamp()
         async with self.lock:
             if kind in CHUNKS:
                 if kind != self.flow_kind:
                     await self.flush()
                     self.flow_kind = kind
+                    self.flows += 1
+                    self.flow_key = f'flow:{self.flows}'
                 self.flow_text += chunk_text(data.get('content'))
+                now = time.monotonic()
+                if now - self.flow_at >= STREAM_EVERY:  # the text so far, grown in place, so it reads as it is written
+                    self.flow_at = now
+                    await self.note(self.flow_key, kind, self.flow_text)
                 return
             await self.flush()
             if kind in ('tool_call', 'tool_call_update'):
                 ident = str(data.get('toolCallId', ''))
-                known = self.tools.setdefault(ident, {})
+                # a call first seen before it completes began then; one first seen complete, after the update before it
+                known = self.tools.setdefault(ident, {'began': heard if data.get('status') == 'completed' else
+                                                      self.heard})
                 for field in ('title', 'kind', 'status'):
                     if data.get(field):
                         known[field] = data[field]
                 title = known.get('title') or known.get('kind') or 'A tool call'
                 await self.note(f'tool:{ident}', kind, f'{title} ({known.get("status", "pending")})')
+                if data.get('rawOutput') is not None or data.get('content'):
+                    await self.learn(json.dumps([data.get('rawOutput'), data.get('content')]), known['began'])
             elif kind == 'plan':
                 entries: list[Any] = data.get('entries') or []
                 said = [cast(dict[str, Any], entry) for entry in entries if isinstance(entry, dict)]
@@ -202,6 +282,13 @@ class Session:
         """Asked at the ticket's node with the options as suggestions; the agent waits for the person's choice."""
         waiting: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
         title = str(tool_call.title or tool_call.kind or 'a tool call')
+        how = await asyncio.to_thread(self.ctx.setting, 'dispatch_prompts')  # as set now, so a change reaches this agent
+        allow = next((option for option in options if str(option.kind) == 'allow_once'), None)
+        if allow is not None and (how == 'approve-all' or (how == 'approve-reads' and str(tool_call.kind) in READS)):
+            async with self.lock:
+                await self.flush()
+                await self.note(None, 'approved', f'{title}: approved by dispatch_prompts={how}')
+            return RequestPermissionResponse(outcome=AllowedOutcome(option_id=allow.option_id, outcome='selected'))
         async with self.lock:
             await self.flush()
             await self.ask(waiting, options, title, '')
@@ -221,9 +308,29 @@ class Session:
                                  by=self.by)
         self.asked[asked.message_id] = (waiting, options, title)
 
+    async def learn(self, output: str, began: str) -> None:
+        """The questions the agent asked itself in one tool call: each one whose id the call's output shows and that
+        was made no earlier than the call began, so a question it only read is not taken for its own."""
+        ids = set(IDS.findall(output)) - set(self.asked) - set(self.theirs)
+        if not ids:
+            return
+        found = await asyncio.to_thread(self.store.messages, None, 'question', True, limit=0)
+        for message in found.results:
+            if message.message_id in ids and message.created >= began:
+                self.theirs[message.message_id] = message
+
     async def check(self) -> None:
-        """Read the open questions this session asked, and answer the agent for each one the person answered."""
+        """Read the open questions this session asked, and answer the agent for each one the person answered; tell the
+        agent the answer to each question it asked itself; and end the session once its ticket is done while no prompt
+        of its own runs, whatever turn closed it, VIEW-035."""
+        if not self.ending and self.turns == 0:
+            record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            if record.done:
+                self.spawn(self.end('the ticket is done'))
+                return
         async with self.lock:
+            if self.theirs and not self.ending:
+                await self.answered()
             if not self.asked:
                 return
             found = await asyncio.to_thread(self.store.messages, self.node, 'question', None, limit=0)
@@ -240,11 +347,26 @@ class Session:
                     continue
                 await self.ask(waiting, options, title, f'The answer "{message.answer}" names none of the options. ')
 
+    async def answered(self) -> None:
+        """Each question the agent asked itself that the person has answered, told to the agent as a prompt, once."""
+        found = await asyncio.to_thread(self.store.messages, None, 'question', False, limit=0)
+        for message in found.results:
+            asked = self.theirs.pop(message.message_id, None)
+            if asked is None:
+                continue
+            text = prompt('answered', message_id=message.message_id, question=asked.text or '',
+                          answer=message.answer or '')
+            await self.flush()
+            await self.note(None, 'answered', text)
+            self.turn(text)
+
     # ------------------------------------------------------------------ the session
 
     async def run(self) -> dict[str, Any]:
         server = await asyncio.start_server(self.control, '127.0.0.1', 0)
         self.port = int(server.sockets[0].getsockname()[1])
+        loop = asyncio.get_running_loop()
+        listener = self.ctx.listen(lambda payload: loop.call_soon_threadsafe(self.changed_elsewhere, payload))
         try:
             await self.begin()
             await self.ended.wait()
@@ -255,11 +377,11 @@ class Session:
             await self.note(None, 'failed', f'{self.name} {said} on work {self.work_id}: {error}')
         finally:
             await asyncio.shield(self.end(self.how or 'the runner ended'))
+            await asyncio.to_thread(listener.close)
             server.close()
         return {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id, 'ended': self.how}
 
     async def begin(self) -> None:
-        await self.write(self.store.layer, LAYER, 'dispatch', VARIABLE, mutable=True, hideable=True, ready=True)
         loop = asyncio.get_running_loop()
         transport, protocol = await loop.subprocess_exec(
             lambda: Exits(LINE_LIMIT, loop), *self.command, stdin=asyncio.subprocess.PIPE,
@@ -285,12 +407,15 @@ class Session:
                                               {'work_id': self.work_id, 'agent': self.agent,
                                                'session_id': self.session_id})
         await self.write(self.store.take_work, self.work_id, None, self.by)
-        item = await self.write(self.store.add_item, LAYER, self.node, self.summary('running'),
-                                extra=self.extra('running'))
-        self.record_item = item.item_id if isinstance(item, Item) else None
+        self.took = True
+        row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
+        row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000)
+        await self.table(lambda tx: tx.insert('sessions', row))
+        self.recorded = True
         self.turn(prompt('handoff', work_id=self.work_id))
 
     def turn(self, text: str) -> None:
+        self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
         self.turns += 1
         self.idle.clear()
         self.spawn(self.prompted(text))
@@ -320,8 +445,14 @@ class Session:
         if not self.ending:
             await self.end(f'the agent ended with exit code {code}')
 
+    def changed_elsewhere(self, payload: dict[str, Any]) -> None:
+        """map.changed from another process, handed over by the base's listener, BASE-053: a change to this project
+        may be an answer to a question, so the open questions are read, QUAL-015."""
+        if payload.get('project') == self.store.project_id and not self.ending:
+            self.spawn(self.check())
+
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        """One request on the control port: `changed`, `message` or `stop`, with this session's token."""
+        """One request on the control port: `message` or `stop`, with this session's token."""
         try:
             line = await asyncio.wait_for(reader.readline(), REPLY_LIMIT)
             found: Any = json.loads(line) if line else None
@@ -331,14 +462,15 @@ class Session:
                 return
             said = {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id}
             op = asked.get('op')
-            if op == 'changed':
-                await self.reply(writer, {'ok': True})
-                await self.check()
-            elif op == 'message':
+            if op == 'message':
                 if self.ending or self.session_id is None:
                     await self.reply(writer, {**said, 'sent': False, 'error': 'The session has not started or is ending.'})
                     return
-                self.turn(str(asked.get('text', '')))
+                text = str(asked.get('text', ''))
+                async with self.lock:  # the person's words in the thread, where the agent's reply follows
+                    await self.flush()
+                    await self.note(None, 'person', text)
+                self.turn(text)
                 await self.reply(writer, {**said, 'sent': True})
             elif op == 'stop':
                 await self.end('stopped by the person', release=False)
@@ -394,9 +526,14 @@ class Session:
         if self.number is not None:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(nonce.close, self.number)
-        if self.record_item is not None:
-            await self.write(self.store.edit, self.record_item,
-                             {'value': self.summary(f'ended, {how}'), 'extra': self.extra('ended')})
+        if self.took:  # a ticket this session leaves open goes back to To do, so no figure circles it, VIEW-035
+            with contextlib.suppress(Exception):
+                record = await asyncio.to_thread(ticket, self.store, self.work_id)
+                if not record.done:
+                    await self.write(self.store.move_work, self.work_id, 'todo', None, self.by)
+        if self.recorded:
+            session_id = self.session_id
+            await self.table(lambda tx: tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how}))
         self.over.set()
         if release:
             self.ended.set()

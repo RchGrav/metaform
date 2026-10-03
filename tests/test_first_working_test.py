@@ -22,9 +22,9 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'specifications' / 'Intake_2.0.md'  # the served intake, Rich 2026-10-02
+SPEC = ROOT / 'specifications' / 'Intake_2.1.md'  # the served intake, Rich 2026-10-03
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_subtype',
+TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_add_requirement', 'intake_subtype',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
@@ -159,12 +159,15 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                                          if key in ('role', 'name', 'name_length', 'refs')}})
         for element in submission['elements']:
             for join in element.get('joins', []):
-                made = record('intake_join', {'receiver': element['namespace_address'], **{
-                    key: value for key, value in join.items() if key != 'subtypes'}})
+                record('intake_add_requirement', {'receiver': element['namespace_address'], **{
+                    key: value for key, value in join.items() if key not in ('subtypes', 'type')}})
                 for subtype in join.get('subtypes', []):
                     inner = subtype['element']
-                    record('intake_subtype', {'into': made['join_id'], 'namespace_address': inner['namespace_address'],
-                                              **{key: value for key, value in subtype.items() if key != 'element'},
+                    record('intake_subtype', {'parent_receiver': element['namespace_address'],
+                                              'parent_provider': join['provider'],
+                                              'namespace_address': inner['namespace_address'],
+                                              **{key: value for key, value in subtype.items()
+                                                 if key not in ('element', 'provider')},
                                               **{key: value for key, value in inner.items()
                                                  if key in ('role', 'name', 'name_length', 'refs')}})
         # The condition of an object is a work record, apart from the map, written by the same agent through
@@ -172,7 +175,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         record('map_work', {'op': 'add', 'node': 'element:code.alarm.audible', 'condition': 'broken',
                             'note': 'the pin is never released', 'task': 'release it after stop'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
-        assert (report['elements'], report['joins'], report['subtypes'], report['work']) == (4, 2, 1, 1)
+        assert (report['elements'], report['requirements'], report['subtypes'], report['work']) == (4, 2, 1, 1)
         # Each element of the fixture carries its name, kept on the element with no notice, Rich 2026-10-01.
         assert noticed == ['purpose']
     finally:

@@ -8,7 +8,7 @@
       "name": "Home cook",
       "joins": [
         {
-          "type": "purpose",
+          "type": "require",
           "provider": "code.timer.kitchen",
           "purpose": "Know when each dish is done without watching the clock.",
           "ef": "The timer counts down each named dish and rings when one reaches zero.",

@@ -66,6 +66,8 @@ TABLES = Tables(version=2, tables=(
 ))
 
 Row = dict[str, Any]
+# The nouns that name a node by address, MAP-005, as refine names what it changes.
+NAMING = ('receiver', 'provider', 'address')
 
 
 def _now() -> str:
@@ -91,17 +93,8 @@ class Key:
 
 def _join_key(store: Store, node: Node) -> Key | None:
     """A map join's two ends; a subtype join's are its parent join's receiver and the element it holds."""
-    view = store.node(node, raw=True)
-    if view is None or not view.address:
-        return None
-    for join in store.joins(view.address, 'receiver', raw=True, limit=0).results:
-        if join.join_id == node.id and join.receiver_address and join.provider_address:
-            return Key(join.receiver_address, join.provider_address)
-    for join in store.joins(view.address, 'receiver', raw=True, limit=0).results:
-        for held in store.subtypes(join.join_id, raw=True, limit=0).results:
-            if held.join_id == node.id and held.address:
-                return Key(view.address, held.address)
-    return None
+    ends = store.join_ends(node.id)
+    return None if ends is None else Key(*ends)
 
 
 def _key_of(store: Store, node: Node) -> Key | None:
@@ -117,8 +110,9 @@ def _key(store: Store, text: str) -> Key:
     """The key of the node a command names, which must be a node of the active map."""
     try:
         node = Node.parse(text)
-    except StoreError as error:
-        raise Stop(str(error), 'write element:<address or id> or join:<id>') from None
+    except StoreError:
+        raise Stop(f'{text!r} is not a node: name an element by address, or a requirement by receiver and '
+                   'provider.', 'metaform help memory read_graph') from None
     if node.kind == 'type':
         raise Stop('Memory is kept at an element or a join, not at a bare type address.',
                    f'metaform memory read_graph node=element:{node.id}')
@@ -378,11 +372,47 @@ def _noted(tx: TableTx, key: Key, text: str) -> bool:
 
 # ------------------------------------------------------------------------------------------------ the nine commands
 
-def _scope(ctx: Context) -> tuple[Store, Key | None]:
+def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key | None:
+    """The key of the node a command names by address, MAP-005: a requirement by its receiver and provider, a part by
+    its address inside it, an element by its address; or the node noun as written. A node noun given beside them is
+    named in a notice as not read."""
+    if not any(name in nouns for name in NAMING):
+        return _key(store, nouns['node']) if nouns.get('node') else None
+    if 'node' in nouns:
+        notices.append({'where': 'node', 'message': 'receiver, provider and address name the node; node was not read.'})
+    if 'receiver' not in nouns and 'provider' not in nouns:
+        return _key(store, f"element:{nouns['address']}")
+    if store.active_metaform() is None:
+        raise Stop('A requirement is not a node here: the project has no metaform.', 'metaform memory orphaned')
+    found = _key_of(store, store.requirement(nouns.get('receiver'), nouns.get('provider'), nouns.get('address')))
+    if found is None:
+        raise Stop(f"The requirement of {nouns.get('receiver')} served by {nouns.get('provider')} is not a node of the "
+                   'map here.', 'metaform map where')
+    return found
+
+
+def _held(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key:
+    """The key of the node note names, node first, Rich 2026-10-03: with provider beside it, the requirement node holds
+    as its receiver, and with address the part at that address inside it, MAP-005."""
+    if 'provider' not in nouns:
+        if 'address' in nouns:
+            notices.append({'where': 'address', 'message': 'address names a part only with provider; it was not read.'})
+        return _key(store, nouns['node'])
+    node = str(nouns['node'])
+    receiver = node.partition(':')[2] if node.startswith('element:') else node
+    found = _named(store, {'receiver': receiver, **{name: nouns[name] for name in ('provider', 'address')
+                                                    if name in nouns}}, [])
+    assert found is not None  # receiver and provider are given, so _named names a node or stops
+    return found
+
+
+def _scope(ctx: Context, notices: list[dict[str, str]], *, carry: bool = True) -> tuple[Store, Key | None]:
+    """The store and the named node; a command that writes first carries what the memory layer held, and one that
+    only reads writes nothing, VIEW-011."""
     store = ctx.require_store()
-    _carry(store)
-    given = ctx.nouns.get('node')
-    return store, (_key(store, given) if given else None)
+    if carry:
+        _carry(store)
+    return store, _named(store, ctx.nouns, notices)
 
 
 class _Given:
@@ -423,10 +453,9 @@ class _Given:
         return result
 
 
-def _not_found(name: str, key: Key | None) -> Stop:
-    return Stop(f'Entity with name {name} not found',
-                'metaform memory read_graph' + (f' node=element:{key.receiver}' if key is not None and not key.provider
-                                                else ' node=join:<id>' if key is not None else ''))
+def _not_found(name: str, nouns: dict[str, Any]) -> Stop:
+    named = ''.join(f' {noun}={nouns[noun]}' for noun in ('node', *NAMING) if noun in nouns)
+    return Stop(f'Entity with name {name} not found', f'metaform memory read_graph{named}')
 
 
 def _layered(store: Store) -> None:
@@ -436,8 +465,8 @@ def _layered(store: Store) -> None:
 
 
 def create_entities(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     entities = [(given.text(one['name'], 'name'), given.text(one['entityType'], 'entityType'),
                  given.texts(one['observations'], 'observations'))
                 for one in given.objects('entities', ('name', 'entityType', 'observations'))]
@@ -467,8 +496,8 @@ def _relations(given: _Given) -> list[tuple[str, str, str]]:
 
 
 def create_relations(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     relations = _relations(given)
     made: list[dict[str, Any]] = []
     with store.tables() as tx:
@@ -477,7 +506,7 @@ def create_relations(ctx: Context) -> Any:
         for source, target, _ in relations:
             for end in (source, target):
                 if end not in known:
-                    raise _not_found(end, key)
+                    raise _not_found(end, ctx.nouns)
         held = {(row['source'], row['target'], row['relation_type']) for row in view.graph.relations}
         for triple in relations:
             if triple in held:
@@ -490,8 +519,8 @@ def create_relations(ctx: Context) -> Any:
 
 
 def add_observations(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     observations = [(given.text(one['entityName'], 'entityName'), given.texts(one['contents'], 'contents'))
                     for one in given.objects('observations', ('entityName', 'contents'))]
     results: list[dict[str, Any]] = []
@@ -500,15 +529,15 @@ def add_observations(ctx: Context) -> Any:
         known = view.known
         for name, contents in observations:
             if name not in known:
-                raise _not_found(name, key)
+                raise _not_found(name, ctx.nouns)
             results.append({'entityName': name, 'addedObservations': _observe(tx, view.graph, name, contents)})
     _layered(store)
     return given.said({'results': results})
 
 
 def delete_entities(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     names = given.texts(ctx.nouns.get('entityNames'), 'entityNames')
     with store.tables() as tx:
         view = _view(tx, key)
@@ -523,8 +552,8 @@ def delete_entities(ctx: Context) -> Any:
 
 
 def delete_observations(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
                  for one in given.objects('deletions', ('entityName', 'observations'))]
     deleted, requested, missing = 0, 0, list[str]()
@@ -544,8 +573,8 @@ def delete_observations(ctx: Context) -> Any:
 
 
 def delete_relations(ctx: Context) -> Any:
-    store, key = _scope(ctx)
     given = _Given(ctx)
+    store, key = _scope(ctx, given.notices)
     relations = _relations(given)
     deleted = 0
     with store.tables() as tx:
@@ -575,8 +604,8 @@ def _shown(store: Store, tx: TableTx, view: View) -> View:
                              if any(reaches(address) for address in at.get(name, ['']))])
 
 
-def _read(ctx: Context) -> View | None:
-    store, key = _scope(ctx)
+def _read(ctx: Context, notices: list[dict[str, str]]) -> View | None:
+    store, key = _scope(ctx, notices, carry=False)
     if key is not None and not _reaches(store, key.address):
         return None
     with store.tables(write=False) as tx:
@@ -589,14 +618,15 @@ EMPTY: dict[str, list[Any]] = {'entities': [], 'relations': []}
 
 
 def read_graph(ctx: Context) -> Any:
-    view = _read(ctx)
-    return dict(EMPTY) if view is None else view.whole()
+    given = _Given(ctx)
+    view = _read(ctx, given.notices)
+    return given.said(dict(EMPTY) if view is None else view.whole())
 
 
 def search_nodes(ctx: Context) -> Any:
     given = _Given(ctx)
     wanted = given.text(ctx.nouns.get('query'), 'query').lower()
-    view = _read(ctx)
+    view = _read(ctx, given.notices)
     if view is None:
         return given.said(dict(EMPTY))
     chosen = [name for name in view.names
@@ -608,7 +638,7 @@ def search_nodes(ctx: Context) -> Any:
 def open_nodes(ctx: Context) -> Any:
     given = _Given(ctx)
     names = given.texts(ctx.nouns.get('names'), 'names')
-    view = _read(ctx)
+    view = _read(ctx, given.notices)
     if view is None:
         return given.said(dict(EMPTY))
     return given.said(view.around([name for name in view.names if name in names]))
@@ -624,9 +654,8 @@ def _join_said(row: Row, held: bool) -> dict[str, Any]:
 def joins(ctx: Context) -> Any:
     """The joins of type memory, at a node or of an entity, or all of them, each with whether it is orphaned."""
     store = ctx.require_store()
-    _carry(store)
-    given, entity = ctx.nouns.get('node'), ctx.nouns.get('entity')
-    key = _key(store, given) if given else None
+    notices: list[dict[str, str]] = []
+    key, entity = _named(store, ctx.nouns, notices), ctx.nouns.get('entity')
     with store.tables(write=False) as tx:
         if key is not None:
             found = _joined(tx, key)
@@ -637,14 +666,17 @@ def joins(ctx: Context) -> Any:
     if key is not None and entity:
         found = [row for row in found if row['entity'] == entity]
     mapped = _Map(store)
-    return {'joins': [_join_said(row, mapped.holds(Key(row['receiver'], row['provider']))) for row in found]}
+    said: dict[str, Any] = {'joins': [_join_said(row, mapped.holds(Key(row['receiver'], row['provider'])))
+                                      for row in found]}
+    if notices:
+        said['notices'] = notices
+    return said
 
 
 def orphaned(ctx: Context) -> Any:
     """The memory joins whose address the active map does not hold, with what each was attached to, for the orphaned
     menu; they are kept, and a new intake that holds the address reconnects them."""
     store = ctx.require_store()
-    _carry(store)
     with store.tables(write=False) as tx:
         found = list(tx.rows('joins', by=('receiver', 'provider'), limit=0).results)
     mapped = _Map(store)
@@ -660,12 +692,28 @@ def unjoin(ctx: Context) -> Any:
     return {'deleted': deleted}
 
 
+def rekey(ctx: Context) -> Any:
+    """Transfer memory attachments and notes at an exact address, including either end of a map join. The old
+    address may already be absent from the map; existing unique keys make a collision roll the whole transfer back."""
+    store = ctx.require_store()
+    old, new = ctx.nouns['old'], ctx.nouns['new']
+    counts = {'joins': 0, 'notes': 0}
+    if old != new:
+        with store.tables() as tx:
+            for table, key in (('joins', ('join_id',)), ('notes', ('receiver', 'provider'))):
+                for row in tx.rows(table, limit=0).results:
+                    changes = {end: new for end in ('receiver', 'provider') if row[end] == old}
+                    if changes:
+                        tx.update(table, {name: row[name] for name in key}, changes)
+                        counts[table] += 1
+    return {'old': old, 'new': new, **counts}
+
+
 def graph(ctx: Context) -> Any:
     """The whole graph with every join, for a browser of it. Each join also says whether its entity shows at its node
     as a read of the node shows it: the join is not orphaned and memory reaches the node's address in the call's
     layers, VIEW-031."""
     store = ctx.require_store()
-    _carry(store)
     with store.tables(write=False) as tx:
         whole = Graph.read(tx)
         rows = list(tx.rows('joins', by=('receiver', 'provider'), limit=0).results)
@@ -692,23 +740,24 @@ def _note_said(row: Row | None) -> dict[str, Any] | None:
 def note(ctx: Context) -> Any:
     """The node's one note: read it, or with text write it in place of what it held; empty text clears it."""
     store = ctx.require_store()
-    _carry(store)
-    key = _key(store, ctx.nouns['node'])
+    notices: list[dict[str, str]] = []
+    key = _held(store, ctx.nouns, notices)
     text = ctx.nouns.get('text')
     where = {'receiver': key.receiver, 'provider': key.provider}
     if text is None:
         with store.tables(write=False) as tx:
-            return {**key.said(), 'note': _note_said(tx.get('notes', where))}
+            return {**key.said(), 'note': _note_said(tx.get('notes', where)), **({'notices': notices} if notices else {})}
+    _carry(store)
     if len(text) > NOTE_LIMIT:
         raise Stop(f'A note holds at most {NOTE_LIMIT} characters; this one has {len(text)}.',
                    f'metaform memory note {ctx.nouns["node"]} text=<at most {NOTE_LIMIT} characters>')
     with store.tables() as tx:
         if text == '':
             tx.delete('notes', where)
-            return {**key.said(), 'note': None}
+            return {**key.said(), 'note': None, **({'notices': notices} if notices else {})}
         changes = {'text': text, 'by': ctx.nouns.get('by'), 'at': _now()}
         row = tx.update('notes', where, changes) or tx.insert('notes', {**where, **changes})
-    return {**key.said(), 'note': _note_said(row)}
+    return {**key.said(), 'note': _note_said(row), **({'notices': notices} if notices else {})}
 
 
 # ------------------------------------------------------------------------------------------------ the node read
@@ -749,8 +798,13 @@ def node_read(ctx: Context, node: Node) -> Any:
 
 # ------------------------------------------------------------------------------------------------ the declaration
 
-NODE = ('The map node whose memories the command acts on, element:<address or id> or join:<id>, a subtype join being '
-        'a join. Without it the command acts on the whole memory graph.')
+NODE = ('The map element whose memories the command acts on, element:<address>. Without node, receiver, provider or '
+        'address the command acts on the whole memory graph.')
+RECEIVER = 'A requirement whose memories the command acts on: the address of the element that requires it, with provider.'
+PROVIDER = 'A requirement whose memories the command acts on: the address of the element that serves it, with receiver.'
+ADDRESS = 'An element, by address; with receiver and provider, the part at that address inside the requirement.'
+NAMED = (Noun('receiver', RECEIVER, required=False), Noun('provider', PROVIDER, required=False),
+         Noun('address', ADDRESS, required=False))
 ENTITY = {'type': 'object', 'properties': {
     'name': {'type': 'string', 'description': 'The name of the entity'},
     'entityType': {'type': 'string', 'description': 'The type of the entity'},
@@ -778,7 +832,7 @@ EXAMPLE = ('metaform memory create_entities \'[{"name":"route ejection","entityT
 
 
 def _at(*nouns: Noun) -> tuple[Noun, ...]:
-    return (*nouns, Noun('node', NODE, required=False))
+    return (*nouns, Noun('node', NODE, required=False), *NAMED)
 
 
 MODULE = Module(
@@ -791,7 +845,8 @@ MODULE = Module(
     details='The nine commands take the reference memory server\'s arguments and return its results. With node, they '
             'act on the entities joined to that node and the relations between them; create_entities joins what it '
             'makes to the node. A memory join is keyed by the node\'s namespace address, so a clear keeps it and a new '
-            'intake with the same address reconnects it; orphaned lists those the map no longer holds. The reads at '
+            'intake with the same address reconnects it; orphaned lists those the map no longer holds. '
+            'rekey <old-address> <new-address> transfers attachments and notes when an address is replaced. The reads at '
             'a node show nothing while the layer named memory is turned off there, with select, mask or --layers. Each '
             'node also holds one note of at most 2048 characters.',
     verbs=(
@@ -822,19 +877,30 @@ MODULE = Module(
         Verb('open_nodes', open_nodes, 'Open specific nodes in the knowledge graph by their names.',
              nouns=_at(Noun('names', 'An array of entity names to retrieve', kind='json', schema=NAMES))),
         Verb('note', note, "Read a node's one note, or write it in place of what it held; empty text clears it.",
-             nouns=(Noun('node', 'element:<address or id> or join:<id>, a subtype join being a join.'),
+             nouns=(Noun('node', 'An element, element:<address>; with provider, the requirement it holds as receiver.'),
+                    Noun('provider', 'A requirement node holds as its receiver: the address of the element that serves '
+                                     'it.', required=False),
+                    Noun('address', 'With provider: the part at that address inside the requirement.', required=False),
                     Noun('text', f'The note, at most {NOTE_LIMIT} characters.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
              examples=(('metaform memory note element:code.manager.route text="Routes drift under load."',
                         "Write the route manager's note."),)),
         Verb('joins', joins, 'The joins of type memory: at a node, of an entity, or all, each with whether it is '
                              'orphaned.',
-             nouns=(Noun('node', 'element:<address or id> or join:<id>.', required=False),
+             nouns=(Noun('node', 'element:<address>.', required=False), *NAMED,
                     Noun('entity', 'An entity name.', required=False))),
         Verb('orphaned', orphaned, 'The memory joins whose address the active map does not hold, with what each was '
                                    'attached to.'),
         Verb('unjoin', unjoin, 'Take one memory join away by its id; the entity stays in the graph.',
              nouns=(Noun('id', 'The join id joins or orphaned gives.'),)),
+        Verb('rekey', rekey, 'Transfer memory joins and notes from an old address to a new address.',
+             nouns=(Noun('old', 'The exact old namespace address, including one no longer held by the map.'),
+                    Noun('new', 'The replacement namespace address.')),
+             details='Replaces the exact address in receivers and providers of memory joins and notes in one '
+                     'transaction. Keeps join ids, note text, author and time, and the memory graph. A destination '
+                     'key collision rolls back the whole transfer. Returns the number of joins and notes changed.',
+             examples=(('metaform memory rekey code.manager.route code.manager.table',
+                        'Transfer the route manager\'s memory to its replacement address.'),)),
         Verb('graph', graph, 'The whole graph with every join, and whether each join\'s memory shows at its '
                              'node.'),
     ),

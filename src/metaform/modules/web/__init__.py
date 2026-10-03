@@ -15,17 +15,22 @@ import ipaddress
 import json
 import os
 import secrets
+import selectors
 import signal
 import socket
 import subprocess
 import sys
 import threading
+from contextlib import ExitStack
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from metaform import home, prompt_files, settings
-from metaform.module import Context, Module, Status, Stop, Subscription, Verb
+from metaform.module import Context, Module, Noun, Status, Stop, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -255,31 +260,6 @@ def held_open(record: dict[str, Any]) -> http.client.HTTPResponse | None:
     return response
 
 
-def pushed(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
-    """map.changed: hand the event to the running server, which pushes it to every open page, VIEW-018.
-
-    This subscriber runs in the publishing command's process, as every subscriber does, BASE-010. The server takes
-    the event only from this machine and with the nonce from its run file. With no server running it does nothing.
-    """
-    record = recorded()
-    if record is None:
-        return {'pushed': False}
-    address, port = reach(str(record.get('bind', ''))), int(record.get('port') or 0)
-    body = json.dumps({'topic': 'map.changed', 'payload': payload}).encode('utf-8')
-    connection = http.client.HTTPConnection(address, port, timeout=1)
-    try:
-        connection.request('POST', '/api/notify', body=body, headers={
-            'Host': host_port(address, port), 'Content-Type': 'application/json',
-            'X-Metaform-Nonce': str(record.get('nonce', '')), 'X-Metaform-Token': token() or ''})
-        answer = connection.getresponse()
-        answer.read()
-        return {'pushed': answer.status == 200}
-    except OSError:
-        return {'pushed': False}
-    finally:
-        connection.close()
-
-
 def status(ctx: Context) -> Status:
     """With `web_autostart` on, the autostart message is in the instructions agents read, VIEW-015, and in status
     for a project with no map yet, where an intake comes next. Off, it is in neither."""
@@ -289,9 +269,42 @@ def status(ctx: Context) -> Status:
     return Status(notice=None if mapped else AUTOSTART, instruction=AUTOSTART)
 
 
+def serve(ctx: Context) -> None:
+    """Reconstruct and serve static web variants until interrupted, PROJ-019."""
+    store = ctx.require_store()
+    ids = cast(list[str], ctx.nouns['variants'])
+    try:
+        with ExitStack() as stack:
+            if os.name == 'nt':
+                previous = signal.signal(signal.SIGBREAK, signal.default_int_handler)
+                stack.callback(signal.signal, signal.SIGBREAK, previous)
+            folder = Path(stack.enter_context(TemporaryDirectory(prefix='metaform-web-')))
+            extracted = store.extract(ids, folder, ctx.nouns.get('origin'))
+            if not extracted:
+                ctx.say('No variants to serve.')
+                return
+            selector = stack.enter_context(selectors.DefaultSelector())
+            addresses: list[tuple[str, int]] = []
+            for root in extracted:
+                handler = partial(SimpleHTTPRequestHandler, directory=str(root))
+                server = stack.enter_context(ThreadingHTTPServer(('127.0.0.1', 0), handler))
+                selector.register(server, selectors.EVENT_READ, server)
+                identifier = root.name if ids == ['all'] or len(extracted) > 1 else ids[0]
+                addresses.append((identifier, server.server_port))
+            for identifier, port in addresses:
+                ctx.say(f'{identifier}  http://127.0.0.1:{port}/')
+            sys.stdout.flush()
+            sys.stderr.flush()
+            while True:
+                for key, _ in selector.select():
+                    cast(ThreadingHTTPServer, key.data).handle_request()
+    except KeyboardInterrupt:
+        pass  # ExitStack closes the listeners and removes the reconstructed folders.
+
+
 MODULE = Module(
     id='web',
-    summary="Start and stop Metaform's web GUI.",
+    summary="Start and stop Metaform's web GUI, and serve web variants.",
     purpose="Starts Metaform's web GUI, where people see every registered project's map. Details: metaform help web.",
     details='One server per Metaform home serves every project on one fixed port, --web-port. It binds to '
             '--web-bind, loopback by default, where no token is needed; any other address also needs the token '
@@ -300,7 +313,15 @@ MODULE = Module(
     verbs=(
         Verb('start', start, 'Start the web GUI, or show the address it already runs at.'),
         Verb('stop', stop, 'Stop the web GUI.'),
+        Verb('serve', serve, 'Serve reconstructed web variants together, each on its own local port.',
+             nouns=(Noun('origin', 'The origin id; the latest origin when omitted.', required=False),
+                    Noun('variants', 'Variant ids, or all to serve every variant of the origin.', many=True)),
+             details='Serves static files on OS-assigned ports at 127.0.0.1 and prints one address per variant. '
+                     'Runs in this terminal until Ctrl+C, then closes the ports and removes the temporary copies. '
+                     'The Metaform web GUI keeps its own server and port.',
+             examples=(('metaform web serve v000001 v000002', 'Compare two variants.'),
+                       ('metaform web serve all origin=<id>', 'Serve every variant of one origin.')),
+             surfaces=('cli',)),
     ),
-    subscriptions=(Subscription('map.changed', pushed),),
     status=status,
 )

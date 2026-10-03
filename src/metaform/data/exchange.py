@@ -8,7 +8,6 @@ metaform's store is imported in one transaction, STORE-006.
 """
 from __future__ import annotations
 
-import hashlib
 import sqlite3
 from collections.abc import Iterable, Sequence
 from contextlib import ExitStack
@@ -29,6 +28,10 @@ FORMAT = 1
 THINGS = ('elements', 'joins', 'items', 'properties')  # a subtype join is a row of joins, STORE-011
 KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'items': 'item', 'properties': 'property'}
 ID_OF_TABLE = {table: versions.KINDS[kind].id_column for table, kind in KIND_OF_TABLE.items()}
+
+
+def _quoted(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
 
 
 def _rows(db: sqlite3.Connection, sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
@@ -73,14 +76,36 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs', 'challenge_states', 'plans', 'work', 'work_links', 'work_steps', 'messages',
+                 'hidden', *THINGS, 'refs',
                  'reexamine', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
         db.execute('BEGIN')
         _fill(db, document, layer_names)
         modules = tables.export_modules(db)
+        unowned = tables.export_unowned(db)
+        prior = db.execute("SELECT value FROM meta WHERE key='prior_schema_version'").fetchone()
+        if prior is not None:
+            document['prior_schema_version'] = str(prior[0])
         db.execute('COMMIT')
+    extensions = [entry for entry in modules if any(value.get('schema') is not None for value in entry['tables'])]
+    modules = [entry for entry in modules if entry not in extensions]
+    if unowned:
+        document['unowned_tables'] = unowned
+    if extensions:
+        chosen = {row['layer_id'] for row in document['layers']}
+        items = {row['item_id'] for row in document['items']}
+        for entry in extensions:
+            for value in entry['tables']:
+                table = tables.Table.from_dict(value)
+                rows = entry['rows'][table.name]
+                names = {column.name for column in table.columns}
+                if 'layer_id' in names:
+                    rows = [row for row in rows if row['layer_id'] is None or row['layer_id'] in chosen]
+                elif 'item_id' in names:
+                    rows = [row for row in rows if row['item_id'] in items]
+                entry['rows'][table.name] = rows
+        document['extensions'] = extensions
     if modules:  # the modules' tables beside the map, STORE-045
         document['modules'] = modules
     return document
@@ -138,14 +163,14 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
     refs.sort(key=lambda pair: pair[0])
     document['refs'] = [ref for _, ref in refs]
     item_ids = {row['item_id'] for row in document['items']}
-    document['challenge_states'] = [row for row in _rows(db, 'SELECT * FROM challenge_states ORDER BY rowid')
-                                    if row['item_id'] in item_ids]
-    document['plans'] = [row for row in _rows(db, 'SELECT * FROM plans ORDER BY rowid') if row['layer_id'] in chosen]
-    document['work'] = _without_row(_rows(db, 'SELECT * FROM work ORDER BY row'))
-    document['work_links'] = _rows(db, 'SELECT * FROM work_links ORDER BY work_id, number')
-    # the steps a ticket's agent filed and what waits for the user at a node, STORE-042, MAP-050 and MAP-053
-    document['work_steps'] = _without_row(_rows(db, 'SELECT * FROM work_steps ORDER BY work_id, number, row'))
-    document['messages'] = _without_row(_rows(db, 'SELECT * FROM messages ORDER BY row'))
+    for name, declared in tables.exchange_tables(db).items():
+        rows = _rows(db, f'SELECT * FROM {_quoted(name)} ORDER BY rowid')
+        columns = {column.name for column in declared.columns}
+        if 'layer_id' in columns:
+            rows = [row for row in rows if row['layer_id'] in chosen]
+        elif 'item_id' in columns:
+            rows = [row for row in rows if row['item_id'] in item_ids]
+        document[name] = _without_row(rows)
     document['reexamine'] = [row for row in _rows(db, 'SELECT * FROM reexamine ORDER BY rowid')
                              if row['layer_id'] in chosen and row['changed_in'] in chosen]
     addresses = {row['address'] for table in ('elements', 'selections') for row in document[table]}
@@ -183,7 +208,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 
 
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-              *THINGS, 'challenge_states', 'plans', 'work', 'work_links', 'work_steps', 'messages', 'reexamine')
+              *THINGS, 'reexamine')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
@@ -258,15 +283,24 @@ def _validate(document: Any) -> None:
                 problems.append(f'{where}: not an object')
                 continue
             _record(metaform.get('metaform'), f'{where}.metaform', HEAD_KEYS, problems)
-            if 'modules' in metaform:
-                tables.check(metaform['modules'], f'{where}.modules', problems)
-            for table in ROW_TABLES:
+            if 'prior_schema_version' in metaform and metaform['prior_schema_version'] not in (
+                    '7', '8', '9', '10', '11', '12', '13', '14', '15'):
+                problems.append(f'{where}.prior_schema_version: not a historical layout version')
+            if 'unowned_tables' in metaform:
+                tables.check_unowned(metaform['unowned_tables'], f'{where}.unowned_tables', problems)
+            for key in ('modules', 'extensions'):
+                if key in metaform:
+                    tables.check(metaform[key], f'{where}.{key}', problems)
+            extension_tables = tables.exchange_tables(entries=metaform.get('modules', []) + metaform.get('extensions', []))
+            for table in (*ROW_TABLES, *extension_tables):
                 rows = as_list(metaform.get(table, []))
                 if rows is None:
                     problems.append(f'{where}.{table}: not a list')
                     continue
                 for place, row in enumerate(rows):
-                    _record(row, f'{where}.{table}[{place}]', columns(table), problems)
+                    keys = (tuple(column.name for column in extension_tables[table].columns if column.name != 'row')
+                            if table in extension_tables else columns(table))
+                    _record(row, f'{where}.{table}[{place}]', keys, problems)
             refs = as_list(metaform.get('refs', []))
             if refs is None:
                 problems.append(f'{where}.refs: not a list')
@@ -294,30 +328,10 @@ class Planned:
     registered: bool
     metaform: dict[str, Any]
     activate: bool
-    never_active: bool = False
 
 
-def _pulled(metaform: dict[str, Any], project_id: str, label: str, taken: set[str]) -> dict[str, Any]:
-    """A wheel's metaform as it arrives in the main home: an id made from the wheel and its own, so pulling the same
-    folder again finds it, and its name followed by `-from-<wheel>`, numbered when taken, BASE-025."""
-    head = metaform['metaform']
-    derived = hashlib.sha256(f'{label}/{head["metaform_id"]}'.encode()).hexdigest()[:32]
-    folder = home.project_folder(project_id)
-    wanted = f'{head["name"]}-from-{label}'
-    if folder is None:
-        name, number = wanted, 1
-        while name in taken:
-            number += 1
-            name = f'{wanted}-{number}'
-    else:
-        with home.project_db(folder) as db:
-            name = home.free_name(db, project_id, wanted, taken)
-    taken.add(name)
-    return {**metaform, 'metaform': {**head, 'metaform_id': derived, 'name': name}}
-
-
-def _plan(document: dict[str, Any], project: str | None, notices: list[dict[str, str]],
-          pulled: str | None = None) -> tuple[list[Planned], int]:
+def _plan(document: dict[str, Any], project: str | None,
+          notices: list[dict[str, str]]) -> tuple[list[Planned], int]:
     """Where each metaform goes, decided before anything is written, and how many are skipped.
 
     A metaform another project owns here is not created again, STORE-027: nothing of it is written, and a notice
@@ -325,7 +339,6 @@ def _plan(document: dict[str, Any], project: str | None, notices: list[dict[str,
     """
     planned: list[Planned] = []
     skipped = 0
-    names: dict[str, set[str]] = {}
     for entry in document.get('projects', []):
         record = home.Project(**entry['project'])
         if project is not None:
@@ -342,8 +355,6 @@ def _plan(document: dict[str, Any], project: str | None, notices: list[dict[str,
                     raise StoreError(f'{record.path} is already registered as project {holder}.',
                                      f'metaform import <file> {holder}')
         for metaform in entry.get('metaforms', []):
-            if pulled is not None:
-                metaform = _pulled(metaform, project_id, pulled, names.setdefault(project_id, set()))
             metaform_id = metaform['metaform']['metaform_id']
             owner = home.metaform_owner(metaform_id)
             if owner is not None and owner != project_id:
@@ -353,13 +364,11 @@ def _plan(document: dict[str, Any], project: str | None, notices: list[dict[str,
                     f'what it holds to that project: metaform import <file> {owner}')})
                 continue
             planned.append(Planned(project_id, record, registered, metaform,
-                                   pulled is None and not registered and entry.get('active_metaform') == metaform_id,
-                                   never_active=pulled is not None))
+                                   not registered and entry.get('active_metaform') == metaform_id))
     return planned, skipped
 
 
-def import_document(document: dict[str, Any], project: str | None = None, *,
-                    pulled: str | None = None) -> dict[str, Any]:
+def import_document(document: dict[str, Any], project: str | None = None) -> dict[str, Any]:
     """Add what the target does not hold, by unique id, as one unit, STORE-027 and STORE-006.
 
     The document is checked whole and every metaform's place decided before anything is written. A project the
@@ -371,7 +380,7 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
     """
     _validate(document)
     notices: list[dict[str, str]] = []
-    planned, skipped = _plan(document, project, notices, pulled)
+    planned, skipped = _plan(document, project, notices)
     report: dict[str, Any] = {'metaforms_added': 0, 'metaforms_skipped': skipped, 'layers_added': 0,
                               'layers_skipped': 0, 'things_added': 0, 'things_skipped': 0, 'notices': notices}
     opened: list[sqlite3.Connection] = []
@@ -415,8 +424,7 @@ def import_document(document: dict[str, Any], project: str | None = None, *,
                 assert folder is not None
                 with home.project_db(folder, write=True) as own:
                     added = home.import_metaform_in(own, item.project_id, head['metaform_id'], head['name'],
-                                                    head['created'], activate=item.activate,
-                                                    never_active=item.never_active)
+                                                    head['created'], activate=item.activate)
                 report['metaforms_added' if added else 'metaforms_skipped'] += 1
             for db in opened:
                 db.execute('COMMIT')
@@ -443,6 +451,9 @@ def _missing(db: sqlite3.Connection, need: dict[str, str]) -> bool:
 
 
 def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, Any], report: dict[str, Any]) -> None:
+    if 'prior_schema_version' in metaform:
+        db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)",
+                   (metaform['prior_schema_version'],))
     fresh_ids = {row[ID_OF_TABLE[table]] for table in THINGS for row in metaform.get(table, []) if row['op'] == 'add'}
     for place, need in enumerate(metaform.get('requires', [])):
         if not _missing(db, need) or need.get('id') in fresh_ids:
@@ -468,21 +479,8 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
         _insert(db, 'layers', {**layer, 'metaform_id': metaform_id})
         report['layers_added'] += 1
     fresh = set(new_layers)
-    # Tickets and messages have no layer; each follows its object, so it comes in whether or not a layer is new,
-    # and once, STORE-042.
-    for row in metaform.get('work', []):
-        _insert(db, 'work', row, ignore=True)
-    for row in metaform.get('work_links', []):
-        _insert(db, 'work_links', row, ignore=True)
-    for row in metaform.get('work_steps', []):
-        if not db.execute('SELECT 1 FROM work_steps WHERE work_id=? AND number=? AND at=?',
-                          (row['work_id'], row['number'], row['at'])).fetchone():
-            _insert(db, 'work_steps', row)
-    for row in metaform.get('messages', []):
-        _insert(db, 'messages', row, ignore=True)
-    # A module's rows have no layer either; each comes in once, by its key, STORE-045.
-    tables.import_modules(db, metaform.get('modules', []), report, f'metaforms.{metaform_id}.modules')
     if not fresh:
+        _import_extensions(db, metaform, report, metaform_id)
         return
     for row in metaform.get('types', []):
         db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, ?)', (row['address'], row['parent']))
@@ -540,16 +538,33 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     for layer_id in metaform.get('hidden', []):
         if layer_id in fresh:
             db.execute('INSERT OR IGNORE INTO hidden_layers(layer_id) VALUES (?)', (layer_id,))
-    for row in metaform.get('challenge_states', []):
-        _insert(db, 'challenge_states', row, ignore=True)
-    for row in metaform.get('plans', []):
-        if row['layer_id'] in fresh:
-            _insert(db, 'plans', row, ignore=True)
     for row in metaform.get('reexamine', []):
         if row['layer_id'] in fresh:
             _insert(db, 'reexamine', row, ignore=True)
     for kind in versions.ORDER:
         versions.recompute(db, kind, touched[kind])
+    _import_extensions(db, metaform, report, metaform_id)
+
+
+def _import_extensions(db: sqlite3.Connection, document: dict[str, Any], report: dict[str, Any],
+                       metaform_id: str) -> None:
+    """Import declared extensions after the core identities and layers their rows can reference."""
+    tables.import_unowned(db, document.get('unowned_tables', []))
+    entries = document.get('modules', []) + document.get('extensions', [])
+    tables.import_modules(db, entries, report, f'metaforms.{metaform_id}.modules')
+    for name, declared in tables.exchange_tables(db, entries).items():
+        for row in document.get(name, []):
+            # Integer row keys are local sequence numbers. Established documents omit them, so a repeated import
+            # finds the row by the values it carries instead of assigning another local number.
+            if declared.key == ('row',):
+                keys = list(row)
+                equal = ' AND '.join(f'{_quoted(key)} IS ?' for key in keys)
+                if db.execute(f'SELECT 1 FROM {_quoted(name)} WHERE {equal}', tuple(row.values())).fetchone():
+                    continue
+            names = [column.name for column in declared.columns if column.name != 'row']
+            db.execute(f'INSERT OR IGNORE INTO {_quoted(name)}'
+                       f'({", ".join(_quoted(column) for column in names)}) '
+                       f'VALUES ({", ".join("?" for _ in names)})', tuple(row[column] for column in names))
 
 
 def _identity(db: sqlite3.Connection, kind: str, row: dict[str, Any]) -> bool:
@@ -576,17 +591,3 @@ def _insert(db: sqlite3.Connection, table: str, row: dict[str, Any], *, ignore: 
     marks = ', '.join('?' for _ in names)
     verb = 'INSERT OR IGNORE' if ignore else 'INSERT'
     return db.execute(f'{verb} INTO {table}({", ".join(names)}) VALUES ({marks})', tuple(row[key] for key in names))
-
-
-def pull_wheel(label: str) -> dict[str, Any]:
-    """Pull a directly run wheel's data into this home: each of its metaforms arrives as its own, never active and
-    never merged into one that is here; pulling again adds nothing; the wheel's folder is left in place, BASE-025."""
-    wheels = home.home() / 'wheels'
-    folder = wheels / label
-    if not (folder / 'projects').is_dir() and not (folder / 'metaform.sqlite3').is_file():
-        found = sorted(path.name for path in wheels.iterdir() if path.is_dir()) if wheels.is_dir() else []
-        raise StoreError(f'No data of a wheel {label} at {folder}.',
-                         f'metaform import wheel={found[0]}' if found else 'metaform list projects')
-    with home.at(folder):
-        document = export_document()
-    return import_document(document, pulled=label)

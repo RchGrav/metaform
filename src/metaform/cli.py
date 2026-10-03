@@ -14,16 +14,20 @@ import io
 import json
 import signal
 import sys
+import zipfile
 from collections.abc import Callable
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
 from . import (
     __version__,
+    aliases,
     changes,
     context,
     docs,
     grammar,
+    harness,
     home,
     instructions,
     loader,
@@ -33,7 +37,7 @@ from . import (
     results,
     settings,
 )
-from .data import Store, export_document, history, import_document, prompts, pull_wheel
+from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop
 from .module import Verb, call, on_this_system
@@ -523,6 +527,16 @@ def unset(args: list[str], folder: Path) -> None:
         out('Unglued: ' + ', '.join(unglued))
 
 
+def alias(args: list[str], folder: Path) -> None:
+    """`alias <name> <module> <module>... [folder=<path>]`: one name at the top menu for several modules, CLI-039."""
+    named = any(arg.startswith('folder=') for arg in args)
+    args, folder = _split_folder(args, folder)
+    name, *modules = args or ['']
+    modules = aliases.define(folder, name, modules, set(VERBS))
+    where = f'in {folder}, ' if named else ''
+    out(f'Success: {where}{name} stands for {", ".join(modules)}')
+
+
 def config(args: list[str], folder: Path) -> None:
     args, folder = _split_folder(args, folder)
     show_it = '--show' in args
@@ -553,7 +567,8 @@ def help_(args: list[str], folder: Path) -> None:
     elif args == ['intro']:
         out(docs.intro(str(home.home())))
     elif args == ['commands']:
-        out(docs.commands_index(lambda group: shown(group, folder)))
+        out(docs.commands_index(lambda group: shown(group, folder),
+                                {name: [module.id for module in held] for name, held in aliases.shown(folder).items()}))
     elif args == ['switches']:
         out(docs.switches_index())
     elif args == ['agents']:
@@ -564,6 +579,8 @@ def help_(args: list[str], folder: Path) -> None:
         out(docs.switch_page(args[0], folder))
     elif len(args) == 1 and args[0] in docs.COMMANDS:
         out(docs.page(args[0]))
+    elif len(args) == 1 and loader.get(args[0]) is None and args[0] in aliases.defined(folder):
+        run_alias(args[0], [], folder)
     elif args and _module(args[0], folder, quiet=True):
         found = _module(args[0], folder)
         if len(args) == 1:
@@ -622,19 +639,14 @@ def export(args: list[str], folder: Path) -> None:
 def import_(args: list[str], folder: Path) -> None:
     if len(args) not in (1, 2):
         raise Stop('import takes a file, and then an optional project.', 'metaform import --help')
-    if args[0].startswith('wheel='):
-        if len(args) != 1:
-            raise Stop('import wheel= takes nothing more.', 'metaform import wheel=<name>-<version>')
-        report = pull_wheel(args[0].partition('=')[2])
-    else:
-        source = _named_folder(folder, args[0])
-        if not source.is_file():
-            raise Stop(f'No file at {source}.', 'metaform export > <file>')
-        try:
-            document = json.loads(source.read_text(encoding='utf-8'))
-        except ValueError:
-            raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
-        report = import_document(document, args[1] if len(args) == 2 else None)
+    source = _named_folder(folder, args[0])
+    if not source.is_file():
+        raise Stop(f'No file at {source}.', 'metaform export > <file>')
+    try:
+        document = json.loads(source.read_text(encoding='utf-8'))
+    except ValueError:
+        raise Stop(f'{source} is not JSON.', 'metaform export > <file>') from None
+    report = import_document(document, args[1] if len(args) == 2 else None)
     for key, number in report.items():
         if key != 'notices':
             out(f'{key.replace("_", " ")}: {count(number)}')
@@ -687,6 +699,18 @@ def extract(args: list[str], folder: Path) -> None:
         out(f'Extracted into {written}')
 
 
+def provision(args: list[str], folder: Path) -> None:
+    """Record that the agent is done provisioning the harness Metaform runs under, MCP-028 and D96."""
+    if args != ['done']:
+        raise Stop('provision takes done.', 'metaform provision done')
+    binary = harness.running()
+    if binary is None or harness.key(binary) is None:
+        raise Stop('Metaform cannot tell which harness it runs under, so there is none to record.',
+                   'metaform help provision')
+    harness.done(binary)
+    out(f'Provisioning is done for the harness at {harness.key(binary)}; Metaform will not ask here again.')
+
+
 def uninstall_(args: list[str], folder: Path) -> None:
     from . import install
     install.uninstall(args, out)
@@ -696,7 +720,7 @@ def build_(args: list[str], folder: Path) -> None:
     if args:
         raise Stop('build takes no words.', 'metaform build')
     from . import build
-    wheel, notes = build.build()
+    wheel, notes = build.build(folder)
     for note in notes:
         out(note)
     out(f'Wheel: {wheel}')
@@ -707,7 +731,7 @@ VERBS: dict[str, Callable[[list[str], Path], None]] = {
     'disable': disable, 'activate': activate, 'import': import_, 'export': export, 'query': query_,
     'install': install_, 'uninstall': uninstall_, 'build': build_, 'feedback': feedback, 'read': read,
     'extract': extract, 'prompts': prompts_, 'prompt': prompt_, 'clear': clear, 'restore': restore, 'remove': remove,
-    'instructions': instructions_}
+    'instructions': instructions_, 'provision': provision, 'alias': alias}
 
 
 def always(verb: str, rest: list[str]) -> bool:
@@ -813,6 +837,17 @@ def run_nonce(held: nonce.Nonce, rest: list[str], folder: Path) -> None:
         run_module(held.module, rest or [held.function], folder)
     finally:
         nonce.left(token)
+
+
+def run_alias(name: str, rest: list[str], folder: Path) -> None:
+    """`metaform <alias>`: the commands of each module it stands for that this folder shows, CLI-039."""
+    if rest not in ([], ['-h'], ['--help']):
+        raise Stop(f'{name} is an alias; run its commands by their module, as it lists them.', f'metaform {name}')
+    held = aliases.shown(folder).get(name)
+    if not held:
+        raise Stop(f"{name} stands for {', '.join(aliases.defined(folder)[name])}, and none of them is on this "
+                   "folder's command surface.", 'metaform unset --modules')
+    out('\n'.join(docs.module_syntax(module) for module in held))
 
 
 def run_module(identifier: str, rest: list[str], folder: Path) -> None:
@@ -921,16 +956,22 @@ docs.command(Command('config', 'Open the settings screen, or print the settings.
                                ('--json', 'With --show, print JSON.')),
                      details='Each setting shows its value and its state: default, set, or glued.',
                      see_also=('set', 'unset')))
+docs.command(Command('alias', 'Give two or more modules one name at the top menu.',
+                     ('metaform alias <name> <module> <module>... [folder=<path>]',),
+                     description='An alias is one name beside the module names. Entering it, metaform <name>, lists '
+                                 'the commands of every module it stands for, each written <module> <command>.',
+                     details='It holds in the folder it is defined for and every folder below it. Defining a name '
+                             'again replaces what it stood for there. folder= defines it for another folder, such as '
+                             "a worker's, before the worker starts.",
+                     examples=(('metaform alias mapping map memory', 'One name for the map and memory commands.'),),
+                     see_also=('help',)))
 docs.command(Command('export', "Write a project's data to one JSON document.",
                      ('metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...',),
                      details='With no file the document goes to standard output. Everything carries its unique id.',
                      see_also=('import',)))
-docs.command(Command('import', "Add what a JSON document or a directly run wheel's data holds and this home "
-                               'does not.',
-                     ('metaform import <file> [<project>]', 'metaform import wheel=<name>-<version>'),
-                     details='Importing something that already exists does nothing. wheel= pulls in the data a '
-                             'wheel kept while it ran directly: each of its metaforms arrives as its own, named '
-                             '<name>-from-<name>-<version>, and is never made active.', see_also=('export',)))
+docs.command(Command('import', 'Add what a JSON document holds and this home does not.',
+                     ('metaform import <file> [<project>]',),
+                     details='Importing something that already exists does nothing.', see_also=('export',)))
 docs.command(Command('query', "Ask one of the design's questions of the folder's project.",
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))
@@ -940,6 +981,22 @@ docs.command(Command('install', 'Set up your AI tools to use Metaform.',
                                  'server with each tool, writes the skill, and proves each tool can start the server.',
                      details='With no tool named it asks; naming tools, or all, sets up without asking.',
                      see_also=('build',)))
+_provision_skill = resources.files('metaform') / 'skill' / 'SKILL.md'
+_provision_skill_source = (f'extract {_provision_skill.at} from {_provision_skill.root.filename}'
+                           if isinstance(_provision_skill, zipfile.Path) else f'copy {_provision_skill}')
+docs.command(Command('provision', 'Give an AI tool the installer does not know what it supports of Metaform.',
+                     ('metaform provision done',),
+                     description='The first metaform run under a tool Metaform has not recorded says so. Set up '
+                                 'each feature below that the tool supports, skip any it cannot or you do not want, '
+                                 'then run metaform provision done; runs under that tool then say nothing of it.',
+                     details='MCP registration: add a stdio MCP server named metaform whose command is metaform mcp '
+                             'serve, wherever the tool keeps its MCP servers. '
+                             f'Skill: {_provision_skill_source} into the tool\'s '
+                             'global skills folder as metaform/SKILL.md, a real copy and never a link, and never '
+                             'into a project folder. '
+                             'Hooks: Metaform has no hooks to set up yet. '
+                             'A tool metaform install sets up is recorded by the install and never sees the notice.',
+                     see_also=('install',)))
 docs.command(Command('extract', 'Write variants of an origin out to folders, with Python alone.',
                      ('metaform extract <variant id>... <folder> [origin=<id>]', 'metaform extract all <folder> '
                       '[origin=<id>]'),
@@ -1034,8 +1091,7 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
     if args[:1] == ['--version']:
-        out(f'metaform {__version__}')
-        return 0
+        return _command(args, folder)
     try:
         return _command(args, folder)
     finally:
@@ -1044,6 +1100,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _command(args: list[str], folder: Path) -> int:
     try:
+        if first_run := harness.notice():
+            sys.stderr.write(f'Notice: {first_run}\n')  # under a harness the home has not recorded, D96
+        if args[:1] == ['--version']:
+            out(f'metaform {__version__}')
+            return 0
         loader.discover()
         if not args:
             status(args, folder)
@@ -1052,9 +1113,6 @@ def _command(args: list[str], folder: Path) -> int:
         if verb in ('-h', '--help'):
             out(docs.overview())
             return 0
-        if verb == '--version':
-            out(f'metaform {__version__}')
-            return 0
         if verb not in VERBS:
             if loader.get(verb) is None and nonce.FORM.fullmatch(verb):
                 held = nonce.read(verb)
@@ -1062,6 +1120,9 @@ def _command(args: list[str], folder: Path) -> int:
                     sys.stderr.write('Error: Invalid or Unknown Nonce\n')  # closed or never issued, BASE-050
                     return 2
                 run_nonce(held, rest, folder)
+                return 0
+            if loader.get(verb) is None and verb in aliases.defined(folder):
+                run_alias(verb, rest, folder)
                 return 0
             run_module(verb, rest, folder)
             return 0

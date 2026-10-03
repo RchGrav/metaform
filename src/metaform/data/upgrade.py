@@ -19,6 +19,19 @@ metaform is a map that points to the code, never documentation. Every current jo
 relation text as its ef, written as its newest version, so its earlier versions keep the old ef; then the relation and
 observation columns are removed. The old ef text and the old observation text go into no field: they remain only in
 the store's version history and in the backup made first.
+
+Layout 12 to 13, Rich 2026-10-02: "the join type for requirements is require, rename it across the board from purpose".
+Every version of every join of type purpose is typed require; nothing else changes.
+
+Layout 13 to 14, VIEW-040, Rich 2026-10-03: a ticket holds the agent glyph it is assigned to. The work table gains its
+glyph column, empty on every ticket; nothing else changes.
+
+Layout 14 to 15, ticket 90430bba, STORE-045 and BASE-046: a ticket's glyph is a feature's field, kept in the map
+module's own table keyed by the work id, so the chassis work table drops its glyph column; every other field of every
+ticket is kept. The glyphs it held go into no field: they remain only in the backup made first.
+
+Layout 15 to 16, LAYER-021, Rich 2026-10-03, D91 and D92: a knowledge item carries read_first and always_show. The items
+table gains both columns, false on every item; nothing else changes.
 """
 from __future__ import annotations
 
@@ -29,24 +42,25 @@ from pathlib import Path
 from .. import home
 from ..errors import StoreError
 from ..sqlite import SCHEMA_VERSION
+from . import tables
 from .schema import STORE_SCHEMA
 from .versions import KINDS, recompute
 
 RENAMED = {'reexamine': {'changed_in': 'correction_layer_id'}}  # a new column read from its old name
 VERSIONED = ('elements', 'joins', 'items', 'properties')
-LAYERED = VERSIONED + ('item_ids', 'current_items', 'current_properties', 'reports', 'plans')  # kept, moved to the intake
+LAYERED = VERSIONED + ('item_ids', 'current_items', 'current_properties')  # kept, moved to the intake
 SETTINGS = ('hidden_layers', 'layer_fields', 'layer_tags', 'provenance', 'selections')  # the correction layer's own
 LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold; folded below
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 to 11 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8', '9', '10', '11'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 11.',
+    """Update a store at layout 7 to 15 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 15.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
-    target.executescript(STORE_SCHEMA)
+    target.executescript(STORE_SCHEMA + '\n' + tables.extension_schema())
     wanted = target.execute("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL").fetchall()
     target.close()
     factory = db.row_factory
@@ -69,12 +83,16 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
                 ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
                 recompute(db, _kind_name(kind.table), ids)
         if int(found) < 10:  # a layout 10 or 11 store already holds these
-            _tickets(db)
+            tables.legacy_upgrade(db, found)
             _fields(db)
+        if int(found) >= 10:
+            tables.legacy_upgrade(db, found)
+        db.execute("UPDATE joins SET type='require' WHERE type='purpose'")  # layout 13, Rich 2026-10-02
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
             raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '
                              f'the first in {problems[0][0]}. Nothing was changed.', 'metaform feedback')
+        db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)", (found,))
         db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (SCHEMA_VERSION,))
         db.execute('COMMIT')
     except BaseException:
@@ -100,12 +118,12 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
     longer has; create the indexes it adds."""
     have = {name: sql for kind, name, sql in db.execute(
         "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL") if kind == 'table'}
-    tables = {name: sql for kind, name, sql in wanted if kind == 'table'}
+    wanted_tables = {name: sql for kind, name, sql in wanted if kind == 'table'}
     for name in have:
         # A module's own table has a dot in its name and is the module's to keep, STORE-045.
-        if name not in tables and not name.startswith('sqlite_') and '.' not in name:
+        if name == 'correction_stack':
             db.execute(f'DROP TABLE "{name}"')
-    for name, sql in tables.items():
+    for name, sql in wanted_tables.items():
         if name not in have:
             db.execute(sql)
             continue
@@ -142,7 +160,7 @@ def _ef_from_relation(db: sqlite3.Connection) -> None:
     for table in ('current_joins', 'current_subtypes'):
         for join_id, current in db.execute(f'SELECT join_id, row FROM {table} ORDER BY row').fetchall():
             base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
-            if base['ef'] == base['relation']:
+            if base['ef'] == base['relation'] or not base['relation']:  # no relation, nothing to move
                 continue
             columns = {key: base[key] for key in base.keys() if key != 'row'}
             columns.update(ef=base['relation'], op='change', reason=EF_REASON, evidence=None)
@@ -152,12 +170,6 @@ def _ef_from_relation(db: sqlite3.Connection) -> None:
             db.execute("INSERT INTO refs(owner, owner_row, position, key, value) SELECT owner, ?, position, key, value "
                        "FROM refs WHERE owner='join' AND owner_row=? ORDER BY position", (row, current))
             db.execute(f'UPDATE {table} SET row=? WHERE join_id=?', (row, join_id))
-
-
-def _tickets(db: sqlite3.Connection) -> None:
-    """A taken ticket keeps its kind: in-progress was a missing one taken, fixing a broken one taken."""
-    for shown, kind in (('in-progress', 'missing'), ('fixing', 'broken')):
-        db.execute('UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?', (kind, shown))
 
 
 def _fields(db: sqlite3.Connection) -> None:
@@ -178,6 +190,7 @@ def _fold(db: sqlite3.Connection, correction: str) -> None:
     """Move one correction layer's versions into the intake layer it refined; its rows keep their row numbers,
     which come after the intake's own, so they stay the newest versions."""
     intake = _refined(db, correction)
+    tables.legacy_fold(db, correction, intake)
     for table in LAYERED:
         db.execute(f'UPDATE {table} SET layer_id=? WHERE layer_id=?', (intake, correction))
     db.execute('UPDATE OR IGNORE reexamine SET changed_in=? WHERE changed_in=?', (intake, correction))

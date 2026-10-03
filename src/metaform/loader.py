@@ -1,9 +1,11 @@
 """Find modules, read their declarations without running them, and load the enabled ones, BASE-037.
 
-Modules come from three places, in this order:
-  system  the modules that ship with Metaform, `metaform/modules/`
-  user    folders under `<home>/modules`
-  entry   installed packages that declare a `metaform.modules` entry point
+Modules come from four places, in this order:
+  system   the modules that ship with Metaform, `metaform/modules/`
+  user     folders under `<home>/modules`
+  entry    installed packages that declare a `metaform.modules` entry point
+  project  folders under `.metaform/modules/` in the active selected project's folder, which Metaform only
+           reads, D93
 
 Everything a module registers, its verbs, settings, subscriptions and tasks,
 is owned by the module, and unload, reload and shutdown withdraw all of it
@@ -14,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import importlib
+import importlib.machinery
 import importlib.resources
 import importlib.util
 import inspect
@@ -30,7 +33,8 @@ from . import home, module_metadata, settings
 from .module import Context, Module, call
 
 RESERVED = {'help', 'add', 'list', 'set', 'unset', 'config', 'enable', 'disable', 'activate', 'import', 'export',
-            'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis'}
+            'query', 'build', 'install', 'uninstall', 'feedback', 'read', 'extract', 'prompts', 'prompt', 'clear', 'restore', 'remove', 'chassis',
+            'alias'}
 SYSTEM: Traversable = importlib.resources.files('metaform') / 'modules'
 TOOL_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
@@ -50,10 +54,43 @@ class Found:
 
 
 _cache: list[Found] | None = None
+_cache_project: str | None = None
 _exit_registered = False
+_read_only: set[Path] = set()
 
 
-def _candidates() -> list[Found]:
+def _selected_project() -> str | None:
+    """The active selected project of the folder this process runs in, PROJ-003."""
+    chosen = settings.value('project', Path.cwd())
+    return chosen if isinstance(chosen, str) and chosen else None
+
+
+def project_place(project_id: str | None) -> Path | None:
+    """A project's module place, `.metaform/modules/` in its folder, which the person creates, D93."""
+    record = home.project(project_id) if project_id else None
+    return None if record is None else Path(record.path) / '.metaform' / 'modules'
+
+
+class _ReadOnlyLoader(importlib.machinery.SourceFileLoader):
+    """Loads a project-place module's source and never writes its bytecode, since Metaform writes nothing into a
+    project folder, STORE-001."""
+
+    def set_data(self, path: str, data: Any, *, _mode: int = 0o666) -> None:
+        return None
+
+
+def _read_only_finder(entry: str) -> importlib.machinery.FileFinder:
+    """The finder for a folder inside a project place, so a module's submodules load read-only too."""
+    path = Path(entry)
+    if not any(path == root or root in path.parents for root in _read_only):
+        raise ImportError(entry)
+    return importlib.machinery.FileFinder(
+        entry, (importlib.machinery.ExtensionFileLoader, importlib.machinery.EXTENSION_SUFFIXES),
+        (_ReadOnlyLoader, importlib.machinery.SOURCE_SUFFIXES),
+        (importlib.machinery.SourcelessFileLoader, importlib.machinery.BYTECODE_SUFFIXES))
+
+
+def _candidates(project_id: str | None) -> list[Found]:
     found: list[Found] = []
     for place, root in (('system', SYSTEM), ('user', home.home() / 'modules')):
         if root.is_dir():
@@ -69,6 +106,11 @@ def _candidates() -> list[Found]:
             found.append(Found(entry.name, 'entry', Path('.'), package, problem=f'Package {package} is not importable.'))
             continue
         found.append(Found(entry.name, 'entry', Path(spec.origin).parent, package))
+    root = project_place(project_id)
+    if root is not None and root.is_dir():
+        for folder in sorted(root.iterdir(), key=lambda item: item.name):
+            if folder.is_dir() and (folder / '__init__.py').is_file():
+                found.append(Found(folder.name, 'project', folder, f'metaform_module_project_{folder.name}'))
     return found
 
 
@@ -79,7 +121,17 @@ def _import(item: Found) -> Module:
         item.import_name = f'metaform.modules.{item.id}'  # A system module inside a directly run wheel.
         imported = importlib.import_module(item.import_name)
     else:
-        spec = importlib.util.spec_from_file_location(item.import_name, item.path / '__init__.py',
+        source = item.path / '__init__.py'
+        read_only = None
+        if item.place == 'project':
+            _read_only.add(item.path)
+            if _read_only_finder not in sys.path_hooks:
+                sys.path_hooks.insert(0, _read_only_finder)
+            for entry in [entry for entry in sys.path_importer_cache if Path(entry) == item.path
+                          or item.path in Path(entry).parents]:
+                del sys.path_importer_cache[entry]
+            read_only = _ReadOnlyLoader(item.import_name, str(source))
+        spec = importlib.util.spec_from_file_location(item.import_name, source, loader=read_only,
                                                       submodule_search_locations=[str(item.path)])
         if spec is None or spec.loader is None:
             raise ImportError(f'Cannot load {item.path}.')
@@ -136,10 +188,11 @@ def missing_dependencies(requirements: tuple[str, ...]) -> list[str]:
 
 def discover() -> list[Found]:
     """Every module Metaform can see, loaded when enabled and compatible, with the reason when it is not."""
-    global _cache
+    global _cache, _cache_project
     if _cache is not None:
         return _cache
-    found = _candidates()
+    _cache_project = _selected_project()
+    found = _candidates(_cache_project)
     seen: dict[str, Found] = {}
     for item in found:
         if item.problem:
@@ -274,6 +327,24 @@ def unload(identifier: str) -> None:
     for item in discover():
         if item.id == identifier and item.module is not None:
             _unload(item)
+
+
+def follow_enabled() -> None:
+    """Reset the cache when a module found has been enabled or disabled since, by any process, or the folder's
+    selected project has changed, so a long-lived process, the web GUI's server or the MCP server, loads what is
+    enabled now, with the project place of the project selected now, before it publishes, VIEW-018 and D93."""
+    if _cache is None:
+        return
+    if _selected_project() != _cache_project:
+        reset()
+        return
+    for item in _cache:
+        if item.declared is None:
+            continue
+        state = home.module_state(item.id)
+        if (state if state is not None else not item.declared.ships_disabled) != item.enabled:
+            reset()
+            return
 
 
 def set_enabled(identifier: str, on: bool) -> None:

@@ -163,6 +163,22 @@ def test_the_read_of_a_held_element_shows_the_subtype_join_and_the_join_it_sits_
     assert [join.provider_address for join in tick.receives] == ['code.clock']
 
 
+@pytest.mark.req('STORE-010')
+@pytest.mark.req('STORE-011')
+def test_one_join_read_by_id_gives_its_two_ends_by_address(store):
+    _, outer, inner = small_map(store)
+    held = store.subtypes(outer.join_id, raw=True).results[0]
+    assert store.join_ends(outer.join_id) == ('stakeholder.cook.home', 'code.timer.kitchen')
+    assert store.join_ends(inner.join_id) == ('code.timer.kitchen', 'code.alarm.audible')
+    assert store.join_ends(held.join_id) == ('stakeholder.cook.home', 'code.loop.tick')
+    assert store.join_ends(store.element('code.timer.kitchen').element_id) is None
+    notes = knowledge(store, 'notes')
+    added = store.add_join(notes.name, 'code.alarm.audible', 'code.loop.tick', purpose='keep time', ef='ticks')
+    assert store.join_ends(added.join_id) == ('code.alarm.audible', 'code.loop.tick')
+    assert store.remove(added.join_id).notices == ()
+    assert store.join_ends(added.join_id) is None
+
+
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('BASE-036')
 def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(store):
@@ -187,7 +203,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                  'name': 'tick loop', 'name_length': 2, 'role': 'SE', 'type': 'subtype',
                                  'ef': 'Advances each countdown.', 'refs': [{'key': 'path', 'value': 'src/tick.c'}],
                                  'layer': 'intake-1'}]
-    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
+    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'require',
                                   'purpose': 'Get attention when a countdown ends.', 'ef': 'Plays a loud tone.',
                                   'name': 'audible alarm', 'layer': 'intake-1'}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']

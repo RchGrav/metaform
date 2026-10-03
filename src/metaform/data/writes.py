@@ -16,21 +16,15 @@ import json
 from collections.abc import Iterable
 from typing import Any, TypeVar, cast
 
-from .. import home
 from ..errors import StoreError
 from ..wording import count
-from . import rows, versions, views
+from . import operations, rows, versions, views
 from .ids import as_object, encode_extra, encode_value, is_id, new_id, refs_fit
 from .records import (
-    CONDITIONS,
-    MESSAGES,
     ROLES,
-    COLUMNS,
-    TICKETS,
     Element,
     Item,
     Join,
-    Message,
     Node,
     Notice,
     Outcome,
@@ -38,7 +32,6 @@ from .records import (
     Ref,
     Subtype,
     Version,
-    WorkRecord,
 )
 from .rows import Row
 from .selection import LayerRow, all_layers
@@ -138,7 +131,7 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 
 
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-             ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose',
+             ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'require',
              refs: Iterable[Any] = (), extra: Any = None, ifd: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
     for the functionality it names, MAP-020."""
@@ -147,7 +140,7 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('name', name), ('purpose', purpose), ('ef', ef), ('verb', verb), ('non_goal', non_goal))}
-    kind = rows.text(type, 'type', notices) or 'purpose'
+    kind = rows.text(type, 'type', notices) or 'require'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, 'the join', notices)
     split += more
@@ -155,8 +148,8 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     provider_id = rows.element_at(tx, provider, found, 'provider', notices)
     if receiver_id == provider_id:
         notices.append(Notice('provider', 'The provider is the receiver itself; the join was stored as given, D82.'))
-    if kind != 'purpose' and not rows.address_form(kind):
-        notices.append(Notice('type', f'{kind!r} is not purpose or an address; it was stored as given.'))
+    if kind != 'require' and not rows.address_form(kind):
+        notices.append(Notice('type', f'{kind!r} is not require or an address; it was stored as given.'))
     join_id = new_id()
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
@@ -285,8 +278,12 @@ def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
 # Items and properties ---------------------------------------------------------------------------------------
 
 def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None = None, refs: Iterable[Any] = (),
-             extra: Any = None) -> Item | Outcome:
-    """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015."""
+             extra: Any = None, read_first: Any = False, always_show: Any = False, task: Any = False,
+             condition: Any = None) -> Item | Outcome:
+    """Attach one value of the layer's variable at one node, with an optional link to another, STORE-015.
+
+    `read_first` and `always_show` are stored on the item. An item flagged `task` is a ticket, D92: it adds a work
+    record at its node whose task is the item's value, and the flag is not stored on the item, LAYER-021."""
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
     notices: list[Notice] = []
@@ -298,9 +295,11 @@ def add_item(tx: Tx, layer: str, target: Node, value: Any, *, link: Node | None 
     split += more
     target_kind, target_id = rows.node_at(tx, target, found, 'target', notices)
     link_kind, link_id = rows.node_at(tx, link, found, 'link', notices) if link is not None else (None, None)
-    made = [rows.insert_item(tx, found, target_kind, target_id, answer, link_kind, link_id, pairs, kept_extra)
-            for answer in answers]
+    made = [rows.insert_item(tx, found, target_kind, target_id, answer, link_kind, link_id, pairs, kept_extra,
+                             read_first, always_show) for answer in answers]
     rows.split_items(tx, found, target_kind, target_id, split)
+    operations.item_write(tx, Node.of(target_kind, target_id), answers,
+                          {'task': task, 'condition': condition}, notices)
     return _with(views.item_by_id(tx, made[0]), notices)
 
 
@@ -508,6 +507,8 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
                 columns[key] = length if key == 'name_length' else role
         elif key in rows.TEXT_COLUMNS:
             columns[key] = rows.text(value, key, notices)
+        elif kind == 'item' and key in ('read_first', 'always_show'):
+            columns[key] = int(bool(value))
         else:
             columns[key] = value
     if aside:
@@ -581,238 +582,6 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     return _with(record, notices)
 
 
-# Work records --------------------------------------------------------------------------------------------------
-
-WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')
-
-
-def _work_text(value: Any, field: str, notices: list[Notice]) -> str | None:
-    """A note, task or resolution: text, or anything else kept as JSON text with a notice, BASE-044."""
-    if value is None or isinstance(value, str):
-        return value
-    notices.append(Notice(field, f'{field} is not text; it was stored as JSON text.'))
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _condition(value: Any, notices: list[Notice]) -> str:
-    """The condition as given; a missing one is stored as empty text, since the column is never null, BASE-044."""
-    if value in CONDITIONS:
-        return str(value)
-    if value is None:
-        notices.append(Notice('condition', 'condition is missing; stored empty.'))
-        return ''
-    if value in MESSAGES:
-        notices.append(Notice('condition', f'A {value} is not the condition of a part; it was stored as given. Ask the '
-                                           'user with metaform map ask, and leave a message with metaform map tell.'))
-        return str(value)
-    notices.append(Notice('condition', f'{value!r} is not missing, broken, flawed, enhancement or exclude; it was stored '
-                                       'as given.'))
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-
-
-def _work_row(tx: Tx, work_id: str) -> Any:
-    row = tx.db.execute('SELECT * FROM work WHERE work_id=?', (work_id,)).fetchone()
-    if row is None:
-        raise StoreError(f'No work record has the id {work_id}.', 'metaform map work')
-    return row
-
-
-def add_work(tx: Tx, node: Any, condition: Any, *, note: Any = None, task: Any = None, held: Any = False,
-             reviewed: Any = False, links: Any = ()) -> WorkRecord:
-    """Write the condition of an element, join or subtype as its own record, apart from the map, STORE-042."""
-    notices: list[Notice] = []
-    kind, thing = rows.work_target(tx, node, notices)
-    work_id = new_id()
-    tx.db.execute('INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created) '
-                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                  (work_id, kind, thing, _condition(condition, notices), _work_text(note, 'note', notices),
-                   _work_text(task, 'task', notices), int(bool(held)), int(bool(reviewed)), home.now()))
-    _link(tx, work_id, links, notices)
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
-    """Replace the nodes a ticket links for reference, VIEW-035: each an element or a join, in the order given."""
-    tx.db.execute('DELETE FROM work_links WHERE work_id=?', (work_id,))
-    for number, node in enumerate(links or ()):
-        kind, thing = rows.work_target(tx, node, notices)
-        tx.db.execute('INSERT INTO work_links(work_id, number, target_kind, target_id) VALUES (?, ?, ?, ?)',
-                      (work_id, number, kind, thing))
-
-
-def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
-    """Change a work record's condition, note, task, held or reviewed in place; other keys are named and not stored."""
-    notices: list[Notice] = []
-    _work_row(tx, work_id)
-    given = as_object(changes)
-    if given is None:
-        raise StoreError('The changes to a work record are an object of its fields.', 'metaform help map work')
-    for key in sorted(given):
-        if key == 'links':
-            _link(tx, work_id, given[key], notices)
-            continue
-        if key not in WORK_FIELDS:
-            notices.append(Notice(key, f'A work record has no field {key}; it was not stored.'))
-            continue
-        value: Any = given[key]
-        if key == 'condition':
-            value = _condition(value, notices)
-        elif key in ('held', 'reviewed'):
-            value = int(bool(value))
-        else:
-            value = _work_text(value, key, notices)
-        tx.db.execute(f'UPDATE work SET {key}=? WHERE work_id=?', (value, work_id))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def _message_row(tx: Tx, message_id: str) -> Any:
-    row = tx.db.execute('SELECT * FROM messages WHERE message_id=?', (message_id,)).fetchone()
-    if row is None:
-        raise StoreError(f'No question or message has the id {message_id}.', 'metaform map messages')
-    return row
-
-
-def add_message(tx: Tx, node: Any, kind: str, text: Any, *, suggestions: Any = None, by: Any = None) -> Message:
-    """What an agent says to the user at a node, MAP-050: a question, with the answers it suggests, or a message.
-    Nothing is refused: a question with no suggestions is stored, and the agent is told to suggest."""
-    notices: list[Notice] = []
-    target_kind, thing = rows.work_target(tx, node, notices)
-    suggested: list[str] = []
-    if isinstance(suggestions, (list, tuple)):
-        suggested = [one if isinstance(one, str) else json.dumps(one, ensure_ascii=False)
-                     for one in cast('list[Any] | tuple[Any, ...]', suggestions)]
-    elif suggestions is not None:
-        notices.append(Notice('suggestions', 'suggestions is a list of answers; what was sent was kept as the one '
-                                             'suggestion.'))
-        suggested = [suggestions if isinstance(suggestions, str) else json.dumps(suggestions, ensure_ascii=False)]
-    if kind == 'question' and not suggested:
-        notices.append(Notice('suggestions', 'This question has no suggestions. Ask with the answers you suggest, the '
-                                             'one you recommend first: suggestions=["...", "..."].'))
-    message_id = new_id()
-    tx.db.execute('INSERT INTO messages(message_id, target_kind, target_id, kind, text, suggestions, by, created) '
-                  'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                  (message_id, target_kind, thing, kind, _work_text(text, 'text', notices),
-                   json.dumps(suggested, ensure_ascii=False) if suggested else None,
-                   _work_text(by, 'by', notices), home.now()))
-    return views.message(tx, _message_row(tx, message_id), tuple(notices))
-
-
-def close_message(tx: Tx, message_id: str, answer: Any = None) -> Message:
-    """The user answered a question or read a message. One already closed keeps its first answer."""
-    notices: list[Notice] = []
-    row = _message_row(tx, message_id)
-    if row['closed'] is not None:
-        notices.append(Notice('message_id', f'This was closed at {row["closed"]}; its answer was kept.'))
-        return views.message(tx, row, tuple(notices))
-    tx.db.execute('UPDATE messages SET closed=?, answer=? WHERE message_id=?',
-                  (home.now(), _work_text(answer, 'answer', notices), message_id))
-    return views.message(tx, _message_row(tx, message_id), tuple(notices))
-
-
-def _count(value: Any, notices: list[Notice]) -> int | None:
-    """The steps an agent plans: a whole number from 0, or none, which means the task has no steps. Anything else is
-    named and read as none, BASE-044."""
-    if value is None:
-        return None
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value)
-    notices.append(Notice('steps', f'{value!r} is not a count of steps; the task was left with no count.'))
-    return None
-
-
-def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
-    """The agent says how many steps it plans, or says it again when its plan changes, MAP-053. A count below the
-    steps already done is raised to them, since what is done is done."""
-    notices: list[Notice] = []
-    row = _work_row(tx, work_id)
-    count = _count(steps, notices)
-    done = int(row['steps_done'] or 0)
-    if count is not None and count < done:
-        notices.append(Notice('steps', f'{done} steps are done already; the count was set to {done}.'))
-        count = done
-    tx.db.execute('UPDATE work SET steps=? WHERE work_id=?', (count, work_id))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
-    """The agent finished a step, and says what it did, MAP-053. Nothing is refused: a step beyond the count raises
-    the count, and a step on a record never taken or already done is stored, each named in a notice."""
-    notices: list[Notice] = []
-    row = _work_row(tx, work_id)
-    if row['done'] is not None:
-        notices.append(Notice('done', f'This work record was done at {row["done"]}; the step was stored.'))
-    elif row['taken'] is None:
-        notices.append(Notice('condition', 'This task was not taken when the step was reported; the step was stored. '
-                                           'Take a task before its first step.'))
-    done = int(row['steps_done'] or 0) + 1
-    planned = row['steps']
-    if planned is not None and done > int(planned):
-        notices.append(Notice('steps', f'Step {done} is beyond the {planned} planned; the count was raised to {done}.'))
-        planned = done
-    tx.db.execute('UPDATE work SET steps=?, steps_done=? WHERE work_id=?', (planned, done, work_id))
-    tx.db.execute('INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)',
-                  (work_id, done, _work_text(said, 'said', notices), home.now()))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRecord:
-    """An agent takes the record's task, MAP-049: it is in progress, keeps its kind, VIEW-035, records who took it, and
-    waits no longer. A record taken or done cannot be taken again, so two agents never hold one task."""
-    row = _work_row(tx, work_id)
-    condition = str(row['condition'])
-    if row['done'] is not None:
-        raise StoreError(f'This work record was done at {row["done"]}.', 'metaform map work open=true')
-    if row['taken'] is not None:
-        raise StoreError('This task is already taken.', 'metaform map work open=true')
-    if condition not in TICKETS:
-        raise StoreError(f'A {condition or "record with no condition"} has no task to take.',
-                         'metaform map work open=true')
-    notices: list[Notice] = []
-    tx.db.execute('UPDATE work SET taken=?, taken_by=?, held=0, steps=COALESCE(?, steps) WHERE work_id=?',
-                  (home.now(), _work_text(by, 'by', notices), _count(steps, notices), work_id))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
-    """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
-    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again."""
-    row = _work_row(tx, work_id)
-    if column not in COLUMNS:
-        raise StoreError(f'{column!r} is not a column: backlog, todo, doing or done.', 'metaform help map work')
-    notices: list[Notice] = []
-    if column == 'done':
-        tx.db.execute('UPDATE work SET done=COALESCE(done, ?), held=0 WHERE work_id=?', (home.now(), work_id))
-    elif column == 'doing':
-        tx.db.execute('UPDATE work SET done=NULL, held=0, taken=COALESCE(taken, ?), taken_by=COALESCE(?, taken_by) '
-                      'WHERE work_id=?', (home.now(), _work_text(by, 'by', notices), work_id))
-    else:
-        tx.db.execute('UPDATE work SET done=NULL, taken=NULL, taken_by=NULL, held=? WHERE work_id=?',
-                      (int(column == 'backlog'), work_id))
-    del row
-    moved = views.work_record(tx, _work_row(tx, work_id))
-    others = [record for record in (views.work_record(tx, other) for other in tx.db.execute(
-        'SELECT * FROM work WHERE work_id<>? ORDER BY position IS NULL, position, row', (work_id,)))
-              if record.column == moved.column]
-    at = len(others) if position is None else max(0, min(len(others), int(position)))
-    for place, record in enumerate([*others[:at], moved, *others[at:]]):
-        tx.db.execute('UPDATE work SET position=? WHERE work_id=?', (place, record.work_id))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
-def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:
-    """Mark a work record done, keeping its resolution beside it; a record already done keeps its first resolution."""
-    notices: list[Notice] = []
-    row = _work_row(tx, work_id)
-    if row['done'] is not None:
-        notices.append(Notice('work_id', f'This work record was done at {row["done"]}; its resolution was kept.'))
-        return views.work_record(tx, row, tuple(notices))
-    tx.db.execute('UPDATE work SET done=?, resolution=? WHERE work_id=?',
-                  (home.now(), _work_text(resolution, 'resolution', notices), work_id))
-    return views.work_record(tx, _work_row(tx, work_id), tuple(notices))
-
-
 def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:
     """Where items split from a changed row attach: the thing itself, or an item's own node."""
     if kind == 'item':
@@ -837,7 +606,7 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
     tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
     versions.drop_current(tx.db, kind, 'row', row['row'])
     if kind == 'item':
-        tx.db.execute('DELETE FROM challenge_states WHERE item_id=?', (thing,))
+        operations.cleanup(tx, 'item', str(thing))
     tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
     if not users:
         return Outcome()

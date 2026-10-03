@@ -32,7 +32,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-032 | Every feature is implemented in a module | BASE-003, BASE-004 | covered |
 | REQ-033 | Every module follows the template contract | BASE-019 | covered |
 | REQ-034 | Modules are self-contained, one file or one package | BASE-014 | covered |
-| REQ-035 | Modules load from system, user and entry-point places | BASE-014 | covered; per-project place open |
+| REQ-035 | Modules load from system, user, entry-point and project places | BASE-014 | covered |
 | REQ-036 | Shipped and community modules use the same contract | BASE-004, BASE-014 | covered |
 | REQ-037 | Discovery and activation are distinct | BASE-015 | covered |
 | REQ-038 | Module lifecycle is owned and reversible | BASE-018, QUAL-010 | covered |
@@ -51,7 +51,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | REQ-063 | Hydration is additive and non-destructive | CLI-023 | covered |
 | REQ-064 | Configuration survives module absence | CLI-024 | covered |
 | REQ-065 | Glue; unset all skips glued; select from list or module data | CLI-013, CLI-016, CLI-017, CLI-019 | covered |
-| REQ-066 | Installed and portable execution share configuration | BASE-023, BASE-025, STORE-030 | NOT COVERED |
+| REQ-066 | Installed and portable execution share configuration | BASE-025, STORE-030 | covered |
 | REQ-070 | Surface economy | CLI-005, CLI-006 | covered |
 | REQ-071 | Command grammar and two kinds of help; progressive disclosure | CLI-001, CLI-005, CLI-006, CLI-007, CLI-008, CLI-009 | covered |
 | REQ-072 | Module ownership remains visible | BASE-029 | covered |
@@ -167,9 +167,9 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | S-05 | Template and demo modules ship disabled | BASE-017 | covered |
 | S-06 | Module data goes through the data access object as a layer | BASE-005, STORE-022, STORE-023 | covered |
 | S-07 | Repo wheel carries every module; local build carries enabled ones | BASE-022 | covered |
-| S-08 | A wheel runs directly from its own subfolder | BASE-023, STORE-030 | covered; per build or per name open |
+| S-08 | A wheel runs directly from its own subfolder | BASE-023, BASE-025, STORE-030 | corrected by Rich 2026-10-03: the normal data folder, BASE-025 |
 | S-09 | A directly run wheel works in hosted code execution | BASE-024 | covered |
-| S-10 | Installing a wheel merges its data | BASE-025 | covered; meaning of merge open |
+| S-10 | Installing a wheel merges its data | BASE-025 | corrected by Rich 2026-10-03: the data is already in the main folder, BASE-025 |
 | S-11 | Metaform offers to maintain a user's fork, CI and wheel | BASE-027 | covered |
 | S-12 | pyproject.toml, uv, and uvx launch | BASE-021, MCP-010 | covered |
 | S-13 | Distribution name undecided | BASE-021, MCP-010 | covered; open |
@@ -197,7 +197,7 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 | S-35 | Type checking, lint, three-system runs, critic review | QUAL-003, QUAL-004, QUAL-005, QUAL-008 | covered |
 | S-36 | The first working test | MCP-024 | covered |
 | S-37 | Open: REQ-018 roots | MAP-014 | covered; open |
-| S-38 | Open: REQ-035 per-project module place | BASE-014 | covered; open |
+| S-38 | Answered: REQ-035 per-project module place, D93 | BASE-014 | covered |
 | S-39 | Open: REQ-124 hiding by dependency | LAYER-006 | covered; open |
 | S-40 | Open: Section 20 removal | none | removed: recommended, awaiting confirmation |
 
@@ -205,7 +205,6 @@ Dispositions: covered; deferred, meaning nonces, assignment context or remote ho
 
 - REQ-001, REQ-002, REQ-003: carried by the Authority section of 00-index.md.
 - REQ-041: whether a module can call another module's public operation beyond events is open question 7 in 04-chassis-modules.
-- REQ-066: confirmed design gives a directly run wheel its own data subfolder, BASE-023 and STORE-030, which contradicts sharing one configuration. Whether REQ-066 is retired, or reconciled through merge on install, BASE-025, needs Rich's answer.
 - REQ-087: MCP-009 covers operation from inside any host. Launching a configured harness conflicts with the confirmed rule that Metaform never launches a model, and no correction retires it. The deterministic local fixture is not specified.
 - REQ-130 to REQ-134: the rulebook is not in the spec.
 - REQ-140 to REQ-150: the workflow module is not in the spec. BASE-003 places workflows in modules and MCP-009 delivers intake instructions by name, but workflow execution, representation, snapshots, revisions, replay, human waits and CLI completeness are unspecified.

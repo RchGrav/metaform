@@ -47,23 +47,23 @@ Instead of treating an artifact as a passive data container, Metaform models it 
 
 ```
                      Operative Purpose (OP)
-                    [Host: Vested Entity "Why"]
+                    [Host: CQU "Why"]
                                /\
                               /  \
             Structural Join  /    \  Encounter Function (EF)
             (Expectation)   /      \ [Host: Providing Element "How"]
                            /        \
                           /__________\
-           Vested Entity (VE)        Providing Element (PE)
+           Cestui Que Use (CQU)      Providing Element (PE)
            [External Anchor]          [Internal Subsystem]
 
 ```
 
 ### 2.1 Node Definitions
 
-1. **Vested Entity (VE):** The type of party outside the artifact whose purpose drives the most improvement in it. The VE anchors the requirement. It is never the person who asked for the intake, the end user, or whoever performs the operation, since those could be named for every artifact; it is the vested role, such as the `seller` of a product photograph or the `module author` of a plugin system.
-2. **Operative Purpose (OP):** The active goal the VE holds, the *why*.
-3. **Providing Element (PE):** The structural component within the workpiece whose **Encounter Function (EF)** satisfies the VE's purpose.
+1. **Cestui Que Use (CQU):** The type of party outside the artifact whose purpose drives the most improvement in it. The CQU anchors the requirement. It is never the person who asked for the intake, the end user, or whoever performs the operation, since those could be named for every artifact; it is the vested role, such as the `seller` of a product photograph or the `module author` of a plugin system.
+2. **Operative Purpose (OP):** The active goal the CQU holds, the *why*.
+3. **Providing Element (PE):** The structural component within the workpiece whose **Encounter Function (EF)** satisfies the CQU's purpose.
 
 ### 2.2 Relational Invariance Over Implementation: $\mathcal{C}(T)$
 
@@ -75,7 +75,7 @@ $$\mathcal{C}(T) = \{ (r_i \wedge p_i \wedge e) \}$$
 
 Where:
 
-* $r_i$ is the Receiving/Vested Entity.
+* $r_i$ is the Receiving Entity/CQU.
 * $p_i$ is the Operative Purpose owned by $r_i$.
 * $e$ is the Type's invariant Encounter Function.
 
@@ -100,15 +100,6 @@ $$\text{Address: } c_n.\dots.c_2.c_1 \implies \text{Canonical Type: } c_1 \text{
 * `media.photo.jpg` $\rightarrow$ Concrete encoding, not functional capability (**Invalid**)
 
 
-
-### 3.2 Function and Encounter
-
-Every join records which reading of its Encounter Function applies:
-
-* **Function:** the encounter of a functionality. The capability belongs to the provider, and this receiver meets it.
-* **Encounter:** the functionality of the encounter. The function exists in the meeting itself, as a product photograph's does in the buyer's viewing.
-
-The word sits on the join, not the node, because the same component can be a Function for one receiver and an Encounter for another.
 
 ---
 

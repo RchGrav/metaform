@@ -29,11 +29,12 @@ Started from template 0.2.0.
 - `history`: returns the names greeted so far. The default verb. Tool `hello_history`.
 - `forget [--confirm]`: deletes the greeting layer. A caution verb. Tool `hello_forget`, with `confirm`.
 - `beep`: rings the terminal bell, on Windows only.
-- `todo <task>`: writes a `missing` work record on the module's own element, `code.module.hello`, with the task; returns the record id. Tool `hello_todo`.
+- `todo <task>`: writes a `missing` work record on the module's own element, `code.module.hello`, with the task, and keeps how many names hello had greeted then in its own table `todos`, keyed by the work id; returns the record id. `metaform map work id=<id>` shows that count under `hello`, through `work_read`, BASE-035. Tool `hello_todo`.
 - `done <id> <resolution>`: marks that record done, its resolution kept beside it. Tool `hello_done`.
 - `noncedemo`: walks an agent through a nonce, BASE-050. Run directly it requests a nonce whose function is `noncedemo` itself and prints `Please run metaform <nonce>`. Run through that nonce, `nonce.reached()` holds it, and `noncedemo` does the step the nonce's value in the chassis holds, or the step written after the nonce, `next` or `complete`. `next` updates the value, so the nonce run alone gives the same message again. `complete` closes the nonce and requests a new one, the nonce an agent would pass to the main agent. That one, run, closes itself and ends the demo; run again, it prints `Error: Invalid or Unknown Nonce`. Tool `hello_noncedemo`.
 - `count`: says `hello has greeted <n> names.` with `ctx.say` and returns `{"greeted": n}`. With `--json` the sentence goes to standard error and only the data to standard output; over MCP it is a line of the result. Tool `hello_count`.
 - `welcome <name>`: an async verb that publishes `hello.greeted` with `await ctx.publish_async(...)`; `ctx.publish` inside a running loop is refused, BASE-009. Returns `welcome, <name>`. Tool `hello_welcome`.
+- `follow`: waits for the next change to the map made in another process and shows it, `{"changed": [<payload>]}`. It listens with `ctx.listen`, BASE-053, whose handler runs in the listener's own thread and hands the payload to the verb's loop with `call_soon_threadsafe`; the listener closes when the verb returns. Only on the command line, since over MCP it would hold the tool call until the map changed.
 - `later <name> <seconds>`: starts a task with `ctx.spawn` that greets the name after the seconds, and returns at once. The task belongs to hello: it runs on after the verb returns for as long as the process runs, as the MCP server does, and the chassis cancels it when the process ends or hello unloads, BASE-018. From the command line the process ends at once, so the name is not greeted. Tool `hello_later`.
 - `greet-favorite`: greets the `--favorite` name. With none set it raises `Stop('No favorite is set.', 'metaform set --favorite <name>')`, which the CLI prints as `Error:` and `Next:` lines with exit 2, CLI-009. Tool `hello_greet-favorite`.
 - `uptime`: returns how long ago `start` ran in this process. Tool `hello_uptime`.
@@ -57,7 +58,7 @@ Publishes `hello.greeted` with `{"name": ...}`, from `greet` with `ctx.publish` 
 
 ## Sync and async
 
-`wait`, `welcome` and `later` are coroutines, and so is the task `later` spawns. Every other verb, the subscriber and the hooks are plain functions.
+`wait`, `welcome`, `later` and `follow` are coroutines, and so is the task `later` spawns. Every other verb, the subscriber and the hooks are plain functions.
 
 ## Work records
 
@@ -65,7 +66,7 @@ A module keeps the condition of an object as a work record, apart from the map, 
 
 ## Tables
 
-`MODULE.tables` declares hello's own tables at version 1, STORE-045. `visits(name, times)`, keyed by `name`, has `place='metaform'`: it is the table `"hello.visits"` in the metaform's store, and goes with the metaform when the project is cleared. `notes(note_id, text, at)`, keyed by `note_id` with an index on `at`, has `place='project'`: it is in `projects/<project>/modules/hello.sqlite3`, and a clear of the project's metaforms keeps it. The chassis creates both on first use and carries both through export and import. `visit`, `note` and `notes` reach them with `ctx.require_store().tables()`.
+`MODULE.tables` declares hello's own tables at version 2, STORE-045. `visits(name, times)`, keyed by `name`, has `place='metaform'`: it is the table `"hello.visits"` in the metaform's store, and goes with the metaform when the project is cleared. `notes(note_id, text, at)`, keyed by `note_id` with an index on `at`, has `place='project'`: it is in `projects/<project>/modules/hello.sqlite3`, and a clear of the project's metaforms keeps it. The chassis creates both on first use and carries both through export and import. `note` and `notes` reach them with `ctx.require_store().tables()`. `visit` uses its declared DAO operation.
 
 ## Layers
 
@@ -139,3 +140,8 @@ Each public import a module can use, and the command that shows it:
 | `feedback` | `metaform hello feedback "The greet help was clear."` |
 | `list_reports` | `metaform hello reports` |
 | `read_report` | `metaform hello read-report <name>`, a name `reports` lists |
+
+`MODULE.data` declares `count_visit` as a DAO operation. `visit` calls
+`store.count_visit(name)`; the handler gets `DataTx` and reaches `visits`
+through `tx.tables()` on the same transaction. A call inside `Store.atomic()`
+commits or rolls back with the native map writes in that block.

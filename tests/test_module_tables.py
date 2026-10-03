@@ -402,6 +402,59 @@ def test_a_table_the_new_version_no_longer_declares_is_dropped_after_its_copy_is
     assert 'ledger.entries' not in tables and 'ledger.payments' in tables
 
 
+LEDGER_V2_CENTS = '''
+    from metaform.data import Column, Index, Table, Tables
+    from metaform.module import Module
+    SUPPORTED_OS = ('linux', 'macos', 'windows')
+    FOUND = []
+    PAGED = []
+    def upgrade(tx, found):
+        if tx.place != 'metaform':
+            return
+        rows = tx.found_rows('entries', limit=0).results
+        FOUND.extend(rows)
+        first = tx.found_rows('entries', limit=2)
+        PAGED.extend(first.results + tx.found_rows('entries', limit=2, after=first.next).results)
+        for row in rows:
+            tx.update('entries', {'entry_id': row['entry_id']}, {'cents': row['amount'] * 100})
+    TABLES = Tables(version=2, upgrade=upgrade, tables=(
+        Table('entries', place='metaform', key=('entry_id',),
+              columns=(Column('entry_id', required=True), Column('who', required=True),
+                       Column('paid', 'bool', default=False), Column('detail', 'json'), Column('cents', 'int')),
+              indexes=(Index(('who',)),)),
+        Table('notes', place='project', key=('note_id',),
+              columns=(Column('note_id', required=True), Column('text', required=True), Column('at', required=True)),
+              indexes=(Index(('at',)),)),
+    ))
+    MODULE = Module(id='ledger', summary='Ledger.', purpose='Keeps a ledger. Details: metaform help ledger.',
+                    tables=TABLES)
+'''
+
+
+def test_an_upgrade_reads_a_column_its_new_version_drops_and_carries_it_into_a_new_one(ledger, user_module):
+    """Ticket 823465c9: the module's upgrade reads the rows as the version found held them, a dropped column
+    included, and carries what it held into a new column before the column goes."""
+    fill(ledger)
+    user_module('ledger', LEDGER_V2_CENTS)
+    loader.reset()
+    with Store('proj', module='ledger').tables(write=False) as tx:
+        assert [(row['entry_id'], row['cents']) for row in tx.rows('entries', limit=0).results] == \
+            [('e1', 500), ('e2', 700), ('e3', 200)]
+        with pytest.raises(StoreError):  # only an upgrade reads the rows as the version found held them
+            tx.found_rows('entries')
+    found = next(item for item in loader.discover() if item.id == 'ledger')
+    import sys
+    assert sys.modules[found.import_name].FOUND == [
+        {'entry_id': 'e1', 'who': 'ada', 'amount': 5, 'paid': False, 'detail': {'for': 'tea'}},
+        {'entry_id': 'e2', 'who': 'bob', 'amount': 7, 'paid': True, 'detail': None},
+        {'entry_id': 'e3', 'who': 'ada', 'amount': 2, 'paid': False, 'detail': None}]  # in the found key's order
+    assert sys.modules[found.import_name].PAGED == sys.modules[found.import_name].FOUND  # a page at a time, STORE-025
+    assert [row[1] for row in raw(store_file(), 'PRAGMA table_info("ledger.entries")')] == \
+        ['entry_id', 'who', 'paid', 'detail', 'cents']
+    tables = {row[0] for row in raw(store_file(), "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {name for name in tables if name.startswith('ledger.')} == {'ledger.entries'}
+
+
 def test_an_upgrade_that_cannot_keep_the_rows_is_refused_and_changes_nothing(ledger, user_module):
     fill(ledger)
     user_module('ledger', LEDGER_V1.replace('version=1', 'version=2').replace(

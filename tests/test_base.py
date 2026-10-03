@@ -13,7 +13,8 @@ import pytest
 pytestmark = pytest.mark.kind('fixture')
 
 MODULES = Path(__file__).parents[1] / 'src' / 'metaform' / 'modules'
-PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce'}
+PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce',
+          'metaform.prompt_files'}
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 
 
@@ -81,10 +82,24 @@ def test_the_example_modules_import_only_the_public_base(tmp_path):
 def test_importing_the_public_base_creates_no_files(tmp_path):
     home = tmp_path / 'missing-home'
     result = subprocess.run([sys.executable, '-c', 'import metaform.module, metaform.settings, metaform.data, '
-                                                   'metaform.events'],
+                                                   'metaform.events, metaform.nonce, metaform.prompt_files'],
                             env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True, text=True, encoding='utf-8')
     assert result.returncode == 0, result.stderr
     assert not home.exists()
+
+
+@pytest.mark.req('BASE-004')
+@pytest.mark.req('MCP-031')
+def test_a_module_reads_its_own_prompts_through_the_public_base():
+    from importlib import resources
+    from metaform import prompt_files
+    assert 'metaform.prompt_files' in PUBLIC
+    folder = resources.files('metaform.modules.template')
+    assert prompt_files.text(folder, 'instructions') == 'template is active.'
+    assert prompt_files.required(folder, 'instructions') == 'template is active.'
+    assert prompt_files.text(folder, 'no_such_prompt') is None
+    with pytest.raises(LookupError):
+        prompt_files.required(folder, 'no_such_prompt')
 
 
 @pytest.mark.req('BASE-035')
@@ -300,7 +315,158 @@ def test_an_entry_point_module_loads(home, tmp_path):
     assert out == '3 books'
 
 
-LEFTOVER = "from metaform import settings\nsettings.text('{name}_leftover', 'x')"
+def _project_module(source, name, body, **files):
+    """Write a module into a project's place, `<source>/.metaform/modules/<name>/`, D93, with any other files."""
+    import textwrap
+    folder = source / '.metaform' / 'modules' / name
+    folder.mkdir(parents=True)
+    (folder / '__init__.py').write_text(textwrap.dedent(body))
+    for file, text in files.items():
+        (folder / f'{file}.py').write_text(textwrap.dedent(text))
+    return folder
+
+
+NOTES = f'''
+    from metaform.module import Module, Verb
+    {OS}
+    def count(ctx):
+        return 'proj notes'
+    MODULE = Module(id='notes', summary='Proj notes.', purpose='Notes. Details: metaform help notes.',
+                    verbs=(Verb('count', count, 'Count the notes.'),))
+'''
+
+
+@pytest.mark.req('BASE-014')
+@pytest.mark.req('BASE-037')
+@pytest.mark.req('PROJ-003')
+def test_a_project_module_loads_only_for_the_active_selected_project(run, module_row, tmp_path):
+    proj, other, outside = tmp_path / 'proj', tmp_path / 'other', tmp_path / 'outside'
+    for folder in (proj / 'src', other, outside):
+        folder.mkdir(parents=True)
+    run('add', 'project', 'proj', str(proj))
+    run('add', 'project', 'other', str(other))
+    _project_module(proj, 'notes', NOTES)
+    assert module_row('notes', cwd=proj / 'src')[1:3] == ['on', 'project']
+    assert run('notes', 'count', cwd=proj / 'src').stdout == 'proj notes'
+    assert module_row('notes', cwd=other) is None
+    assert module_row('notes', cwd=outside) is None
+    assert 'Unknown command: notes.' in run('notes', 'count', cwd=other, ok=False).stderr
+    run('set', '--project', 'proj', cwd=other)
+    assert run('notes', 'count', cwd=other).stdout == 'proj notes'
+    run('set', '--project', 'other', cwd=proj)
+    assert module_row('notes', cwd=proj) is None
+
+
+@pytest.mark.req('BASE-014')
+@pytest.mark.req('BASE-037')
+def test_a_project_module_never_displaces_a_same_name_module_of_an_earlier_place(home, tmp_path, user_module, run):
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    run('add', 'project', 'proj', str(proj))
+    user_module('shelf', f'''
+        from metaform.module import Module
+        {OS}
+        MODULE = Module(id='shelf', summary='User shelf.', purpose='A shelf. Details: metaform help shelf.')
+    ''')
+    user_module('crate', '''
+        SUPPORTED_OS = ('plan9',)
+        raise SystemExit('must not run')
+    ''')
+    site = tmp_path / 'site'
+    _package(site, 'books', f'''
+        from metaform.module import Module
+        {OS}
+        MODULE = Module(id='books', summary='Entry books.', purpose='Books. Details: metaform help books.')
+    ''')
+    for name in ('shelf', 'books', 'crate'):
+        _project_module(proj, name, f'''
+            {OS}
+            raise SystemExit('must not run')
+        ''')
+    lines = run('list', 'modules', cwd=proj, env={'PYTHONPATH': str(site)}).stdout.splitlines()
+    rows = {(row[0], row[2]): row for row in (line.split(None, 3) for line in lines)
+            if row[0] in ('shelf', 'books', 'crate')}
+    assert sorted(rows) == [('books', 'entry'), ('books', 'project'), ('crate', 'project'), ('crate', 'user'),
+                            ('shelf', 'project'), ('shelf', 'user')]
+    assert rows['shelf', 'user'][1] == 'on' and rows['books', 'entry'][1] == 'on'
+    assert rows['crate', 'user'][1] == 'error' and 'plan9' in rows['crate', 'user'][3]
+    for name, place in (('shelf', 'user'), ('books', 'entry'), ('crate', 'user')):
+        assert rows[name, 'project'][1] == 'error' and f'{place} place' in rows[name, 'project'][3]
+
+
+def _snapshot(folder):
+    return {path.relative_to(folder).as_posix(): path.read_bytes() if path.is_file() else None
+            for path in sorted(folder.rglob('*'))}
+
+
+@pytest.mark.req('BASE-014')
+@pytest.mark.req('STORE-001')
+def test_loading_and_running_a_project_module_leaves_the_project_folder_unchanged(home, tmp_path, user_module):
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    from metaform import home as metaform_home
+    metaform_home.add_project('proj', proj)
+    body = f'''
+        from metaform.module import Module, Verb
+        from . import parts
+        {OS}
+        def count(ctx):
+            from .deeper import later
+            return parts.WORD + later.WORD
+        MODULE = Module(id='{{name}}', summary='Notes.', purpose='Notes. Details: metaform help {{name}}.',
+                        verbs=(Verb('count', count, 'Count the notes.'),))
+    '''
+    _project_module(proj, 'notes', body.replace('{name}', 'notes'), parts="WORD = 'proj '")
+    (proj / '.metaform' / 'modules' / 'notes' / 'deeper').mkdir()
+    (proj / '.metaform' / 'modules' / 'notes' / 'deeper' / '__init__.py').write_text('')
+    (proj / '.metaform' / 'modules' / 'notes' / 'deeper' / 'later.py').write_text("WORD = 'notes'\n")
+    control = user_module('control', body.replace('{name}', 'control').replace('from .deeper import later',
+                                                                              'from . import parts as later'))
+    (control / 'parts.py').write_text("WORD = 'control'\n")
+    before = _snapshot(proj)
+    env = {key: value for key, value in os.environ.items() if key not in ('PYTHONDONTWRITEBYTECODE', 'PYTHONPYCACHEPREFIX')}
+    env['METAFORM_HOME'] = str(home)
+    for args in (('list', 'modules'), ('notes', 'count'), ('control', 'count')):
+        result = subprocess.run([sys.executable, '-m', 'metaform', *args], env=env, cwd=proj,
+                                capture_output=True, text=True, encoding='utf-8')
+        assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == 'controlcontrol'
+    assert subprocess.run([sys.executable, '-m', 'metaform', 'notes', 'count'], env=env, cwd=proj,
+                          capture_output=True, text=True, encoding='utf-8').stdout == 'proj notes'
+    assert (control / '__pycache__').is_dir(), 'the control shows this Python writes bytecode beside a module'
+    assert _snapshot(proj) == before
+
+
+@pytest.mark.req('BASE-014')
+@pytest.mark.req('BASE-037')
+@pytest.mark.req('PROJ-003')
+def test_a_long_lived_process_follows_the_folders_project_selection(home, tmp_path, monkeypatch):
+    from metaform import home as metaform_home
+    from metaform import loader, settings
+    proj, other = tmp_path / 'proj', tmp_path / 'other'
+    for folder in (proj, other):
+        folder.mkdir()
+        metaform_home.add_project(folder.name, folder)
+    _project_module(proj, 'notes', NOTES)
+    before = _snapshot(proj)
+    monkeypatch.setattr(sys, 'dont_write_bytecode', False)
+    monkeypatch.chdir(other)
+    loader.reset()
+    try:
+        assert loader.get('notes') is None
+        for _ in range(2):
+            settings.put('project', 'proj', other)
+            loader.follow_enabled()
+            assert loader.get('notes') is not None and loader.get('notes').module is not None
+            settings.put('project', 'other', other)
+            loader.follow_enabled()
+            assert loader.get('notes') is None
+    finally:
+        loader.reset()
+    assert _snapshot(proj) == before
+
+
+LEFTOVER ="from metaform import settings\nsettings.text('{name}_leftover', 'x')"
 REFUSALS = {
     'missing_os': ("raise SystemExit('must not run')", 'SUPPORTED_OS is required'),
     'wrong_id': (f"{OS}\n{{leftover}}\nfrom metaform.module import Module\n"

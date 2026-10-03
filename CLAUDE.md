@@ -65,6 +65,12 @@ When a spec or a request looks wrong, say so before building it and offer the al
 
 When Rich says install the new version, he expects the installed `metaform` to be updated, not only the build and the MCP registration. Why: the command line and anything it starts, the viewer included, run the installed copy, so a build that only reaches the MCP registration leaves them on old code.
 
+## Testing
+
+Do not write tests for reversible, low-impact changes that mirror the implementation. If you do choose to verify your work with tests, make sure that the tests are meaningful and necessary to verify implementation.
+
+Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
+
 ## These instructions are only for an agent assisting with development or collaboration on the project. The instructions are for your understanding not agents in the runtime itself.   Only runtime workflow instructions belong in Metaform's context-aware interface.
 
 <MetaformFoundation> This MetaformFoundation defines the minimum core of expertise an expert agent must internalize for understanding, constructing, applying, preserving, and troubleshooting in the metaform system along with the understanding that functional testing and correctness are not the same as semantic correctness for a particular purpose.

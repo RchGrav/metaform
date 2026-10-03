@@ -326,8 +326,10 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   curves: () => G ? G.graphData().links.map(link => ({k: link.k, curve: accessed(G.linkCurvature(), link)})) : [],
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
+  layouts: () => V3.layouts, drawnWork: id => (G?.graphData().nodes.find(node => node.id === id)?.work || []).length,
   loaded: () => !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer, changes: () => LIVE.done,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
+  at2d: id => M.nodes.has(id) ? {x: M.nodes.get(id).x, y: M.nodes.get(id).y} : null,
   look: id => look(id), fit: () => fit2D(), menu: id => menu(id), task: id => giveWork(id), element: id => addElement(id), note: id => notesAt(id),
   // The memory network of a node, VIEW-031: opened as the menu's entry opens it, and what both views draw of it, or
   // null on the map.
@@ -335,12 +337,15 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   memory: () => MEM.key && MEM.drawn ? {key: MEM.key, nodes: G ? G.graphData().nodes.map(node => node.id) : [],
     links: G ? G.graphData().links.map(link => ({source: endOf(link.source), target: endOf(link.target), relation: link.relation})) : [],
     nodes2d: [...M.nodes.keys()]} : null,
-  away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0,
+  away3d: () => G ? G.camera().position.distanceTo(G.controls().target) : 0, fits3d: () => V3.fits,
   samples3d: () => G ? G.postProcessingComposer().renderTarget1.samples : 0,
   samplesFor: name => samplesFor(name), drawnBy: () => G ? drawnBy() : '',
   // The samples a pixel are set, so a browser check can compare the picture with the smoothing and without it.
   smooth3d: samples => { if (!G) return; const chain = G.postProcessingComposer();
     for (const target of [chain.renderTarget1, chain.renderTarget2]) { target.samples = samples; target.dispose(); } },
+  // The 3D map stops drawing, or draws again, so a browser check that steps the page's clock frame by frame to read
+  // the 2D camera does not draw the 3D map at every step.
+  pause3d: on => { if (G) { if (on) G.pauseAnimation(); else G.resumeAnimation(); } },
   zoom3d: share => { if (G) { const at = G.camera().position; G.cameraPosition({x: at.x * share, y: at.y * share, z: at.z * share}, undefined, 0); } },
   glass: (on, options = {}, segments = 16) => {  // to measure what it costs
     if (!G) return;
@@ -493,18 +498,22 @@ function routeOf(data, from, to) {  // the fewest edges of the drawn map from on
   for (let at = to; at !== null; at = back.get(at)) path.unshift(at);
   return path;
 }
-function figures(tickets) {  // the figures the tickets call for, VIEW-035
+/* The figures, VIEW-035: one for each ticket an agent is working in a live session, the agents key's own list, so an
+ * agent that is not active is not on the map, whatever its ticket says; when its session ends the figure walks back
+ * and is gone. */
+const liveWork = () => new Set(D.sessions.filter(one => one.state === 'running' && !ticketOf(one.work_id)?.done)
+  .map(one => one.work_id));
+function figures(tickets) {
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
   if (!home) return;
-  const now = Date.now();
+  const live = liveWork();
   for (const ticket of tickets) {
     const figure = ROAM.figures.get(ticket.work_id), target = ticketNode(ticket);
-    if (figure) { figure.done = Boolean(ticket.done); continue; }
-    const working = Boolean(ticket.taken && !ticket.done);
-    const finished = Boolean(ticket.taken && ticket.done) && now - Date.parse(ticket.done) < ROAM.recent * 1000;
-    if ((working || finished) && !ROAM.seen.has(ticket.work_id) && nodeById(data, target)) {
-      const glyph = drawGlyph(ticket.work_id), mesh = createAgent(glyph);
+    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.work_id); continue; }
+    const working = live.has(ticket.work_id) && !ticket.done;
+    if (working && !ROAM.seen.has(ticket.work_id) && nodeById(data, target)) {
+      const glyph = drawGlyph(ticket.work_id, ownGlyph(ticket)), mesh = createAgent(glyph);
       mesh.scale.setScalar(0.001);
       G.scene().add(mesh);
       ROAM.seen.add(ticket.work_id);
@@ -1287,7 +1296,33 @@ function start3D() {
   };
 }
 /* A click on any vertex selects that object itself: an element, a join's purpose vertex or a subtype. */
-function clicked3d(node) { if (node) select(node.id, true); }
+function clicked3d(node) {
+  if (!node) return;
+  if (large()) MODE.mode = 'readable';  // a click on a node goes to mode two, VIEW-041
+  select(node.id, true);
+}
+/* A node takes the pointer anywhere it is drawn, not only at its center, Rich 2026-10-03: a part not built on the
+ * whole round of characters it is written in, which `DRAWN` keeps at least five characters wide however far away it
+ * is, a cell drawn whole when its middle is inside; every other node on the whole of its sphere. Each node's object
+ * is picked by a ball of that size on the screen around its center. */
+const PICK = {edge: 2};  // the pixels past a sphere that the picture smooths its edge over, measured 2026-10-03
+const PICKED = {center: new THREE.Vector3(), at: new THREE.Vector3(), ball: new THREE.Sphere(), size: new THREE.Vector2()};
+function picked(raycaster, hits) {
+  const node = this.__data, camera = raycaster.camera;
+  if (!node || !camera?.isPerspectiveCamera) return;
+  const {center, at, ball, size} = PICKED;
+  this.getWorldPosition(center);
+  const depth = -at.copy(center).applyMatrix4(camera.matrixWorldInverse).z;
+  if (depth <= 0) return;
+  const unit = 2 * depth / (camera.projectionMatrix.elements[5] * G.renderer().getSize(size).y);  // world units a pixel spans there
+  const cell = T.cell.value.clone().multiplyScalar(T.zoom.value / G.renderer().getPixelRatio());  // a character, in pixels
+  const radius = Math.cbrt(nodeSize(node)) * 3;
+  const reach = this.userData.written ? Math.max(radius, 2.5 * cell.x * unit) + cell.y / 2 * unit
+    : radius + PICK.edge * unit;
+  if (!raycaster.ray.intersectSphere(ball.set(center, reach), at)) return;
+  const distance = raycaster.ray.origin.distanceTo(at);
+  if (distance >= raycaster.near && distance <= raycaster.far) hits.push({distance, point: at.clone(), object: this});
+}
 function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), ...servedBy(node)];
   if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
@@ -1475,6 +1510,7 @@ function labels() {
     text3d();
     let signaled = false;
     for (const node of G.graphData().nodes) {
+      if (node.__threeObj && node.__threeObj.raycast !== picked) node.__threeObj.raycast = picked;
       if ((node.work && node.work.length) || node.__threeObj?.material?.userData.lit) paint3d(node);
       signaled = signaled || SIGNALS.some(([condition]) => has(node, condition));
     }
@@ -1503,10 +1539,36 @@ function draw3D(previous = null) {
   for (const id of [...tags.keys()]) if (!named.has(id)) dropLabel(id);
   if (hovered) hovered = data.nodes.find(node => node.id === hovered.id) || null;
   $('#tip3d').hidden = !hovered;
+  if (inPlace(data)) return;
   // A memory network is laid out before it is shown, so it opens settled and whole in view; the map keeps its own
   // layout running from where each node stands.
   G.warmupTicks(MEM.key ? 120 : 0);
   G.graphData(data);
+  V3.layouts++;
+}
+/* New data starts the 3D layout again at full strength, which shakes the map, so a change that adds or removes no node
+ * and no link is copied onto what is drawn, which is drawn again where it stands, VIEW-018. */
+const PLACE = new Set(['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', 'index', '__threeObj', 'source', 'target']);
+const end = value => value && typeof value === 'object' ? value.id : value;
+const linkKey = link => `${end(link.source)}>${end(link.target)}>${link.k}`;
+function inPlace(data) {
+  const shown = G.graphData();
+  if (shown.nodes.length !== data.nodes.length || shown.links.length !== data.links.length) return false;
+  const nodes = new Map(shown.nodes.map(node => [node.id, node]));
+  if (data.nodes.some(node => !nodes.has(node.id))) return false;
+  const links = new Map();
+  for (const link of shown.links) (links.get(linkKey(link)) || links.set(linkKey(link), []).get(linkKey(link))).push(link);
+  const pairs = [];
+  for (const link of data.links) {
+    const same = links.get(linkKey(link));
+    if (!same?.length) return false;
+    pairs.push([same.shift(), link]);
+  }
+  const copy = (into, from) => { for (const [key, value] of Object.entries(from)) if (!PLACE.has(key)) into[key] = value; };
+  for (const node of data.nodes) copy(nodes.get(node.id), node);
+  for (const [into, from] of pairs) copy(into, from);
+  G.refresh();
+  return true;
 }
 /* A theme recolors both views in place, VIEW-023: the 3D view rereads its colors, the 2D map is drawn again. The
  * choice is the viewer's own, kept in this browser. */
@@ -1522,10 +1584,12 @@ function setTheme(name) {
 $('#theme').value = document.documentElement.dataset.theme;
 if ($('#theme').selectedIndex < 0) $('#theme').value = document.documentElement.dataset.theme = 'space';  // a kept name that is no longer a theme
 $('#theme').onchange = () => setTheme($('#theme').value);
+const MODE = {mode: 'whole', key: 5};  // the 2D camera's mode in the large area, VIEW-041; see modeTarget
 /* The two views change places, VIEW-028: the 2D map takes the large area and the 3D map the small one, and back.
  * Each is then drawn for the area it has. The choice is the viewer's own, kept in this browser. */
 async function swap(on) {
   $('.app').classList.toggle('swapped', on);
+  if (on) MODE.mode = 'whole';  // the 2D map comes to the large area in mode one, VIEW-041
   (on ? $('main') : $('#small')).append($('#map2d'));
   (on ? $('#small') : $('main')).append($('#big3d'));
   $('#swapBtn').title = on ? 'Put the 3D map back in the large area' : 'Put this map in the large area, and the 3D map here';
@@ -1534,19 +1598,19 @@ async function swap(on) {
   resize();
   if (G) setTimeout(() => fit3d(600, on ? 24 : 60), 50);  // the whole 3D map in its new area
   if (S.loading || !S.elements.size) return;
-  await build2D();
+  await build2D(false);  // drawn for its new area, opening as it does on loading
   if (S.selected) select(S.selected, false, true);
 }
 $('#swapBtn').onclick = $('#swap3dBtn').onclick = () => swap(!$('.app').classList.contains('swapped'));
 /* The 3D map's own Fit goes between two views: the whole map, and close on the selected node. It moves the 3D map
  * only, as the 2D map's Fit moves the 2D map only. */
-const V3 = {whole: 0};  // how far the camera stands when the whole map is in view
+const V3 = {whole: 0, fits: 0, layouts: 0};  // how far the camera stands when the whole map is in view, and the fits ended
 const away3d = () => G.camera().position.distanceTo(G.controls().target);
 function fit3d(time = 700, room = 60) {
   if (!G) return;
   const took = reduced() ? 0 : time;
   G.zoomToFit(took, room);
-  setTimeout(() => { if (G) V3.whole = away3d(); }, took + 60);
+  setTimeout(() => { if (G) { V3.whole = away3d(); V3.fits++; } }, took + 60);
 }
 function fly3d(id) {
   const node = G ? G.graphData().nodes.find(item => item.id === id) : null;
@@ -1589,11 +1653,11 @@ function renderLegend() {
 }
 
 /* ---------- 2D: the whole map, short names, no text on the edges; the camera moves node to node ---------- */
-const M = {svg: null, nodes: new Map(), edges: [], cam: null, fit: null, frame: 0, generation: 0};
+const M = {svg: null, nodes: new Map(), edges: [], cam: null, to: null, fit: null, frame: 0, generation: 0};
 const MAP2D = 5000;  // the most elements Mermaid lays out; above it the 2D map is not drawn, BUILD-QUESTIONS Q52
 const plain2d = text => String(text || '').replace(/["[\]{}()<>|#;`]/g, '').slice(0, 30);
 let mermaidReady = false;
-async function build2D() {
+async function build2D(keep = true) {
   const generation = ++M.generation;
   const host = $('#viewport');
   if (!window.mermaid) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not load.')); return; }
@@ -1638,6 +1702,8 @@ async function build2D() {
   try { result = await window.mermaid.render(`map2d${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, 'The 2D map could not be drawn.')); return; }
   if (generation !== M.generation) return;
+  // The whole map drawn again keeps its camera and eases from there, VIEW-041, with the zoom the person has, VIEW-008.
+  const was = keep && M.base && M.svg === M.base.svg && M.cam ? {cam: {...M.cam}, zoom: M.zoom} : null;
   const inside = IN.length > 0 || Boolean(MEM.key);
   const svg = mountSvg(result, host, inside);
   const nodes = new Map();
@@ -1659,7 +1725,8 @@ async function build2D() {
   if (MEM.key) { svg.remove(); svg.style.visibility = ''; await drawMemory2d(); return; }
   if (inside) { svg.remove(); svg.style.visibility = ''; await drawInside(); return; }
   showBase();
-  if (S.selected) focus2D(S.selected, false);
+  if (was) { setCam(was.cam, false); M.zoom = was.zoom; }
+  if (S.selected) focus2D(S.selected); else applyMode();
 }
 /* Mermaid's strict SVG, the only markup parsed; hidden when it is measured without being shown. */
 function mountSvg(result, host, hidden) {
@@ -1702,7 +1769,7 @@ function showBase(left = null) {
   const base = M.base;
   renderCrumbs();
   if (!base) return;
-  cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
+  stopCam();  // a camera still easing on the level left must not move this one
   Object.assign(M, {svg: base.svg, nodes: base.nodes, edges: base.edges, fit: base.fit, vertical: base.vertical, drawn: null});
   fill($('#viewport'), base.svg);
   const node = left ? base.nodes.get(left) : null;
@@ -1711,13 +1778,13 @@ function showBase(left = null) {
     setCam(frame(into(node)), false);
     M.zoom = {w: kept.w, h: kept.h};
     arrive(base.svg);
-    moveCam({x: node.x - kept.w / 2, y: node.y - kept.h / 2, w: kept.w, h: kept.h});
+    moveCam(moded() ? modeTarget() : {x: node.x - kept.w / 2, y: node.y - kept.h / 2, w: kept.w, h: kept.h});
     return;
   }
   base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
   const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id;
-  setCam(base.cam || frame(readable(base.fit, base.nodes.get(S.selected) || base.nodes.get(entry)
-    || base.nodes.values().next().value)));
+  setCam(base.cam || (moded() ? frame(modeTarget()) : frame(readable(base.fit, base.nodes.get(S.selected)
+    || base.nodes.get(entry) || base.nodes.values().next().value))));
 }
 
 /* ---------- inside a node: the 2D map is replaced by the node's own graph, VIEW-016 ----------
@@ -1867,11 +1934,11 @@ async function drawInside(arriving = false) {
     if (layer) cluster.style.setProperty('--c', `var(${colorVar(layer)})`);
   }
   level.things = things;
-  cancelAnimationFrame(M.frame);  // a camera still easing on the level left must not move this one
+  stopCam();  // a camera still easing on the level left must not move this one
   Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: level});
   setCam(frame(readable(M.fit, nodes.get(level.key))));
   renderCrumbs();
-  if (S.selected && nodes.has(S.selected)) focus2D(S.selected, false);
+  if (S.selected && nodes.has(S.selected)) focus2D(S.selected);
 }
 function renderCrumbs() {
   const bar = $('#crumbs');
@@ -2058,7 +2125,7 @@ async function memories(key) {
   if (generation !== MEM.generation) return;
   MEM.drawn = true;
   select(key, false, true);
-  if (M.fit && M.drawn === MEM) setCam(frame(M.fit));  // it opens with the whole memory network in view
+  if (M.fit && M.drawn === MEM) { stopCam(); setCam(frame(M.fit)); }  // it opens with the whole memory network in view
   await whole3d();
   if (generation !== MEM.generation) return;
   renderCrumbs();
@@ -2116,7 +2183,7 @@ async function drawMemory2d(hidden = false) {
     group.classList.add(key === network.key ? 'in-center' : 'in-entity');
   }
   network.relations.forEach((relation, index) => svg.querySelector(`path[data-id="e${index}"]`)?.classList.add('relation'));
-  cancelAnimationFrame(M.frame);  // a camera still easing on the view left must not move this one
+  stopCam();  // a camera still easing on the view left must not move this one
   Object.assign(M, {svg, nodes, edges: [], fit: fitOf(svg), vertical, drawn: MEM});
   setCam(frame(M.fit));
   $('#map2d').classList.add('focused');
@@ -2287,19 +2354,43 @@ function renderOrphans() {
   if (O.open && !$('#float').hidden && $('#float .title').textContent === 'Orphaned memories') orphans();
 }
 $('#orphanBtn').onclick = () => { showAdmin(false); orphans(); };
+/* Agent prompts, VIEW-039: how agents' permission prompts are answered, read from the settings each time the window
+ * opens and written back to them, so the administrator's choice is the one every agent follows and never reverts. */
+const PROMPT_WORDS = {'approve-all': 'Approve every prompt', 'approve-reads': 'Approve reads and searches; ask for the rest',
+  ask_all: 'Ask every prompt as a question at the ticket'};
+$('#promptsBtn').onclick = async () => {
+  showAdmin(false);
+  let found;
+  try { found = await read('dispatch-prompts'); } catch (error) { return toast(error.message); }
+  fill($('#prompts .choices'), found.choices.map(choice => h('label', {class: 'choice'},
+    h('input', {type: 'radio', name: 'prompts', value: choice, checked: choice === found.value,
+                onchange: async () => {
+                  if (await wrote('/api/dispatch-prompts', {value: choice})) $('#prompts .saved').textContent = `Saved: ${choice}`;
+                  else $(`#prompts input[value="${found.value}"]`).checked = true;
+                }}),
+    h('b', {}, choice), h('span', {}, PROMPT_WORDS[choice] || ''))));
+  $('#prompts .saved').textContent = `Now: ${found.value}`;
+  $('#prompts').hidden = false;
+};
+$('#prompts .close').onclick = () => { $('#prompts').hidden = true; };
+movable($('#prompts'));
 function aspect() { const box = $('#viewport').getBoundingClientRect(); return Math.max(0.2, box.width / Math.max(1, box.height)); }
 function frame(box) {
   let {x, y, w, h: height} = box; const a = aspect();
   if (w / height > a) { const nh = w / a; y -= (nh - height) / 2; height = nh; } else { const nw = height * a; x -= (nw - w) / 2; w = nw; }
   return {x, y, w, h: height};
 }
-/* A view fades in or out, and the promise settles once it has; with reduced motion it changes at once, VIEW-016. */
+/* A view fades in or out, and the promise settles once the browser has run the fade's time, which starts late when
+ * frames come late; a fade that changes nothing settles on the timer. With reduced motion it changes at once,
+ * VIEW-016. */
 function fade(svg, to, ms = 480) {
   if (reduced()) { svg.style.transition = ''; svg.style.opacity = ''; return Promise.resolve(); }
   svg.style.transition = `opacity ${ms}ms ease`;
   svg.getBoundingClientRect();  // the fade starts from the opacity the view has now
   svg.style.opacity = String(to);
-  return new Promise(resolve => setTimeout(resolve, ms));
+  const run = svg.getAnimations().find(one => one.transitionProperty === 'opacity');
+  if (!run) return new Promise(resolve => setTimeout(resolve, ms));
+  return run.finished.then(() => {}, () => {});  // a fade cut by another, or by its view leaving the page, settles too
 }
 /* A view that has just been put in place, faded in from nothing. */
 function arrive(svg) {
@@ -2315,32 +2406,71 @@ function setCam(cam, settled = true) {
   if (settled) M.zoom = {w: cam.w, h: cam.h};
   M.svg?.setAttribute('viewBox', `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
 }
-function moveCam(target, animate = true) {
+const near = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) <= Math.max(a.w, b.w) * 1e-4);
+function stopCam() { cancelAnimationFrame(M.frame); M.to = null; }
+/* Every move of the 2D camera eases in and out and is never set at once, VIEW-041; with reduced motion it moves at
+ * once, VIEW-016. A move to where the camera is already going goes on as it is. */
+function moveCam(target) {
   if (!M.svg) return;
-  cancelAnimationFrame(M.frame);
-  const to = frame(target), from = {...M.cam};
+  const to = frame(target);
+  if (!M.cam) return setCam(to);
+  if (near(M.to || M.cam, to)) return;
+  stopCam();
+  const from = {...M.cam};
   M.zoom = {w: to.w, h: to.h};
-  if (!animate || reduced()) return setCam(to);
-  const start = performance.now(), duration = 700;
-  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  if (reduced()) return setCam(to);
+  M.to = to;
+  // Its time starts at its first frame, so work the page does before that frame is not skipped over in one step.
+  let start = null;
+  const duration = 700, ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const step = now => {
+    start ??= now;
     const k = ease(Math.min(1, (now - start) / duration));
     setCam({x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, w: from.w + (to.w - from.w) * k, h: from.h + (to.h - from.h) * k}, false);
-    if (k < 1) M.frame = requestAnimationFrame(step);
+    if (k < 1) M.frame = requestAnimationFrame(step); else M.to = null;
   };
   M.frame = requestAnimationFrame(step);
 }
+/* The two modes of the 2D map in the large area, VIEW-041: `whole` keeps the whole diagram fitted to the area, and
+ * `readable` fits it the same way but never draws its text below the minimum the keys 1 to 9 set, 8 to 24 px, holding
+ * the selected node at the center when the minimum wins. The wheel leaves both, null, until a click or Fit. They set
+ * the camera of the whole map; a node's own graph and a memory network keep theirs, and the small area keeps the zoom
+ * VIEW-008 gives it. */
+const large = () => $('.app').classList.contains('swapped');
+const moded = () => large() && Boolean(MODE.mode) && Boolean(M.base) && M.svg === M.base.svg;
+const at2d = id => !id ? null : M.nodes.get(id) || (id.startsWith('p:') ? M.nodes.get(joinOf(id)?.provider) : null);
+function smallestText(svg) {  // the smallest font size of the diagram's labels, in its own units
+  let least = Infinity;
+  for (const text of svg.querySelectorAll('text, tspan'))
+    if ([...text.childNodes].some(node => node.nodeType === 3 && node.textContent.trim()))
+      least = Math.min(least, parseFloat(getComputedStyle(text).fontSize) || Infinity);
+  return isFinite(least) ? least : 13;
+}
+function modeTarget() {
+  const fit = frame(M.fit), area = M.svg.getBoundingClientRect();
+  if (MODE.mode !== 'readable' || !area.width || !area.height) return fit;
+  M.base.text ??= smallestText(M.base.svg);
+  // The viewBox at which that text, times the screen pixels per unit, is the minimum; the larger on screen wins.
+  const w = area.width * M.base.text / (6 + 2 * MODE.key), height = w * area.height / area.width;
+  if (w >= fit.w) return fit;
+  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id;
+  const center = at2d(S.selected) || M.nodes.get(entry) || {x: fit.x + fit.w / 2, y: fit.y + fit.h / 2};
+  return {x: center.x - w / 2, y: center.y - height / 2, w, h: height};
+}
+function applyMode() { if (moded()) moveCam(modeTarget()); }
 function fit2D() {
+  if (large()) MODE.mode = 'whole';
   M.view = 'out';
   $('#map2d').classList.remove('focused');
   for (const edge of M.edges) edge.path?.classList.remove('on');
   for (const node of M.nodes.values()) node.g.classList.remove('sel', 'near');
   if (M.fit) moveCam(M.fit);
 }
-function focus2D(id, animate = true, framing = 'around', zoom = false) {
+function focus2D(id, framing = 'around', zoom = false) {
   const join = id.startsWith('p:') ? joinOf(id) : null;
   const node = M.nodes.get(id) || (join ? M.nodes.get(join.provider) : null);
-  if (!node || !M.svg) return;
+  if (!M.svg) return;
+  if (!node) return applyMode();
   if (IN.length) {
     for (const [key, value] of M.nodes) value.g.classList.toggle('sel', key === id);
   } else {
@@ -2349,25 +2479,30 @@ function focus2D(id, animate = true, framing = 'around', zoom = false) {
     for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
       : edge.join.receiver === id || edge.join.provider === id);
   }
+  if (moded()) return moveCam(modeTarget());  // in the large area the mode sets the camera, VIEW-041
   // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008.
   const held = M.zoom || M.cam;
-  if (!zoom) return moveCam({x: node.x - held.w / 2, y: node.y - held.h / 2, w: held.w, h: held.h}, animate);
+  if (!zoom) return moveCam({x: node.x - held.w / 2, y: node.y - held.h / 2, w: held.w, h: held.h});
   // 'around' shows the node with its joined nodes; 'inside' frames the node so the nodes it holds fill the view;
   // 'close' moves nearer to a node that holds nothing.
   M.view = framing === 'around' ? 'around' : 'in';
   const [w, height] = framing === 'inside' ? [node.w * 1.25, node.h * 1.25]
     : framing === 'close' ? [Math.max(node.w * 1.8, 160), Math.max(node.h * 2.6, 110)]
     : [Math.max(node.w * 3.4, 380), Math.max(node.h * 5, 260)];
-  moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height}, animate);
+  moveCam({x: node.x - w / 2, y: node.y - height / 2, w, h: height});
 }
-/* One click selects; a click on the selected node goes inside it; a group's "more" node shows the next ones. */
-function clicked2d(id) { if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true); }
+/* One click selects; a click on the selected node goes inside it; a group's "more" node shows the next ones. In the
+ * large area a click on a node goes to mode two, VIEW-041. */
+function clicked2d(id) {
+  if (large()) MODE.mode = 'readable';
+  if (!MEM.key && (id === S.selected || id.startsWith('m:'))) goInside(id); else select(id, true);
+}
 (function wire2D() {
   const host = $('#map2d');
   $('#fitBtn').onclick = event => { event.stopPropagation(); cycleView(); };
   $('#backBtn').onclick = event => { event.stopPropagation(); step(-1); };
   $('#forwardBtn').onclick = event => { event.stopPropagation(); step(1); };
-  let drag = null;
+  let drag = null, wheelTarget = null;
   host.addEventListener('pointerdown', event => {
     if (event.target.closest('button, a') || !M.cam) return;
     drag = {x: event.clientX, y: event.clientY, cam: {...M.cam}, moving: false};
@@ -2376,6 +2511,8 @@ function clicked2d(id) { if (!MEM.key && (id === S.selected || id.startsWith('m:
     if (!drag) return;
     if (!drag.moving) {  // captured only once it is a drag, so a click still reaches the node under it
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+      stopCam();
+      drag.cam = {...M.cam};
       drag.moving = true; host.setPointerCapture(event.pointerId);
     }
     const box = $('#viewport').getBoundingClientRect(), scale = M.cam.w / box.width;
@@ -2385,20 +2522,26 @@ function clicked2d(id) { if (!MEM.key && (id === S.selected || id.startsWith('m:
   host.addEventListener('wheel', event => {
     if (!M.cam) return;
     event.preventDefault();
+    if (large()) MODE.mode = null;  // the wheel leaves both modes, VIEW-041
     const f = event.deltaY > 0 ? 1.15 : 0.87, box = $('#viewport').getBoundingClientRect();
     const px = (event.clientX - box.left) / box.width, py = (event.clientY - box.top) / box.height, c = M.cam;
-    setCam({x: c.x + (c.w - c.w * f) * px, y: c.y + (c.h - c.h * f) * py, w: c.w * f, h: c.h * f});
+    const previous = M.to && M.to === wheelTarget ? M.to : c;
+    const w = previous.w * f, height = previous.h * f;
+    moveCam({x: c.x + (c.w - w) * px, y: c.y + (c.h - height) * py, w, h: height});
+    wheelTarget = M.to;
   }, {passive: false});
+  new ResizeObserver(() => applyMode()).observe($('#viewport'));  // the area changes size: the new fit, VIEW-041
 })();
 function fitAll() { fit2D(); fit3d(); }
 /* Fit and F go through three views, Rich 2026-09-26: zoomed out to the whole map, zoomed in on the selected node,
- * with the nodes inside it when it holds any, and regular, the node with its joined nodes. */
+ * with the nodes inside it when it holds any, and regular, the node with its joined nodes. In the large area they go
+ * back to mode one, VIEW-041. */
 function cycleView() {
   const here = S.selected;
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
-  if (!here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
-  if (next === 'in') return focus2D(here, true, !IN.length && !MEM.key && insideOf(here).length ? 'inside' : 'close', true);
-  focus2D(here, true, 'around', true);
+  if (large() || !here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
+  if (next === 'in') return focus2D(here, !IN.length && !MEM.key && insideOf(here).length ? 'inside' : 'close', true);
+  focus2D(here, 'around', true);
 }
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
 async function step(by) {
@@ -2427,6 +2570,48 @@ function across(keys) {  // in their order across the 2D map
   const at = key => M.nodes.get(key) || {x: Infinity, y: Infinity};
   return [...keys].sort((a, b) => M.vertical ? at(a).x - at(b).x || at(a).y - at(b).y : at(a).y - at(b).y || at(a).x - at(b).x);
 }
+/* Down goes down an edge to the node drawn nearest under the selected one, across the map's other axis, so with seven
+ * below it lands near the middle and not at the far end of the row; the nodes inside a node are gone to when no edge
+ * leads down. A row not drawn yet gives its middle node. */
+function below(key) {
+  const providers = childrenOf(key).filter(child => !child.startsWith('s:') || key.startsWith('p:'));
+  const row = providers.length ? providers : childrenOf(key);
+  const here = M.nodes.get(key), axis = M.vertical ? 'x' : 'y';
+  const drawn = row.filter(child => M.nodes.has(child));
+  if (!here || !drawn.length) return row[Math.floor((row.length - 1) / 2)];
+  return drawn.reduce((best, child) =>
+    Math.abs(M.nodes.get(child)[axis] - here[axis]) < Math.abs(M.nodes.get(best)[axis] - here[axis]) ? child : best);
+}
+/* Past either end of a parent's row, Left and Right go on to the nodes of the next parent over on the parent's level,
+ * the first of them going right and the last going left, and past the last parent of the level round to the first, so
+ * every node of a level is reached by Left and Right alone. A level is the children of every node on the level above,
+ * in their order across the map, starting from the roots. Returns the node and the parent it is reached under. */
+/* The node drawn nearest beside a node on its row of the 2D map, that way, leaving out the box a node is drawn inside
+ * and the nodes drawn inside its own box. */
+function besideDrawn(key, by) {
+  const here = M.nodes.get(key);
+  if (!here) return null;
+  const depth = M.vertical ? 'y' : 'x', across = M.vertical ? 'x' : 'y';
+  const box = key.startsWith('s:') ? subtypeOf.get(key)?.join.provider : null, held = new Set(insideOf(key));
+  const onward = [...M.nodes.entries()].filter(([id, node]) => id !== key && id !== box && !held.has(id)
+    && Math.abs(node[depth] - here[depth]) < 2 && (node[across] - here[across]) * by > 0);
+  if (!onward.length) return null;
+  return onward.reduce((best, one) => Math.abs(one[1][across] - here[across]) < Math.abs(best[1][across] - here[across]) ? one : best)[0];
+}
+function besideOnLevel(key, parent, by) {
+  if (!parent) return null;  // the roots are one row already
+  let level = roots(), seen = new Set(level);
+  while (level.length && !level.includes(parent)) {
+    level = level.flatMap(node => childrenOf(node)).filter(node => !seen.has(node) && seen.add(node));
+  }
+  if (!level.length) return null;
+  const row = level.flatMap(node => childrenOf(node).map(next => ({next, parent: node})))
+    .filter((one, at, all) => all.findIndex(other => other.next === one.next) === at);
+  const at = row.findIndex(one => one.next === key && one.parent === parent);
+  const from = at >= 0 ? at : row.findIndex(one => one.next === key);
+  if (from < 0 || row.length < 2) return null;
+  return row[(from + by + row.length) % row.length];
+}
 function insideOf(key) {
   return across(S.joins.filter(join => join.provider === key).flatMap(join => (join.subtypes || []).map(subtype => 's:' + subtype.join_id)));
 }
@@ -2441,7 +2626,7 @@ function parentOf(key) {
   if (key.startsWith('s:')) return subtypeOf.get(key)?.join.provider || null;
   return across(new Set(S.joins.filter(join => join.provider === key && S.elements.has(join.receiver)).map(join => join.receiver)))[0] || null;
 }
-function roots() {  // the nodes nothing receives from, vested entities first; then any part of the map they do not reach
+function roots() {  // the nodes nothing receives from, CQUs first; then any part of the map they do not reach
   const top = [...S.elements.keys()].filter(key => !parentOf(key));
   const ordered = [...across(top.filter(key => S.elements.get(key).element.role === 'CQU')), ...across(top.filter(key => S.elements.get(key).element.role !== 'CQU'))];
   const reached = new Set(ordered), queue = [...ordered];
@@ -2473,6 +2658,10 @@ document.addEventListener('keydown', event => {
   if (event.target.closest('select, input, textarea, .CodeMirror, [contenteditable="true"]')) return;
   if (event.key === 'f' || event.key === 'F') { event.preventDefault(); cycleView(); return; }
   if (event.key === 'Home') { event.preventDefault(); fitAll(); return; }
+  // In the large area the keys 1 to 9 set the minimum text, 8 to 24 px, and go to mode two, VIEW-041.
+  if (/^[1-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && large()) {
+    event.preventDefault(); Object.assign(MODE, {mode: 'readable', key: Number(event.key)}); applyMode(); return;
+  }
   if (!S.selected) return;
   const here = S.selected;
   if (event.key === 'Escape' || (event.key === 'Enter' && event.shiftKey)) { event.preventDefault(); backOut(); return; }
@@ -2486,7 +2675,7 @@ document.addEventListener('keydown', event => {
   }
   if (event.key === 'ArrowDown') {
     event.preventDefault();
-    const next = childrenOf(here)[0];
+    const next = below(here);
     if (next) { S.trail.push(here); select(next, true, true); }
   } else if (event.key === 'ArrowUp') {
     event.preventDefault();
@@ -2496,9 +2685,15 @@ document.addEventListener('keydown', event => {
     event.preventDefault();
     const parent = S.trail.length ? S.trail[S.trail.length - 1] : parentOf(here);
     const row = parent ? childrenOf(parent) : roots();
-    const at = row.indexOf(here);
-    if (at < 0 || row.length < 2) return;
-    select(row[(at + (event.key === 'ArrowRight' ? 1 : -1) + row.length) % row.length], true, true);
+    const at = row.indexOf(here), by = event.key === 'ArrowRight' ? 1 : -1;
+    if (at >= 0 && row[at + by]) { select(row[at + by], true, true); return; }
+    // past the end of the row: the node drawn nearest beside it that way, whatever its parent, whose row it is in
+    // then; with nothing drawn beyond, round the level of the tree
+    const drawn = besideDrawn(here, by);
+    const beside = drawn ? {next: drawn, parent: parentOf(drawn)} : besideOnLevel(here, parent, by);
+    if (!beside) return;
+    if (S.trail.length && beside.parent) S.trail[S.trail.length - 1] = beside.parent;
+    select(beside.next, true, true);
   }
 });
 
@@ -2520,7 +2715,7 @@ function select(id, fly, keepTrail = false, stepping = false, again = false) {
   showSteps();
   S.selected = id;
   setReach(id);
-  if (!known) { S.neighbors = new Set(); focus2D(id, fly); if (!again) showTab('object'); renderThing(thing); return; }
+  if (!known) { S.neighbors = new Set(); focus2D(id); if (!again) showTab('object'); renderThing(thing); return; }
   S.neighbors = MEM.key ? new Set([id, ...(MEM.network?.relations || []).flatMap(relation =>
       relation.from === id ? [relation.to] : relation.to === id ? [relation.from] : [])])
     : subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
@@ -2532,7 +2727,7 @@ function select(id, fly, keepTrail = false, stepping = false, again = false) {
     const node = G.graphData().nodes.find(item => item.id === id);
     if (fly && node) fly3d(id);
   }
-  focus2D(id, fly);
+  focus2D(id);
   if (!again) showTab('object');
   // The panel's reads are returned, so a load waits for them before it says it is loaded.
   return MEM.key ? renderMemories(id) : subtype ? renderSubtype(subtype) : join ? renderJoin(join) : renderObject(id);
@@ -2569,7 +2764,12 @@ function asked(record, metaform = S.metaform) {
     h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.closed ? 'answered' : 'open'),
       record.by ? h('span', {class: 'pill'}, record.by) : null),
     h('p', {class: 'asked'}, record.text || ''),
-    record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, typed]);
+    record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, typed],
+    // Answered by mistake: Reopen clears the answer and the question waits again with its suggestions, MAP-050.
+    record.closed ? h('button', {class: 'reopen', onclick: async event => {
+      event.target.disabled = true;
+      if (!await wrote('/api/reopen', {id: record.message_id, metaform})) event.target.disabled = false;
+    }}, 'Reopen') : null);
 }
 /* The messages of a node, VIEW-030: what agents say to the user there. A question waits for an answer and a note
  * waits to be read. */
@@ -2665,12 +2865,21 @@ function taskWords(text) {  // a node named inline, [[name|address]], shown as i
   parts.push(text.slice(at));
   return parts;
 }
-function card(ticket) {
+function card(ticket, place, total) {
   const steps = ticket.steps || 0, filed = ticket.steps_done || 0;
+  const move = async position => {
+    if (await wrote('/api/move', {work_id: ticket.work_id, column: columnOf(ticket), position})) await renderBoard();
+  };
+  // its agent's glyph, VIEW-040: its own, or while its agent is at work the one its figure is drawn as
+  const glyph = ownGlyph(ticket) || ROAM.figures.get(ticket.work_id)?.glyph;
   const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.work_id, 'data-kind': ticket.condition || 'none',
     onclick: () => { const element = partAt(ticket.address); if (element) { select(element.element_id, true); history(element.element_id); } }},
-    h('div', {class: 'top'}, h('span', {class: 'kind'}, ticket.condition || 'unsorted'),
-      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null, h('span', {class: 'age'}, ago(ticket.created))),
+    h('div', {class: 'top'}, glyph ? h('img', {class: 'glyph', src: `/page/agent-glyphs/${glyph}.svg`, alt: glyph,
+      title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
+      h('span', {class: 'kind'}, ticket.condition || 'unsorted'),
+      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
+      h('span', {class: 'age', title: ticket.done ? 'Since completion' : ticket.taken ? 'Since taken' : 'Since opened'},
+        ago(ticket.done || ticket.taken || ticket.created))),
     h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
     h('div', {class: 'nodes'}, nodeChip({kind: ticket.kind, id: ticket.id, address: ticket.address,
       ends: [ticket.receiver_address, ticket.provider_address]}, 'assigned'),
@@ -2678,6 +2887,12 @@ function card(ticket) {
     steps || filed ? h('div', {class: 'progress'}, h('span', {style: {width: `${Math.min(100, 100 * filed / Math.max(steps, filed, 1))}%`}}),
       h('small', {}, `${filed}/${steps || filed}`)) : null,
     ticket.resolution ? h('div', {class: 'resolution'}, ticket.resolution) : null,
+    h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
+      [['Top', 'Move to top', 0, place === 0], ['Up', 'Move up', place - 1, place === 0],
+        ['Down', 'Move down', place + 1, place === total - 1]].map(([text, label, position, disabled]) =>
+        h('button', {title: label, 'aria-label': label, disabled, onclick: event => {
+          event.stopPropagation(); move(position);
+        }}, text))),
     waiting(ticket) ? h('button', {class: 'start', title: 'Start an agent on this ticket', onclick: event => {
       event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null);
   box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.work_id); box.classList.add('dragging'); });
@@ -2695,7 +2910,7 @@ function drawBoard() {
     onclick: () => { B.off.has(kind) ? B.off.delete(kind) : B.off.add(kind); drawBoard(); }}, kind === 'none' ? 'unsorted' : kind)));
   fill($('#board .columns'), BOARD.map(([column, title]) => {
     const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(order);
-    const cards = h('div', {class: 'cards'}, tickets.map(card));
+    const cards = h('div', {class: 'cards'}, tickets.map((ticket, place) => card(ticket, place, tickets.length)));
     cards.addEventListener('dragover', event => { event.preventDefault(); cards.classList.add('over'); });
     cards.addEventListener('dragleave', () => cards.classList.remove('over'));
     cards.addEventListener('drop', async event => {
@@ -2719,6 +2934,10 @@ async function renderBoard() {
 $('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); $('#board .search').focus(); };
 $('#board .close').onclick = () => { $('#board').hidden = true; };
 $('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
+/* Distribute, VIEW-040: the tickets not done and not taken are given the glyphs of N agents, in turn. */
+$('#board .distribute button').onclick = async () => {
+  if (await wrote('/api/distribute', {agents: Number($('#board .distribute input').value)})) await renderBoard();
+};
 $('#board .add').onclick = () => {
   const first = S.selected && S.elements.has(S.selected) ? S.selected : [...S.elements.keys()][0];
   if (first) giveWork(first); else toast('Add a card once the project has a map.');
@@ -2729,20 +2948,31 @@ const columnOf = ticket => ticket.done ? 'done' : ticket.taken ? 'doing' : ticke
 const when = text => (text || '').replace('T', ' ').replace('Z', '');
 async function ticketsOf(id) { return (await read('work', {node: targetOf(id), limit: 0})).results || []; }
 async function history(id) {
-  let tickets;
+  let tickets, dispatched = [];
   try { tickets = await ticketsOf(id); } catch (error) { toast(error.message); return; }
+  try { dispatched = (await read('dispatch-sessions')).sessions || []; } catch (error) { toast(error.message); }
   Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
   $('#float .title').textContent = `Work history · ${calledOf(id)}`;
   fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => h('div', {class: 'ticket'},
     h('div', {class: 'head'}, h('span', {class: `kind kind-${ticket.condition}`}, ticket.condition || 'ticket'),
       h('span', {class: 'column'}, COLUMN_NAMES[columnOf(ticket)]),
-      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null),
+      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
+      ticket.done || ticket.taken ? h('span', {class: 'age', title: ticket.done ? 'Since completion' : 'Since taken'},
+        ago(ticket.done || ticket.taken)) : null),
     ticket.task ? h('p', {class: 'task'}, ticket.task) : null,
     ticket.note ? h('p', {class: 'note'}, ticket.note) : null,
     h('div', {class: 'when'}, `opened ${when(ticket.created)}`, ticket.taken ? ` · taken ${when(ticket.taken)}` : '',
       ticket.done ? ` · done ${when(ticket.done)}` : ''),
     (ticket.said || []).length ? h('ol', {class: 'steps'}, ticket.said.map(step => h('li', {}, step.said || ''))) : null,
-    ticket.resolution ? h('p', {class: 'resolution'}, ticket.resolution) : null))
+    ticket.resolution ? h('p', {class: 'resolution'}, ticket.resolution) : null,
+    // each agent sent to work it, and its session's log, VIEW-036 and VIEW-039
+    ...dispatched.filter(one => one.work_id === ticket.work_id).map(one => h('div', {class: 'dispatch'},
+      h('span', {}, `${agentName(one.agent)} sent ${when(one.started)} · `
+        + (one.state === 'running' ? 'working' : `ended${one.how ? `, ${one.how}` : ''}`)),
+      h('button', {class: 'log', title: "The session's whole thread", onclick: async () => {
+        await renderAgents();
+        agentAt(one.work_id, one.session_id);
+      }}, 'Open log')))))
     : h('p', {class: 'empty'}, 'No work here yet.'));
   $('#float').hidden = false;
 }
@@ -2782,7 +3012,7 @@ async function wrote(path, given) {
     body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})});
   const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
   if (!response.ok) toast(body.error || 'It was not written.');
-  return response.ok;
+  return response.ok ? body : null;
 }
 /* A floating window is moved by its title. */
 function movable(box) {
@@ -2804,17 +3034,28 @@ function movable(box) {
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
 const AGENT_NAMES = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};  // as the dispatch module names them
 const DOING = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user_message_chunk: 'was told',
-  tool_call: 'ran', tool_call_update: 'ran', plan: 'plan', turn: 'turn', failed: 'failed'};
-const D = {sessions: [], notes: [], work: null, drawn: new Map()};
+  tool_call: 'ran', tool_call_update: 'ran', plan: 'plan', turn: 'turn', failed: 'failed', person: 'you', approved: 'approved'};
+/* How each line of an agent's thread reads: what it says, what it thinks, what it runs, and what the person said. */
+const THREAD = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user_message_chunk: 'told', tool_call: 'tool',
+  tool_call_update: 'tool', plan: 'plan', turn: 'turn', failed: 'failed', person: 'you'};
+const D = {sessions: [], notes: [], work: null, session: null, drawn: new Map()};
 const waiting = ticket => !ticket.done && !ticket.taken;  // a ticket an agent can be started on
-const held = item => item.extra || {};
 const ticketOf = workId => (S.tickets || []).find(ticket => ticket.work_id === workId);
 function ticketPart(ticket) {
   const element = ticket?.address ? partAt(ticket.address) : null;
   return element ? named(element) : ticket ? calledOf(ticketNode(ticket)) : 'its ticket';
 }
-const glyphOf = workId => `/page/agent-glyphs/${drawGlyph(workId)}.svg`;  // the character its 3D figure is, VIEW-035
+// a ticket's own glyph, VIEW-040: the map module keeps it and the work read shows it under `map`, BASE-035
+const ownGlyph = ticket => ticket?.map?.glyph;
+// the character its 3D figure is, VIEW-035: the ticket's own glyph when it is assigned one, VIEW-040
+const glyphFor = workId => drawGlyph(workId, ownGlyph(ticketOf(workId)));
+const glyphOf = workId => `/page/agent-glyphs/${glyphFor(workId)}.svg`;
 const agentName = agent => AGENT_NAMES[agent] || agent || 'An agent';
+async function startAgent(workId, agent) {
+  if (!await wrote('/api/dispatch-start', {work_id: workId, agent})) return false;
+  toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed once its session is made.`);
+  return true;
+}
 /* The window an agent is started from: the tickets, and the agent chosen once for the window. */
 function startWindow(title, tickets) {
   $('#dispatch .title').textContent = title;
@@ -2823,9 +3064,8 @@ function startWindow(title, tickets) {
     h('button', {class: 'start', title: 'Start the agent chosen above on this ticket', onclick: async event => {
       const agent = $('#dispatch select.agent').value;
       event.target.disabled = true;
-      if (await wrote('/api/dispatch-start', {work_id: ticket.work_id, agent})) {
+      if (await startAgent(ticket.work_id, agent)) {
         $('#dispatch').hidden = true;
-        toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed once its session is made.`);
       } else event.target.disabled = false;
     }}, 'Start'),
     h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
@@ -2833,27 +3073,30 @@ function startWindow(title, tickets) {
 }
 $('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; };
 movable($('#dispatch'));
-/* The agent deployed box: each agent running in the project, its flat icon and in words what it is. */
+/* The agents key: each agent working in the project now, with its flat icon and in words what it is; a click opens its
+ * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
+ * Sessions are the dispatch module's own tables, never the map. */
 async function renderAgents() {
-  let items = [];
-  // There is no dispatch layer until an agent first starts, and a read expected to find nothing is not made.
-  if (!noMetaform() && S.layers.some(layer => layer.name === 'dispatch')) {
-    try { items = (await read('layer-items', {layer: 'dispatch', limit: 0})).results || []; }
+  let found = {sessions: []};
+  if (!noMetaform()) {
+    try { found = await read('dispatch-sessions', {thread: 'false'}); }  // the threads are read for the open window only
     catch (error) { toast(error.message); }
   }
-  D.sessions = items.filter(item => held(item).dispatch === 'session');
-  D.notes = items.filter(item => held(item).dispatch === 'note');
-  const running = D.sessions.filter(item => held(item).state === 'running');
-  fill($('#agents .list'), running.map(item => {
-    const {work_id: workId, agent} = held(item);
-    return h('button', {class: 'agent', 'data-id': workId, title: String(item.value || ''), onclick: () => agentAt(workId)},
-      h('img', {src: glyphOf(workId), alt: drawGlyph(workId)}), h('b', {}, agentName(agent)),
-      h('small', {}, `on ${ticketPart(ticketOf(workId))}`));
-  }));
-  $('#agents').hidden = !running.length;
+  D.sessions = found.sessions || [];
+  // at work: a live session whose ticket is not done, so an agent idling after its ticket closed is not listed
+  const working = D.sessions.filter(one => one.state === 'running' && !ticketOf(one.work_id)?.done);
+  fill($('#agents .list'), working.map(one => h('button', {
+    class: `agent ${one.state === 'running' ? 'working' : 'ended'}`, 'data-id': one.work_id, 'data-session': one.session_id,
+    title: `${agentName(one.agent)} on work ${one.work_id}: ${one.state === 'running' ? 'working' : `ended, ${one.how || ''}`}`,
+    onclick: () => agentAt(one.work_id, one.session_id)},
+    h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
+    h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · ${one.state === 'running' ? 'working' : 'ended'}`))));
+  $('#agents').hidden = !working.length;
+  figures(S.tickets || []);  // the map's figures follow the same sessions
   if (D.work) await drawAgent();
 }
-function agentAt(workId) {
+function agentAt(workId, sessionId = null) {
+  D.session = sessionId;
   if (D.work !== workId) { $('#agent .say').value = ''; D.drawn = new Map(); }
   D.work = workId;
   $('#agent').hidden = false;
@@ -2863,15 +3106,24 @@ function agentAt(workId) {
  * question is, VIEW-021, a message to send it, and Stop. The text being written is part of the page and is never
  * drawn again, so a map change keeps it, VIEW-018. */
 async function drawAgent() {
-  const work = D.work, session = D.sessions.filter(item => held(item).work_id === work).at(-1);
-  const {agent, session_id: sessionId, state} = session ? held(session) : {};
+  const work = D.work;
+  const session = D.sessions.filter(one => one.work_id === work && (!D.session || one.session_id === D.session)).at(-1);
+  const {agent, session_id: sessionId, state} = session || {};
   const ticket = ticketOf(work);
   $('#agent .icon').src = glyphOf(work);
-  $('#agent .icon').alt = drawGlyph(work);
+  $('#agent .icon').alt = glyphFor(work);
   $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)}${state && state !== 'running' ? ' · ended' : ''}`;
   $('#agent .task').textContent = ticket ? ticket.task || ticket.note || '' : '';
-  fill($('#agent .activity'), D.notes.filter(item => held(item).work_id === work && (!sessionId || held(item).session_id === sessionId))
-    .map(item => h('li', {}, h('small', {}, DOING[held(item).update] || held(item).update || ''), String(item.value ?? ''))));
+  // A chat: newest at the bottom, kept in view while the person is reading the end of it, VIEW-039.
+  try { D.notes = (await read('dispatch-sessions', {id: work})).lines || []; }
+  catch (error) { toast(error.message); }
+  if (D.work !== work) return;
+  const thread = $('#agent .activity');
+  const following = !thread.childElementCount || thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
+  fill(thread, D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId))
+    .map(line => h('li', {class: THREAD[line.kind] || 'note'},
+      h('small', {}, DOING[line.kind] || line.kind || ''), String(line.text ?? ''))));
+  if (following) thread.scrollTop = thread.scrollHeight;
   let open = [];
   if (ticket && sessionId) {
     try { open = (await messagesOf(ticketNode(ticket))).unread.filter(record => record.kind === 'question' && record.by === `${agent} ${sessionId}`); }
@@ -2890,6 +3142,9 @@ $('#agent .send').onclick = async () => {
   if (await wrote('/api/dispatch-message', {work_id: D.work, text})) { $('#agent .say').value = ''; toast('Sent to the agent.'); }
   $('#agent .send').disabled = false;
 };
+$('#agent .say').addEventListener('keydown', event => {  // Enter sends, Shift+Enter starts a new line
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#agent .send').click(); }
+});
 $('#agent .stop').onclick = async () => {
   $('#agent .stop').disabled = true;
   if (await wrote('/api/dispatch-stop', {work_id: D.work})) toast('The agent was stopped.');
@@ -2915,6 +3170,7 @@ function giveWork(id) {
   if (!element) { toast('Work is given at an element.'); return; }
   Object.assign(K, {nodes: [element.address], chosen: null, at: null});
   $('#task .backlog').checked = false;
+  $('#task .start-agent').checked = false;
   $('#task .title').textContent = `Add Task · ${named(element)}`;
   $('#task .text').replaceChildren();
   $('#task .browser input').value = '';
@@ -3057,8 +3313,10 @@ $('#task .put').onclick = async () => {
   const inline = [...$('#task .text').querySelectorAll('[data-address]')].map(node => node.dataset.address);
   const all = [...new Set([...K.nodes, ...inline])].filter(address => partOf(address));
   const nodes = all.map(address => `element:${partOf(address).element_id}`);
-  if (await wrote('/api/task', {task, nodes, condition: $('#task .condition').value, held: $('#task .backlog').checked})) {
+  const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value, held: $('#task .backlog').checked});
+  if (written) {
     $('#task').hidden = true;
+    if ($('#task .start-agent').checked) await startAgent(written.results[0].work_id, $('#task select.agent').value);
     renderBoard();
   }
 };
@@ -3130,6 +3388,7 @@ $('#element .add').onclick = async () => {
   if (!response.ok) { toast(body.error || 'The element was not written.'); return; }
   for (const notice of body.notices || []) toast(notice.message);
   $('#element').hidden = true;
+  if (given.validate) await startAgent(body.work.work_id, $('#element select.agent').value);
   // What a person adds is shown: where the layers in view are chosen by name, the layer of what is added by hand
   // is put among them.
   S.layers = (await read('layers', {limit: 0})).results;
@@ -3308,7 +3567,7 @@ async function renderProv() {
 }
 
 /* ---------- prompts: edited in a real editor, saved as a new version, VIEW-013 ---------- */
-const P = {editor: null, name: null, number: null, versions: []};
+const P = {editor: null, name: null, number: null, versions: [], asked: 0};
 async function getJson(path) {
   const response = await fetch(path, {headers: {Accept: 'application/json'}});
   const body = await response.json().catch(() => ({}));
@@ -3316,13 +3575,20 @@ async function getJson(path) {
   return body;
 }
 async function renderPrompt(name = P.name, number = P.number) {
+  // only the last one asked for is shown: opening a layer's prompt asks twice, and an earlier read coming back after
+  // the person has typed would put the stored text back
+  const asked = ++P.asked;
   const listed = (await getJson('/api/prompts')).prompts;
+  if (asked !== P.asked) return;
   if (!listed.length) {
     $('#promptNote').textContent = 'No stored prompts yet. The intake stores its prompt the first time it is served.';
     return;
   }
-  P.name = listed.some(item => item.name === name) ? name : listed[0].name;
-  P.versions = (await getJson(`/api/prompt-versions?name=${encodeURIComponent(P.name)}`)).versions;
+  const chosen = listed.some(item => item.name === name) ? name : listed[0].name;
+  const versions = (await getJson(`/api/prompt-versions?name=${encodeURIComponent(chosen)}`)).versions;
+  if (asked !== P.asked) return;
+  P.name = chosen;
+  P.versions = versions;
   P.number = P.versions.some(item => item.number === number) ? number : P.versions[0].number;
   fill($('#promptSel'), listed.map(item => h('option', {value: item.name, selected: item.name === P.name}, item.name)));
   fill($('#verSel'), P.versions.map(item => h('option', {value: String(item.number), selected: item.number === P.number},
@@ -3441,6 +3707,7 @@ async function recordingNow() {
  * selection. */
 async function changed(event) {
   if (event.topic !== 'map.changed' || event.payload?.project !== S.project) return;
+  if (event.payload.tables === 'dispatch') return agentsChanged();  // a line of an agent's thread changes no map
   if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
   try {
@@ -3460,6 +3727,16 @@ async function changed(event) {
       await renderBoard();
     } while (LIVE.again);
   } catch (error) { toast(error.message); } finally { LIVE.busy = false; LIVE.done++; }
+}
+/* A line an agent wrote, or its session begun or ended: the agents key and the open agent window are read again,
+ * once for however many lines came while they were read. */
+const AGENTS = {busy: false, again: false};
+async function agentsChanged() {
+  if (AGENTS.busy) { AGENTS.again = true; return; }
+  AGENTS.busy = true;
+  try {
+    do { AGENTS.again = false; await renderAgents(); } while (AGENTS.again);
+  } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }
 }
 function listen() {
   const source = new EventSource('/api/events');

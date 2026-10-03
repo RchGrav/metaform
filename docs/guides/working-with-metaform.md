@@ -39,6 +39,14 @@ metaform unset --modules
 
 Use `metaform enable <module>` and `metaform disable <module>` to change module state. The [extension guide](extending-metaform.md) explains the distinction.
 
+An alias gives two or more modules one name at the top menu. `metaform <name>` then lists the commands of each module it stands for, and they run by their module's name. It holds in the folder it is defined for and every folder below it; `folder=<path>` defines it for a worker's folder:
+
+```sh
+metaform alias mapping map memory
+metaform mapping
+metaform alias mapping map memory folder=~/wt/job1
+```
+
 ## Find the functionality, then examine its relationships
 
 Start with the represented elements rather than guessing a source directory:
@@ -80,7 +88,7 @@ metaform map subtypes <join_id>
 metaform map where code.loop.tick
 ```
 
-The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the purpose join, naming the element it holds, and that element stays one ordinary element record. The tick loop, `code.loop.tick`, is held only by the ticker subtype join, so it is no root and no node of the outer map; `where` at its address returns the element with its subtype join and the join holding it. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
+The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the require join, naming the element it holds, and that element stays one ordinary element record. The tick loop, `code.loop.tick`, is held only by the ticker subtype join, so it is no root and no node of the outer map; `where` at its address returns the element with its subtype join and the join holding it. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
 
 Use `map links <node>` for items that link to a node, and `map citing <key> <value>` for references such as an exact source path, for example `metaform map citing path src/tick.c`. Node forms are:
 
@@ -230,7 +238,7 @@ metaform map work node=element:code.alarm.audible
 metaform map work op=done id=<work_id> resolution="Wired on revision two."
 ```
 
-`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps: `intake element`, `intake join` and `intake subtype` take `condition` and `note`, which write an open work record at what was just recorded. a critic with its findings, and any agent at any time.
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. At an element, the list holds its own records and those on the joins it receives or provides, subtype joins included. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps: `intake element`, `intake add_requirement` and `intake subtype` take `condition` and `note`, which write an open work record at what was just recorded. a critic with its findings, and any agent at any time.
 
 ## Refine the metaform
 
@@ -239,20 +247,20 @@ The metaform is the metaform: it does not stack new layers or new colors each ti
 A refinement changes or removes one thing of the metaform and records why. No layer is named:
 
 ```text
-metaform map knowledge op=refine id=<id> <field>=<value> reason="<why it changes>" evidence="<what shows it>"
-metaform map knowledge op=refine id=<id> remove=true reason="<why it goes>"
+metaform map refine id=<id> <field>=<value> reason="<why it changes>" evidence="<what shows it>"
+metaform map refine id=<id> remove=true reason="<why it goes>"
 metaform map history <id>
 ```
 
 `evidence` is optional. Replace the angle-bracket fields with the actual id and reasoning. Each refinement writes a new version of the thing in the `intake` layer and keeps every earlier version, so the reason for each change stays with it. `metaform map history <id>` reads every version in the order it was written. A removal also keeps its versions. It leaves what pointed at the removed thing orphaned and names each in its result.
 
-A finished intake also takes additions directly: `op=add-element`, `op=add-join`, `op=add-subtype` and the other add operations with `layer=intake`. Use them to expand the metaform, and `op=refine` to change what is already there.
+A finished intake also takes additions directly: `op=add-element`, `op=add-join`, `op=add-subtype` and the other add operations with `layer=intake`. Use them to expand the metaform, and `map refine` to change what is already there.
 
-An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `op=refine` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
+An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `map refine` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
 
 A knowledge layer built on what a refinement changed is marked for re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither a refinement nor marking a layer re-examined performs the reasoning.
 
-`op=edit` and `op=refine` read `ef` but not `verb`: a value given for `verb` is named in a notice and ignored, so a join's verb cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `refine` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the omission.
+`op=edit` and `map refine` read `ef` but not `verb`: a value given for `verb` is named in a notice and ignored, so a join's verb cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `refine` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the omission.
 
 ## Use prompting and criticism without changing the assignment
 
@@ -332,8 +340,6 @@ metaform import kitchen-export.json kitchen
 ```
 
 Exchange preserves IDs and adds missing records. It does not overwrite an existing identity with a later copy of the same ID. A Metaform already owned by another project in the same home is not duplicated into a second owner; the import reports that condition. A document written at another schema version is refused with the version it has and the one this Metaform supports. This is exchange of retained representation, not Canonical Intake recording.
-
-Direct-wheel work can be pulled into the normal home with `metaform import wheel=metaform-0.1.0`. Pulled Metaforms receive distinguishable names and are not made active automatically.
 
 ### Keep artifact variants as well as the map
 

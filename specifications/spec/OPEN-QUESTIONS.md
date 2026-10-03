@@ -21,18 +21,14 @@ Recommendation: it arrives with an open `tbd` record carrying the critic's task,
 
 **D90. The voice of the fields.** The fields are written with third-person singular present-tense active verbs ending in -s or -es, so each reads as a sentence after the element's name, and the intake agent writes, for each element, a concise statement that continues from its name, MAP-020. The Canonical Intake applies the voice to the relation and the verb. Which other fields follow it? Which element's name does each field continue from, the receiver's or the provider's? And where is an element's statement kept, now that an element holds only its address, name_length and role, MAP-015? (MAP-015, MAP-020, MAP-040, BASE-039)
 
-**D91. Listed rules and the item flags.** What an agent is handed with a task lists the rules rather than carrying their full text. Does listing replace the `read_first` and `always_show` flags, or do they stay beside it? (LAYER-021, MAP-048)
-
-**D92. Tasks, questions and past work.** Answered in part, Rich 2026-10-01: a task is a ticket, the work record on the node it is assigned to, which links other nodes for reference, keeps its kind while it is worked, and moves across a board's columns, STORE-042 and VIEW-035; agents are told to use Metaform for all task assignment while the `tasks` setting is on, the default. The rest stands: A task is written on every node the work concerns, MAP-048; a work record carries a task, MAP-046; and a knowledge item can be flagged `task`, LAYER-021. Are these one kind of task or several? What holds the orchestrator's task list and its queue, MAP-049, the agent's progress sentence at each node, a question at a node and its answer, MAP-050, and past work with its work log, MAP-051? Can a person submit work directly in the web GUI, as the explanation offered with an intake says, MCP-027, which would be a write beyond VIEW-011's? (MAP-046, MAP-048 to MAP-051, LAYER-021, MCP-027, VIEW-011, VIEW-020, VIEW-021)
-
-**D93. The project module place.** Modules load from ranked places, system, user and project, where the project place holds modules that load only for the active selected project, BASE-014. Metaform writes nothing into a project folder and keeps all data in the home, STORE-001. Does the project place live in the project's own folder, as `.metaform/modules/`, which the person creates, or under the project's data in the home? D25 had recommended no project place, before the place was part of the design. (BASE-014, BASE-037, STORE-001, D25)
+**D92. Tasks, questions and past work.** Answered in part, Rich 2026-10-01: a task is a ticket, the work record on the node it is assigned to, which links other nodes for reference, keeps its kind while it is worked, and moves across a board's columns, STORE-042 and VIEW-035; agents are told to use Metaform for all task assignment while the `tasks` setting is on, the default. Answered in part, Rich 2026-10-03: "A task item is a ticket: writing an item flagged task adds a work record at its node, and the flag is not stored on the item", LAYER-021. The rest stands: A task is written on every node the work concerns, MAP-048; a work record carries a task, MAP-046; and a knowledge item can be flagged `task`, LAYER-021. Are these one kind of task or several? What holds the orchestrator's task list and its queue, MAP-049, the agent's progress sentence at each node, a question at a node and its answer, MAP-050, and past work with its work log, MAP-051? Can a person submit work directly in the web GUI, as the explanation offered with an intake says, MCP-027, which would be a write beyond VIEW-011's? (MAP-046, MAP-048 to MAP-051, LAYER-021, MCP-027, VIEW-011, VIEW-020, VIEW-021)
 
 **D94. The CalVer format.** Versions during development are CalVer, never SemVer, BASE-020. Which format? The package declares `0.2.0` today, and the spec's examples show that form. (BASE-020, BASE-041, BASE-042, CLI-028)
 
 **D95. Which folder's settings the web GUI shows.** A browser has no folder, and one server serves every project. Which folder's settings, such as `--layers`, CLI-033, does the GUI show and change? (VIEW-002, VIEW-004, VIEW-007, section 09 question 5)
 Recommendation: each project's registered folder, shown with its path at the top of the page; built so until answered.
 
-**D96. First-run provisioning.** MCP-028 carries the design of 2026-09-11, which offered provisioning through the menus that nonces keyed, since dropped, MCP-012. The installer of MCP-013 to MCP-021, designed later, sets up the tools it knows. Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? (MCP-028, MCP-013, MCP-016, MCP-021)
+**D96. First-run provisioning.** Answered in part, Rich 2026-10-03: beside the installer. Any metaform command under a harness not in the record prints a notice on stderr: this is Metaform's first run here, read metaform help provision for each feature, MCP registration, skill and hooks, then run metaform provision done. metaform install records the harnesses it sets up, so those never see the notice. The rest stands: the answer left out how Metaform finds the harness it runs under, which the notice needs, and nothing in Metaform defines a hook for a harness to run; both are asked at `code.installer`. The question as first asked: MCP-028 carries the design of 2026-09-11, which offered provisioning through the menus that nonces keyed, since dropped, MCP-012. The installer of MCP-013 to MCP-021, designed later, sets up the tools it knows. Does first-run provisioning for an unfamiliar harness stand beside the installer, and through which commands? (MCP-028, MCP-013, MCP-016, MCP-021)
 
 **D97. mvm's parts the spec does not carry.** The command line follows mvm, CLI-035. mvm has `config <group>`, which opens one group of the settings screen, and `config --wizard`, a guided setup, and its help page has a section on when to use the command and one listing its subcommands, which CLI-029's page does not. Are they wanted? (CLI-035, CLI-026, CLI-029)
 Recommendation: yes, all four, since the design is mvm's and no later decision removed them.
@@ -42,7 +38,7 @@ Recommendation: a file in `specifications/`, beside `code_quality_standards.md`.
 
 **D99. The Canonical Intake's wording.** Its text changes only in Rich's words. It differs from the decided shape in these places: each element carries a `<name/>`, while the project's name for a functionality goes on the join, MAP-020; its response protocol says to remove absorbed subparts recorded as root elements, while the element stays one record, MAP-031; its nested subtype join has no type and no non_goal and carries a provider beside its inline element, MAP-030; its method's steps do not show the call the agent makes for each entry, with the JSON arguments it sends; it does not say that the intake agent writes the condition of an object as a work record, MAP-046, and the recording lines served after it, BASE-039, do not name `map_work`; and the voice of the fields and the element's statement, D90, are not in it. Which wording do you want for each? (MAP-020, MAP-030, MAP-031, MAP-040, MAP-046, BASE-039, D90)
 
-**D100. The install front door.** Installing a wheel goes through an install stage that never downgrades without force, with a backstage check on the first run of an install that went around it, BASE-047. The design writes the front door `python metaform.whl install`, while `install` is the chassis verb that sets up AI tools, MCP-013, and a directly run wheel runs the same command line, BASE-042. What is the front door's command, and what exactly do the stage and the backstage check? (BASE-047, BASE-025, BASE-042, MCP-013)
+**D100. The install front door.** Answered in part, Rich 2026-10-03: when run from a wheel, `install` first runs the stage and then the AI tool setup, MCP-013; an installed copy runs only the setup. The rest stands: Installing a wheel goes through an install stage that never downgrades without force, with a backstage check on the first run of an install that went around it, BASE-047. What exactly do the stage and the backstage check? That includes how the stage puts the wheel in place as the installed Metaform, which on Rich's machine is a uv tool install, how it reads the installed Metaform's version, how force is written on `install`, and what the backstage does when it finds the stage never ran. (BASE-047, BASE-042, MCP-013)
 
 **D101. TRAO-DAG.** Rich's description of 2026-09-26, TRAO-DAG, is the reference the build is measured against. The spec carries its binary Func and Enc state on joins as `ef`, MAP-020, its annealing as subtype joins that keep their own encounter functions under the combined one, MAP-030, and its prompt expansion as preprocessing and the `context` read, LAYER-017 and STORE-035. Two of its parts are not carried: the Func and Enc state on nodes, and bias blind spots computed as Func capabilities minus Enc manifestations, beside the two critic analyses of LAYER-014. Does either belong in the design? (MAP-020, MAP-030, LAYER-014, LAYER-017)
 
@@ -80,10 +76,13 @@ Recommendation: reroute, so the map says once how the receiver is served and the
 **D113. Linking across repositories under upstream.** MAP-014. How does an address under `upstream` link to a node in another registered project's map: by matching the address beneath upstream to that project's own address, by naming the project, or both?
 Recommendation: name the project and match the address, so the link is exact and survives either map being refined.
 
-**D114. How Intake 2.0 receives a project's target.** MAP-041, MAP-043. Intake 2.0 is the served intake, BASE-039, and has no `<target>` element, so nothing fills the project's target. Its TARGET_RESOLUTION takes the target the prompt states, and otherwise this project folder's contexts. When the project's target is not its folder, a url, an artifact, inline content or inferred, MAP-041, how does 2.0 receive it?
-Recommendation: when the person asks for nothing, the server fills `{prompt}` with the project's target when that target is not the project's folder, since 2.0 says its `{Prompt}` is "filled by the server with the stated target or task"; when the person asks for something, their words are served as given. Not built; Rich decides.
-
 ## Answered
+
+**D93. The project module place.** Answered by Rich, 2026-10-03: "In the project folder, as .metaform/modules/, which the person creates; Metaform only reads it, so it still writes nothing there." Built in the loader, BASE-014 and BASE-037. The question was: Modules load from ranked places, system, user and project, where the project place holds modules that load only for the active selected project, BASE-014. Metaform writes nothing into a project folder and keeps all data in the home, STORE-001. Does the project place live in the project's own folder, as `.metaform/modules/`, which the person creates, or under the project's data in the home? D25 had recommended no project place, before the place was part of the design. (BASE-014, BASE-037, STORE-001, D25)
+
+**D91. Listed rules and the item flags.** Answered by Rich, 2026-10-03: "The flags stay beside the listing: a read_first item is read before the task, an always_show item is always shown, and the rules are listed." `read_first` and `always_show` are columns of a knowledge item, STORE-015, and the reads honor them, LAYER-021. The question was: what an agent is handed with a task lists the rules rather than carrying their full text. Does listing replace the `read_first` and `always_show` flags, or do they stay beside it? (LAYER-021, MAP-048)
+
+**D114. How the served intake receives a project's target.** Answered by Rich, 2026-10-03: the orchestrator states the target in the prompt. The question rested on a wrong reading: the intake takes its target from the prompt, through TARGET_RESOLUTION, which sets `{Target}` to the target the prompt states and otherwise to this project folder's contexts. Nothing more is built. Intake 2.1 is the served intake, BASE-039.
 
 **D78. What an element record holds.** Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. The project's own name for a functionality goes on the join, the purpose join and the subtype join alike. The element record is its identity, address, name_length and role; its refs are rows linked to it. MAP-015, STORE-009, MAP-020.
 
@@ -109,9 +108,9 @@ Recommendation: when the person asks for nothing, the server fills `{prompt}` wi
 
 **D9. C(T).** The theory behind how Metaform works. It describes no mechanism and no stored field.
 
-**D26. A directly run wheel's data.** A subfolder of ~/.metaform per wheel name and version.
+**D26. A directly run wheel's data.** The normal data folder, ~/.metaform, the same as the installed copy. Corrected by Rich, 2026-10-03: "A directly run wheel uses the normal data folder, ~/.metaform, the same as the installed copy. Keeping it separate raises how to merge it." BASE-025.
 
-**D27. Installing a wheel.** Its data can be pulled into the main folder, each metaform arriving as its own. Nothing is merged.
+**D27. Installing a wheel.** A directly run wheel's data is already in the main folder, so installing it moves no data. Corrected by Rich, 2026-10-03, BASE-025.
 
 **D59. Mapping a worker's folder.** The orchestrator runs `metaform set --modules workflow,memory folder=<path>` before the worker starts. The setting formerly called `--commands` is `--modules`. This per-folder surface is the closest thing Metaform has to a nonce.
 
@@ -137,8 +136,8 @@ Recommendation: no. A subpart is absorbed only when one parent's join already ca
 **D5. Can a subtype hold subtypes of its own?**
 Recommendation: no, one level. A subtype lives inside a join, not inside an element. This can be relaxed later without breaking stored maps. Since D83 a subtype join's parent is a join held by a receiver; one that names a subtype join cannot be read, and a join absorbed while it holds subtype joins passes them to its new parent, MAP-032.
 
-**D6. Several VEs.** When the intake names more than one VE, is one recorded as primary?
-Recommendation: yes, a primary flag on the VE element, because the VE that drives the most improvement gives the best inference and agents need to know which one it is.
+**D6. Several CQUs.** When the intake names more than one CQU, is one recorded as primary?
+Recommendation: yes, a primary flag on the CQU element, because the CQU that drives the most improvement gives the best inference and agents need to know which one it is.
 
 **D11. A join whose receiver and provider are the same element.**
 Recommendation: no. A join is one receiver's purpose served by a different provider, and a self join is a cycle, which the mesh cannot express.
@@ -186,7 +185,7 @@ Recommendation: dropped. Before 1.0 the contract changes freely and nothing real
 ### Chassis, modules and wheels
 
 **D25. A module place per project (REQ-035).**
-Recommendation: none, since all data is global. Reopened as D93: the project place is part of the design, BASE-014, and where it lives is open.
+Recommendation: none, since all data is global. Reopened as D93: the project place is part of the design, BASE-014, and where it lives is answered there.
 
 **D28. Whether install and uninstall are chassis verbs.**
 Recommendation: chassis verbs. Setup is the first thing a user runs and has to work with no modules enabled. The MCP module supplies the registration entry the installer writes.
@@ -243,7 +242,7 @@ Recommendation: it asks separately and keeps the data by default.
 Recommendation: one shared Type tree, with elements per project. A Type keeps its universal description, and practices attached at a Type apply to every artifact of that Type.
 
 **D48. Roles on elements a non-intake layer creates.** MAP-017 requires a role; STORE-009 allows none.
-Recommendation: no role. DE, SE, NE and VE are the intake's classification of the artifact. An element a memory or challenge layer creates is not part of that classification.
+Recommendation: no role. DE, SE, NE and CQU are the intake's classification of the artifact. An element a memory or challenge layer creates is not part of that classification.
 
 **D50. `metaform abort <workflow> --confirm`.** The chassis does not run workflows.
 Recommendation: abort is the workflow module's verb, and the narrowing message names it as that module's command.
@@ -324,7 +323,7 @@ The trace in TRACE.md found requirements in REQUIREMENTS.md that no section carr
 Recommendation: each gets its own module spec after the first test, built on the template and the common base. This spec covers the chassis, the map and layers, storage, CLI and settings, MCP, the installer and the intake module. Until then those requirements stay in REQUIREMENTS.md as the source for their module specs.
 
 **D45. REQ-066, shared configuration between installed and direct-wheel use.** It says the same state root gives the same configuration, while the confirmed wheel design runs a direct wheel from its own subfolder under ~/.metaform.
-Recommendation: the subfolder design stands. A direct wheel reads and writes only its own subfolder, and the only shared step is the merge when a wheel is installed (D27). REQ-066 is corrected to say that.
+Answered by Rich, 2026-10-03: a directly run wheel uses the normal data folder, the same as the installed copy, so installed and direct-wheel use share one state root and one configuration, as REQ-066 says. BASE-025, STORE-030.
 
 **D46. REQ-087, launching a harness.** It says Metaform supports launching a configured harness as well as running inside one. The confirmed design says Metaform never launches a model, because hosts start agents in different ways.
 Recommendation: Metaform runs only inside the agent's harness. Launching a harness is removed.

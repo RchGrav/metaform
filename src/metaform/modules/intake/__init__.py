@@ -1,16 +1,21 @@
 """intake: the Canonical Intake served by name, recorded one object at a time as it is reasoned, BASE-039.
 
 A subagent reads `intake prompt` and records the map as it works: it starts the
-intake, then records each element, join and subtype join in its own call,
-anneals with `intake absorb`, reads the recorded map back with `intake show`,
-whole or one receiver at a time, corrects it with `intake edit` and
-`intake remove`, and ends with `intake finish`. The intake layer is building
-until then: context reads do not see it, and the web GUI follows it live.
-Every object is named by the key its recording call returned, `element_id` or
-`join_id`, and an element's address is `namespace_address`, as in the
-Canonical Intake. Nothing is refused for its content: what does not fit is
-stored as given and named in a notice, BASE-044. The report and process
-feedback are saved at the finish, BASE-045.
+intake, records each element and each requirement in its own call, a part
+refining a requirement with `intake subtype`, anneals with `intake absorb`,
+reads the recorded map back with `intake show`, whole or one receiver at a
+time, corrects it with `intake edit` and `intake remove`, and ends with
+`intake finish`. The intake layer is building until then: context reads do not
+see it, and the web GUI follows it live.
+
+The agent names what it reasoned, never what the store keeps: an element by its
+namespace_address, a requirement by the element that requires and the element
+that serves it, and a part by its address inside that requirement. The code
+writes them as elements, joins and subtype joins, and no id reaches the agent;
+Rich, 2026-10-02: "joins are a database concept"; "It's, it's just adding a
+fucking requirement. Why even use the word join?" Nothing is refused for its
+content: what does not fit is stored as given and named in a notice, BASE-044.
+The report and process feedback are saved at the finish, BASE-045.
 """
 from __future__ import annotations
 
@@ -32,7 +37,7 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
-RESOURCE = resources.files(__name__) / 'resources' / 'Intake_2.0.md'  # Intake 2.0, the served intake, Rich 2026-10-02
+RESOURCE = resources.files(__name__) / 'resources' / 'Intake_2.1.md'  # Intake 2.1, the served intake, Rich 2026-10-03
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -82,7 +87,7 @@ def served(ctx: Context, asked: str = '') -> str:
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
     # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
-    # project, BASE-039. Intake 2.0 is not XML, so it gets the words exactly as written; an XML intake file, which
+    # project, BASE-039. Intake 2.1 is not XML, so it gets the words exactly as written; an XML intake file, which
     # intake_file can name, gets them escaped as an attribute value is.
     text = text.replace('{prompt}', _escape(asked) if source.name.lower().endswith('.xml') else asked, 1)
     return text
@@ -103,8 +108,9 @@ SUBTYPE_TEXT = ('ef', 'verb')
 ELEMENT_FIELDS = ('name', 'name_length', 'role')  # an element is its address, name_length and role; name, STORE-009
 ADDRESS = 'namespace_address'  # the element's address, named as in the Canonical Intake, MAP-040
 UNMOVED = ("An element cannot be moved: its namespace_address is its identity, and another address is a different "
-           "element, MAP-015. namespace_address was not applied; record the element at the new address with "
-           "element and move its joins to it with edit receiver= or provider=.")
+           "element, MAP-015. to_address was not applied; record the element at the new address with element and "
+           "move its requirements to it with edit to_receiver= or to_provider=.")
+ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 
 class Recording:
@@ -118,10 +124,64 @@ def _stamp() -> str:
     return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
 
 
-def _note(notices: Notices, result: Any) -> None:
-    """A store result's notices, each named by the field it is about; the element's address by its tool name."""
+def _note(notices: Notices, result: Any, words: dict[str, str] | None = None) -> None:
+    """A store result's notices, each named by the field it is about; the element's address by its tool name. An id
+    the store names is said in the agent's words, `words`, as an address or a requirement."""
     for notice in cast(tuple[Notice, ...], getattr(result, 'notices', ()) or ()):
-        notices.append({'where': ADDRESS if notice.where == 'address' else notice.where, 'message': notice.message})
+        message = ID.sub(lambda match: (words or {}).get(match.group(0), match.group(0)), notice.message)
+        where = {'address': ADDRESS, 'join': 'requirement', 'parent': 'requirement'}.get(notice.where, notice.where)
+        notices.append({'where': where, 'message': message})
+
+
+def _said(receiver: Any, provider: Any) -> str:
+    return f'the requirement of {receiver} served by {provider}'
+
+
+def _words(store: Store, layer: Layer | None) -> dict[str, str]:
+    """What the agent calls each thing of the intake being recorded, by the id the store names it with."""
+    if layer is None:
+        return {}
+    graph = store.layer_graph(layer.name)
+    words = {placed.element.element_id: placed.element.address for placed in graph.elements}
+    for held in graph.joins:
+        words[held.join_id] = _said(held.receiver_address, held.provider_address)
+        for item in held.subtypes:
+            words[item.join_id] = f'{item.address} inside {_said(held.receiver_address, held.provider_address)}'
+            words[item.element_id] = str(item.address)
+    return words
+
+
+def _requirement(store: Store, layer: Layer | None, receiver: Any, provider: Any, notices: Notices) -> Join | None:
+    """The one requirement of `receiver` served by `provider`, in the intake being recorded, or in the metaform when
+    none is. Two that the addresses cannot tell apart are both named, with their purposes, and neither is chosen."""
+    owner = store.element(str(receiver), raw=True)
+    found = [] if owner is None else [
+        held for held in store.joins(owner.element_id, raw=True, limit=0).results
+        if held.provider_address == provider and (layer is None or held.layer_id == layer.layer_id)]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        notices.append({'where': 'requirement', 'message': f'{receiver} has no requirement served by {provider}; '
+                                                           'nothing was changed.'})
+    else:
+        purposes = '; '.join(repr(held.purpose) for held in found)
+        notices.append({'where': 'requirement', 'message': f'{receiver} has {len(found)} requirements served by '
+                                                           f'{provider}, which their addresses cannot tell apart, with '
+                                                           f'the purposes {purposes}; nothing was changed.'})
+    return None
+
+
+def _part(store: Store, layer: Layer | None, parent: Join, address: Any, notices: Notices) -> Subtype | None:
+    """The part at `address` inside a requirement."""
+    found = [item for item in store.subtypes(parent.join_id, raw=True, limit=0).results
+             if item.address == address and (layer is None or item.layer_id == layer.layer_id)]
+    if len(found) == 1:
+        return found[0]
+    said = _said(parent.receiver_address, parent.provider_address)
+    notices.append({'where': ADDRESS, 'message': f'{said} holds {"no" if not found else len(found)} '
+                                                 f'{"part" if len(found) <= 1 else "parts"} at {address}; nothing '
+                                                 'was changed.'})
+    return None
 
 
 def _text(ctx: Context, name: str, notices: Notices) -> str | None:
@@ -291,7 +351,7 @@ def element(ctx: Context) -> Any:
     address = ctx.nouns[ADDRESS]
     made = _describe(rec, address, given, refs, extra, notices)
     _condition(ctx, rec, 'element', made, notices)
-    return {'element_id': made, ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
+    return {ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
 
 
 def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], thing: str | None,
@@ -309,8 +369,9 @@ def _missing(ctx: Context, names: tuple[str, ...], notices: Notices) -> None:
             notices.append({'where': name, 'message': f'{name} is missing; stored empty.'})
 
 
-def join(ctx: Context) -> Any:
-    """Record one join: the receiver's purpose served by the provider's encounter function."""
+def add_requirement(ctx: Context) -> Any:
+    """Add one requirement: the receiver's purpose served by the provider's encounter function. The code writes it as
+    a join of type require held by the receiver, MAP-020."""
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
@@ -318,50 +379,73 @@ def join(ctx: Context) -> Any:
     receiver, provider = ctx.nouns['receiver'], ctx.nouns['provider']
     made = rec.store.add_join(rec.layer.name, receiver, provider,
                               **{name: ctx.nouns.get(name) for name in ('name', *JOIN_TEXT, 'non_goal')},
-                              type=ctx.nouns.get('type') or 'purpose', refs=refs or (), extra=extra,
-                              ifd=ctx.nouns.get('ifd'))
-    _note(notices, made)
+                              refs=refs or (), extra=extra, ifd=ctx.nouns.get('ifd'))
+    _note(notices, made, _words(rec.store, rec.layer))
     _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
-    return {'join_id': getattr(made, 'join_id', None), 'receiver': receiver, 'provider': provider,
-            'layer': rec.layer.name, 'notices': notices}
+    return {'receiver': receiver, 'provider': provider, 'layer': rec.layer.name, 'notices': notices}
 
 
 def subtype(ctx: Context) -> Any:
-    """Record one subtype join inside its parent join, holding an element recorded or described as intake element
-    does: the absorbed part stays one element record, MAP-030."""
+    """Record one part inside a requirement, named by its receiver and provider, holding an element recorded or
+    described as intake element does: the part stays one element record, MAP-030. The code writes it as a subtype
+    join in that requirement's join."""
     notices: Notices = []
     rec = _recording(ctx, notices)
     refs, extra = _refs_and_extra(ctx, notices)
+    receiver, provider, address = ctx.nouns['parent_receiver'], ctx.nouns['parent_provider'], ctx.nouns[ADDRESS]
+    result = {'parent_receiver': receiver, 'parent_provider': provider, ADDRESS: address, 'layer': rec.layer.name,
+              'notices': notices}
+    parent = _requirement(rec.store, rec.layer, receiver, provider, notices)
+    if parent is None:
+        return result
     _missing(ctx, (*SUBTYPE_TEXT, 'ifd'), notices)
-    address = ctx.nouns[ADDRESS]
     described = {'role': ctx.nouns.get('role'), 'name_length': _whole(ctx.nouns.get('name_length')),
                  'name': ctx.nouns.get('name')}
     element_id = _describe(rec, address, described, None, None, notices)
-    made = rec.store.add_subtype(rec.layer.name, ctx.nouns['into'], element_id or address,
+    made = rec.store.add_subtype(rec.layer.name, parent.join_id, element_id or address,
                                  **{name: ctx.nouns.get(name) for name in (*SUBTYPE_TEXT, 'non_goal', 'name',
                                                                            'purpose')},
                                  refs=refs or (), extra=extra, ifd=ctx.nouns.get('ifd'))
-    _note(notices, made)
+    _note(notices, made, _words(rec.store, rec.layer))
     _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
-    return {'join_id': getattr(made, 'join_id', None), 'parent': ctx.nouns['into'], 'element_id': element_id,
-            ADDRESS: address, 'layer': rec.layer.name, 'notices': notices}
+    return result
+
+
+def _target(store: Store) -> tuple[Recording | None, Store, Layer | None]:
+    """The intake being recorded and its store, or the project's store when none is."""
+    found = _building(store)
+    return found, (found.store if found is not None else store), (found.layer if found is not None else None)
+
+
+FINISHED = ('The intake is finished, so nothing was changed. The metaform changes by refining, with metaform map '
+            'refine, which keeps every version, LAYER-025.')
+
+
+def _finished(store: Store, found: Recording | None, named: dict[str, Any]) -> dict[str, Any] | None:
+    """What edit, remove and absorb return once no intake is being recorded: they change nothing."""
+    if found is not None:
+        return None
+    said = FINISHED if store.has_intake() else NOTHING
+    return {**named, 'layer': None, 'notices': [{'where': 'intake', 'message': said}]}
 
 
 def absorb(ctx: Context) -> Any:
-    """Make a recorded join a subtype join inside its parent's purpose join, keeping every field, its purpose among
-    them; any other join that still names the element is named and left as it is, MAP-030."""
-    store = ctx.require_store()
+    """Make a recorded requirement a part inside its parent's requirement, keeping every field, its purpose among
+    them; any other requirement that still names the element is named and left as it is, MAP-030."""
+    found, target, layer = _target(ctx.require_store())
+    nouns = ctx.nouns
+    done = _finished(target, found, {key: nouns[key] for key in ('receiver', 'provider', 'parent_receiver', 'parent_provider')})
+    if done is not None:
+        return done
     notices: Notices = []
-    found = _building(store)
-    target = found.store if found is not None else store
-    moved = target.edit(ctx.nouns['join'], {'parent': ctx.nouns['into']})
-    _note(notices, moved)
-    fields = cast(dict[str, Any], getattr(moved, 'fields', {}))
-    element_id = fields.get('provider')
-    held = target.element(str(element_id), raw=True) if element_id else None
-    return {'join_id': ctx.nouns['join'], 'parent': fields.get('parent'), 'element_id': element_id,
-            ADDRESS: held.address if held is not None else None,
-            'layer': found.layer.name if found is not None else None, 'notices': notices}
+    words = _words(target, layer)
+    held = _requirement(target, layer, nouns['receiver'], nouns['provider'], notices)
+    parent = _requirement(target, layer, nouns['parent_receiver'], nouns['parent_provider'], notices)
+    if held is not None and parent is not None:
+        _note(notices, target.edit(held.join_id, {'parent': parent.join_id}), words)
+    return {'receiver': nouns['receiver'], 'provider': nouns['provider'], 'parent_receiver': nouns['parent_receiver'],
+            'parent_provider': nouns['parent_provider'], 'layer': layer.name if layer is not None else None,
+            'notices': notices}
 
 
 def _refs(found: Any) -> list[dict[str, str]]:
@@ -369,28 +453,28 @@ def _refs(found: Any) -> list[dict[str, str]]:
 
 
 def _element_entry(found: Element) -> dict[str, Any]:
-    return {'element_id': found.element_id, ADDRESS: found.address, 'short_name': found.short_name,
-            'name_length': found.name_length, 'name': found.name, 'role': found.role, 'refs': _refs(found.refs),
-            'extra': found.extra}
+    return {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
+            'name': found.name, 'role': found.role, 'refs': _refs(found.refs), 'extra': found.extra}
 
 
 def _subtype_entry(item: Subtype) -> dict[str, Any]:
-    return {'join_id': item.join_id, 'parent': item.parent, 'element_id': item.element_id, ADDRESS: item.address,
-            'short_name': item.short_name, 'role': item.role, 'name_length': item.name_length, 'name': item.name,
-            'element_name': item.element_name, 'purpose': item.purpose, 'ifd': item.ifd,
+    return {ADDRESS: item.address, 'short_name': item.short_name, 'role': item.role, 'name_length': item.name_length,
+            'name': item.name, 'element_name': item.element_name, 'purpose': item.purpose, 'ifd': item.ifd,
             **{name: getattr(item, name) for name in (*SUBTYPE_TEXT, 'non_goal')}, 'refs': _refs(item.refs),
             'extra': item.extra}
 
 
-def _join_entry(held: Join, inside: tuple[Subtype, ...]) -> dict[str, Any]:
-    return {'join_id': held.join_id, 'receiver': held.receiver_address, 'provider': held.provider_address,
-            'type': held.type, 'name': held.name, **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')},
-            'ifd': held.ifd,
+def _requirement_entry(held: Join, inside: tuple[Subtype, ...]) -> dict[str, Any]:
+    return {'receiver': held.receiver_address, 'provider': held.provider_address, 'name': held.name,
+            **{name: getattr(held, name) for name in (*JOIN_TEXT, 'non_goal')}, 'ifd': held.ifd,
             'refs': _refs(held.refs), 'extra': held.extra, 'subtypes': [_subtype_entry(item) for item in inside]}
 
 
-def _held(store: Store, joins: list[tuple[Join, tuple[Subtype, ...]]], layer: Layer) -> list[Element]:
-    """The elements this intake recorded that its subtype joins hold, each one element record, MAP-030."""
+Held = list[tuple[Join, tuple[Subtype, ...]]]
+
+
+def _held(store: Store, joins: Held, layer: Layer) -> list[Element]:
+    """The elements this intake recorded that its parts hold, each one element record, MAP-030."""
     found: list[Element] = []
     for _, inside in joins:
         for item in inside:
@@ -400,28 +484,36 @@ def _held(store: Store, joins: list[tuple[Join, tuple[Subtype, ...]]], layer: La
     return found
 
 
-def _map(store: Store, elements: list[Element], joins: list[tuple[Join, tuple[Subtype, ...]]],
-         layer: Layer) -> dict[str, Any]:
-    """The recorded map: every element with its element_id, every join with its join_id and the subtype joins it
-    holds, and the addresses never described."""
+def _elements(store: Store, elements: list[Element], joins: Held, layer: Layer) -> list[Element]:
     listed = {found.element_id: found for found in [*elements, *_held(store, joins, layer)]}
-    ordered = sorted(listed.values(), key=lambda found: found.address)
+    return sorted(listed.values(), key=lambda found: found.address)
+
+
+def _map(store: Store, elements: list[Element], joins: Held, layer: Layer) -> dict[str, Any]:
+    """The recorded map in the agent's words: every element by its address, every requirement by its receiver and
+    provider with the parts it holds, and the addresses never described."""
+    ordered = _elements(store, elements, joins, layer)
     return {'elements': [_element_entry(found) for found in ordered],
-            'joins': [_join_entry(held, inside) for held, inside in joins],
+            'requirements': [_requirement_entry(held, inside) for held, inside in joins],
             'undescribed': [found.address for found in ordered if not _described(found)]}
 
 
-def _whole_map(store: Store, layer: Layer) -> dict[str, Any]:
+def _recorded(store: Store, layer: Layer) -> tuple[list[Element], Held]:
     graph: GraphPage = store.layer_graph(layer.name)
-    joins: list[tuple[Join, tuple[Subtype, ...]]] = [(held, held.subtypes) for held in graph.joins]
-    return _map(store, [placed.element for placed in graph.elements], joins, layer)
+    joins: Held = [(held, held.subtypes) for held in graph.joins]
+    return _elements(store, [placed.element for placed in graph.elements], joins, layer), joins
+
+
+def _whole_map(store: Store, layer: Layer) -> dict[str, Any]:
+    elements, joins = _recorded(store, layer)
+    return _map(store, elements, joins, layer)
 
 
 def _receiver_map(store: Store, receiver: str, layer: Layer) -> dict[str, Any]:
-    """One receiver's joins in this intake and what they hold, with the elements they name, BASE-039."""
+    """One receiver's requirements in this intake and what they hold, with the elements they name, BASE-039."""
     owner = store.element(receiver, raw=True)
     if owner is None:
-        return {'elements': [], 'joins': [], 'undescribed': [], 'notices': [{'where': 'receiver', 'message': (
+        return {'elements': [], 'requirements': [], 'undescribed': [], 'notices': [{'where': 'receiver', 'message': (
             f'{receiver} is not an element of this intake; nothing is recorded under it.')}]}
     joins = [(held, tuple(item for item in store.subtypes(held.join_id, raw=True, limit=0).results
                           if item.layer_id == layer.layer_id))
@@ -435,12 +527,12 @@ NOTHING = 'No intake is being recorded. intake start begins one.'
 
 
 def show(ctx: Context) -> Any:
-    """The intake being recorded, whole or one receiver's joins and what they hold: to read back, proof and correct
-    before finishing, without reading the whole map at once."""
+    """The intake being recorded, whole or one receiver's requirements and what they hold: to read back, proof and
+    correct before finishing, without reading the whole map at once."""
     store = ctx.require_store()
     found = _building(store)
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': [], 'joins': [],
+        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': [], 'requirements': [],
                 'undescribed': [], 'notices': [{'where': 'intake', 'message': NOTHING}]}
     receiver = ctx.nouns.get('receiver')
     shown: dict[str, Any] = (_receiver_map(found.store, str(receiver), found.layer) if receiver
@@ -448,18 +540,18 @@ def show(ctx: Context) -> Any:
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, **shown}
 
 
-JOIN_EDITS = ('receiver', 'provider', 'type', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal')
+REQUIREMENT_EDITS = ('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal')
+MOVES = {'to_receiver': 'receiver', 'to_provider': 'provider'}
 
 
 def _edit_element(ctx: Context, found: Recording | None, target: Store, current: Element,
                   refs: list[Any] | None, extra: dict[str, Any] | None, notices: Notices) -> None:
     """Describe a recorded element again; its namespace_address is its identity and never changes, MAP-015."""
-    if ctx.nouns.get(ADDRESS) is not None and ctx.nouns[ADDRESS] != current.address:
-        notices.append({'where': ADDRESS, 'message': UNMOVED})
+    if ctx.nouns.get('to_address') is not None and ctx.nouns['to_address'] != current.address:
+        notices.append({'where': 'to_address', 'message': UNMOVED})
     given = {key: ctx.nouns[key] for key in ELEMENT_FIELDS if ctx.nouns.get(key) is not None}
     if 'name_length' in given:
         given['name_length'] = _whole(given['name_length'])
-    others = {key: ctx.nouns[key] for key in JOIN_EDITS if ctx.nouns.get(key) is not None}
     if found is not None and (given or refs is not None or extra is not None):
         _describe(found, current.address, {**given, 'role': given.get('role')}, refs, extra, notices)
         notices[:] = [notice for notice in notices if not notice['message'].startswith('role is missing')]
@@ -467,64 +559,107 @@ def _edit_element(ctx: Context, found: Recording | None, target: Store, current:
         changes: dict[str, Any] = {key: value for key, value in given.items() if key != 'name'}
         changes.update({key: value for key, value in (('refs', refs), ('extra', extra)) if value is not None})
         _note(notices, target.edit(current.element_id, changes))
-    if others:
-        _note(notices, target.edit(current.element_id, others))
 
 
-def _edit_join(ctx: Context, found: Recording | None, target: Store, thing: str, refs: list[Any] | None,
-               extra: dict[str, Any] | None, notices: Notices) -> None:
-    """Change a recorded join; its receiver and provider move it, MAP-003. On a subtype join namespace_address gives it
-    another element to hold, and role and name_length describe the element it holds."""
-    versions = target.history(thing, limit=0).results
-    fields = versions[-1].fields if versions else {}
-    changes: dict[str, Any] = {key: ctx.nouns[key] for key in JOIN_EDITS if ctx.nouns.get(key) is not None}
-    element = {key: ctx.nouns[key] for key in ('role', 'name_length') if ctx.nouns.get(key) is not None}
-    if fields.get('parent') is not None:
-        if ctx.nouns.get(ADDRESS) is not None:
-            changes['provider'] = ctx.nouns[ADDRESS]
-        held = target.element(str(fields.get('provider')), raw=True)
-        if element and held is not None and found is not None:
-            _describe(found, held.address, {'role': element.get('role'),
-                                            'name_length': _whole(element.get('name_length'))}, None, None, notices)
-            notices[:] = [notice for notice in notices if not notice['message'].startswith('role is missing')]
-            element = {}
-    elif ctx.nouns.get(ADDRESS) is not None:
-        changes[ADDRESS] = ctx.nouns[ADDRESS]
-    changes.update(element)
+def _changes(ctx: Context, refs: list[Any] | None, extra: dict[str, Any] | None) -> dict[str, Any]:
+    changes: dict[str, Any] = {key: ctx.nouns[key] for key in REQUIREMENT_EDITS if ctx.nouns.get(key) is not None}
     if refs is not None:
         changes['refs'] = refs
     if extra is not None:
         changes['extra'] = extra
+    return changes
+
+
+def _edit_requirement(ctx: Context, target: Store, held: Join, refs: list[Any] | None, extra: dict[str, Any] | None,
+                      notices: Notices, words: dict[str, str]) -> None:
+    """Change a recorded requirement; to_receiver and to_provider move it and it stays the same, MAP-003."""
+    changes = _changes(ctx, refs, extra)
+    changes.update({column: ctx.nouns[noun] for noun, column in MOVES.items() if ctx.nouns.get(noun) is not None})
     if changes:
-        _note(notices, target.edit(thing, changes))
+        _note(notices, target.edit(held.join_id, changes), words)
+
+
+def _edit_part(ctx: Context, found: Recording | None, target: Store, item: Subtype, refs: list[Any] | None,
+               extra: dict[str, Any] | None, notices: Notices, words: dict[str, str]) -> None:
+    """Change a recorded part; to_address gives it another element to hold, and role and name_length describe the
+    element it holds."""
+    changes = _changes(ctx, refs, extra)
+    if ctx.nouns.get('to_address') is not None:
+        changes['provider'] = ctx.nouns['to_address']
+    element = {key: ctx.nouns[key] for key in ('role', 'name_length') if ctx.nouns.get(key) is not None}
+    if element and found is not None and item.address is not None:
+        _describe(found, item.address, {'role': element.get('role'),
+                                        'name_length': _whole(element.get('name_length'))}, None, None, notices)
+        notices[:] = [notice for notice in notices if not notice['message'].startswith('role is missing')]
+    elif element:
+        changes.update(element)
+    if changes:
+        _note(notices, target.edit(item.join_id, changes), words)
+
+
+NAMED_BY = ('Name what to change by its addresses: namespace_address for an element, receiver and provider for a '
+            'requirement, and all three for a part inside a requirement.')
+
+
+def _named(ctx: Context) -> dict[str, Any]:
+    return {key: ctx.nouns[key] for key in ('receiver', 'provider', ADDRESS) if ctx.nouns.get(key) is not None}
 
 
 def edit(ctx: Context) -> Any:
-    """Change one recorded element, join or subtype join in place while the intake is being recorded."""
-    store = ctx.require_store()
+    """Change one recorded element, requirement or part in place while the intake is being recorded."""
+    found, target, layer = _target(ctx.require_store())
+    named = _named(ctx)
+    done = _finished(target, found, named)
+    if done is not None:
+        return done
     notices: Notices = []
-    found = _building(store)
-    target = found.store if found is not None else store
     refs, extra = _refs_and_extra(ctx, notices)
-    thing = ctx.nouns['id']
-    current = target.element(thing, raw=True)
-    if current is not None:
-        _edit_element(ctx, found, target, current, refs, extra, notices)
+    words = _words(target, layer)
+    if 'receiver' in named or 'provider' in named:
+        held = _requirement(target, layer, named.get('receiver'), named.get('provider'), notices)
+        item = _part(target, layer, held, named[ADDRESS], notices) if held is not None and ADDRESS in named else None
+        if item is not None:
+            _edit_part(ctx, found, target, item, refs, extra, notices, words)
+        elif held is not None and ADDRESS not in named:
+            _edit_requirement(ctx, target, held, refs, extra, notices, words)
+    elif ADDRESS in named:
+        current = target.element(named[ADDRESS], raw=True)
+        if current is None:
+            notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
+        else:
+            _edit_element(ctx, found, target, current, refs, extra, notices)
     else:
-        _edit_join(ctx, found, target, thing, refs, extra, notices)
-    return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
+        notices.append({'where': ADDRESS, 'message': NAMED_BY})
+    return {**named, 'layer': layer.name if layer is not None else None, 'notices': notices}
 
 
 def remove(ctx: Context) -> Any:
-    """Remove one recorded element, join or subtype join while the intake is being recorded."""
-    store = ctx.require_store()
+    """Remove one recorded element, requirement or part while the intake is being recorded."""
+    found, target, layer = _target(ctx.require_store())
+    named = _named(ctx)
+    done = _finished(target, found, named)
+    if done is not None:
+        return done
     notices: Notices = []
-    found = _building(store)
-    target = found.store if found is not None else store
-    thing = ctx.nouns['id']
-    current = target.element(thing, raw=True)
-    _note(notices, target.remove(current.element_id if current is not None else thing))
-    return {'id': thing, 'layer': found.layer.name if found is not None else None, 'notices': notices}
+    words = _words(target, layer)
+    thing: str | None = None
+    if 'receiver' in named or 'provider' in named:
+        held = _requirement(target, layer, named.get('receiver'), named.get('provider'), notices)
+        if held is not None and ADDRESS in named:
+            item = _part(target, layer, held, named[ADDRESS], notices)
+            thing = item.join_id if item is not None else None
+        elif held is not None:
+            thing = held.join_id
+    elif ADDRESS in named:
+        current = target.element(named[ADDRESS], raw=True)
+        thing = current.element_id if current is not None else None
+        if current is None:
+            notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
+    else:
+        notices.append({'where': ADDRESS, 'message': NAMED_BY})
+    if thing is not None:
+        _note(notices, target.remove(thing), words)
+    return {**named, 'layer': layer.name if layer is not None else None, 'notices': notices}
 
 
 def finish(ctx: Context) -> Any:
@@ -535,17 +670,17 @@ def finish(ctx: Context) -> Any:
     feedback = _given(ctx, 'feedback', notices)
     found = _building(store)
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': 0, 'joins': 0,
+        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': 0, 'requirements': 0,
                 'subtypes': 0, 'refs': 0, 'work': 0,
                 'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is nothing '
                                                                      'to finish.'}]}
-    recorded = _whole_map(found.store, found.layer)
-    if recorded['undescribed']:
-        names = recorded['undescribed']
-        notices.append({'where': 'undescribed', 'message': f'{", ".join(names)} {"was" if len(names) == 1 else "were"} '
-                                                           'recorded as the end of a join but never described with '
-                                                           'intake element; stored without a role or a '
-                                                           'name_length.'})
+    elements, joins = _recorded(found.store, found.layer)
+    undescribed = [element.address for element in elements if not _described(element)]
+    if undescribed:
+        notices.append({'where': 'undescribed', 'message': f'{", ".join(undescribed)} '
+                                                           f'{"was" if len(undescribed) == 1 else "were"} named in a '
+                                                           'requirement but never described with intake element; '
+                                                           'stored without a role or a name_length.'})
     _note(notices, found.store.finish(found.layer.name))
     if not found.active:
         previous = store.active_metaform()
@@ -560,14 +695,14 @@ def finish(ctx: Context) -> Any:
             save_report(store.project_id, found.layer.layer_id, kind, text, store=found.store,
                         layer=found.layer.layer_id)
     # The open work records on what this intake recorded, MAP-046: the condition of an object is apart from the map.
-    subtypes = [item for row in recorded['joins'] for item in row['subtypes']]
-    recorded_ids = {row['element_id'] for row in recorded['elements']} | {
-        row['join_id'] for row in [*recorded['joins'], *subtypes]}
+    parts = [item for _, inside in joins for item in inside]
+    recorded_ids = {element.element_id for element in elements} | {
+        held.join_id for held in [*(held for held, _ in joins), *parts]}
     work = sum(1 for row in found.store.work(open=True, limit=0).results if row.id in recorded_ids)
-    refs = sum(len(row['refs']) for row in [*recorded['elements'], *recorded['joins'], *subtypes])
+    refs = sum(len(row.refs) for row in [*elements, *(held for held, _ in joins), *parts])
     return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform,
-            'elements': len(recorded['elements']), 'joins': len(recorded['joins']), 'subtypes': len(subtypes),
-            'refs': refs, 'work': work, 'notices': notices}
+            'elements': len(elements), 'requirements': len(joins), 'subtypes': len(parts), 'refs': refs,
+            'work': work, 'notices': notices}
 
 
 def status_verb(ctx: Context) -> str:
@@ -606,20 +741,21 @@ def _nouns(*names: str) -> tuple[Noun, ...]:
 E, J, H = ELEMENT_WORDS.get, JOIN_WORDS.get, HELD_WORDS.get
 NOUNS = {noun.name: noun for noun in (
     Noun('role', E('role', ''), required=False, schema=ROLE),
-    Noun('name', '', required=False),
+    Noun('name', E('name', ''), required=False),
     Noun('name_length', E('name_length', ''), required=False, schema=NAME_LENGTH),
     Noun('refs', J('refs', ''), required=False, schema=REFS),
-    Noun('extra', '', required=False, schema=EXTRA),
-    Noun('type', '', required=False),
+    Noun('extra', E('extra', ''), required=False, schema=EXTRA),
     Noun('condition', E('condition', ''), required=False),
     Noun('note', E('note', ''), required=False),
     Noun('ifd', J('ifd', ''), required=False, schema=IFD),
     *(Noun(field, J(field, ''), required=False) for field in ('purpose', 'ef', 'verb', 'non_goal')),
 )}
+REQUIREMENT = (Noun('receiver', J('receiver', '')), Noun('provider', J('provider', '')))
 SUBTYPE_NOUNS = (
-    Noun('into', 'The join_id of the parent join it sits inside, as intake join returned it.'),
+    Noun('parent_receiver', J('parent_receiver', '')),
+    Noun('parent_provider', J('parent_provider', '')),
     Noun(ADDRESS, H(ADDRESS, '')),
-    *_nouns('type', 'purpose', 'ef', 'ifd', 'verb', 'non_goal'),
+    *_nouns('purpose', 'ef', 'ifd', 'verb', 'non_goal'),
     Noun('role', H('role', ''), required=False, schema=SUBTYPE_ROLE),
     Noun('name', H('name', ''), required=False),
     Noun('name_length', H('name_length', ''), required=False, schema=NAME_LENGTH),
@@ -628,8 +764,14 @@ SUBTYPE_NOUNS = (
     *_nouns('condition', 'note'),
 )
 ABSORB_NOUNS = (
-    Noun('join', 'The join_id of the join where the element provides, the join to place inside its parent.'),
-    Noun('into', "The join_id of the parent's purpose join it goes inside."),
+    *REQUIREMENT,
+    Noun('parent_receiver', J('parent_receiver', '')),
+    Noun('parent_provider', J('parent_provider', '')),
+)
+NAMING = (
+    Noun('receiver', J('receiver', ''), required=False),
+    Noun('provider', J('provider', ''), required=False),
+    Noun(ADDRESS, E(ADDRESS, ''), required=False),
 )
 
 MODULE = Module(
@@ -639,10 +781,12 @@ MODULE = Module(
             'project has an intake. The intake is agent work: a subagent reads its instructions with the command prompt '
             'and follows them. Details: metaform help intake.',
     details='The intake text is served as stored, with its prompt slot filled. The intake is recorded as it is '
-            'reasoned, one element, join or subtype join per call, into one building intake layer, annealed with '
-            'absorb, read back with show, whole or one receiver at a time, and corrected with edit and remove. No '
-            'other read sees it until finish; after finish the metaform changes by refining, metaform map knowledge '
-            'op=refine, in the same layer. Nothing is '
+            'reasoned, one element, requirement or part per call, into one building intake layer, annealed with '
+            'absorb, read back with show, whole or one receiver at a time, and corrected with edit and remove. An '
+            'element is named by its namespace_address, a requirement by its receiver and provider, and a part by '
+            'its address inside that requirement. No '
+            'other read sees it until finish; after finish the metaform changes by refining, metaform map refine, '
+            'in the same layer. Nothing is '
             'refused for its content: what does not fit is stored as given and named in a notice.',
     verbs=(
         Verb('prompt', prompt, 'The Canonical Intake instructions for this project.',
@@ -662,36 +806,30 @@ MODULE = Module(
                     Noun('refs', E('refs', ''), required=False, schema=REFS),
                     NOUNS['extra'],
                     *_nouns('condition', 'note'))),
-        Verb('join', join, "Record one join: the receiver's purpose served by the provider's encounter function.",
-             nouns=(Noun('receiver', J('receiver', '')),
-                    Noun('provider', J('provider', '')),
-                    *_nouns('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type',
-                            'refs', 'extra', 'condition', 'note'))),
-        Verb('subtype', subtype, 'Record one subtype join inside its parent join, holding an element.',
-             nouns=SUBTYPE_NOUNS),
-        Verb('absorb', absorb, "Anneal: make a recorded join a subtype join inside its parent's purpose join, keeping "
+        Verb('add_requirement', add_requirement, "Add one requirement: the receiver's purpose served by the provider's "
+                                         'encounter function.',
+             nouns=(*REQUIREMENT,
+                    *_nouns('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'refs', 'extra', 'condition',
+                            'note'))),
+        Verb('subtype', subtype, 'Record one part inside a requirement, named by its receiver and provider, holding '
+                                 'an element.', nouns=SUBTYPE_NOUNS),
+        Verb('absorb', absorb, "Anneal: make a recorded requirement a part inside its parent's requirement, keeping "
                                'every field; the element stays one element record.', nouns=ABSORB_NOUNS),
-        Verb('show', show, 'The intake being recorded, whole or one receiver at a time, with the ids to edit or '
-                           'remove.',
-             nouns=(Noun('receiver', "An element's namespace_address: show only the joins it receives and what they "
-                                     'hold.', required=False),)),
-        Verb('edit', edit, 'Change one recorded element, join or subtype join; the fields given replace the ones it '
-                           'had.',
-             nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
-                               'included.'),
-                    *_nouns('purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type'),
-                    Noun('receiver', 'A new receiver for a join, by namespace address: the join moves and keeps its '
-                                     'join_id.', required=False),
-                    Noun('provider', 'A new Providing Element for a join, by namespace address.', required=False),
-                    Noun(ADDRESS, 'On a subtype join, the namespace_address of another element for it to hold. An '
-                                  'element cannot be moved: given for an element, it is not applied.', required=False),
+        Verb('show', show, 'The intake being recorded, whole or one receiver at a time.',
+             nouns=(Noun('receiver', J('receiver', ''), required=False),)),
+        Verb('edit', edit, 'Change one recorded element, requirement or part, named by its addresses; the fields '
+                           'given replace the ones it had.',
+             nouns=(*NAMING,
+                    *_nouns('purpose', 'ef', 'ifd', 'verb', 'non_goal'),
+                    Noun('to_receiver', J('to_receiver', ''), required=False),
+                    Noun('to_provider', J('to_provider', ''), required=False),
+                    Noun('to_address', E('to_address', ''), required=False),
                     *_nouns('role', 'name', 'name_length', 'refs', 'extra'))),
-        Verb('remove', remove, 'Remove one recorded element, join or subtype join.',
-             nouns=(Noun('id', "An element's namespace_address or element_id, or a join_id, a subtype join's "
-                               'included.'),)),
+        Verb('remove', remove, 'Remove one recorded element, requirement or part, named by its addresses.',
+             nouns=NAMING),
         Verb('finish', finish, 'Finish and activate the recorded metaform, keeping the earlier one whole. Switch '
                                'back with metaform map activate <previous-name>. After finish the metaform changes '
-                               'by refining: metaform map knowledge op=refine.',
+                               'by refining: metaform map refine.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '
                                    'and - is standard input.', required=False),

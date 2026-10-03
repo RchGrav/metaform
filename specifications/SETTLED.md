@@ -27,13 +27,13 @@ The spec in spec/ now carries every entry below; TRACE.md maps each entry to its
 **The repo's wheel carries every repo module. The local build command carries only the enabled modules.** Confirmed.
 *Why:* the release is complete, and a user's own build holds exactly what they use.
 
-**A wheel runs directly, from its own subfolder under ~/.metaform.** Confirmed. Whether it gets one subfolder per build or one per wheel name is open.
+**A wheel runs directly, using the normal data folder, ~/.metaform, the same as the installed copy.** Corrected by Rich, 2026-10-03: keeping it separate raises how to merge it.
 *Why:* a custom build never depends on version compatibility with the installed Metaform.
 
 **A directly run wheel works in the code execution environments of OpenAI and Claude.** It carries its requirements and is compatible there. Confirmed.
 *Why:* a user can build a custom Metaform and upload it where an agent runs code.
 
-**Installing a wheel can update the installed data and merge the wheel's data in.** Confirmed. What merging does exactly is open.
+**Installing a wheel can update the installed data.** A directly run wheel's data is already in the main folder, so nothing is merged. Corrected by Rich, 2026-10-03.
 
 **At release, Metaform offers to maintain a user's personal fork, its CI and the build of their own wheel.** Confirmed.
 *Why:* the community builds on the template, and that upkeep is what keeps their forks working as the chassis changes.

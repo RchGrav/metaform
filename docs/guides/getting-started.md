@@ -33,7 +33,7 @@ A Metaform-built wheel is both installable and directly runnable. Substitute the
 python /path/to/metaform-0.1.0-py3-none-any.whl list modules
 ```
 
-In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. With no `METAFORM_HOME` already set, direct execution uses the wheel-specific home `~/.metaform/wheels/metaform-0.1.0`. That is distinct from an installed command or a host's `uvx --from ... metaform` launch, which uses the normal home. To use one explicit home across both paths, set `METAFORM_HOME` consistently before launching them.
+In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. Direct execution uses the normal home, `~/.metaform`, the same as an installed command or a host's `uvx --from ... metaform` launch. `METAFORM_HOME` chooses another home for any of them.
 
 The repository holds no built application wheel. Use the repository source or a wheel produced from it with `metaform build`.
 
@@ -113,22 +113,22 @@ The served procedure's XML schema defines the fields of each object. The agent r
 ```sh
 metaform intake start model=opus role="intake agent" id=example-intake-1
 metaform intake element stakeholder.cook.home role=CQU name_length=2
-metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." function="Counts down and rings." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish."
+metaform intake add_requirement stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives verb=tells
 metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-An element is its address, `name_length` and role; its name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. The project's own name for a functionality goes on the join, as `name`: this project calls its kitchen timer the dish clock. `relation` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use, the join's receiver, when `ef` is Encounter. A `name` sent to `intake element` is kept in the element's `extra`, with a notice saying the name goes on the join.
+An element is its address, `name_length` and role; its short name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer, and `name` holds its canonical name. The project's own name for a functionality goes on the requirement, as `name`: this project calls its kitchen timer the dish clock. `ef` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb.
 
-Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_join`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. `intake_join` returns the `join_id` that `intake_subtype` takes as `into` for a subtype join inside it, and `intake_absorb` makes a recorded join a subtype join inside its parent's join, keeping its `join_id`; the element it holds stays one element. An element's address is `namespace_address` in every intake tool, as in the Canonical Intake. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
+Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_add_requirement`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. The agent names a requirement by its `receiver` and `provider`, a part by its `namespace_address` inside that requirement, and an element by its `namespace_address`, as in the Canonical Intake; no call hands it an id. `intake_absorb` makes a recorded requirement a part inside its parent's requirement; the element it holds stays one element. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no requirement to fabricate values that were not recorded.
 
-Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's joins with `receiver=`, `intake edit` and `intake remove` change it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, joins, subtype joins, refs and open work records, and a notice naming any address recorded only as the end of a join and never described.
+Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's requirements with `receiver=`, `intake edit` and `intake remove` change it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, requirements, parts, refs and open work records, and a notice naming any address named in a requirement and never described.
 
-`intake element`, `intake join` and `intake subtype` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map_work`.
+`intake element`, `intake add_requirement` and `intake subtype` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map_work`.
 
 ### What stays available
 
-The intake produces one layer, named `intake`. After it is finished the metaform changes by refining that layer with `op=refine`, which keeps every earlier version, and does not stack new layers: see [Refine the metaform](working-with-metaform.md#refine-the-metaform). Repeating intake for a Metaform that already has one creates a **new active Metaform**, while keeping the previous one whole. It does not replace the old base layer in place.
+The intake produces one layer, named `intake`. After it is finished the metaform changes by refining that layer with `map refine`, which keeps every earlier version, and does not stack new layers: see [Refine the metaform](working-with-metaform.md#refine-the-metaform). Repeating intake for a Metaform that already has one creates a **new active Metaform**, while keeping the previous one whole. It does not replace the old base layer in place.
 
 ```sh
 metaform list metaforms
@@ -188,15 +188,15 @@ metaform add project kitchen .
 metaform intake start model=none role="by hand" id=kitchen-1
 metaform intake element stakeholder.cook.home role=CQU name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2 refs='[{"key": "path", "value": "src/main.c"}]'
-metaform intake join stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done without watching the clock." function="Counts down each named dish and rings when one reaches zero." ef=Function relation="tells the cook when a dish is done" verb=tells observation="One countdown per dish, set from the front panel."
+metaform intake add_requirement stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done without watching the clock." ef="tells the cook when a dish is done" ifd=receives verb=tells
 metaform intake element code.alarm.audible role=SE name_length=2 refs='[{"key": "path", "value": "src/alarm.c"}]'
-metaform intake join code.timer.kitchen code.alarm.audible name="buzzer" purpose="Get the cook's attention the moment a countdown ends." function="Plays a tone on the speaker until the cook presses stop." ef=Encounter relation="sounds the end of a countdown through the speaker" verb=sounds observation="A piezo speaker driven by one GPIO pin."
-metaform intake subtype <join_id of the dish clock join> code.loop.tick role=SE name_length=2 name="ticker" function="Subtracts one second from each running countdown." ef=Function relation="advances every running countdown by one second" verb=advances observation="One timer interrupt per second." refs='[{"key": "path", "value": "src/tick.c"}]'
+metaform intake add_requirement code.timer.kitchen code.alarm.audible name="buzzer" purpose="Get the cook's attention the moment a countdown ends." ef="sounds the end of a countdown through the speaker" ifd=receives verb=sounds
+metaform intake subtype stakeholder.cook.home code.timer.kitchen code.loop.tick role=SE name_length=2 name="ticker" ef="advances every running countdown by one second" ifd=receives verb=advances refs='[{"key": "path", "value": "src/tick.c"}]'
 metaform intake finish
 metaform map where code.timer.kitchen
 ```
 
-Each `intake join` prints the `join_id` it recorded; `intake subtype` takes the dish clock join's as its first word. `finish` reports four elements, two joins, one subtype join and three refs. The tick loop is an element held only by its subtype join, so `map roots` does not list it and `map where code.loop.tick` returns it with the subtype join and the join that holds it.
+`intake subtype` names the dish clock requirement by its receiver and provider. `finish` reports four elements, two requirements, one part and three refs. The tick loop is an element held only as a part, so `map roots` does not list it and `map where code.loop.tick` returns it with the subtype join and the join that holds it.
 
 The shell examples use POSIX single quotes around JSON; on Windows PowerShell, quote the JSON for PowerShell instead.
 

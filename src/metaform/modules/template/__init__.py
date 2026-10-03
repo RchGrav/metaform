@@ -21,13 +21,30 @@ and writes them in `with ctx.require_store().tables() as tx:`, STORE-045.
 `place='project'` keeps it in the project, kept by a clear. hello's `visit`,
 `note` and `notes` show it.
 
+
+A module owns composite DAO operations with `data=Data(operations={...})`,
+importing `Data`, `DataTx` and `Operation` from `metaform.data`. Its handler
+receives the current transaction, and `Operation(handler, write=True)` joins
+`Store.atomic()`. `tx.tables()` reaches its metaform tables in that same
+transaction. Hello's `count_visit` operation backs `visit`. `Data.decorate`
+adds to native records; `Data.item_write` contributes to item writes.
+`Table.from_sql(name, schema, on_remove=...)` adopts an existing SQL table
+with its rows, constraints and indexes. Recorded removal rules survive an
+absent owner. Map's storage shows legacy table adoption and upgrades.
+
 A module adds to the read of a node, `map where` and `map node`, with
 `node_read=`: a function of the context and the node read, which returns plain
 data, shown under the module's id, or None for nothing, BASE-035. hello's
-`node_read` shows it.
+`node_read` shows it. A module keeps its own fields on a work record in a table
+of its own keyed by the work id, STORE-045, and shows them in `map work id=<id>`
+with `work_read=`: a function of the context and the work record, which returns
+plain data under the module's id, or None for nothing. hello's `work_read`
+shows it.
 
 Every prompt an agent reads is in `resources/prompts.xml`, an element named
-for the prompt, never in Python, MCP-031. `instructions` is listed in the
+for the prompt, never in Python, MCP-031. A module reads one with
+`prompt_files.text(resources.files(__name__), name)`, or `prompt_files.required`
+when a missing prompt is a defect. `instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
 """
 from __future__ import annotations
@@ -50,5 +67,7 @@ MODULE = Module(
     stop=None,
     status=None,
     tables=None,
+    data=None,
     node_read=None,
+    work_read=None,
 )

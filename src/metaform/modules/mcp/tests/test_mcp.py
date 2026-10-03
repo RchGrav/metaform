@@ -497,37 +497,38 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                               'name': 'kitchen timer', 'name_length': 2,
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
         named = json.loads(text(described)[-1])['notices']
-        made = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
-                                                      'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
-                                                      'ef': 'Rings.',
-                                                      'verb': 'rings'})
-        join_id = json.loads(text(made)[-1])['join_id']
-        await called(client, 'intake_subtype', {'into': join_id, 'namespace_address': 'code.loop.tick',
-                                                  'ef': 'Ticks.', 'verb': 'advances', 'role': 'SE'})
-        beat = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
+        made = await called(client, 'intake_add_requirement', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
+                                                             'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
+                                                             'ef': 'Rings.', 'verb': 'rings'})
+        await called(client, 'intake_subtype', {'parent_receiver': 'code.timer.kitchen',
+                                                  'parent_provider': 'code.alarm.audible',
+                                                  'namespace_address': 'code.loop.tick', 'ef': 'Ticks.',
+                                                  'verb': 'advances', 'role': 'SE'})
+        await called(client, 'intake_add_requirement', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
                                                       'purpose': 'Keep time.', 'ef': 'Beats.', 'verb': 'beats'})
-        beat_id = json.loads(text(beat)[-1])['join_id']
-        absorbed = await called(client, 'intake_absorb', {'join': beat_id, 'into': join_id})
-        moved = json.loads(text(absorbed)[-1])
+        absorbed = await called(client, 'intake_absorb', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
+                                                            'parent_receiver': 'code.timer.kitchen',
+                                                            'parent_provider': 'code.alarm.audible'})
         shown = json.loads(text(await called(client, 'intake_show', {}))[-1])
         one = json.loads(text(await called(client, 'intake_show', {'receiver': 'code.timer.kitchen'}))[-1])
         finished = json.loads(text(await called(client, 'intake_finish', {'report': 'Fine.'}))[-1])
         return (names, started.is_error, shown, finished, named, described.is_error,
-                (absorbed.is_error, moved['join_id'], moved['parent'], beat_id, join_id), one)
+                (absorbed.is_error, json.loads(text(made)[-1])), one)
     names, error, shown, finished, named, described_error, absorb, one = session(home, folder, call)
-    assert absorb[0] is False and absorb[1:3] == absorb[3:5]
-    assert [row['join_id'] for row in one['joins']] == [absorb[4]]
-    assert {sub['join_id'] for sub in one['joins'][0]['subtypes']} >= {absorb[3]}
-    assert {'intake_start', 'intake_element', 'intake_join', 'intake_subtype', 'intake_absorb', 'intake_show',
-            'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_submit' not in names
+    assert absorb[0] is False and set(absorb[1]) == {'receiver', 'provider', 'layer', 'notices'}
+    assert [row['provider'] for row in one['requirements']] == ['code.alarm.audible']
+    assert {sub['namespace_address'] for sub in one['requirements'][0]['subtypes']} == {'code.loop.tick',
+                                                                                        'code.loop.beat'}
+    assert {'intake_start', 'intake_element', 'intake_add_requirement', 'intake_subtype', 'intake_absorb', 'intake_show',
+            'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_join' not in names
     assert error is False and described_error is False
     assert named == []  # the element's name is its own field, Rich 2026-10-01
-    assert [row['name'] for row in shown['joins']] == ['countdown alarm']
+    assert [row['name'] for row in shown['requirements']] == ['countdown alarm']
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
     assert shown['undescribed'] == ['code.alarm.audible', 'code.loop.beat']
-    assert len(shown['joins']) == 1 and len(shown['joins'][0]['subtypes']) == 2
-    assert (finished['elements'], finished['joins'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
+    assert len(shown['requirements']) == 1 and len(shown['requirements'][0]['subtypes']) == 2
+    assert (finished['elements'], finished['requirements'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
     kitchen = Store('fresh').element('code.timer.kitchen')
     assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
     assert (kitchen.short_name, kitchen.name, kitchen.extra) == ('kitchen timer', 'kitchen timer', None)
@@ -567,6 +568,52 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
     assert read == []
     assert written == [{'project': 'proj', 'metaform_id': active.metaform_id}]  # once, for the one write
     assert after == written  # the notes were taken once: the read announces nothing, not the write again
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('BASE-037')
+@pytest.mark.req('MCP-002')
+def test_a_module_enabled_or_disabled_after_the_server_started_is_loaded_or_dropped_before_a_write_is_announced(
+        run, home, mapped, tmp_path, user_module):
+    """Ticket 8f039057: the watcher stands in for dispatch's subscriber. Off when the server announces its first
+    write, enabled on the command line in the same session and it hears the next write, disabled again and it hears
+    no more."""
+    log = tmp_path / 'heard.jsonl'
+    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', 'mutable=true', 'hideable=true',
+        'module=test', cwd=mapped)
+    user_module('watcher', f'''
+        import json
+        from pathlib import Path
+        from metaform.module import Module, Subscription
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        def saw(payload, ctx):
+            with Path({str(log)!r}).open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps({{**payload, 'surface': ctx.surface}}) + '\\n')
+        MODULE = Module(id='watcher', summary='x', purpose='Watches the map. Details: metaform help watcher.',
+                        subscriptions=(Subscription('map.changed', saw),))
+    ''')
+    run('disable', 'watcher')
+
+    def lines():
+        return [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
+
+    async def note(client, value):
+        written = await called(client, 'map_knowledge', {'op': 'add-item', 'layer': 'notes',
+                                                         'node': 'element:code.timer.kitchen', 'value': value})
+        return written.is_error, lines()
+
+    async def call(client, init):
+        off = await note(client, 'Before the watcher is on.')
+        await asyncio.to_thread(run, 'enable', 'watcher')
+        on = await note(client, 'After the watcher is on.')
+        await asyncio.to_thread(run, 'disable', 'watcher')
+        return off, on, await note(client, 'After the watcher is off again.')
+    off, on, dropped = session(home, mapped, call)
+    active = Store('proj').active_metaform()
+    assert (off[0], on[0], dropped[0]) == (False, False, False)  # each of the three notes was written
+    assert off[1] == []
+    assert on[1] == [{'project': 'proj', 'metaform_id': active.metaform_id, 'surface': 'mcp'}]  # heard in the server
+    assert dropped[1] == on[1]
 
 
 HISTORY_TOOLS = {'add_origin', 'list_origins', 'add_variant', 'list_variants', 'extract'}
@@ -745,6 +792,66 @@ def test_the_server_lists_one_tool_for_each_module_and_a_module_is_entered_for_i
         'Error: map has no command nothing.', 'Next: call map with no command for its commands']
     assert stray.is_error and 'takes command and arguments' in text(stray)[0]
     assert json.loads(text(ran)[-1]) == json.loads(run('map', 'joins', 'code.timer.kitchen', '--json', cwd=mapped).stdout)
+
+
+@pytest.mark.req('CLI-039')
+def test_an_alias_is_one_tool_whose_commands_are_the_commands_of_its_modules(run, home, mapped):
+    """An alias is one name at the top menu, over MCP as on the command line; its commands are written as the command
+    line writes them, `<module> <command>`, and run as that module's command."""
+    run('memory', 'create_entities', '[{"name": "kitchen", "entityType": "timer", "observations": ["loud"]}]',
+        cwd=mapped)
+    run('alias', 'mapping', 'memory', 'map', cwd=mapped)             # the order given, not the order of the names
+
+    async def check(client, init):
+        tools = await listed(client)
+        opened = {name: await client.call_tool(name, {}) for name in ('mapping', 'map', 'memory')}
+        reads = {command: (await client.call_tool('mapping', {'help': f'{tool} {command}'}),
+                           await client.call_tool(tool, {'help': command}))
+                 for tool, command in (('map', 'joins'), ('memory', 'read_graph'))}
+        ran = await client.call_tool('mapping', {'command': 'map joins',
+                                                 'arguments': {'element': 'code.timer.kitchen'}})
+        graph = await client.call_tool('mapping', {'command': 'memory read_graph', 'arguments': {}})
+        bare = await client.call_tool('mapping', {'command': 'joins'})
+        return tools, opened, reads, ran, graph, bare
+    tools, opened, reads, ran, graph, bare = session(home, mapped, check)
+    listing = {name: [(one['command'], one['summary']) for one in json.loads(text(result)[-1])['commands']]
+               for name, result in opened.items()}
+    wanted = [(f'{tool} {command}', summary) for tool in ('memory', 'map') for command, summary in listing[tool]]
+    assert listing['mapping'] == wanted
+    assert tools['mapping'].input_schema['properties']['command']['enum'] == [command for command, _ in wanted]
+    for through, alone in reads.values():
+        through, alone = json.loads(text(through)[-1]), json.loads(text(alone)[-1])
+        assert (through['summary'], through['arguments']) == (alone['summary'], alone['arguments'])
+    assert json.loads(text(ran)[-1]) == json.loads(run('map', 'joins', 'code.timer.kitchen', '--json',
+                                                       cwd=mapped).stdout)
+    assert json.loads(text(graph)[-1]) == json.loads(run('memory', 'read_graph', '--json', cwd=mapped).stdout)
+    assert bare.is_error and text(bare)[0].splitlines() == [
+        'Error: mapping has no command joins.', 'Next: call mapping with no command for its commands']
+
+
+@pytest.mark.req('CLI-039')
+@pytest.mark.req('CLI-022')
+@pytest.mark.req('MCP-004')
+def test_an_alias_tool_follows_the_folders_surface_and_its_definition_reaches_a_running_session(run, home, mapped):
+    heard = []
+
+    async def check(client, init):
+        before = set(await listed(client))
+        run('alias', 'mapping', 'map', 'memory', cwd=mapped)
+        await client.call_tool('map', {})
+        await client.call_tool('map', {})                             # nothing changed since: nothing more is said
+        defined = await listed(client)
+        run('set', '--modules', 'chassis,map', cwd=mapped)
+        narrowed = await listed(client)
+        run('set', '--modules', 'chassis,intake', cwd=mapped)
+        return before, defined, narrowed, set(await listed(client))
+    before, defined, narrowed, gone = session(home, mapped, check, heard)
+    assert 'mapping' not in before and 'mapping' in defined
+    assert heard.count('notifications/tools/list_changed') == 1      # the alias; a tools/list is the new list itself
+    assert defined['mapping'].input_schema['properties']['command']['enum'] != \
+        narrowed['mapping'].input_schema['properties']['command']['enum']
+    assert all(command.startswith('map ') for command in narrowed['mapping'].input_schema['properties']['command']['enum'])
+    assert 'mapping' not in gone
 
 
 @pytest.mark.req('CLI-037')
