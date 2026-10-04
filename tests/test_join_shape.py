@@ -13,14 +13,19 @@ import pytest
 
 from metaform.data.schema import STORE_SCHEMA
 
-ELEMENT = {'address', 'name_length', 'name', 'role'}
-JOIN = {'type', 'receiver', 'purpose', 'ef', 'ifd'}
-HELD = {'join_row', 'position', 'element_id'}  # the elements a join holds, one row each, in order
-# The bookkeeping columns are the store's own: row identity, layer, and the version's op, reason and evidence.
-STORE_OWN = {'row', 'element_id', 'join_id', 'layer_id', 'op', 'reason', 'evidence'}
-# What the intake tools take beside the design's own fields: the element's address under its intake name, the
-# elements a join holds, refs for the sources layer, and the condition and note of a ticket.
-TOOL_OWN = {'namespace_address', 'elements', 'refs', 'condition', 'note'}
+# The store's bookkeeping of a versioned row: its row, identity, layer, and the version's op, reason and evidence.
+VERSION = {'row', 'layer_id', 'op', 'reason', 'evidence'}
+COLUMNS = {
+    'elements': VERSION | {'element_id', 'address', 'name_length', 'name', 'role'},
+    'joins': VERSION | {'join_id', 'type', 'receiver', 'purpose', 'ef', 'ifd'},
+    'join_elements': {'join_row', 'position', 'element_id'},  # the elements a join holds, one row each, in order
+    'current_elements': {'element_id', 'row', 'address', 'role'},
+    'current_joins': {'join_id', 'row', 'receiver'},
+    'refs': {'ref_id', 'owner', 'owner_row', 'position', 'key', 'value'},
+}
+ELEMENT = {'namespace_address', 'name_length', 'name', 'role'}
+JOIN = {'receiver', 'elements', 'purpose', 'ef', 'ifd'}
+TICKET = {'condition', 'note'}  # a ticket written beside what was recorded, apart from the map
 
 
 @pytest.mark.kind('fixture')
@@ -29,13 +34,29 @@ TOOL_OWN = {'namespace_address', 'elements', 'refs', 'condition', 'note'}
 def test_the_metaform_holds_only_the_fields_of_richs_shape():
     db = sqlite3.connect(':memory:')
     db.executescript(STORE_SCHEMA)
-    columns = {table: {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
-               for table in ('elements', 'joins', 'join_elements')}
-    assert columns['elements'] - STORE_OWN == ELEMENT, f'element columns: {sorted(columns["elements"] - STORE_OWN)}'
-    assert columns['joins'] - STORE_OWN == JOIN, f'join columns: {sorted(columns["joins"] - STORE_OWN)}'
-    assert columns['join_elements'] == HELD
-    assert 'current_subtypes' not in {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
+    for table, wanted in COLUMNS.items():
+        found = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
+        assert found == wanted, f'{table}: {sorted(found ^ wanted)}'
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert 'current_subtypes' not in tables
+    # Refs belong only to layer items and properties: the metaform holds none, STORE-012.
+    for owner in ('item', 'property'):
+        db.execute("INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, 1, 0, 'k', 'v')", (owner,))
+    for owner in ('element', 'join'):
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, 1, 0, 'k', 'v')", (owner,))
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MAP-020')
+def test_the_tools_that_write_the_metaform_take_no_field_beyond_richs_shape():
     from metaform.modules.intake import MODULE
     taken = {verb.name: {noun.name for noun in verb.nouns} for verb in MODULE.verbs}
-    assert taken['element'] - TOOL_OWN <= ELEMENT, f'intake element takes {sorted(taken["element"] - TOOL_OWN - ELEMENT)}'
-    assert taken['join'] - TOOL_OWN <= JOIN, f'intake join takes {sorted(taken["join"] - TOOL_OWN - JOIN)}'
+    # An element's refs go to the sources layer; a join takes none, Rich 2026-10-04.
+    assert taken['element'] - TICKET == ELEMENT | {'refs'}, sorted(taken['element'])
+    assert taken['join'] - TICKET == JOIN, sorted(taken['join'])
+    from metaform.modules.map import READS, REFINE_FIELDS
+    assert READS['add-element'] <= {'address', 'name_length', 'name', 'role', 'refs'}, sorted(READS['add-element'])
+    assert READS['add-join'] <= {'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}, sorted(READS['add-join'])
+    assert set(REFINE_FIELDS) <= {'name', 'name_length', 'role', 'purpose', 'ef', 'ifd', 'elements'}, REFINE_FIELDS

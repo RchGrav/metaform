@@ -177,6 +177,12 @@ ERRORS: dict[str, tuple[Callable, Callable]] = {
     'add_join an end that is no element id': (lambda s, w: None,
                                               lambda s, w: s.add_join('k', 'code.k.a', '0' * 32, purpose='p',
                                                                       ef='f')),
+    # Only an element is a join end: a real join's id given as an element the join holds, or as its receiver, cannot
+    # be read, STORE-010.
+    'add_join holding a join': (lambda s, w: None,
+                                lambda s, w: s.add_join('k', 'code.k.a', w.k_join.join_id, purpose='p', ef='f')),
+    'add_join received by a join': (lambda s, w: None,
+                                    lambda s, w: s.add_join('k', w.k_join.join_id, 'code.k.a', purpose='p', ef='f')),
     'add_ref unknown owner': (lambda s, w: None, lambda s, w: s.add_ref('0' * 32, 'path', 'x')),
     'edit_work unknown': (lambda s, w: None, lambda s, w: s.edit_work('0' * 32, {'task': 'x'})),
     'finish_work unknown': (lambda s, w: None, lambda s, w: s.finish_work('0' * 32, 'x')),
@@ -258,7 +264,9 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'discard memory': (lambda s, w: None, lambda s, w: s.discard('memory'), False, _unchanged),
     'add_element role in a knowledge layer': (lambda s, w: None,
                                               lambda s, w: s.add_element('k', 'code.k.y', role='BOGUS'), True,
-                                              lambda s, w, got, before: got.role == 'BOGUS'),
+                                              lambda s, w, got, before: got.role is None and [
+                                                  item.value for item in s.layer_items('k', Node('element', 'code.k.y')).results]
+                                              == [{'role': 'BOGUS'}]),
     'add_item unknown target': (lambda s, w: None,
                                 lambda s, w: s.add_item('k', Node('element', 'code.nothing'), 'v'), True,
                                 _raw_element('code.nothing')),

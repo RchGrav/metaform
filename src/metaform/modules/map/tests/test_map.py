@@ -470,6 +470,21 @@ def test_a_noun_the_operation_does_not_read_is_kept_in_extra_or_named_as_ignored
     assert 'ignored' in finished['notices'][0]['message'] and finished['ready']
 
 
+@pytest.mark.req('BASE-043')
+@pytest.mark.req('LAYER-025')
+def test_refine_refuses_a_word_it_does_not_take_and_writes_nothing(run, mapped):
+    """refine has no extra, so the command line has nowhere to keep a word it does not know: it refuses it, as the
+    chassis grammar does for every verb with no extra, BASE-043, and the metaform keeps every version as it was."""
+    store = Store('proj')
+    join = store.joins('code.timer.kitchen', raw=True).results[0]
+    before = [version.to_dict() for version in store.history(join.join_id, limit=0).results]
+    refused = run('map', 'refine', 'receiver=code.timer.kitchen', 'provider=code.alarm.audible', 'ef=Plays loudly.',
+                  'reason=louder', 'variable=x', cwd=mapped, ok=False)
+    assert refused.returncode == 2 and "does not take 'variable=x'" in refused.stderr
+    assert [version.to_dict() for version in store.history(join.join_id, limit=0).results] == before
+    assert store.joins('code.timer.kitchen', raw=True).results[0].ef == 'Plays a tone.'
+
+
 def said(result):
     return [(notice['where'], notice['message']) for notice in result['notices']]
 
@@ -1090,8 +1105,9 @@ def test_ticket_handoff_includes_module_memories_at_its_node_and_linked_nodes(ru
     store = Store('proj')
     target = (Node('join', store.joins('code.timer.kitchen').results[0].join_id) if on_join else
               Node('element', 'code.timer.kitchen'))
-    run('memory', 'note', str(target), 'text=Check the circuit before replacing the timer.', cwd=mapped)
-    run('memory', 'note', 'element:code.alarm.audible', 'text=The tone driver was rewired.', cwd=mapped)
+    from tests.storekit import page_note  # the note is the person's, written from the page, VIEW-034
+    page_note('proj', str(target), 'Check the circuit before replacing the timer.')
+    page_note('proj', 'element:code.alarm.audible', 'The tone driver was rewired.')
     ticket = store.add_work(target, 'broken', task='repair the timer', links=[Node('element', 'code.alarm.audible')])
     read = j(run, 'work', f'id={ticket.work_id}', cwd=mapped)
     assert read['at']['memory']['note']['text'] == 'Check the circuit before replacing the timer.'

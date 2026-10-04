@@ -26,6 +26,19 @@ def renamed(row: dict) -> dict:
     return {**row, 'type': 'purpose'} if row.get('type') == 'require' else row
 
 
+def layer_names(db) -> set[str]:
+    """The layers a store holds: a layout 19 update makes the sources layer and no other, Rich 2026-10-04: "I want all
+    of that fucikiong  shit gone"."""
+    return {str(row[0]) for row in db.execute('SELECT name FROM layers')}
+
+
+def element_names(db) -> dict[str, str | None]:
+    """Each current element's name: a join's or a subtype join's name is the name of the element it holds after a
+    layout 19 update, Rich 2026-10-04: "the name on the join was the name for the element"."""
+    return {str(row[0]): row[1] for row in db.execute(
+        'SELECT c.element_id, e.name FROM current_elements c JOIN elements e ON e.row = c.row ORDER BY c.element_id')}
+
+
 def sources(db) -> list[tuple]:
     """The items of the sources layer, each with its node and its refs, in order."""
     return [tuple(row) for row in db.execute(
@@ -121,12 +134,17 @@ def test_a_layout_9_store_moves_an_elements_name_and_a_joins_ifd_out_of_extra_in
         assert opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
         element = opened.execute("SELECT name FROM elements WHERE element_id='E1'").fetchone()
         joined = opened.execute('SELECT ifd FROM joins WHERE row=1').fetchone()
-        # What else the extra held is kept in the intake details layer, layout 19, Rich 2026-10-04.
-        details = opened.execute("SELECT i.value FROM current_items c JOIN items i ON i.row = c.row JOIN layers l "
-                                 "ON l.layer_id = i.layer_id WHERE l.name='intake details' AND i.target_id='E1'").fetchall()
+        layers = layer_names(opened)
+        anywhere = [row[0] for row in opened.execute('SELECT value FROM items') if 'colour' in str(row[0])]
     assert element[0] == 'kitchen timer daemon'
     assert joined[0] == 'receives'
-    assert [row[0] for row in details] == ['{"extra": {"colour": "red"}}']
+    # What else the extra held is not kept in the store, layout 19, Rich 2026-10-04; the backup made first holds it.
+    assert 'intake details' not in layers and anywhere == []
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
+    assert len(backups) == 1
+    kept = sqlite3.connect(backups[0])
+    assert 'colour' in kept.execute("SELECT extra FROM elements WHERE element_id='E1'").fetchone()[0]
+    kept.close()
 
 
 LAYOUT_10 = (Path(__file__).parent / 'fixtures' / 'store-v10.sql').read_text(encoding='utf-8')
@@ -182,22 +200,29 @@ def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_ev
         current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
         held = db.execute('SELECT element_id FROM join_elements WHERE join_row=3 ORDER BY position').fetchall()
         refs = sources(db)
+        layers = layer_names(db)
+        names = element_names(db)
         broken = db.execute('PRAGMA foreign_key_check').fetchall()
     assert version == SCHEMA_VERSION
     assert 'perspective' not in columns
+    # the join's name is the element's it holds, and so is the subtype join's; nothing else of them is kept
+    assert names == {'E1': None, 'E2': 'engine', 'E3': 'tick'}
+    assert 'intake details' not in layers
     assert after[:1] == before  # layout 12 adds each join's newest version, its ef the old relation, MAP-020
     assert [row['ef'] for row in after[1:]] == ['runs the code each frame']  # the subtype join is gone, layout 19
     moving = ('row', 'ef', 'op', 'reason', 'evidence')
     assert {key: value for key, value in after[1].items() if key not in moving} == \
         {key: value for key, value in before[0].items() if key not in moving}
     assert [tuple(row) for row in current] == [('J1', 3)] and [row[0] for row in held] == ['E2', 'E3']
-    assert refs == [('join', 'J1', 'path', 'src/engine.c')]
+    assert refs == [('element', 'E2', 'path', 'src/engine.c')]  # the join's refs are the element's it holds
     assert broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1
     kept = sqlite3.connect(backups[0])
     assert kept.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == '10'
     assert kept.execute('SELECT perspective FROM joins ORDER BY row').fetchall() == [('Encounter',), ('Function',)]
+    assert kept.execute('SELECT verb, non_goal, extra FROM joins WHERE row=1').fetchone() == (
+        'runs', 'No threads.', '{"colour": "red"}')  # what the store no longer keeps, the backup holds
     kept.close()
 
 
@@ -279,6 +304,8 @@ def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relatio
         rows = [{key: row[key] for key in row.keys()} for row in db.execute('SELECT * FROM joins ORDER BY row')]
         current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
         refs = sources(db)
+        layers = layer_names(db)
+        names = element_names(db)
         elements = db.execute('SELECT element_id, row FROM current_elements ORDER BY element_id').fetchall()
         kept = (db.execute('SELECT work_id, target_id FROM work').fetchall(),
                 db.execute('SELECT message_id, target_id FROM messages').fetchall(),
@@ -289,6 +316,8 @@ def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relatio
                  for row in db.execute(f'SELECT * FROM "{table}"').fetchall() for value in row if isinstance(value, str)]
         broken = db.execute('PRAGMA foreign_key_check').fetchall()
     assert version == SCHEMA_VERSION
+    # each element keeps its own name, and nothing else of the joins' old fields is kept, layout 19
+    assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick', 'E4': None} and 'intake details' not in layers
     assert [[row[0] for row in held] for held in join_ids] == [['J1', 'J2', 'J3'], ['J1', 'J2', 'J3']]
     for observation in ('One loop.', 'One loop, in engine.c.', 'One interrupt.', 'Removed.'):
         assert not any(observation in text for text in texts), observation  # kept only in the backup
@@ -301,8 +330,9 @@ def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relatio
         == {key: value for key, value in before[1].items() if key not in ('row', 'ef', 'op', 'reason', 'evidence')}
     assert (newest['J1']['op'], newest['J1']['reason']) == ('change', EF_REASON)
     assert [tuple(row) for row in current] == [('J1', newest['J1']['row'])]
-    assert refs == [('join', 'J1', 'path', 'src/engine.c'), ('join', 'J1', 'spec', 'MAP-020'),
-                    ('element', 'E3', 'path', 'src/tick.c')]  # the current versions' refs, in the sources layer
+    # the current versions' refs, each at the element the join or subtype join held, one sources item per element
+    assert refs == [('element', 'E2', 'path', 'src/engine.c'), ('element', 'E2', 'spec', 'MAP-020'),
+                    ('element', 'E3', 'path', 'src/tick.c')]
     assert [tuple(row) for row in elements] == [('E1', 1), ('E2', 2), ('E3', 3), ('E4', 4)]
     # what was at the subtype join is at the element it held, layout 19
     assert [[tuple(row) for row in table] for table in kept] == [[('W1', 'J1')], [('Q1', 'E3')], [('I1', 'J1')]]
@@ -363,7 +393,14 @@ def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM joins ORDER BY row')]
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
+        layers = layer_names(opened)
+        names = element_names(opened)
+        held = opened.execute("SELECT e.element_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row "
+                              "WHERE c.join_id='J1' ORDER BY e.position").fetchall()
     assert version == SCHEMA_VERSION == '19'
+    assert [row[0] for row in held] == ['E2', 'E3']
+    # each element keeps its own name; the joins' verb, non_goal and the subtype join's own fields are not kept
+    assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick'} and 'intake details' not in layers
     assert [row['type'] for row in after] == ['purpose', 'purpose']  # the subtype join is gone, layout 19
     assert after == [renamed(row) for row in before if row['parent'] is None]
     assert broken == []
@@ -371,6 +408,7 @@ def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and
     assert len(backups) == 1
     copy = sqlite3.connect(backups[0])
     assert copy.execute("SELECT type FROM joins ORDER BY row").fetchall() == [('purpose',), ('purpose',), ('subtype',)]
+    assert copy.execute('SELECT verb, non_goal FROM joins WHERE row=2').fetchone() == ('runs', 'No threads.')
 
 
 @pytest.mark.req('MAP-020')
@@ -601,10 +639,12 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
 @pytest.mark.req('STORE-010')
 def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: Path, tmp_path: Path):
     """Rich, 2026-10-04: "we are reverting the data shape back to my original original design, no added field
-    nothing...   that can all go to a knowledge layer". A join holds its provider, and its subtype join's element is
-    held by it too; the refs go to the sources layer, and a join's name, verb, non_goal and extra, and the subtype join's
-    own fields, go to the intake details layer; a ticket, a message and an item at the subtype join move to its
-    element. The metaform keeps only Rich's fields."""
+    nothing...   that can all go to a knowledge layer"; "the name on the join was the name for the element"; "I want
+    all of that fucikiong  shit gone". A join holds its provider, and its subtype join's element is held by it too; a
+    join's name is the name of the element it holds when that element has none; each element's refs, with those of the
+    joins that held it, are its one item of the sources layer; a ticket, a message and an item at the subtype join move
+    to its element. The current version is what moves. Nothing else of the old shape is kept in the store, and the copy
+    kept first holds all of it. The metaform keeps only Rich's fields."""
     path = tmp_path / 'main.metaform.sqlite3'
     db = sqlite3.connect(path)
     db.executescript(LAYOUT_16)
@@ -613,27 +653,37 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
         INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, kind, created, ready)
           VALUES ('{INTAKE}', 'M', 'intake', 'intake', 'v', 0, 0, 'intake', '2026-10-01', '2026-10-01'),
                  ('{MEMORY}', 'M', 'memory', 'memory', 'v', 1, 1, 'memory', '2026-10-01', '2026-10-01');
-        INSERT INTO types(address) VALUES ('code'), ('code.b'), ('code.loop'), ('code.loop.tick');
-        INSERT INTO element_ids(element_id) VALUES ('E1'), ('E2'), ('E3');
+        INSERT INTO types(address) VALUES ('code'), ('code.b'), ('code.c'), ('code.loop'), ('code.loop.tick');
+        INSERT INTO element_ids(element_id) VALUES ('E1'), ('E2'), ('E3'), ('E4');
         INSERT INTO identities(id, kind) VALUES ('E1', 'element'), ('E2', 'element'), ('E3', 'element'),
-                                                ('J1', 'join'), ('J2', 'join'), ('I1', 'item');
+                                                ('E4', 'element'), ('J1', 'join'), ('J2', 'join'), ('J3', 'join'),
+                                                ('I1', 'item');
         INSERT INTO elements(row, element_id, layer_id, address, name_length, name, role, extra)
           VALUES (1, 'E1', '{INTAKE}', 'code', 1, 'code', 'DE', '{{"kept": "aside"}}'),
                  (2, 'E2', '{INTAKE}', 'code.b', 1, 'b', 'SE', NULL),
-                 (3, 'E3', '{INTAKE}', 'code.loop.tick', 2, 'tick', 'SE', NULL);
+                 (3, 'E3', '{INTAKE}', 'code.loop.tick', 2, 'tick', 'SE', NULL),
+                 (4, 'E4', '{INTAKE}', 'code.c', 1, NULL, 'NE', NULL);
         INSERT INTO current_elements(element_id, row, address, role)
-          VALUES ('E1', 1, 'code', 'DE'), ('E2', 2, 'code.b', 'SE'), ('E3', 3, 'code.loop.tick', 'SE');
-        INSERT INTO address_elements(address, element_id) VALUES ('code', 'E1'), ('code.b', 'E2'), ('code.loop.tick', 'E3');
-        INSERT INTO join_ids(join_id) VALUES ('J1'), ('J2');
-        INSERT INTO joins(row, join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, ifd, verb, non_goal)
-          VALUES (1, 'J1', '{INTAKE}', 'require', NULL, 'E1', 'E2', 'bee', 'Need b.', 'serves b', 'receives', 'serves',
-                  'No c.'),
+          VALUES ('E1', 1, 'code', 'DE'), ('E2', 2, 'code.b', 'SE'), ('E3', 3, 'code.loop.tick', 'SE'),
+                 ('E4', 4, 'code.c', 'NE');
+        INSERT INTO address_elements(address, element_id)
+          VALUES ('code', 'E1'), ('code.b', 'E2'), ('code.loop.tick', 'E3'), ('code.c', 'E4');
+        INSERT INTO join_ids(join_id) VALUES ('J1'), ('J2'), ('J3');
+        INSERT INTO joins(row, join_id, layer_id, type, parent, receiver, provider, name, purpose, ef, ifd, verb, non_goal,
+                          extra, op)
+          VALUES (1, 'J1', '{INTAKE}', 'require', NULL, 'E1', 'E2', 'old bee', 'Need b once.', 'served b', 'sends',
+                  'served', 'No d.', NULL, 'add'),
                  (2, 'J2', '{INTAKE}', 'subtype', 'J1', NULL, 'E3', NULL, 'Keep time.', 'ticks once a frame', 'sends',
-                  'ticks', NULL);
-        INSERT INTO current_joins(join_id, row, receiver, provider) VALUES ('J1', 1, 'E1', 'E2');
+                  'ticks', NULL, NULL, 'add'),
+                 (3, 'J1', '{INTAKE}', 'require', NULL, 'E1', 'E2', 'bee', 'Need b.', 'serves b', 'receives', 'serves',
+                  'No c.', NULL, 'change'),
+                 (4, 'J3', '{INTAKE}', 'require', NULL, 'E1', 'E4', 'cee', 'Need c.', 'serves c', 'receives', NULL,
+                  NULL, '{{"weight": 2}}', 'add');
+        INSERT INTO current_joins(join_id, row, receiver, provider) VALUES ('J1', 3, 'E1', 'E2'), ('J3', 4, 'E1', 'E4');
         INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES ('J2', 2, 'J1', 'E3');
         INSERT INTO refs(owner, owner_row, position, key, value)
-          VALUES ('element', 1, 0, 'path', 'src/code'), ('join', 1, 0, 'path', 'src/b.c'), ('join', 2, 0, 'path', 'src/tick.c');
+          VALUES ('element', 1, 0, 'path', 'src/code'), ('join', 1, 0, 'path', 'src/old.c'),
+                 ('join', 3, 0, 'path', 'src/b.c'), ('join', 2, 0, 'path', 'src/tick.c');
         INSERT INTO item_ids(item_id, layer_id) VALUES ('I1', '{MEMORY}');
         INSERT INTO items(row, item_id, layer_id, target_kind, target_id, value)
           VALUES (1, 'I1', '{MEMORY}', 'join', 'J2', '"ticks drift"');
@@ -642,31 +692,53 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
         INSERT INTO messages(message_id, target_kind, target_id, kind, created) VALUES ('Q1', 'join', 'J2', 'question', '2026-10-01');
     """)
     db.commit()
+    elements_before = db.execute('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row').fetchall()
     db.close()
     with open_store(path, write=False) as opened:
-        q = lambda sql, *args: [tuple(row) for row in opened.execute(sql, args)]
+        q = lambda sql, *args: [tuple(row) for row in opened.execute(sql, args)]  # noqa: E731
         version = q("SELECT value FROM meta WHERE key='schema_version'")[0][0]
-        held = q('SELECT e.element_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row '
-                 "WHERE c.join_id='J1' ORDER BY e.position")
-        joins = q('SELECT join_id, type, receiver, purpose, ef, ifd FROM joins ORDER BY row')
+        elements_after = q('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row')
+        held = {join_id: [row[0] for row in q('SELECT e.element_id FROM join_elements e JOIN current_joins c '
+                                              'ON c.row = e.join_row WHERE c.join_id=? ORDER BY e.position', join_id)]
+                for join_id in ('J1', 'J3')}
+        current = q('SELECT c.join_id, j.type, j.receiver, j.purpose, j.ef, j.ifd FROM current_joins c '
+                    'JOIN joins j ON j.row = c.row ORDER BY c.join_id')
+        joins = q('SELECT join_id FROM joins ORDER BY row')
         layer = {name: layer_id for layer_id, name in q('SELECT layer_id, name FROM layers')}
+        layers = layer_names(opened)
         items = q('SELECT i.layer_id, i.target_kind, i.target_id, i.value, r.key, r.value FROM current_items c '
-                  'JOIN items i ON i.row = c.row LEFT JOIN refs r ON r.owner = \'item\' AND r.owner_row = i.row '
+                  "JOIN items i ON i.row = c.row LEFT JOIN refs r ON r.owner = 'item' AND r.owner_row = i.row "
                   'ORDER BY i.row, r.position')
         moved = q('SELECT target_kind, target_id FROM work UNION ALL SELECT target_kind, target_id FROM messages')
         refs = q("SELECT owner FROM refs WHERE owner <> 'item'")
         broken = q('PRAGMA foreign_key_check')
     assert version == SCHEMA_VERSION == '19'
-    assert held == [('E2',), ('E3',)]
-    assert joins == [('J1', 'purpose', 'E1', 'Need b.', 'serves b', 'receives')]
-    sources, details = layer['sources'], layer['intake details']
-    assert (sources, 'element', 'E1', '"code"', 'path', 'src/code') in items
-    assert (sources, 'join', 'J1', '"code served by code.b"', 'path', 'src/b.c') in items
-    assert (sources, 'element', 'E3', '"code.loop.tick"', 'path', 'src/tick.c') in items
-    assert (details, 'element', 'E1', '{"extra": {"kept": "aside"}}', None, None) in items
-    assert (details, 'join', 'J1', '{"name": "bee", "non_goal": "No c.", "verb": "serves"}', None, None) in items
-    assert (details, 'element', 'E3', '{"ef": "ticks once a frame", "ifd": "sends", "part_of": "code served by code.b", '
-                                      '"purpose": "Keep time.", "verb": "ticks"}', None, None) in items
-    assert (MEMORY, 'element', 'E3', '"ticks drift"', None, None) in items
+    # J1's name is not E2's, which has its own; J3's is E4's, which had none; the rest of every element is kept
+    assert elements_after == [tuple(row) if row[0] != 'E4' else (*row[:3], 'cee', row[4]) for row in elements_before]
+    assert held == {'J1': ['E2', 'E3'], 'J3': ['E4']}
+    assert current == [('J1', 'purpose', 'E1', 'Need b.', 'serves b', 'receives'),
+                       ('J3', 'purpose', 'E1', 'Need c.', 'serves c', 'receives')]
+    assert 'J2' not in [row[0] for row in joins]  # the subtype join is gone, its element held by J1
+    sources = layer['sources']
+    assert 'intake details' not in layers  # nothing of the old shape is kept beside the metaform
+    # The current version is what moves: J1's refs from its change row, at E2, the element J1 holds.
+    assert items == [
+        (MEMORY, 'element', 'E3', '"ticks drift"', None, None),
+        (sources, 'element', 'E1', '"code"', 'path', 'src/code'),
+        (sources, 'element', 'E2', '"code.b"', 'path', 'src/b.c'),
+        (sources, 'element', 'E3', '"code.loop.tick"', 'path', 'src/tick.c'),
+    ]
     assert moved == [('element', 'E3'), ('element', 'E3')]
     assert refs == [] and broken == []
+    # Earlier versions' fields and refs remain in the copy kept first.
+    backups = list((home / 'backups' / 'upgrade-19').glob(f'*/{tmp_path.name}/main.metaform.sqlite3'))
+    assert len(backups) == 1
+    kept = sqlite3.connect(backups[0])
+    assert kept.execute("SELECT value FROM refs WHERE owner='join' AND owner_row=1").fetchall() == [('src/old.c',)]
+    # what the store no longer keeps, the copy holds: J1's name, verb and non_goal, J3's extra, E1's extra, and the
+    # subtype join's own purpose and ef
+    assert kept.execute('SELECT name, verb, non_goal FROM joins WHERE row=3').fetchone() == ('bee', 'serves', 'No c.')
+    assert kept.execute('SELECT extra FROM joins WHERE row=4').fetchone() == ('{"weight": 2}',)
+    assert kept.execute("SELECT extra FROM elements WHERE element_id='E1'").fetchone() == ('{"kept": "aside"}',)
+    assert kept.execute('SELECT purpose, ef FROM joins WHERE row=2').fetchone() == ('Keep time.', 'ticks once a frame')
+    kept.close()

@@ -341,7 +341,8 @@ def test_the_graph_pages_every_visible_element_and_join_once_with_its_nearest_pa
 @pytest.mark.req('VIEW-002')
 def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gui_itself(run, home, web, mapped):
     remember(run, mapped, 'create_entities', [entity('drift', 'Drifts under load.')], 'element:code.timer.kitchen')
-    run('memory', 'note', 'element:code.timer.kitchen', 'text=Keep the loop small.', cwd=mapped)
+    from tests.storekit import page_note
+    page_note('proj', 'element:code.timer.kitchen', 'Keep the loop small.')  # the person's note, VIEW-034
     started(run)
     stores = sorted((home / 'projects').rglob('*.sqlite3')) + [home / 'metaform.sqlite3']
     assert any(path.name == 'memory.sqlite3' for path in stores)  # the memory module's store, with rows, is read too
@@ -929,8 +930,12 @@ def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(ru
     page.evaluate(f'window.metaform.select("{cook}")')
     first = press('ArrowDown')
     assert first in row  # down goes to a node the cook's join holds
-    if first == tick:  # left or right goes along the row to the other node of the same parent
-        assert press('ArrowRight' if row.index(tick) == 0 else 'ArrowLeft') == kitchen
+    other = row[1 - row.index(first)]
+    toward, back = ('ArrowRight', 'ArrowLeft') if row.index(first) == 0 else ('ArrowLeft', 'ArrowRight')
+    assert press(toward) == other  # left or right goes along the row to the other node of the same parent
+    assert press(back) == first  # and back again
+    if first != kitchen:
+        assert press(toward) == kitchen
     walk = [press(key) for key in ('ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowRight', 'ArrowLeft')]
     assert walk == [alarm, kitchen, cook, display, cook]
     assert problems == []
@@ -991,14 +996,18 @@ def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_has
     assert drawn[at['code.timer.kitchen']] == 'dish timer'  # its name
     assert drawn[at['code.alarm.audible']] == 'audible alarm'  # no name: its short name
     page.wait_for_function('() => document.querySelector("#map2d").textContent.includes("dish timer")')
+    outer = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => [...node.childNodes].filter(part => part.nodeName !== "title").map(part => part.textContent).join("").trim())')
+    assert outer.count('dish timer') == 1 and outer.count('audible alarm') == 1, outer
+    graph = page.evaluate('window.metaform.graph().nodes')
+    assert [node for node in graph if node['t'] == 'purpose' and node.get('name')] == []  # a join has no label
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
     assert page.text_content('#p-object h2') == 'kitchen timer' and 'dish timer' in page.inner_text('#p-object')
     cook = at['exterior.cook']
     page.evaluate(f'window.metaform.select("{cook}")')
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
-    labels = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => node.textContent.trim())')
-    assert labels.count('dish timer') <= 1, labels  # the join beside the timer does not repeat the timer's label
+    labels = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => [...node.childNodes].filter(part => part.nodeName !== "title").map(part => part.textContent).join("").trim())')
+    assert '·' in labels and 'dish timer' not in labels, labels  # inside the cook its join is drawn with no label
     assert problems == []
 
 
@@ -1325,14 +1334,12 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{tick}")')
     assert page.evaluate('window.metaform.vertical()') == across
-    center, held = (page.evaluate(f"""(() => {{ const title = [...document.querySelectorAll('#map2d svg title')]
-        .find(t => t.textContent === '{name}'); const box = title.parentNode.getBoundingClientRect();
-        return [box.left + box.width / 2, box.top + box.height / 2]; }})()""") for name in ('dish timer', ''))
-    # the join the timer receives has no label of its own, Rich 2026-10-04, so its title is empty
+    # the timer and the join it receives, found by their keys, since a join has no label, Rich 2026-10-04
+    center, held = (page.evaluate(f'window.metaform.at2d("{key}")') for key in (kitchen, tick))
     if across:  # top to bottom: what the node holds sits below it
-        assert held[1] > center[1]
+        assert held['y'] > center['y']
     else:
-        assert held[0] > center[0]
+        assert held['x'] > center['x']
     width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
     whole = width()
     page.keyboard.press('f')
@@ -3982,26 +3989,25 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
 
 
 @pytest.mark.req('VIEW-034')
-def test_a_person_and_an_agent_keep_their_notes_at_a_node_in_one_place(run, web, mapped, browser):
-    """Rich, 2026-09-29: notes where both he and an agent put notes in place. Rich, 2026-10-02: "Allow one single note
-    not a list, limit its characters to 2048, make it so you can edit the note and so can the user, its not protected,
-    it doesnt expire, they dont build up." The fixture's folder leaves memory out, and the note shows all the same."""
+def test_the_person_writes_the_note_at_a_node_in_the_page_and_an_agent_only_reads_it(run, web, mapped, browser):
+    """Rich, 2026-10-04: "It stands for me to be able to make a note for people on the nodes. That's what it stands
+    for, not for other people. It's for the admin and for other people to read what I, what the user writes. Not for
+    the AI. The AI is going to have the memory server." One single note, not a list, of at most 2048 characters, Rich
+    2026-10-02. The fixture's folder leaves memory out, and the note shows all the same."""
     from metaform.data import Store
     alarm = Store('proj').element('code.alarm.audible').element_id
     noted = lambda: json.loads(run('memory', 'note', 'element:code.alarm.audible', '--json', cwd=mapped).stdout)['note']
-    run('memory', 'note', 'element:code.alarm.audible', 'text=The tone is 2 kHz.', 'by=agent', cwd=mapped)  # an agent's
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     page.evaluate(f'window.metaform.menu("{alarm}")')
-    assert page.text_content('#menu button.notes') == 'Notes 1'
+    assert page.text_content('#menu button.notes') == 'Notes 0'
     page.click('#menu button.notes')
     page.wait_for_selector('#notes:not([hidden])')
-    assert page.input_value('#notes textarea') == 'The tone is 2 kHz.' and 'agent' in page.inner_text('#notes .by')
     assert page.get_attribute('#notes textarea', 'maxlength') == '2048'
     page.fill('#notes textarea', 'The tone is 2 kHz. Too quiet in a loud kitchen; ask before changing the pitch.')
     assert page.inner_text('#notes .count') == '78 / 2048'
-    page.click('#notes .save')                                        # the person edits the agent's note in place
+    page.click('#notes .save')                                        # the person writes the note in the page
     page.wait_for_function('() => document.querySelector("#notes .by").textContent.includes("you")')
     assert (noted()['text'], noted()['by']) == (
         'The tone is 2 kHz. Too quiet in a loud kitchen; ask before changing the pitch.', 'user')
@@ -4009,9 +4015,11 @@ def test_a_person_and_an_agent_keep_their_notes_at_a_node_in_one_place(run, web,
     page.evaluate(f'window.metaform.menu("{alarm}")')
     assert page.text_content('#menu button.notes') == 'Notes 1'      # one note, never a list
     page.keyboard.press('Escape')
-    run('memory', 'note', 'element:code.alarm.audible', 'text=Raised to 3 kHz.', 'by=agent', cwd=mapped)  # and the agent
+    refused = run('memory', 'note', 'element:code.alarm.audible', 'text=Raised to 3 kHz.', cwd=mapped, ok=False)
+    assert refused.returncode == 2 and 'The note is written only from the web page.' in refused.stderr  # the AI reads it
+    assert noted()['text'] == 'The tone is 2 kHz. Too quiet in a loud kitchen; ask before changing the pitch.'
     page.evaluate(f'window.metaform.note("{alarm}")')
-    page.wait_for_function('() => document.querySelector("#notes textarea").value === "Raised to 3 kHz."')
+    page.wait_for_function('() => document.querySelector("#notes textarea").value.startsWith("The tone is 2 kHz.")')
     page.fill('#notes textarea', '')
     page.click('#notes .save')                                        # empty, it is cleared
     page.wait_for_function('() => document.querySelector("#notes .by").textContent.includes("No note")')

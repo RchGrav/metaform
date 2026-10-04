@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
-from metaform.data import PLACE_KINDS, Item, Node, Notice, Page, Store, WorkRecord
+from metaform.data import PLACE_KINDS, Item, Node, Notice, Outcome, Page, Store, WorkRecord
 from metaform.data.records import TICKETS
 from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads, work_reads
 
@@ -335,7 +335,7 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
-    'add-element': frozenset({'address', 'name_length', 'name', 'role'}),
+    'add-element': frozenset({'address', 'name_length', 'name', 'role', 'refs'}),  # refs go to the sources layer
     'add-join': frozenset({'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra', 'read_first', 'always_show', 'task', 'condition'}),
@@ -530,8 +530,11 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
                            tags=tuple(nouns.get('tags', ())), provenance=provenance,
                            sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
-        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role'),
+        made = store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role'),
                                  name=nouns.get('name'))
+        if 'refs' in nouns and not isinstance(made, Outcome):
+            _sources(store, made.element_id, made.address, nouns['refs'], notices)
+        return made
     if op == 'add-join':
         purpose, ef = _empty(ctx, notices, 'purpose', 'ef')
         return store.add_join(name, nouns['receiver'], nouns['elements'], purpose=purpose, ef=ef,
@@ -564,6 +567,22 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     raise Stop(f'{op!r} is not a knowledge operation.', 'metaform help map knowledge')
 
 
+SOURCES = 'sources'  # the layer an element's refs go in, Rich 2026-10-04
+
+
+def _sources(store: Store, element_id: str, address: str, refs: Any, notices: list[Notice]) -> None:
+    """The refs given with an element, as its one item of the sources layer, replacing what that item held: the
+    metaform holds no refs, Rich 2026-10-04: "if you want to have refs you add a sources layer"."""
+    store.layer(SOURCES, 'intake', 'refs', kind='layer', mutable=True, hideable=True, ready=True)
+    held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
+            if isinstance(item, Item)]
+    if held:
+        notices.extend(getattr(store.edit(held[0].item_id, {'refs': refs}), 'notices', ()))
+    else:
+        notices.extend(getattr(store.add_item(SOURCES, Node('element', element_id), address, refs=refs), 'notices', ()))
+    notices.append(Notice('refs', f'The refs were written to the {SOURCES} layer at {address}; the metaform holds none.'))
+
+
 def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] | None = None) -> Noun:
     return Noun(name, help, kind=kind, required=False, schema=schema)
 
@@ -590,7 +609,8 @@ KNOWLEDGE_NOUNS = (
                      'not apply it.'),
     _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element.'),
     _noun('name_length', 'add-element: how many trailing segments form the element\'s short name.', 'int'),
-    _noun('refs', 'add-property and add-item: a JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
+    _noun('refs', 'add-property and add-item: a JSON list of [key, value] pairs, in order; add-element: the element\'s '
+                  'refs, written to the sources layer.', 'json', REFS_SCHEMA),
     _noun('extra', 'add-property and add-item: a JSON object of further fields.', 'json', {'type': 'object'}),
     _noun('receiver', 'add-join: the element that holds the purpose; edit: another receiver, which moves the join.'),
     _noun('elements', 'add-join and edit: the elements that serve the purpose, a JSON list of addresses.', 'json',

@@ -735,12 +735,15 @@ def _note_said(row: Row | None) -> dict[str, Any] | None:
 
 
 def note(ctx: Context) -> Any:
-    """The node's one note: read it, or with text write it in place of what it held; empty text clears it."""
+    """The node's one note: read it, or, from the web page only, write it in place of what it held; empty text clears
+    it. Rich, 2026-10-04: "the note is for me"; "no note for them". An agent reads the note and never writes it."""
     store = ctx.require_store()
     notices: list[dict[str, str]] = []
     key = _held(store, ctx.nouns, notices)
     text = ctx.nouns.get('text')
     where = {'receiver': key.receiver, 'provider': key.provider}
+    if text is not None and ctx.surface != 'web':
+        raise Stop('The note is written only from the web page.', f'metaform memory note {ctx.nouns["node"]}')
     if text is None:
         with store.tables(write=False) as tx:
             return {**key.said(), 'note': _note_said(tx.get('notes', where)), **({'notices': notices} if notices else {})}
@@ -873,12 +876,12 @@ MODULE = Module(
                                      'content'))),
         Verb('open_nodes', open_nodes, 'Open specific nodes in the knowledge graph by their names.',
              nouns=_at(Noun('names', 'An array of entity names to retrieve', kind='json', schema=NAMES))),
-        Verb('note', note, "Read a node's one note, or write it in place of what it held; empty text clears it.",
+        Verb('note', note, "Read a node's one note, the person's; only the web page writes it.",
              nouns=(Noun('node', 'An element, element:<address>; with provider, the purpose it holds as receiver.'),
                     Noun('provider', 'A purpose node holds as its receiver: the address of the element that serves '
                                      'it.', required=False),
                     Noun('address', 'With provider: the element at that address the join holds.', required=False),
-                    Noun('text', f'The note, at most {NOTE_LIMIT} characters.', required=False),
+                    Noun('text', f'The note, at most {NOTE_LIMIT} characters; only the web page writes it.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
              examples=(('metaform memory note element:code.manager.route text="Routes drift under load."',
                         "Write the route manager's note."),)),

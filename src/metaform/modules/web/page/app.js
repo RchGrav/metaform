@@ -273,7 +273,8 @@ function graphData() {
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
   const drawnIds = new Set(nodes.map(node => node.id));
   const at = thing => thing.kind === 'property' ? thing.item.element_id : keyOf(thing.item.target);
-  const hung = [...S.items.values()].filter(thing => drawnIds.has(at(thing)));
+  // The sources layer's refs are shown in the panel and never hung on the map, Rich 2026-10-04: the map is the design.
+  const hung = [...S.items.values()].filter(thing => drawnIds.has(at(thing)) && thing.layer !== 'sources');
   for (const thing of hung) {
     nodes.push({id: thing.key, t: 'item', layer: thing.layer, text: itemText(thing.value)});
     drawnIds.add(thing.key);
@@ -1944,7 +1945,7 @@ function renderThing(thing) {
     fill(pane,
       h('div', {class: 'eyebrow'}, thing.layerKind === 'memory' ? 'Memory' : thing.kind === 'property' ? 'Property' : 'Item'),
       h('div', {class: 'pills'}, thing.layer ? layerPill(thing.layer) : null, thing.item.state ? h('span', {class: 'pill'}, thing.item.state) : null),
-      h('p', {class: 'itemtext'}, itemText(thing.value)),
+      h('div', {class: 'itemtext'}, itemView(thing.value)),
       link ? h('p', {class: 'meta'}, 'Links to ', h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(link); }},
         nameOf(link, thing.item.link.id)), '; Enter goes there.') : null,
       refsOf(thing.item.refs));
@@ -3488,9 +3489,21 @@ function joinCard(join, side) {
     join.purpose ? h('p', {}, join.purpose) : null,
     join.ef ? h('p', {class: 'fn'}, join.ef) : null);
 }
+/* An item's value as text: an object as one `field: value` line per field it holds, empty fields left out, so a layer
+ * such as intake details reads as fields, Rich 2026-10-04: "its not formatted". */
+const filled = value => value !== null && value !== undefined && value !== '' && !(Array.isArray(value) && !value.length);
+const fieldText = value => value && typeof value === 'object' ? JSON.stringify(value) : String(value);
 function itemText(value) {
-  if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
+  if (Array.isArray(value)) return value.map(fieldText).join('\n');
+  if (value && typeof value === 'object')
+    return Object.entries(value).filter(([, each]) => filled(each)).map(([key, each]) => `${key}: ${fieldText(each)}`).join('\n');
   return String(value ?? '');
+}
+/* The same value for the panel: an object as a table of its fields. */
+function itemView(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return itemText(value);
+  return h('dl', {class: 'fields'}, Object.entries(value).filter(([, each]) => filled(each))
+    .flatMap(([key, each]) => [h('dt', {}, key), h('dd', {}, fieldText(each))]));
 }
 /* A selected join shows only itself, so nothing needs finding in its receiver's text. */
 function renderJoin(join) {
@@ -3534,7 +3547,7 @@ async function renderObject(id) {
       if (!items.length) continue;
       box.append(h('div', {class: 'eyebrow'}, group.kind === 'memory' ? 'Memory' : group.layer),
         ...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''), style: {'--c': `var(${colorVar(group.layer)})`}},
-          itemText(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
+          itemView(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
     }
     // What the memory module adds to the node's read, as `map node` gives it, BASE-035: its one note, and while memory
     // shows here, the memories kept at it and those on the joins it receives and provides, LAYER-013 and VIEW-034.

@@ -7,6 +7,7 @@ import json
 import pytest
 
 from metaform.data import Node, Store
+from tests.storekit import page_note
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -439,27 +440,33 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
 
 
 @pytest.mark.req('VIEW-034')
-def test_a_node_holds_one_note_of_at_most_2048_characters_that_anyone_edits(run, mapped):
-    """Rich, 2026-10-02: one single note not a list, 2048 characters, the agent and the user edit it, not protected,
-    it does not expire, notes do not build up."""
-    written = mj(run, 'note', 'element:code.manager.route', 'text=Routes drift under load.', cwd=mapped)
+def test_a_node_holds_one_note_of_at_most_2048_characters_that_only_the_person_writes(run, mapped):
+    """Rich, 2026-10-04: "It stands for me to be able to make a note for people on the nodes. That's what it stands
+    for, not for other people. It's for the admin and for other people to read what I, what the user writes. Not for
+    the AI. The AI is going to have the memory server." One single note, not a list, of at most 2048 characters; it
+    does not expire, and notes do not build up, Rich 2026-10-02."""
+    from metaform.errors import Stop
+    written = page_note('proj', 'element:code.manager.route', 'Routes drift under load.')
     assert written['note']['text'] == 'Routes drift under load.'
-    mj(run, 'note', 'element:code.manager.route', 'text=Routes hold under load.', 'by=user', cwd=mapped)
-    read = mj(run, 'note', 'element:code.manager.route', cwd=mapped)
+    page_note('proj', 'element:code.manager.route', 'Routes hold under load.')
+    read = mj(run, 'note', 'element:code.manager.route', cwd=mapped)  # every surface reads it
     assert (read['note']['text'], read['note']['by']) == ('Routes hold under load.', 'user')
     assert where(run, 'code.manager.route', mapped)['memory']['note']['text'] == 'Routes hold under load.'
-    long = m(run, 'note', 'element:code.manager.route', 'text=' + 'x' * 2049, cwd=mapped, ok=False)
-    assert long.returncode == 2 and '2048' in long.stderr
+    with pytest.raises(Stop, match='2048'):
+        page_note('proj', 'element:code.manager.route', 'x' * 2049)
     assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Routes hold under load.'
-    assert mj(run, 'note', 'element:code.manager.route', 'text=' + 'y' * 2048, cwd=mapped)['note']['text'] == 'y' * 2048
-    mj(run, 'note', 'element:code.manager.route', 'text=An agent edits the user\'s note.', cwd=mapped)
-    replaced = mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']
-    assert (replaced['text'], replaced['by']) == ("An agent edits the user's note.", None)  # not protected
+    assert page_note('proj', 'element:code.manager.route', 'y' * 2048)['note']['text'] == 'y' * 2048
+    # An agent never writes the note: the command line refuses, and nothing changes.
+    refused = m(run, 'note', 'element:code.manager.route', "text=An agent edits the user's note.", cwd=mapped,
+                ok=False)
+    assert refused.returncode == 2 and 'The note is written only from the web page.' in refused.stderr
+    cleared = m(run, 'note', 'element:code.manager.route', 'text=', cwd=mapped, ok=False)  # nor clears it
+    assert cleared.returncode == 2
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'y' * 2048
     run('clear', 'project', 'proj', '--confirm', cwd=mapped)
     intake(Store('proj'))
-    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == \
-        "An agent edits the user's note."  # it does not expire, and a clear keeps it
-    assert mj(run, 'note', 'element:code.manager.route', 'text=', cwd=mapped)['note'] is None
+    assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'y' * 2048  # a clear keeps it
+    assert page_note('proj', 'element:code.manager.route', '')['note'] is None
 
 
 @pytest.mark.req('LAYER-012')
@@ -541,8 +548,8 @@ CARRYING = (('create_entities', J([entity('echo timing', 'fact')]), PROBE),
             ('add_observations', J([{'entityName': 'echo seed', 'contents': ['Echoes answer in a second.']}])),
             ('delete_entities', J(['nothing'])),
             ('delete_observations', J([{'entityName': 'echo seed', 'observations': ['nothing']}])),
-            ('delete_relations', J([{'from': 'echo seed', 'to': 'echo seed', 'relationType': 'nothing'}])),
-            ('note', 'element:code.probe.echo', 'text=Echo the route.'))
+            ('delete_relations', J([{'from': 'echo seed', 'to': 'echo seed', 'relationType': 'nothing'}])))
+# The note is not among them: an agent never writes it, Rich 2026-10-04, VIEW-034.
 
 
 @pytest.mark.req('VIEW-011')
@@ -614,12 +621,13 @@ def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped
     assert [one['name'] for one in mj(run, 'read_graph', PROBE, cwd=mapped)['entities']] == []
     assert [one['entity'] for one in mj(run, 'joins', *PURPOSE, cwd=mapped)['joins']] == ['echo timeout']
     # note takes node first, Rich 2026-10-03: provider beside it names the join node holds as its receiver.
-    written = mj(run, 'note', 'element:code.manager.route', 'provider=code.probe.echo',
-                 'text=The echo is the only liveness check.', cwd=mapped)
+    # The note is the person's, written from the page, VIEW-034; reading it is the same on every surface.
+    written = page_note('proj', 'element:code.manager.route', 'The echo is the only liveness check.',
+                        provider='code.probe.echo')
     assert (written['receiver'], written['provider']) == ('code.manager.route', 'code.probe.echo')
     assert mj(run, 'note', f'join:{join_id}', cwd=mapped)['note']['text'] == 'The echo is the only liveness check.'
-    timed = mj(run, 'note', 'code.manager.route', 'provider=code.probe.echo', 'address=code.probe.echo.timer',
-               'text=Drifts warm.', cwd=mapped)
+    timed = page_note('proj', 'code.manager.route', 'Drifts warm.', provider='code.probe.echo',
+                      address='code.probe.echo.timer')
     assert timed['address'] == 'code.probe.echo.timer'
     assert mj(run, 'note', 'element:code.probe.echo.timer', cwd=mapped)['note']['text'] == 'Drifts warm.'
     assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note'] is None
@@ -718,11 +726,11 @@ def test_rekey_transfers_exact_addresses_at_both_ends_and_preserves_the_graph(ru
 def test_rekey_rolls_back_all_attachments_and_notes_on_a_destination_collision(run, mapped, collision):
     old, new = 'code.manager.route', 'code.probe.echo'
     mj(run, 'create_entities', J([entity('routing fact', 'fact')]), ROUTE, cwd=mapped)
-    mj(run, 'note', f'element:{old}', 'text=Keep the old note.', cwd=mapped)
+    page_note('proj', f'element:{old}', 'Keep the old note.')
     if collision == 'joins':
         mj(run, 'create_entities', J([entity('routing fact', 'fact')]), PROBE, cwd=mapped)
     else:
-        mj(run, 'note', f'element:{new}', 'text=Keep the destination note.', cwd=mapped)
+        page_note('proj', f'element:{new}', 'Keep the destination note.')
     store = Store('proj', module='memory')
     with store.tables(write=False) as tx:
         before = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}

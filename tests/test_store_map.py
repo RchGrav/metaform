@@ -166,11 +166,16 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
 @pytest.mark.req('STORE-009')
 @pytest.mark.req('MAP-017')
 @pytest.mark.req('BASE-044')
-def test_a_role_given_to_an_element_of_a_knowledge_layer_is_stored_as_given_and_named(store):
+def test_a_role_given_to_an_element_of_a_knowledge_layer_is_kept_in_that_layer_and_never_on_the_element(store):
+    """A role is the intake's classification of the artifact, D48: one given in a knowledge layer is not the element's
+    role; it is kept as an item of that layer at the element and named in a notice, BASE-044."""
+    from metaform.data import Node
     layer = knowledge(store, 'notes')
     made = store.add_element(layer.name, 'code.cache.page', name_length=2, role='SE')
-    assert (made.name_length, made.role) == (2, 'SE')
+    assert (made.name_length, made.role) == (2, None)
     assert [notice.where for notice in made.notices] == ['role']
+    assert [item.value for item in store.layer_items(layer.name, Node('element', 'code.cache.page')).results] == [
+        {'role': 'SE'}]
     assert store.element('code.cache.page', raw=True).short_name == 'page cache'
 
 

@@ -394,8 +394,12 @@ def test_the_intake_tools_carry_no_flag_field_and_a_flag_sent_anyway_is_named_an
     recorded(run, project, 'start')
     refused = run('intake', 'element', 'code.alarm.audible', 'role=SE', 'flag=broken', cwd=project, ok=False)
     assert refused.returncode == 2 and "does not take 'flag=broken'" in refused.stderr
+    joined = run('intake', 'join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=p', 'colour=red',
+                 cwd=project, ok=False)
+    assert joined.returncode == 2 and "does not take 'colour=red'" in joined.stderr
     assert Store('timer').work(open=True, limit=0).results == ()
-    assert recorded(run, project, 'show')['elements'] == []
+    shown = recorded(run, project, 'show')
+    assert (shown['elements'], shown['joins']) == ([], [])
 
 
 @pytest.mark.req('BASE-039')
@@ -579,6 +583,15 @@ def test_recording_again_and_remove_change_a_building_intake_and_a_finished_one_
     gone = json.loads(run('intake', 'remove', 'receiver=code.a', 'provider=code.b', '--json', cwd=project).stdout)
     assert 'map refine' in gone['notices'][0]['message'] and 'correction' not in gone['notices'][0]['message']
     assert [join.purpose for join in Store('timer').joins('code.a').results] == ['The better purpose.']
+    # Recording after the finish starts a new intake in a new metaform; the finished one is left exactly as it was.
+    later = json.loads(run('intake', 'join', 'code.a', '["code.b"]', 'purpose=Changed.', '--json', cwd=project).stdout)
+    assert any(notice['where'] == 'metaform' for notice in later['notices'])
+    run('intake', 'element', 'code.a', 'role=SE', 'name=renamed', cwd=project)
+    finished = Store('timer')
+    assert [(join.purpose, [held.address for held in join.elements]) for join in finished.joins('code.a').results] == [
+        ('The better purpose.', ['code.b'])]
+    kept = finished.element('code.a')
+    assert kept is not None and (kept.role, kept.name) == ('DE', None)
 
 
 @pytest.mark.req('BASE-039')
@@ -777,12 +790,19 @@ def test_recording_and_remove_name_an_element_and_a_join_by_their_addresses(run,
     ids to expect: each thing is named by the addresses the agent reasoned."""
     failsafe_intake(run, project)
     recorded(run, project, 'join', 'stakeholder.operator', '["code.failsafe.gateway", "code.probe.ping"]')
+    held = next(row for row in recorded(run, project, 'show')['joins']
+                if row['receiver'] == 'stakeholder.operator' and 'code.probe.ping' in row['elements'])
+    # recorded again with no fields, the join keeps its own and only gains the element
+    assert (held['purpose'], held['ef'], held['ifd']) == ('Catch a dead gateway.', 'Probes the gateway and fails over.',
+                                                          'receives')
+    recorded(run, project, 'element', 'code.alarm', 'name=alarm bell')
     recorded(run, project, 'element', 'code.alarm', 'name_length=2')
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.failsafe.gateway',
              'namespace_address=code.probe.ping')
     recorded(run, project, 'remove', 'receiver=stakeholder.operator', 'provider=code.probe.echo')
     again = recorded(run, project, 'show')
-    assert next(row for row in again['elements'] if row['namespace_address'] == 'code.alarm')['name_length'] == 2
+    alarm = next(row for row in again['elements'] if row['namespace_address'] == 'code.alarm')
+    assert (alarm['name_length'], alarm['role'], alarm['name']) == (2, 'SE', 'alarm bell')  # the rest is kept
     assert sorted((row['receiver'], tuple(row['elements'])) for row in again['joins']) == [
         ('code.alarm', ('code.probe.echo',)), ('stakeholder.operator', ('code.failsafe.gateway',))]
     assert 'namespace_address' in nouns_of('element') and 'address' not in nouns_of('element')
@@ -991,7 +1011,12 @@ def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, proje
     store = Store('timer')
     found = store.layer_items('sources', Node('element', 'code.timer.kitchen'), limit=0).results
     assert [[(ref.key, ref.value) for ref in item.refs] for item in found] == [[('path', 'timer.c')]]
-    assert 'refs' not in store.element('code.timer.kitchen', raw=True).to_dict()
+    # The ref is held by the sources item and by nothing of the metaform: the one thing citing it is that item.
+    assert [(cited.kind, cited.layer, cited.address) for cited in store.citing('path', 'timer.c').results] == [
+        ('item', 'sources', 'code.timer.kitchen')]
+    # sources is a knowledge layer, mutable, hideable and finished, never part of the metaform.
+    layer = next(each for each in store.layers(limit=0).results if each.name == 'sources')
+    assert (layer.kind, layer.mutable, layer.hideable, layer.ready is not None) == ('layer', True, True, True)
     # The sources layer is read at once, with no step to finish it: the where read shows the refs at the element.
     shown = store.where('code.timer.kitchen', raw=True)
     assert [ref.key for group in shown.layers if group.layer == 'sources' for item in group.items for ref in item.refs] == ['path']
@@ -1002,4 +1027,10 @@ def test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on(run, proje
     run('set', '--no-intake-sources', cwd=project)
     off = recorded(run, project, 'element', 'code.alarm.audible', 'role=SE', f'refs={path}')
     assert {'where': 'refs', 'message': 'intake_sources is off, so the refs were not recorded.'} in off['notices']
-    assert store.layer_items('sources', Node('element', 'code.alarm.audible'), limit=0).results == ()
+    # The element is still recorded, and no layer holds the refs: nothing cites the path anywhere but timer.c's item.
+    assert recorded(run, project, 'show', 'receiver=code.alarm.audible')['elements'][0]['role'] == 'SE'
+    assert store.citing('path', 'timer.c').results == ()
+    alarm = store.element('code.alarm.audible', raw=True)
+    assert alarm is not None
+    held = store.node(Node('element', alarm.element_id), raw=True)
+    assert held is not None and [group.layer for group in held.layers if any(item.refs for item in group.items)] == []

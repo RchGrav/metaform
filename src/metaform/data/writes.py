@@ -41,24 +41,28 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
 
 # Elements and joins ---------------------------------------------------------------------------------------
 
-def _element_fields(name_length: Any, role: Any, found: LayerRow, notices: list[Notice]) -> tuple[Any, str | None]:
+def _element_fields(name_length: Any, role: Any, found: LayerRow,
+                    notices: list[Notice]) -> tuple[Any, str | None, list[tuple[str, Any]]]:
     """An element's name_length and role as its row holds them, STORE-009, each stored as given and named in a notice
-    when it does not fit, BASE-044: a name_length that is not a whole number of at least 1, a role outside the five, or
-    a role given in a layer other than the intake, since a role is the intake's classification of the artifact, D48.
+    when it does not fit, BASE-044: a name_length that is not a whole number of at least 1, or a role outside the five.
+    A role is the intake's classification of the artifact, D48: one given in another layer is not the element's; it is
+    kept as an item of that layer at the element, returned here to be written, so nothing given is lost.
     """
     if name_length is not None and not rows.whole_number(name_length):
         notices.append(Notice('name_length', 'name_length is not a whole number; it was stored as given.'))
     elif name_length is not None and int(name_length) < 1:
         notices.append(Notice('name_length', 'name_length is less than 1; it was stored as given.'))
     stored_role: str | None = None
-    if role is not None:
+    aside: list[tuple[str, Any]] = []
+    if role is not None and found.kind not in METAFORM_KINDS:
+        aside.append(('role', role))
+        notices.append(Notice('role', f"A role is the intake's classification of the artifact, and {found.name} is "
+                                      f'not the intake; the role was kept as an item of {found.name} at the element.'))
+    elif role is not None:
         stored_role = rows.text(role, 'role', notices)
-        if found.kind not in METAFORM_KINDS:
-            notices.append(Notice('role', f"A role is the intake's classification of the artifact, and {found.name} "
-                                          'is not the intake; the role was stored as given.'))
-        elif stored_role not in ROLES:
+        if stored_role not in ROLES:
             notices.append(Notice('role', f'{role!r} is not AUE, CQU, DE, SE or NE; it was stored as given.'))
-    return name_length, stored_role
+    return name_length, stored_role, aside
 
 
 def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, role: Any = None,
@@ -84,9 +88,10 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
                                   f'its own {field}; the {field} given here was not applied.')
                     for field, unapplied in given if unapplied]
         return _with(record, notices, existing=True, differs=any(unapplied for _, unapplied in given))
-    length, stored_role = _element_fields(name_length, role, found, notices)
+    length, stored_role, aside = _element_fields(name_length, role, found, notices)
     element_id = rows.new_element(tx, found, address, name_length=length, role=stored_role,
                                   name=rows.text(name, 'name', notices))
+    rows.split_items(tx, found, 'element', element_id, aside)
     record = views.element(tx, element_id, None)
     assert record is not None
     return _with(record, notices)
@@ -360,9 +365,11 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
                 link = value if isinstance(value, Node) else Node.parse(str(value))
                 columns['link_kind'], columns['link_id'] = rows.node_at(tx, link, found, 'link', notices)
         elif kind == 'element' and key in ('name_length', 'role'):
-            length, role = _element_fields(value if key == 'name_length' else None,
-                                           value if key == 'role' else None, found, notices)
-            columns[key] = length if key == 'name_length' else role
+            length, role, kept = _element_fields(value if key == 'name_length' else None,
+                                                 value if key == 'role' else None, found, notices)
+            split += kept
+            if not kept:
+                columns[key] = length if key == 'name_length' else role
         elif kind == 'join' and key == 'ifd':
             columns[key] = _ifd(value, notices)
         elif key in rows.TEXT_COLUMNS:

@@ -380,6 +380,9 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .diff div{padding:0 10px}
 .diff .add{background:var(--add-bg);color:var(--add)}.diff .del{background:var(--del-bg);color:var(--del)}.diff .gap{color:var(--faint)}
 .itemtext{white-space:pre-wrap;overflow-wrap:anywhere}
+.fields{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin:4px 0}
+.fields dt{color:var(--muted)}
+.fields dd{margin:0;overflow-wrap:anywhere}
 /* Mermaid lays the 2D map out here before it is shown: a holder of no size, so the page never grows a scrollbar. */
 #draw{position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden}
 

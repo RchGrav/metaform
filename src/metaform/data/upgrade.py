@@ -46,11 +46,11 @@ nothing...   that can all go to a knowledge layer.  metaform goes back to my ori
 you add a sources layer, or you keep them in a sources layer". An element keeps its address, name_length, name and
 role; a join keeps its type, receiver, purpose, ef and ifd, and holds the elements that serve it. Every version of a
 join holds its provider; each current subtype join's element is held by its parent join's current version, and the
-subtype join is gone. Nothing is dropped: every current element's and join's refs become an item of a layer named
-sources at it, and what else it held, an element's extra, a join's name, verb, non_goal, extra and promoted element,
-and a subtype join's own fields, become an item of a layer named intake details at it, the subtype join's at the
-element it held. Items, tickets and messages at a subtype join move to that element. Earlier versions of those fields
-remain in the backup made first.
+subtype join is gone. A join's or subtype join's name is the name of the element it holds, Rich 2026-10-04: "the name on
+the join was the name for the element". Every current element's refs, and those of the joins that held it, become its
+one item of a layer named sources. Items, tickets and messages at a subtype join move to its element. Nothing else of
+the old shape is kept in the store, Rich 2026-10-04: "I want all of that fucikiong  shit gone"; the backup made first
+holds every field and every earlier version.
 """
 from __future__ import annotations
 
@@ -252,7 +252,7 @@ def _kind_name(table: str) -> str:
 
 
 SHAPE_REASON = "Layout 19, Rich 2026-10-04: the metaform goes back to Rich's original shape."
-SOURCES, DETAILS = 'sources', 'intake details'
+SOURCES = 'sources'
 
 
 def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> None:
@@ -313,50 +313,40 @@ def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
                            (element_id,)).fetchone()
         return str(found[0]) if found else str(element_id)
 
-    def kept(row: sqlite3.Row, names: tuple[str, ...]) -> dict[str, Any]:
-        fields: dict[str, Any] = {}
-        for name in names:
-            if name in row.keys() and row[name] is not None:
-                fields[name] = json.loads(row[name]) if name == 'extra' and json_text(row[name]) else row[name]
-        return fields
+    refs: dict[str, list[tuple[str, str]]] = {}  # each element's refs, its own and those of the joins that held it
+
+    def name(element_id: Any, given: Any) -> None:
+        """A join's or a subtype join's name is the name of the element it holds, Rich 2026-10-04: "the name on the
+        join was the name for the element"; an element that has a name of its own keeps it."""
+        if given:
+            db.execute('UPDATE elements SET name=? WHERE name IS NULL AND row=(SELECT row FROM current_elements '
+                       'WHERE element_id=?)', (given, element_id))
 
     for element_id, current in db.execute('SELECT element_id, row FROM current_elements ORDER BY row').fetchall():
-        base = db.execute('SELECT * FROM elements WHERE row=?', (current,)).fetchone()
-        found = refs_of('element', current)
-        if found:
-            item(SOURCES, 'refs', 'element', element_id, base['address'], found)
-        details = kept(base, ('extra',))
-        if details:
-            item(DETAILS, 'fields', 'element', element_id, details)
-    for join_id, current in db.execute('SELECT join_id, row FROM current_joins ORDER BY row').fetchall():
+        refs.setdefault(element_id, []).extend(refs_of('element', current))
+    for current, provider in db.execute('SELECT c.row, j.provider FROM current_joins c JOIN joins j ON j.row = c.row '
+                                        'ORDER BY c.row').fetchall():
         base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
-        said = f"{address(base['receiver'])} served by {address(base['provider'])}"
-        found = refs_of('join', current)
-        if found:
-            item(SOURCES, 'refs', 'join', join_id, said, found)
-        details = kept(base, ('name', 'verb', 'non_goal', 'extra', 'element'))
-        if details:
-            item(DETAILS, 'fields', 'join', join_id, details)
+        name(provider, base['name'])
+        refs.setdefault(provider, []).extend(refs_of('join', current))
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='current_subtypes'").fetchone():
         for parent, element_id, current in db.execute(
                 'SELECT parent, provider, row FROM current_subtypes ORDER BY row').fetchall():
             base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
-            holder = db.execute('SELECT j.row, j.receiver, j.provider FROM current_joins c JOIN joins j ON j.row = c.row '
-                                'WHERE c.join_id=?', (parent,)).fetchone()
+            holder = db.execute('SELECT j.row FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
+                                (parent,)).fetchone()
             if holder is not None and not db.execute('SELECT 1 FROM join_elements WHERE join_row=? AND element_id=?',
                                                      (holder[0], element_id)).fetchone():
                 position = db.execute('SELECT COALESCE(MAX(position) + 1, 0) FROM join_elements WHERE join_row=?',
                                       (holder[0],)).fetchone()[0]
                 db.execute('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
                            (holder[0], position, element_id))
-            details = kept(base, ('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'extra'))
-            if holder is not None:
-                details['part_of'] = f'{address(holder[1])} served by {address(holder[2])}'
-            item(DETAILS, 'fields', 'element', element_id, details)
-            found = refs_of('join', current)
-            if found:
-                item(SOURCES, 'refs', 'element', element_id, address(element_id), found)
+            name(element_id, base['name'])
+            refs.setdefault(element_id, []).extend(refs_of('join', current))
         db.execute('DROP TABLE current_subtypes')
+    for element_id, found in refs.items():
+        if found:
+            item(SOURCES, 'refs', 'element', element_id, address(element_id), found)
     for column in ('target', 'link'):
         for table in ('items', 'current_items'):
             db.execute(f"UPDATE {table} SET {column}_kind='element', {column}_id=(SELECT element_id FROM "
@@ -365,14 +355,3 @@ def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
     db.execute("DELETE FROM refs WHERE owner IN ('element', 'join')")
     db.execute('DELETE FROM join_elements WHERE join_row IN (SELECT row FROM joins WHERE parent IS NOT NULL)')
     db.execute('DELETE FROM joins WHERE parent IS NOT NULL')
-
-
-def json_text(value: Any) -> bool:
-    """Whether a stored value is JSON text."""
-    if not isinstance(value, str):
-        return False
-    try:
-        json.loads(value)
-    except ValueError:
-        return False
-    return True

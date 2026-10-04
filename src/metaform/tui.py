@@ -76,7 +76,7 @@ class _Backend:
             if item.module is not None:
                 self.modules[item.id] = _Owner(
                     tuple(setting for setting in settings.SCHEMA.values() if setting.owner == item.id),
-                    description=item.module.purpose, help=item.module.details or item.module.purpose)
+                    description=item.module.summary, help=item.module.summary)  # the summary, for people; purpose is for agents
             if item.problem:
                 self.load_errors[item.id] = item.problem
             rows.append(_Row(item.id, item.enabled, str(item.path)))

@@ -160,3 +160,10 @@ def scans(plan_lines):
     return bad
 
 
+
+
+def page_note(project: str, node: str, text: str, **naming: str):
+    """Write a node's note as the person does, from the web page, VIEW-034: the only surface that writes it. `naming`
+    takes provider and address beside node, as the command does."""
+    from metaform.modules.web.server import module_verb
+    return module_verb({'project': project}, 'memory', 'note', {'node': node, 'text': text, 'by': 'user', **naming})
