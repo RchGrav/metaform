@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Getting started](getting-started.md) · [Reading the representation](reading-a-metaform.md)
 
-Use Metaform to bring prepared understanding into a task, examine the relevant relationships, and retain what the work establishes. The examples below use the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand), registered as the project `kitchen`. For another workpiece, use the addresses returned by its own map. Join ids are generated when a join is recorded, so the examples write `<join_id>` where yours goes; `map joins` and `map where ... full=true` print them.
+Use Metaform to bring prepared understanding into a task, examine the relevant relationships, and retain what the work establishes. The examples below use the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand), registered as the project `kitchen`. For another workpiece, use the addresses returned by its own map. Ids are generated when a thing is recorded, so the examples write `<join_id>` and `<id>` where yours goes; `map joins` and `map where ... full=true` print them. Reads and the intake name elements by address and joins by their receiver and an element they hold.
 
 ## Establish the current work context
 
@@ -57,11 +57,11 @@ metaform map where code.timer.kitchen
 metaform map element code.timer.kitchen
 ```
 
-`roots` is the map's entry: the CQU and the DE with the joins they receive, and every root element. `where` is one read of an address: the element with its address read through `name_length` and its role; `provides`, what relies on it, each join it provides with the receiver and the receiver's purpose; `receives`, what it relies on, each join it receives with the provider; the subtype joins inside those joins; the subtype join holding it, when it has one; its open work records; and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. `element` returns the element alone: its address, `name_length`, role, short name and references.
+`roots` is the map's entry: the CQU and the DE with the joins they receive, and every root element. `where` is one read of an address: the element with its address read through `name_length`, its role and its `name`; `provides`, what relies on it, each join that holds it with the receiver, the receiver's purpose, the join's `ef` and `ifd`, and the elements the join holds; `receives`, what it relies on, each join it holds as receiver with the elements that serve it; its open work records; and `layers`, what the layers in context hold at it, the `sources` layer's refs among them. It leaves ids and empty fields out; `full=true` keeps them. `element` returns the element alone: its address, `name_length`, role, short name and `name`.
 
-The project's own name for a functionality is on its joins, as `name`. Here the address `code.timer.kitchen` reads as kitchen timer, and the join through which it serves the cook calls it the **dish clock**.
+The project's own name for a functionality is on its element, as `name`. Here the address `code.timer.kitchen` reads as kitchen timer, and the project calls it the **dish clock**.
 
-`metaform map search <words>` finds items, memories and knowledge values, whose text holds every word. It does not search element addresses or join names, and it is not a separate semantic retrieval model.
+`metaform map search <words>` finds items, memories and knowledge values, whose text holds every word. It does not search element addresses or names, and it is not a separate semantic retrieval model.
 
 Now look in both directions:
 
@@ -70,7 +70,7 @@ metaform map joins code.timer.kitchen as=receiver
 metaform map joins code.timer.kitchen as=provider
 ```
 
-As a receiver, an entity exposes what it needs. As a provider, it exposes whose purposes its effects serve. The kitchen timer receives the buzzer's Encounter from `code.alarm.audible` and provides the dish clock's Function to `stakeholder.cook.home`. These are different reasons to examine the same functionality.
+As a receiver, an element exposes what it needs: the joins it holds, each with the elements that serve it. As a provider, it exposes whose purposes it serves: the joins that hold it, each with its receiver. The kitchen timer receives from `code.alarm.audible` the sounding of the end of a countdown, and serves `stakeholder.cook.home` with the tick loop. These are different reasons to examine the same functionality.
 
 ```sh
 metaform map identity code.timer.kitchen
@@ -80,15 +80,15 @@ metaform map identity code.timer.kitchen
 
 ### Read a relationship as an object
 
-For the dish clock join, the one where the timer serves the cook:
+For the join where the timer and the tick loop serve the cook:
 
 ```sh
+metaform map where code.timer.kitchen full=true
 metaform map node join:<join_id>
-metaform map subtypes <join_id>
 metaform map where code.loop.tick
 ```
 
-The join owns its purpose and has a stable ID. Its subtype joins explain contributions within that relationship: each is a join of type `subtype` held inside the require join, naming the element it holds, and that element stays one ordinary element record. The tick loop, `code.loop.tick`, is held only by the ticker subtype join, so it is no root and no node of the outer map; `where` at its address returns the element with its subtype join and the join holding it. `children <prefix>` traverses the namespace's type ancestry, which is a different structure from the provider/receiver joins.
+A join is held by its receiver, `stakeholder.cook.home`, and holds the elements that serve its purpose, here `code.timer.kitchen` and `code.loop.tick`. The join owns its purpose, `ef` and `ifd` and has a stable id. There are no subtype joins: a part that serves the same purpose is another element held in the same join, and recording the join again with that element adds it. `children <prefix>` traverses the namespace's type ancestry toward the leaves, which is a different structure from the joins.
 
 Use `map links <node>` for items that link to a node, and `map citing <key> <value>` for references such as an exact source path, for example `metaform map citing path src/tick.c`. Node forms are:
 
@@ -97,13 +97,11 @@ element:<namespace-address-or-id>
 join:<join-id>
 ```
 
-A subtype join is a join, named by its join id, and the element it holds is an element.
-
 Commands with paged results return a cursor when more data remains. Pass that returned value as `after=<cursor>`; `limit=0` requests all results. `--json` supplies structured output. `--raw`, where the verb declares it, exposes stored material outside the normal current-view filtering. A raw read is an inspection operation, not a change to selected inference context.
 
 ## Retain a finding where it matters
 
-Memory is a graph of its own, the MCP reference memory server's: entities with a name, an entityType and observations, and relations between entities. At a node of the map it presents itself as that server, scoped to the node. A finding about a provider belongs at its element. A finding about why a specific receiver needs that provider belongs at the join. A finding about an absorbed contribution can belong at the element it is, or at its subtype join when it concerns how it serves inside the parent's join.
+Memory is a graph of its own, the MCP reference memory server's: entities with a name, an entityType and observations, and relations between entities. At a node of the map it presents itself as that server, scoped to the node. A finding about a provider belongs at its element. A finding about why a specific receiver needs its providers belongs at the join.
 
 ```sh
 metaform memory create_entities '[{"name":"countdown drift","entityType":"behavior","observations":["The countdown drifts one second an hour on the first board."]}]' node=element:code.timer.kitchen
@@ -170,7 +168,13 @@ These shell examples use POSIX-style single quoting around JSON. The tool equiva
 
 The layer starts **building**. Finishing makes it available to normal selection. The returned layer name is authoritative: a name already used by a different declaration can result in a numbered name and notice. Read operation results rather than assuming every requested name was installed unchanged.
 
-`map knowledge` writes one object per call: `op=add-element` takes an element's `address`, `name_length`, `role`, `refs` and `extra`; `op=add-join` takes the receiver, the provider, `name`, `purpose`, `function`, `ef`, `relation`, `verb`, `observation`, `non_goal`, `type`, `refs` and `extra`; `op=add-subtype` takes the parent `join`, the `address` of the element it holds and the subtype join's fields. Nothing is refused for its content: a field that is missing is stored empty and named in a notice, and a call stops only when it lacks a field its record cannot be stored without, such as a join's receiver, BASE-038.
+`map knowledge` writes one object per call: `op=add-element` takes an element's `address`, `name_length`, `name` and `role`; `op=add-join` takes the `receiver`, `elements`, a JSON list of the addresses that serve its purpose, `purpose`, `ef`, `ifd` and `type`, `purpose` by default. Refs are not a field of either: they live in the `sources` layer, written as items. Nothing is refused for its content: a field that is missing is stored empty and named in a notice, and a call stops only when it lacks a field its record cannot be stored without, such as a join's receiver or elements, BASE-038.
+
+The metaform holds only elements and joins. Anything more goes in a knowledge layer, as items at the element or the join:
+
+- The `sources` layer holds an element's refs, one item per element, written by the intake while `intake_sources` is on. It is mutable and hideable. The intake creates it already finished, so reads show it at once.
+- Logic is not a join. The workflow module, which ships off and starts with `metaform enable workflow`, adds it to an element in a knowledge layer with `metaform workflow logic`, and it reads back with `workflow history <address> <name> <layer>`.
+- A store written at an earlier layout is updated when Metaform opens it, after a copy is kept under the home's `backups` folder. At layout 19 each subtype join's element becomes held by its parent join, and what the old shape kept beyond Rich's shape moved: refs into `sources`, and a join's name, verb, non_goal and extra and a subtype join's fields into a layer named `intake details`.
 
 ```sh
 metaform map layers
@@ -230,7 +234,7 @@ Intake, knowledge, and memory have different lifecycles. The intake layer is the
 
 ## Record the condition of an object as work
 
-The map holds the intended functional shape. The condition of an element or a join, a subtype join included, is a work record, kept apart from the map: `missing`, to be done or determined, `broken`, or `exclude`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a refinement.
+The map holds the intended functional shape. The condition of an element or a join is a work record, kept apart from the map: `missing`, to be done or determined, `broken`, or `exclude`, with a note saying what and where and a task saying what it needs. Writing or changing one never changes the map and is never a refinement.
 
 ```sh
 metaform map work op=add node=element:code.alarm.audible condition=broken note="The alarm pin is unconnected on the second board revision." task="Wire the alarm pin on revision two."
@@ -238,29 +242,29 @@ metaform map work node=element:code.alarm.audible
 metaform map work op=done id=<work_id> resolution="Wired on revision two."
 ```
 
-`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. At an element, the list holds its own records and those on the joins it receives or provides, subtype joins included. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps: `intake element`, `intake add_purpose` and `intake subtype` take `condition` and `note`, which write an open work record at what was just recorded. a critic with its findings, and any agent at any time.
+`op=add` returns the record's `work_id`; `op=edit` changes its condition, note, task, `held` or `reviewed`; `op=done` marks it done with its resolution kept beside it. `op=take` says an agent has started on the task: a `missing` record becomes `in-progress` and a `broken` one `fixing`, and a record taken or done cannot be taken again, so two agents never hold one task. On the map a part waiting to be built is drawn in characters, and they change faster while an agent works on it. With no `op`, `map work` lists records, by `node`, `condition` and `open=true` or `false`. At an element, the list holds its own records and those on the joins it receives or provides. Every element and join read carries `open_work`, the conditions of its open records, and `where` lists them. The intake agent writes these as it maps: `intake element` and `intake join` take `condition` and `note`, which write an open work record at what was just recorded. A critic writes its findings the same way, and any agent can at any time.
 
 ## Refine the metaform
 
 The metaform is the metaform: it does not stack new layers or new colors each time something changes. The finished intake is one layer, named `intake`, and the metaform expands and changes inside it. Periodically refine it.
 
-A refinement changes or removes one thing of the metaform and records why. No layer is named:
+A refinement changes or removes one thing of the metaform and records why. No layer is named, and no id: an element is named by its `address`, a join by its `receiver` and `provider`, an element it holds.
 
 ```text
-metaform map refine id=<id> <field>=<value> reason="<why it changes>" evidence="<what shows it>"
-metaform map refine id=<id> remove=true reason="<why it goes>"
+metaform map refine address=<address> <field>=<value> reason="<why it changes>" evidence="<what shows it>"
+metaform map refine receiver=<address> provider=<address> <field>=<value> reason="<why it changes>"
+metaform map refine address=<address> remove=true reason="<why it goes>"
 metaform map history <id>
 ```
 
-`evidence` is optional. Replace the angle-bracket fields with the actual id and reasoning. Each refinement writes a new version of the thing in the `intake` layer and keeps every earlier version, so the reason for each change stays with it. `metaform map history <id>` reads every version in the order it was written. A removal also keeps its versions. It leaves what pointed at the removed thing orphaned and names each in its result.
+`evidence` is optional. Replace the angle-bracket fields with the actual addresses and reasoning. The fields to change are `name`, `name_length` and `role` for an element, and `purpose`, `ef`, `ifd` and `elements` for a join; `elements` replaces the list the join holds. Each refinement writes a new version of the thing in the `intake` layer and keeps every earlier version, so the reason for each change stays with it. `metaform map history <id>` reads every version in the order it was written, by the id that `map where <address> full=true` prints. A removal also keeps its versions. It leaves what pointed at the removed thing orphaned and names each in its result.
 
-A finished intake also takes additions directly: `op=add-element`, `op=add-join`, `op=add-subtype` and the other add operations with `layer=intake`. Use them to expand the metaform, and `map refine` to change what is already there.
+A finished intake also takes additions directly: `op=add-element` and `op=add-join` with `layer=intake`. Use them to expand the metaform, and `map refine` to change what is already there.
 
-An element cannot be moved: its address is its identity, and another address is a different element. An `address` given to `map refine` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `receiver` or `provider` moves it, and `parent=<join_id>` makes it a subtype join inside that join, keeping its purpose. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
+An element cannot be moved: its address is its identity, and another address is a different element. An address given as `to_address` to `map refine` for an element is not applied, and the notice says to record the element at the new address and move its joins. A join can be moved: `to_receiver` moves it to another receiver and it stays the same join. A moved join keeps its id and everything attached to it. An element recorded again at an address it held before is the same element, with its memory, items and joins.
 
 A knowledge layer built on what a refinement changed is marked for re-examination. After examining the affected knowledge, `metaform map reexamined <layer>` records that state. Neither a refinement nor marking a layer re-examined performs the reasoning.
 
-`op=edit` and `map refine` read `ef` but not `verb`: a value given for `verb` is named in a notice and ignored, so a join's verb cannot be changed through `map knowledge`. `intake edit` changes both while an intake is building, and the Python store's `edit` and `refine` take them. [Correspondence issue C01](../inference-metaform/IMPLEMENTATION_MAP.md#c01) identifies the omission.
 
 ## Use prompting and criticism without changing the assignment
 
@@ -318,7 +322,7 @@ metaform map markdown file=kitchen-map.md
 metaform map markdown address=code.timer.kitchen
 ```
 
-It holds each element's name, address, role and paths, and each join's receiver, provider, relation, purpose and non_goal. With an address it covers that element and what stands around it. The web GUI's Export button saves the same document.
+It holds each element's name, address, role and paths, and each join's receiver, the elements it holds, `ef` and purpose. The paths come from the `sources` layer. With an address it covers that element and what stands around it. The web GUI's Export button saves the same document.
 
 Export the current project to a file:
 

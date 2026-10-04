@@ -1,0 +1,246 @@
+{
+  "layer": "intake-20260929T193256Z-c56487",
+  "project": "mcp-interface-review",
+  "metaform": "main",
+  "elements": [
+    {
+      "element_id": "747c60a18ebf4ae7af03c69112d599d4",
+      "namespace_address": "code.adapter.argument",
+      "short_name": "argument adapter",
+      "role": "SE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "5265645ec5ef438ba8542cefbb4118df",
+      "namespace_address": "code.catalog.command",
+      "short_name": "command catalog",
+      "role": "SE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "16a609dfa78e4a3d88d8ed31c25b655f",
+      "namespace_address": "code.composer.instruction",
+      "short_name": "instruction composer",
+      "role": "SE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "bdb9ffe435e143cfac93151df1e86965",
+      "namespace_address": "code.interface.tool",
+      "short_name": "tool interface",
+      "role": "DE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "efb786e98f464db79e7b2ce82525087f",
+      "namespace_address": "code.presenter.result",
+      "short_name": "result presenter",
+      "role": "SE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "4c30e93a97484e89a2b7cfff24909f30",
+      "namespace_address": "code.router.command",
+      "short_name": "command router",
+      "role": "SE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "61da97beaae341a384c884d6a6a1575c",
+      "namespace_address": "code.transport.message",
+      "short_name": "message transport",
+      "role": "NE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    },
+    {
+      "element_id": "ca64148093c04a45b3e9660c25dff41d",
+      "namespace_address": "stakeholder.architect.automation",
+      "short_name": "automation architect",
+      "role": "VE",
+      "name_length": 2,
+      "refs": [],
+      "extra": null
+    }
+  ],
+  "joins": [
+    {
+      "join_id": "55fdce82d74d4930b4a9fe11148d1d6a",
+      "receiver": "code.interface.tool",
+      "provider": "code.transport.message",
+      "type": "purpose",
+      "name": null,
+      "purpose": "Exchange initialization, tool discovery and tool calls with an MCP host.",
+      "function": "Runs the SDK low-level server with stdio streams and list-tools and call-tool handlers.",
+      "ef": "Function",
+      "relation": "Carries protocol messages between the host and server",
+      "verb": "Carries",
+      "observation": "The module requires the MCP SDK and declares serve for the CLI only.",
+      "non_goal": null,
+      "refs": [
+        {
+          "key": "path",
+          "value": "__init__.py"
+        }
+      ],
+      "extra": null,
+      "subtypes": []
+    },
+    {
+      "join_id": "5d41d57bdc0f4c319d1ad51d40b9c49a",
+      "receiver": "code.interface.tool",
+      "provider": "code.catalog.command",
+      "type": "purpose",
+      "name": null,
+      "purpose": "Make available actions and their arguments discoverable without exposing every command as a separate tool.",
+      "function": "Builds one tool per surfaced module and returns command summaries and schemas on an empty call.",
+      "ef": "Function",
+      "relation": "Enumerates surfaced commands and their argument schemas",
+      "verb": "Enumerates",
+      "observation": "entries derives module commands from declarations; the metaform tool separately holds chassis commands.",
+      "non_goal": null,
+      "refs": [
+        {
+          "key": "path",
+          "value": "server.py"
+        }
+      ],
+      "extra": null,
+      "subtypes": []
+    },
+    {
+      "join_id": "7e13f93e908a471f83dc380aca57e217",
+      "receiver": "code.interface.tool",
+      "provider": "code.composer.instruction",
+      "type": "purpose",
+      "name": null,
+      "purpose": "Orient agents toward the action appropriate to the project state.",
+      "function": "Composes base usage instructions and notices supplied by surfaced modules for initialization.",
+      "ef": "Function",
+      "relation": "Composes instructions for the project state",
+      "verb": "Composes",
+      "observation": "serve constructs the instructions once when the Server is created.",
+      "non_goal": null,
+      "refs": [
+        {
+          "key": "path",
+          "value": "server.py"
+        }
+      ],
+      "extra": null,
+      "subtypes": []
+    },
+    {
+      "join_id": "8871ad6b5847428fa103fe66b7cbee51",
+      "receiver": "code.interface.tool",
+      "provider": "code.router.command",
+      "type": "purpose",
+      "name": null,
+      "purpose": "Execute the requested module command in the calling folder and selected project.",
+      "function": "Resolves the module and command, constructs per-call context, and invokes synchronous or asynchronous verbs.",
+      "ef": "Function",
+      "relation": "Routes selected commands to their declared implementations",
+      "verb": "Routes",
+      "observation": "enter dispatches through run_tool; every invocation receives its own Context.",
+      "non_goal": null,
+      "refs": [
+        {
+          "key": "path",
+          "value": "server.py"
+        }
+      ],
+      "extra": null,
+      "subtypes": [
+        {
+          "join_id": "a27948bf35d34bfe99fab1c869c19957",
+          "parent": "8871ad6b5847428fa103fe66b7cbee51",
+          "element_id": "747c60a18ebf4ae7af03c69112d599d4",
+          "namespace_address": "code.adapter.argument",
+          "short_name": "argument adapter",
+          "role": "SE",
+          "name_length": 2,
+          "name": null,
+          "purpose": "Carry the command arguments into the common command grammar while preserving notices about conversion.",
+          "function": "Reads named nouns, switches, project and layers; sibling arguments are merged with nested arguments.",
+          "ef": "Function",
+          "relation": "Adapts supplied arguments to the command context",
+          "verb": "Adapts",
+          "observation": "Nested arguments win when both layouts contain the same name.",
+          "non_goal": null,
+          "refs": [
+            {
+              "key": "path",
+              "value": "server.py"
+            }
+          ],
+          "extra": {
+            "receiver": "code.router.command"
+          }
+        },
+        {
+          "join_id": "f66ff71ae9674315b7140bf09517fbdb",
+          "parent": "8871ad6b5847428fa103fe66b7cbee51",
+          "element_id": "efb786e98f464db79e7b2ce82525087f",
+          "namespace_address": "code.presenter.result",
+          "short_name": "result presenter",
+          "role": "SE",
+          "name_length": 2,
+          "name": null,
+          "purpose": "Return the command result, notices and actionable errors to the requesting host.",
+          "function": "Encodes say lines and command results as MCP text content and sets the error indicator.",
+          "ef": "Function",
+          "relation": "Presents command results and error next steps",
+          "verb": "Presents",
+          "observation": "Successful results may be strings or JSON; errors contain Error and Next lines.",
+          "non_goal": null,
+          "refs": [
+            {
+              "key": "path",
+              "value": "server.py"
+            }
+          ],
+          "extra": {
+            "receiver": "code.router.command"
+          }
+        }
+      ]
+    },
+    {
+      "join_id": "a376270c81bf44679a64280327f1bc08",
+      "receiver": "stakeholder.architect.automation",
+      "provider": "code.interface.tool",
+      "type": "purpose",
+      "name": null,
+      "purpose": "Enable agents to obtain project purpose and perform the corresponding work through a concise interface.",
+      "function": "Exposes module tools whose menus describe commands, then executes selected commands with named arguments.",
+      "ef": "Function",
+      "relation": "Presents module tools and their command menus",
+      "verb": "Presents",
+      "observation": "One process serves one MCP host over standard input and output.",
+      "non_goal": null,
+      "refs": [
+        {
+          "key": "path",
+          "value": "server.py"
+        }
+      ],
+      "extra": null,
+      "subtypes": []
+    }
+  ],
+  "undescribed": [],
+  "notices": []
+}

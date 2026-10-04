@@ -24,7 +24,7 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 ROOT = Path(__file__).parents[1]
 SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'Intake_2.1.md'  # the served intake, Rich 2026-10-03
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
-TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_add_purpose', 'intake_subtype',
+TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_join', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
          'map_clear', 'map_node', 'map_layers', 'map_tag', 'map_untag', 'map_knowledge', 'map_work', 'feedback',
          'list_reports', 'read_report', 'set'}
@@ -48,7 +48,7 @@ def commands(host):
 
 
 REPORT = 'The alarm pin is never released after stop.'
-FEEDBACK = 'The subtype provider field repeats the element address.'
+FEEDBACK = 'The join elements field repeats the provider address.'
 CURSOR = {'mcpServers': {'other': {'command': 'other-server', 'args': ['--port', '1']}}}
 LIMIT = 180.0
 
@@ -153,29 +153,25 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
             return out
 
         record('intake_start', {'model': 'fixture', 'role': 'intake subagent'})
+        # A join holds its provider and the element of each of its parts, Rich's shape, 2026-10-04.
+        described = ('role', 'name', 'name_length', 'refs')
         for element in submission['elements']:
-            record('intake_element', {'namespace_address': element['namespace_address'],
-                                      **{key: value for key, value in element.items()
-                                         if key in ('role', 'name', 'name_length', 'refs')}})
+            parts = [subtype['element'] for join in element.get('joins', []) for subtype in join.get('subtypes', [])]
+            for each in (element, *parts):
+                record('intake_element', {'namespace_address': each['namespace_address'],
+                                          **{key: value for key, value in each.items() if key in described}})
         for element in submission['elements']:
             for join in element.get('joins', []):
-                record('intake_add_purpose', {'receiver': element['namespace_address'], **{
-                    key: value for key, value in join.items() if key not in ('subtypes', 'type')}})
-                for subtype in join.get('subtypes', []):
-                    inner = subtype['element']
-                    record('intake_subtype', {'parent_receiver': element['namespace_address'],
-                                              'parent_provider': join['provider'],
-                                              'namespace_address': inner['namespace_address'],
-                                              **{key: value for key, value in subtype.items()
-                                                 if key not in ('element', 'provider')},
-                                              **{key: value for key, value in inner.items()
-                                                 if key in ('role', 'name', 'name_length', 'refs')}})
+                held = [join['provider'], *(subtype['element']['namespace_address']
+                                            for subtype in join.get('subtypes', []))]
+                record('intake_join', {'receiver': element['namespace_address'], 'elements': held, **{
+                    key: value for key, value in join.items() if key in ('purpose', 'ef', 'ifd')}})
         # The condition of an object is a work record, apart from the map, written by the same agent through
         # map_work while the intake is being recorded, MAP-046.
         record('map_work', {'op': 'add', 'node': 'element:code.alarm.audible', 'condition': 'broken',
                             'note': 'the pin is never released', 'task': 'release it after stop'})
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
-        assert (report['elements'], report['purposes'], report['subtypes'], report['work']) == (4, 2, 1, 1)
+        assert (report['elements'], report['joins'], report['work']) == (4, 2, 1)
         # Each element of the fixture carries its name, kept on the element with no notice, Rich 2026-10-01.
         assert noticed == ['purpose']
     finally:

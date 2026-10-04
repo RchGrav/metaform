@@ -104,11 +104,11 @@ def test_reordering_a_ticket_preserves_its_assignment_progress_and_completion(st
 
 
 @pytest.mark.req('STORE-042')
-@pytest.mark.parametrize('destination', ['element', 'subtype'])
+@pytest.mark.parametrize('destination', ['element', 'join'])
 def test_moving_a_ticket_to_another_node_keeps_its_progress_and_links(store, destination):
     """Work 71470758: moving a ticket's attachment preserves the ticket and its work log, apart from map identity."""
     _, outer, _ = small_map(store)
-    target = ALARM if destination == 'element' else Node('join', store.subtypes(outer.join_id).results[0].join_id)
+    target = ALARM if destination == 'element' else Node('join', outer.join_id)
     ticket = store.add_work(KITCHEN, 'broken', note='drifts', task='fix the drift', reviewed=True, links=[ALARM])
     store.take_work(ticket.work_id, steps=2, by='codex')
     before = store.step_work(ticket.work_id, 'Measured the drift.').to_dict()
@@ -219,20 +219,12 @@ def test_one_ticket_is_read_by_its_id_with_what_the_map_holds_at_its_node_and_it
     alarm, joined = read.linked
     assert alarm.element.address == 'code.alarm.audible' and [one.task for one in alarm.work] == [
         'a ticket at the other node']
-    assert (joined.kind, joined.join.join_id, [ref.value for ref in joined.join.refs]) == ('join', outer.join_id, ['src'])
+    assert (joined.kind, joined.join.join_id, [each.address for each in joined.join.elements]) == (
+        'join', outer.join_id, ['code.timer.kitchen', 'code.loop.tick'])
     plain = read.to_dict()
     assert (plain['work_id'], plain['at']['element']['address'], plain['linked'][1]['join']['receiver']) == (
         ticket.work_id, 'code.timer.kitchen', 'stakeholder.cook.home')
     assert plain['at']['messages'][0]['text'] == 'Is the snooze still wanted?'
-
-
-def test_a_ticket_on_a_subtype_join_reads_with_the_join_holding_it(store):
-    _, outer, _ = small_map(store)
-    tick = store.subtypes(outer.join_id).results[0]
-    ticket = store.add_work(Node('join', tick.join_id), 'broken', task='the tick drifts')
-    read = store.ticket(ticket.work_id)
-    assert (read.at.kind, read.at.subtype.join_id, read.at.join.join_id) == ('join', tick.join_id, outer.join_id)
-    assert read.to_dict()['at']['held']['subtype']['element'] == 'code.loop.tick'
 
 
 def test_reading_a_ticket_by_an_id_no_ticket_has_names_the_list(store):

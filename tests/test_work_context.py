@@ -1,4 +1,4 @@
-"""Task orientation and optional history at elements, joins and subtype joins."""
+"""Task orientation and optional history at elements and joins."""
 import pytest
 
 from metaform import home
@@ -10,11 +10,10 @@ pytestmark = pytest.mark.kind('fixture')
 
 @pytest.mark.req('MAP-049')
 @pytest.mark.req('MAP-051')
-@pytest.mark.parametrize('kind', ['element', 'join', 'subtype'])
+@pytest.mark.parametrize('kind', ['element', 'join'])
 def test_node_reads_show_taken_age_and_past_work_without_spending_context_on_its_log(store, monkeypatch, kind):
     _, outer, _ = small_map(store)
-    target = (Node('element', 'code.timer.kitchen') if kind == 'element' else
-              Node('join', outer.join_id if kind == 'join' else store.subtypes(outer.join_id).results[0].join_id))
+    target = Node('element', 'code.timer.kitchen') if kind == 'element' else Node('join', outer.join_id)
     monkeypatch.setattr(home, 'now', lambda: '2026-10-01T00:00:00Z')
     old = store.add_work(target, 'broken', task='wire the tone')
     store.take_work(old.work_id, steps=1, by='first agent')

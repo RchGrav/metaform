@@ -248,31 +248,27 @@ $('#apply').onclick = async () => {
 
 /* ---------- the graph data ---------- */
 /* The graph as the approved prototype draws it: each join uncollapsed as its receiver, a purpose vertex and the
- * encounter, the link on to its provider; subtypes hang from their join's purpose; the namespace joins each element to
+ * encounter, a link on to each element the join holds, Rich's shape, 2026-10-04; the namespace joins each element to
  * its nearest parent element, VIEW-005. */
 function graphData() {
   const nodes = [], links = [];
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.element_id]));
   for (const {element, parent} of S.elements.values()) {
-    nodes.push({id: element.element_id, t: 'el', name: element.short_name || element.address, address: element.address,
+    nodes.push({id: element.element_id, t: 'el', name: labelOf(element), address: element.address,
       role: element.role, work: element.open_work || [], layer: element.layer});
     if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.element_id, k: 'tree'});
   }
   const ids = new Set(nodes.map(node => node.id));
   for (const join of S.joins) {
-    if (!ids.has(join.receiver) || !ids.has(join.provider)) continue;
+    const drawnTo = join.providers.filter(id => ids.has(id));
+    if (!ids.has(join.receiver) || !drawnTo.length) continue;
     const purpose = 'p:' + join.join_id;
     nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []});
     links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id,
       work: join.open_work || []});
-    links.push({source: purpose, target: join.provider, k: 'encounter', layer: join.layer, join: join.join_id,
-      work: join.open_work || []});
-    for (const subtype of join.subtypes || []) {
-      nodes.push({id: 's:' + subtype.join_id, t: 'sub', join: join.join_id, layer: subtype.layer,
-        name: subtype.short_name || subtype.address, joinName: subtype.name, work: subtype.open_work || []});
-      links.push({source: purpose, target: 's:' + subtype.join_id, k: 'layer', layer: subtype.layer, join: join.join_id,
+    for (const provider of drawnTo)
+      links.push({source: purpose, target: provider, k: 'encounter', layer: join.layer, join: join.join_id,
         work: join.open_work || []});
-    }
   }
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
   const drawnIds = new Set(nodes.map(node => node.id));
@@ -305,18 +301,11 @@ function graphData() {
       relation: relation.relationType});
   return {nodes, links};
 }
-/* A selection is an element's id, a subtype as 's:<id>' by its subtype join's id, or a join as 'p:<id>', the same
- * keys the 3D view uses. The element a subtype join holds is no node of the outer map, MAP-031, so what is attached to
- * it is shown at its subtype, `heldBy`. */
-const subtypeOf = new Map(), heldBy = new Map();
-function indexSubtypes() {
-  subtypeOf.clear();
-  heldBy.clear();
-  for (const join of S.joins) for (const subtype of join.subtypes || []) {
-    subtypeOf.set('s:' + subtype.join_id, {subtype, join});
-    if (!heldBy.has(subtype.element_id)) heldBy.set(subtype.element_id, 's:' + subtype.join_id);
-  }
-}
+/* A selection is an element's id or a join as 'p:<id>', the same keys the 3D view uses. */
+/* A join as Rich's shape holds it, 2026-10-04: `providers` are the ids of every element it holds, each a provider;
+ * `provider` and `provider_address` name the first, the one that names the join beside its receiver. */
+const withProviders = join => ({...join, providers: (join.elements || []).map(each => each.element_id),
+  provider: join.elements?.[0]?.element_id, provider_address: join.elements?.[0]?.address});
 const accessed = (value, item) => typeof value === 'function' ? value(item) : value;
 const joinOf = key => S.joins.find(join => 'p:' + join.join_id === key);
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
@@ -641,7 +630,7 @@ const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1.35, atten
 const DRIFT = {value: 0};  // the one clock the distortion of every node drifts by; still with reduced motion
 const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
-const isGlass = node => node.t === 'el' || node.t === 'sub';
+const isGlass = node => node.t === 'el';
 function bead(node) {
   const radius = Math.cbrt(nodeSize(node)) * 3;  // as the graph sizes a node: the cube root of its value, times 3
   if (!shapes.has(radius)) shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS));
@@ -1294,7 +1283,7 @@ function start3D() {
     G.graphData(data);  // the layout gives vertices without a position new ones and settles again
   };
 }
-/* A click on any vertex selects that object itself: an element, a join's purpose vertex or a subtype. */
+/* A click on any vertex selects that object itself: an element or a join's purpose vertex. */
 function clicked3d(node) {
   if (!node) return;
   if (large()) MODE.mode = 'readable';  // a click on a node goes to mode two, VIEW-041
@@ -1326,13 +1315,13 @@ function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), ...servedBy(node)];
   if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
   const join = S.joins.find(item => item.join_id === node.join);
-  if (node.t === 'purpose') return [join?.name ? h('b', {}, join.name) : null, h('span', {}, join?.purpose || 'purpose')];
-  return [h('b', {}, node.name || ''), node.joinName ? h('span', {}, node.joinName) : null];
+  if (node.t === 'purpose') return [h('span', {}, join?.purpose || 'purpose')];
+  return [h('b', {}, node.name || '')];
 }
 /* What an element does, which its label does not say, VIEW-038: the ef of each join it provides, as written, with
  * no subject chosen, MAP-020. Its address is not shown, since that is its name read the other way. */
 function servedBy(node) {
-  return S.joins.filter(join => join.provider === node.id && (join.ef || join.purpose)).slice(0, 3).map(join =>
+  return S.joins.filter(join => join.providers.includes(node.id) && (join.ef || join.purpose)).slice(0, 3).map(join =>
     h('span', {class: 'why'}, short(join.ef || join.purpose, 160)));
 }
 /* The tooltip sits above the hovered node, clear of its sphere at any zoom, so the pointer never covers it; it goes
@@ -1639,7 +1628,7 @@ function renderLegend() {
   fill(legend, ...rows.map(([color, text, kind]) =>
     h('span', {style: {'--c': `var(${color})`}}, h('i', {class: kind}), text)));
   const open = new Set([...S.elements.values()].flatMap(entry => entry.element.open_work || [])
-    .concat(S.joins.flatMap(join => (join.open_work || []).concat((join.subtypes || []).flatMap(subtype => subtype.open_work || [])))));
+    .concat(S.joins.flatMap(join => join.open_work || [])));
   for (const condition of CONDITIONS) if (open.has(condition))
     legend.append(h('span', {style: {'--c': condition === 'missing' || condition === 'in-progress' ? 'var(--text)'
       : `var(--${condition === 'fixing' ? 'broken' : condition === 'message' ? 'question' : condition})`}},
@@ -1669,27 +1658,13 @@ async function build2D(keep = true) {
     mermaidReady = true;
   }
   const keys = new Map([...S.elements.keys()].map((id, index) => [id, `n${index}`]));
-  const drawn = S.joins.filter(join => keys.has(join.receiver) && keys.has(join.provider));
-  // The nodes inside an element are the subtypes of the joins it provides; it is drawn as a box holding them.
-  const held = new Map();
-  for (const join of drawn) for (const subtype of join.subtypes || [])
-    held.set(join.provider, [...(held.get(join.provider) || []), subtype]);
-  const inner = new Map();
+  // One edge from a join's receiver to each element it holds, Rich's shape, 2026-10-04.
+  const drawn = S.joins.filter(join => keys.has(join.receiver))
+    .flatMap(join => join.providers.filter(id => keys.has(id)).map(provider => ({join, provider})));
   const vertical = S.elements.size > 5;
   const lines = [vertical ? 'flowchart TB' : 'flowchart LR'];
-  for (const [id, {element}] of S.elements) {
-    const label = plain2d(element.short_name || element.address);
-    if (!held.has(id)) { lines.push(`${keys.get(id)}["${label}"]`); continue; }
-    lines.push(`subgraph ${keys.get(id)} ["${label}"]`, 'direction TB');
-    for (const subtype of held.get(id)) {
-      const key = `s${inner.size}`;
-      inner.set('s:' + subtype.join_id, key);
-      lines.push(`${key}["${plain2d(subtype.short_name || subtype.address)}"]:::sub`);
-    }
-    lines.push('end');
-  }
-  if (inner.size) lines.push('classDef sub font-size:11px');
-  drawn.forEach((join, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(join.provider)}`));
+  for (const [id, {element}] of S.elements) lines.push(`${keys.get(id)}["${plain2d(labelOf(element))}"]`);
+  drawn.forEach(({join, provider}, index) => lines.push(`${keys.get(join.receiver)} e${index}@--> ${keys.get(provider)}`));
   if (!S.elements.size || S.elements.size > MAP2D) { IN.length = 0; M.base = null; renderCrumbs(); }
   if (!S.elements.size) { fill(host, h('p', {class: 'empty', style: {padding: '16px'}}, noMetaform() ? noneYet() : 'This metaform has no elements in these layers.')); return; }
   if (S.elements.size > MAP2D) {
@@ -1707,16 +1682,10 @@ async function build2D(keep = true) {
   const svg = mountSvg(result, host, inside);
   const nodes = new Map();
   for (const [id, key] of keys) {
-    const group = held.has(id) ? svg.querySelector(`g.cluster[id="${key}"], g.cluster[id$="-${key}"]`)
-      : svg.querySelector(`[id*="-flowchart-${key}-"]`);
+    const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
     if (group) placeIn(nodes, id, group, S.elements.get(id).element.address, S.elements.get(id).element.open_work);
   }
-  for (const [id, key] of inner) {
-    const group = svg.querySelector(`[id*="-flowchart-${key}-"]`);
-    const {subtype} = subtypeOf.get(id) || {};
-    if (group && subtype) placeIn(nodes, id, group, subtype.address, subtype.open_work);
-  }
-  const edges = drawn.map((join, index) => ({join, path: svg.querySelector(`[data-id="e${index}"]`)
+  const edges = drawn.map(({join, provider}, index) => ({join, provider, path: svg.querySelector(`[data-id="e${index}"]`)
     || svg.querySelectorAll('.edgePaths path')[index]}));
   for (const edge of edges) for (const condition of edge.join.open_work || []) edge.path?.classList.add(`work-${condition}`);
   // The base map is kept while a node is entered and shown again as it was, VIEW-016.
@@ -1792,23 +1761,21 @@ function showBase(left = null) {
 const IN = [];  // the levels entered from the base map: {key, label, more, things}
 const GROUP = 20;
 let insideGen = 0;
-const kindOf = key => key.startsWith('s:') || key.startsWith('p:') ? 'join' : 'element';  // a subtype join is a join
-const bareId = key => key.replace(/^[sp]:/, '');
-const keyOf = node => !node ? null
-  : node.kind === 'join' ? (subtypeOf.has('s:' + node.id) ? 's:' + node.id : 'p:' + node.id)
-  : node.kind === 'element' ? (S.elements.has(node.id) ? node.id : heldBy.get(node.id) || node.id) : null;
+const kindOf = key => key.startsWith('p:') ? 'join' : 'element';
+const bareId = key => key.replace(/^p:/, '');
+const keyOf = node => !node ? null : node.kind === 'join' ? 'p:' + node.id : node.kind === 'element' ? node.id : null;
 const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
-/* An element's and a subtype's name is its short name, its address read through name_length, MAP-012; a join's is the
- * project's own name for the functionality, MAP-020, or when it has none the short namespace name of the element it
- * refers to, its provider, Rich 2026-10-04. */
-const joinLabel = join => { const held = S.elements.get(join.provider)?.element;
-  return join.name || held?.short_name || held?.address || 'join'; };
+/* An element is labeled with its name, the project's name for it, or else its short namespace name, its address read
+ * through name_length, MAP-012, Rich 2026-10-04: "the fall back for name not being provided is the short namespace
+ * name"; "the name on the join was the name for the element". A join has no name in Rich's shape, so it has no label;
+ * its purpose shows when it is hovered or selected. */
+const labelOf = element => element.name || element.short_name || element.address;
+const joinLabel = () => '';
 function nameOf(key, fallback = key) {
-  if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.short_name || found.address : fallback; }
   if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
   const found = S.elements.get(key)?.element;
-  return found ? found.short_name || found.address : fallback;
+  return found ? labelOf(found) : fallback;
 }
 async function drawInside(arriving = false) {
   const level = IN.at(-1);
@@ -1816,20 +1783,9 @@ async function drawInside(arriving = false) {
   const generation = ++insideGen;
   const target = `${kindOf(level.key)}:${bareId(level.key)}`;
   let view = null, incoming = [];
-  const held = level.key.startsWith('s:') ? subtypeOf.get(level.key)?.subtype.element_id : null;
   try {
     view = await read('node', {target, ...viewLayers()});
     incoming = (await read('links-to', {target, limit: 0, ...viewLayers()})).results || [];
-    if (held) {  // the absorbed part stays one element, so what is attached to it shows at its subtype, MAP-030
-      const part = await read('node', {target: `element:${held}`, ...viewLayers()});
-      const groups = new Map((view?.layers || []).map(group => [group.layer, group]));
-      for (const group of part?.layers || []) {
-        const into = groups.get(group.layer);
-        if (into) { into.items = [...(into.items || []), ...(group.items || [])]; into.properties = [...(into.properties || []), ...(group.properties || [])]; }
-        else if (view) view.layers = [...(view.layers || []), group];
-      }
-      incoming = [...incoming, ...((await read('links-to', {target: `element:${held}`, limit: 0, ...viewLayers()})).results || [])];
-    }
   } catch (error) { if (error.status !== 404) toast(error.message); }
   if (generation !== insideGen) return;
   const vertical = M.base ? M.base.vertical : true;  // the whole map's orientation, so going inside never turns it
@@ -1846,16 +1802,10 @@ async function drawInside(arriving = false) {
   if (key.startsWith('p:')) {
     const join = joinOf(key);
     if (join) {
-      edges.push(`${add(join.receiver, nameOf(join.receiver), 'stub')} --> ${center}`,
-        `${center} --> ${add(join.provider, nameOf(join.provider), 'stub')}`);
-      for (const subtype of join.subtypes || []) edges.push(`${center} --- ${add('s:' + subtype.join_id, subtype.short_name || subtype.address, 'sub')}`);
+      edges.push(`${add(join.receiver, nameOf(join.receiver), 'stub')} --> ${center}`);
+      for (const provider of join.providers) edges.push(`${center} --> ${add(provider, nameOf(provider), 'stub')}`);
     }
-  } else if (key.startsWith('s:')) {
-    const found = subtypeOf.get(key);
-    if (found) edges.push(`${add('p:' + found.join.join_id, joinLabel(found.join), 'purpose')} --- ${center}`);
   } else {
-    for (const join of S.joins.filter(item => item.provider === key)) for (const subtype of join.subtypes || [])
-      edges.push(`${center} --- ${add('s:' + subtype.join_id, subtype.short_name || subtype.address, 'sub')}`);
     for (const join of S.joins.filter(item => item.receiver === key))
       edges.push(`${center} --> ${add('p:' + join.join_id, joinLabel(join), 'purpose')}`);
   }
@@ -1881,8 +1831,8 @@ async function drawInside(arriving = false) {
     if (to) edges.push(`${ids.get(thing.key)} --> ${add(to, nameOf(to, thing.item.link.id), 'stub')}`);
   }
   // The memories kept at the node, in memory's group; each relation of theirs runs to the memory it names, and a memory
-  // kept elsewhere leads on to the nodes it is kept at, LAYER-013. A subtype shows those of the element it holds too.
-  const kept = [...new Set([...memoriesAt(key), ...(held ? memoriesAt(keyOf({kind: 'element', id: held})) : [])])];
+  // kept elsewhere leads on to the nodes it is kept at, LAYER-013.
+  const kept = [...new Set(memoriesAt(key))];
   if (kept.length) {
     const gid = `g${groups.size}`;
     groups.set(gid, memoryLayer());
@@ -1914,7 +1864,7 @@ async function drawInside(arriving = false) {
     }
     edges.push(`${gid} --> ${center}`);
   }
-  lines.push(...edges, ...['center', 'item', 'stub', 'more', 'purpose', 'sub'].map(kind => `classDef ${kind} font-size:11px`));
+  lines.push(...edges, ...['center', 'item', 'stub', 'more', 'purpose'].map(kind => `classDef ${kind} font-size:11px`));
   let result;
   try { result = await window.mermaid.render(`inside${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { fill($('#viewport'), h('p', {class: 'empty', style: {padding: '16px'}}, 'This node could not be drawn.')); return; }
@@ -2012,22 +1962,17 @@ const emptyMemory = () => ({entities: new Map(), relations: [], joins: [], at: n
 const memoryLayer = () => S.layers.find(layer => layer.kind === 'memory')?.name || 'memory';
 const memoryKey = name => 'e:' + name;
 const memoryName = key => key.slice(2);
-/* The node of the map a memory join names: an element by its address, the element a subtype join holds at its subtype,
- * a map join by its receiver's and provider's addresses, and a subtype join by its parent's receiver and the element
- * it holds, STORE-020. */
+/* The node of the map a memory join names: an element by its address, and a map join by its receiver's address and the
+ * address of an element it holds, STORE-020. */
 function nodeAt(join) {
   const addressOf = id => S.elements.get(id)?.element.address;
   if (join.address !== undefined) {
     const found = [...S.elements.values()].find(entry => entry.element.address === join.address);
-    if (found) return found.element.element_id;
-    for (const [key, {subtype}] of subtypeOf) if (subtype.address === join.address) return key;
-    return null;
+    return found ? found.element.element_id : null;
   }
-  const parent = S.joins.find(one => addressOf(one.receiver) === join.receiver && addressOf(one.provider) === join.provider);
-  if (parent) return 'p:' + parent.join_id;
-  for (const [key, {subtype, join: held}] of subtypeOf)
-    if (addressOf(held.receiver) === join.receiver && subtype.address === join.provider) return key;
-  return null;
+  const parent = S.joins.find(one => addressOf(one.receiver) === join.receiver
+    && (one.elements || []).some(each => each.address === join.provider));
+  return parent ? 'p:' + parent.join_id : null;
 }
 async function memoryOf() {
   let whole;
@@ -2058,18 +2003,15 @@ function networkOf(key) {
     .map(relation => ({from: memoryKey(relation.from), to: memoryKey(relation.to), type: relation.relationType}));
   return {key, own, entities: [key, ...[...names].map(memoryKey)], relations};
 }
-/* The node is drawn as the map draws it: an element as its glass, a join as its purpose, a subtype as a subtype; each
- * memory as a memory is drawn in the map. */
+/* The node is drawn as the map draws it: an element as its glass and a join as its purpose; each memory as a memory is
+ * drawn in the map. */
 function entityNode(key) {
   if (key.startsWith('e:')) return {id: key, t: 'item', layer: memoryLayer(), text: memoryName(key), work: []};
   const element = S.elements.get(key)?.element;
-  if (element) return {id: key, t: 'el', name: element.short_name || element.address, address: element.address,
+  if (element) return {id: key, t: 'el', name: labelOf(element), address: element.address,
     role: element.role, work: element.open_work || [], layer: element.layer};
   const join = joinOf(key);
   if (join) return {id: key, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []};
-  const found = subtypeOf.get(key);
-  if (found) return {id: key, t: 'sub', join: found.join.join_id, layer: found.subtype.layer,
-    name: found.subtype.short_name || found.subtype.address, joinName: found.subtype.name, work: found.subtype.open_work || []};
   return {id: key, t: 'el', name: key, address: key, work: []};  // a node the layers in view do not draw
 }
 function memoryData() {
@@ -2496,7 +2438,7 @@ function focus2D(id, framing = 'around', zoom = false) {
     $('#map2d').classList.add('focused');
     for (const [key, value] of M.nodes) { value.g.classList.toggle('sel', key === id); value.g.classList.toggle('near', key !== id && S.neighbors.has(key)); }
     for (const edge of M.edges) edge.path?.classList.toggle('on', join ? edge.join === join
-      : edge.join.receiver === id || edge.join.provider === id);
+      : edge.join.receiver === id || edge.provider === id);
   }
   if (moded()) return moveCam(modeTarget());  // in the large area the mode sets the camera, VIEW-041
   // Selecting moves the view to the node at the zoom it has; the zoom changes only when Fit asks, VIEW-008.
@@ -2559,7 +2501,7 @@ function cycleView() {
   const here = S.selected;
   const next = {around: 'out', out: 'in', in: 'around'}[M.view || 'around'];
   if (large() || !here || next === 'out') return fit2D();  // its own map only; the 3D map has a Fit of its own, VIEW-028
-  if (next === 'in') return focus2D(here, !IN.length && !MEM.key && insideOf(here).length ? 'inside' : 'close', true);
+  if (next === 'in') return focus2D(here, 'close', true);
   focus2D(here, 'around', true);
 }
 /* Back and forward step through the nodes selected, as a browser does; a new selection drops the steps forward. */
@@ -2593,8 +2535,7 @@ function across(keys) {  // in their order across the 2D map
  * below it lands near the middle and not at the far end of the row; the nodes inside a node are gone to when no edge
  * leads down. A row not drawn yet gives its middle node. */
 function below(key) {
-  const providers = childrenOf(key).filter(child => !child.startsWith('s:') || key.startsWith('p:'));
-  const row = providers.length ? providers : childrenOf(key);
+  const row = childrenOf(key);
   const here = M.nodes.get(key), axis = M.vertical ? 'x' : 'y';
   const drawn = row.filter(child => M.nodes.has(child));
   if (!here || !drawn.length) return row[Math.floor((row.length - 1) / 2)];
@@ -2605,14 +2546,12 @@ function below(key) {
  * the first of them going right and the last going left, and past the last parent of the level round to the first, so
  * every node of a level is reached by Left and Right alone. A level is the children of every node on the level above,
  * in their order across the map, starting from the roots. Returns the node and the parent it is reached under. */
-/* The node drawn nearest beside a node on its row of the 2D map, that way, leaving out the box a node is drawn inside
- * and the nodes drawn inside its own box. */
+/* The node drawn nearest beside a node on its row of the 2D map, that way. */
 function besideDrawn(key, by) {
   const here = M.nodes.get(key);
   if (!here) return null;
   const depth = M.vertical ? 'y' : 'x', across = M.vertical ? 'x' : 'y';
-  const box = key.startsWith('s:') ? subtypeOf.get(key)?.join.provider : null, held = new Set(insideOf(key));
-  const onward = [...M.nodes.entries()].filter(([id, node]) => id !== key && id !== box && !held.has(id)
+  const onward = [...M.nodes.entries()].filter(([id, node]) => id !== key
     && Math.abs(node[depth] - here[depth]) < 2 && (node[across] - here[across]) * by > 0);
   if (!onward.length) return null;
   return onward.reduce((best, one) => Math.abs(one[1][across] - here[across]) < Math.abs(best[1][across] - here[across]) ? one : best)[0];
@@ -2631,19 +2570,14 @@ function besideOnLevel(key, parent, by) {
   if (from < 0 || row.length < 2) return null;
   return row[(from + by + row.length) % row.length];
 }
-function insideOf(key) {
-  return across(S.joins.filter(join => join.provider === key).flatMap(join => (join.subtypes || []).map(subtype => 's:' + subtype.join_id)));
-}
 function childrenOf(key) {
-  if (key.startsWith('p:')) return [joinOf(key)?.provider].filter(Boolean);
-  if (key.startsWith('s:')) return [];
-  const providers = across(new Set(S.joins.filter(join => join.receiver === key && S.elements.has(join.provider)).map(join => join.provider)));
-  return [...providers, ...insideOf(key)];
+  if (key.startsWith('p:')) return across((joinOf(key)?.providers || []).filter(id => S.elements.has(id)));
+  return across(new Set(S.joins.filter(join => join.receiver === key).flatMap(join => join.providers)
+    .filter(id => S.elements.has(id))));
 }
 function parentOf(key) {
   if (key.startsWith('p:')) return joinOf(key)?.receiver || null;
-  if (key.startsWith('s:')) return subtypeOf.get(key)?.join.provider || null;
-  return across(new Set(S.joins.filter(join => join.provider === key && S.elements.has(join.receiver)).map(join => join.receiver)))[0] || null;
+  return across(new Set(S.joins.filter(join => join.providers.includes(key) && S.elements.has(join.receiver)).map(join => join.receiver)))[0] || null;
 }
 function roots() {  // the nodes nothing receives from, CQUs first; then any part of the map they do not reach
   const top = [...S.elements.keys()].filter(key => !parentOf(key));
@@ -2664,7 +2598,7 @@ function backOut() {
   if (IN.length) return goTo(IN.length - 1);
   const here = S.selected;
   if (!here) return;
-  if (here.startsWith('s:') || here.startsWith('p:')) {
+  if (here.startsWith('p:')) {
     const up = S.trail.length ? S.trail.pop() : parentOf(here);
     if (up) select(up, true, true);
   } else fitAll();
@@ -2721,9 +2655,9 @@ document.addEventListener('keydown', event => {
  * such as the prompt being edited. */
 function select(id, fly, keepTrail = false, stepping = false, again = false) {
   if (!id) return;
-  const subtype = id.startsWith('s:') ? subtypeOf.get(id) : null, join = id.startsWith('p:') ? joinOf(id) : null;
+  const join = id.startsWith('p:') ? joinOf(id) : null;
   const entity = Boolean(MEM.network?.entities.includes(id));  // a node of the memory network open, VIEW-031
-  const known = subtype || join || S.elements.has(id) || entity,
+  const known = join || S.elements.has(id) || entity,
     thing = IN.at(-1)?.things?.get(id) || S.items.get(id) || memoryThing(id);
   if (!known && !thing) return;
   if (!keepTrail) S.trail = [];
@@ -2737,10 +2671,9 @@ function select(id, fly, keepTrail = false, stepping = false, again = false) {
   if (!known) { S.neighbors = new Set(); focus2D(id); if (!again) showTab('object'); renderThing(thing); return; }
   S.neighbors = MEM.key ? new Set([id, ...(MEM.network?.relations || []).flatMap(relation =>
       relation.from === id ? [relation.to] : relation.to === id ? [relation.from] : [])])
-    : subtype ? new Set([subtype.join.provider, subtype.join.receiver, ...insideOf(subtype.join.provider)])
-    : join ? new Set([join.receiver, join.provider])
-    : new Set([id, ...S.joins.filter(item => item.receiver === id).map(item => item.provider),
-      ...S.joins.filter(item => item.provider === id).map(item => item.receiver)]);
+    : join ? new Set([join.receiver, ...join.providers])
+    : new Set([id, ...S.joins.filter(item => item.receiver === id).flatMap(item => item.providers),
+      ...S.joins.filter(item => item.providers.includes(id)).map(item => item.receiver)]);
   if (G) {
     G.nodeColor(G.nodeColor());
     const node = G.graphData().nodes.find(item => item.id === id);
@@ -2749,7 +2682,7 @@ function select(id, fly, keepTrail = false, stepping = false, again = false) {
   focus2D(id);
   if (!again) showTab('object');
   // The panel's reads are returned, so a load waits for them before it says it is loaded.
-  return MEM.key ? renderMemories(id) : subtype ? renderSubtype(subtype) : join ? renderJoin(join) : renderObject(id);
+  return MEM.key ? renderMemories(id) : join ? renderJoin(join) : renderObject(id);
 }
 
 function refsOf(refs) {
@@ -2799,11 +2732,10 @@ function asked(record, metaform = S.metaform) {
 /* The messages of a node, VIEW-030: what agents say to the user there. A question waits for an answer and a note
  * waits to be read. */
 const Q = {open: []};
-const nodeOf = record => record.node_kind === 'element' ? record.node_id
-  : joinOf('p:' + record.node_id) ? 'p:' + record.node_id : 's:' + record.node_id;
-const targetOf = id => id.startsWith('p:') || id.startsWith('s:') ? `join:${id.slice(2)}` : `element:${id}`;
+const nodeOf = record => record.node_kind === 'element' ? record.node_id : 'p:' + record.node_id;
+const targetOf = id => id.startsWith('p:') ? `join:${id.slice(2)}` : `element:${id}`;
 const calledOf = id => (G ? G.graphData().nodes.find(node => node.id === id) : null)?.name
-  || S.elements.get(id)?.element.short_name || joinOf(id)?.name || 'this node';
+  || (S.elements.has(id) ? labelOf(S.elements.get(id).element) : null) || 'this node';
 async function messagesOf(id) {
   const found = (await read('messages', {node: targetOf(id), limit: 0})).results;
   return {unread: found.filter(record => !record.closed), past: found.filter(record => record.closed), all: found};
@@ -3279,7 +3211,7 @@ movable($('#agent'));
  * inserted into the text reads there as its proper noun and carries its address. */
 const K = {nodes: [], chosen: null, at: null};
 const partOf = address => [...S.elements.values()].map(entry => entry.element).find(element => element.address === address);
-const named = element => element.short_name || element.address;
+const named = element => labelOf(element);
 function chip(element, remove = null) {
   return h('span', {'data-address': element.address, title: element.address, contenteditable: 'false'}, named(element),
     remove ? h('button', {title: 'Take it off this task', onclick: remove}, 'x') : null);
@@ -3329,8 +3261,8 @@ async function chart(parts) {
   if (parts.length > MAP2D) return unable(`The chart lays out at most ${MAP2D} parts.`);
   const keys = new Map(parts.map((part, index) => [part.element_id, `c${index}`]));
   const lines = ['flowchart TB', ...parts.map(part => `${keys.get(part.element_id)}["${plain2d(named(part))}"]`),
-    ...S.joins.filter(join => keys.has(join.receiver) && keys.has(join.provider))
-      .map(join => `${keys.get(join.receiver)} --> ${keys.get(join.provider)}`)];
+    ...S.joins.filter(join => keys.has(join.receiver)).flatMap(join => join.providers.filter(id => keys.has(id))
+      .map(provider => `${keys.get(join.receiver)} --> ${keys.get(provider)}`))];
   let result;
   try { result = await window.mermaid.render(`pick${generation}`, lines.join('\n'), $('#draw')); }
   catch (error) { return unable('The chart could not be drawn.'); }
@@ -3544,53 +3476,29 @@ function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c':
 function elementLink(id, address) {
   const entry = S.elements.get(id);
   return h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); select(id, true); }},
-    entry ? (entry.element.short_name || address) : address);
+    entry ? labelOf(entry.element) : address);
 }
 function joinCard(join, side) {
-  const other = side === 'provider' ? join.provider : join.receiver;
-  const otherAddress = side === 'provider' ? join.provider_address : join.receiver_address;
+  // A join seen from an element it holds names its receiver; seen from its receiver, it names every element it holds.
+  const others = side === 'provider' ? (join.elements || []).map(each => elementLink(each.element_id, each.address))
+    : [elementLink(join.receiver, join.receiver_address)];
   return h('div', {class: 'join'},
-    h('div', {class: 'row'}, h('span', {class: 'dir'}, `${side} · `, elementLink(other, otherAddress)),
+    h('div', {class: 'row'}, h('span', {class: 'dir'}, `${side} · `, ...others.flatMap((link, at) => at ? [', ', link] : [link])),
       h('span', {class: 'lay', style: {'--c': `var(${colorVar(join.layer)})`}}, join.layer)),
-    join.name ? h('p', {class: 'name'}, h('b', {}, join.name)) : null,
     join.purpose ? h('p', {}, join.purpose) : null,
-    join.ef ? h('p', {class: 'fn'}, join.ef) : null,
-    join.non_goal ? h('p', {class: 'obs'}, `Not: ${join.non_goal}`) : null,
-    refsOf(join.refs),
-    (join.subtypes || []).map(subtype => h('div', {class: 'sub'}, h('a', {class: 'link', href: '#', onclick: event => {
-      event.preventDefault(); select('s:' + subtype.join_id, true); }}, h('b', {}, subtype.short_name || subtype.address)), ' ',
-      subtype.name ? h('span', {}, subtype.name, ' ') : null,
-      h('span', {class: 'refs'}, subtype.address), subtype.ef ? h('div', {}, subtype.ef) : null,
-      refsOf(subtype.refs))));
+    join.ef ? h('p', {class: 'fn'}, join.ef) : null);
 }
 function itemText(value) {
   if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
   return String(value ?? '');
 }
-/* A selected subtype or join shows only itself, so nothing needs finding in its parent's text. */
-function renderSubtype({subtype, join}) {
-  fill($('#p-object'),
-    h('div', {class: 'eyebrow'}, 'Subtype'),
-    h('h2', {}, subtype.short_name || subtype.address),
-    h('div', {class: 'addr'}, subtype.address),
-    subtype.name ? h('p', {class: 'name'}, h('b', {}, subtype.name)) : null,
-    h('div', {class: 'pills'}, subtype.role ? h('span', {class: 'pill'}, subtype.role) : null,
-      (subtype.open_work || []).map(workPill), layerPill(subtype.layer)),
-    h('p', {class: 'meta'}, 'Inside ', elementLink(join.provider, join.provider_address), ', in the join that serves ',
-      elementLink(join.receiver, join.receiver_address), '.'),
-    subtype.ef ? h('p', {}, subtype.ef) : null,
-    refsOf(subtype.refs),
-    h('div', {id: 'work'}),
-    h('div', {class: 'eyebrow'}, 'The join it sits in'),
-    joinCard(join, 'provider'));
-  renderWork(`join:${subtype.join_id}`, 's:' + subtype.join_id, `element:${subtype.element_id}`);
-}
+/* A selected join shows only itself, so nothing needs finding in its receiver's text. */
 function renderJoin(join) {
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Join'),
-    h('h2', {}, join.name || join.ef || `${join.receiver_address} receives from ${join.provider_address}`),
+    h('h2', {}, join.ef || `${join.receiver_address} receives from ${join.provider_address}`),
     h('p', {class: 'meta'}, elementLink(join.receiver, join.receiver_address), ' receives from ',
-      elementLink(join.provider, join.provider_address), '.'),
+      ...(join.elements || []).flatMap((each, at) => [at ? ', ' : '', elementLink(each.element_id, each.address)]), '.'),
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
     joinCard(join, 'provider'),
     h('div', {id: 'work'}));
@@ -3599,7 +3507,7 @@ function renderJoin(join) {
 async function renderObject(id) {
   const {element} = S.elements.get(id);
   const pane = $('#p-object');
-  const held = S.joins.filter(join => join.receiver === id), serves = S.joins.filter(join => join.provider === id);
+  const held = S.joins.filter(join => join.receiver === id), serves = S.joins.filter(join => join.providers.includes(id));
   fill(pane, 
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, element.short_name || element.address),
@@ -3608,7 +3516,6 @@ async function renderObject(id) {
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
       (element.open_work || []).map(workPill), layerPill(element.layer),
       h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
-    refsOf(element.refs),
     h('div', {id: 'work'}),
     h('div', {id: 'items'}),
     h('div', {class: 'eyebrow'}, 'Joins held by this element'),
@@ -3789,11 +3696,11 @@ async function loadLive() {
   if (text === LIVE.seen || !following()) return;
   LIVE.seen = text;
   S.elements = new Map(page.elements.map(entry => [entry.element.element_id, entry]));
-  S.joins = [...page.joins];
+  S.joins = page.joins.map(withProviders);
   S.items = new Map();
-  indexSubtypes(); draw3D(); renderLegend();
+  draw3D(); renderLegend();
   await build2D();
-  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
+  const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;
   if (start) select(start, false, false, false, true);
@@ -3895,7 +3802,7 @@ async function itemsOf(generation) {
 
 /* ---------- loading: projects, metaforms, layers, then the graph page by page ---------- */
 /* The steps filed and planned of each node's open tickets, the most advanced first, VIEW-035: an element's by its
- * id, a join's on its purpose vertex and as a subtype. */
+ * id, a join's on its purpose vertex. */
 async function progressOf() {
   const found = new Map();
   let tickets = [];
@@ -3903,7 +3810,7 @@ async function progressOf() {
   S.tickets = tickets;
   for (const ticket of tickets) {
     if (!ticket.taken || ticket.done) continue;
-    const keys = ticket.kind === 'join' ? ['p:' + ticket.id, 's:' + ticket.id] : [ticket.id];
+    const keys = ticket.kind === 'join' ? ['p:' + ticket.id] : [ticket.id];
     const done = {filed: ticket.steps_done || 0, planned: ticket.steps || 0};
     const share = one => one.planned ? one.filed / one.planned : one.filed;
     for (const key of keys) if (!found.has(key) || share(done) > share(found.get(key))) found.set(key, done);
@@ -3929,8 +3836,7 @@ async function readGraph() {
       const page = await read('graph', {limit: 500, ...(after ? {after} : {}), ...viewLayers()});
       if (stale()) return;
       for (const entry of page.elements) S.elements.set(entry.element.element_id, entry);
-      S.joins.push(...page.joins);
-      indexSubtypes();
+      S.joins.push(...page.joins.map(withProviders));
       draw3D(); renderLegend();
       after = page.next;
     } while (after);
@@ -3949,7 +3855,7 @@ async function readGraph() {
     toast(error.message);
     // The last whole map read is kept: a read that fails, as every read does while the server restarts, puts it back,
     // and the failure is said. Another metaform's is never put back, since its load begins with none.
-    if (!stale() && !whole && S.whole) { Object.assign(S, S.whole); indexSubtypes(); }
+    if (!stale() && !whole && S.whole) Object.assign(S, S.whole);
   }
   if (stale()) return;
   S.loading = 0;
@@ -3957,7 +3863,7 @@ async function readGraph() {
   renderLegend();
   const told = Promise.all([renderMessages(), renderAgents()]);  // read beside the 2D map; the load ends when they are
   await build2D();
-  const keep = S.selected && (S.elements.has(S.selected) || subtypeOf.has(S.selected) || joinOf(S.selected)
+  const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)
     || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
   const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
     || S.elements.keys().next().value;

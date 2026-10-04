@@ -53,7 +53,8 @@ def test_approval_makes_a_plan_and_leaves_the_critics_layer_unchanged(home, stor
     group = next(group for group in view.layers if group.layer == 'challenge.blind')
     assert group.items[0].state == 'plan'
     assert store.element('code.watchdog').state == 'plan'
-    watchdog_join = next(join for join in store.joins('code.timer.kitchen').results if join.provider_address == 'code.watchdog')
+    watchdog_join = next(join for join in store.joins('code.timer.kitchen').results
+                         if [each.address for each in join.elements] == ['code.watchdog'])
     assert watchdog_join.state == 'plan'
 
 

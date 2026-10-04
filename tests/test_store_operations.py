@@ -72,30 +72,27 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     'add_element': (lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c'),
                     {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0),
                      'address_elements': (1, 0), 'types': (1, 0)}),
-    'add_element with its name_length and refs': (
-        lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c', name_length=1, refs=[('path', 'c.c')]),
+    'add_element with its name_length and name': (
+        lambda s, w: None, lambda s, w, c: s.add_element('k', 'code.k.c', name_length=1, name='c'),
         {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0),
-         'address_elements': (1, 0), 'types': (1, 0), 'refs': (1, 0)}),
+         'address_elements': (1, 0), 'types': (1, 0)}),
+    # A join is one row with one join_elements row for each element it holds, Rich's shape, 2026-10-04.
     'add_join': (lambda s, w: None,
-                 lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f', refs=[('path', 'x')]),
+                 lambda s, w, c: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f'),
                  {'join_ids': (1, 0), 'identities': (1, 0), 'joins': (1, 0), 'current_joins': (1, 0),
-                  'refs': (1, 0)}),
-    'add_subtype': (lambda s, w: None,
-                    lambda s, w, c: s.add_subtype('k', w.k_join.join_id, 'code.k.b.part', ef='f'),
-                    {'join_ids': (1, 0), 'identities': (2, 0), 'joins': (1, 0), 'current_subtypes': (1, 0),
-                     'element_ids': (1, 0), 'elements': (1, 0), 'current_elements': (1, 0), 'address_elements': (1, 0),
-                     'types': (1, 0)}),
-    'add_subtype holding an element there': (
-        lambda s, w: None, lambda s, w, c: s.add_subtype('k', w.k_join.join_id, 'code.k.b', ef='f'),
-        {'join_ids': (1, 0), 'identities': (1, 0), 'joins': (1, 0), 'current_subtypes': (1, 0)}),
+                  'join_elements': (1, 0)}),
+    'add_join holding two elements': (lambda s, w: s.add_element('k', 'code.k.c'),
+                                      lambda s, w, c: s.add_join('k', 'code.k.b', ['code.k.a', 'code.k.c'],
+                                                                 purpose='p', ef='f'),
+                                      {'join_ids': (1, 0), 'identities': (1, 0), 'joins': (1, 0),
+                                       'current_joins': (1, 0), 'join_elements': (2, 0)}),
+    'edit elements': (lambda s, w: s.add_element('k', 'code.k.c'),
+                      lambda s, w, c: s.edit(w.k_join.join_id, {'elements': ['code.k.b', 'code.k.c']}),
+                      {'join_elements': (1, 0)}),
     'edit receiver': (lambda s, w: s.add_element('k', 'code.k.c'),
                       lambda s, w, c: s.edit(w.k_join.join_id, {'receiver': 'code.k.c'}),
                       {'joins': (1, 1), 'current_joins': (1, 1)}),
-    'edit parent': (lambda s, w: (s.add_element('k', 'code.k.c'),
-                                  s.add_join('k', 'code.k.a', 'code.k.c', purpose='p', ef='f'))[1],
-                    lambda s, w, c: s.edit(w.k_join.join_id, {'parent': c.join_id}),
-                    {'joins': (1, 1), 'current_joins': (0, 1), 'current_subtypes': (1, 0)}),
-    'add_ref': (lambda s, w: None, lambda s, w, c: s.add_ref(w.k_join.join_id, 'path', 'y'), {'refs': (1, 0)}),
+    'add_ref': (lambda s, w: None, lambda s, w, c: s.add_ref(w.item.item_id, 'path', 'y'), {'refs': (1, 0)}),
     'add_item': (lambda s, w: None, lambda s, w, c: s.add_item('k', Node('element', 'code.k.b'), 'v'),
                  {'item_ids': (1, 0), 'identities': (1, 0), 'items': (1, 0), 'current_items': (1, 0)}),
     'add_property': (lambda s, w: None, lambda s, w, c: s.add_property('k', 'code.k.a', 'v'),
@@ -122,16 +119,14 @@ CASES: dict[str, tuple[Callable, Callable, dict]] = {
     # written, LAYER-025.
     'refine': (lambda s, w: None,
                lambda s, w, c: s.refine(w.inner.join_id, {'ef': 'x'}, reason='r'),
-               {'joins': (1, 0), 'current_joins': (1, 1)}),
+               {'joins': (1, 0), 'current_joins': (1, 1), 'join_elements': (1, 0)}),
     'refine a removal': (lambda s, w: None,
                          lambda s, w, c: s.refine(w.outer.join_id, remove=True, reason='r'),
-                         {'joins': (1, 0), 'refs': (1, 0), 'current_joins': (0, 1)}),
+                         {'joins': (1, 0), 'join_elements': (2, 0), 'current_joins': (0, 1)}),
     'add_element into the finished intake': (lambda s, w: None, lambda s, w, c: s.add_element('intake-1', 'code.x'),
                                              {'element_ids': (1, 0), 'identities': (1, 0), 'elements': (1, 0),
                                               'current_elements': (1, 0), 'address_elements': (1, 0),
                                               'types': (1, 0)}),
-    'add_ref on the metaform': (lambda s, w: None, lambda s, w, c: s.add_ref(w.outer.join_id, 'path', 'x'),
-                                {'refs': (1, 0)}),
     'reexamined': (lambda s, w: (s.layer('built', 'test', 'Built.', mutable=True, hideable=True,
                                          provenance=PROVENANCE, sources=('intake-1',)),
                                  s.finish('built'), refined(s, w)),
@@ -182,16 +177,6 @@ ERRORS: dict[str, tuple[Callable, Callable]] = {
     'add_join an end that is no element id': (lambda s, w: None,
                                               lambda s, w: s.add_join('k', 'code.k.a', '0' * 32, purpose='p',
                                                                       ef='f')),
-    'add_subtype unknown join': (lambda s, w: None,
-                                 lambda s, w: s.add_subtype('k', '0' * 32, 'code.k.part', ef='f')),
-    'add_subtype inside a subtype join': (
-        lambda s, w: None,
-        lambda s, w: s.add_subtype('k', s.subtypes(w.outer.join_id).results[0].join_id, 'code.k.part', ef='f')),
-    'edit parent that is a subtype join': (
-        lambda s, w: None,
-        lambda s, w: s.edit(w.k_join.join_id, {'parent': s.subtypes(w.outer.join_id).results[0].join_id})),
-    'edit parent that is the join itself': (lambda s, w: None,
-                                            lambda s, w: s.edit(w.k_join.join_id, {'parent': w.k_join.join_id})),
     'add_ref unknown owner': (lambda s, w: None, lambda s, w: s.add_ref('0' * 32, 'path', 'x')),
     'edit_work unknown': (lambda s, w: None, lambda s, w: s.edit_work('0' * 32, {'task': 'x'})),
     'finish_work unknown': (lambda s, w: None, lambda s, w: s.finish_work('0' * 32, 'x')),
@@ -264,13 +249,6 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                                                     {'address': 'code.k.d'}), False,
                                 lambda s, w, got, before: s.element('code.k.c', raw=True) is not None and
                                 s.element('code.k.d', raw=True) is None),
-    'edit parent in a join of another receiver': (
-        lambda s, w: None, lambda s, w: s.edit(w.k_join.join_id, {'parent': w.outer.join_id}), True,
-        # its receiver, which the parent's receiver now holds, is kept aside; its purpose stays its own, STORE-011
-        lambda s, w, got, before: [(sub.join_id, sub.purpose, sub.extra)
-                                   for sub in s.subtypes(w.outer.join_id, raw=True).results
-                                   if sub.join_id == w.k_join.join_id] == [(w.k_join.join_id, 'p',
-                                                                           {'receiver': 'code.k.a'})]),
     'remove intake': (lambda s, w: None, lambda s, w: s.remove(w.outer.join_id), False, _unchanged),
     'remove memory': (lambda s, w: None, lambda s, w: s.remove(w.memo.item_id), False, _unchanged),
     'remove still used': (lambda s, w: None, lambda s, w: s.remove(s.element('code.k.a', raw=True).element_id), True,
@@ -280,7 +258,7 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
     'discard memory': (lambda s, w: None, lambda s, w: s.discard('memory'), False, _unchanged),
     'add_element role in a knowledge layer': (lambda s, w: None,
                                               lambda s, w: s.add_element('k', 'code.k.y', role='BOGUS'), True,
-                                              lambda s, w, got, before: got.role is None),
+                                              lambda s, w, got, before: got.role == 'BOGUS'),
     'add_item unknown target': (lambda s, w: None,
                                 lambda s, w: s.add_item('k', Node('element', 'code.nothing'), 'v'), True,
                                 _raw_element('code.nothing')),
@@ -358,34 +336,14 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                              lambda s, w, got, before: s.element('code.nothing', raw=True).layer == 'k'),
     'add_join to itself': (lambda s, w: None,
                            lambda s, w: s.add_join('k', 'code.k.a', 'code.k.a', purpose='p', ef='f'), True,
-                           lambda s, w, got, before: got.receiver == got.provider),
-    'add_subtype malformed': (lambda s, w: None,
-                              lambda s, w: s.add_subtype('k', w.k_join.join_id, 'Code.Part', ef='f'), True,
-                              lambda s, w, got, before: got.address == 'Code.Part'),
-    'add_subtype element another subtype join holds': (
-        lambda s, w: None, lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.loop.tick', ef='f'),
-        True, lambda s, w, got, before: got.element_id == s.element('code.loop.tick').element_id),
+                           lambda s, w, got, before: got.receiver in [held.element_id for held in got.elements]),
+    'add_join holding no element': (lambda s, w: None,
+                                    lambda s, w: s.add_join('k', 'code.k.a', [], purpose='p', ef='f'), True,
+                                    lambda s, w, got, before: got.elements == ()),
+    # The metaform holds no refs, Rich 2026-10-04: an element's refs are items of the sources layer.
+    'add_ref on the metaform': (lambda s, w: None, lambda s, w: s.add_ref(w.outer.join_id, 'path', 'x'), False,
+                                _unchanged),
     # A ref that is not a key and a value, both text, is kept in the record's extra under refs, STORE-012.
-    'add_element ref not text': (lambda s, w: None,
-                                 lambda s, w: s.add_element('k', 'code.k.c', refs=[('path', 'c.c'), ('line', 12)]),
-                                 True, lambda s, w, got, before: _odd_refs(got, [['line', 12]], ('path', 'c.c'))),
-    'add_join ref not text': (lambda s, w: None,
-                              lambda s, w: s.add_join('k', 'code.k.b', 'code.k.a', purpose='p', ef='f',
-                                                      refs=[('line', 12), 'loose'], extra={'a': 1}),
-                              True, lambda s, w, got, before: _odd_refs(got, [['line', 12], 'loose'], a=1)
-                              and 'two were not' in got.notices[0].message),
-    # A ref given as an object with a key and a value that are not both text is a record, so, as any list of records
-    # in an extra, it is split into an item of its own, STORE-004.
-    'add_element ref not text as a record': (
-        lambda s, w: None,
-        lambda s, w: s.add_element('k', 'code.k.c', refs=[{'key': 'line', 'value': 12}]), True,
-        lambda s, w, got, before: got.extra is None and got.refs == () and [
-            item.value for item in s.layer_items('k', Node('element', got.element_id)).results] == [
-            {'refs': {'key': 'line', 'value': 12}}]),
-    'add_subtype ref not text': (lambda s, w: None,
-                                 lambda s, w: s.add_subtype('k', w.k_join.join_id, 'code.k.b.part', ef='f',
-                                                            refs=[('line', 12)]),
-                                 True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
     'add_item ref not text': (lambda s, w: None,
                               lambda s, w: s.add_item('k', Node('element', 'code.k.a'), 'v', refs=[('line', 12)]),
                               True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
@@ -393,14 +351,14 @@ NOTICES: dict[str, tuple[Callable, Callable, bool, Callable]] = {
                                   lambda s, w: s.add_property('k', 'code.k.b', 'v', refs=[('line', 12)]),
                                   True, lambda s, w, got, before: _odd_refs(got, [['line', 12]])),
     'edit ref not text': (lambda s, w: None,
-                          lambda s, w: s.edit(w.k_join.join_id, {'refs': [('path', 'a.c'), ('line', 12)]}), True,
+                          lambda s, w: s.edit(w.item.item_id, {'refs': [('path', 'a.c'), ('line', 12)]}), True,
                           lambda s, w, got, before: _odd_refs(
-                              s.joins('code.k.a', raw=True).results[0], [['line', 12]], ('path', 'a.c'))),
-    'refine ref not text': (lambda s, w: None,
-                            lambda s, w: s.refine(w.inner.join_id, {'refs': [('path', 'a.c'), ('line', 12)]},
-                                                  reason='r'), True,
-                             lambda s, w, got, before: [(ref.key, ref.value) for ref in got.refs] == [('path', 'a.c')]
-                             and got.fields['extra'] == {'refs': [['line', 12]]}),
+                              s.layer_items('k', Node('element', 'code.k.a')).results[0], [['line', 12]], ('path', 'a.c'))),
+    'edit refs on a join': (lambda s, w: None,
+                            lambda s, w: s.edit(w.k_join.join_id, {'refs': [('path', 'a.c')]}), False, _unchanged),
+    'refine refs on a join': (lambda s, w: None,
+                              lambda s, w: s.refine(w.inner.join_id, {'refs': [('path', 'a.c')]}, reason='r'), False,
+                              _unchanged),
 }
 
 

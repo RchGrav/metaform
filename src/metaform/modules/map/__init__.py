@@ -35,7 +35,7 @@ settings.boolean('tasks', True, help='Assign and track work on the map like a ka
 
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 # What edit and refine change; ifd and verb among them, which were dropped before, an intake found.
-FIELDS = ('address', 'extra', 'receiver', 'provider', 'parent', 'type', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
+FIELDS = ('address', 'extra', 'receiver', 'elements', 'type', 'purpose', 'ef', 'ifd',
           'name', 'name_length', 'role', 'value', 'link', 'element', 'refs', 'read_first', 'always_show')
 
 
@@ -143,8 +143,6 @@ def identity(ctx: Context) -> Any:
     return _store(ctx).identity(ctx.nouns['element'], **_reading(ctx), **_paging(ctx))
 
 
-def subtypes(ctx: Context) -> Any:
-    return _store(ctx).subtypes(ctx.nouns['join'], **_reading(ctx), **_paging(ctx))
 
 
 def children(ctx: Context) -> Any:
@@ -337,11 +335,8 @@ def _optional(ctx: Context, *names: str) -> dict[str, Any]:
 READS: dict[str, frozenset[str]] = {
     'create': frozenset({'variable', 'mutable', 'hideable', 'kind', 'fields', 'sources', 'tags', 'module', 'workflow',
                          'prompt', 'model', 'role', 'blinded'}),
-    'add-element': frozenset({'address', 'name_length', 'name', 'role', 'refs', 'extra'}),
-    'add-join': frozenset({'receiver', 'provider', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'type',
-                           'refs', 'extra'}),
-    'add-subtype': frozenset({'join', 'address', 'purpose', 'ef', 'ifd', 'verb',
-                              'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'}),
+    'add-element': frozenset({'address', 'name_length', 'name', 'role'}),
+    'add-join': frozenset({'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra', 'read_first', 'always_show', 'task', 'condition'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
@@ -355,8 +350,8 @@ READS: dict[str, frozenset[str]] = {
 # The fields each knowledge operation cannot store its record without, besides op, BASE-038: the field that says what
 # the record is, where it attaches, or which layer holds it. A call missing one stops and writes nothing.
 NEEDS: dict[str, tuple[str, ...]] = {
-    'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'provider'),
-    'add-subtype': ('join', 'address'), 'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
+    'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'elements'),
+    'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
     'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',),
     'finish': ('layer',), 'discard': ('layer',),
 }
@@ -397,13 +392,13 @@ def _with_notices(result: Any, notices: list[Notice]) -> Any:
 
 
 STORE_ID = re.compile(r'\b[0-9a-f]{32}\b')
-REFINE_FIELDS = ('name', 'name_length', 'role', 'refs', 'extra', 'purpose', 'ef', 'ifd', 'verb', 'non_goal')
+REFINE_FIELDS = ('name', 'name_length', 'role', 'purpose', 'ef', 'ifd', 'elements')
 NAMING = ('receiver', 'provider', 'address')
 
 
 def _said_as(store: Store, thing: str) -> str:
-    """What an agent calls a thing the store names by id: an element by its address, a purpose by the element that
-    holds it and the element that serves it, a part by its address inside its purpose."""
+    """What an agent calls a thing the store names by id: an element by its address, a join by its receiver and the
+    first element it holds."""
     found = store.element(thing, raw=True)
     if found is not None:
         return found.address
@@ -412,10 +407,9 @@ def _said_as(store: Store, thing: str) -> str:
     def at(ref: Any) -> str:
         element = store.element(str(ref), raw=True) if ref else None
         return element.address if element is not None else str(ref)
-    if fields.get('parent'):
-        return f"{at(fields.get('provider'))} inside {_said_as(store, str(fields['parent']))}"
     if fields.get('receiver'):
-        return f"the purpose of {at(fields['receiver'])} served by {at(fields.get('provider'))}"
+        held = fields.get('elements') or [None]
+        return f"the purpose of {at(fields['receiver'])} served by {held[0]}"
     return thing
 
 
@@ -434,7 +428,8 @@ def _purposes(store: Store, receiver: Any, provider: Any) -> list[Any]:
     owner = store.element(str(receiver), raw=True)
     if owner is None:
         return []
-    return [held for held in store.joins(owner.element_id, limit=0).results if held.provider_address == provider]
+    return [held for held in store.joins(owner.element_id, limit=0).results
+            if any(each.address == provider for each in held.elements)]
 
 
 def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = False) -> Any:
@@ -450,11 +445,11 @@ def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = Fa
 
 
 def refine(ctx: Context) -> Any:
-    """Refine the metaform: one element, purpose or part changed or removed as its newest version in the
-    metaform's own layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an
-    element by its address, a purpose by the element that holds it and the element that serves it, and a part by
-    its address inside that purpose, MAP-005. It is a verb of its own, apart from knowledge, because it changes the
-    metaform and no knowledge layer. Nothing is refused for its content, BASE-044."""
+    """Refine the metaform: one element or join changed or removed as its newest version in the metaform's own
+    layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an element by its
+    address, a join by its receiver and an element it holds, MAP-005; `elements` gives the elements a join holds. It
+    is a verb of its own, apart from knowledge, because it changes the metaform and no knowledge layer. Nothing is
+    refused for its content, BASE-044."""
     nouns = ctx.nouns
     if not any(name in nouns for name in NAMING):
         raise Stop('refine needs address, or receiver and provider, to name what it changes.',
@@ -467,23 +462,10 @@ def refine(ctx: Context) -> Any:
     if 'receiver' in nouns or 'provider' in nouns:
         said = f"the purpose of {nouns.get('receiver')} served by {nouns.get('provider')}"
         held = _one(_purposes(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
-        if held is not None and 'address' in nouns:
-            parts = [item for item in store.subtypes(held.join_id, limit=0).results if item.address == nouns['address']]
-            part = _one(parts, f"{nouns['address']} inside {said}", notices)
-            thing = part.join_id if part is not None else None
-            if 'to_address' in nouns:
-                changes['provider'] = nouns['to_address']
-        elif held is not None:
+        if held is not None:
             thing = held.join_id
-            changes.update({column: nouns[noun] for noun, column in (('to_receiver', 'receiver'),
-                                                                     ('to_provider', 'provider')) if noun in nouns})
-            if 'parent_receiver' in nouns or 'parent_provider' in nouns:
-                parent = _one(_purposes(store, nouns.get('parent_receiver'), nouns.get('parent_provider')),
-                              f"the purpose of {nouns.get('parent_receiver')} served by "
-                              f"{nouns.get('parent_provider')}", notices, purposes=True)
-                thing = thing if parent is not None else None
-                if parent is not None:
-                    changes['parent'] = parent.join_id
+            if 'to_receiver' in nouns:
+                changes['receiver'] = nouns['to_receiver']
     else:
         element = store.element(str(nouns['address']), raw=True)
         if element is None:
@@ -548,17 +530,12 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
                            tags=tuple(nouns.get('tags', ())), provenance=provenance,
                            sources=tuple(nouns.get('sources', ())))
     if op == 'add-element':
-        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role', 'refs', 'extra'),
+        return store.add_element(name, nouns['address'], **_optional(ctx, 'name_length', 'role'),
                                  name=nouns.get('name'))
     if op == 'add-join':
         purpose, ef = _empty(ctx, notices, 'purpose', 'ef')
-        return store.add_join(name, nouns['receiver'], nouns['provider'], purpose=purpose, ef=ef,
-                              **_optional(ctx, 'name', 'ifd', 'verb', 'non_goal', 'type', 'refs', 'extra'))
-    if op == 'add-subtype':
-        return store.add_subtype(name, nouns['join'], nouns['address'],
-                                 **_optional(ctx, 'purpose', 'ef', 'ifd', 'verb',
-                                             'non_goal', 'name', 'name_length', 'role', 'refs', 'extra'),
-                                 element_name=nouns.get('name'))
+        return store.add_join(name, nouns['receiver'], nouns['elements'], purpose=purpose, ef=ef,
+                              **_optional(ctx, 'ifd', 'type'))
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
@@ -592,8 +569,8 @@ def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] |
 
 
 KNOWLEDGE_NOUNS = (
-    _noun('op', 'create, add-element, add-join, add-subtype, add-property, add-item, add-ref, add-plan, edit, remove, '
-                'finish or discard.'),
+    _noun('op', 'create, add-element, add-join, add-property, add-item, add-ref, add-plan, edit, remove, finish or '
+                'discard.'),
     _noun('layer', 'The layer this call works on, by name or id. An object added without one goes to a new layer '
                    'named unnamed-<time>.'),
     _noun('variable', 'create: the one question the layer answers.'),
@@ -607,36 +584,26 @@ KNOWLEDGE_NOUNS = (
     _noun('workflow', 'create: the workflow within that module.'),
     _noun('prompt', 'create: the prompt the layer is made from.'),
     _noun('model', 'create: the model that makes it.'),
-    _noun('role', 'create: the role of its producer; add-element and add-subtype: DE, SE, NE, CQU or AUE, the role of '
-                  'the element, the one a subtype join holds included.'),
+    _noun('role', 'create: the role of its producer; add-element: DE, SE, NE, CQU or AUE, the role of the element.'),
     _noun('blinded', 'create: whether the producer saw only the map.', 'bool'),
-    _noun('address', 'add-element: the element\'s dotted namespace address; add-subtype: the address of the element '
-                     'the subtype join holds. An element cannot be moved: edit does not apply it.'),
-    _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element. '
-                  "add-join: the project's own name for the functionality the join names. add-subtype: both, for the "
-                  'subtype join and the element it holds.'),
-    _noun('name_length', 'add-element and add-subtype: how many trailing segments form the element\'s short name.',
-          'int'),
-    _noun('refs', 'A JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
-    _noun('extra', 'A JSON object of further fields.', 'json', {'type': 'object'}),
-    _noun('receiver', 'add-join: the element that holds the purpose; edit: another receiver, which moves '
-                      'the join.'),
-    _noun('provider', 'add-join: the element whose function serves it; edit: another provider, or on a '
-                      'subtype join another element to hold.'),
-    _noun('parent', 'edit: the id of a join held by a receiver; the join becomes a subtype join inside '
-                    'it, keeping its purpose.'),
-    _noun('purpose', 'add-join and add-subtype: the Operative Purpose; a subtype join keeps its own purpose.'),
-    _noun('ef', "add-join and add-subtype: the Encounter Function."),
-    _noun('ifd', 'add-join and add-subtype: IFD, Information Flow Direction, the primary flow of information. sends: OP to '
-                 'EF. receives: EF to OP. both: equal need.', schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
-    _noun('verb', 'add-join and add-subtype: the verb ef opens with, third-person singular present tense, ending in '
-                  '-s or -es.'),
-    _noun('non_goal', 'add-join and add-subtype: what the receiver does not seek.'),
+    _noun('address', 'add-element: the element\'s dotted namespace address. An element cannot be moved: edit does '
+                     'not apply it.'),
+    _noun('name', 'add-element: Canonical Name (Project official terminology) or Informal Name of the element.'),
+    _noun('name_length', 'add-element: how many trailing segments form the element\'s short name.', 'int'),
+    _noun('refs', 'add-property and add-item: a JSON list of [key, value] pairs, in order.', 'json', REFS_SCHEMA),
+    _noun('extra', 'add-property and add-item: a JSON object of further fields.', 'json', {'type': 'object'}),
+    _noun('receiver', 'add-join: the element that holds the purpose; edit: another receiver, which moves the join.'),
+    _noun('elements', 'add-join and edit: the elements that serve the purpose, a JSON list of addresses.', 'json',
+          {'type': 'array', 'items': {'type': 'string'}}),
+    _noun('purpose', 'add-join: the Operative Purpose.'),
+    _noun('ef', 'add-join: the Encounter Function.'),
+    _noun('ifd', 'add-join: IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. '
+                 'receives: EF to OP. both: equal need.', schema={'type': 'string', 'enum': ['sends', 'receives', 'both']}),
     _noun('type', 'add-join: the join type, purpose by default.'),
-    _noun('join', 'add-subtype: the id of the join the subtype join sits in; add-plan: the join id.'),
+    _noun('join', 'add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
     _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
-    _noun('node', 'add-item: element:<address or id> or join:<id>, a subtype join being a join.'),
+    _noun('node', 'add-item: element:<address or id> or join:<id>.'),
     _noun('link', 'add-item: a node the item links to.'),
     _noun('read_first', 'add-item and edit: the item is read before the task.', 'bool'),
     _noun('always_show', 'add-item and edit: the item is always shown.', 'bool'),
@@ -653,17 +620,12 @@ REFINE_WORDS = {
     'name': "The project's own name for the element or the join's functionality.",
     'name_length': "How many trailing segments form the element's short name.",
     'role': 'DE, SE, NE, CQU or AUE.',
-    'refs': 'A JSON list of [key, value] pairs, in order.',
-    'extra': 'A JSON object of further fields.',
     'receiver': 'Another receiver, which moves the join.',
-    'provider': 'Another provider, or on a subtype join another element to hold.',
-    'parent': 'The id of a join held by a receiver; the join becomes a subtype join inside it, keeping its purpose.',
+    'elements': 'The elements the join holds, a JSON list of addresses; they replace the ones it held.',
     'purpose': 'The Operative Purpose.',
     'ef': 'The Encounter Function.',
     'ifd': 'IFD, Information Flow Direction, the primary flow of information. sends: OP to EF. receives: EF to OP. '
            'both: equal need.',
-    'verb': 'The verb ef opens with, third-person singular present tense, ending in -s or -es.',
-    'non_goal': 'What the receiver does not seek.',
     'type': 'The join type.',
     'element': 'The element, by address or id.',
     'value': 'The value, as JSON.',
@@ -676,19 +638,14 @@ def _refined_noun(noun: Noun) -> Noun:
 
 
 REFINE_NOUNS = (
-    _noun('receiver', 'A purpose: the element that holds it, by address.'),
-    _noun('provider', 'A purpose: the element that serves it, by address.'),
-    _noun('address', 'An element, by address; with receiver and provider, the part at that address inside the '
-                     'purpose.'),
+    _noun('receiver', 'A join: the element that holds it, by address.'),
+    _noun('provider', 'A join: an element it holds, by address.'),
+    _noun('address', 'An element, by address.'),
     _noun('reason', 'Why.'),
     _noun('evidence', 'What shows it.'),
     _noun('remove', 'Remove it from the metaform instead of changing it; its versions are kept.', 'bool'),
-    _noun('to_receiver', 'A purpose: its new receiver, by address; it moves and stays the same purpose.'),
-    _noun('to_provider', 'A purpose: its new provider, by address.'),
-    _noun('to_address', 'A part: another element for it to hold, by address. An element cannot be moved: given for an '
-                        'element, it is not applied.'),
-    _noun('parent_receiver', 'A purpose placed inside another: the receiver of the purpose it goes inside.'),
-    _noun('parent_provider', 'A purpose placed inside another: the provider of the purpose it goes inside.'),
+    _noun('to_receiver', 'A join: its new receiver, by address; it moves and stays the same join.'),
+    _noun('to_address', 'An element cannot be moved: given for an element, it is not applied.'),
     *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
 )
 
@@ -757,7 +714,7 @@ def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
     the purpose it holds as receiver, and with address the part at that address inside it, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
-            notices.append(Notice('address', 'address names a part only with provider; it was not read.'))
+            notices.append(Notice('address', 'address names an element a join holds only with provider; it was not read.'))
         return _work_node(nouns['node'])
     node = str(nouns['node'])
     receiver = node.partition(':')[2] if node.startswith('element:') else node
@@ -949,11 +906,10 @@ WORK_NOUNS = (
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
-                  'list gives its own records and those on the joins it receives or provides, subtype joins included.'),
-    _noun('receiver', 'list, add and edit: a purpose, by the address of the element that holds it, with provider.'),
-    _noun('provider', 'list, add and edit: a purpose, by the address of the element that serves it, with receiver.'),
-    _noun('address', 'list, add and edit: an element, by address; with receiver and provider, the part at that address '
-                     'inside the purpose.'),
+                  'list gives its own records and those on the joins it receives or provides.'),
+    _noun('receiver', 'list, add and edit: a join, by the address of the element that holds it, with provider.'),
+    _noun('provider', 'list, add and edit: a join, by the address of an element it holds, with receiver.'),
+    _noun('address', 'list, add and edit: an element, by address.'),
     _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, in the specs and not built '
                        'yet; broken; flawed, not broken but not right either; enhancement; or exclude, material '
                        'outside the intake scope or code conflicting with a superseding specification, with the '
@@ -1000,8 +956,9 @@ MODULE = Module(
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with the receiver and its '
-            'purpose, what it relies on, every join it receives with the provider and its function, the subtype joins '
-            'inside them, its open work records and what the layers in context hold at it; full=true keeps ids. With '
+            'purpose, what it relies on, every join it receives with the elements it holds and its function, its '
+            'open work records and what the layers in context hold at it, the sources layer\'s refs among them; '
+            'full=true keeps ids. With '
             "no address, start with roots: the map's entry, the CQU and the DE with their joins, and the root "
             'elements. The receiver holds the purpose, the provider delivers the function. '
             'Record what you learn at a node with the memory tools; to build or improve a knowledge layer, use '
@@ -1011,9 +968,8 @@ MODULE = Module(
     verbs=(
         Verb('roots', roots, "The map's entry: the CQU and the DE with their joins, and every root element.",
              nouns=PAGING, switches=RAW),
-        Verb('where', where, 'One read of an address: the element, what relies on it, what it relies on, the subtype '
-                             'joins inside those joins and the one holding it, its open work records and the layers '
-                             "in context at it; with an empty address, the map's entry.",
+        Verb('where', where, 'One read of an address: the element, what relies on it, what it relies on, its open '
+                             "work records and the layers in context at it; with an empty address, the map's entry.",
              nouns=(Noun('address', 'A dotted namespace address, or empty for the entry.'),
                     _noun('full', 'true keeps ids and empty fields, which are left out by default.', 'bool')),
              switches=RAW),
@@ -1021,16 +977,13 @@ MODULE = Module(
              nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
              switches=RAW, surfaces=('cli',)),
-        Verb('element', element, 'One element: its address, name_length, role and short name, with its refs.',
+        Verb('element', element, 'One element: its address, name_length, name, role and short name.',
              nouns=(Noun('element', 'An address or element id.'),), switches=RAW),
-        Verb('joins', joins, 'The joins an element owns, or with as=provider those it serves.',
+        Verb('joins', joins, 'The joins an element receives, or with as=provider those that hold it.',
              nouns=(Noun('element', 'An address or element id.'), _noun('as', 'receiver or provider.'), *PAGING),
              switches=RAW),
         Verb('identity', identity, 'Every join an element provides for: who receives it, why and how.',
              nouns=(Noun('element', 'An address or element id.'), *PAGING), switches=RAW),
-        Verb('subtypes', subtypes, 'The subtype joins inside a join, each with the element it holds.',
-             nouns=(Noun('join', 'A join id.'), *PAGING),
-             switches=RAW),
         Verb('children', children, 'The next types toward the leaves.',
              nouns=(Noun('address', 'A dotted namespace address.'), *PAGING)),
         Verb('layers', layers, 'The layers, with their kind, tags, state and whether each is on here.',
@@ -1041,7 +994,7 @@ MODULE = Module(
         Verb('layer', layer, 'Everything one layer holds, or what it holds at one node.',
              nouns=(Noun('layer', 'A layer.'), _noun('node', 'A node, such as element:code.engine.'), *PAGING)),
         Verb('node', node, "Every layer's items at one node, grouped by layer.",
-             nouns=(Noun('node', 'element:<address or id> or join:<id>, a subtype join being a join.'),),
+             nouns=(Noun('node', 'element:<address or id> or join:<id>.'),),
              switches=RAW),
         Verb('context', context, 'The properties that apply at an address, and those attached toward the leaves from '
                                  'it that are visible there.',
@@ -1063,8 +1016,7 @@ MODULE = Module(
                            'read one by its id, add or edit one, take one, plan its steps and report each, move it '
                            'on the board, or mark it done.',
              nouns=WORK_NOUNS,
-             details='A work record is attached to one element or join, a subtype join included, and never changes '
-                     'the map. Its '
+             details='A work record is attached to one element or join and never changes the map. Its '
                      'condition is missing, broken or exclude; its note says what and where, its task what it needs. '
                      'exclude records material outside the intake scope or code conflicting with a superseding '
                      'specification. The note links the affected material and the specification or scope reason '

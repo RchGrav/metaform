@@ -56,22 +56,21 @@ def _named(given, names):
 
 
 def record_intake(run, folder, elements, env=None, finish=()):
-    """Record an intake through the command line one object per call, as an intake agent does, then finish it."""
+    """Record an intake through the command line one object per call, as an intake agent does, then finish it. A join
+    of the fixture holds its provider and the elements of its parts, Rich's shape, 2026-10-04."""
     def call(*args):
         return json.loads(run('intake', *args, '--json', cwd=folder, env=env).stdout)
-    run('intake', 'start', cwd=folder, env=env)  # start hands over the Canonical Intake, not JSON, BASE-039
+    run('intake', 'start', cwd=folder, env=env)  # start hands over the intake text, not JSON, BASE-039
     for element in elements:
-        call('element', element['namespace_address'],
-             *_named(element, ('role', 'name', 'name_length', 'refs')))
-    for element in elements:
+        call('element', element['namespace_address'], *_named(element, ('role', 'name', 'name_length', 'refs')))
         for join in element.get('joins', []):
-            call('add_purpose', element['namespace_address'], join['provider'],
-                 *_named(join, ('name', 'purpose', 'ef', 'verb', 'non_goal', 'refs')))
             for subtype in join.get('subtypes', []):
                 inner = subtype.get('element', {})
-                call('subtype', element['namespace_address'], join['provider'], inner['namespace_address'],
-                     *_named(subtype, ('ef', 'verb')),
-                     *_named(inner, ('role', 'name', 'name_length', 'refs')))
+                call('element', inner['namespace_address'], *_named(inner, ('role', 'name', 'name_length', 'refs')))
+    for element in elements:
+        for join in element.get('joins', []):
+            held = [join['provider'], *(subtype['element']['namespace_address'] for subtype in join.get('subtypes', []))]
+            call('join', element['namespace_address'], json.dumps(held), *_named(join, ('purpose', 'ef', 'ifd')))
     return call('finish', *finish)
 
 
@@ -86,21 +85,19 @@ def memory(store):
 
 
 def small_map(store):
-    """An intake with a CQU receiving from a DE, and the DE receiving from an SE through a join with one subtype.
-
-    Each element is its address, name_length and role; the project's name for each functionality is on its join."""
+    """An intake with a CQU receiving from a DE, and the DE receiving from an SE; the CQU's join holds the DE and the
+    tick loop, a part annealed into it, Rich's shape, 2026-10-04: an element is its address, name_length, name and
+    role, and a join its purpose, ef and ifd with the elements it holds."""
     with store.atomic():
         layer = intake(store)
         store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
-        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
-        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
-        outer = store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen', name='kitchen timer',
-                               purpose='Know when each dish is done.', ef='Counts down and rings.',
-                               refs=[('path', 'src')])
-        inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE', name='kitchen timer')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE', name='audible alarm')
+        store.add_element(layer.name, 'code.loop.tick', name_length=2, role='SE', name='tick loop')
+        outer = store.add_join(layer.name, 'stakeholder.cook.home', ['code.timer.kitchen', 'code.loop.tick'],
+                               purpose='Know when each dish is done.', ef='Counts down and rings.')
+        inner = store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible',
                                purpose='Get attention when a countdown ends.', ef='Plays a tone.')
-        store.add_subtype(layer.name, outer.join_id, 'code.loop.tick', ef='Advances each countdown.',
-                          name='tick loop', name_length=2, role='SE', refs=[('path', 'src/tick.c')])
     return layer, outer, inner
 
 

@@ -40,12 +40,27 @@ column, the address of the element a promoted join names, empty on every join; n
 Layout 17 to 18, Rich 2026-10-04: "well I think we need to go back to purpose for semantics"; "yeah, add it to
 purpose..   thats because for certain artifact types like photos you cant call them a requirement but you can more
 easily reason a purpose". Every version of every join of type require is typed purpose again; nothing else changes.
+
+Layout 18 to 19, Rich 2026-10-04: "we are reverting the data shape back to my original original design, no added field
+nothing...   that can all go to a knowledge layer.  metaform goes back to my original shape"; "if you want to have refs
+you add a sources layer, or you keep them in a sources layer". An element keeps its address, name_length, name and
+role; a join keeps its type, receiver, purpose, ef and ifd, and holds the elements that serve it. Every version of a
+join holds its provider; each current subtype join's element is held by its parent join's current version, and the
+subtype join is gone. Nothing is dropped: every current element's and join's refs become an item of a layer named
+sources at it, and what else it held, an element's extra, a join's name, verb, non_goal, extra and promoted element,
+and a subtype join's own fields, become an item of a layer named intake details at it, the subtype join's at the
+element it held. Items, tickets and messages at a subtype join move to that element. Earlier versions of those fields
+remain in the backup made first.
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
+import uuid
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from .. import home
 from ..errors import StoreError
@@ -62,9 +77,9 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 to 17 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 17.',
+    """Update a store at layout 7 to 18 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 18.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -82,6 +97,9 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
             stack += [row[0] for row in db.execute("SELECT layer_id FROM layers WHERE kind='correction'")
                       if row[0] not in stack]
         _ef_from_relation(db)
+        if int(found) < 10:  # a layout 10 store already holds these; run while `extra` is still there
+            _fields(db)
+        _to_shape(db, wanted)
         _relayout(db, wanted)
         if found == '7':
             for layer_id in stack:
@@ -90,12 +108,9 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
             for kind in KINDS.values():
                 ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
                 recompute(db, _kind_name(kind.table), ids)
-        if int(found) < 10:  # a layout 10 or 11 store already holds these
-            tables.legacy_upgrade(db, found)
-            _fields(db)
-        if int(found) >= 10:
-            tables.legacy_upgrade(db, found)
+        tables.legacy_upgrade(db, found)
         db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18, Rich 2026-10-04
+        db.execute('DROP TABLE IF EXISTS temp.subtype_moves')
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
             raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '
@@ -182,8 +197,14 @@ def _ef_from_relation(db: sqlite3.Connection) -> None:
 
 def _fields(db: sqlite3.Connection) -> None:
     """Layout 10, Rich 2026-10-01: an element's name and a join's IFD are fields of their own, no longer kept in its
-    extra; each is moved out of the extra, and an extra left empty is cleared."""
+    extra; each is moved out of the extra, and an extra left empty is cleared. Run before the relayout, which takes
+    `extra` off, so the two columns are added here when the store does not have them yet."""
     for table, key in (('elements', 'name'), ('joins', 'ifd')):
+        columns = [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
+        if key not in columns:
+            db.execute(f'ALTER TABLE {table} ADD COLUMN {key} TEXT')
+        if 'extra' not in columns:
+            continue
         db.execute(f"UPDATE {table} SET {key}=json_extract(extra, '$.{key}') WHERE {key} IS NULL AND json_valid(extra) "
                    f"AND json_type(extra, '$.{key}') = 'text'")
         db.execute(f"UPDATE {table} SET extra=NULLIF(json_remove(extra, '$.{key}'), '{{}}') WHERE json_valid(extra) "
@@ -228,3 +249,130 @@ def _name_intake(db: sqlite3.Connection) -> None:
 
 def _kind_name(table: str) -> str:
     return next(name for name, kind in KINDS.items() if kind.table == table)
+
+
+SHAPE_REASON = "Layout 19, Rich 2026-10-04: the metaform goes back to Rich's original shape."
+SOURCES, DETAILS = 'sources', 'intake details'
+
+
+def _to_shape(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> None:
+    """Layout 19: a join holds the elements that serve it, and everything beyond Rich's shape goes into layers.
+
+    Run before the old columns are removed. `temp.subtype_moves` names, for each subtype join, the element it held,
+    so each module's legacy upgrade can move what it keeps at a subtype join to that element.
+    """
+    columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
+    if 'provider' not in columns:
+        return
+    db.execute(next(sql for kind, name, sql in wanted if kind == 'table' and name == 'join_elements'))
+    db.execute('CREATE TEMP TABLE subtype_moves(join_id TEXT PRIMARY KEY, element_id TEXT NOT NULL)')
+    db.execute('INSERT INTO join_elements(join_row, position, element_id) '
+               'SELECT row, 0, provider FROM joins WHERE parent IS NULL')
+    db.execute('INSERT OR REPLACE INTO temp.subtype_moves(join_id, element_id) '
+               'SELECT join_id, provider FROM joins WHERE parent IS NOT NULL ORDER BY row')
+    made: dict[str, str] = {}
+
+    def layer(name: str, variable: str) -> str | None:
+        if name not in made:
+            owner = db.execute("SELECT metaform_id FROM layers ORDER BY kind <> 'intake', created LIMIT 1").fetchone()
+            if owner is None:
+                return None
+            chosen, number = name, 1
+            while db.execute('SELECT 1 FROM layers WHERE name=?', (chosen,)).fetchone():
+                number += 1
+                chosen = f'{name}-{number}'
+            made[name] = uuid.uuid4().hex
+            now = home.now()
+            db.execute('INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, kind, '
+                       "created, ready) VALUES (?, ?, ?, 'intake', ?, 1, 1, 'layer', ?, ?)",
+                       (made[name], owner[0], chosen, variable, now, now))
+        return made[name]
+
+    def item(name: str, variable: str, kind: str, target: str, value: Any,
+             refs: Sequence[tuple[str, str]] = ()) -> None:
+        layer_id = layer(name, variable)
+        if layer_id is None:
+            return
+        item_id = uuid.uuid4().hex
+        db.execute('INSERT INTO item_ids(item_id, layer_id) VALUES (?, ?)', (item_id, layer_id))
+        db.execute("INSERT INTO identities(id, kind) VALUES (?, 'item')", (item_id,))
+        cursor = db.execute('INSERT INTO items(item_id, layer_id, target_kind, target_id, value) VALUES (?, ?, ?, ?, ?)',
+                            (item_id, layer_id, kind, target, json.dumps(value, ensure_ascii=False, sort_keys=True)))
+        row = int(cursor.lastrowid or 0)
+        db.execute('INSERT INTO current_items(item_id, row, layer_id, target_kind, target_id) VALUES (?, ?, ?, ?, ?)',
+                   (item_id, row, layer_id, kind, target))
+        db.executemany("INSERT INTO refs(owner, owner_row, position, key, value) VALUES ('item', ?, ?, ?, ?)",
+                       [(row, index, key, value) for index, (key, value) in enumerate(refs)])
+
+    def refs_of(owner: str, row: int) -> list[tuple[str, str]]:
+        return [(str(ref[0]), str(ref[1])) for ref in db.execute(
+            'SELECT key, value FROM refs WHERE owner=? AND owner_row=? ORDER BY position', (owner, row))]
+
+    def address(element_id: Any) -> str:
+        found = db.execute('SELECT address FROM elements WHERE element_id=? ORDER BY row DESC LIMIT 1',
+                           (element_id,)).fetchone()
+        return str(found[0]) if found else str(element_id)
+
+    def kept(row: sqlite3.Row, names: tuple[str, ...]) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
+        for name in names:
+            if name in row.keys() and row[name] is not None:
+                fields[name] = json.loads(row[name]) if name == 'extra' and json_text(row[name]) else row[name]
+        return fields
+
+    for element_id, current in db.execute('SELECT element_id, row FROM current_elements ORDER BY row').fetchall():
+        base = db.execute('SELECT * FROM elements WHERE row=?', (current,)).fetchone()
+        found = refs_of('element', current)
+        if found:
+            item(SOURCES, 'refs', 'element', element_id, base['address'], found)
+        details = kept(base, ('extra',))
+        if details:
+            item(DETAILS, 'fields', 'element', element_id, details)
+    for join_id, current in db.execute('SELECT join_id, row FROM current_joins ORDER BY row').fetchall():
+        base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
+        said = f"{address(base['receiver'])} served by {address(base['provider'])}"
+        found = refs_of('join', current)
+        if found:
+            item(SOURCES, 'refs', 'join', join_id, said, found)
+        details = kept(base, ('name', 'verb', 'non_goal', 'extra', 'element'))
+        if details:
+            item(DETAILS, 'fields', 'join', join_id, details)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='current_subtypes'").fetchone():
+        for parent, element_id, current in db.execute(
+                'SELECT parent, provider, row FROM current_subtypes ORDER BY row').fetchall():
+            base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
+            holder = db.execute('SELECT j.row, j.receiver, j.provider FROM current_joins c JOIN joins j ON j.row = c.row '
+                                'WHERE c.join_id=?', (parent,)).fetchone()
+            if holder is not None and not db.execute('SELECT 1 FROM join_elements WHERE join_row=? AND element_id=?',
+                                                     (holder[0], element_id)).fetchone():
+                position = db.execute('SELECT COALESCE(MAX(position) + 1, 0) FROM join_elements WHERE join_row=?',
+                                      (holder[0],)).fetchone()[0]
+                db.execute('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
+                           (holder[0], position, element_id))
+            details = kept(base, ('name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal', 'extra'))
+            if holder is not None:
+                details['part_of'] = f'{address(holder[1])} served by {address(holder[2])}'
+            item(DETAILS, 'fields', 'element', element_id, details)
+            found = refs_of('join', current)
+            if found:
+                item(SOURCES, 'refs', 'element', element_id, address(element_id), found)
+        db.execute('DROP TABLE current_subtypes')
+    for column in ('target', 'link'):
+        for table in ('items', 'current_items'):
+            db.execute(f"UPDATE {table} SET {column}_kind='element', {column}_id=(SELECT element_id FROM "
+                       f"temp.subtype_moves m WHERE m.join_id={table}.{column}_id) WHERE {column}_kind='join' AND "
+                       f'{column}_id IN (SELECT join_id FROM temp.subtype_moves)')
+    db.execute("DELETE FROM refs WHERE owner IN ('element', 'join')")
+    db.execute('DELETE FROM join_elements WHERE join_row IN (SELECT row FROM joins WHERE parent IS NOT NULL)')
+    db.execute('DELETE FROM joins WHERE parent IS NOT NULL')
+
+
+def json_text(value: Any) -> bool:
+    """Whether a stored value is JSON text."""
+    if not isinstance(value, str):
+        return False
+    try:
+        json.loads(value)
+    except ValueError:
+        return False
+    return True

@@ -18,7 +18,7 @@ from typing import Any
 from .. import home
 from ..errors import StoreError
 from . import operations, rows, versions, views, writes
-from .ids import LAYER_NAME, TAG, is_id, new_id, refs_fit
+from .ids import LAYER_NAME, TAG, is_id, new_id
 from .records import Layer, Notice, Outcome, Version
 from .selection import LAYER_COLUMNS, LayerRow, all_layers, layer_row
 from .session import Tx
@@ -183,7 +183,10 @@ def discard(tx: Tx, layer: str) -> Outcome:
                                                      f'the element was kept and now belongs to '
                                                      f'{rows.layer(tx, heir).name}.'))
                     continue
-            db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
+            if owner in ('item', 'property'):
+                db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (owner, row[0]))
+            if owner == 'join':
+                db.execute('DELETE FROM join_elements WHERE join_row=?', (row[0],))
             versions.drop_current(db, owner, 'row', row[0])
             if owner == 'item':
                 operations.cleanup(tx, 'item', str(row[1]))
@@ -209,7 +212,8 @@ def _heir(db: sqlite3.Connection, element_id: str, leaving: str) -> str | None:
         ' SELECT layer_id, 0 AS kind, row FROM properties WHERE element_id=:e'
         " UNION ALL SELECT layer_id, 1, row FROM items WHERE (target_kind='element' AND target_id=:e)"
         "  OR (link_kind='element' AND link_id=:e)"
-        ' UNION ALL SELECT layer_id, 2, row FROM joins WHERE receiver=:e OR provider=:e) '
+        ' UNION ALL SELECT layer_id, 2, row FROM joins WHERE receiver=:e'
+        '  OR row IN (SELECT join_row FROM join_elements WHERE element_id=:e)) '
         'WHERE layer_id<>:l AND layer_id NOT IN (SELECT layer_id FROM elements WHERE element_id=:e) '
         'ORDER BY kind, row LIMIT 1', {'e': element_id, 'l': leaving}).fetchone()
     return None if found is None else str(found[0])
@@ -283,10 +287,9 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
     layer, LAYER-025. Every earlier version is kept.
 
     A key a refinement may not change, such as an element's address, is named in a notice and not applied; the rest
-    is written, STORE-034. A join's receiver, provider and parent move it, MAP-003; a join absorbed into a parent
-    passes the subtype joins of the metaform it holds to that parent, MAP-032. What a removal leaves pointing at the
-    removed thing is orphaned and named, and the layers built from the metaform are marked for re-examination,
-    STORE-036.
+    is written, STORE-034. A join's receiver moves it, MAP-003, and `elements` gives the elements it holds; a change
+    that does not name them keeps the ones it held. What a removal leaves pointing at the removed thing is orphaned
+    and named, and the layers built from the metaform are marked for re-examination, STORE-036.
     """
     kind = rows.kind_of(tx, thing)
     spec = versions.KINDS[kind]
@@ -304,23 +307,21 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
                                      'knowledge layer is edited in place: metaform map knowledge '
                                      f'op=edit layer={found.name} id={thing} <field>=<value>. Nothing was '
                                      'written.'),))
-    allowed = writes.split_changes(kind, given, notices, held=kind == 'join' and base['parent'] is not None)
+    allowed = writes.split_changes(kind, given, notices)
     if not remove and given and not allowed:
         return Outcome(tuple(notices))
     columns = {key: base[key] for key in base.keys() if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
     split: list[tuple[str, Any]] = []
+    held: list[str] | None = None
     if not remove:
         changed, split = writes.changed_columns(tx, kind, allowed, found, notices, base)
+        held = changed.pop(writes.HELD, None)
         columns.update(changed)
     columns.update({'layer_id': found.layer_id, 'op': 'remove' if remove else 'change',
                     'reason': rows.text(reason, 'reason', notices), 'evidence': rows.text(evidence, 'evidence', notices)})
     row = _version(tx, spec.table, columns)
-    if 'refs' in allowed and not remove:
-        rows.write_refs(tx, kind, row, refs_fit(allowed['refs'])[0])
-    else:
-        rows.write_refs(tx, kind, row, [(ref.key, ref.value) for ref in rows.read_refs(tx.db, kind, current)])
-    if kind == 'join' and not remove and 'parent' in columns and columns['parent'] != base['parent']:
-        _lift(tx, found, thing, str(columns['parent']), rows.text(reason, 'reason', []), notices)
+    if kind == 'join':
+        rows.write_held(tx, row, held if held is not None else rows.held_elements(tx.db, current))
     if remove:
         notices += versions.orphaned_by(tx.db, kind, thing)
     versions.recompute(tx.db, kind, [thing])
@@ -337,32 +338,3 @@ def _version(tx: Tx, table: str, columns: dict[str, Any]) -> int:
     marks = ', '.join('?' for _ in columns)
     cursor = tx.db.execute(f'INSERT INTO {table}({names}) VALUES ({marks})', tuple(columns.values()))
     return int(cursor.lastrowid or 0)
-
-
-def _lift(tx: Tx, found: LayerRow, thing: str, parent: str, reason: str | None, notices: list[Notice]) -> None:
-    """The subtype joins of the metaform that a join absorbed into a parent held pass to that parent, each as a new
-    version in the metaform's layer, D3 and D5, MAP-032; a knowledge layer's is named and left inside it."""
-    kinds = versions.layer_kinds(tx.db)
-    lifted: list[str] = []
-    left: list[str] = []
-    for child, child_row in tx.db.execute('SELECT join_id, row FROM current_subtypes WHERE parent=?',
-                                          (thing,)).fetchall():
-        base = tx.db.execute('SELECT * FROM joins WHERE row=?', (child_row,)).fetchone()
-        if kinds.get(str(base['layer_id'])) not in METAFORM_KINDS:
-            left.append(str(child))
-            continue
-        columns = {key: base[key] for key in base.keys() if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
-        columns.update({'parent': parent, 'layer_id': found.layer_id, 'op': 'change',
-                        'reason': reason or f'its parent join {thing} was absorbed into {parent}', 'evidence': None})
-        row = _version(tx, 'joins', columns)
-        rows.write_refs(tx, 'join', row, [(ref.key, ref.value) for ref in rows.read_refs(tx.db, 'join', child_row)])
-        versions.recompute(tx.db, 'join', [str(child)])
-        lifted.append(str(child))
-    if lifted:
-        notices.append(Notice('parent', f"{', '.join(lifted)} sat inside {thing}; a subtype join holds no subtype "
-                                        f'joins, D5, so {"it was" if len(lifted) == 1 else "they were"} passed to '
-                                        f'{parent}.'))
-    if left:
-        notices.append(Notice('parent', f"{', '.join(left)} of a knowledge layer still "
-                                        f"{'sits' if len(left) == 1 else 'sit'} inside {thing}; a refinement never "
-                                        'changes a knowledge layer, so it was left as it is.'))

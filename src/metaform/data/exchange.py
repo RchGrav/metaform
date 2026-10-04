@@ -25,7 +25,7 @@ from .schema import STORE_SCHEMA
 from .session import open_store
 
 FORMAT = 1
-THINGS = ('elements', 'joins', 'items', 'properties')  # a subtype join is a row of joins, STORE-011
+THINGS = ('elements', 'joins', 'items', 'properties')
 KIND_OF_TABLE = {'elements': 'element', 'joins': 'join', 'items': 'item', 'properties': 'property'}
 ID_OF_TABLE = {table: versions.KINDS[kind].id_column for table, kind in KIND_OF_TABLE.items()}
 
@@ -76,7 +76,7 @@ def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequ
     document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
-                 'hidden', *THINGS, 'refs',
+                 'hidden', *THINGS, 'refs', 'join_elements',
                  'reexamine', 'requires'):
         document[name] = []
     with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
@@ -162,6 +162,14 @@ def _fill(db: sqlite3.Connection, document: dict[str, Any], layer_names: Sequenc
                                          'value': ref['value']}))
     refs.sort(key=lambda pair: pair[0])
     document['refs'] = [ref for _, ref in refs]
+    # The elements each version of a join holds, named the way a ref names its owner, Rich's shape, 2026-10-04.
+    document['join_elements'] = [
+        {'join_id': join_id, 'join_layer_id': join_layer, 'join_version': version, 'position': held['position'],
+         'element_id': held['element_id']}
+        for (kind, join_row), (join_id, join_layer, version) in sorted(owner_ids.items(), key=lambda pair: pair[0][1])
+        if kind == 'join'
+        for held in _rows(db, 'SELECT position, element_id FROM join_elements WHERE join_row=? ORDER BY position',
+                          (join_row,))]
     item_ids = {row['item_id'] for row in document['items']}
     for name, declared in tables.exchange_tables(db).items():
         rows = _rows(db, f'SELECT * FROM {_quoted(name)} ORDER BY rowid')
@@ -190,15 +198,14 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
             if row['op'] != 'add' and kind != 'property':
                 wanted.append((kind, row[ID_OF_TABLE[table]]))
             if table == 'joins':
-                wanted += [('element', end) for end in (row['receiver'], row['provider']) if end is not None]
-                if row['parent'] is not None:
-                    wanted.append(('join', row['parent']))
+                wanted.append(('element', row['receiver']))
             if table == 'items':
                 wanted.append((row['target_kind'], row['target_id']))
                 if row['link_kind']:
                     wanted.append((row['link_kind'], row['link_id']))
             if table == 'properties':
                 wanted.append(('element', row['element_id']))
+    wanted += [('element', held['element_id']) for held in document['join_elements']]
     found: list[dict[str, str]] = []
     for kind, ident in wanted:
         entry = {'kind': kind, 'id': ident}
@@ -212,6 +219,7 @@ ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
 HEAD_KEYS = ('metaform_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
+HELD_KEYS = ('join_id', 'join_layer_id', 'join_version', 'position', 'element_id')
 
 
 @cache
@@ -284,7 +292,7 @@ def _validate(document: Any) -> None:
                 continue
             _record(metaform.get('metaform'), f'{where}.metaform', HEAD_KEYS, problems)
             if 'prior_schema_version' in metaform and metaform['prior_schema_version'] not in (
-                    '7', '8', '9', '10', '11', '12', '13', '14', '15'):
+                    '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18'):
                 problems.append(f'{where}.prior_schema_version: not a historical layout version')
             if 'unowned_tables' in metaform:
                 tables.check_unowned(metaform['unowned_tables'], f'{where}.unowned_tables', problems)
@@ -306,6 +314,11 @@ def _validate(document: Any) -> None:
                 problems.append(f'{where}.refs: not a list')
             for place, ref in enumerate(refs or []):
                 _record(ref, f'{where}.refs[{place}]', REF_KEYS, problems)
+            held = as_list(metaform.get('join_elements', []))
+            if held is None:
+                problems.append(f'{where}.join_elements: not a list')
+            for place, entry in enumerate(held or []):
+                _record(entry, f'{where}.join_elements[{place}]', HELD_KEYS, problems)
             _strings(metaform.get('hidden', []), f'{where}.hidden', problems)
             requires = as_list(metaform.get('requires', []))
             if requires is None:
@@ -496,7 +509,7 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
     versions_of: dict[tuple[str, str, str], int] = {}
     touched: dict[str, list[str]] = {kind: [] for kind in versions.ORDER}
     new_ids: set[tuple[str, str]] = set()
-    for table in THINGS:  # every identity first, so a subtype join written before its parent finds it, STORE-011
+    for table in THINGS:  # every identity first, so a join written before an element it holds finds it
         kind = KIND_OF_TABLE[table]
         for row in metaform.get(table, []):
             if row['layer_id'] in fresh and _identity(db, kind, row):
@@ -531,6 +544,15 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
                              'metaform export > <file>')
         db.execute('INSERT INTO refs(owner, owner_row, position, key, value) VALUES (?, ?, ?, ?, ?)',
                    (ref['owner'], owner_row, ref['position'], ref['key'], ref['value']))
+    for held in metaform.get('join_elements', []):
+        if held['join_layer_id'] not in fresh:
+            continue
+        join_row = rows_of.get(('join', held['join_id'], held['join_layer_id'], int(held['join_version'])))
+        if join_row is None:
+            raise StoreError(f'join_elements names join {held["join_id"]}, which the document does not hold.',
+                             'metaform export > <file>')
+        db.execute('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
+                   (join_row, held['position'], held['element_id']))
     for row in metaform.get('selections', []):
         if row['layer_id'] in fresh:
             db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, NULL)', (prefixes(row['address'])[0],))

@@ -4,13 +4,24 @@
 
 An Inference Metaform is a representation of **what a workpiece is doing**. Its addresses organize functional meaning; its joins explain receiving purposes and how providers serve them. It is not a source-file hierarchy or a call graph with more descriptive labels.
 
-This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 10 only, so that file cannot be imported into it; the commands below are the reads that return these records from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 require joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
+This guide reads the earlier map of this repository, recorded on September 26, 2026 and kept as a dated snapshot, an [export](../examples/project-metaform.json) of an earlier version, at schema version 1. The current chassis imports schema version 19 only, so that file cannot be imported into it; the commands below are the reads that return records of this kind from a map that holds them, and on your own map they take its addresses. The recorded map has 19 global elements, 33 require joins, and 26 internal subtypes. Its 86 type-prefix records are the ancestry needed for the namespace, not 86 independently represented subsystems. The [implementation map](../inference-metaform/IMPLEMENTATION_MAP.md#graph-index) contains the complete element, join, and subtype index.
 
-The export was written by the store of that day, and three of its record shapes have changed since. The project's name for a functionality was a descriptor item at the element; it is now the join's `name`. A subtype was its own row; it is now a join of type `subtype` inside its parent join, holding an ordinary element. The condition of an object was a finding with a `flag`; it is now a work record, apart from the map. The export also predates `verb`, so its joins and subtypes record `verb` as null, and its relations are whole sentences.
+The snapshot has the shape of its day, and the current shape is smaller. Rich restored his original shape on 2026-10-04. An element is its `namespace_address`, `name_length`, `name` and `role`. A join is its type, `purpose`, `ef` and `ifd`, held by its receiver, and it holds the elements that serve it. Compared with the snapshot:
 
-The running web GUI draws a map as nodes and joins. This screenshot is the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand): elements as nodes, joins as the lines between them, colored by `ef`, the tick loop drawn inside the kitchen timer's join in the 2D map, the audible alarm red for its open `broken` work record, and the selected element's memory, knowledge and joins in the panel on the left.
+| In the snapshot | Now |
+|---|---|
+| The project's name for a functionality was a descriptor item at the element, then a `name` on the join. | `name` is a field of the element. |
+| A join named one `provider`. | A join holds a list of `elements`. |
+| A subtype was its own row, or a join of type `subtype` inside its parent join. | There are no subtype joins. The element is held by the join. |
+| A join carried `function`, `relation`, `verb`, `observation`, `non_goal` and `extra`, and `ef` was one word, Function or Encounter. | A join carries `purpose`, `ef` and `ifd`. `ef` is the Encounter Function written as an active-voice fragment, and `ifd` is `sends`, `receives` or `both`. |
+| Refs were a field of an element or a join. | Refs are items in a knowledge layer named `sources`. |
+| The condition of an object was a finding with a `flag`. | It is a work record, apart from the map. |
 
-![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its memory, a review-notes item and the buzzer join it holds, the 2D map above it with the tick loop inside the kitchen timer, and the 3D graph of every element, join and item on the right, the audible alarm red for its broken work record.](../images/gui-map.png)
+Opening an older store upgrades it in place, after a backup, and moves what the old shape kept into the `sources` layer and a layer named `intake details`.
+
+The running web GUI draws a map as nodes and joins. This screenshot is the kitchen timer's map from [Getting started](getting-started.md#record-a-small-map-by-hand), taken from a throwaway home: elements as nodes in the 3D graph, each join drawn as a vertex between its receiver and the elements it holds, the audible alarm red for its open `broken` work record, and the selected element's `sources` refs, a review-notes item, memory and the joins it holds and serves in the Object panel on the left. The 2D map above the panel is zoomed in on the kitchen timer and the tick loop.
+
+![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its sources path, a review-notes item, its memory and the joins it holds and serves, the 2D map above it, and the 3D graph on the right with the audible alarm red for its broken work record.](../images/gui-map.png)
 
 ## Begin with the artifact and its receivers
 
@@ -63,7 +74,7 @@ For `code.system.plugin`, there are three useful readings:
 | Short type name | plugin system (`name_length = 2`) |
 | Project name | module contract and loader |
 
-Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading, and that short reading is the element's name. The current store records the project name on the join that names the functionality, as `name`, not on the element: it is how this project names the functionality, formally or informally. The export, written before that change, holds it in a descriptor item at the element.
+Namespace segments reverse into a readable type name; underscores become spaces. `name_length` selects how many trailing segments participate in the short reading, and that short reading is the element's name. The current store records the project name on the element, as `name`: it is how this project names the functionality, formally or informally. The export, written before that change, holds it in a descriptor item at the element.
 
 Every prefix supplies a type perspective:
 
@@ -85,7 +96,7 @@ Original material: [address-only examples](../../specifications/metaprompting_el
 
 ## Read a join as a reasoned relationship
 
-The module author receives a capability from `code.system.plugin`. Its join is:
+The module author receives a capability from `code.system.plugin`. In the snapshot this join is:
 
 ```mermaid
 graph LR
@@ -99,23 +110,23 @@ graph LR
 | Receiver | `stakeholder.author.module`, owns the Operative Purpose: add a capability once, as a module, with the needed surfaces |
 | Provider | `code.system.plugin`, supplies the Encounter Function: a MODULE declaration and loader through which that capability becomes commands, tools, settings, events, status, and lifecycle |
 | Join | `d14bd3498b614dfbaf0754c99b28dba3` |
-| `ef` | Encounter |
+| `ef` | Encounter, the snapshot's one-word marker |
 | `relation` | The plugin system lets a module author plug a capability into Metaform with one declaration. |
 
-This display is an abbreviated reading of the actual record. The complete purpose, function, observation, and references remain in the export. On a map that holds them, the provider's address read prints them under `provides`, and `map node` prints what the layers hold at the join:
+This display is an abbreviated reading of the snapshot's record, which also holds `function`, `observation`, references and a null `verb`. In the current shape the same join is held by `stakeholder.author.module`, holds `code.system.plugin` among its elements, and carries `purpose`, `ef` and `ifd`. On a map that holds it, the element's address read prints the join under `provides`, and `map node` prints what the layers hold at the join:
 
 ```sh
 metaform map where code.system.plugin
-metaform map node join:d14bd3498b614dfbaf0754c99b28dba3
+metaform map node join:<join_id>
 ```
 
-The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the provider for that relationship. `relation` states the connection as an active-voice fragment that starts with its third-person verb, and `verb` holds that verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use, the join's receiver, when `ef` is Encounter. The export's relations predate that form and are whole sentences. `observation` records the actual condition, form, arrangement, or limitations. References connect the record to relevant evidence or artifact-specific logic. An optional `non_goal` records a pertinent outcome the receiver does not seek; its absence is not a request to invent exclusions.
+The **Operative Purpose** is the why, held by the receiver. The **Encounter Function** is the how, supplied by the elements the join holds for that relationship, and the current `ef` states it as an active-voice fragment that starts with its third-person verb. `ifd`, the information flow direction, says which way the primary flow runs: `sends` from the Operative Purpose to the Encounter Function, `receives` from the Encounter Function to the Operative Purpose, or `both` when the need is equal. Anything the old shape kept in `observation` or `non_goal` is not a field now. It belongs in a knowledge layer, as an item at the join, where a reader can see which layer asserts it.
 
-A provider can serve different purposes through different Encounter Functions. The module contract serves the command line by supplying verb declarations, the builder by identifying loaded modules and dependencies, and the module author through the declaration-and-loading encounter. Those distinctions belong in the joins, not in a single flattened element-level function description.
+A provider can serve different purposes through different Encounter Functions. The module contract serves the command line by supplying verb declarations, the builder by identifying loaded modules and dependencies, and the module author through the declaration-and-loading encounter. Those distinctions belong in the joins, one per receiving purpose, not in a single flattened element-level function description.
 
 ## Function and Encounter are not synonyms for function and file
 
-**Function** is operative capability. **Encounter** is the form through which it is expressed, realized, used, or experienced. In the module-author join, the declaration mechanism is marked Encounter; in the command-line receiving join, supplying the declared verbs is marked Function.
+**Function** is operative capability. **Encounter** is the form through which it is expressed, realized, used, or experienced. In the snapshot's module-author join, the declaration mechanism is marked Encounter; in the command-line receiving join, supplying the declared verbs is marked Function. The current `ef` does not carry that mark. The Encounter Function is written out in the join's `ef` text.
 
 The phrase **Encounter Function** has an intentional **Unloaded Definition**. It supports understanding the function of an encounter or the encounter of a function according to the artifact and relationship. Replacing it everywhere with “callable,” “API method,” or “user interface” would remove part of the method's scope.
 
@@ -123,27 +134,27 @@ This matters outside software as well. In the author's photograph example, a cou
 
 The dotted typology expresses valid Function or Encounter types, not every convenient metadata label. Encoding alone does not make a functional type. A JPEG encoder can have an encoder-function address; simply appending a file format to a document address does not establish such a function. The [namespace account](../inference-metaform/REFERENCE.md#namespaces) covers the distinctions in depth.
 
-## Subtype joins preserve detail without adding more global elements
+## A join holds the elements that serve its purpose
 
-The module-author join contains:
+The module-author join holds two elements besides the contract itself in the snapshot:
 
 ```mermaid
 graph TB
-    join["code.system.plugin serves stakeholder.author.module<br/>require join d14bd3498b614dfbaf0754c99b28dba3"]
+    join["join held by stakeholder.author.module<br/>purpose: add a capability once, as a module"]
+    join -.holds.-> plugin["code.system.plugin<br/>module contract and loader"]
     join -.holds.-> template["code.template.module<br/>template"]
     join -.holds.-> example["code.module.example<br/>helloworld"]
 ```
 
-`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. Their active roles are preserved **inside the parent require join**, each in a subtype join, a join of type `subtype` that names the element it holds. Each stays one ordinary element record at its own address; an element whose only joins are subtype joins is no root and no node of the outer map. They do not receive independent copies of that purpose merely because they can be named.
+`template` contributes a contract-shaped starting point. `helloworld` demonstrates working use of the contract. The snapshot kept them as subtype joins inside the parent join. The current shape has no subtype joins: the join holds each of them as an element, and each stays one ordinary element record at its own address. `map where <address>` returns the join that holds it. They do not receive independent copies of the purpose merely because they can be named.
 
 ```sh
-metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3
 metaform map where code.module.example
 ```
 
-This is the result of convergence: many implementation details are absorbed into load-bearing parent functionalities while their atomic contributions remain available in the matching relationships. Convergence is not loss of the useful detail; it is the decision about where that detail belongs.
+Recording a join again with an element it holds adds the elements it does not hold, which is how the intake anneals parts into one join. This is the result of convergence: many implementation details are absorbed into load-bearing functionalities while their atomic contributions remain available as held elements. Convergence is not loss of the useful detail; it is the decision about where that detail belongs.
 
-The runtime can also create a memory holder named `code.module.hello` when the hello demo runs. That holder is not the same address as the element `code.module.example` that the intake's subtype join holds. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
+The runtime can also create a memory holder named `code.module.hello` when the hello demo runs. That holder is not the same address as the element `code.module.example` that the snapshot's subtype join held. The former is a module-created location for greeting records; the latter describes the example module's contribution to the module-author purpose. Similar names do not silently merge their identities.
 
 ## Follow Encounters through the applicable structure
 
@@ -177,7 +188,7 @@ The exported graph's broad provider records contain receiver-specific joins. The
 
 ## Distinguish the representation from attached knowledge
 
-An element or a join, a subtype join included, provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Refinements retain changes to the representation as versions in the `intake` layer.
+An element or a join provides an address. Items attach local findings, observations, or other values at that address. Properties supply branch-scoped knowledge. Layers keep bodies of knowledge and their purposes distinct; selection determines which participate in an operation. Refinements retain changes to the representation as versions in the `intake` layer.
 
 ```sh
 metaform map node element:code.system.plugin

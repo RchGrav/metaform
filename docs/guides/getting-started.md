@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Next: working with Metaform](working-with-metaform.md)
 
-A useful first session ends with a relationship you can use: a receiver, its purpose, the provider satisfying it, and the references that connect that understanding to the workpiece. Installation and intake establish the route to that result.
+A useful first session ends with a relationship you can use: a receiver, its purpose, the elements serving it, and the references that connect that understanding to the workpiece. Installation and intake establish the route to that result.
 
 ## 1. Install the supplied source edition
 
@@ -30,7 +30,7 @@ The base package declares `prompt_toolkit`; the MCP module separately declares `
 A Metaform-built wheel is both installable and directly runnable. Substitute the actual wheel path:
 
 ```sh
-python /path/to/metaform-0.1.0-py3-none-any.whl list modules
+python /path/to/metaform-2026.9.30.2-py3-none-any.whl list modules
 ```
 
 In later examples, replace `metaform` with `python /path/to/the.whl` when using this form. Direct execution uses the normal home, `~/.metaform`, the same as an installed command or a host's `uvx --from ... metaform` launch. `METAFORM_HOME` chooses another home for any of them.
@@ -100,7 +100,7 @@ metaform intake prompt
 
 Over MCP, use the `intake_prompt` tool with no arguments when the folder resolves the project, or with `{"project":"example"}` to select it explicitly.
 
-The command serves the operative intake with the target filled in, followed by the recording and report instructions. It does not run an AI model. The intake module's agent notice directs a subagent to read and follow those instructions. The agent examines the workpiece, reasons through its receiving purposes and providers, records each object as soon as it is reasoned, converges its functional structure, then reads the whole map back, proofs it and finishes it.
+The command serves the intake text with its prompt slot filled by `text=`, empty meaning this project, and its target filled in from the registered project. Nothing is added beside it. It does not run an AI model. The intake module's agent notice directs a subagent to read and follow those instructions. The agent examines the workpiece, reasons through its receiving purposes and the elements that serve them, records each object as soon as it is reasoned, anneals its functional structure, then reads the map back, proofs it and finishes it.
 
 **Your part** is to identify the workpiece and direct the work. **The agent's part** is the substantive inference and recording. **Metaform's part** is to serve the method, retain the result, and make that understanding available through subsequent reads, memory, knowledge, and tools.
 
@@ -111,20 +111,43 @@ The operative procedure is intended to ship with the project. Its wording is par
 The served procedure's XML schema defines the fields of each object. The agent records the map through the intake tools, one object per call, as it reasons it, so it never holds the whole map in its context:
 
 ```sh
-metaform intake start model=opus role="intake agent" id=example-intake-1
+metaform intake start model=opus role="intake agent"
 metaform intake element stakeholder.cook.home role=CQU name_length=2
-metaform intake add_purpose stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives verb=tells
+metaform intake element code.timer.kitchen role=DE name_length=2 name="dish clock"
+metaform intake join stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives
 metaform intake show
 metaform intake finish report="What the agent found broken or unfinished."
 ```
 
-An element is its address, `name_length` and role; its short name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer, and `name` holds its canonical name. The project's own name for a functionality goes on the purpose, as `name`: this project calls its kitchen timer the dish clock. `ef` is a fragment in the active voice that starts with its third-person verb, and `verb` is that verb.
+The map has two kinds of record, in the shape Rich restored on 2026-10-04.
 
-Over MCP the same calls are the tools `intake_start`, `intake_element`, `intake_add_purpose`, `intake_subtype`, `intake_absorb`, `intake_show`, `intake_edit`, `intake_remove` and `intake_finish`, each with the same fields as named arguments. The agent names a purpose by its `receiver` and `provider`, a part by its `namespace_address` inside that purpose, and an element by its `namespace_address`, as in the Canonical Intake; no call hands it an id. `intake_absorb` makes a recorded purpose a part inside its parent's purpose; the element it holds stays one element. The optional `model`, `role` and `blinded` on `start`, and `report` and `feedback` on `finish`, preserve the supplied run information. There is no purpose to fabricate values that were not recorded.
+- An element is its `namespace_address`, `name_length`, `name` and `role`. Its short name is its address read backward through `name_length`, so `code.timer.kitchen` with `name_length=2` is the kitchen timer. `name` is the project's own name for it: this project calls its kitchen timer the dish clock.
+- A join is its type (`purpose`), `purpose`, `ef` and `ifd`. The receiver holds the join and the join holds the elements that serve the purpose. `ef` is the Encounter Function, a fragment in the active voice. `ifd` is the information flow direction: `sends`, `receives` or `both`.
 
-Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: `intake show` returns it whole, or one receiver's purposes with `receiver=`, `intake edit` and `intake remove` change it, no other read sees it, and `metaform web` draws each object as it arrives. `finish` returns the layer, the Metaform, the counts of elements, purposes, parts, refs and open work records, and a notice naming any address named in a purpose and never described.
+There are no subtype joins, and no `refs`, `verb`, `non_goal` or name on a join. A part that serves the same purpose is another element in the same join.
 
-`intake element`, `intake add_purpose` and `intake subtype` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map_work`.
+Over MCP the same calls are the tools `intake_prompt`, `intake_start`, `intake_element`, `intake_join`, `intake_show`, `intake_remove` and `intake_finish`, with the same fields as named arguments. The agent names an element by its `namespace_address` and a join by its `receiver` and an element it holds, as in the Canonical Intake. No call hands it an id.
+
+| Verb | What it does |
+|---|---|
+| `prompt` | Serves the intake. |
+| `start` | Opens the building layer, with the `model` and `role` the agent gives. |
+| `element` | Records one element. Recording an address again replaces the fields given. Takes `refs`, `condition` and `note`. |
+| `join` | Records one join: `receiver`, `elements` as a JSON list, and optional `purpose`, `ef`, `ifd`, `condition` and `note`. Recording again with an element the join already holds changes that join, and any element it does not hold is added to it. This is annealing. |
+| `show` | Reads back the recorded map: `elements`, `joins` and `undescribed`, the addresses a join names and no `element` call described. With `receiver=` it reads one receiver's joins and the elements they hold. |
+| `remove` | Takes out an element (`namespace_address`), a join (`receiver` and `provider`, an element it holds), or one element from a join (all three). After `finish` it changes nothing and names `map refine`. |
+| `finish` | Marks the layer ready and saves `report` and `feedback`. Returns the counts of `elements`, `joins` and open `work` records, and a notice for any address named in a join and never described. |
+| `status` | Whether the project has an intake, or one is being recorded. |
+
+Each call returns what it stored and its notices. Nothing is refused for its content: a field that does not fit is stored as given and named in a notice, and a missing field is stored empty and named. Until `finish`, the intake is building: no read other than `intake show` sees it, and `metaform web` draws each object as it arrives.
+
+`element` and `join` take `condition` and `note`. Given either, the call also writes an open work record at what it just recorded, apart from the map: `condition=missing` for what the specifications describe and is not built, `broken`, or `exclude`. The web GUI draws a node with an open `missing` record at 70% opacity and flashes one with an open `broken` record red. Any other work record is written with `map work`.
+
+#### Refs go in the sources layer
+
+An element's `refs` are a JSON list of key and value pairs, such as `[{"key": "path", "value": "src/main.c"}]`. They are not a field of the element. While the setting `intake_sources` is on, which is the default, `intake element` writes them as one item at the element in a knowledge layer named `sources`, replacing what that item held. With the setting off (`metaform set --no-intake-sources`), the refs are not recorded and the call says so.
+
+The intake creates `sources` already finished, so `map where` shows the refs at once, without waiting for `intake finish`.
 
 ### What stays available
 
@@ -161,13 +184,13 @@ metaform map joins <address> as=receiver
 metaform map joins <address> as=provider
 ```
 
-The receiver view asks **what this entity needs and who provides it**. The provider view asks **who receives this capability and why**. One read gives both:
+The receiver view asks **what this entity needs and who provides it**: the joins the element holds, each with the elements that serve it. The provider view asks **who receives this capability and why**: the joins that hold the element, each with its receiver. One read gives both:
 
 ```text
 metaform map where <address>
 ```
 
-`where` returns the element, `provides`, what relies on it, `receives`, what it relies on, the subtype joins inside those joins, the subtype join holding it when it has one, its open work records, and what the layers in context hold at it. It leaves ids and empty fields out; `full=true` keeps them. Open the joins' references to connect the represented understanding to the actual artifact.
+`where` returns the element, `provides`, every join that holds it with the receiver, the receiver's purpose, `ef`, `ifd` and the elements the join holds, `receives`, every join the element holds as receiver with its elements, its open work records, and `layers`, what the layers in context hold at it, the `sources` layer's refs among them. It leaves ids and empty fields out; `full=true` keeps them. Open the refs to connect the recorded understanding to the actual artifact.
 
 The first benefit is concrete: you now have a recorded reason for a relationship, not merely an observation that two parts connect. An agent considering a change can reason against that purpose before reconstructing the whole project.
 
@@ -185,24 +208,27 @@ The examples in [Working with Metaform](working-with-metaform.md) and [Extending
 
 ```sh
 metaform add project kitchen .
-metaform intake start model=none role="by hand" id=kitchen-1
+metaform intake start model=none role="by hand"
 metaform intake element stakeholder.cook.home role=CQU name_length=2
-metaform intake element code.timer.kitchen role=DE name_length=2 refs='[{"key": "path", "value": "src/main.c"}]'
-metaform intake add_purpose stakeholder.cook.home code.timer.kitchen name="dish clock" purpose="Know when each dish is done without watching the clock." ef="tells the cook when a dish is done" ifd=receives verb=tells
-metaform intake element code.alarm.audible role=SE name_length=2 refs='[{"key": "path", "value": "src/alarm.c"}]'
-metaform intake add_purpose code.timer.kitchen code.alarm.audible name="buzzer" purpose="Get the cook's attention the moment a countdown ends." ef="sounds the end of a countdown through the speaker" ifd=receives verb=sounds
-metaform intake subtype stakeholder.cook.home code.timer.kitchen code.loop.tick role=SE name_length=2 name="ticker" ef="advances every running countdown by one second" ifd=receives verb=advances refs='[{"key": "path", "value": "src/tick.c"}]'
+metaform intake element code.timer.kitchen role=DE name_length=2 name="dish clock" refs='[{"key": "path", "value": "src/main.c"}]'
+metaform intake join stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done without watching the clock." ef="tells the cook when a dish is done" ifd=receives
+metaform intake element code.alarm.audible role=SE name_length=2 name="buzzer" refs='[{"key": "path", "value": "src/alarm.c"}]'
+metaform intake join code.timer.kitchen '["code.alarm.audible"]' purpose="Get the cook's attention the moment a countdown ends." ef="sounds the end of a countdown through the speaker" ifd=receives
+metaform intake element code.loop.tick role=SE name_length=2 name="ticker" refs='[{"key": "path", "value": "src/tick.c"}]'
+metaform intake join stakeholder.cook.home '["code.timer.kitchen", "code.loop.tick"]'
 metaform intake finish
 metaform map where code.timer.kitchen
 ```
 
-`intake subtype` names the dish clock purpose by its receiver and provider. `finish` reports four elements, two purposes, one part and three refs. The tick loop is an element held only as a part, so `map roots` does not list it and `map where code.loop.tick` returns it with the subtype join and the join that holds it.
+The last `intake join` names a join the cook already holds with the timer. It is that join: it keeps its purpose, `ef` and `ifd` and gains the tick loop, so the cook's purpose is served by two elements. `finish` reports four elements, two joins and no open work records. `map where code.loop.tick` returns the one join that holds it. `map where code.timer.kitchen` lists the three refs under `layers`.
 
 The shell examples use POSIX single quotes around JSON; on Windows PowerShell, quote the JSON for PowerShell instead.
 
+On a machine that has never run Metaform, each command also prints a notice to read `metaform help provision` and run `metaform provision done`. It does not change the result.
+
 ### The earlier export in docs/examples
 
-[project-metaform.json](../examples/project-metaform.json) is an export of an earlier version: this repository's own map, recorded on September 26, 2026, at schema version 1. The current chassis imports schema version 10 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 10.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
+[project-metaform.json](../examples/project-metaform.json) is a dated snapshot: an export of this repository's own map, recorded on September 26, 2026, at schema version 1 and in the shape of that day, with subtype joins and `verb` recorded as null on each join. The current chassis imports schema version 19 only, and `metaform import` stops on this file with `The document has schema version 1; this Metaform supports version 19.` The [reader guide](reading-a-metaform.md) and the [walkthrough](../examples/project-walkthrough.md) quote its records as recorded material.
 
 ## When the first command does not do what you expect
 

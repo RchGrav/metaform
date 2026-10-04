@@ -152,22 +152,18 @@ The purpose belongs to the receiver. The EF belongs to the provider. Their parti
 
 ### A join records why a connection exists
 
-A join carries the receiving relationship's meaning, not merely two connected names:
+A join carries the receiving relationship's meaning, not merely two connected names. It is held by its receiver and holds the elements that serve its purpose:
 
 | Field | Meaning |
 |---|---|
-| Receiver | The entity whose purpose is served; implicit in the containing element in intake XML and explicit in stored joins. |
-| Provider | The element supplying the relevant EF. |
-| `name` | The project's own name for the functionality the join names, its canonical or informal name. |
-| `type` | `purpose` for a join a receiver holds; `subtype` for a subtype join inside a parent join. |
+| Receiver | The element that holds the join and whose purpose is served; implicit in the containing element in intake XML and explicit in stored joins. |
+| Elements | The Providing Elements whose EF serves the purpose, held in order by the join. One purpose can be served by several elements, and recording the join again with more elements adds them. |
+| `type` | `purpose`. |
 | `purpose` | The receiver's active Operative Purpose. |
-| `function` | The descriptive EF supplied for this encounter. |
-| `ef` | `Function` or `Encounter`, identifying which reading is in use. |
-| `relation` | The artifact-specific relationship, an active-voice fragment that starts with its third-person verb; its subject is the Providing Element when `ef` is Function and the Cestui Que Use when `ef` is Encounter. |
-| `verb` | The third-person verb `relation` starts with. |
-| `observation` | What is actually there: its condition, implementation, format, arrangement, or limitations. |
-| `non_goal` | An optional pertinent outcome the receiver is not seeking. |
-| `refs` | Additional references or logic, expressed as key/value records. |
+| `ef` | The Encounter Function, how the held elements serve the purpose, an active-voice fragment that starts with its third-person verb. |
+| `ifd` | The information flow direction, the primary flow of information: `sends` from the Operative Purpose to the Encounter Function, `receives` from the Encounter Function to the Operative Purpose, `both` for equal need. |
+
+That is the whole of a join, in the shape Rich restored on 2026-10-04. The project's own name for a functionality is the element's `name`. References are items of a knowledge layer named `sources`. Anything else, such as an observation or a note about what a join does not seek, is an item of a knowledge layer at the element or the join. The September 26 snapshot had more fields on a join (`function`, `relation`, `verb`, `observation`, `non_goal`, `refs`, a `name`, a one-word `ef` and a `provider`) and had subtype joins. The store upgrade moves what those fields held into the `sources` layer and a layer named `intake details`.
 
 A dependency between a command line and a plugin system can mean many things. Here the command line receives declarations so that it can parse operations, expose the right settings, generate help, and run enabled module verbs. That reason determines what a proposed declaration change must be examined against.
 
@@ -200,7 +196,7 @@ The Inference Metaform uses reified knowledge hypergraph semantics: a relationsh
 
 This is the practical meaning of a knowledge graph of knowledge graphs. The shape contains functional relationships, and additional knowledge can express relationships about those relationships. A note about why one declaration must satisfy an MCP schema belongs at that receiving join, not necessarily on the plugin system globally.
 
-The implementation provides identities for elements and joins, internal subtype joins included, and lets items target them. This realizes relationship addressability without requiring a particular graph-database technology. The [storage correspondence](IMPLEMENTATION_MAP.md#records) explains the concrete records.
+The implementation provides identities for elements and joins and lets items target them. This realizes relationship addressability without requiring a particular graph-database technology. The [storage correspondence](IMPLEMENTATION_MAP.md#records) explains the concrete records.
 
 <a id="namespaces"></a>
 ## 4. Namespaces, proper nouns, and project names
@@ -237,17 +233,17 @@ The system retains both functional naming and the terminology used by the projec
 
 `name_length` is a **lookback segment count**, not a character count and not the number of words in the project name. With `code.system.plugin` and `name_length=2`, the last two segments reverse to `plugin system`. With `code.interface.command_line` and `name_length=2`, they yield `command line interface`, which has three words because an underscore expands to a space.
 
-An element's name is its reading, and the project's names are on joins; neither replaces a namespace reference. An intake join naming another element uses that element's exact address, not its readable label. The store also assigns stable identifiers so that records, joins, and corrections can be addressed independently of a displayed name.
+An element's short name is its reading, and the project's name for it is its `name`; neither replaces a namespace reference. An intake join naming another element uses that element's exact address, not its readable label. The store also assigns stable identifiers so that records, joins, and corrections can be addressed independently of a displayed name.
 
 ### Three structures that must remain distinguishable
 
-The **type tree**, the **purpose graph**, and **internal subtype containment** express different relationships.
+The **type tree**, the **purpose graph**, and **held elements** express different relationships.
 
-The type tree says how a functional type is situated among broader and narrower types. The purpose graph says who receives what and why. Internal subtype containment says which specific functional contributions have been absorbed into a parent join during convergence.
+The type tree says how a functional type is situated among broader and narrower types. The purpose graph says who receives what and why. A join's held elements say which specific functional contributions serve one purpose, including those annealed into the join during convergence.
 
-For example, the September 26 map of this project retains `code.bus.event` as an internal subtype in the join through which the plugin system serves the chassis. Its functional address is not rewritten into a fabricated lexical child of `code.system.plugin`. Private containment in a join and dotted namespace ancestry are different kinds of structure.
+For example, the September 26 snapshot of this project retains `code.bus.event` as an internal subtype in the join through which the plugin system serves the chassis; the current shape holds it as an element of that join. Its functional address is not rewritten into a fabricated lexical child of `code.system.plugin`. Being held by a join and dotted namespace ancestry are different kinds of structure.
 
-Sources: [name readings](../../src/metaform/data/names.py), [namespace rules](../../src/metaform/modules/intake/resources/Canonical_Intake.xml#L50-L97), and the [project graph index](IMPLEMENTATION_MAP.md#graph-index).
+Sources: [name readings](../../src/metaform/data/names.py), [namespace rules](../../src/metaform/modules/intake/resources/Intake_2.1.md), and the [project graph index](IMPLEMENTATION_MAP.md#graph-index).
 
 <a id="intake"></a>
 ## 5. Canonical Intake and construction of the form
@@ -284,9 +280,9 @@ Its photo examples include a seller who improves the presentation of a sale phot
 
 After the initial survey and grouping, the intake traces what the defining functionality needs in order to supply its EF. The DE remains a provider to the outside CQU while becoming a receiver for its own requirements.
 
-For each such requirement, the procedure identifies a provider and records a purpose join. When that provider has requirements of its own, the examination continues from its receiving perspective. Every OP traces back through receiving relationships to the purpose served outside the artifact.
+For each such requirement, the procedure identifies the providing elements and records a purpose join held by the receiver. When that provider has requirements of its own, the examination continues from its receiving perspective. Every OP traces back through receiving relationships to the purpose served outside the artifact.
 
-The join records the active OP in `purpose`, the provider's EF in `function`, the Function/Encounter word in `ef`, the provider's namespace, an active-voice `relation`, the one-word `verb` the agent infers for it, and an observation of the actual arrangement or limitation. A pertinent `non_goal` and additional refs are retained when they contribute meaning.
+The join records the active OP in `purpose`, the EF in `ef` as an active-voice fragment, the information flow direction in `ifd`, and the namespaces of the elements that serve it. Refs go in the `sources` layer, and anything else that contributes meaning goes in a knowledge layer.
 
 The trace continues until there are no further unsatisfied OPs or NEs needed to understand the artifact. Parametrics are not enumerated as independent functional elements merely because many tunable values exist.
 
@@ -300,26 +296,30 @@ This is how the procedure pursues a complete functional account without making t
 
 The intake then anneals and combines elements where a larger functionality can carry their contributions in the same purpose relationship. A subpart is absorbed only when the parent's purpose join already states its purpose. A subpart with an objective purpose that the parent cannot carry remains its own element.
 
-Combining does not optimize functionality away. It changes the level at which the functionality is represented. The absorbed subpart is placed in the matching parent join by an internal subtype join, which keeps its atomic EF, active-voice relation, observation, name, and references; the subpart itself stays one element record at its own address and does not move. An element whose only joins are subtype joins is not a global root element.
+Combining does not optimize functionality away. It changes the level at which the functionality is represented. The absorbed subpart is placed in the matching parent join as one more element it holds; the subpart itself stays one element record at its own address and does not move. Before 2026-10-04 the store kept such a part as a subtype join inside the parent join, with its own EF fields. The current shape has no subtype joins.
 
-An internal subtype join has no separate purpose field: the containing parent join carries that purpose. This preserves the reason for convergence instead of hiding an independent requirement inside a parent that cannot express it.
+A join has one purpose, carried by the join. This preserves the reason for convergence instead of hiding an independent requirement inside a parent that cannot express it.
 
 ```mermaid
 graph TB
-    intake["Final global element: intake module<br/>supplies the orchestrator's purpose:<br/>retain one whole functional intake as a reusable base"]
-    canonical["internal contribution: Canonical Intake<br/>instructs the intake agent's functional examination"]
-    writer["internal contribution: submission writer<br/>stores the submitted elements and joins"]
-    intake -.holds.-> canonical
-    intake -.holds.-> writer
+    receiver["Receiver: agent orchestrator<br/>purpose: retain one whole functional intake as a reusable base"]
+    join["join held by the receiver"]
+    intake["code.intake<br/>intake module"]
+    canonical["document.procedure.intake<br/>Canonical Intake"]
+    writer["code.writer.submission<br/>submission writer"]
+    receiver --> join
+    join -.holds.-> intake
+    join -.holds.-> canonical
+    join -.holds.-> writer
 ```
 
-The September 26 map of this project uses this arrangement, recorded when the intake was still submitted whole. `document.procedure.intake` and `code.writer.submission` are internal subtypes under the orchestrator's receiving join with `code.intake`. Their representation preserves distinct contributions while the parent functionality carries the receiving purpose.
+The September 26 snapshot of this project uses this arrangement as subtype joins, recorded when the intake was still submitted whole. `document.procedure.intake` and `code.writer.submission` are internal subtypes under the orchestrator's receiving join with `code.intake`. Their representation preserves distinct contributions while the parent functionality carries the receiving purpose.
 
 ### Result shape
 
 The operative resource asks for a `result` root with its own generated id, a list of final elements, and receiver-owned joins. The result id supports later linkage to expansion material. The file does not require an internal self-reference to that id.
 
-The following is a **derived XML illustration using the September 26 map's names and relationship shape**, written in the resource's schema. Its shortened field content explains the nesting; it is not a claim of a newly executed intake or a replacement for the complete served prompt.
+The following is a **derived XML illustration using the September 26 snapshot's names and relationship shape**, written in the schema of the Canonical Intake of that day, with its nested subtype join, `function`, one-word `ef`, `relation`, `verb` and `observation`. The current store does not hold those fields. It is kept to show how the Canonical Intake asked an agent to nest a contribution inside the join that carries its purpose. Its shortened field content explains the nesting; it is not a claim of a newly executed intake or a replacement for the complete served prompt.
 
 ```xml
 <result id="illustration-intake-relationship">
@@ -363,19 +363,19 @@ The following is a **derived XML illustration using the September 26 map's names
 
 The global list does not repeat `document.procedure.intake`. The join's provider reference and its contained subtype element use the same namespace value. The recorded project name remains distinct from that address.
 
-The agent records this shape with the intake tools, one object per call: `intake_element` for each element, `intake_join` for the purpose join, and `intake_subtype` with `into`, the join's id, for the subtype join and the element it holds. The schema's `<name>` on an element is the author's wording; the store holds an element as its address, `name_length` and role, keeps a name sent with `intake_element` in the element's extra with a notice, and takes the project's name for a functionality on the join as `name`, [C12](IMPLEMENTATION_MAP.md#c12).
+The agent records the current shape with the intake tools, one object per call: `intake_element` for each element, with its `namespace_address`, `name_length`, `name` and `role`, and `intake_join` for each join, with its `receiver`, the `elements` that serve it as a list of addresses, and its `purpose`, `ef` and `ifd`. To place a contribution in the join that already carries its purpose, the agent records that join again with the element added. The store holds a join's elements as `join_elements` rows in order. The agent's refs go in the `sources` layer, while `intake_sources` is on.
 
 ### Elicitation, recording, and preservation
 
-The current module serves the stored intake text with controlled target and project substitutions, followed by its recording instructions and the report/debug requests selected for the call. Tests compare the resource and its specifications copy. An explicit `intake_file` setting can select another operative file.
+The current module serves the stored intake text, Intake 2.1, with its prompt slot and target filled and nothing added beside it. The intake is the instruction, and anything added competes with it. An explicit `intake_file` setting can select another file.
 
-The intake is recorded as it is reasoned. The agent starts it, then records each element, join and subtype join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context; it anneals with one call per join, which places a join inside its parent's join as a subtype join. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back, whole or one receiver at a time, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
+The intake is recorded as it is reasoned. The agent starts it, then records each element and each join in its own tool call as soon as it has reasoned that object, so it never has to hold the whole map in its context; it anneals by recording a join again with an element it holds and the elements to add, which adds them to that join. Once everything is recorded it performs the proofing pass of step 12: it reads the recorded map back, whole or one receiver at a time, checks it against the artifact and the procedure, corrects it, anneals it and completes it, then finishes the intake. The resource's XML schema defines each object's fields; the module never parses XML.
 
-Each call stores its object in a building intake layer, retaining content with notices where fields do not fit; nothing is refused for its content. The tools carry no condition field: what the agent finds in the specifications and not built, broken, or exclude it writes as a work record, apart from the map. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
+Each call stores its object in a building intake layer, retaining content with notices where fields do not fit; nothing is refused for its content. The `condition` and `note` an `intake_element` or `intake_join` call takes are not fields of the map: what the agent finds in the specifications and not built, broken, or exclude it writes as a work record, apart from the map. While the layer is building, no context read sees it and the web GUI draws it as it grows. The procedure says intake is not gated or judged; the resulting map can be graded and the intake refined contextually afterward. Storage preserves the supplied result rather than silently treating every semantic rule as an enforced validator.
 
 A finished intake layer is immutable and nonhideable. A subsequent intake is recorded in a new Metaform rather than overwriting the previous base. The author's intention to lock in the operative method on release concerns preservation of its behavior. The current preservation mechanism is exact resource text and controlled substitution; the [implementation map](IMPLEMENTATION_MAP.md#correspondence) records the boundary of the separately discussed encoding idea.
 
-Sources: [complete served Canonical Intake](../../src/metaform/modules/intake/resources/Canonical_Intake.xml) and [serving and recording](../../src/metaform/modules/intake/__init__.py).
+Sources: [served Intake 2.1](../../src/metaform/modules/intake/resources/Intake_2.1.md) and [serving and recording](../../src/metaform/modules/intake/__init__.py).
 
 <a id="encounters"></a>
 ## 6. Function, Encounter, and scoped propagation
@@ -386,14 +386,7 @@ Sources: [complete served Canonical Intake](../../src/metaform/modules/intake/re
 
 For a timer, counting down a named dish supplies an operative capability. An audible alarm supplies the encounter through which the cook's attention is obtained. For the Inference Metaform itself, a stored map is made available through command-line tools, MCP, or a visual interface. Those interfaces affect how the functionality is encountered and used.
 
-The current intake writes the descriptive EF in `function` and the categorical word in `ef`:
-
-```text
-function: the concrete how supplied for this receiving purpose
-ef:       Function | Encounter
-```
-
-This distinction exists on joins and internal subtype joins. It is not a universal temporal state in which every node must switch from a dormant function to a running encounter. An Encounter includes forms of representation and realization, not only an event happening at a moment in time.
+The September 26 snapshot wrote the descriptive EF in `function` and a categorical word in `ef`, `Function` or `Encounter`. The current join has one field, `ef`, the Encounter Function written out as an active-voice fragment, with `ifd` saying which way the information flows. The distinction between the two readings still holds in how an agent reasons about an EF, and it exists on joins. It is not a universal temporal state in which every node must switch from a dormant function to a running encounter. An Encounter includes forms of representation and realization, not only an event happening at a moment in time.
 
 ### A language Encounter conditions functional reasoning
 
@@ -487,7 +480,7 @@ The exact identity account directs this reasoning. It does not add an automatic 
 
 ### Functional locations for what agents learn
 
-The graph's elements are distinct nodes at which agents can attach memory traces. A finding about a plugin contract can be stored at `code.system.plugin`; a finding specific to the way the contract serves MCP can be stored at that join. An observation about an internal contribution can be stored at its subtype.
+The graph's elements are distinct nodes at which agents can attach memory traces. A finding about a plugin contract can be stored at `code.system.plugin`; a finding specific to the way the contract serves MCP can be stored at that join. An observation about a contribution held by a join can be stored at the element it is.
 
 These are meaningful locations because the prior inference has already established what the nodes and relationships are for. The next agent can arrive through a task's referent, through an affected receiving purpose, or through an Encounter and find the associated knowledge there.
 
@@ -497,16 +490,15 @@ A functional element holds:
 - locally addressed memory
 - selected knowledge
 - receiving joins, each holding:
-  - purpose and EF
+  - purpose, EF and the elements it holds
   - relation-specific knowledge
-  - internal subtype contributions
 - provider-side relationships
 
 Memory is therefore one use of the Inference Metaform's functional addressability, not the entire definition of the system.
 
 ### Element and join targets
 
-The implementation supports two node kinds for memory: `element` and `join`. Elements can be addressed by namespace or identifier; joins, subtype joins included, have identifiers. An absorbed subpart is an element, and its subtype join a join. A memory observation is an item at its target. A memory relation is an item at the from-node with a link to the to-node and a relation value.
+The implementation supports two node kinds for memory: `element` and `join`. Elements can be addressed by namespace or identifier; joins have identifiers. An absorbed subpart is an element the join holds. A memory observation is an item at its target. A memory relation is an item at the from-node with a link to the to-node and a relation value.
 
 The memory module keeps a graph of its own, the MCP reference memory server's, and exposes its nine operations with the reference's names: `create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes` and `open_nodes`. Given a node, each acts on the memories joined to that node; a memory entity is never an element of the Metaform, and deleting one never removes a functional identity.
 
@@ -615,7 +607,7 @@ That distinction supports broad understanding of a mixed realization while prese
 | Origin/variant material | File-state history tied to an origin, separate from refinements of the graph and from memory. |
 | Work record | The condition of an element or a join, apart from the map and from every layer: open until its task is done, then done with its resolution kept; it follows its object through every version and survives a layer's discard. |
 
-A refinement changes the current graph view while retaining every earlier version of the thing. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, provider or parent join, keeping its identity and its attached items. A knowledge layer built on what a refinement changed is marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
+A refinement changes the current graph view while retaining every earlier version of the thing. An element cannot be moved, since its address is its identity; a join can be moved to another receiver, keeping its identity and its attached items, and the elements it holds can be replaced. A knowledge layer built on what a refinement changed is marked for re-examination. The source's exact marking and orphan behavior are described in the [implementation map](IMPLEMENTATION_MAP.md#corrections).
 
 This separation lets an agent reason about what is stored, what currently applies, what has changed, and what a previous operation used without treating those as the same question.
 
@@ -746,7 +738,7 @@ A C response should identify the actual functional location and explain how it s
 
 **A: an already considered concern.** A critic proposes retaining every shared-memory edit as immutable history. The project could explain that this memory layer is intentionally mutable working memory, while prompt versions, the versions a refinement keeps, and other knowledge records have separate retention roles. That answer would need the project's actual rationale for choosing this division. The example illustrates a possible A exchange; it does not claim that this rationale has already been recorded as an answer.
 
-**B: an unexplored interface concern.** A critic examining the current code finds that joins have `ef` and `verb` fields in intake and storage, but the map knowledge interface's edit and refine read `ef` but do not read `verb`. A B response could identify the effect on changing Function/Encounter distinctions through that surface and explore the interface change. The interface omission is source-observed; the challenge response here is a derived illustration, not a stored project response.
+**B: an unexplored interface concern.** A critic examining the September 26 code found that joins had `ef` and `verb` fields in intake and storage, but the map knowledge interface's edit and refine read `ef` and did not read `verb`. A B response could identify the effect on changing the Function/Encounter distinction through that surface and explore the interface change. The interface omission was source-observed on that date; the challenge response here is a derived illustration, not a stored project response. The omission no longer exists: the metaform has no `verb`, and edit and refine read `ef`.
 
 **C: functionality handled elsewhere.** A critic asks how asynchronous tasks are owned and cleaned up when a module is unloaded. A project response can point to `Context.spawn` and the loader's task ownership and unload behavior, explaining that the capability is shared rather than reimplemented in each module. A complete C response connects those source locations to the concern instead of relying on the absence or presence of a separately named runtime node.
 
@@ -905,7 +897,7 @@ The same prepared form improves the starting material for prompting, whole-syste
 
 A module author wants to add a new operation. The functional entry is the receiving join from `stakeholder.author.module` to `code.system.plugin`. It establishes the purpose: declare a capability once and receive commands, tools, settings, events, status, and lifecycle without editing the chassis.
 
-The author or agent opens the recorded `module contract and loader` functionality rather than treating a guessed file path as its entire meaning. Provider-side joins show the other recipients of that declaration: the chassis, command line, MCP server, package builder, and agent instructions. The template and helloworld internal subtypes show where the project already supplies a starting declaration and a working example.
+The author or agent opens the recorded `module contract and loader` functionality rather than treating a guessed file path as its entire meaning. Provider-side joins show the other recipients of that declaration: the chassis, command line, MCP server, package builder, and agent instructions. The template and helloworld elements, held by the module author's join, show where the project already supplies a starting declaration and a working example.
 
 A task such as `Review the plugin system for the new operation` can be lexicalized against the recorded name. Its namespace mapping leads to the same functional node and its relationship-specific knowledge. Selected informational layers can explain existing design choices. Any selected imperative layer remains separately identified.
 
@@ -917,13 +909,13 @@ This walkthrough reuses one prepared interpretation of the plugin system across 
 
 ### Walkthrough 2: examine a real interface discrepancy
 
-**Basis: a source-observed discrepancy and a derived challenge exchange.**
+**Basis: a source-observed discrepancy of September 26, since resolved, and a derived challenge exchange.**
 
 The functional map describes the map API as the agent-facing encounter with stored elements, joins, and layers. The critic examines the actual implementation with that receiving purpose in view.
 
-The intake tools, store APIs, and record schema support `ef` and `verb`, and the knowledge interface writes them when it adds a join or a subtype join. Its edit and refine read `ef` but omit `verb` from the fields they read, so a `verb` given there is named in a notice and ignored rather than reaching its dedicated field.
+On September 26 the intake tools, store APIs, and record schema supported `ef` and `verb`, and the knowledge interface wrote them when it added a join or a subtype join. Its edit and refine read `ef` but omitted `verb` from the fields they read, so a `verb` given there was named in a notice and ignored rather than reaching its dedicated field. Since 2026-10-04 a join has no `verb`, so the case is closed, and the walkthrough stands as an example of the method.
 
-The issue is not that the entire graph lacks Function/Encounter semantics. It is that one interface does not carry an existing semantic field through to its implemented destination. The functional description allows the critic to locate the mismatch precisely: agents using this encounter should be able to supply the distinction supported by the underlying records.
+The issue was not that the entire graph lacked Function/Encounter semantics. It was that one interface did not carry an existing semantic field through to its implemented destination. The functional description allows the critic to locate the mismatch precisely: agents using this encounter should be able to supply the distinction supported by the underlying records.
 
 A blindspot challenge can present that finding with the source locations and affected receiving purpose. The project's response can say whether it was already considered, whether it should be explored, or whether another interface already handles the intended use and why that matters. A substantive response is retained separately from its A/B/C state.
 
@@ -978,12 +970,12 @@ These commitments express what the described mechanisms mean and what must remai
 | F06 | Functional proper noun, project name, and namespace reference retain their different jobs. | [Names](#namespaces) |
 | F07 | The intake's Unloaded Definition retains both readings of Encounter Function. | [Intake](#intake) |
 | F08 | Survey, recursion, closure, and convergence preserve the functionality represented. | [Construction](#intake) |
-| F09 | Absorbed subparts remain internal subtype contributions rather than duplicate global roots. | [Convergence](#intake) |
+| F09 | Absorbed subparts remain elements held by the parent's join rather than duplicate joins of their own. | [Convergence](#intake) |
 | F10 | Function and Encounter retain their breadth and explicit representation. | [Encounters](#encounters) |
 | F11 | Encounter visibility through ancestors does not apply it to unrelated sibling branches. | [Scoped propagation](#encounters) |
 | F12 | `C(T)` is exact, with one EF per Type at the represented resolution. | [Identity](#identity) |
 | F13 | Mutation and transformation distinguish preserving identity from intentionally changing it. | [Recomposition](#identity) |
-| F14 | Elements, joins, and internal subtypes provide meaningful locations for memory and knowledge. | [Addressability](#memory) |
+| F14 | Elements and joins provide meaningful locations for memory and knowledge. | [Addressability](#memory) |
 | F15 | Local items and inherited properties have distinct scopes. | [Memory](#memory), [layers](#layers) |
 | F16 | Knowledge participation is separate from storage; starting selection and local select/mask are distinct. | [Selection](#layers) |
 | F17 | Lexicalization resolves project referents, preserves the requested operation, and stops before executing it. | [Lexicalization](#lexicalization) |
@@ -1014,7 +1006,7 @@ These commitments express what the described mechanisms mean and what must remai
 | External / exterior | [3](#semantic-structure) |
 | Formboard / formation | [14](#formation) |
 | Function | [3](#semantic-structure), [6](#encounters) |
-| Internal subtype | [4](#namespaces), [5](#intake) |
+| Held element, formerly internal subtype | [4](#namespaces), [5](#intake) |
 | Join / reified relationship | [3](#semantic-structure), [8](#memory) |
 | Layer / variable / sources | [9](#layers), [13](#provenance) |
 | Lexicalization | [10](#lexicalization) |

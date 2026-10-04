@@ -184,20 +184,15 @@ def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_typ
 
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('STORE-020')
-def test_a_join_and_a_subtype_join_are_nodes_of_memory_keyed_by_their_receiver_and_provider(run, mapped):
+def test_a_join_is_a_node_of_memory_keyed_by_its_receiver_and_provider(run, mapped):
     store = Store('proj')
     join_id = store.joins('code.manager.route').results[0].join_id
-    with store.atomic():
-        store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
-        held = store.add_subtype('intake-1', join_id, 'code.probe.echo.timer', purpose='Time the echo.')
     mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'The echo times out after 1 s.')]),
        f'node=join:{join_id}', cwd=mapped)
-    mj(run, 'create_entities', J([entity('timer drift', 'fact')]), f'node=join:{held.join_id}', cwd=mapped)
     assert mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)['entities'] == [
         entity('echo timeout', 'fact', 'The echo times out after 1 s.')]
     joined = {one['entity']: (one['receiver'], one['provider']) for one in mj(run, 'joins', cwd=mapped)['joins']}
-    assert joined == {'echo timeout': ('code.manager.route', 'code.probe.echo'),
-                      'timer drift': ('code.manager.route', 'code.probe.echo.timer')}
+    assert joined == {'echo timeout': ('code.manager.route', 'code.probe.echo')}
 
 
 @pytest.mark.req('LAYER-013')
@@ -412,10 +407,8 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
     from metaform import sqlite as metaform_sqlite
     store = Store('proj')
     join_id = store.joins('code.manager.route').results[0].join_id
-    with store.atomic():
-        store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
-        held = store.add_subtype('intake-1', join_id, 'code.probe.echo.timer', purpose='Time the echo.')
-    for number, node in enumerate((ROUTE, PROBE, f'node=join:{join_id}', f'node=join:{held.join_id}')):
+    store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
+    for number, node in enumerate((ROUTE, PROBE, f'node=join:{join_id}', 'node=element:code.probe.echo.timer')):
         mj(run, 'create_entities', J([entity(f'fact {number}', 'fact')]), node, cwd=mapped)
     opened: list[str] = []
     real = metaform_sqlite.connect
@@ -583,53 +576,56 @@ PURPOSE =('receiver=code.manager.route', 'provider=code.probe.echo')
 
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('MAP-005')
-def test_memory_names_a_purpose_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
+def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped):
     """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
-    are internal. An agent names a purpose by its receiver and provider, as refine does, and never handles
-    join:<id>."""
+    are internal. An agent names a join by its receiver and an element it holds, as refine does, and never handles
+    join:<id>; with address beside them it names an element that join holds, Rich's shape, 2026-10-04."""
     store = Store('proj')
     join_id = store.joins('code.manager.route').results[0].join_id
     with store.atomic():
         store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
-        part = store.add_subtype('intake-1', join_id, 'code.probe.echo.timer', purpose='Time the echo.')
+        store.refine(join_id, {'elements': ['code.probe.echo', 'code.probe.echo.timer']}, reason='the timer serves it')
         store.add_element('intake-1', 'code.manager.table', name_length=2, role='SE')
-        tabled = store.add_join('intake-1', 'code.manager.route', 'code.manager.table', purpose='Keep the routes.')
         store.add_element('intake-1', 'code.manager.table.row', name_length=3, role='SE')
-        store.add_subtype('intake-1', tabled.join_id, 'code.manager.table.row', purpose='Hold one route.')
-    # The route manager holds two purposes, so the provider, not the order they are held in, picks one.
+        tabled = store.add_join('intake-1', 'code.manager.route', ['code.manager.table', 'code.manager.table.row'],
+                                purpose='Keep the routes.')
+    # The route manager holds two joins, so the provider, not the order they are held in, picks one.
     table = ('receiver=code.manager.route', 'provider=code.manager.table')
     mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), *PURPOSE, cwd=mapped)
     beside = mj(run, 'create_entities', J([entity('table size', 'fact')]), *table, PROBE, cwd=mapped)
     assert beside['notices'] == [{'where': 'node', 'message': 'receiver, provider and address name the node; node '
                                                               'was not read.'}]
+    # Any element the join holds names it.
+    timer = ('receiver=code.manager.route', 'provider=code.probe.echo.timer')
+    assert mj(run, 'read_graph', *timer, cwd=mapped) == mj(run, 'read_graph', *PURPOSE, cwd=mapped)
     mj(run, 'create_entities', J([entity('timer drift', 'fact')]), *PURPOSE, 'address=code.probe.echo.timer',
        cwd=mapped)
     elsewhere = m(run, 'create_entities', J([entity('x', 'fact')]), *PURPOSE, 'address=code.manager.table.row',
                   cwd=mapped, ok=False)
-    assert elsewhere.returncode == 2 and 'code.manager.table.row is not a part inside' in elsewhere.stderr
+    assert elsewhere.returncode == 2 and 'code.manager.table.row is not held by' in elsewhere.stderr
     mj(run, 'create_entities', J([entity('route cost', 'fact')]), 'address=code.manager.route', cwd=mapped)
     assert mj(run, 'read_graph', *PURPOSE, cwd=mapped) == mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)
     assert [one['name'] for one in mj(run, 'read_graph', *PURPOSE, cwd=mapped)['entities']] == ['echo timeout']
     assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{tabled.join_id}', cwd=mapped)['entities']] == [
         'table size']
-    assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{part.join_id}', cwd=mapped)['entities']] == [
-        'timer drift']
+    assert [one['name'] for one in mj(run, 'read_graph', 'node=element:code.probe.echo.timer',
+                                      cwd=mapped)['entities']] == ['timer drift']
     assert [one['name'] for one in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities']] == ['route cost']
     assert [one['name'] for one in mj(run, 'read_graph', PROBE, cwd=mapped)['entities']] == []
     assert [one['entity'] for one in mj(run, 'joins', *PURPOSE, cwd=mapped)['joins']] == ['echo timeout']
-    # note takes node first, Rich 2026-10-03: provider beside it names the purpose node holds as its receiver.
+    # note takes node first, Rich 2026-10-03: provider beside it names the join node holds as its receiver.
     written = mj(run, 'note', 'element:code.manager.route', 'provider=code.probe.echo',
                  'text=The echo is the only liveness check.', cwd=mapped)
     assert (written['receiver'], written['provider']) == ('code.manager.route', 'code.probe.echo')
     assert mj(run, 'note', f'join:{join_id}', cwd=mapped)['note']['text'] == 'The echo is the only liveness check.'
     timed = mj(run, 'note', 'code.manager.route', 'provider=code.probe.echo', 'address=code.probe.echo.timer',
                'text=Drifts warm.', cwd=mapped)
-    assert (timed['receiver'], timed['provider']) == ('code.manager.route', 'code.probe.echo.timer')
-    assert mj(run, 'note', f'join:{part.join_id}', cwd=mapped)['note']['text'] == 'Drifts warm.'
+    assert timed['address'] == 'code.probe.echo.timer'
+    assert mj(run, 'note', 'element:code.probe.echo.timer', cwd=mapped)['note']['text'] == 'Drifts warm.'
     assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note'] is None
     alone = mj(run, 'note', 'element:code.manager.route', 'address=code.probe.echo.timer', cwd=mapped)
     assert (alone['address'], alone['note'], alone['notices']) == ('code.manager.route', None, [
-        {'where': 'address', 'message': 'address names a part only with provider; it was not read.'}])
+        {'where': 'address', 'message': 'address names an element a join holds only with provider; it was not read.'}])
 
 
 @pytest.mark.req('LAYER-013')

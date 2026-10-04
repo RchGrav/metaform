@@ -48,7 +48,6 @@ from .records import (
     Ref,
     Roots,
     Selection,
-    Subtype,
     Version,
     Where,
 )
@@ -202,38 +201,22 @@ class Store:
     # ---------------------------------------------------------------- the map
 
     def add_element(self, layer: str | None, address: Any, *, name_length: Any = None, role: Any = None,
-                    refs: Iterable[Any] = (), extra: Any = None, name: Any = None) -> Element | Outcome:
-        """Write an element, its address, name_length, name and role, or return the one already at the address,
-        STORE-009."""
+                    name: Any = None) -> Element | Outcome:
+        """Write an element, its address, name_length, name and role, Rich's shape, or return the one already at the
+        address, STORE-009."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_element(tx, named, address, name_length=name_length, role=role, refs=refs,
-                                                  extra=extra, name=name), notice)
+            return self._noted(writes.add_element(tx, named, address, name_length=name_length, role=role, name=name),
+                               notice)
 
-    def add_join(self, layer: str | None, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
-                 extra: Any = None, ifd: Any = None, element: Any = None) -> Join | Outcome:
-        """Write one join, owned by its receiver and served by its provider, STORE-010, with the project's name for
-        the functionality it names, MAP-020; `element` promotes it to the element at that address, MAP-054."""
+    def add_join(self, layer: str | None, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None,
+                 ifd: Any = None, type: Any = 'purpose') -> Join | Outcome:
+        """Write one join, Rich's shape: held by its receiver, holding the elements that serve its purpose, with its
+        type, purpose, ef and ifd, STORE-010."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_join(tx, named, receiver, provider, name=name, purpose=purpose,
-                                               ef=ef, verb=verb, non_goal=non_goal, type=type, refs=refs,
-                                               extra=extra, ifd=ifd, element=element), notice)
-
-    def add_subtype(self, layer: str | None, join: Any, address: Any, *, ef: Any = None, verb: Any = None,
-                    non_goal: Any = None,
-                    name: Any = None, name_length: Any = None, role: Any = None, refs: Iterable[Any] = (),
-                    extra: Any = None, purpose: Any = None, ifd: Any = None,
-                    element_name: Any = None) -> Subtype | Outcome:
-        """Write a subtype join inside its parent join, holding the element at `address`, an ordinary element record;
-        it carries its own purpose, the share of its parent's it serves, STORE-011 and MAP-030."""
-        with self._write() as tx:
-            named, notice = self._named(tx, layer)
-            return self._noted(writes.add_subtype(tx, named, join, address, ef=ef, verb=verb, non_goal=non_goal,
-                                                  name=name,
-                                                  name_length=name_length, role=role, refs=refs, extra=extra,
-                                                  purpose=purpose, ifd=ifd, element_name=element_name), notice)
+            return self._noted(writes.add_join(tx, named, receiver, elements, purpose=purpose, ef=ef, ifd=ifd,
+                                               type=type), notice)
 
     def add_ref(self, owner: str, key: str, value: str) -> Ref | Outcome:
         """Add one ref to a thing's current version in a knowledge or mutable layer, STORE-012."""
@@ -369,13 +352,13 @@ class Store:
     # ================================================================== reads
 
     def element(self, ref: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Element | None:
-        """One element by address or id: its address, name_length, role and short name, with its refs."""
+        """One element by address or id: its address, name_length, name, role and short name."""
         with self._read() as tx:
             return reads.element(tx, None if raw else self._resolver(tx, selection), ref)
 
     def joins(self, element: str, as_: str = 'receiver', *, selection: Sequence[str] | None = None,
               raw: bool = False, limit: int = LIMIT, after: str | None = None) -> Page[Join]:
-        """The joins an element owns, or those it provides for, each with its layer."""
+        """The joins an element receives, or those that hold it, as provider, each with its layer."""
         with self._read() as tx:
             return reads.joins(tx, None if raw else self._resolver(tx, selection), element, as_, limit, after)
 
@@ -384,22 +367,16 @@ class Store:
         """Every current join the element provides for: who receives it, why, and how, STORE-010."""
         return self.joins(element, 'provider', selection=selection, raw=raw, limit=limit, after=after)
 
-    def subtypes(self, join: str, *, selection: Sequence[str] | None = None, raw: bool = False,
-                 limit: int = LIMIT, after: str | None = None) -> Page[Subtype]:
-        """The subtype joins in a join, each with the element it holds, STORE-011."""
-        with self._read() as tx:
-            return reads.subtypes(tx, None if raw else self._resolver(tx, selection), join, limit, after)
-
     def join_ends(self, join: str) -> tuple[str, str] | None:
-        """One join's receiver and provider by address, read from every stored layer as a work record reads them; a
-        subtype join's are its parent join's receiver and the element it holds, STORE-010. None for no current join."""
+        """One join's receiver and the first element it holds, by address, read from every stored layer as a work
+        record reads them, STORE-010. None for no current join."""
         with self._read() as tx:
             return reads.join_ends(tx, join)
 
     def purpose(self, receiver: Any, provider: Any, address: Any = None) -> Node:
-        """The node an agent names by address, MAP-005: the purpose of `receiver` served by `provider`, or with
-        `address` the part at that address inside it, read from every stored layer as refine reads them. It stops
-        when the map holds none, or several that their addresses cannot tell apart, naming their purposes."""
+        """The node an agent names by address, MAP-005: the join of `receiver` that holds `provider`, or with `address`
+        the element at that address it holds, read from every stored layer as refine reads them. It stops when the map
+        holds none, or several that their addresses cannot tell apart, naming their purposes."""
         said = f'the purpose of {receiver} served by {provider}'
         if receiver is None or provider is None:
             raise StoreError(f'{said}: a purpose is named by its receiver and its provider together.',
@@ -408,7 +385,7 @@ class Store:
         if owner is None:
             raise StoreError(f'{receiver} is not an element of the map here.', f'metaform map where {receiver}')
         found = [held for held in self.joins(owner.element_id, raw=True, limit=0).results
-                 if held.provider_address == provider]
+                 if any(each.address == provider for each in held.elements)]
         if not found:
             raise StoreError(f'{receiver} has no purpose served by {provider}.', f'metaform map where {receiver}')
         if len(found) > 1:
@@ -417,17 +394,16 @@ class Store:
                              f'cannot tell apart, with the purposes {purposes}.', f'metaform map where {receiver}')
         if address is None:
             return Node('join', found[0].join_id)
-        parts = [part for part in self.subtypes(found[0].join_id, raw=True, limit=0).results if part.address == address]
-        if len(parts) != 1:
-            raise StoreError(f'{address} is {"not a part" if not parts else "held more than once"} inside {said}.',
-                             f'metaform map where {receiver}')
-        return Node('join', parts[0].join_id)
+        parts = [each for each in found[0].elements if each.address == address]
+        if not parts:
+            raise StoreError(f'{address} is not held by {said}.', f'metaform map where {receiver}')
+        return Node('element', parts[0].element_id)
 
     def where(self, address: str, *, selection: Sequence[str] | None = None, raw: bool = False,
               full: bool = False) -> Where | None:
-        """One read of an address: the element, what relies on it, what it relies on, the subtype joins inside those
-        joins and the one holding it, its open work records and the layers in context at it, STORE-025; `full` keeps
-        ids and empty fields in its plain data."""
+        """One read of an address: the element, the joins that hold it, the joins it receives, each with the elements
+        it holds, its open work records and the layers in context at it, STORE-025; `full` keeps ids and empty fields
+        in its plain data."""
         with self._read() as tx:
             return reads.where(tx, self._resolver(tx, selection), raw, address, full)
 
@@ -525,12 +501,12 @@ class Store:
 
     def graph(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
               after: str | None = None) -> GraphPage:
-        """A page of the outer map in address order, with parents, joins and subtype joins, for the viewer, VIEW-010."""
+        """A page of the map in address order, with parents and joins, each with the elements it holds, VIEW-010."""
         with self._read() as tx:
             return reads.graph(tx, None if raw else self._resolver(tx, selection), limit, after)
 
     def layer_graph(self, layer: str) -> GraphPage:
-        """One layer's own elements, joins and subtype joins, building or finished; not a context read, BASE-039."""
+        """One layer's own elements and joins, building or finished; not a context read, BASE-039."""
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 

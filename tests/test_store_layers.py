@@ -176,7 +176,7 @@ def test_a_select_toward_the_leaves_from_a_mask_turns_the_layer_on_again_there_a
 @pytest.mark.req('STORE-019')
 @pytest.mark.req('LAYER-007')
 def test_a_layer_masked_at_the_receiver_does_not_reach_its_joins(store):
-    _, outer, inner = small_map(store)
+    _, _outer, inner = small_map(store)
     notes = knowledge(store, 'notes')
     store.add_item(notes.name, Node('join', inner.join_id), 'the tone is too quiet')
     store.finish(notes.name)
@@ -374,10 +374,8 @@ def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
     assert 'joins' not in changed and 'current_joins' not in changed and changed['properties'] == (1, 0)
     at_type = store.add_property(media.name, Node('type', 'code'), 'x')
     assert at_type.notices and at_type.address == 'code' and not at_type.orphaned
-    tick = store.subtypes(outer.join_id).results[0]
-    for target in (Node('join', outer.join_id), Node('join', tick.join_id)):
-        stored = store.add_property(media.name, target, 'x')
-        assert stored.notices and stored.orphaned
+    stored = store.add_property(media.name, Node('join', outer.join_id), 'x')
+    assert stored.notices and stored.orphaned
     assert 'joins' not in diff(before, dump(store_file(home, store)))
 
 

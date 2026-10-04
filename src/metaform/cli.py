@@ -1027,7 +1027,7 @@ docs.command(Command('feedback', 'Save feedback on the Metaform process, and a r
                      details='An agent that cannot continue stops and saves a trouble report here, with the result '
                              'it has in shape=, instead of retrying. A value that names a file reads the file; - reads '
                              'standard input.',
-                     examples=(('metaform feedback "The subtype fields did not match the intake text." '
+                     examples=(('metaform feedback "The join fields did not match the intake text." '
                                 'layer=intake-20260925T041500Z-3fa2c1', "Feedback on an intake run."),),
                      see_also=('list', 'read')))
 docs.command(Command('read', 'Read one report, feedback or shape file exactly.',

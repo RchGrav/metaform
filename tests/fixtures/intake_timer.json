@@ -8,18 +8,9 @@
       "name": "Home cook",
       "joins": [
         {
-          "type": "require",
           "provider": "code.timer.kitchen",
           "purpose": "Know when each dish is done without watching the clock.",
           "ef": "The timer counts down each named dish and rings when one reaches zero.",
-          "verb": "tells",
-          "non_goal": "Plan the meal.",
-          "refs": [
-            {
-              "key": "path",
-              "value": "src"
-            }
-          ],
           "ifd": "receives"
         }
       ]
@@ -40,22 +31,8 @@
           "provider": "code.alarm.audible",
           "purpose": "Get the cook's attention the moment a countdown ends.",
           "ef": "The alarm plays a tone on the speaker until the cook presses stop.",
-          "verb": "rings",
-          "refs": [
-            {
-              "key": "path",
-              "value": "src/alarm.c"
-            },
-            {
-              "key": "path",
-              "value": "src/pins.h"
-            }
-          ],
           "subtypes": [
             {
-              "provider": "code.loop.tick",
-              "ef": "tick_all subtracts one second from each running countdown.",
-              "verb": "advances",
               "element": {
                 "namespace_address": "code.loop.tick",
                 "name_length": 2,
@@ -67,8 +44,7 @@
                     "value": "src/tick.c"
                   }
                 ]
-              },
-              "ifd": "receives"
+              }
             }
           ],
           "ifd": "receives"

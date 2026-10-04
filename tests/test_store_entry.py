@@ -16,23 +16,24 @@ FIXTURE = json.loads((Path(__file__).parent / 'fixtures' / 'intake_timer.json').
 
 
 @pytest.mark.req('STORE-009')
-@pytest.mark.req('MAP-031')
 @pytest.mark.req('STORE-025')
 def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home, store, traced):
     small_map(store)
     tables = dump(store_file(home, store))
     assert 'element_roles' not in tables
-    # The tick loop a subtype join holds is an element too, MAP-030, and the entry leaves it out, MAP-031.
+    # The tick loop a join holds is an element as any other, Rich's shape, 2026-10-04.
     assert sorted(row[3] for row in tables['current_elements']) == ['CQU', 'DE', 'SE', 'SE']
     traced.clear()
     roots = store.roots()
     lines = [line for _, plan in plans(home, store, traced) for line in plan]
     assert any('current_elements_by_role' in line for line in lines)
-    entry = {item.element.address: [join.provider_address for join in item.joins] for item in roots.entry}
-    assert entry == {'stakeholder.cook.home': ['code.timer.kitchen'], 'code.timer.kitchen': ['code.alarm.audible']}
+    entry = {item.element.address: [[each.address for each in join.elements] for join in item.joins]
+             for item in roots.entry}
+    assert entry == {'stakeholder.cook.home': [['code.timer.kitchen', 'code.loop.tick']],
+                     'code.timer.kitchen': [['code.alarm.audible']]}
     assert sorted((element.address, element.role, element.short_name) for element in roots.elements) == [
-        ('code.alarm.audible', 'SE', 'audible alarm'), ('code.timer.kitchen', 'DE', 'kitchen timer'),
-        ('stakeholder.cook.home', 'CQU', 'home cook')]
+        ('code.alarm.audible', 'SE', 'audible alarm'), ('code.loop.tick', 'SE', 'tick loop'),
+        ('code.timer.kitchen', 'DE', 'kitchen timer'), ('stakeholder.cook.home', 'CQU', 'home cook')]
 
 
 @pytest.mark.req('STORE-025')
@@ -175,29 +176,3 @@ def test_discarding_a_layer_leaves_the_work_records_of_its_objects_in_place(home
                       on_join.work_id: ('join', join.join_id, None, 'broken'),
                       on_intake.work_id: ('element', on_intake.id, 'code.alarm.audible', 'missing')}
     assert store.element('code.alarm.audible').open_work == ('missing',)
-
-
-@pytest.mark.req('STORE-042')
-@pytest.mark.req('STORE-011')
-def test_a_work_record_attaches_to_a_subtype_join_or_to_the_element_it_holds_and_reads_back_there(home, store):
-    _, outer, _ = small_map(store)
-    tick = store.subtypes(outer.join_id).results[0]
-    before = dump(store_file(home, store))
-    on_join = store.add_work(Node('join', tick.join_id), 'missing', task='one tick per second, not two')
-    assert (on_join.kind, on_join.id, on_join.receiver_address, on_join.provider_address) == (
-        'join', tick.join_id, 'stakeholder.cook.home', 'code.loop.tick')
-    after = dump(store_file(home, store))
-    assert len(after['work']) == 1 and {name: rows for name, rows in after.items() if name != 'work'} == {
-        name: rows for name, rows in before.items() if name != 'work'}
-    assert store.subtypes(outer.join_id).results[0].open_work == ('missing',)
-    assert store.where('code.loop.tick').subtype.open_work == ('missing',)
-    assert store.element('code.loop.tick').open_work == ()
-    assert store.element('stakeholder.cook.home').open_work == ()
-    assert store.joins('stakeholder.cook.home').results[0].open_work == ()
-    on_element = store.add_work(Node('element', 'code.loop.tick'), 'broken')
-    assert (on_element.kind, on_element.id, on_element.address) == ('element', tick.element_id, 'code.loop.tick')
-    assert store.element('code.loop.tick').open_work == ('broken',)
-    assert store.where('code.loop.tick').element.open_work == ('broken',)
-    assert store.subtypes(outer.join_id).results[0].open_work == ('missing',)
-    assert [row.work_id for row in store.work(node=Node('join', tick.join_id)).results] == [on_join.work_id]
-    assert [row.work_id for row in store.work(node=Node('element', tick.element_id)).results] == [on_element.work_id]

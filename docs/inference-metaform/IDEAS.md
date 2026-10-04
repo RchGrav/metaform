@@ -47,7 +47,7 @@ A useful implementation would derive the explanation from the same resolution de
 
 **Benefit.** This would make the difference between remembering a fact and remembering its functional location visible. It would help an agent find a past conclusion at the relationship where it matters and help a user detect a note that was attached too broadly.
 
-**Connection to existing mechanisms.** [Node-addressed items and relationship reads](IMPLEMENTATION_MAP.md#records) already support elements and joins, subtype joins included. The proposal is a presentation and navigation capability over that data. It does not imply that mutable memory already has a historical ledger.
+**Connection to existing mechanisms.** [Node-addressed items and relationship reads](IMPLEMENTATION_MAP.md#records) already support elements and joins. The proposal is a presentation and navigation capability over that data. It does not imply that mutable memory already has a historical ledger.
 
 **Concrete illustration.** A note about how a declared verb appears as an MCP tool is shown at the MCP-to-module-contract relationship. A note about packaging the same module is shown at the builder's relationship. The module's name connects them for navigation, while their receiving purposes preserve why the observations differ.
 
@@ -109,7 +109,7 @@ A non-code counterpart is a collection-level presentation practice that transfer
 
 ### Proposal 8. Receiver-oriented views of the same provider
 
-**Proposed functionality.** Offer focused views of a capability according to the entity receiving it. Each view would show the relevant purpose joins, internal subtypes, selected knowledge, refs, and available operations. The views would be projections of the same Inference Metaform rather than separately maintained architecture descriptions.
+**Proposed functionality.** Offer focused views of a capability according to the entity receiving it. Each view would show the relevant purpose joins and the elements they hold, selected knowledge, refs, and available operations. The views would be projections of the same Inference Metaform rather than separately maintained architecture descriptions.
 
 **Benefit.** A module author, a packaging task, and a source critic do not need unrelated versions of the truth; they need different relationships within the same functional understanding. A receiver-oriented view would let a user enter at the purpose of the present task while retaining navigation to broader consequences.
 
@@ -131,7 +131,7 @@ The technical-reference set supplies the full account, source correspondence, co
 | [System README](../../README.md) | Understand what the system does and where to begin. | Lead with prepared functional understanding and its reuse; show one small actual project example, installed entrypoints, current capability boundaries, and links to deeper material. |
 | [First-session guide](../guides/getting-started.md) | Complete one useful operation and recognize its result. | Use the actual installation and project/intake operations; show the resulting map, a meaningful relationship read, and where a contribution is retained. Keep command output tied to a named source version. |
 | [Community module-author guide](../guides/extending-metaform.md) | Add a capability using the implemented contract. | Use template and helloworld to explain declarations, settings, Context, CLI/MCP exposure, store access, owned tasks, events, instructions, and packaging. Show what is supplied by the chassis rather than recreating it in each example. |
-| [Reading an Inference Metaform](../guides/reading-a-metaform.md) | Read the functional graph without mistaking it for a code hierarchy. | Explain receiver, purpose, provider, Function/Encounter, reified join, subtype containment, names, ancestry, and refs using one annotated part of the actual project map. |
+| [Reading an Inference Metaform](../guides/reading-a-metaform.md) | Read the functional graph without mistaking it for a code hierarchy. | Explain receiver, purpose, provider, Function/Encounter, reified join, held elements, names, ancestry, and refs using one annotated part of the actual project map. |
 | [Operating guide](../guides/working-with-metaform.md) and [project walkthrough](../examples/project-walkthrough.md); further recorded task cases | Apply an operation through existing understanding. | Pair an original request with its grounded context, actual operation, result, and newly reusable knowledge. Keep examples focused on tasks such as explanation, criticism, extension, refactoring, and formation of non-code artifacts. |
 | Completed case studies | Follow preparation and reuse through real work. | Build from the original traces in [EXAMPLES_TO_COLLECT.md](EXAMPLES_TO_COLLECT.md), including measured records where supplied. Show what remained reusable and what required fresh inference. |
 

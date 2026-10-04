@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- intake's prompts, MCP-031. What is between an element's tags is what is served.
      <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
-     it, every noun of every recording verb included: <element> for an element and the element a part holds, <join> for
-     a purpose and the purpose a part refines. A field with lines in Intake 2.1's GLOSSARY carries them word for word, in place of 2.0's, each
+     it, every noun of every recording verb included: <element> for an element, <join> for a join and the elements it
+     holds. A field with lines in Intake 2.1's GLOSSARY carries them word for word, in place of 2.0's, each
      prefixed by its term, one per line; Rich 2026-10-02: "I think the long field descriptions get these". A field
      with no glossary line keeps its plainest name and allowed values, MAP-040. -->
 <prompts>
@@ -29,26 +29,17 @@ NE: Notable Element — states an essential external demand or dependency.</role
     <refs>refs</refs>
     <condition>condition: missing, broken, exclude</condition>
     <note>note</note>
-    <extra>extra</extra>
-    <to_address>new namespace address</to_address>
   </element>
   <join>
     <receiver>RE: Receiving Element/Entity — the element bearing an OP; its joins live in it.
 Join: purpose record living in the RE (see SCHEMA_JOIN).</receiver>
+    <elements>PE: Providing Element — join endpoint whose EF fulfills the OP.</elements>
     <provider>PE: Providing Element — join endpoint whose EF fulfills the OP.</provider>
     <purpose>OP: Operative Purpose — the WHY; the RE's reason for the encounter.</purpose>
     <ef>EF: see {LB_EF} — the HOW; what the PE does, in active voice; recorded in the RE's join.</ef>
     <ifd>IFD: Information Flow Direction — the primary flow of information: sends (OP->EF) | receives (EF->OP) | both (equal need).</ifd>
-    <verb>verb</verb>
-    <non_goal>non-goal</non_goal>
-    <refs>refs</refs>
     <condition>condition: missing, broken, exclude</condition>
     <note>note</note>
-    <extra>extra</extra>
-    <parent_receiver>parent receiver</parent_receiver>
-    <parent_provider>parent provider</parent_provider>
-    <to_receiver>new receiver</to_receiver>
-    <to_provider>new provider</to_provider>
   </join>
 </fields>
 </prompts>

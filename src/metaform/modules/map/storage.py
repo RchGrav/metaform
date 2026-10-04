@@ -41,7 +41,6 @@ from metaform.data import (
     Report,
     Step,
     StoreError,
-    Subtype,
     Table,
     Tables,
     Ticket,
@@ -62,9 +61,9 @@ Row = DataRow
 ANSWERS = ("A", "B", "C")
 WORK_FIELDS = ("condition", "note", "task", "held", "reviewed")
 REPORT_KINDS = ("report", "feedback", "shape")
-JOINS_AT = (
-    "SELECT join_id FROM current_joins WHERE receiver=? OR provider=? UNION SELECT s.join_id FROM "
-    "current_subtypes s JOIN current_joins p ON p.join_id=s.parent WHERE p.receiver=? OR s.provider=?"
+JOINS_AT = (  # the current joins an element receives or holds
+    "SELECT join_id FROM current_joins WHERE receiver=? UNION SELECT c.join_id FROM join_elements e "
+    "JOIN current_joins c ON c.row = e.join_row WHERE e.element_id=?"
 )
 
 
@@ -118,7 +117,7 @@ def add_work(
     reviewed: Any = False,
     links: Any = (),
 ) -> WorkRecord:
-    """Write the condition of an element, join or subtype as its own record, apart from the map, STORE-042."""
+    """Write the condition of an element or join as its own record, apart from the map, STORE-042."""
     notices: list[Notice] = []
     kind, thing = work_target(tx, node, notices)
     work_id = new_id()
@@ -454,7 +453,7 @@ def work(
         params: list[Any] = [int(cursor or 0)]
         if target is not None and around:
             where.append(f"(target_kind=? AND target_id=? OR target_kind='join' AND target_id IN ({JOINS_AT}))")
-            params.extend((*target, *[target[1]] * 4))
+            params.extend((*target, *[target[1]] * 2))
         elif target is not None:
             where.append("target_kind=? AND target_id=?")
             params.extend(target)
@@ -550,8 +549,7 @@ def save_report(tx: Tx, name: str, run_id: str, kind: str, size: int, layer: str
 
 
 def work_record(tx: Tx, row: Row, notices: tuple[Notice, ...] = ()) -> WorkRecord:
-    """One work row as a record, with its object's address, or its join's two ends, when the object is current: a
-    subtype join's receiver is its parent join's."""
+    """One work row as a record, with its object's address, or its join's two ends, when the object is current."""
     kind, thing = str(row["target_kind"]), str(row["target_id"])
     address = receiver = provider = None
     if kind == "join":
@@ -668,7 +666,7 @@ def open_work(tx: Tx, kind: str, thing_id: str) -> tuple[str, ...]:
 
 def work_target(tx: Tx, node: Any, notices: list[Notice]) -> tuple[str, str]:
     """The kind and identity id a work record attaches to: the current element at an address, or the object with the
-    id given, a subtype join being a join. A node that names no current object is kept as written, with a notice,
+    id given. A node that names no current object is kept as written, with a notice,
     BASE-044."""
     if not isinstance(node, Node):
         raise StoreError(
@@ -787,12 +785,12 @@ def approve(tx: Tx, item_id: str) -> ChallengeState:
 
 
 def _join_in_layer(tx: Tx, element_id: str, layer_id: str) -> str | None:
-    for column in ("provider", "receiver"):
-        row = tx.execute(
-            f"SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row "
-            f"WHERE c.{column}=? AND j.layer_id=? ORDER BY c.row LIMIT 1",
-            (element_id, layer_id),
-        ).fetchone()
+    """The first join of the layer that holds the element, or else the first it receives."""
+    for sql in ("SELECT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row JOIN joins j "
+                "ON j.row = c.row WHERE e.element_id=? AND j.layer_id=? ORDER BY c.row LIMIT 1",
+                "SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row "
+                "WHERE c.receiver=? AND j.layer_id=? ORDER BY c.row LIMIT 1"):
+        row = tx.execute(sql, (element_id, layer_id)).fetchone()
         if row is not None:
             return str(row[0])
     return None
@@ -975,14 +973,12 @@ def decorate(tx: Tx, record: Any) -> Any:
             row is not None and row[0] == record.join_id
             for row in (
                 tx.execute("SELECT join_id FROM plans WHERE element_id=?", (end,)).fetchone()
-                for end in (record.provider, record.receiver)
+                for end in (*(held.element_id for held in record.elements), record.receiver)
             )
         )
         return dataclasses.replace(
             record, state="plan" if plan else None, open_work=open_work(tx, "join", record.join_id)
         )
-    if isinstance(record, Subtype):
-        return dataclasses.replace(record, open_work=open_work(tx, "join", record.join_id))
     if isinstance(record, Item):
         state = tx.execute("SELECT state FROM challenge_states WHERE item_id=?", (record.item_id,)).fetchone()
         return dataclasses.replace(record, state=str(state[0]) if state else None)
@@ -997,8 +993,7 @@ def decorate(tx: Tx, record: Any) -> Any:
     if isinstance(record, Where):
         if record.kind == "join":
             assert record.join is not None
-            identity = record.subtype.join_id if record.subtype is not None else record.join.join_id
-            target = Node("join", identity)
+            target = Node("join", record.join.join_id)
         else:
             assert record.element is not None
             target = Node("element", record.element.element_id)
@@ -1027,6 +1022,18 @@ def legacy_upgrade(db: DataConnection, found: str) -> None:
     if int(found) < 10:
         for shown, kind in (("in-progress", "missing"), ("fixing", "broken")):
             db.execute("UPDATE work SET condition=?, taken=COALESCE(taken, created) WHERE condition=?", (kind, shown))
+    moved = db.execute("SELECT 1 FROM temp.sqlite_master WHERE name='subtype_moves'").fetchone()
+    if int(found) < 19 and moved is not None:
+        # Layout 19, Rich 2026-10-04: a subtype join is gone and its element is held by the join; what was at the
+        # subtype join is at that element.
+        present = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table, kind, ident in (("work", "target_kind", "target_id"), ("work_links", "target_kind", "target_id"),
+                                   ("messages", "target_kind", "target_id"),
+                                   ("challenge_states", "link_kind", "link_id")):
+            if table in present:
+                db.execute(f"UPDATE {table} SET {kind}='element', {ident}=(SELECT element_id FROM temp.subtype_moves m "
+                           f"WHERE m.join_id={table}.{ident}) WHERE {kind}='join' AND {ident} IN "
+                           "(SELECT join_id FROM temp.subtype_moves)")
 
 
 def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:

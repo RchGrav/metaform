@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reader guide](../guides/reading-a-metaform.md) · [Module-author guide](../guides/extending-metaform.md)
 
-This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json), this repository's own map as it was recorded that day. Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The export is of an earlier version, schema version 1, which the current chassis does not import; the inspection commands are the reads that return these records from a map that holds them. In that export the project's names are descriptor items at the elements, where the current store holds them on the joins as `name`, and each subtype is its own row, where the current store holds a join of type `subtype` inside its parent join.
+This walkthrough uses the actual [September 26, 2026 project export](project-metaform.json), this repository's own map as it was recorded that day. Its graph records are recorded material. The task, lexicalized request, criticism exchange, and prospective reuse described below are **derived illustrations**, not a transcript of a completed agent assignment. The export is a dated snapshot of an earlier version, schema version 1, which the current chassis does not import; the inspection commands are the reads that return records of this kind from a map that holds them. In that export the project's names are descriptor items at the elements, where the current store holds them on the elements as `name`, and each subtype is its own row, where the current store has no subtype joins: the join holds the element. Each join also names one `provider`, where a current join holds a list of `elements`, and carries `function`, `relation`, `observation` and `non_goal`, which the current shape does not have. The [reader guide](../guides/reading-a-metaform.md) lists the differences.
 
 ## 1. Begin from a receiving purpose
 
@@ -17,14 +17,13 @@ The recorded purpose is to add a capability once, as a module, with command and 
 ```sh
 metaform map element code.system.plugin
 metaform map node join:d14bd3498b614dfbaf0754c99b28dba3
-metaform map subtypes d14bd3498b614dfbaf0754c99b28dba3
 ```
 
 An agent now receives more than a list of files. It has a reason to use the shared contract, the distinction between the module's contribution and the chassis's contribution, and locations for the relevant implementation. The graph has already performed part of the semantic preparation for the assignment.
 
 ## 2. Identify the actual starting materials
 
-Two internal subtypes belong to this join:
+Two internal subtypes belong to this join in the snapshot. In the current shape the join holds them as elements:
 
 | Address | Project name | Contribution |
 |---|---|---|

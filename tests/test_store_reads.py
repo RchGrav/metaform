@@ -33,7 +33,7 @@ def populated(store):
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('STORE-033')
 def test_every_read_is_answered_through_an_index(home, store, traced):
-    _, outer, inner = populated(store)
+    _, _, inner = populated(store)
     kitchen = Node('element', 'code.timer.kitchen')
     reads = {
         'element': lambda: store.element('code.timer.kitchen'),
@@ -42,9 +42,8 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'joins provider': lambda: store.joins('code.timer.kitchen', as_='provider').results,
         'joins raw': lambda: store.joins('code.timer.kitchen', raw=True).results,
         'identity': lambda: store.identity('code.timer.kitchen').results,
-        'subtypes': lambda: store.subtypes(outer.join_id).results,
         'where element': lambda: store.where('code.timer.kitchen'),
-        'where subtype': lambda: store.where('code.loop.tick'),
+        'where held element': lambda: store.where('code.loop.tick'),
         'children': lambda: store.children('code.timer').results,
         'children of the top': lambda: store.children('').results,
         'layer_items': lambda: store.layer_items('notes').results,
@@ -52,11 +51,10 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'node': lambda: store.node(kitchen),
         'node raw': lambda: store.node(kitchen, raw=True),
         'node join': lambda: store.node(Node('join', inner.join_id)),
-        'node subtype join': lambda: store.node(Node('join', store.subtypes(outer.join_id).results[0].join_id)),
-        'node of the element a subtype join holds': lambda: store.node(Node('element', 'code.loop.tick')),
+        'node of an element a join holds': lambda: store.node(Node('element', 'code.loop.tick')),
         'context': lambda: store.context('code.timer'),
         'links_to': lambda: store.links_to(Node('element', 'code.alarm.audible')).results,
-        'citing': lambda: store.citing('path', 'src/tick.c').results,
+        'citing': lambda: store.citing('path', 'src/timer.c').results,
         'history': lambda: store.history(inner.join_id).results,
         'graph': lambda: store.graph(limit=2),
         'layers': lambda: store.layers().results,
@@ -100,7 +98,7 @@ def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store,
     traced.clear()
     assert len(store.identity('code.target').results) == 50
     lines = [line for _, plan_lines in plans(home, store, traced) for line in plan_lines]
-    assert any('current_joins_by_provider' in line for line in lines)
+    assert any('join_elements_by_element' in line for line in lines)
 
 
 @pytest.mark.req('STORE-025')
@@ -114,21 +112,21 @@ def test_one_read_of_an_address_shows_what_relies_on_it_and_what_it_relies_on(st
     relying = {join.receiver_address: join for join in kitchen.provides}
     assert set(relying) == {'stakeholder.cook.home', 'code.timer.kitchen.display'}
     cook = relying['stakeholder.cook.home']
-    assert (cook.join_id, cook.purpose, cook.ef, cook.name, cook.layer) == (
-        outer.join_id, 'Know when each dish is done.', 'Counts down and rings.', 'kitchen timer', 'intake-1')
-    assert [(sub.address, sub.short_name, sub.ef) for sub in cook.subtypes] == [
-        ('code.loop.tick', 'tick loop', 'Advances each countdown.')]
+    assert (cook.join_id, cook.purpose, cook.ef, cook.layer) == (
+        outer.join_id, 'Know when each dish is done.', 'Counts down and rings.', 'intake-1')
+    assert [(held.address, held.short_name) for held in cook.elements] == [
+        ('code.timer.kitchen', 'kitchen timer'), ('code.loop.tick', 'tick loop')]
     assert relying['code.timer.kitchen.display'].layer == 'notes'
-    assert [(join.join_id, join.provider_address, join.ef, join.layer) for join in kitchen.receives] == [
-        (inner.join_id, 'code.alarm.audible', 'Plays a loud tone.', 'intake-1')]
-    assert kitchen.subtype is None and kitchen.join is None and kitchen.work == ()
+    assert [(join.join_id, [held.address for held in join.elements], join.ef, join.layer)
+            for join in kitchen.receives] == [(inner.join_id, ['code.alarm.audible'], 'Plays a loud tone.', 'intake-1')]
+    assert kitchen.join is None and kitchen.work == ()
     assert {group.layer: ([item.value for item in group.items], [prop.value for prop in group.properties])
             for group in kitchen.layers} == {'notes': (['keep the loop small'], ['C']),
                                              'memory': (['drifts under load'], [])}
     display = store.where('code.timer.kitchen.display')
     assert [(record.condition, record.note, record.task) for record in display.work] == [
         ('missing', 'not wired yet', 'wire it')]
-    assert [join.provider_address for join in display.receives] == ['code.timer.kitchen']
+    assert [[held.address for held in join.elements] for join in display.receives] == [['code.timer.kitchen']]
     assert display.receives[0].open_work == ('broken',)
 
 
@@ -146,31 +144,12 @@ def test_the_read_of_an_address_follows_the_reading_context(store):
     assert [group.layer for group in everything.layers] == ['notes', 'memory']
 
 
-@pytest.mark.req('STORE-025')
-@pytest.mark.req('MAP-031')
-def test_the_read_of_a_held_element_shows_the_subtype_join_and_the_join_it_sits_in(store):
-    _, outer, _ = populated(store)
-    tick = store.where('code.loop.tick')
-    held = store.subtypes(outer.join_id).results[0]
-    assert (tick.kind, tick.subtype.join_id, tick.join.join_id, tick.provides, tick.receives) == (
-        'subtype', held.join_id, outer.join_id, (), ())
-    extra = knowledge(store, 'extra')
-    store.add_element(extra.name, 'code.clock')
-    store.add_join(extra.name, 'code.loop.tick', 'code.clock', purpose='keep time', ef='ticks')
-    store.finish(extra.name)
-    tick = store.where('code.loop.tick')
-    assert (tick.kind, tick.subtype.join_id, tick.join.join_id) == ('element', held.join_id, outer.join_id)
-    assert [join.provider_address for join in tick.receives] == ['code.clock']
-
 
 @pytest.mark.req('STORE-010')
-@pytest.mark.req('STORE-011')
-def test_one_join_read_by_id_gives_its_two_ends_by_address(store):
+def test_one_join_read_by_id_gives_its_receiver_and_its_first_element_by_address(store):
     _, outer, inner = small_map(store)
-    held = store.subtypes(outer.join_id, raw=True).results[0]
     assert store.join_ends(outer.join_id) == ('stakeholder.cook.home', 'code.timer.kitchen')
     assert store.join_ends(inner.join_id) == ('code.timer.kitchen', 'code.alarm.audible')
-    assert store.join_ends(held.join_id) == ('stakeholder.cook.home', 'code.loop.tick')
     assert store.join_ends(store.element('code.timer.kitchen').element_id) is None
     notes = knowledge(store, 'notes')
     added = store.add_join(notes.name, 'code.alarm.audible', 'code.loop.tick', purpose='keep time', ef='ticks')
@@ -198,14 +177,15 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
     assert not [key for key, _ in keys(small) if key.endswith('_id') or key in ('parent', 'target')]
     assert not [key for key, value in keys(small) if value in (None, '', [], {}, False)]
     cook = next(join for join in small['provides'] if join['receiver'] == 'stakeholder.cook.home')
-    assert 'provider' not in cook and cook['name'] == 'kitchen timer' and cook['layer'] == 'intake-1'
-    assert cook['subtypes'] == [{'element': 'code.loop.tick', 'reading': 'tick loop code', 'short_name': 'tick loop',
-                                 'name': 'tick loop', 'name_length': 2, 'role': 'SE', 'type': 'subtype',
-                                 'ef': 'Advances each countdown.', 'refs': [{'key': 'path', 'value': 'src/tick.c'}],
-                                 'layer': 'intake-1'}]
-    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
-                                  'purpose': 'Get attention when a countdown ends.', 'ef': 'Plays a loud tone.',
-                                  'name': 'audible alarm', 'layer': 'intake-1'}]
+    assert 'provider' not in cook and 'name' not in cook and cook['layer'] == 'intake-1'
+    assert cook['elements'] == [
+        {'address': 'code.timer.kitchen', 'short_name': 'kitchen timer', 'name_length': 2, 'name': 'kitchen timer',
+         'role': 'DE'},
+        {'address': 'code.loop.tick', 'short_name': 'tick loop', 'name_length': 2, 'name': 'tick loop', 'role': 'SE'}]
+    assert small['receives'] == [{'type': 'purpose', 'purpose': 'Get attention when a countdown ends.',
+                                  'ef': 'Plays a loud tone.', 'layer': 'intake-1',
+                                  'elements': [{'address': 'code.alarm.audible', 'short_name': 'audible alarm',
+                                                'name_length': 2, 'name': 'audible alarm', 'role': 'SE'}]}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']
     alarm = store.element('code.alarm.audible').element_id
     assert small['layers'][0]['items'] == [{'layer': 'notes', 'value': 'keep the loop small',
@@ -215,22 +195,22 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
     assert display['work'] == [{'work_id': store.work().results[0].work_id, 'condition': 'missing',
                                 'note': 'not wired yet', 'task': 'wire it'}]
     tick = store.where('code.loop.tick').to_dict()
-    assert set(tick) == {'kind', 'element', 'held'} and set(tick['held']) == {'subtype', 'join'}
-    assert tick['held']['join']['receiver'] == 'stakeholder.cook.home'
+    assert set(tick) == {'kind', 'element', 'provides'}
+    assert [join['receiver'] for join in tick['provides']] == ['stakeholder.cook.home']
     full = store.where('code.timer.kitchen', full=True).to_dict()
     assert full['element']['element_id'] == store.element('code.timer.kitchen').element_id
     assert [join['join_id'] for join in full['receives']] == [inner.join_id]
-    assert full['held'] is None and full['work'] == []
+    assert 'held' not in full and full['work'] == []
     assert outer.join_id in [join['join_id'] for join in full['provides']]
 
 
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-016')
 def test_every_join_carries_the_name_of_its_layer(store):
-    _, outer, inner = populated(store)
+    _, _outer, _inner = populated(store)
     joins = [*store.joins('code.timer.kitchen').results, *store.joins('code.timer.kitchen', as_='provider').results,
              *store.joins('code.timer.kitchen.display').results, *store.identity('code.timer.kitchen').results,
-             *store.joins('code.timer.kitchen', raw=True).results, store.where('code.loop.tick').join]
+             *store.joins('code.timer.kitchen', raw=True).results, *store.where('code.loop.tick').provides]
     assert joins
     layer_names = {layer.layer_id: layer.name for layer in store.layers().results}
     for join in joins:
@@ -279,7 +259,7 @@ def test_a_write_that_does_not_fit_is_stored_with_a_notice_and_text_is_never_jud
     small_map(store)
     extra = knowledge(store, 'extra')
     join = store.add_join(extra.name, 'code.timer.kitchen', 'code.probe.echo', purpose='p', ef='f')
-    assert [notice.where for notice in join.notices] == ['provider']
+    assert [notice.where for notice in join.notices] == ['elements']
     assert 'code.probe.echo' in join.notices[0].message and extra.name in join.notices[0].message
     echo = store.element('code.probe.echo', raw=True)
     assert echo is not None and echo.layer == extra.name and echo.role is None
@@ -305,11 +285,12 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
             break
     addresses = [entry.element.address for entry in entries]
     assert pages > 1 and addresses == sorted(set(addresses))
-    assert addresses == ['code.alarm.audible', 'code.timer.kitchen', 'code.timer.kitchen.display',
+    # an element a join holds is an element of the map as any other, Rich's shape, 2026-10-04
+    assert addresses == ['code.alarm.audible', 'code.loop.tick', 'code.timer.kitchen', 'code.timer.kitchen.display',
                          'stakeholder.cook.home']
     assert {entry.element.address: entry.parent for entry in entries} == {
-        'code.alarm.audible': None, 'code.timer.kitchen': None, 'code.timer.kitchen.display': 'code.timer.kitchen',
-        'stakeholder.cook.home': None}
+        'code.alarm.audible': None, 'code.loop.tick': None, 'code.timer.kitchen': None,
+        'code.timer.kitchen.display': 'code.timer.kitchen', 'stakeholder.cook.home': None}
     assert all(entry.element == store.element(entry.element.address) for entry in entries)
     everything = store.graph(limit=0)
     assert [entry.element.address for entry in everything.elements] == addresses and everything.next is None
@@ -317,7 +298,8 @@ def test_the_graph_read_pages_each_visible_element_with_its_nearest_parent_and_t
         held = [join for join in everything.joins if join.receiver == entry.element.element_id]
         assert [join.join_id for join in held] == [join.join_id for join in store.joins(entry.element.address).results]
         for join in held:
-            assert join.subtypes == store.subtypes(join.join_id, limit=0).results
+            assert join.elements == next(read for read in store.joins(entry.element.address).results
+                                         if read.join_id == join.join_id).elements
     assert 'code.timer.kitchen.display' not in [e.element.address for e in store.graph(selection=['intake-1']).elements]
     secret = knowledge(store, 'secret')
     store.add_element(secret.name, 'code.timer.kitchen.secret')

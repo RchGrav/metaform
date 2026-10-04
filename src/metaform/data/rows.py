@@ -23,13 +23,12 @@ from .selection import LAYER_COLUMNS, LayerRow, layer_row
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('name_length', 'name', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
-             'element', 'extra'),  # receiver, provider and parent move it, MAP-003; element promotes it, MAP-054
+    'element': ('name_length', 'name', 'role'),  # never the address: an element cannot be moved, MAP-015
+    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd'),  # receiver moves it, MAP-003; Rich's shape
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'ef', 'verb', 'non_goal', 'type', 'name', 'ifd')
+TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd')
 
 Row = sqlite3.Row
 
@@ -153,37 +152,35 @@ def current_element(tx: Tx, ref: str) -> Row | None:
 
 
 def holding(tx: Tx, element_id: str) -> list[str]:
-    """The current subtype joins that hold an element, in id order; one read on `current_subtypes_by_provider`."""
-    return [str(row[0]) for row in tx.db.execute('SELECT join_id FROM current_subtypes WHERE provider=? '
-                                                 'ORDER BY join_id', (element_id,))]
+    """The current joins that hold an element, in id order; one read on `join_elements_by_element`."""
+    return [str(row[0]) for row in tx.db.execute(
+        'SELECT DISTINCT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row '
+        'WHERE e.element_id=? ORDER BY c.join_id', (element_id,))]
 
 
-def held_only(tx: Tx, element_id: str) -> bool:
-    """Whether an element's only current joins are subtype joins holding it, so it is no root and no node of the
-    outer map, MAP-031: the one check every read of the outer map uses for it."""
-    db = tx.db
-    if db.execute('SELECT 1 FROM current_subtypes WHERE provider=? LIMIT 1', (element_id,)).fetchone() is None:
-        return False
-    return (db.execute('SELECT 1 FROM current_joins WHERE receiver=? LIMIT 1', (element_id,)).fetchone() is None and
-            db.execute('SELECT 1 FROM current_joins WHERE provider=? LIMIT 1', (element_id,)).fetchone() is None)
+def held_elements(db: sqlite3.Connection, join_row: int) -> list[str]:
+    """The ids of the elements one version of a join holds, in order."""
+    return [str(row[0]) for row in db.execute('SELECT element_id FROM join_elements WHERE join_row=? ORDER BY position',
+                                              (join_row,))]
+
+
+def write_held(tx: Tx, join_row: int, element_ids: Iterable[str]) -> None:
+    """The elements one version of a join holds, in order, replacing what that version held."""
+    tx.db.execute('DELETE FROM join_elements WHERE join_row=?', (join_row,))
+    tx.db.executemany('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
+                      [(join_row, index, element_id) for index, element_id in enumerate(element_ids)])
 
 
 def current_join(tx: Tx, join_id: str) -> Row | None:
-    """A join's current version row, held by a receiver or, for a subtype join, by its parent join."""
+    """A join's current version row."""
     row: Row | None = tx.db.execute('SELECT j.* FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
                                     (join_id,)).fetchone()
-    if row is None:
-        row = tx.db.execute('SELECT j.* FROM current_subtypes c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
-                            (join_id,)).fetchone()
     return row
 
 
 def owner_address(tx: Tx, row: Row) -> str | None:
-    """The address a join sits at: its receiver's, or for a subtype join its parent join's receiver's, STORE-019."""
-    if row['parent'] is None:
-        return address_of(tx, str(row['receiver']))
-    parent = tx.db.execute('SELECT receiver FROM current_joins WHERE join_id=?', (row['parent'],)).fetchone()
-    return None if parent is None else address_of(tx, str(parent[0]))
+    """The address a join sits at: its receiver's, STORE-019."""
+    return address_of(tx, str(row['receiver']))
 
 
 def address_of(tx: Tx, element_id: str) -> str | None:
@@ -192,8 +189,7 @@ def address_of(tx: Tx, element_id: str) -> str | None:
 
 
 def node_address(tx: Tx, kind: str, thing_id: str) -> str | None:
-    """Where a node sits: an element's address, or a join's receiver's address, a subtype join's parent's
-    receiver's."""
+    """Where a node sits: an element's address, or a join's receiver's address."""
     if kind == 'element':
         return address_of(tx, thing_id)
     row = current_join(tx, thing_id)
@@ -243,26 +239,23 @@ def reused_element(tx: Tx, address: str) -> str | None:
     return str(held[0])
 
 
-def new_element(tx: Tx, found: LayerRow, address: str, extra: dict[str, Any] | None = None, *,
-                name_length: int | None = None, role: str | None = None, refs: Iterable[tuple[str, str]] = (),
+def new_element(tx: Tx, found: LayerRow, address: str, *, name_length: Any = None, role: str | None = None,
                 name: str | None = None) -> str:
     """Write a new element row in a layer, under the id the address held before when nothing holds it now.
 
-    The row is the element: its address, name_length and role, STORE-009; its refs are rows owned by it.
+    The row is the element: its address, name_length, name and role, STORE-009, Rich's shape.
     """
     element_id = reused_element(tx, address) or new_id()
     if tx.db.execute('SELECT 1 FROM element_ids WHERE element_id=?', (element_id,)).fetchone() is None:
         tx.db.execute('INSERT INTO element_ids(element_id) VALUES (?)', (element_id,))
         identity(tx, element_id, 'element')
     types(tx, address)
-    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, name, role, extra) '
-                           'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                           (element_id, found.layer_id, address, name_length, name, role, encode_extra(extra, address)))
+    cursor = tx.db.execute('INSERT INTO elements(element_id, layer_id, address, name_length, name, role) '
+                           'VALUES (?, ?, ?, ?, ?, ?)', (element_id, found.layer_id, address, name_length, name, role))
     row = int(cursor.lastrowid or 0)
     versions.hold_address(tx.db, address, element_id)
     tx.db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
                   (element_id, row, address, role))
-    write_refs(tx, 'element', row, refs)
     return element_id
 
 

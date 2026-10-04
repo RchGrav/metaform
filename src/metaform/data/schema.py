@@ -1,19 +1,21 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 18.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 19.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
-An element is its address, name_length and role, STORE-009, and it cannot be
-moved, MAP-015; the project's name for a functionality is on the join, STORE-010.
-`current_elements` carries the current row's role, so the map's entry is one read
-on `current_elements_by_role`. `address_elements` remembers the element id of
-every address the store has held, so an element recorded again at its address is
-the same element, STORE-009. A join's identity holds only its id, so it can be
-moved, MAP-003. A subtype join is a row of `joins` with a parent join, and its
-current row is in `current_subtypes`, never in `current_joins`, which every read of
-the element graph uses, STORE-011. Feature tables are declared by their modules.
-Two indexes are added beyond the section's own: `elements_by_address`, for the history of one
-address, STORE-005, and `joins_by_element`, for the joins promoted to the element at an address, MAP-054. A thing keeps every version it was given in its layer, so the
-metaform is refined in its own intake layer, LAYER-025: no thing is unique per
-layer, and `<table>_by_id` reads a thing's versions in order.
+The metaform is Rich's shape, 2026-10-04: an element is its address, name_length,
+name and role, STORE-009, and it cannot be moved, MAP-015; a join is its type,
+purpose, ef and ifd, held by its receiver, and holds the elements that serve its
+purpose, one `join_elements` row per element for each version of the join, in
+order. Nothing else is a field of the metaform: refs live in the sources layer and
+anything more in a knowledge layer, as items. `current_elements` carries the
+current row's role, so the map's entry is one read on `current_elements_by_role`.
+`address_elements` remembers the element id of every address the store has held,
+so an element recorded again at its address is the same element, STORE-009. A
+join's identity holds only its id, so it can be moved, MAP-003. Feature tables are
+declared by their modules. `elements_by_address` reads the history of one address,
+STORE-005, and `join_elements_by_element` the joins that hold an element. A thing
+keeps every version it was given in its layer, so the metaform is refined in its
+own intake layer, LAYER-025: no thing is unique per layer, and `<table>_by_id`
+reads a thing's versions in order.
 """
 from __future__ import annotations
 
@@ -90,7 +92,6 @@ CREATE TABLE IF NOT EXISTS elements(
   name_length INTEGER,
   name        TEXT,
   role        TEXT,
-  extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
   evidence    TEXT
@@ -115,45 +116,33 @@ CREATE TABLE IF NOT EXISTS joins(
   join_id     TEXT NOT NULL REFERENCES join_ids(join_id),
   layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
   type        TEXT NOT NULL DEFAULT 'purpose',
-  parent      TEXT REFERENCES join_ids(join_id),
-  receiver    TEXT REFERENCES element_ids(element_id),
-  provider    TEXT NOT NULL REFERENCES element_ids(element_id),
-  name        TEXT,
+  receiver    TEXT NOT NULL REFERENCES element_ids(element_id),
   purpose     TEXT,
   ef          TEXT,
   ifd         TEXT,
-  verb        TEXT,
-  non_goal    TEXT,
-  element     TEXT REFERENCES types(address),
-  extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
   evidence    TEXT
 );
 CREATE INDEX IF NOT EXISTS joins_by_id ON joins(join_id, row);
-CREATE INDEX IF NOT EXISTS joins_by_element ON joins(element);
+CREATE TABLE IF NOT EXISTS join_elements(
+  join_row   INTEGER NOT NULL REFERENCES joins(row),
+  position   INTEGER NOT NULL,
+  element_id TEXT NOT NULL REFERENCES element_ids(element_id),
+  PRIMARY KEY(join_row, position)
+);
+CREATE INDEX IF NOT EXISTS join_elements_by_element ON join_elements(element_id, join_row);
 CREATE TABLE IF NOT EXISTS current_joins(
   join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
   row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
-  receiver TEXT NOT NULL,
-  provider TEXT NOT NULL
+  receiver TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS current_joins_by_receiver ON current_joins(receiver);
-CREATE INDEX IF NOT EXISTS current_joins_by_provider ON current_joins(provider);
 CREATE INDEX IF NOT EXISTS joins_by_layer ON joins(layer_id);
-
-CREATE TABLE IF NOT EXISTS current_subtypes(
-  join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
-  row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
-  parent   TEXT NOT NULL,
-  provider TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS current_subtypes_by_parent ON current_subtypes(parent);
-CREATE INDEX IF NOT EXISTS current_subtypes_by_provider ON current_subtypes(provider);
 
 CREATE TABLE IF NOT EXISTS refs(
   ref_id    INTEGER PRIMARY KEY,
-  owner     TEXT NOT NULL CHECK(owner IN ('element','join','item','property')),
+  owner     TEXT NOT NULL CHECK(owner IN ('item','property')),
   owner_row INTEGER NOT NULL,
   position  INTEGER NOT NULL,
   key       TEXT NOT NULL,

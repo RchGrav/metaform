@@ -225,9 +225,9 @@ It covers the base database, the per-project store, the correction stack, layers
 - Status: confirmed for the tree and prefix rows. One shared Type tree follows D47: the address is the shared Type, and each store indexes the addresses it uses. No attachment at a bare type address follows D74.
 
 ### STORE-009 Elements
-- Requirement: Each element is stored as its identity id, its current address, its name_length and its role, and every version of it is kept. Everything else about an element is linked to it.
-- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The element record is that address with its identity, its `name_length`, the number of trailing address segments read backward to form its proper noun, MAP-012, and its role, AUE, CQU, DE, SE or NE, MAP-017. The namespace address is the name index, so an element holds little beyond what reads it: its address and name_length, and its role; and since a name goes wherever there is a namespace and a name length, the element holds `name`, the canonical name the project uses for it, beside `name_length`. The project's own name for a functionality, its glossary or informal name, is on the join, STORE-010 and STORE-011, because joins are what speak to the artifact itself. Everything else is linked to the element: its refs are rows linked to its version, STORE-012, and any other field given for it is kept in its `extra`, STORE-021. An element a knowledge layer creates carries its address and, where the layer gives one, its name_length. It carries no role, D48: a role given for it is kept in its `extra` with a notice, BASE-044. An element a correction layer adds carries a role as the intake's do. An element's identity belongs to its address, and it cannot be moved, MAP-015. When an element is removed and an element is recorded again at the same address, it is the same element: its identity comes back, and with it every record still linked to it, the joins that name it, the items attached to it and its versions. Nothing is copied or relinked, because those records never left.
-- Why: Elements are real records that everything else points at. The intake names them by address, so the current address must be one direct lookup, and the identity id, which belongs to the address, keeps attachments with the element whatever layer removes it and records it again.
+- Requirement: Each element is stored as its identity id, its current address, its name_length, its name and its role, Rich's shape, and every version of it is kept. Nothing else is a field of an element; anything more about it is in a layer.
+- What this means: An element is one functional part of the artifact, or an entity outside it, recorded at a type address. The element record is that address with its identity, its `name_length`, the number of trailing address segments read backward to form its short name, MAP-012, its `name`, the canonical name the project uses for it, and its `role`, MAP-017. Its refs are items of the sources layer, MAP-021.
+- Why: Elements are real records that everything else points at. The intake names them by address, so the current address must be one direct lookup, and the identity id, which belongs to the address, keeps attachments with the element whatever layer removes it. Rich, 2026-10-04: "we are reverting the data shape back to my original original design, no added field nothing...   that can all go to a knowledge layer.  metaform goes back to my original shape".
 - How it shows: `element code.bus.event` returns that element's current row in one read.
 - Build:
   ```sql
@@ -236,13 +236,12 @@ It covers the base database, the per-project store, the correction stack, layers
     element_id  TEXT NOT NULL REFERENCES element_ids(element_id),
     layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
     address     TEXT NOT NULL REFERENCES types(address),
-    name_length INTEGER,                                -- MAP-012: trailing segments read backward as its proper noun
+    name_length INTEGER,                                -- MAP-012: trailing segments read backward as its short name
+    name        TEXT,                                   -- the canonical name the project uses for it
     role        TEXT,                                   -- MAP-017: AUE, CQU, DE, SE or NE, stored as given
-    extra       TEXT,                                   -- STORE-021
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
     reason      TEXT,
-    evidence    TEXT,
-    UNIQUE(element_id, layer_id)
+    evidence    TEXT
   );
   CREATE TABLE current_elements(
     element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
@@ -257,27 +256,24 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE INDEX elements_by_layer ON elements(layer_id);
   CREATE INDEX current_elements_by_role ON current_elements(role, element_id);
   ```
-  The current row carries the address so that address lookup of current elements is one unique-index read, and so that two current elements cannot hold the same address. It carries the role so that the map's entry is one direct read, `roots`, STORE-025: `current_elements_by_role` finds the CQU and the DE, and the role is written with the address whenever a row becomes current.
-  - An element cannot be moved, MAP-015: no write changes an element row's address. `edit` and `correct` given `address` for an element do not apply it and name it in a notice, STORE-034; the element at a better address is recorded as its own element, and the joins move to it.
-  - Identity by address: `address_elements` remembers the element id of every address the store has held, written whenever an element row takes an address, in any layer, and whenever an element becomes current at an address through the correction stack or an import. `add_element` at an address with no current element reads that row first: when the id it names is not current, the new element row is written under that id, so the joins, items, properties and versions still pointing at it are its own again, and nothing is copied or relinked. Only an address never held gets a new id. This is the one mechanism behind a correction layer putting an element back, STORE-017, and a building layer's `remove` followed by another record at the same address, STORE-032.
-  - Fields: `add_element(layer, address, name_length=, role=, refs=)` writes the element row with its name_length and role, and the refs as rows owned by that row, STORE-012. A name_length that is not a whole number is kept in the element's `extra`, and a whole number below 1 is stored as given, each with a notice; a role outside the five is stored as given with a notice, BASE-044. A role given in a layer other than the intake or a correction layer is kept in the element's `extra` with a notice, D48. Reads of an element return its identity, address, `reading`, `short_name`, name_length, role, refs and `extra`, MAP-012. While the element's layer can change in place, a building intake or correction layer or a knowledge layer, `edit` changes its name_length and role, STORE-032; once the metaform holds them, a correction layer changes them, STORE-017 and STORE-034.
-  - `add_element` at an address a current element already holds returns that element, marked `existing: true`, and writes no element row. `differs` is true when the name_length or role given differ from the element's, and a notice names each of name_length, role and refs given that was not applied, with the layer the element belongs to. The address is the element's identity, so a repeated address is the same element.
-  - A role is stored as given, or left out when none is given. The store does not refuse a missing role, STORE-026. The intake writes one role on every element it creates, MAP-017.
+  The current row carries the address so that address lookup of current elements is one unique-index read, and so that two current elements cannot hold the same address. It carries the role so that the map's entry is one direct read, `roots`, STORE-025.
+  - An element cannot be moved, MAP-015: no write changes an element row's address. `edit` and `refine` given `address` for an element do not apply it and name it in a notice, STORE-034.
+  - Identity by address: `address_elements` remembers the element id of every address the store has held, so an element recorded again at its address is the same element, with what was attached to it.
+  - Fields: `add_element(layer, address, name_length=, name=, role=)` writes the element row. A name_length that is not a whole number of at least 1, a role outside the five, and a role given in a layer other than the intake are stored as given, each named in a notice, BASE-044.
+  - `add_element` at an address a current element already holds returns that element, marked `existing: true`, and writes no element row; `differs` is true when a field given differs from the element's, and a notice names each one not applied.
 - Acceptance:
-  - Looking up an element by address after two correction layers changed it returns the version from the higher one, through `current_elements`.
+  - Looking up an element by address returns its current version through `current_elements`.
   - Adding a second element at an address that a current element already holds returns the existing element's id, marked existing, and writes no element row.
-  - An intake element read back by address returns its name_length, its role and its `short_name`, the address read through name_length, from its own row; the `elements` row has `name_length` and `role` columns and no `name` column, and writing it writes no item.
-  - An element a knowledge layer adds with a role reads back with no role and the role in its `extra`, and the call's notice names `role`.
-  - An element removed from a building layer and recorded again at the same address has its first identity id, and a join that named it as provider reads back with it as provider again.
-  - A memory item attached to an element is absent from `node` after a building layer removes the element, and reads back at the element after it is recorded again at the same address.
-- Relates to: STORE-007, STORE-010, STORE-012, STORE-017, STORE-021, STORE-025, MAP-012, MAP-015, MAP-016, MAP-017.
-- Status: confirmed: the element record is its identity, address, name_length and role, and the project's name for a functionality is on the join, Rich 2026-09-27; this replaces D78, which linked name, name_length, role and refs to the element as a descriptor item. The role on the current row and its index for `roots`, and the notices, are recommended. One current element per address in a project follows from an element being its address, and an element that cannot be moved follows from it too, Rich 2026-09-27. An element created by a layer other than the intake carries no role, D48: roles are the intake's classification of the artifact. Rich, 2026-09-27: an element removed and recorded again at its address is the same element, with every record related to it. Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. Rich, 2026-10-01: a name goes anywhere there is a namespace and name length.
+  - An intake element read back by address returns its name_length, name, role and `short_name` from its own row; the `elements` table has no column beyond those, its address and the store's bookkeeping.
+  - An element removed from a building layer and recorded again at the same address has its first identity id, and a join that held it holds it again.
+- Relates to: STORE-007, STORE-010, STORE-012, STORE-017, STORE-025, MAP-012, MAP-015, MAP-016, MAP-017.
+- Status: confirmed by Rich, 2026-10-04, Rich's original shape. Layout 19 takes `extra` off the element and moves what it held to the intake details layer, STORE-029. Earlier: confirmed: the element record is its identity, address, name_length and role, and the project's name for a functionality is on the join, Rich 2026-09-27; this replaces D78, which linked name, name_length, role and refs to the element as a descriptor item. The role on the current row and its index for `roots`, and the notices, are recommended. One current element per address in a project follows from an element being its address, and an element that cannot be moved follows from it too, Rich 2026-09-27. An element created by a layer other than the intake carries no role, D48: roles are the intake's classification of the artifact. Rich, 2026-09-27: an element removed and recorded again at its address is the same element, with every record related to it. Rich, 2026-09-27: the namespace address is the name index, and the element was meant to be only its address and name_length; roles stay on the element. Rich, 2026-10-01: a name goes anywhere there is a namespace and name length.
 
 ### STORE-010 Joins are owned by their receiver and run one way
-- Requirement: Each join is stored with its receiver, or for a subtype join its parent join, its provider, name, purpose, function, verb and non-goal as separate columns, and points from receiver to provider only.
-- What this means: A join is one receiver's purpose served by one provider's encounter function. The receiver owns it. A relationship in the other direction is a different join with its own purpose. Both ends are elements. A join is never stored inside an element row and never as a list. The join carries the project's own name for the functionality it names, where the project has one, MAP-020: the join is where the map speaks about the artifact, and an element's only name is its address read through name_length, STORE-009. A subtype join is a join held inside its parent join, which owns it, STORE-011. A join can be moved, MAP-003: its receiver, provider or parent changes and it stays the same join.
-- Why: Each join is one receiver's why served by one provider's how, so its meaning stays single. Receiver, purpose and encounter are different kinds of node with links in one direction, so the receiver, purpose and encounter structure cannot hold a cycle. Keeping each part in its own column lets the store answer the design's own questions directly. The identity of an element X, its C(T), is every current join where X is the provider: who receives it, why, and how. That is one indexed read. A function's join can be moved, MAP-003, so nothing ties a join's identity to its receiver.
-- How it shows: `identity code.failsafe.gateway.mesh` lists every receiver of the failsafe with that receiver's purpose and the failsafe's function for it, from one index.
+- Requirement: Each join is stored with its type, receiver, purpose, ef and ifd as separate columns, holds the elements that serve its purpose, Rich's shape, and points from its receiver to those elements only.
+- What this means: A join is one receiver's purpose served by the encounter function of the elements it holds, each a provider. The receiver owns it. A relationship in the other direction is a different join with its own purpose. Both ends are elements.
+- Why: Each join is one receiver's why served by its providers' how, so its meaning stays single. Receiver, purpose and encounter are different kinds of node with links in one direction, so the structure cannot hold a cycle. Rich, 2026-10-04: "we are reverting the data shape back to my original original design, no added field nothing...   that can all go to a knowledge layer.  metaform goes back to my original shape".
+- How it shows: `identity code.failsafe.gateway.mesh` lists every join that holds the failsafe, with each receiver's purpose and the join's ef, from one index.
 - Build:
   ```sql
   CREATE TABLE joins(
@@ -285,87 +281,56 @@ It covers the base database, the per-project store, the correction stack, layers
     join_id     TEXT NOT NULL REFERENCES join_ids(join_id),
     layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
     type        TEXT NOT NULL DEFAULT 'purpose',
-    parent      TEXT REFERENCES join_ids(join_id),  -- a subtype join's parent join, STORE-011; NULL on every other join
-    receiver    TEXT REFERENCES element_ids(element_id),  -- NULL on a subtype join, which its parent's receiver owns
-    provider    TEXT NOT NULL REFERENCES element_ids(element_id),  -- on a subtype join, the element it holds
-    name        TEXT,      -- the project's own name for the functionality, MAP-020
+    receiver    TEXT NOT NULL REFERENCES element_ids(element_id),
     purpose     TEXT,
     ef          TEXT,
-    verb        TEXT,      -- the verb ef opens with, MAP-020
-    non_goal    TEXT,
-    extra       TEXT,                                -- STORE-021
+    ifd         TEXT,      -- sends, receives or both
     op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),  -- STORE-017
     reason      TEXT,
-    evidence    TEXT,
-    UNIQUE(join_id, layer_id)
+    evidence    TEXT
   );
-  CREATE TABLE current_joins(                        -- joins held by a receiver; never a subtype join, STORE-011
+  CREATE TABLE join_elements(                        -- the elements one version of a join holds, in order
+    join_row   INTEGER NOT NULL REFERENCES joins(row),
+    position   INTEGER NOT NULL,
+    element_id TEXT NOT NULL REFERENCES element_ids(element_id),
+    PRIMARY KEY(join_row, position)
+  );
+  CREATE TABLE current_joins(
     join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
     row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
-    receiver TEXT NOT NULL,
-    provider TEXT NOT NULL
+    receiver TEXT NOT NULL
   );
+  CREATE INDEX join_elements_by_element ON join_elements(element_id, join_row);
   CREATE INDEX current_joins_by_receiver ON current_joins(receiver);
-  CREATE INDEX current_joins_by_provider ON current_joins(provider);
   CREATE INDEX joins_by_layer ON joins(layer_id);
   ```
-  - `join_ids` holds only the id, STORE-007, so a change of a join's receiver, provider or parent keeps its id, its history and what is attached to it. Moving a join is a change of those fields: in place in a layer that can change in place, STORE-032, and as a `change` row in a correction layer, STORE-017 and STORE-034.
-  - Both ends reference `element_ids`, so only an element is a join end; a subtype join is a join and never an end.
-  - Nothing checks for cycles among elements. Two elements may each receive from the other through two joins.
-  - `Store.join_ends(join_id)` reads one current join by its id and gives its two ends by address, the receiver's and the provider's; a subtype join's are its parent join's receiver's and the element it holds, STORE-011, as a work record and a message give them. It answers nothing when no current join has the id or an end has no current element. A module keys its own data by a join's namespace address through it, STORE-045.
+  - `join_ids` holds only the id, STORE-007, so a change of a join's receiver or of the elements it holds keeps its id, its history and what is attached to it, MAP-003.
+  - Each version of a join has its own `join_elements` rows; a version that does not change the elements copies those it held.
+  - Only an element is a join end. Nothing checks for cycles among elements. Two elements may each receive from the other through two joins.
+  - `Store.join_ends(join_id)` reads one current join by its id and gives its receiver's address and the address of the first element it holds, the two addresses that name it, as a work record and a message give them.
+  - `Store.purpose(receiver, provider, address=None)` names the join of `receiver` that holds `provider`, and with `address` the element at that address it holds, MAP-005.
 - Acceptance:
   - Two joins, A receives from B and B receives from A, both store and both read back.
-  - Writing a join whose provider is a join's id is an error naming the id, since no element has it, and writes nothing.
-  - The identity read of an element with 50 provider joins among 100000 joins uses `current_joins_by_provider`.
-  - A join written with a name reads back with it, and a join written without one reads back with none.
+  - A join holding two elements reads back with both, in order, and the identity read of each element returns it.
+  - Writing a join that names an element by an id no element has is an error naming the id, and writes nothing.
   - A join moved to another receiver in a knowledge layer keeps its id and its memory, and is returned by the new receiver's `joins` read and not by the old one's.
-  - `join_ends` of a join gives its receiver's and provider's addresses; of a subtype join, its parent join's receiver's address and the address of the element it holds; of an element's id or a removed join, nothing.
-- Relates to: STORE-007, STORE-009, STORE-011, STORE-025, STORE-034, MAP-001, MAP-002, MAP-003, MAP-020.
-- Status: confirmed by Rich, 2026-09-27: the name on the join, and a join can be moved and stays the same join. A join holds no perspective, relation or observation, MAP-020; layouts 11 and 12 took the columns out, STORE-029. The `parent` column and the nullable receiver are recommended.
+- Relates to: STORE-007, STORE-009, STORE-025, STORE-034, MAP-001, MAP-002, MAP-003, MAP-020, MAP-030.
+- Status: confirmed by Rich, 2026-10-04, Rich's original shape. Layout 19 takes `provider`, `parent`, `name`, `verb`, `non_goal`, `extra` and `element` off the join, writes each version's provider to `join_elements`, puts each subtype join's element in its parent join, and moves what else they held to the intake details and sources layers, STORE-029. Earlier: confirmed by Rich, 2026-09-27: the name on the join, and a join can be moved and stays the same join. A join holds no perspective, relation or observation, MAP-020; layouts 11 and 12 took the columns out, STORE-029. The `parent` column and the nullable receiver are recommended.
 
 ### STORE-011 Subtype joins live inside one join
-- Requirement: A subtype join is a `joins` row of type `subtype` held inside one require join and naming the element it holds, with its own encounter function and its own purpose, and its current row is kept apart from the current joins every read of the element graph uses.
-- What this means: Annealing combines parts that share the same join into a larger parent functionality, MAP-030. The join carries the purpose and the combined encounter. Each absorbed part stays one ordinary element record, STORE-009, and a subtype join under the require join places it, keeping its own encounter function, name, verb, optional non_goal and refs. A subtype join carries its own purpose, the share of the parent's purpose the part serves, in the purpose column as any join's is, corrected 2026-09-29: kept in the extra it was set apart from the join it describes, and a read by purpose did not find it. A part whose purpose the parent's cannot carry does not share the join and is its own element of the outer map, MAP-030. It is a join, so it has a join id, a layer, a history and attachments like any join, and absorbing a join into a parent, or moving a subtype join to another parent, keeps them, MAP-003. Its parent join's receiver owns it. It is never an edge of the outer map, and an element held only by subtype joins is never a root, MAP-031.
-- Why: Annealing keeps the root map minimal without discarding functionality. A subtype join exists only because it shares that join with its parent, so it lives there. Before step 52 subtypes had a table of their own, whose rows could only point at a join, so that no query could pull a subtype into the element graph by forgetting a filter. The shape below keeps that true of the subtype join by keeping its current row out of `current_joins`, the table every read of the element graph uses.
-- How it shows: `subtypes <join>` lists the subtype joins inside the failsafe's join, each with its own function and the probe it holds. `where code.probe.echo` answers with the probe's element, its subtype join and the join it lives in, not as a root element.
-- Build:
-  ```sql
-  -- A subtype join is a row of `joins`, STORE-010: type 'subtype', `parent` its parent join,
-  -- `provider` the element it holds, no receiver, and its own purpose.
-  CREATE TABLE current_subtypes(
-    join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
-    row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),
-    parent   TEXT NOT NULL,     -- the join it sits in
-    provider TEXT NOT NULL      -- the element it holds
-  );
-  CREATE INDEX current_subtypes_by_parent ON current_subtypes(parent);
-  CREATE INDEX current_subtypes_by_provider ON current_subtypes(provider);
-  ```
-  - How the shape keeps the reason: a join's current row goes to `current_joins` when the row has no parent and to `current_subtypes` when it has one, in the one place every current row is written, `insert_current`, STORE-017. Every read of the element graph, the joins an element receives or provides, `identity`, the entry's joins in `roots` and the joins `graph` draws, reads `current_joins`, so no read can return a subtype join as an edge of the element graph by forgetting a filter; `subtypes`, `where` and the subtypes of `graph` and `layer_graph` reach subtype joins only through `current_subtypes_by_parent` and `current_subtypes_by_provider`. The element a subtype join holds is an element, so it is in `current_elements`. When subtype joins are its only joins it is the end of no row of `current_joins`, so the element graph built from `current_joins` never reaches it, and the reads that list elements by address or role for the outer map, `graph`, `layer_graph` and `roots`, leave it out through one check, `held_only`, MAP-031.
-  - A subtype join's parent is a join held by a receiver: a parent that is a subtype join, that names no join, or that is the join itself cannot be read, STORE-026, and nothing is written, D5 and MAP-032.
-  - The element it holds: `add_subtype` names it by address or id. An address with no current element gets one in the writing layer, written with the name_length and role given, STORE-009. An element already there keeps its own name_length and role, and each given that differs is named in a notice, as `add_element` does for an element already at its address. An element already held by another current subtype join is stored as given with a notice naming that subtype join, D4; one read on `current_subtypes_by_provider`.
-  - A subtype join's refs are rows owned by its `joins` row, STORE-012; the element's own refs are on the element's row.
-  - A subtype join's rows are found by `joins_by_layer` for finishing, peeling, discarding and exporting, STORE-005.
-- Acceptance:
-  - A subtype join written in a join is returned by the subtypes read for that join, and by no read of joins by receiver or provider.
-  - Writing a subtype join with a purpose stores it in the join's own purpose column, and returns no notice for it.
-  - No read that returns joins by receiver or provider, or the entry's joins, ever returns a subtype join.
-  - Writing an item attached to a subtype join succeeds and is returned by the node read for that join.
-  - The element a subtype join holds is one element record, read back by `element` with its id, address, name_length and role; a second subtype join holding it is stored and its notice names the first.
-- Relates to: STORE-009, STORE-010, STORE-015, STORE-017, STORE-025, MAP-030, MAP-031, MAP-032.
-- Status: confirmed by Rich, 2026-09-27, for placement: an element is one record, annealing places it in its parent's join as a subtype join, and the element does not move. A subtype join holds no relation and no observation, MAP-020. The storage shape and `held_only` are recommended. A subtype owns no joins; its joins lift to the parent when it is annealed, D3. A part serving two joins is its own element, D4. A subtype holds no subtypes, D5.
+- Status: superseded by Rich, 2026-10-04: there are no subtype joins; a join holds every element that serves it, STORE-010 and MAP-030. Layout 19 drops `current_subtypes`, puts each subtype join's element in its parent join, moves the subtype join's own fields to the intake details layer and its refs to the sources layer, and moves items, tickets and messages at a subtype join to its element, STORE-029.
 
 ### STORE-012 Refs
-- Requirement: Each ref is one key and value row attached to one version row of an element, join, property or layer item, a subtype join's row included.
+- Requirement: Each ref is one key and value row attached to one version row of a layer item or a property. The metaform holds no refs: an element's refs are an item of the sources layer at it, MAP-021.
 - What this means: Refs carry type-specific or artifact-specific references, such as `path` pointing at a member file. They belong to the version they were written with, so a reader of a version gets exactly the refs that version had.
-- Why: Refs are part of what a version says. Tying them to the version row keeps an earlier version readable exactly as it was after a correction layer changes its refs.
-- How it shows: After a correction layer drops a stale path ref from a join, the join's history still shows the path in the intake's version, and the current version does not.
+- Why: Refs are part of what a layer says. Rich, 2026-10-04: "if you want to have refs you add a sources layer, or you keep them in a sources layer..   this makes the metaform itself the map I intended it to be."
+- How it shows: The sources layer's item at `code.timer.kitchen` lists `path=timer.c`; the element itself holds none.
 - Build:
   ```sql
   CREATE TABLE refs(
     ref_id    INTEGER PRIMARY KEY,
-    owner     TEXT NOT NULL CHECK(owner IN ('element','join','item','property')),
-    owner_row INTEGER NOT NULL,   -- elements.row, joins.row, items.row or properties.row
+    owner     TEXT NOT NULL CHECK(owner IN ('item','property')),
+    owner_row INTEGER NOT NULL,   -- items.row or properties.row
     position  INTEGER NOT NULL,   -- order as written
     key       TEXT NOT NULL,
     value     TEXT NOT NULL
@@ -373,13 +338,15 @@ It covers the base database, the per-project store, the correction stack, layers
   CREATE INDEX refs_by_owner ON refs(owner, owner_row, position);
   CREATE INDEX refs_by_key_value ON refs(key, value);
   ```
-  A `change` row in a correction layer copies forward the refs it keeps, as new rows pointing at the new version row.
-  - Refs are written with their owner: the create operations of STORE-024 take a `refs` list of key and value pairs in order. A ref in that list that is not a key and a value, both text, is never refused, STORE-026: every writer that takes `refs` keeps it in the record's `extra` under `refs`, with the notice `A ref is a key and a value, both text; one was not, and kept in the extra under refs.`, `two were not` and so on, counted as PROJ-025 counts; `edit` and `correct` given a new `refs` list do the same. The rule is written once, in the store; the intake tools and the map's write verbs hand `refs` on as given, so an odd ref reaches the store from every writer and is placed there. `add_ref` adds one more ref to a thing's current version in a knowledge layer or a mutable layer at any time, STORE-032. A ref on a thing of the intake layer or of a finished correction layer changes only through a correction layer, STORE-017.
+  - Refs are written with their owner: `add_item` and `add_property` take a `refs` list of key and value pairs in order. A ref in that list that is not a key and a value, both text, is never refused, STORE-026: it is kept in the record's `extra` under `refs`.
+  - `add_ref` on an element or a join writes nothing and returns a notice saying the metaform holds no refs, BASE-044.
+  - The intake writes an element's refs as its one item of the `sources` layer, a knowledge layer it makes on the first ref, replacing what that item held, while the setting `intake_sources` is on, BASE-039.
 - Acceptance:
-  - A join with refs `path=a` and `path=b`, changed by a correction layer to keep only `path=b`, reads back with one ref at the current version and two in its intake version.
-  - `add_ref` on a thing in the intake layer writes nothing and returns a notice naming a correction layer, BASE-044.
+  - An item with refs `path=a` and `path=b` reads back with both, in order.
+  - `add_ref` on a join writes nothing and returns a notice.
+  - With `intake_sources` off, refs given to the intake are not recorded and a notice says so.
 - Relates to: STORE-004, STORE-017, STORE-025, STORE-032, MAP-021.
-- Status: recommended. The lookup by key and value is required by MAP-021.
+- Status: confirmed by Rich, 2026-10-04: refs live in the sources layer. Layout 19 moves every current element's and join's refs to the sources layer, STORE-029. `test_refs_go_to_the_sources_layer_only_while_intake_sources_is_on` protects it.
 
 ## Layers
 
@@ -803,7 +770,7 @@ It covers the base database, the per-project store, the correction stack, layers
 - What this means: A chassis that finds a store at a version it does not know says so and names the next step rather than reading it wrongly.
 - Why: Stores outlive the code that wrote them. A reader that silently misreads an older or newer layout corrupts what agents are told.
 - How it shows: Opening a store written by a newer chassis gives an error naming the version found and the version supported.
-- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. Each kind of database has its own version, so a change to one kind's layout never refuses another: the metaform store's layout is version 18, since every `require` join is typed `purpose` again, Rich 2026-10-04: a store at layout 17 is updated, after a copy of it is kept under the home's backups, by typing each of its `require` joins `purpose`, and nothing else changes. Version 17 was when a join gained its `element` column, MAP-054. Version 16 was when a knowledge item came to carry `read_first` and `always_show`, LAYER-021: a store at layout 15 is updated, after a copy of it is kept under the home's backups, by adding the items table's two columns, false on every item, and nothing else changes. Version 15 was when a ticket's agent glyph left the chassis work table for the map module's own table, `"map.glyphs"`, keyed by the work id, STORE-045 and BASE-046, ticket 90430bba; a store at layout 14 is updated, after a copy of it is kept under the home's backups, by taking the work table's `glyph` column out, and every other field of every ticket is kept; the glyphs it held go into no field and remain only in that backup. Version 14 was when a ticket held the agent glyph it is assigned to, VIEW-040; a store at layout 13 is updated, after a copy of it is kept under the home's backups, by adding the work table's `glyph` column, empty on every ticket, and nothing else changes. Version 13 was when a purpose's join type became `purpose`, MAP-020; a store at layout 12 is updated, after a copy of it is kept under the home's backups, by typing every version of every join of type purpose `purpose`, and nothing else changes. Version 12 was when a join came to hold no relation and no observation, because the metaform points to the code and is never documentation, MAP-020. A store at layout 11 is updated after a copy of it is kept under the home's backups: each current join and subtype join takes its old relation text as its ef, written as its newest version with its refs, so its earlier versions keep the old ef, and then the relation and observation columns are taken out; the old ef text and the old observation text go into no field and remain only in the store's version history and in that backup. Version 11 was when a join came to hold no perspective, since ef carries the direction, MAP-020; a store at layout 10 is updated by taking the joins' perspective column out, after a copy of it is kept under the home's backups, and every other field of every join is kept as it was; version 10 was when an element's name and a join's IFD became fields of their own, no longer kept in the extra, which holds nothing the design names; version 9 was when a ticket kept its kind while it is worked and records who took it, its place on the board and the nodes it links for reference, D92 and VIEW-035; version 8 was when the metaform kept every version of a thing in its own layer and there are no correction layers, LAYER-025; version 7 named the fields ef and perspective, MAP-020; version 6 was when a work record came to hold the steps an agent plans and those it has done, MAP-053; version 5 was step 52, which made a subtype join a row of `joins` and took out the relocation of elements; the base database is version 2, since it holds no project, PROJ-026; a project's own database, its history database and the prompt database are each version 1. Each kind keeps its own number because one shared number once made a change to the store refuse a whole home, its registry of projects and settings included, whose own layout had not changed. A store is never refused or thrown away for an earlier layout: the version changes only for a change that requires an update, and the store is updated to it, because a data store that refuses its own data is not one a person can rely on.
+- Build: `meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` with `schema_version`. Each kind of database has its own version, so a change to one kind's layout never refuses another: the metaform store's layout is version 19, Rich's original shape, Rich 2026-10-04: "we are reverting the data shape back to my original original design, no added field nothing...   that can all go to a knowledge layer". A store at layout 18 or earlier is updated, after a copy of it is kept under the home's backups: every version of a join holds its provider in `join_elements`; each current subtype join's element is held by its parent join's current version and the subtype join is removed; every current element's and join's refs become an item of a layer named `sources` at it; an element's extra, a join's name, verb, non_goal, extra and promoted element, and a subtype join's own fields become an item of a layer named `intake details`; items, tickets and messages at a subtype join move to its element; earlier versions of those fields remain only in the backup. Version 18 was when every `require` join was typed `purpose` again, Rich 2026-10-04: a store at layout 17 was updated, after a copy of it is kept under the home's backups, by typing each of its `require` joins `purpose`, and nothing else changes. Version 17 was when a join gained its `element` column, MAP-054. Version 16 was when a knowledge item came to carry `read_first` and `always_show`, LAYER-021: a store at layout 15 is updated, after a copy of it is kept under the home's backups, by adding the items table's two columns, false on every item, and nothing else changes. Version 15 was when a ticket's agent glyph left the chassis work table for the map module's own table, `"map.glyphs"`, keyed by the work id, STORE-045 and BASE-046, ticket 90430bba; a store at layout 14 is updated, after a copy of it is kept under the home's backups, by taking the work table's `glyph` column out, and every other field of every ticket is kept; the glyphs it held go into no field and remain only in that backup. Version 14 was when a ticket held the agent glyph it is assigned to, VIEW-040; a store at layout 13 is updated, after a copy of it is kept under the home's backups, by adding the work table's `glyph` column, empty on every ticket, and nothing else changes. Version 13 was when a purpose's join type became `purpose`, MAP-020; a store at layout 12 is updated, after a copy of it is kept under the home's backups, by typing every version of every join of type purpose `purpose`, and nothing else changes. Version 12 was when a join came to hold no relation and no observation, because the metaform points to the code and is never documentation, MAP-020. A store at layout 11 is updated after a copy of it is kept under the home's backups: each current join and subtype join takes its old relation text as its ef, written as its newest version with its refs, so its earlier versions keep the old ef, and then the relation and observation columns are taken out; the old ef text and the old observation text go into no field and remain only in the store's version history and in that backup. Version 11 was when a join came to hold no perspective, since ef carries the direction, MAP-020; a store at layout 10 is updated by taking the joins' perspective column out, after a copy of it is kept under the home's backups, and every other field of every join is kept as it was; version 10 was when an element's name and a join's IFD became fields of their own, no longer kept in the extra, which holds nothing the design names; version 9 was when a ticket kept its kind while it is worked and records who took it, its place on the board and the nodes it links for reference, D92 and VIEW-035; version 8 was when the metaform kept every version of a thing in its own layer and there are no correction layers, LAYER-025; version 7 named the fields ef and perspective, MAP-020; version 6 was when a work record came to hold the steps an agent plans and those it has done, MAP-053; version 5 was step 52, which made a subtype join a row of `joins` and took out the relocation of elements; the base database is version 2, since it holds no project, PROJ-026; a project's own database, its history database and the prompt database are each version 1. Each kind keeps its own number because one shared number once made a change to the store refuse a whole home, its registry of projects and settings included, whose own layout had not changed. A store is never refused or thrown away for an earlier layout: the version changes only for a change that requires an update, and the store is updated to it, because a data store that refuses its own data is not one a person can rely on.
 - Acceptance:
   - A store with `schema_version` set to 999 is refused with a `StoreError`, and nothing is written to it.
   - A home whose project and history databases are at version 1 opens while the store's layout is at version 14, and its projects, settings and origins read back.

@@ -18,14 +18,13 @@ def filled(store):
     store.add_item(notes.name, Node('element', 'code.timer.kitchen'), {'imperative': 'keep it small'},
                    extra={'confidence': 'high'}, refs=[('path', 'src/timer.c')])
     store.add_property(notes.name, 'code.timer.kitchen', 'C')
-    store.add_join(notes.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='stop', ef='signals',
-                   extra={'latency_budget': '5 ms'})
+    store.add_join(notes.name, 'code.alarm.audible', 'code.timer.kitchen', purpose='stop', ef='signals')
     store.finish(notes.name)
     store.mask('code.alarm', notes.name)
     notes_memory = memory(store)
     store.add_item(notes_memory.name, Node('join', inner.join_id), 'quiet tone')
     store.refine(inner.join_id, {'ef': 'Plays a loud tone.'}, reason='louder', evidence='bench')
-    store.refine(outer.join_id, {'refs': [('path', 'src'), ('path', 'src/timer.c')]}, reason='both files')
+    store.refine(outer.join_id, {'elements': ['code.timer.kitchen']}, reason='the tick is the timer\'s own')
     store.refine(outer.join_id, {'purpose': 'Serve each dish on time.'}, reason='sharper')
     return outer, inner
 
@@ -41,7 +40,7 @@ def move_home(monkeypatch, tmp_path, name):
 @pytest.mark.req('STORE-021')
 def test_export_import_export_gives_the_same_document(home, store, monkeypatch, tmp_path):
     outer, _ = filled(store)
-    versions = [(version.op, version.fields['purpose'], [(ref.key, ref.value) for ref in version.refs])
+    versions = [(version.op, version.fields['purpose'], version.fields['elements'])
                 for version in store.history(outer.join_id).results]
     kitchen = store.element('code.timer.kitchen').element_id
     first = export_document(['proj'])
@@ -52,10 +51,11 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
     assert second == first
     moved = Store('proj')
     assert moved.element('code.timer.kitchen').element_id == kitchen
-    join = next(join for join in moved.joins('code.alarm.audible', raw=True).results if join.layer == 'notes')
-    assert join.extra == {'latency_budget': '5 ms'}
-    assert [(version.op, version.fields['purpose'], [(ref.key, ref.value) for ref in version.refs])
-            for version in moved.history(outer.join_id).results] == versions  # every version, with its own refs
+    item = moved.layer_items('notes', Node('element', 'code.timer.kitchen')).results[0]
+    assert item.extra == {'confidence': 'high'}
+    assert [(version.op, version.fields['purpose'], version.fields['elements'])
+            for version in moved.history(outer.join_id).results] == versions  # every version, with the elements it holds
+    assert versions[0][2] == ['code.timer.kitchen', 'code.loop.tick'] and versions[1][2] == ['code.timer.kitchen']
     assert len(versions) == 3
     assert moved.joins('stakeholder.cook.home').results[0].purpose == 'Serve each dish on time.'  # the newest is current
 
@@ -77,12 +77,12 @@ def test_an_exported_join_carries_no_relation_and_no_observation_and_a_document_
 @pytest.mark.req('STORE-042')
 def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after_import(home, store, monkeypatch,
                                                                                          tmp_path):
-    outer, inner = filled(store)
-    tick = store.subtypes(outer.join_id).results[0]
+    _, inner = filled(store)
+    tick = store.element('code.loop.tick')
     missing = store.add_work(Node('element', 'code.alarm.audible'), 'missing', note='the pin is never released',
                          task='release the pin', held=True)
     broken = store.add_work(Node('join', inner.join_id), 'broken', task='wire the tone', reviewed=True)
-    on_tick = store.add_work(Node('join', tick.join_id), 'exclude')
+    on_tick = store.add_work(Node('element', tick.element_id), 'exclude')
     done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'missing').work_id, 'built it')
     first = export_document(['proj'])
     assert len(first['projects'][0]['metaforms'][0]['work']) == 4
@@ -93,7 +93,7 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
     assert moved.element('code.alarm.audible').open_work == ('missing',)
     assert moved.element('code.timer.kitchen').open_work == ()
     assert [join.open_work for join in moved.joins('code.timer.kitchen').results] == [('broken',)]
-    assert moved.subtypes(outer.join_id).results[0].open_work == ('exclude',)
+    assert moved.element('code.loop.tick').open_work == ('exclude',)
     records = {row.work_id: row for row in moved.work().results}
     assert set(records) == {missing.work_id, broken.work_id, on_tick.work_id, done.work_id}
     assert (records[missing.work_id].address, records[missing.work_id].note, records[missing.work_id].task,
@@ -101,17 +101,15 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
         'code.alarm.audible', 'the pin is never released', 'release the pin', True, missing.created)
     assert (records[broken.work_id].receiver_address, records[broken.work_id].provider_address,
             records[broken.work_id].reviewed) == ('code.timer.kitchen', 'code.alarm.audible', True)
-    assert (records[on_tick.work_id].receiver_address, records[on_tick.work_id].provider_address) == (
-        'stakeholder.cook.home', 'code.loop.tick')
+    assert records[on_tick.work_id].address == 'code.loop.tick'
     assert (records[done.work_id].done, records[done.work_id].resolution) == (done.done, 'built it')
     assert [row.work_id for row in moved.work(open=False).results] == [done.work_id]
 
 
 @pytest.mark.req('STORE-027')
-@pytest.mark.req('STORE-011')
 @pytest.mark.req('STORE-034')
-def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they_were(home, store, monkeypatch,
-                                                                                       tmp_path):
+def test_moved_joins_and_the_elements_joins_hold_come_through_export_and_import_where_they_were(home, store,
+                                                                                                monkeypatch, tmp_path):
     _, outer, inner = small_map(store)
     store.refine(inner.join_id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
     notes = knowledge(store, 'notes')
@@ -119,7 +117,7 @@ def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they
         store.add_element(notes.name, address)
     early = store.add_join(notes.name, 'code.a', 'code.q', purpose='q', ef='g')
     later = store.add_join(notes.name, 'code.a', 'code.p', purpose='p', ef='f')
-    store.edit(early.join_id, {'parent': later.join_id})
+    store.edit(later.join_id, {'elements': ['code.p', 'code.q']})
     store.finish(notes.name)
     first = export_document(['proj'])
     move_home(monkeypatch, tmp_path, 'other-home')
@@ -127,10 +125,10 @@ def test_moved_joins_and_subtype_joins_come_through_export_and_import_where_they
     assert export_document(['proj']) == first
     moved = Store('proj')
     assert inner.join_id in [join.join_id for join in moved.joins('stakeholder.cook.home').results]
-    assert [sub.join_id for sub in moved.subtypes(outer.join_id).results] == [
-        store.subtypes(outer.join_id).results[0].join_id]
-    assert [sub.join_id for sub in moved.subtypes(later.join_id).results] == [early.join_id]
-    assert [join.join_id for join in moved.joins('code.a').results] == [later.join_id]
+    held = {join.join_id: [each.address for each in join.elements] for join in moved.joins('code.a').results}
+    assert held == {early.join_id: ['code.q'], later.join_id: ['code.p', 'code.q']}
+    cook = {join.join_id: join for join in moved.joins('stakeholder.cook.home').results}[outer.join_id]
+    assert [each.address for each in cook.elements] == ['code.timer.kitchen', 'code.loop.tick']
 
 
 @pytest.mark.req('STORE-027')

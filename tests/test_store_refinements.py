@@ -3,7 +3,7 @@ LAYER-025."""
 from __future__ import annotations
 
 import pytest
-from storekit import dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import dump, knowledge, memory, small_map, store_file, values
 
 from metaform.data import Node
 
@@ -52,17 +52,17 @@ def test_the_kind_correction_is_not_a_layer_kind(store):
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('STORE-034')
 @pytest.mark.req('STORE-025')
-@pytest.mark.req('MAP-020')
-def test_a_refinement_changes_an_elements_name_length_and_role_and_a_joins_name(store):
-    _, outer, _ = small_map(store)
+def test_a_refinement_changes_an_elements_name_length_role_and_name(store):
+    small_map(store)
     kitchen = store.element('code.timer.kitchen').element_id
     store.refine(kitchen, {'name_length': 1, 'role': 'SE'}, reason='one word says it')
-    store.refine(outer.join_id, {'name': 'dish timer'}, reason='what the cook calls it')
+    store.refine(kitchen, {'name': 'dish timer'}, reason='what the cook calls it')
     element = store.element('code.timer.kitchen')
     assert (element.element_id, element.name_length, element.role, element.short_name) == (kitchen, 1, 'SE', 'kitchen')
-    assert store.joins('stakeholder.cook.home').results[0].name == 'dish timer'
+    assert element.name == 'dish timer'
     assert [(version.layer, version.fields['role'], version.fields['name_length'])
-            for version in store.history(kitchen).results] == [('intake-1', 'DE', 2), ('intake-1', 'SE', 1)]
+            for version in store.history(kitchen).results] == [('intake-1', 'DE', 2), ('intake-1', 'SE', 1),
+                                                               ('intake-1', 'SE', 1)]
     assert [entry.element.address for entry in store.roots().entry] == ['stakeholder.cook.home']
 
 
@@ -80,7 +80,7 @@ def test_address_lookup_returns_the_newest_refinement(store):
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('STORE-034')
 def test_a_removed_join_is_gone_from_every_read_and_kept_in_history(store):
-    _, outer, inner = small_map(store)
+    _, _outer, inner = small_map(store)
     store.refine(inner.join_id, remove=True, reason='not a real join')
     assert store.joins('code.timer.kitchen').results == ()
     assert store.joins('code.timer.kitchen', raw=True).results == ()
@@ -171,25 +171,6 @@ def test_a_refinement_moves_a_join_to_another_receiver_and_what_is_attached_stay
         ('intake-1', 'add'), ('intake-1', 'change')]
 
 
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('STORE-034')
-@pytest.mark.req('MAP-030')
-def test_a_refinement_absorbs_a_join_into_its_parents_join(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'stakeholder.cook', role='CQU')
-        store.add_element(base.name, 'code.timer', role='DE')
-        store.add_element(base.name, 'code.alarm', role='SE')
-        parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                ef='Counts down and rings.')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.')
-    store.refine(part.join_id, {'parent': parent.join_id}, reason='the alarm is part of the timer')
-    assert [join.join_id for join in store.joins('stakeholder.cook').results] == [parent.join_id]
-    held = store.subtypes(parent.join_id).results
-    assert [(sub.join_id, sub.address, sub.purpose, sub.extra) for sub in held] == [
-        (part.join_id, 'code.alarm', 'Hear the end.', None)]  # absorbed, it keeps its purpose as its own, STORE-011
-    assert 'code.alarm' not in [root.address for root in store.roots().elements]
-
 
 @pytest.mark.req('LAYER-025')
 @pytest.mark.req('MAP-015')
@@ -202,10 +183,11 @@ def test_the_metaform_grows_an_element_at_a_better_address_and_a_join_moves_to_i
     store.add_item(notes.name, Node('element', alarm.element_id), 'a piezo')
     before = layer_names(store)
     better = store.add_element('intake-1', 'code.alarm.audible.tone', name_length=2, role='SE')
-    store.refine(inner.join_id, {'provider': 'code.alarm.audible.tone'}, reason='it plays a tone')
+    store.refine(inner.join_id, {'elements': ['code.alarm.audible.tone']}, reason='it plays a tone')
     assert layer_names(store) == before
     moved = store.joins('code.timer.kitchen').results
-    assert [(join.join_id, join.provider_address) for join in moved] == [(inner.join_id, 'code.alarm.audible.tone')]
+    assert [(join.join_id, [each.address for each in join.elements]) for join in moved] == [
+        (inner.join_id, ['code.alarm.audible.tone'])]
     assert store.element('code.alarm.audible.tone').element_id == better.element_id
     assert store.element('code.alarm.audible.tone').layer == 'intake-1'
     assert values(store.node(Node('join', inner.join_id)), 'memory') == ['rings too long']
@@ -214,56 +196,33 @@ def test_the_metaform_grows_an_element_at_a_better_address_and_a_join_moves_to_i
 
 
 @pytest.mark.req('LAYER-025')
-def test_the_finished_metaform_takes_new_joins_and_their_refs(store):
+def test_the_finished_metaform_takes_new_joins(store):
     small_map(store)
     before = layer_names(store)
     added = store.add_join('intake-1', 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it.',
                            ef='Rings.')
     assert added.notices == () and added.layer == 'intake-1'
-    store.add_ref(added.join_id, 'path', 'src/alarm.c')
     found = {join.join_id: join for join in store.joins('stakeholder.cook.home').results}[added.join_id]
-    assert [(ref.key, ref.value) for ref in found.refs] == [('path', 'src/alarm.c')]
+    assert [each.address for each in found.elements] == ['code.alarm.audible']
     assert layer_names(store) == before
 
 
 @pytest.mark.req('LAYER-025')
-def test_the_finished_metaform_takes_new_subtype_joins_and_properties(store):
+def test_the_finished_metaform_takes_new_elements_held_by_its_joins_and_properties(store):
     _, outer, _ = small_map(store)
     before = layer_names(store)
-    held = store.add_subtype('intake-1', outer.join_id, 'code.timer.kitchen.dial', purpose='Set the time.',
-                             ef='Turns to a number of minutes.', role='SE', name_length=1)
-    assert held.layer == 'intake-1'
-    assert held.join_id in [sub.join_id for sub in store.subtypes(outer.join_id).results]
+    dial = store.add_element('intake-1', 'code.timer.kitchen.dial', role='SE', name_length=1)
+    assert dial.layer == 'intake-1'
+    store.refine(outer.join_id, {'elements': ['code.timer.kitchen', 'code.loop.tick', 'code.timer.kitchen.dial']},
+                 reason='the dial sets the time')
+    held = store.joins('stakeholder.cook.home').results[0].elements
+    assert [each.address for each in held] == ['code.timer.kitchen', 'code.loop.tick', 'code.timer.kitchen.dial']
     added = store.add_property('intake-1', 'code.timer', 'battery powered')
     assert added.layer == 'intake-1'
     assert 'battery powered' in [prop.value for prop in store.context('code.timer.kitchen').applying]
     assert layer_names(store) == before
 
 
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('STORE-012')
-def test_a_refined_ref_list_keeps_the_old_version_whole(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'code.a', role='DE')
-        store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', refs=[('path', 'a'), ('path', 'b')])
-    store.refine(join.join_id, {'refs': [('path', 'b')]}, reason='a is stale')
-    assert [(ref.key, ref.value) for ref in store.joins('code.a').results[0].refs] == [('path', 'b')]
-    first = store.history(join.join_id).results[0]
-    assert [(ref.key, ref.value) for ref in first.refs] == [('path', 'a'), ('path', 'b')]
-
-
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('STORE-021')
-def test_extension_fields_survive_a_refinement_that_does_not_touch_them(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'code.a', role='DE')
-        store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', extra={'latency_budget': '5 ms'})
-    store.refine(join.join_id, {'purpose': 'q'}, reason='wording')
-    assert store.joins('code.a').results[0].extra == {'latency_budget': '5 ms'}
 
 
 @pytest.mark.req('LAYER-025')
@@ -280,48 +239,3 @@ def test_a_refinement_marks_the_layers_built_from_what_it_changed(store):
     store.reexamined(built.name)
     assert {layer.name: layer.reexamine for layer in store.layers().results}['challenge'] is False
 
-
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('MAP-020')
-def test_a_joins_and_a_subtypes_verb_is_stored_as_given_and_kept_through_refinements_and_moves(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'code.a', role='DE')
-        store.add_element(base.name, 'code.b', role='SE')
-        join = store.add_join(base.name, 'code.a', 'code.b', purpose='p', ef='f', verb='drive')
-        tick = store.add_subtype(base.name, join.join_id, 'code.loop.tick', ef='g', verb='advances',
-                                 role='SE')
-    assert (join.verb, tick.verb, join.notices, tick.notices) == ('drive', 'advances', (), ())
-    store.refine(join.join_id, {'purpose': 'q'}, reason='wording')
-    store.refine(tick.join_id, {'verb': 'moves'}, reason='plainer')
-    kept = store.joins('code.a').results[0]
-    assert (kept.purpose, kept.verb, store.subtypes(kept.join_id).results[0].verb) == ('q', 'drive', 'moves')
-    store.add_element('intake-1', 'code.c', role='DE')
-    store.refine(join.join_id, {'receiver': 'code.c'}, reason='moved')
-    assert store.history(join.join_id).results[-1].fields['verb'] == 'drive'
-    assert store.history(tick.join_id).results[-1].fields['verb'] == 'moves'
-
-
-@pytest.mark.req('LAYER-025')
-@pytest.mark.req('MAP-032')
-@pytest.mark.req('STORE-034')
-def test_a_refinement_absorbing_a_join_that_holds_a_subtype_join_passes_it_to_the_new_parent(store):
-    with store.atomic():
-        base = intake(store)
-        store.add_element(base.name, 'stakeholder.cook', role='CQU')
-        store.add_element(base.name, 'code.timer', role='DE')
-        store.add_element(base.name, 'code.alarm', role='SE')
-        parent = store.add_join(base.name, 'stakeholder.cook', 'code.timer', purpose='Know when a dish is done.',
-                                ef='Counts down and rings.')
-        part = store.add_join(base.name, 'stakeholder.cook', 'code.alarm', purpose='Hear the end.', ef='Rings.')
-        piezo = store.add_subtype(base.name, part.join_id, 'code.alarm.piezo', ef='Buzzes.', role='SE',
-                                  refs=[('path', 'src/piezo.c')])
-    absorbed = store.refine(part.join_id, {'parent': parent.join_id}, reason='the alarm is the timer\'s')
-    assert piezo.join_id in ' '.join(notice.message for notice in absorbed.notices)
-    assert sorted(sub.join_id for sub in store.subtypes(parent.join_id).results) == sorted(
-        [part.join_id, piezo.join_id])
-    moved = {sub.join_id: sub for sub in store.subtypes(parent.join_id).results}[piezo.join_id]
-    assert (moved.parent, moved.ef, [(ref.key, ref.value) for ref in moved.refs]) == (
-        parent.join_id, 'Buzzes.', [('path', 'src/piezo.c')])
-    assert [(version.layer, version.op, version.fields['parent']) for version in store.history(piezo.join_id).results] \
-        == [('intake-1', 'add', part.join_id), ('intake-1', 'change', parent.join_id)]

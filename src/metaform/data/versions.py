@@ -3,9 +3,8 @@
 Every thing keeps every row written for it. Its current row is its newest, by row order, unless that row is a
 removal, which leaves it out of the current tables. The metaform is refined in its own intake layer: a refinement is
 one more row of the thing in that layer, so nothing is lost and no layer is made. An element's address never
-changes, MAP-015; a join can be moved to another receiver, provider or parent join and stays the same join, MAP-003.
-A join's current row goes to `current_joins`, or to `current_subtypes` when it has a parent, only here, in
-`insert_current`, STORE-011.
+changes, MAP-015; a join can be moved to another receiver and stays the same join, MAP-003. A join's current row
+goes to `current_joins` only here, in `insert_current`.
 """
 from __future__ import annotations
 
@@ -35,9 +34,8 @@ ORDER = ('element', 'join', 'property', 'item')
 
 
 def current_tables(kind: str) -> tuple[str, ...]:
-    """Where a thing's current row can be: a join's in `current_joins`, or in `current_subtypes` for a subtype
-    join, STORE-011."""
-    return ('current_joins', 'current_subtypes') if kind == 'join' else (KINDS[kind].current,)
+    """Where a thing's current row is."""
+    return (KINDS[kind].current,)
 
 
 def current_row(db: sqlite3.Connection, kind: str, thing_id: str) -> int | None:
@@ -88,18 +86,14 @@ def hold_address(db: sqlite3.Connection, address: str, element_id: str) -> None:
 
 
 def insert_current(db: sqlite3.Connection, kind: str, thing_id: str, row: sqlite3.Row) -> None:
-    """Make a row a thing's current version. A join with a parent is a subtype join, and its current row goes to
-    `current_subtypes`, never to `current_joins`: the one place this is decided, STORE-011."""
+    """Make a row a thing's current version."""
     if kind == 'element':
         db.execute('INSERT INTO current_elements(element_id, row, address, role) VALUES (?, ?, ?, ?)',
                    (thing_id, row['row'], row['address'], row['role']))
         hold_address(db, str(row['address']), thing_id)
-    elif kind == 'join' and row['parent'] is not None:
-        db.execute('INSERT INTO current_subtypes(join_id, row, parent, provider) VALUES (?, ?, ?, ?)',
-                   (thing_id, row['row'], row['parent'], row['provider']))
     elif kind == 'join':
-        db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
-                   (thing_id, row['row'], row['receiver'], row['provider']))
+        db.execute('INSERT INTO current_joins(join_id, row, receiver) VALUES (?, ?, ?)',
+                   (thing_id, row['row'], row['receiver']))
     elif kind == 'property':
         db.execute('INSERT INTO current_properties(property_id, row, layer_id, element_id) VALUES (?, ?, ?, ?)',
                    (thing_id, row['row'], row['layer_id'], row['element_id']))
@@ -121,27 +115,17 @@ def orphaned_by(db: sqlite3.Connection, kind: str, thing_id: str) -> list[Notice
     notices: list[Notice] = []
     if kind == 'element':
         for join_id, join_row in db.execute('SELECT join_id, row FROM current_joins WHERE receiver=? UNION '
-                                            'SELECT join_id, row FROM current_joins WHERE provider=?',
+                                            'SELECT c.join_id, c.row FROM join_elements e JOIN current_joins c '
+                                            'ON c.row = e.join_row WHERE e.element_id=?',
                                             (thing_id, thing_id)).fetchall():
             if _of_metaform(db, kinds, 'joins', join_row):
                 notices.append(Notice(join_id, f'Element {thing_id} was removed; join {join_id} still points at it '
                                                'and is orphaned.'))
-        for join_id, join_row in db.execute('SELECT join_id, row FROM current_subtypes WHERE provider=?',
-                                            (thing_id,)).fetchall():
-            if _of_metaform(db, kinds, 'joins', join_row):
-                notices.append(Notice(join_id, f'Element {thing_id} was removed; subtype join {join_id} still holds '
-                                               'it and is orphaned.'))
         for property_id, property_row in db.execute(
                 'SELECT property_id, row FROM current_properties WHERE element_id=?', (thing_id,)).fetchall():
             if _of_metaform(db, kinds, 'properties', property_row):
                 notices.append(Notice(property_id, f'Element {thing_id} was removed; property {property_id} on it is '
                                                    'orphaned.'))
-    elif kind == 'join':
-        for join_id, join_row in db.execute('SELECT join_id, row FROM current_subtypes WHERE parent=?',
-                                            (thing_id,)).fetchall():
-            if _of_metaform(db, kinds, 'joins', join_row):
-                notices.append(Notice(join_id, f'Join {thing_id} was removed; subtype join {join_id} in it is '
-                                               'orphaned.'))
     return notices
 
 

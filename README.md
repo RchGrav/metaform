@@ -94,24 +94,24 @@ flowchart LR
     S --> F["findings, memory, refinements<br/>retained at meaningful addresses"]
 ```
 
-The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements, joins, and internal subtypes, rather than detached from the functionality it concerns.
+The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements and joins, rather than detached from the functionality it concerns.
 
 It also lets a critic find gaps in the design: functions and Encounters the system should have and does not. Code alone shows how a system behaves, not what it is for, so the recorded purposes are what make a missing piece visible. The critic examines the Metaform on its own, or the Metaform together with the code. Each gap becomes a blindspot challenge, which asks the project for substantive reasoning: why a concern was already considered and adds no benefit, why an unexplored concern matters, or where another part of the system already fulfills the apparent omission.
 
 ## What it looks like
 
-A kitchen timer's firmware, mapped. The home cook receives the kitchen timer, which the project calls the dish clock. The timer receives the audible alarm's Encounter, the buzzer. The tick loop is absorbed into the dish clock's join as a subtype join, the ticker. Each join is its own object, drawn here as a circle:
+A kitchen timer's firmware, mapped. The home cook receives the kitchen timer, which the project calls the dish clock. The timer receives the audible alarm's Encounter, the buzzer. The tick loop is annealed into the cook's join: it is one more element that join holds. The cook holds a join, the join holds the elements that serve the cook's purpose, and each join is its own object, drawn here as a circle:
 
 ```mermaid
-graph LR
-    timer["code.timer.kitchen<br/>kitchen timer"] -- provides --> clock(("dish clock<br/>ef: Function"))
-    clock -- "purpose held by" --> cook["stakeholder.cook.home<br/>home cook"]
-    tick["code.loop.tick<br/>tick loop"] -.->|"ticker, a subtype join inside it"| clock
-    alarm["code.alarm.audible<br/>audible alarm"] -- provides --> buzzer(("buzzer<br/>ef: Encounter"))
-    buzzer -- "purpose held by" --> timer
+graph TB
+    cook["stakeholder.cook.home<br/>home cook"] -- "holds" --> j1(("join<br/>Know when each dish is done"))
+    j1 -- "holds" --> timer["code.timer.kitchen<br/>kitchen timer, the dish clock"]
+    j1 -- "holds" --> tick["code.loop.tick<br/>tick loop, the ticker"]
+    timer -- "holds" --> j2(("join<br/>Get the cook's attention"))
+    j2 -- "holds" --> alarm["code.alarm.audible<br/>audible alarm, the buzzer"]
 ```
 
-An agent handed the address `code.timer.kitchen` reads it once, with `metaform map where code.timer.kitchen --json` or the `map_where` tool, and receives the stored record: `provides`, what relies on the timer, `receives`, what it relies on, the subtype join inside, and what the memory and a review layer hold at it.
+An agent handed the address `code.timer.kitchen` reads it once, with `metaform map where code.timer.kitchen --json` or the `map_where` tool, and receives the stored record: `provides`, the joins that hold the timer and so what relies on it, `receives`, the joins the timer holds as receiver and so what it relies on, and what the `sources` layer, a review layer and memory hold at it. The record below is the real output for this map, with `memory` after `layers`:
 
 ```json
 {
@@ -123,74 +123,100 @@ An agent handed the address `code.timer.kitchen` reads it once, with `metaform m
     "short_name": "kitchen timer",
     "name_length": 2,
     "role": "DE",
-    "refs": [{"key": "path", "value": "src/main.c"}]
+    "name": "dish clock"
   },
   "provides": [
     {
       "receiver": "stakeholder.cook.home",
       "layer": "intake",
       "type": "purpose",
-      "name": "dish clock",
       "purpose": "Know when each dish is done without watching the clock.",
-      "function": "Counts down each named dish and rings when one reaches zero.",
-      "ef": "Function",
-      "relation": "tells the cook when a dish is done",
-      "verb": "tells",
-      "observation": "One countdown per dish, set from the front panel.",
-      "subtypes": [
+      "ef": "tells the cook when a dish is done",
+      "ifd": "receives",
+      "elements": [
         {
-          "element": "code.loop.tick",
-          "layer": "intake",
-          "type": "subtype",
-          "reading": "tick loop code",
-          "short_name": "tick loop",
-          "name": "ticker",
+          "address": "code.timer.kitchen",
+          "short_name": "kitchen timer",
           "name_length": 2,
-          "role": "SE",
-          "function": "Subtracts one second from each running countdown.",
-          "ef": "Function",
-          "relation": "advances every running countdown by one second",
-          "verb": "advances",
-          "observation": "One timer interrupt per second.",
-          "refs": [{"key": "path", "value": "src/tick.c"}]
+          "name": "dish clock",
+          "role": "DE"
+        },
+        {
+          "address": "code.loop.tick",
+          "short_name": "tick loop",
+          "name_length": 2,
+          "name": "ticker",
+          "role": "SE"
         }
       ]
     }
   ],
   "receives": [
     {
-      "provider": "code.alarm.audible",
       "layer": "intake",
       "type": "purpose",
-      "name": "buzzer",
       "purpose": "Get the cook's attention the moment a countdown ends.",
-      "function": "Plays a tone on the speaker until the cook presses stop.",
-      "ef": "Encounter",
-      "relation": "sounds the end of a countdown through the speaker",
-      "verb": "sounds",
-      "observation": "A piezo speaker driven by one GPIO pin."
+      "ef": "sounds the end of a countdown through the speaker",
+      "ifd": "receives",
+      "elements": [
+        {
+          "address": "code.alarm.audible",
+          "short_name": "audible alarm",
+          "name_length": 2,
+          "name": "buzzer",
+          "role": "SE"
+        }
+      ]
     }
   ],
   "layers": [
     {
-      "layer": "memory",
-      "kind": "memory",
-      "items": [{"layer": "memory", "value": "The countdown drifts one second an hour on the first board."}]
+      "layer": "sources",
+      "kind": "layer",
+      "items": [
+        {
+          "layer": "sources",
+          "value": "code.timer.kitchen",
+          "refs": [
+            {
+              "key": "path",
+              "value": "src/main.c"
+            }
+          ]
+        }
+      ]
     },
     {
       "layer": "review-notes",
       "kind": "layer",
-      "items": [{"layer": "review-notes", "value": {"finding": "Each dish keeps its own countdown."}}]
+      "items": [
+        {
+          "layer": "review-notes",
+          "value": {
+            "finding": "Each dish keeps its own countdown."
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "memory": {
+    "entities": [
+      {
+        "name": "countdown drift",
+        "entityType": "behavior",
+        "observations": ["The countdown drifts one second an hour on the first board."]
+      }
+    ],
+    "relations": []
+  }
 }
 ```
 
-Ids and empty fields are left out; `full=true` keeps them. Every agent that touches this element — this session, next month, a different model from a different vendor — sees the same stored purpose. [Getting started](docs/guides/getting-started.md#record-a-small-map-by-hand) records this map by hand, without a model, and [Working with Metaform](docs/guides/working-with-metaform.md) adds the memory and the review layer.
+Ids and empty fields are left out; `full=true` keeps them. Every agent that touches this element, this session, next month, a different model from a different vendor — sees the same stored purpose. [Getting started](docs/guides/getting-started.md#record-a-small-map-by-hand) records this map by hand, without a model, and [Working with Metaform](docs/guides/working-with-metaform.md) adds the memory and the review layer.
 
 The web GUI draws the same map:
 
-![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its memory, a review-notes item and the buzzer join it holds; the 2D map above it with the tick loop inside the kitchen timer; and the 3D graph of every element, join and item on the right, the audible alarm red for its open broken work record.](docs/images/gui-map.png)
+![The Metaform web GUI: the kitchen timer selected in the Object panel on the left, with its sources path, a review-notes item, its memory and the joins it holds and serves; the 2D map above it zoomed in on the kitchen timer and the tick loop; and the 3D graph of every element, join and item on the right, the audible alarm red for its open broken work record.](docs/images/gui-map.png)
 
 ### Extending Metaform itself
 
@@ -198,7 +224,7 @@ The earlier map of this repository, recorded on September 26, 2026 and kept as a
 
 > Add a capability to Metaform as a module, declared once in its own folder, that runs as a metaform command and an MCP tool with its own settings, events, status line and lifecycle, without changing the chassis.
 
-The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. Inside that relationship, two subtype joins hold **template** and **hello**. They are internal subtypes of the relationship, not extra top-level subsystems inferred from their filenames.
+The join explains how a `MODULE = Module(...)` declaration supplies those surfaces. In that snapshot, two subtype joins hold **template** and **hello**. The snapshot has the shape of its day; in the current shape the module author's join holds **template** and **hello** as elements beside the module contract. Either way they are part of the relationship, not extra top-level subsystems inferred from their filenames.
 
 An agent asked to add a module can receive the provider's project name, this receiving purpose, the template and example, and the source references for the declaration and loader. It can then implement against the existing shared facilities rather than invent separate command registration, settings storage, or an event mechanism. The same provider also has relationships to the command line, MCP server, package builder, chassis, and agent instructions. Those relationships make the consequences of a change available from the receivers' perspectives, and `metaform map where` on the provider's address returns all of them in one read.
 
@@ -246,7 +272,7 @@ Metaform connects several parts of the work process rather than treating them as
 |---|---|
 | Understand a whole system | Functional parts, receiving purposes, and relationships that cross file or medium boundaries. |
 | Prepare a task | Project names and functional addresses through which a reusable operation can be interpreted. |
-| Retain findings | Meaningful locations for observations about a part, a relationship, or an internal subtype. |
+| Retain findings | Meaningful locations for observations about a part or a relationship. |
 | Change perspective | Reason from a receiver's need, a provider's effects, a broader type, or a particular Encounter. |
 | Find gaps | Functions and Encounters the design lacks, found from the Metaform alone or with the code, each answered with the project's reasoning or the place that already handles it. |
 | Shape the workpiece | Preserve relevant identity while changing a realization, or deliberately transform the purposes and effects that define it. |
@@ -282,7 +308,7 @@ metaform add project example .
 metaform intake prompt
 ```
 
-The last command serves the Canonical Intake instructions; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
+The last command serves the intake instructions, Intake 2.1; **the agent performs the intake**. It examines the workpiece, follows the served method, and records the map one object at a time as it reasons it, through the intake tools, then reads it back, proofs it and finishes it with `intake_finish`. `metaform web` draws the map live while it is recorded. You choose the workpiece and direct the work; Metaform retains the resulting functional representation. Start reading it with `metaform map roots`, read one address with `metaform map where <address>`, or open `metaform web`. `metaform clear project <project> --confirm` removes the project's metaforms and reports so the intake can be taken again from nothing.
 
 For an agent connection, build the selected modules with `metaform build`, then run `metaform install` to choose a detected supported client. The installer registers a wheel-backed stdio MCP server and probes it. [Getting started](docs/guides/getting-started.md) covers the source and wheel paths, supported installer adapters, how the intake is recorded, retained data, and first useful inspection. It also records a small map by hand, without a model.
 

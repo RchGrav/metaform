@@ -11,7 +11,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from metaform.data import Store
+from metaform.data import Node, Store
 
 
 def own(project_id):
@@ -88,9 +88,8 @@ def mapped(run, tmp_path):
         layer = store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
                             provenance={'module': 'intake'}, ready=True)
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
-        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
-        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', name='audible alarm',
-                       purpose='Get attention.',
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE', name='audible alarm')
+        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
                        ef='Plays a tone.')
     return folder
 
@@ -138,37 +137,6 @@ def test_a_tool_returns_what_the_cli_returns(run, home, mapped):
     blocks = session(home, mapped, call)
     assert json.loads(blocks[-1]) == cli
     assert cli['results'][0]['layer'] == 'intake-1'
-
-
-@pytest.mark.req('MCP-003')
-@pytest.mark.req('MAP-020')
-@pytest.mark.req('STORE-011')
-def test_a_knowledge_subtypes_own_purpose_survives_mcp_creation_and_readback(run, home, mapped):
-    """The Canonical Intake's internal joins keep their own OP alongside their EF, also in knowledge layers."""
-    async def check(client, init):
-        async def knowledge(**arguments):
-            result = await client.call_tool('map', {'command': 'knowledge',
-                                                    'arguments': {'layer': 'notes', **arguments}})
-            assert not result.is_error, text(result)
-            return json.loads(text(result)[-1])
-
-        await knowledge(op='create', variable='Alarm operation.', mutable=True, hideable=True)
-        parent = await knowledge(op='add-join', receiver='code.timer.kitchen', provider='code.alarm.audible',
-                                 purpose='Get attention.', ef='Plays a tone.')
-        await knowledge(op='add-subtype', join=parent['join_id'], address='code.alarm.audible.piezo',
-                        purpose='Make the end audible.', ef='Buzzes when driven.', verb='buzzes')
-        await knowledge(op='finish')
-        result = await client.call_tool('map', {'command': 'where',
-                                                'arguments': {'address': 'code.timer.kitchen'}})
-        assert not result.is_error, text(result)
-        return json.loads(text(result)[-1])
-
-    view = session(home, mapped, check)
-    parent = next(join for join in view['receives'] if join['layer'] == 'notes')
-    (subtype,) = parent['subtypes']
-    assert parent['purpose'] == 'Get attention.'
-    assert (subtype['purpose'], subtype['ef']) == ('Make the end audible.', 'Buzzes when driven.')
-    assert 'purpose' not in subtype.get('extra', {})
 
 
 @pytest.mark.req('MCP-003')
@@ -318,8 +286,8 @@ def test_map_where_over_mcp_shows_what_relies_on_an_address_and_what_it_relies_o
         return json.loads(small[-1]), json.loads(full[-1])
     small, full = session(home, mapped, call)
     assert small == cli and set(small) == {'kind', 'element', 'receives'}
-    assert [(join['provider'], join['ef']) for join in small['receives']] == [('code.alarm.audible',
-                                                                                     'Plays a tone.')]
+    assert [([held['address'] for held in join['elements']], join['ef']) for join in small['receives']] == [
+        (['code.alarm.audible'], 'Plays a tone.')]
     assert 'join_id' not in small['receives'][0] and full['receives'][0]['join_id']
 
 
@@ -497,41 +465,36 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                               'name': 'kitchen timer', 'name_length': 2,
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
         named = json.loads(text(described)[-1])['notices']
-        made = await called(client, 'intake_add_purpose', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
-                                                             'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
-                                                             'ef': 'Rings.', 'verb': 'rings'})
-        await called(client, 'intake_subtype', {'parent_receiver': 'code.timer.kitchen',
-                                                  'parent_provider': 'code.alarm.audible',
-                                                  'namespace_address': 'code.loop.tick', 'ef': 'Ticks.',
-                                                  'verb': 'advances', 'role': 'SE'})
-        await called(client, 'intake_add_purpose', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
-                                                      'purpose': 'Keep time.', 'ef': 'Beats.', 'verb': 'beats'})
-        absorbed = await called(client, 'intake_absorb', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
-                                                            'parent_receiver': 'code.timer.kitchen',
-                                                            'parent_provider': 'code.alarm.audible'})
+        await called(client, 'intake_element', {'namespace_address': 'code.loop.tick', 'role': 'SE'})
+        made = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen', 'elements': ['code.alarm.audible'],
+                                                      'purpose': 'Get attention.', 'ef': 'rings', 'ifd': 'receives'})
+        # Recorded again with an element it holds, the join takes the new elements: parts annealed into one join.
+        annealed = await called(client, 'intake_join', {'receiver': 'code.timer.kitchen',
+                                                          'elements': ['code.alarm.audible', 'code.loop.tick',
+                                                                       'code.loop.beat']})
         shown = json.loads(text(await called(client, 'intake_show', {}))[-1])
         one = json.loads(text(await called(client, 'intake_show', {'receiver': 'code.timer.kitchen'}))[-1])
         finished = json.loads(text(await called(client, 'intake_finish', {'report': 'Fine.'}))[-1])
         return (names, started.is_error, shown, finished, named, described.is_error,
-                (absorbed.is_error, json.loads(text(made)[-1])), one)
-    names, error, shown, finished, named, described_error, absorb, one = session(home, folder, call)
-    assert absorb[0] is False and set(absorb[1]) == {'receiver', 'provider', 'layer', 'notices'}
-    assert [row['provider'] for row in one['purposes']] == ['code.alarm.audible']
-    assert {sub['namespace_address'] for sub in one['purposes'][0]['subtypes']} == {'code.loop.tick',
-                                                                                        'code.loop.beat'}
-    assert {'intake_start', 'intake_element', 'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_show',
-            'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_join' not in names
+                (annealed.is_error, json.loads(text(made)[-1])), one)
+    names, error, shown, finished, named, described_error, joined, one = session(home, folder, call)
+    assert joined[0] is False and set(joined[1]) == {'receiver', 'elements', 'layer', 'notices'}
+    assert [row['elements'] for row in one['joins']] == [['code.alarm.audible', 'code.loop.tick', 'code.loop.beat']]
+    assert {'intake_start', 'intake_element', 'intake_join', 'intake_show', 'intake_remove', 'intake_finish'} <= names
+    assert not names & {'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_edit'}
     assert error is False and described_error is False
     assert named == []  # the element's name is its own field, Rich 2026-10-01
-    assert [row['name'] for row in shown['purposes']] == ['countdown alarm']
+    assert [(row['purpose'], row['ef'], row['ifd']) for row in shown['joins']] == [('Get attention.', 'rings',
+                                                                                     'receives')]
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
     assert shown['undescribed'] == ['code.alarm.audible', 'code.loop.beat']
-    assert len(shown['purposes']) == 1 and len(shown['purposes'][0]['subtypes']) == 2
-    assert (finished['elements'], finished['purposes'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
-    kitchen = Store('fresh').element('code.timer.kitchen')
-    assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
-    assert (kitchen.short_name, kitchen.name, kitchen.extra) == ('kitchen timer', 'kitchen timer', None)
+    assert (finished['elements'], finished['joins']) == (4, 1)
+    store = Store('fresh')
+    kitchen = store.element('code.timer.kitchen')
+    assert (kitchen.short_name, kitchen.name) == ('kitchen timer', 'kitchen timer')
+    sources = store.layer_items('sources', Node('element', 'code.timer.kitchen'), limit=0).results
+    assert [[(ref.key, ref.value) for ref in item.refs] for item in sources] == [[('path', 'src/main.c')]]
 
 
 @pytest.mark.req('VIEW-018')
@@ -741,8 +704,8 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
     async def call(client, init):
         greeted = await called(client, 'hello_greet', {'name': {'a': 1}})
         joined = await called(client, 'map_knowledge', {
-            'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'provider': 'code.alarm.audible',
-            'purpose': 12, 'ef': 'f', 'verb': ['r']})
+            'op': 'add-join', 'layer': 'notes', 'receiver': 'code.timer.kitchen', 'elements': ['code.alarm.audible'],
+            'purpose': 12, 'ef': ['r']})
         observed = await called(client, 'memory_create_entities', {
             'node': 'element:code.timer.kitchen',
             'entities': [{'name': 'kitchen', 'entityType': 'part', 'observations': ['fine', 7]}]})
@@ -753,9 +716,9 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
     assert not greet_error and not join_error and not observe_error
     assert greeted == ['Notice: name: name is text; what was sent was kept as its JSON text.\nhello, {"a": 1}\n']
     assert joined[0].splitlines() == ['Notice: purpose: purpose is text; what was sent was kept as its JSON text.',
-                                      'Notice: verb: verb is text; what was sent was kept as its JSON text.']
+                                      'Notice: ef: ef is text; what was sent was kept as its JSON text.']
     join = json.loads(joined[1])
-    assert (join['purpose'], join['verb'], join['notices']) == ('12', '["r"]', [])
+    assert (join['purpose'], join['ef'], join['notices']) == ('12', '["r"]', [])
     assert json.loads(observed[-1])['notices'] == [
         {'where': 'observations', 'message': 'observations is text; what was sent was kept as its JSON text.'}]
     graph = json.loads(run('memory', 'read_graph', '--json', cwd=mapped).stdout)

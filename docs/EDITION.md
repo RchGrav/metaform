@@ -27,7 +27,7 @@ Links between delivered documents worked within the extracted layout. Source lin
 
 The branch and commit were the bundle's attribution in `BUNDLE_INDEX.txt`. The supplied source had no `.git` directory, and the edition did not substitute a later fetched branch. Package requirements are declared in [pyproject.toml](../pyproject.toml).
 
-On that day the live [Canonical Intake resource](../src/metaform/modules/intake/resources/Canonical_Intake.xml) was byte-identical to [its specification copy](../specifications/Canonical_Intake.xml), with SHA-256:
+On that day the live Canonical Intake resource, `src/metaform/modules/intake/resources/Canonical_Intake.xml`, was byte-identical to its specification copy, `specifications/Canonical_Intake.xml`, with SHA-256. The module has since served Intake 2.1 and the Canonical Intake is kept as the previous version, so neither path resolves now:
 
 ```text
 7e2140a9dd71c875689604772c07e5f0c1dd6366b55ba03a530211867eb909f8
@@ -74,17 +74,21 @@ The same evening the presentation pass recorded `verb` as null on each join and 
 f46c9f4865f2dace87eff692efdc2b91729efd82a002373dd13774e83dcc2c1f
 ```
 
-Build steps 41 to 56 of the [build log](../specifications/spec/BUILD-LOG.md) then changed what Metaform stores and does. An element is its address, `name_length` and role, and the project's name for a functionality is on the join. The condition of an element or a join is a work record, `tbd`, `broken` or `cruft`, kept apart from the map. A subtype is a join of type `subtype` inside its parent join. Joins move and elements never do. The intake gained `intake_absorb` and `intake_show receiver=`; `map where` reads what relies on an address and what it relies on; `clear project` clears a project on the command line, over MCP and on the page; the tools never refuse content; and the web module no longer polls. Correction layers and the correction stack were later removed: the metaform now changes by refining in its one `intake` layer. The store's schema version went from 1 to 5, so the example export, at version 1, no longer imports. Steps 57, 59, 60, 61 and 62 followed: the page's own writes announce `map.changed` as a command's do, the MCP server's chassis tools read a call as module verbs do, each kind of database keeps its own schema version, the metaform store's 5 and the base, history and prompt databases' 1, ruff's safe fixes were applied, and going inside a node zooms in as the map fades.
+Build steps 41 to 56 of the [build log](../specifications/BUILD-LOG.md) then changed what Metaform stores and does. An element is its address, `name_length` and role, and the project's name for a functionality is on the join. The condition of an element or a join is a work record, `tbd`, `broken` or `cruft`, kept apart from the map. A subtype is a join of type `subtype` inside its parent join. Joins move and elements never do. The intake gained `intake_absorb` and `intake_show receiver=`; `map where` reads what relies on an address and what it relies on; `clear project` clears a project on the command line, over MCP and on the page; the tools never refuse content; and the web module no longer polls. Correction layers and the correction stack were later removed: the metaform now changes by refining in its one `intake` layer. The store's schema version went from 1 to 5, so the example export, at version 1, no longer imports. Steps 57, 59, 60, 61 and 62 followed: the page's own writes announce `map.changed` as a command's do, the MCP server's chassis tools read a call as module verbs do, each kind of database keeps its own schema version, the metaform store's 5 and the base, history and prompt databases' 1, ruff's safe fixes were applied, and going inside a node zooms in as the map fades.
 
 Step 58 brought the documentation to the code on the `chassis` branch after step 62, commit `2e6f581`. The root README, the guides, the technical reference set, the module READMEs and changelogs, and the specifications index were revised; the guides' examples moved from importing the example export to a kitchen timer's map recorded by hand, and the screenshot was retaken from the current web GUI. The preprint and [CLI-EXERCISE.md](examples/CLI-EXERCISE.md) still describe September 26, and say so.
 
-On that branch the served Canonical Intake is still byte-identical to its specification copy, and its SHA-256 is:
+On 2026-10-04 Rich restored his original shape of the metaform, layout 19 of the store. An element is its `namespace_address`, `name_length`, `name` and `role`. A join is its type, `purpose`, `ef` and `ifd`, held by its receiver, and it holds the elements that serve it, one `join_elements` row each. There are no subtype joins, and no `refs`, `extra`, `verb`, `non_goal`, `relation`, `observation` or join name. Refs live in a knowledge layer named `sources`, which the intake writes while the setting `intake_sources` is on. The intake verbs are `prompt`, `start`, `element`, `join`, `show`, `remove`, `finish` and `status`; recording a join again with an element it holds anneals more elements into it. `map subtypes` and `map knowledge op=add-subtype` are gone, and `map refine` names an element by `address` and a join by `receiver` and `provider`. The guides, the walkthrough and the example export's notes were revised to match. The example export stays the September 26 snapshot, at schema version 1 and in the old shape.
+
+At step 58 the served Canonical Intake was still byte-identical to its specification copy, and its SHA-256 is:
 
 ```text
 9554f5b82674fb0ce2fb61381022d49cd9c45071401c5f8c433770e27f3feab6
 ```
 
-The package version is still `0.1.0`, and the Python requirement `>=3.11`. The checks for step 58 are recorded in its build log entry.
+Since 2026-10-04 the module serves Intake 2.1, `resources/Intake_2.1.md`, with SHA-256 `5d2b539049d227d55604a025b70d2e2800f3171f012d53d717b691b9b5f44b93`, and keeps no copy of it in provenance or the prompt store.
+
+At step 58 the package version was `0.1.0`. It is now `2026.9.30.2`, and the Python requirement is `>=3.11`. The checks for step 58 are recorded in its build log entry.
 
 ## Citation
 

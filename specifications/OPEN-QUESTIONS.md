@@ -69,13 +69,14 @@ Recommendation: the DE; one figure per ticket from take to done; the shortest wa
 **D111. Collapsing the metaform into a single layer.** LAYER-026. Do the knowledge and memory layers fold into the single layer, carry over as their own layers, or stay with the old metaform? Do open tickets carry over? Does collapse write a new metaform, keeping the old one whole, or the same metaform in place?
 Recommendation: a new metaform of one layer, made active, the old one kept whole; element and join ids carry over; knowledge and memory layers carried over as their own layers; open tickets carried over, done ones left with the old metaform.
 
-**D112. Promoting a join to an element.** MAP-054. When a join is promoted, is it rerouted through the new element, so the receiver reaches the former provider only through it, keeping the join's id and what is attached to it, or does the original join stay as it was with the new element beside it?
-Recommendation: reroute, so the map says once how the receiver is served and the join keeps its memories and work.
+**D112. Promoting a join to an element.** Superseded, Rich 2026-10-04: a join holds only its type, purpose, ef and ifd and the elements that serve it, so it is never promoted, MAP-054.
 
 **D113. Linking across repositories under upstream.** MAP-014. How does an address under `upstream` link to a node in another registered project's map: by matching the address beneath upstream to that project's own address, by naming the project, or both?
 Recommendation: name the project and match the address, so the link is exact and survives either map being refined.
 
 ## Answered
+
+**D115. The metaform's shape.** Rich, 2026-10-04: "we are reverting the data shape back to my original original design, no added field nothing...   that can all go to a knowledge layer.  metaform goes back to my original shape..   then if you want to have refs you add a sources layer, or you keep them in a sources layer..   this makes the metaform itself the map I intended it to be." An element is its namespace_address, name_length, name and role; a join is its type, purpose, ef and ifd, holding the elements that serve it, "The provider is an element, its in the element tag"; there are no subtype joins. The intake records with `element` and `join`, "you can completely restore join to make a join, heres why we arent going to call logic a join anymore we are just going to say add logic". Refs live in the sources layer while `intake_sources` is on. MAP-020, MAP-021, MAP-030, MAP-040, STORE-009 to STORE-012, BASE-039.
 
 **D93. The project module place.** Answered by Rich, 2026-10-03: "In the project folder, as .metaform/modules/, which the person creates; Metaform only reads it, so it still writes nothing there." Built in the loader, BASE-014 and BASE-037. The question was: Modules load from ranked places, system, user and project, where the project place holds modules that load only for the active selected project, BASE-014. Metaform writes nothing into a project folder and keeps all data in the home, STORE-001. Does the project place live in the project's own folder, as `.metaform/modules/`, which the person creates, or under the project's data in the home? D25 had recommended no project place, before the place was part of the design. (BASE-014, BASE-037, STORE-001, D25)
 

@@ -294,9 +294,6 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .cluster .nodeLabel,.map2d .cluster text,.map2d .cluster-label text{fill:var(--text)!important;font:500 12px var(--sans)!important}
 .map2d .cluster.sel rect{stroke:var(--signal)!important;stroke-width:2px!important}
 .map2d .cluster.near rect{stroke:var(--intake)!important}
-.map2d .node.sub rect{fill:var(--node-sub)!important}
-.map2d .node.sub .nodeLabel,.map2d .node.sub text{font:500 11px var(--sans)!important;fill:var(--muted)!important}
-.map2d .node.sub.sel .nodeLabel,.map2d .node.sub.sel text{fill:var(--text)!important}
 .map2d marker path{fill:var(--edge)!important;stroke:none!important}
 .map2d .kbd{position:absolute;left:10px;bottom:8px;font:11px var(--mono);color:var(--faint);pointer-events:none}
 /* Each view has the same bar: what steps or moves it on the left, Fit and Swap on the right. */
@@ -326,8 +323,6 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .join .fn,.join .obs{color:var(--muted);font-size:14px}
 .join .lay{display:inline-flex;align-items:center;gap:6px;font:12px var(--mono);color:var(--faint)}
 .join a,.link{color:var(--signal);cursor:pointer;text-decoration:none}
-.sub{font-size:13px;color:var(--muted);border-left:2px solid var(--line-2);padding-left:8px}
-.sub b{color:var(--text);font-weight:500}
 .refs{display:flex;flex-wrap:wrap;gap:4px 16px;font:12px var(--mono);color:var(--muted);word-break:break-all}
 .refs .k{color:var(--faint);margin-right:6px}
 .item{font-size:13px;border-left:2px solid var(--c);padding-left:8px;color:var(--muted);white-space:pre-wrap;word-break:break-word}

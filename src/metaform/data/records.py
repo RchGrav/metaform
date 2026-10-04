@@ -18,12 +18,12 @@ NodeKind = Literal['element', 'join', 'type']
 LayerKind = Literal['layer', 'intake', 'memory']
 Op = Literal['add', 'change', 'remove']  # what a row does, STORE-017
 Answer = Literal['A', 'B', 'C', 'plan']  # a challenge's state, STORE-040
-NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')  # a subtype join is a join, STORE-011
+NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
 LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('AUE', 'CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
-SUBTYPE_ROLES = ('DE', 'SE', 'NE')  # the role of the element a subtype join holds, in the Canonical Intake, MAP-030
+HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in Rich's shape, 2026-10-04
 # The condition a work record holds, MAP-046: three that wait for work, and the two a record takes once an agent has
 # taken its task, a part to be built being in progress and a broken one being fixed.
 CONDITIONS = ('missing', 'broken', 'flawed', 'enhancement', 'exclude')
@@ -56,7 +56,7 @@ class Record:
 
 @dataclass(frozen=True)
 class Node(Record):
-    """A place an item can attach: an element or a join, a subtype join included, named by address or identity id.
+    """A place an item can attach: an element or a join, named by address or identity id.
 
     `type:<address>` names a bare type address; a write there attaches to an element at that address, made by the
     writing layer when the project has none, with a notice, STORE-008.
@@ -66,15 +66,13 @@ class Node(Record):
 
     def __post_init__(self) -> None:
         if self.kind not in PLACE_KINDS:
-            raise StoreError(f'{self.kind!r} is not a node kind: use element, join or type. A subtype join is a join, '
-                             'and the element it holds an element.', 'metaform help map node')
+            raise StoreError(f'{self.kind!r} is not a node kind: use element, join or type.', 'metaform help map node')
 
     @classmethod
     def of(cls, kind: str, ident: str) -> Node:
         """A node whose kind was read as text, such as from a row, checked before it is typed."""
         if kind not in PLACE_KINDS:
-            raise StoreError(f'{kind!r} is not a node kind: use element, join or type. A subtype join is a join, and '
-                             'the element it holds an element.', 'metaform help map node')
+            raise StoreError(f'{kind!r} is not a node kind: use element, join or type.', 'metaform help map node')
         return cls(kind, ident)
 
     @classmethod
@@ -130,8 +128,6 @@ class Element(Record):
     short_name: str = ''
     name_length: int | None = None
     role: str | None = None
-    refs: tuple[Ref, ...] = ()
-    extra: dict[str, Any] | None = None
     existing: bool = False
     differs: bool = False
     state: str | None = None
@@ -142,59 +138,35 @@ class Element(Record):
 
 
 @dataclass(frozen=True)
+class Held(Record):
+    """An element a join holds, as Rich's shape places it inside the join: its address, name_length, name and role,
+    with its short name, MAP-012. Every element a join holds provides for the join's purpose, Rich 2026-10-04."""
+    element_id: str
+    address: str | None
+    short_name: str = ''
+    name_length: int | None = None
+    name: str | None = None
+    role: str | None = None
+
+
+@dataclass(frozen=True)
 class Join(Record):
+    """A join, Rich's shape, 2026-10-04: its type, purpose, the ef and the ifd, held by its receiver, holding the
+    elements that serve its purpose. Nothing else is a field of a join; the rest goes in layers."""
     join_id: str
     layer_id: str
     layer: str
     type: str
     receiver: str
     receiver_address: str | None
-    provider: str
-    provider_address: str | None
-    name: str | None  # the project's own name for the functionality, MAP-020
     purpose: str | None
     ef: str | None
-    verb: str | None
-    non_goal: str | None
-    refs: tuple[Ref, ...] = ()
-    extra: dict[str, Any] | None = None
+    ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
+    elements: tuple[Held, ...] = ()
     state: str | None = None
     orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
-    ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
-    element: str | None = None  # the address of the element the join was promoted to, MAP-054
-
-
-@dataclass(frozen=True)
-class Subtype(Record):
-    """A subtype join, STORE-011: a join of type subtype held in its parent join, with its own fields, its own
-    purpose among them, the share of the parent's purpose it serves,
-    and the element it holds, an ordinary element record, by its id, address, reading, short name, name_length and
-    role, MAP-030."""
-    join_id: str
-    parent: str
-    layer_id: str
-    layer: str
-    type: str
-    element_id: str
-    address: str | None
-    reading: str
-    short_name: str
-    name: str | None  # the subtype join's name for the functionality, MAP-020
-    name_length: int | None
-    role: str | None
-    purpose: str | None
-    ef: str | None
-    verb: str | None
-    non_goal: str | None
-    refs: tuple[Ref, ...] = ()
-    extra: dict[str, Any] | None = None
-    orphaned: bool = False
-    open_work: tuple[str, ...] = ()
-    notices: tuple[Notice, ...] = ()
-    ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
-    element_name: str | None = None  # the canonical name of the element it holds
 
 
 @dataclass(frozen=True)
@@ -323,15 +295,9 @@ class Selection(Record):
     unresolved: tuple[dict[str, str], ...] = ()
 
 
-@dataclass(frozen=True)
-class GraphJoin(Join):
-    """A join with the subtype joins it holds, as a page of the whole map carries it, VIEW-005."""
-    subtypes: tuple[Subtype, ...] = ()
-
-
 # The fields a small read leaves out, STORE-025: identity ids, and the ends a join names by id beside their addresses.
-ID_FIELDS = frozenset({'element_id', 'layer_id', 'join_id', 'parent', 'work_id', 'item_id', 'property_id', 'target',
-                       'receiver', 'provider', 'receiver_address', 'provider_address'})
+ID_FIELDS = frozenset({'element_id', 'layer_id', 'join_id', 'work_id', 'item_id', 'property_id', 'target',
+                       'receiver', 'receiver_address', 'provider_address'})
 
 
 def small(value: Any) -> Any:
@@ -354,20 +320,17 @@ def small(value: Any) -> Any:
 @dataclass(frozen=True)
 class Where(Record):
     """One read of an address, the read an agent orients from, LAYER-017 and STORE-025: the element; `provides`, what
-    relies on it, every join where it is the provider with the subtype joins each holds; `receives`, what it relies on,
-    every join it receives with the subtype joins each holds; the subtype join holding it and the join that sits in,
-    MAP-031, kind `subtype` when it is held only; its open work records, STORE-042; and what the layers in context hold
-    at it, as `node` gives them; and the properties that apply at its address and those visible there, as `context`
-    gives them, LAYER-005, so one read holds what reaches the part. Kind `join` is the read of a join, or of a subtype
-    join with the join holding it, which a ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out
-    unless `full`, all but each ticket's work id, which an agent needs to take it, and each open message's message id,
-    which an agent needs to answer it."""
+    relies on it, every join that holds it, with the receiver and the other elements each holds; `receives`, what it
+    relies on, every join it receives with the elements each holds; its open work records, STORE-042; what the layers in
+    context hold at it, as `node` gives them, the sources layer's refs among them; and the properties that apply at its
+    address and those visible there, as `context` gives them, LAYER-005. Kind `join` is the read of a join, which a
+    ticket on a join gets, MAP-048. `to_dict()` leaves ids and empty fields out unless `full`, all but each ticket's work
+    id, which an agent needs to take it, and each open message's message id, which an agent needs to answer it."""
     kind: str
     element: Element | None = None
-    subtype: Subtype | None = None
     join: Join | None = None
-    provides: tuple[GraphJoin, ...] = ()
-    receives: tuple[GraphJoin, ...] = ()
+    provides: tuple[Join, ...] = ()
+    receives: tuple[Join, ...] = ()
     work: tuple[WorkRecord, ...] = ()
     layers: tuple[LayerGroup, ...] = ()
     full: bool = False
@@ -375,33 +338,24 @@ class Where(Record):
     visible: tuple[Property, ...] = ()
     messages: tuple[Message, ...] = ()  # the open questions and unread messages at it, MAP-050
     past_work: tuple[PastWork, ...] = ()  # references only; the log is read by work id, MAP-051
-    promoted_from: tuple[Join, ...] = ()  # the joins promoted to this element, MAP-054
 
     def to_dict(self) -> dict[str, Any]:
-        held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
         if self.full:
             return {'kind': self.kind, 'element': plain(self.element),
-                    **({'join': plain(self.join)} if self.kind == 'join' and self.subtype is None else {}),
-                    'provides': plain(self.provides),
-                    'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
+                    **({'join': plain(self.join)} if self.kind == 'join' else {}),
+                    'provides': plain(self.provides), 'receives': plain(self.receives), 'work': plain(self.work),
                     'layers': plain(self.layers),
                     'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
-                    'messages': plain(self.messages), 'past_work': plain(self.past_work),
-                    'promoted_from': plain(self.promoted_from)}
+                    'messages': plain(self.messages), 'past_work': plain(self.past_work)}
         data: dict[str, Any] = {'kind': self.kind}
         if self.element is not None:
             data['element'] = small(plain(self.element))
-        if self.kind == 'join' and self.subtype is None and self.join is not None:
-            data['join'] = self._join(plain(self.join), 'receiver', 'provider')
-        if self.promoted_from:
-            data['promoted_from'] = [self._join(plain(join), 'receiver', 'provider') for join in self.promoted_from]
+        if self.kind == 'join' and self.join is not None:
+            data['join'] = self._join(plain(self.join), True)
         if self.provides:
-            data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
+            data['provides'] = [self._join(plain(join), True) for join in self.provides]
         if self.receives:
-            data['receives'] = [self._join(plain(join), 'provider') for join in self.receives]
-        if held is not None:
-            data['held'] = {'subtype': self._subtype(held['subtype']),
-                            'join': self._join(held['join'], 'receiver', 'provider')}
+            data['receives'] = [self._join(plain(join), False) for join in self.receives]
         if self.work:
             data['work'] = [{'work_id': record.work_id, **small({'condition': record.condition, 'note': record.note,
                                                                  'task': record.task, 'taken': record.taken,
@@ -423,19 +377,11 @@ class Where(Record):
         return data
 
     @staticmethod
-    def _subtype(data: dict[str, Any]) -> dict[str, Any]:
-        """A subtype join with the element it holds named by its address, as `element`."""
-        return {'element': data.get('address'), **small({key: value for key, value in data.items() if key != 'address'})}
-
-    @classmethod
-    def _join(cls, data: Any, *ends: str) -> dict[str, Any]:
-        """A join with the ends asked for as addresses, and its subtype joins."""
+    def _join(data: Any, receiver: bool) -> dict[str, Any]:
+        """A join with its receiver by address when asked for, and the elements it holds by address."""
         fields = cast(dict[str, Any], data)
-        named = {end: fields.get(f'{end}_address') for end in ends}
-        inside = [cls._subtype(cast(dict[str, Any], subtype))
-                  for subtype in cast(list[Any], fields.get('subtypes') or [])]
-        return {**named, **small({key: value for key, value in fields.items() if key != 'subtypes'}),
-                **({'subtypes': inside} if inside else {})}
+        named = {'receiver': fields.get('receiver_address')} if receiver else {}
+        return {**named, **small(fields)}
 
 
 @dataclass(frozen=True)
@@ -458,7 +404,7 @@ class GraphElement(Record):
 class GraphPage(Record):
     """A page of the map in address order, VIEW-010: its elements, and the joins they receive."""
     elements: tuple[GraphElement, ...]
-    joins: tuple[GraphJoin, ...]
+    joins: tuple[Join, ...]
     next: str | None = None
 
 
@@ -569,7 +515,7 @@ class PastWork(Record):
 @dataclass(frozen=True)
 class WorkRecord(Record):
     """The condition of one object, apart from the map, STORE-042: an element with its address, or a join with its
-    two ends, a subtype join with its parent's receiver and the element it holds, when the object is current; open
+    two ends, its receiver and an element it holds, when the object is current; open
     until `done` is set, and then kept with its resolution."""
     work_id: str
     kind: str

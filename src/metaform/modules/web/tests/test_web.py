@@ -198,23 +198,22 @@ TOGGLED = ['intake-1', *KNOWLEDGE]
 
 
 def build(store):
-    """An intake with a DE carrying a broken work record and a subtype; a knowledge layer on, one masked at code.alarm, one hidden; and a
-    knowledge item orphaned when a refinement removes its element, VIEW-004 and LAYER-025."""
+    """An intake with a DE carrying a broken work record, the cook's join holding the DE and a tick loop, Rich's shape;
+    a knowledge layer on, one masked at code.alarm, one hidden; and a knowledge item orphaned when a refinement removes
+    its element, VIEW-004 and LAYER-025."""
     from metaform.data import Node
     with store.atomic():
         intake = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
                              hideable=False, provenance=PROVENANCE, ready=True)
         store.add_element(intake.name, 'exterior.cook', name_length=1, role='CQU')
-        store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE')
+        store.add_element(intake.name, 'code.timer.kitchen', name_length=2, role='DE', name='dish timer')
         store.add_element(intake.name, 'code.alarm.audible', name_length=2, role='SE')
         store.add_element(intake.name, 'code.gone', name_length=1, role='SE')
-        outer = store.add_join(intake.name, 'exterior.cook', 'code.timer.kitchen', name='dish timer',
-                               purpose='Know when food is done.',
-                               ef='Counts down and rings.')
+        store.add_element(intake.name, 'code.loop.tick', name_length=2, role='SE', name='one-second tick')
+        store.add_join(intake.name, 'exterior.cook', ['code.timer.kitchen', 'code.loop.tick'],
+                       purpose='Know when food is done.', ef='Counts down and rings.')
         store.add_join(intake.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
                        ef='Plays a tone.')
-        store.add_subtype(intake.name, outer.join_id, 'code.loop.tick', ef='Advances each countdown.',
-                          name='one-second tick', name_length=2, role='SE')
     store.add_work(Node('element', 'code.timer.kitchen'), 'broken', note='drifts', task='hold the tick to one second')
     for name in KNOWLEDGE:
         store.layer(name, 'test', f'What {name} says.', mutable=True, hideable=True, provenance=PROVENANCE)
@@ -302,8 +301,8 @@ def test_the_page_data_for_a_node_is_what_map_node_returns(run, web, mapped):
     from metaform.data import Store
     started(run)
     store = Store('proj')
-    tick = store.subtypes(store.joins('exterior.cook').results[0].join_id).results[0].join_id
-    for node in ('element:code.timer.kitchen', 'element:exterior.cook', f'join:{tick}', 'element:code.loop.tick'):
+    held = store.joins('exterior.cook').results[0].join_id
+    for node in ('element:code.timer.kitchen', 'element:exterior.cook', f'join:{held}', 'element:code.loop.tick'):
         cli = json.loads(run('map', 'node', node, '--json', cwd=mapped).stdout)
         assert api(web, f'/api/node?project=proj&target={node}') == (200, cli)
 
@@ -326,12 +325,12 @@ def test_the_graph_pages_every_visible_element_and_join_once_with_its_nearest_pa
     parents = {element['element']['address']: element['parent'] for element in elements}
     assert len(parents) == len(elements)
     assert parents == {'exterior.cook': None, 'code.timer.kitchen': None, 'code.alarm.audible': None,
-                       'code.timer.kitchen.display': 'code.timer.kitchen'}
-    pairs = sorted((join['receiver_address'], join['provider_address']) for join in joins)
-    assert pairs == [('code.timer.kitchen', 'code.alarm.audible'), ('code.timer.kitchen.display', 'code.timer.kitchen'),
-                     ('exterior.cook', 'code.timer.kitchen')]
-    held = {join['provider_address']: [subtype['address'] for subtype in join['subtypes']] for join in joins}
-    assert held['code.timer.kitchen'] == ['code.loop.tick'] and held['code.alarm.audible'] == []
+                       'code.loop.tick': None, 'code.timer.kitchen.display': 'code.timer.kitchen'}
+    # Each join once, with the elements it holds, Rich's shape, 2026-10-04.
+    held = sorted((join['receiver_address'], [each['address'] for each in join['elements']]) for join in joins)
+    assert held == [('code.timer.kitchen', ['code.alarm.audible']),
+                    ('code.timer.kitchen.display', ['code.timer.kitchen']),
+                    ('exterior.cook', ['code.timer.kitchen', 'code.loop.tick'])]
     raw = api(web, '/api/graph?project=proj&raw=true&limit=0')[1]
     shown = {entry['element']['address'] for entry in raw['elements']}
     assert {'code.alarm.audible.loud', 'code.secret'} <= shown and 'code.gone' not in shown
@@ -474,8 +473,8 @@ def config_layers(run, folder):
 
 def drawn_as_paths(graph, expected):
     """The page's graph against the store's: one vertex per element, each join one path from its receiver to its own
-    purpose vertex and on to its provider with nothing back to the receiver, MAP-002, its subtypes hung from its
-    purpose vertex, and each element's namespace edge from its nearest parent element, VIEW-005."""
+    purpose vertex and on to each element it holds with nothing back to the receiver, MAP-002, and each element's
+    namespace edge from its nearest parent element, VIEW-005."""
     elements = {entry['element']['element_id'] for entry in expected['elements']}
     by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
     links = graph['links']
@@ -487,14 +486,13 @@ def drawn_as_paths(graph, expected):
     for join in expected['joins']:
         purpose = 'p:' + join['join_id']
         assert sorted(by_join.pop(join['join_id'])) == sorted(
-            [(join['receiver'], purpose, 'purpose'), (purpose, join['provider'], 'encounter')]
-            + [(purpose, 's:' + subtype['join_id'], 'layer') for subtype in join['subtypes']])
+            [(join['receiver'], purpose, 'purpose')]
+            + [(purpose, each['element_id'], 'encounter') for each in join['elements']])
     assert by_join == {}
     assert sorted((link['source'], link['target']) for link in links if link['k'] == 'tree') == sorted(
         (by_address[entry['parent']], entry['element']['element_id']) for entry in expected['elements'] if entry['parent'])
     assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
     assert len([node for node in graph['nodes'] if node['t'] == 'purpose']) == len(expected['joins'])
-    assert len([node for node in graph['nodes'] if node['t'] == 'sub']) == sum(len(j['subtypes']) for j in expected['joins'])
 
 
 @pytest.mark.req('VIEW-005')
@@ -510,10 +508,13 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     drawn_as_paths(graph, expected)
     page.wait_for_function('([count]) => window.metaform.labels3d().filter(label => !label.hidden).length === count',
                            arg=[len(elements)])
-    names = {entry['element'].get('short_name') or entry['element']['address'] for entry in expected['elements']}
+    # an element's label is its name, or else its short name, Rich 2026-10-04
+    names = {entry['element'].get('name') or entry['element'].get('short_name') or entry['element']['address']
+             for entry in expected['elements']}
     assert {label['text'] for label in page.evaluate('window.metaform.labels3d()')} == names
     assert page.locator('#map2d svg g.node').count() == len(elements)
-    assert page.locator('#map2d svg .edgePaths path').count() == len(expected['joins'])
+    # one edge from a join's receiver to each element it holds, Rich's shape, 2026-10-04
+    assert page.locator('#map2d svg .edgePaths path').count() == sum(len(join['elements']) for join in expected['joins'])
     assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
                          '.filter(Boolean)') == []
     alarm = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'code.alarm.audible')
@@ -600,7 +601,7 @@ def test_a_refined_join_is_drawn_as_the_metaform_is_and_the_page_offers_no_corre
     from metaform.data import Store
     held = Store('proj').joins('code.timer.kitchen').results[0]
     join = held.join_id
-    named = (f'receiver={held.receiver_address}', f'provider={held.provider_address}')
+    named = (f'receiver={held.receiver_address}', f'provider={held.elements[0].address}')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -642,7 +643,7 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("written in C")')
     panel = page.inner_text('#p-object')
     for shown in ('kitchen timer', 'code.timer.kitchen', 'DE', 'intake-1',
-                  'provider · audible alarm', 'receiver · cook', 'receiver · display', 'tick loop', 'Advances each countdown.',
+                  'provider · audible alarm', 'receiver · cook', 'receiver · display',
                   'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
         assert shown in panel, shown
     assert problems == []
@@ -785,7 +786,7 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     names = {at[address]: address for address in at}
     assert {key: page.evaluate('window.metaform.bloom()')[key] for key in ('pass', 'levels')} == {'pass': True, 'levels': 3}
     assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
@@ -876,8 +877,8 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('VIEW-012')
 def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(run, web, mapped, browser):
-    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". An encounter link and a subtype's link
-    take their layer's color in both views; the legend and the panel name no Function or Encounter word."""
+    """Rich, 2026-10-02: "drop perspective drop the duality , EF infers fine". Each encounter link, one to each element
+    a join holds, takes its layer's color in both views; the legend and the panel name no Function or Encounter word."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -887,12 +888,10 @@ def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(r
     drawn = page.evaluate('window.metaform.linkColors()')
     for join in expected['joins']:
         assert 'perspective' not in join
-        encounter = next(link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter')
-        assert encounter['color'] == color['k1' if join['layer'] == 'notes' else 'intake'], join
-        for subtype in join['subtypes']:
-            assert 'perspective' not in subtype
-            link = next(link for link in drawn if link['target'] == 's:' + subtype['join_id'])
-            assert link['color'] == color['intake']
+        encounters = [link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter']
+        assert len(encounters) == len(join['elements'])
+        for encounter in encounters:
+            assert encounter['color'] == color['k1' if join['layer'] == 'notes' else 'intake'], join
     assert page.locator('#map2d svg .edgePaths path[class*="perspective-"]').count() == 0
     legend = page.inner_text('#legend')
     assert 'Function ·' not in legend and 'Encounter ·' not in legend
@@ -906,8 +905,7 @@ def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(r
 def keys_of(web):
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
     by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
-    subtypes = {subtype['address']: 's:' + subtype['join_id'] for join in expected['joins'] for subtype in join['subtypes']}
-    return expected, by_address, subtypes
+    return expected, by_address
 
 
 @pytest.mark.req('VIEW-008')
@@ -917,28 +915,34 @@ def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(ru
     back to the parent."""
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, inside = keys_of(web)
-    cook, kitchen, alarm, display = (at[address] for address in (
-        'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display'))
-    tick = inside['code.loop.tick']
+    _, at = keys_of(web)
+    cook, kitchen, alarm, display, tick = (at[address] for address in (
+        'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display', 'code.loop.tick'))
+    # cook's join holds the kitchen timer and the tick loop, a row of two in the order they are drawn across the map;
+    # the kitchen timer receives from the alarm; the display, which nothing receives from, sits beside the cook.
+    still2d(page)
+    vertical = page.evaluate('window.metaform.vertical()')
+    across = {key: box_of(page, address)['x' if vertical else 'y']
+              for key, address in ((kitchen, 'code.timer.kitchen'), (tick, 'code.loop.tick'))}
+    row = sorted(across, key=across.get)
+    press = lambda key: (page.keyboard.press(key), page.evaluate('window.metaform.selected()'))[1]
     page.evaluate(f'window.metaform.select("{cook}")')
-    walk = []
-    for key in ('ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowUp', 'ArrowRight', 'ArrowLeft'):
-        page.keyboard.press(key)
-        walk.append(page.evaluate('window.metaform.selected()'))
-    # cook receives from the kitchen timer, which receives from the alarm and holds the tick loop inside it; the
-    # display, which nothing receives from, sits beside the cook at the root.
-    assert walk == [kitchen, alarm, tick, alarm, kitchen, cook, display, cook]
+    first = press('ArrowDown')
+    assert first in row  # down goes to a node the cook's join holds
+    if first == tick:  # left or right goes along the row to the other node of the same parent
+        assert press('ArrowRight' if row.index(tick) == 0 else 'ArrowLeft') == kitchen
+    walk = [press(key) for key in ('ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowRight', 'ArrowLeft')]
+    assert walk == [alarm, kitchen, cook, display, cook]
     assert problems == []
 
 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
-def test_every_element_and_subtype_can_be_reached_with_the_arrow_keys(run, web, mapped, browser):
+def test_every_element_can_be_reached_with_the_arrow_keys(run, web, mapped, browser):
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, inside = keys_of(web)
-    everything = set(at.values()) | set(inside.values())
+    _, at = keys_of(web)
+    everything = set(at.values())
     start = page.evaluate('window.metaform.selected()')
     reached, queue = {start}, [start]
     while queue:
@@ -957,31 +961,15 @@ def test_every_element_and_subtype_can_be_reached_with_the_arrow_keys(run, web, 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-009')
 @pytest.mark.req('VIEW-012')
-def test_clicking_a_subtype_or_a_join_in_3d_shows_that_object_and_the_2d_map_holds_subtypes_inside_their_element(
-        run, web, mapped, browser):
+def test_clicking_a_join_in_3d_shows_that_join(run, web, mapped, browser):
     started(run)
     page, problems, _ = opened(browser, web)
-    expected, at, inside = keys_of(web)
-    tick = inside['code.loop.tick']
-    page.evaluate(f'window.metaform.click3d("{tick}")')
-    assert page.evaluate('window.metaform.selected()') == tick
-    assert page.text_content('#p-object .eyebrow') == 'Subtype'
-    assert page.text_content('#p-object h2') == 'tick loop'
-    assert 'Advances each countdown.' in page.inner_text('#p-object')
-    assert 'Joins held by this element' not in page.inner_text('#p-object')
-    outer = next(join for join in expected['joins'] if join['subtypes'])
+    expected, at = keys_of(web)
+    outer = next(join for join in expected['joins'] if join['receiver'] == at['exterior.cook'])
     page.evaluate(f'window.metaform.click3d("p:{outer["join_id"]}")')
     assert page.evaluate('window.metaform.selected()') == 'p:' + outer['join_id']
     assert page.text_content('#p-object .eyebrow') == 'Join'
     assert outer['purpose'] in page.inner_text('#p-object')
-    held = page.evaluate("""() => {
-        const box = title => [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === title)
-            ?.parentNode.getBoundingClientRect();
-        const outer = box('code.timer.kitchen'), inner = box('code.loop.tick');
-        return outer && inner && inner.left >= outer.left && inner.right <= outer.right
-            && inner.top >= outer.top && inner.bottom <= outer.bottom;
-    }""")
-    assert held
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
     assert 'visible from above' not in page.inner_text('#p-object')
     assert problems == []
@@ -992,27 +980,25 @@ def test_clicking_a_subtype_or_a_join_in_3d_shows_that_object_and_the_2d_map_hol
 @pytest.mark.req('VIEW-016')
 @pytest.mark.req('MAP-012')
 @pytest.mark.req('MAP-020')
-def test_an_element_and_a_subtype_are_named_by_their_short_name_and_a_join_by_its_own_name(run, web, mapped, browser):
-    """Rich, 2026-09-27: the namespace address is the name index, so an element's name is its address read through
-    name_length; the project's own name for a functionality is on the join, and shows wherever the join does."""
+def test_an_element_is_labeled_by_its_name_or_else_its_short_name_and_a_join_has_no_label(run, web, mapped, browser):
+    """Rich, 2026-10-04: an element is labeled "its name and it falls back to namespace address reversed name length";
+    "name is the canonical name, namespace in reverse is full name, restricted to name length is short name"; "the name
+    on the join was the name for the element", so a join has no label of its own."""
     started(run)
     page, problems, _ = opened(browser, web)
-    expected, at, inside = keys_of(web)
-    outer = next(join for join in expected['joins'] if join['subtypes'])
-    assert outer['name'] == 'dish timer'
-    page.evaluate(f'window.metaform.click3d("p:{outer["join_id"]}")')
-    assert page.text_content('#p-object h2') == 'dish timer'
-    page.evaluate(f'window.metaform.click3d("{inside["code.loop.tick"]}")')
-    assert page.text_content('#p-object h2') == 'tick loop'
-    assert 'one-second tick' in page.inner_text('#p-object')
+    _, at = keys_of(web)
+    drawn = {node['id']: node.get('name') for node in page.evaluate('window.metaform.graph().nodes')}
+    assert drawn[at['code.timer.kitchen']] == 'dish timer'  # its name
+    assert drawn[at['code.alarm.audible']] == 'audible alarm'  # no name: its short name
+    page.wait_for_function('() => document.querySelector("#map2d").textContent.includes("dish timer")')
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
-    assert page.text_content('#p-object h2') == 'kitchen timer'
-    assert 'dish timer' in page.inner_text('#p-object')
+    assert page.text_content('#p-object h2') == 'kitchen timer' and 'dish timer' in page.inner_text('#p-object')
     cook = at['exterior.cook']
     page.evaluate(f'window.metaform.select("{cook}")')
     page.keyboard.press('Enter')
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
-    page.wait_for_function('() => document.querySelector("#map2d").textContent.includes("dish timer")')
+    labels = page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].map(node => node.textContent.trim())')
+    assert labels.count('dish timer') <= 1, labels  # the join beside the timer does not repeat the timer's label
     assert problems == []
 
 
@@ -1056,8 +1042,10 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     Escape or Shift+Enter backs out."""
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, inside = keys_of(web)
-    kitchen, cook, tick = at['code.timer.kitchen'], at['exterior.cook'], inside['code.loop.tick']
+    expected, at = keys_of(web)
+    kitchen, cook = at['code.timer.kitchen'], at['exterior.cook']
+    # inside the kitchen timer is the join it receives, drawn as its purpose
+    tick = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
     selected = lambda: page.evaluate('window.metaform.selected()')
     now_inside = lambda: page.evaluate('window.metaform.inside()')
     page.evaluate(f'window.metaform.select("{kitchen}")')
@@ -1081,7 +1069,7 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     page.wait_for_function('() => window.metaform.inside().length === 0')
     assert selected() == kitchen
     page.evaluate(f'window.metaform.select("{cook}")')
-    page.keyboard.press('Enter')  # the cook holds no subtypes and still has an inside, VIEW-016
+    page.keyboard.press('Enter')  # the cook has an inside too, VIEW-016
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
     assert selected() == cook and now_inside()
     assert problems == []
@@ -1196,7 +1184,7 @@ def test_going_inside_a_node_zooms_into_it_as_the_map_fades_and_its_own_graph_fa
     going back out runs the other way; with reduced motion the views change at once."""
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     cook = at['exterior.cook']
     page.evaluate('() => { document.querySelector("#map2d svg").dataset.base = "yes"; }')
     page.evaluate(f'window.metaform.select("{cook}")')
@@ -1252,8 +1240,9 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'quiet tone', 'relationType': 'drives'}])
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, subtypes = keys_of(web)
+    expected, at = keys_of(web)
     kitchen, cook, alarm = at['code.timer.kitchen'], at['exterior.cook'], at['code.alarm.audible']
+    received = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
     assert 'The countdown drifts' not in page.inner_text('#p-object')  # the folder's layers leave memory off
     set_layer(page, 'memory', True)  # turned on in this view only
     page.keyboard.press('Escape')  # the first Escape closes the Layers list, and only that
@@ -1264,7 +1253,7 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
                          'return document.querySelectorAll("#map2d svg g.node").length; }')
 
     page.evaluate(f'window.metaform.select("{cook}")')
-    page.keyboard.press('Enter')  # the cook holds no subtypes and can still be entered
+    page.keyboard.press('Enter')  # the cook can be entered
     page.wait_for_function(f'() => window.metaform.inside().includes("{cook}")')
     keys, crumbs = inside(page)
     assert crumbs.split('›')[-1].strip() == 'cook' and not page.query_selector('#map2d svg[data-base]')
@@ -1280,9 +1269,9 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page.wait_for_function(f'() => window.metaform.inside().includes("{kitchen}") && '
                            'window.metaform.inside().some(key => key.startsWith("e:"))')
     keys, crumbs = inside(page)
-    assert [part.strip() for part in crumbs.split('›')] == ['map', 'kitchen timer']
-    # its subtype, its memory, the memory that memory relates to, and the node that one is kept at
-    assert {subtypes['code.loop.tick'], 'e:countdown drift', 'e:quiet tone', alarm} <= set(keys)
+    assert [part.strip() for part in crumbs.split('›')] == ['map', 'dish timer']
+    # the join it receives, its memory, the memory that memory relates to, and the node that one is kept at
+    assert {received, 'e:countdown drift', 'e:quiet tone', alarm} <= set(keys)
     words = page.evaluate('document.querySelector("#map2d svg").textContent')
     assert 'keep the loop small' in words and 'countdown drift' in words and 'louder is better' not in words
     assert 'drives' in words  # the relation, on its line
@@ -1299,7 +1288,7 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page.click('#p-object a.link:has-text("audible alarm")')
     page.wait_for_function('() => window.metaform.inside().length && '
                            'document.querySelector("#crumbs").textContent.includes("audible alarm")')
-    assert [part.strip() for part in inside(page)[1].split('›')] == ['map', 'kitchen timer', 'audible alarm']
+    assert [part.strip() for part in inside(page)[1].split('›')] == ['map', 'dish timer', 'audible alarm']
     page.keyboard.press('Escape')
     page.wait_for_function('() => window.metaform.inside().length && '
                            '!document.querySelector("#crumbs").textContent.includes("audible alarm")')
@@ -1327,8 +1316,9 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
         store.add_element('notes', f'code.timer.kitchen.{name}', name_length=1)
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, subtypes = keys_of(web)
-    kitchen, tick = at['code.timer.kitchen'], subtypes['code.loop.tick']
+    expected, at = keys_of(web)
+    kitchen = at['code.timer.kitchen']
+    tick = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
     across = page.evaluate('window.metaform.vertical()')
     assert across is True
     page.evaluate(f'window.metaform.select("{kitchen}")')
@@ -1337,7 +1327,8 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     assert page.evaluate('window.metaform.vertical()') == across
     center, held = (page.evaluate(f"""(() => {{ const title = [...document.querySelectorAll('#map2d svg title')]
         .find(t => t.textContent === '{name}'); const box = title.parentNode.getBoundingClientRect();
-        return [box.left + box.width / 2, box.top + box.height / 2]; }})()""") for name in ('kitchen timer', 'tick loop'))
+        return [box.left + box.width / 2, box.top + box.height / 2]; }})()""") for name in ('dish timer', ''))
+    # the join the timer receives has no label of its own, Rich 2026-10-04, so its title is empty
     if across:  # top to bottom: what the node holds sits below it
         assert held[1] > center[1]
     else:
@@ -1372,10 +1363,10 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
     page.on('request', lambda request: fetched.append(request.url))
     page.reload()
     page.wait_for_function('() => window.metaform.loaded()')
-    _, at, subtypes = keys_of(web)
+    _, at = keys_of(web)
     themes = page.evaluate('[...document.querySelectorAll("#theme option")].map(option => option.value)')
     assert len(themes) > 1
-    checked = (at['code.timer.kitchen'], at['code.alarm.audible'], subtypes['code.loop.tick'])
+    checked = (at['code.timer.kitchen'], at['code.alarm.audible'], at['code.loop.tick'])
     made = f'() => {json.dumps(checked)}.every(node => window.metaform.look(node).material)'
     page.wait_for_function(made, timeout=10000)
     for theme in themes:
@@ -1388,7 +1379,7 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
             assert seen['material'] == 'MeshTransmissionMaterial' and seen['transmission'] > 0, (theme, node, seen)
             assert seen['chromatic'] > 0 and seen['distortion'] > 0 and seen['backside'] is True, (theme, node, seen)
     # one shape for every node of a size, however many nodes there are
-    sizes = page.evaluate('new Set(window.metaform.graph().nodes.filter(node => node.t === "el" || node.t === "sub")'
+    sizes = page.evaluate('new Set(window.metaform.graph().nodes.filter(node => node.t === "el")'
                           '.map(node => window.metaform.look(node.id).shape)).size')
     assert sizes <= 4
     assert any(url.endswith('/vendor/three.module.min.js') for url in fetched)
@@ -1434,7 +1425,7 @@ def test_the_page_exports_the_map_as_the_same_markdown_document_the_command_writ
     one document, written by one piece of the chassis."""
     started(run)
     written = run('map', 'markdown', cwd=mapped).stdout
-    assert '## kitchen timer' in written
+    assert '## dish timer' in written
     status, body, headers = request(web, '/api/markdown?project=proj')
     assert status == 200 and body == written
     assert headers['Content-Type'].startswith('text/markdown')
@@ -1461,7 +1452,7 @@ def test_the_2d_map_opens_at_a_size_that_can_be_read_and_only_fit_changes_the_zo
                        ef='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     page.wait_for_function('() => window.metaform.loaded() && document.querySelector("#map2d svg")')
     width = lambda: float(page.get_attribute('#map2d svg', 'viewBox').split()[2])
     view = page.evaluate('document.querySelector("#viewport").getBoundingClientRect().width')
@@ -1603,7 +1594,7 @@ def arrives(run, folder, address='code.part.added'):
     written without a word to the page and the join through the command line, which tells the page once of both."""
     from metaform.data import Store
     Store('proj').add_element('notes', address, name_length=2)
-    run('map', 'knowledge', 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen', f'provider={address}',
+    run('map', 'knowledge', 'op=add-join', 'layer=notes', 'receiver=code.timer.kitchen', f'elements=["{address}"]',
         'purpose=Keep the timer working.', 'ef=serves the timer', cwd=folder)
 
 
@@ -1681,8 +1672,9 @@ def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_
     acted(page, lambda: arrives(run, mapped), until=arrival(page))  # a node arrives: it eases out to hold it too
     assert page.evaluate('[...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")')
     assert fitted(page)
-    expected, at, _ = keys_of(web)
-    joined = next(join['join_id'] for join in expected['joins'] if join['provider'] == at['code.part.added'])
+    expected, at = keys_of(web)
+    joined = next(join['join_id'] for join in expected['joins']
+                  if [held['element_id'] for held in join['elements']] == [at['code.part.added']])
     gone = '![...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")'
     acted(page, lambda: [run('map', 'knowledge', 'op=remove', 'layer=notes', f'id={thing}', cwd=mapped)
                          for thing in (joined, at['code.part.added'])],
@@ -1713,7 +1705,7 @@ def test_in_the_large_area_a_click_goes_to_mode_two_which_holds_the_minimum_text
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     whole_px = page.evaluate(TEXT_PX)
     part = lambda number: at[f'code.part.number{number}']
     page.evaluate(f'window.metaform.click3d("{part(5)}")')  # a click in the 3D map
@@ -1736,7 +1728,7 @@ def test_in_the_large_area_a_click_goes_to_mode_two_which_holds_the_minimum_text
     acted(page, lambda: page.keyboard.press('ArrowRight'))  # the camera follows each new selection
     following = page.evaluate('window.metaform.selected()')
     assert following != part(3) and readable_at(page, 24, following)
-    tick = keys_of(web)[2]['code.loop.tick']              # a node inside an element's box is centered too
+    tick = keys_of(web)[1]['code.loop.tick']              # another element, selected by its id
     acted(page, lambda: page.evaluate(f'window.metaform.select("{tick}")'), must=following != tick)
     assert readable_at(page, 24, tick)
     acted(page, lambda: page.keyboard.press('1'))         # 8 px, as the whole diagram draws its text smaller still
@@ -1755,7 +1747,7 @@ def test_in_the_large_area_the_wheel_leaves_both_modes_and_a_digit_typed_in_a_fi
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
     wheel(page, -400)
     zoom = view_box(page)[2]
@@ -1814,7 +1806,7 @@ def test_in_the_large_area_a_click_on_a_map_of_three_nodes_shows_the_whole_diagr
     page.set_viewport_size({'width': 2200, 'height': 1400})  # an area where the whole diagram draws its text above 24 px
     page.wait_for_timeout(300)
     still2d(page)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     whole = view_box(page)
     assert fitted(page) and page.evaluate(TEXT_PX) > 25
     assert stepped(page, lambda: click_center(page, at['exterior.cook']))[-1] == pytest.approx(whole, abs=1)
@@ -1824,7 +1816,7 @@ def test_in_the_large_area_a_click_on_a_map_of_three_nodes_shows_the_whole_diagr
     # a node arriving and going in mode two: the fit changes and the camera eases to it
     acted(page, lambda: (Store('proj').add_element('notes', 'code.alarm.loud', name_length=2),
                          run('map', 'knowledge', 'op=add-join', 'layer=notes', 'receiver=code.alarm.audible',
-                             'provider=code.alarm.loud', 'purpose=Be heard.', 'ef=rings loudly', cwd=folder)),
+                             'elements=["code.alarm.loud"]', 'purpose=Be heard.', 'ef=rings loudly', cwd=folder)),
           until=arrival(page))
     assert fitted(page) and view_box(page) != pytest.approx(whole, abs=1)
     loud = keys_of(web)[1]['code.alarm.loud']
@@ -1843,7 +1835,7 @@ def test_in_the_small_area_the_2d_map_keeps_its_zoom_and_every_camera_move_eases
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     wheel(page, 200)                                      # the person's zoom
     zoom = view_box(page)[2]
     part = at['code.part.number27']
@@ -1881,7 +1873,7 @@ def test_wheel_zoom_eases_and_a_second_turn_keeps_the_zoom_already_requested(run
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=large)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     middle = page.evaluate('(() => { const box = document.querySelector("#viewport").getBoundingClientRect();'
                            ' return [(box.left + box.right) / 2, (box.top + box.bottom) / 2]; })()')
     page.mouse.move(*middle)
@@ -1919,7 +1911,7 @@ def test_a_drag_interrupts_an_eased_2d_camera_move(run, web, mapped, browser):
     from metaform.data import Store
     thirty(Store('proj'))
     page, problems = opened_on(browser, web, run, large=False)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     page.clock.pause_at(page.evaluate('Date.now()') / 1000 + 1)
     try:
         before = view_box(page)
@@ -1954,11 +1946,10 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
     for index in range(14):
         store.add_element('notes', f'code.part.number{index}', name_length=2)
         store.add_join('notes', 'code.timer.kitchen', f'code.part.number{index}',
-                       name=f'the long name of part number {index} of the kitchen timer',
                        purpose='Keep the timer working.', ef='serves the timer')
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.keyboard.press('Enter')
@@ -1969,7 +1960,7 @@ def test_inside_a_node_with_many_joins_the_graph_opens_at_a_size_that_can_be_rea
     opened_at = scale()
     assert opened_at >= 0.99  # a label's 11px text is drawn at 11px or larger
     inside = page.evaluate("""(() => { const view = document.querySelector('#viewport').getBoundingClientRect();
-        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === 'kitchen timer');
+        const title = [...document.querySelectorAll('#map2d svg title')].find(t => t.textContent === 'dish timer');
         const box = title.parentNode.getBoundingClientRect();
         return box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom; })()""")
     assert inside  # the node entered is in view
@@ -1987,16 +1978,15 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     as links, seen connected together like a brain, as busy as the layers turned on."""
     from metaform.data import Store
     started(run)
-    expected, at, subtypes = keys_of(web)
-    kitchen, alarm = at['code.timer.kitchen'], at['code.alarm.audible']
+    expected, at = keys_of(web)
+    kitchen, alarm, tick = at['code.timer.kitchen'], at['code.alarm.audible'], at['code.loop.tick']
     to_alarm = next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
-    tick = subtypes['code.loop.tick']
     remember(run, mapped, 'create_entities', [entity('countdown drift', 'The countdown drifts under load.')],
              'element:code.timer.kitchen')
     remember(run, mapped, 'create_entities', [entity('alarm pitch', 'Two kilohertz.')], 'element:code.alarm.audible')
     remember(run, mapped, 'create_relations', [{'from': 'countdown drift', 'to': 'alarm pitch', 'relationType': 'drives'}])
     remember(run, mapped, 'create_entities', [entity('quiet tone', 'The tone is too quiet.')], f'join:{to_alarm}')
-    remember(run, mapped, 'create_entities', [entity('lost tick', 'One tick can be lost.')], f'join:{tick[2:]}')
+    remember(run, mapped, 'create_entities', [entity('lost tick', 'One tick can be lost.')], 'element:code.loop.tick')
     Store('proj').add_property('notes', 'code.timer.kitchen', 'ticks at 1 Hz')
     page, problems, _ = opened(browser, web)
     items = lambda: page.evaluate('window.metaform.graph().nodes.filter(node => node.t === "item")')
@@ -2016,7 +2006,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
     assert {(kitchen, memory['countdown drift'], 'item'), (alarm, memory['alarm pitch'], 'item'),
             ('p:' + to_alarm, memory['quiet tone'], 'item'),
-            (tick, memory['lost tick'], 'item')} <= edges  # from the element, the join and the subtype
+            (tick, memory['lost tick'], 'item')} <= edges  # from each element and from the join
     assert (memory['countdown drift'], memory['alarm pitch'], 'relation') in edges  # a relation is a link
     page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
     page.evaluate(f'window.metaform.click3d("{memory["countdown drift"]}")')
@@ -2035,7 +2025,7 @@ def test_back_and_forward_step_through_the_selected_nodes_and_fit_cycles_three_v
     zoomed out, zoomed in and regular."""
     started(run)
     page, problems, _ = opened(browser, web)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     cook, kitchen, alarm, display = (at[address] for address in (
         'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display'))
     selected = lambda: page.evaluate('window.metaform.selected()')
@@ -2083,14 +2073,14 @@ def test_pointing_at_a_node_shows_its_name_above_the_node_clear_of_the_pointer(r
     page.wait_for_timeout(2500)
     page.click('#pauseBtn')  # hold the layout still so the node stays where the pointer goes
     stage = page.locator('#stage').bounding_box()
-    kitchen = page.evaluate('(() => { const tag = window.metaform.labels3d().find(label => label.text === "kitchen timer");'
+    kitchen = page.evaluate('(() => { const tag = window.metaform.labels3d().find(label => label.text === "dish timer");'
                             ' return window.metaform.screen3d(tag.id); })()')
     x, y = kitchen['x'], kitchen['y']
     page.mouse.move(x - 40, y - 40)
     page.mouse.move(x, y, steps=4)
     tip = page.locator('#tip3d')
     tip.wait_for(state='visible')
-    assert 'kitchen timer' in tip.inner_text()
+    assert 'dish timer' in tip.inner_text()
     box = tip.bounding_box()
     assert box['y'] + box['height'] < y - 4, (box, y)  # the whole text sits above the node, not under the hand
     page.mouse.move(stage['x'] + 5, stage['y'] + stage['height'] - 5)
@@ -2115,11 +2105,11 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
             big.add_element(layer.name, f'code.g{group}', role='SE')
         for n in range(600):
             big.add_element(layer.name, f'code.g{n % 20}.e{n}', role='SE')
-        for n in range(600):
-            join = big.add_join(layer.name, f'code.g{n % 20}.e{n}', f'code.g{(n + 1) % 20}.e{(n + 1) % 600}',
-                                purpose='p', ef='f')
-            if n < 10:
-                big.add_subtype(layer.name, join.join_id, f'code.loop.s{n}', ef='f', role='SE')
+        for n in range(10):
+            big.add_element(layer.name, f'code.loop.s{n}', role='SE')
+        for n in range(600):  # the first ten joins hold a second element each, Rich's shape, 2026-10-04
+            held = [f'code.g{(n + 1) % 20}.e{(n + 1) % 600}', *([f'code.loop.s{n}'] if n < 10 else [])]
+            big.add_join(layer.name, f'code.g{n % 20}.e{n}', held, purpose='p', ef='f')
         # e0 receives from e1 above; e1 also receives from e0: two joins, two paths, no loop, MAP-002.
         big.add_join(layer.name, 'code.g1.e1', 'code.g0.e0', purpose='q', ef='g')
     page, problems, _ = opened(browser, web)
@@ -2127,8 +2117,8 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
     page.reload()
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn() '
                            '&& window.metaform.drawn().nodes > 1000', timeout=60000)
-    assert page.evaluate('window.metaform.drawn()') == {'nodes': 620 + 601 + 10, 'links': 600 + 2 * 601 + 10}
-    assert page.inner_text('#count').startswith('620 elements · 601 joins')
+    assert page.evaluate('window.metaform.drawn()') == {'nodes': 630 + 601, 'links': 600 + 2 * 601 + 10}
+    assert page.inner_text('#count').startswith('630 elements · 601 joins')
     drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=big&limit=0')[1])
     assert problems == []
 
@@ -2160,15 +2150,16 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     asked.clear()
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
     assert asked == []
-    run('intake', 'add_purpose', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'ef=f', 'verb=tells',
-        cwd=folder)
+    run('intake', 'join', 'stakeholder.cook.home', '["code.timer.kitchen"]', 'purpose=p', 'ef=f', cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
     page.wait_for_timeout(300)  # the panel's reads for the selected node settle
     assert not [text for text in page.evaluate('window.toasts') if 'Nothing for' in text]  # an unfinished layer is no error
-    run('intake', 'subtype', 'stakeholder.cook.home', 'code.timer.kitchen', 'code.loop.tick', 'ef=f', 'verb=advances',
-        'role=SE', cwd=folder)
+    run('intake', 'element', 'code.loop.tick', 'role=SE', cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
+    run('intake', 'join', 'stakeholder.cook.home', '["code.timer.kitchen", "code.loop.tick"]',
+        cwd=folder)  # annealed into the cook's join, the join that holds the kitchen timer
+    page.wait_for_function('() => window.metaform.drawn().links === 3', timeout=15000)
     run('intake', 'finish', cwd=folder)
     page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 4', timeout=15000)
@@ -2502,40 +2493,6 @@ def test_text_typed_into_a_prompt_just_opened_is_not_put_back_by_a_slower_read_o
     page.evaluate('window.metaform.editor().setValue("one, edited\\n")')
     page.wait_for_function('() => window.pending === 0', timeout=10000)
     assert page.evaluate('window.metaform.editor().getValue()') == 'one, edited\n'
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-016')
-@pytest.mark.req('MAP-030')
-@pytest.mark.req('MAP-031')
-def test_a_subtype_shows_what_is_attached_to_its_subtype_join_and_to_the_element_it_holds(run, web, mapped, browser):
-    """Rich, 2026-09-27: an absorbed element stays one element record inside its parent's join, and is never drawn as
-    a node of the outer map; so what is attached to it, and to its subtype join, is read at its subtype."""
-    from metaform.data import Node, Store
-    started(run)
-    _, at, subtypes = keys_of(web)
-    tick = subtypes['code.loop.tick']
-    held = Store('proj').element('code.loop.tick').element_id
-    assert held not in at.values()  # the element a subtype join holds is no node of the outer map
-    remember(run, mapped, 'create_entities', [entity('own interrupt', 'The tick is its own interrupt.')], f'join:{tick[2:]}')
-    remember(run, mapped, 'create_entities', [entity('one loop', 'One loop serves every timer.')], 'element:code.loop.tick')
-    Store('proj').add_work(Node('element', 'code.loop.tick'), 'missing', task='count in milliseconds')
-    page, problems, _ = opened(browser, web)
-    set_layer(page, 'memory', True)
-    page.keyboard.press('Escape')
-    page.wait_for_function('() => window.metaform.loaded() && '
-                           'window.metaform.graph().nodes.filter(node => node.layer === "memory").length === 2')
-    graph = page.evaluate('window.metaform.graph()')
-    memory = {node['text']: node['id'] for node in graph['nodes'] if node['t'] == 'item' and node['layer'] == 'memory'}
-    edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
-    assert {(tick, memory['own interrupt'], 'item'), (tick, memory['one loop'], 'item')} <= edges
-    page.evaluate(f'window.metaform.select("{tick}")')
-    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("count in milliseconds")')
-    page.keyboard.press('Enter')
-    page.wait_for_function(f'() => window.metaform.inside().includes("{tick}") && '
-                           'window.metaform.inside().filter(key => key.startsWith("e:")).length === 2')
-    words = page.evaluate('document.querySelector("#map2d svg").textContent')
-    assert 'own interrupt' in words and 'one loop' in words
     assert problems == []
 
 
@@ -3544,7 +3501,7 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
     for record in store.work(None, None, True, limit=0).results:  # the kitchen timer is drawn in its own white
         store.finish_work(record.work_id, 'done')
     started(run)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -3792,11 +3749,12 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
 def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inline(run, web, mapped, browser):
     """Rich, 2026-09-29: a text editor window and a node selector on the right-click menu, where nodes are linked to
     the prompt or inserted inline by their proper noun, from a clickable browser of the namespace."""
-    from metaform.data import Node, Store
+    from metaform.data import Store
     store = Store('proj')
     alarm, kitchen, cook = (store.element(address).element_id
                             for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook'))
-    names = {address: store.element(address).short_name for address in ('code.timer.kitchen', 'exterior.cook')}
+    names = {address: store.element(address).name or store.element(address).short_name
+             for address in ('code.timer.kitchen', 'exterior.cook')}
     before = len(store.work(None, None, None, limit=0).results)
     started(run)
     page, problems, _ = opened(browser, web)
@@ -3943,7 +3901,8 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     made = store.element('code.alarm.visible')
     assert made is not None and (made.layer, made.name_length, made.short_name, made.name) == (
         'additions', 2, 'visible alarm', 'Flash Alert')
-    joined = [join for join in store.joins('code.alarm.audible').results if join.provider == made.element_id]
+    joined = [join for join in store.joins('code.alarm.audible').results
+              if [held.element_id for held in join.elements] == [made.element_id]]
     assert [(join.receiver, join.layer, join.purpose, join.ef) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
     work = store.work(Node_of('code.alarm.visible'), 'missing', True).results
@@ -3965,7 +3924,8 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     page.click('#element .add')
     page.wait_for_function('() => document.querySelector("#element").hidden')
     silent = Store('proj').element('code.alarm.silent')
-    assert [join.provider for join in Store('proj').joins('code.alarm.silent').results] == [alarm] and silent is not None
+    assert [[held.element_id for held in join.elements] for join in Store('proj').joins('code.alarm.silent').results] == [
+        [alarm]] and silent is not None
     page.wait_for_timeout(1200)
     assert sum(json.loads(line).get('message', {}).get('method') == 'session/new'
                for line in log.read_text().splitlines()) == 1
@@ -4172,7 +4132,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     drift, tone, waits = 'e:countdown drift', 'e:quiet tone', 'e:cook waits'
     started(run)
     page, problems, _ = opened(browser, web)
-    expected, at, _ = keys_of(web)
+    expected, at = keys_of(web)
     kitchen, cook = at['code.timer.kitchen'], at['exterior.cook']
     outer = next(join['join_id'] for join in expected['joins'] if join['receiver'] == cook)
     still3d(page, 1)  # the page fits the whole 3D map into view once, a moment after it opens
@@ -4232,7 +4192,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
         seen = page.evaluate(f'window.metaform.screen3d("{key}")')
         assert within({'left': seen['x'], 'right': seen['x'], 'top': seen['y'], 'bottom': seen['y']}, stage), key
         assert within(page.evaluate(f'window.metaform.box2d("{key}")'), view), key
-    assert 'kitchen timer' in inside(page)[1]
+    assert 'dish timer' in inside(page)[1]
     # the node is selected and the panel shows what is known about it
     assert selected() == kitchen
     panel = page.inner_text('#p-object')
@@ -4936,7 +4896,7 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     page.evaluate(f'window.metaform.hover3d("{kitchen}")')
     tip = page.locator('#tip3d')
     tip.wait_for(state='visible')
-    assert 'kitchen timer' in tip.inner_text() and 'Counts down and rings.' in tip.inner_text()
+    assert 'dish timer' in tip.inner_text() and 'Counts down and rings.' in tip.inner_text()
     assert 'code.timer.kitchen' not in tip.inner_text()               # the address is the name read the other way
     # Rich, 2026-10-02: no subject rule; each ef is shown as written, where the relation was, with no receiver or
     # provider put before it.
@@ -5105,6 +5065,7 @@ def logged_by(log, check, limit=60):
 @pytest.mark.req('VIEW-011')
 def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_next(run, web, mapped):
     import re
+
     from metaform.data import Node, Store
     work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
     started(run)
@@ -5148,7 +5109,8 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     little box is supposed to tell you that not the color"; "or whatever the agent is"; "every other system I know
     allows monitoring and sending messages to agents this way you can see if they are doing the task right"."""
     import sys
-    from metaform.data import Item, Node, Store
+
+    from metaform.data import Node, Store
     store = Store('proj')
     alarm = store.element('code.alarm.audible').element_id
     work = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
@@ -5461,7 +5423,7 @@ def test_a_person_shows_and_manages_the_memories_in_the_graph_and_finds_the_orph
     page.click('#p-object .rel:has-text("drives") button.delete')
     page.wait_for_function('() => !document.querySelector("#p-object .rel")')
     assert whole()['relations'] == []
-    page.click('#p-object .join:has-text("kitchen timer") button.unjoin')
+    page.click('#p-object .join:has-text("dish timer") button.unjoin')
     page.wait_for_function('() => window.metaform.loaded() && '
                            '!window.metaform.graph().nodes.some(node => node.id === "e:tick drift")')
     assert [one for one in whole()['joins'] if one['entity'] == 'tick drift'] == []
@@ -5724,7 +5686,7 @@ def test_down_goes_to_the_child_drawn_closest_below_and_not_to_the_first(run, we
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     alarm = at['code.alarm.audible']
     tones = [at[f'code.alarm.audible.tone{n}'] for n in range(1, 8)]
     page.evaluate(f'window.metaform.select("{alarm}")')
@@ -5759,7 +5721,7 @@ def test_left_and_right_past_the_end_of_a_row_go_on_to_the_next_parents_nodes_on
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     alarm, light = at['code.alarm.audible'], at['code.light.flash']
     kids = {alarm: [at[f'code.alarm.audible.tone{n}'] for n in (1, 2, 3)],
             light: [at[f'code.light.flash.blink{n}'] for n in (1, 2, 3)]}
@@ -5804,7 +5766,7 @@ def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_i
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    _, at, _ = keys_of(web)
+    _, at = keys_of(web)
     tone, pitch, cover, latch = (at[a] for a in ('code.alarm.audible.tone1', 'code.alarm.audible.tone1.pitch',
                                                  'code.panel.cover', 'code.panel.cover.latch'))
     depth = 'y' if page.evaluate('window.metaform.vertical()') else 'x'

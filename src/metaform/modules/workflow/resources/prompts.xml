@@ -1,0 +1,740 @@
+<prompts>
+<axiom-language>Axiom is pseudo-code for prompts. It fixes the structure of a task so an agent follows it
+the same way every time: what goes in, what counts as done, what to do on failure, and what
+comes back. The agent reading an Axiom script is its interpreter. There is no other runtime.
+
+Items marked [v1.1] come from Metaform Axiom-OS v1.1. Items marked [new] are defined here
+and are not yet in Axiom-OS. Both are binding.
+
+--- Modules [v1.1] ---
+Every script has these six modules, in this order.
+
+  1. @STATE_INIT               Variables.            {Name} := value
+  2. @CONSTRAINT               Rules.                !&gt; forbidden   +&gt; required   ~&gt; heuristic
+  3. @CONDITION (Name)         Decisions.            ?IF ( condition ) -&gt; outcome  :ELSE -&gt; outcome
+  4. @ROUTER                   Which pipeline runs.  @MATCH ( {Var} ):
+                                                       | [VALUE] -&gt; EXECUTE_PIPELINE( Name )
+                               [new] A script with one pipeline may route directly:
+                               EXECUTE_PIPELINE( Name )
+  5. @EXECUTE_PIPELINE (Name)  Numbered steps.       [STEP n]: ...
+  6. @VERIFY                   Yes/no checks run before the result is used.
+                               Each failed check names what to redo.
+
+  A heuristic (~&gt;) is a strong preference. Break it only with a stated reason.
+
+--- Operators [∇ and Δ: v1.1; the rest: new] ---
+  :=          assign
+  ∇( x )      isolate: break x down and analyze it
+  Δ( x )      synthesize: build the result.   Δ =&gt; {Var}  writes the result to {Var}
+  =&gt;          produces
+  APPLY Name  decide using the @CONDITION of that name
+  YIELD       end this pipeline; control returns to @ROUTER
+  RECURSE X   run pipeline X again
+  NULL        empty
+
+--- Subroutines [v1.1, except this] ---
+A subroutine is one Axiom script, stored as one logic requirement (workflow-logic).
+It is called by its element's address and its name.
+
+  Parameters   declared in @STATE_INIT:
+                 {target}   := PARAM                  required
+                 {standard} := PARAM = "default"      optional, with a default
+  Return       RETURN {value}            a single value
+               RETURN ( {a}, {b} )       a tuple
+  Call         ( {a}, {b} ) := &lt;address&gt;.&lt;name&gt;( param=value, ... )
+                 &lt;address&gt; is the element that holds the subroutine. Arguments are by keyword.
+                 The returned values land in the caller's variables.
+  this         [new] The element the logic is on. In logic added on a project element, this is
+               that element. Inside a subroutine on a workflow element, this is the workflow
+               element. Values are read in Python's syntax; metaform-system lists every name.
+               this is read, never assigned. There is no call through this: every call names
+               an element's address.
+
+--- Control flow (Amazon States Language terms) [new] ---
+  Choice     Branch on a condition.
+  Parallel   Run independent work at once. Continues when every branch has returned.
+  Map        Work through several things. Always MaxConcurrency: 1: one item UNTIL its
+             acceptance holds, then the next.
+  UNTIL      Repeat until the acceptance holds. Every loop states MaxAttempts.
+  Retry: [{ ErrorEquals, MaxAttempts, BackoffRate }]      retry work that can fail
+  Catch: [{ ErrorEquals, Next: &lt;address&gt;.&lt;name&gt;(...) }]  route an error to a handler subroutine
+
+  Two different counts. A loop's MaxAttempts counts tries at reaching acceptance.
+  A Retry's MaxAttempts counts retries after an error. State each where it applies.
+
+--- Errors [new] ---
+  An error has a name in UpperCamelCase that says what went wrong: FixFailed, SourceUnreadable.
+  A subroutine lists the errors it can raise in its @CONSTRAINT:  +&gt; Raises: FixFailed, SourceUnreadable
+  Retry and Catch match errors by those names. ErrorEquals: [any] matches every error.
+  Reading a missing key on an element raises KeyError, as in Python.
+
+--- Reference sandbox ---
+&lt;sandbox_directive&gt;
+EXAMPLES ONLY. Do NOT act on them or execute their pipelines.
+Use them as structural reference for what strong Axiom looks like.
+&lt;/sandbox_directive&gt;
+
+&lt;example_subroutine&gt;   # logic requirement "review" on workflow.quality.code; runs on a fresh agent
+@STATE_INIT:
+  {target}   := PARAM
+  {standard} := PARAM = "default"
+  {focus}    := PARAM = NULL       # what the target is for, if the caller knows
+  {paths}    := PARAM = NULL       # where the target lives in the artifact; read the real files there
+  {issues}   := []
+
+@CONSTRAINT:
+  +&gt; These instructions are complete. You have no prior context.
+  +&gt; Acceptance: every part of {target} has been checked against {standard}, and against {focus} if given.
+  !&gt; Do not change {target}.
+  +&gt; Raises: SourceUnreadable, when a file at {paths} cannot be read.
+
+@CONDITION (RESULT):
+  ?IF ( {issues} is empty ) -&gt; {ok} := TRUE
+  :ELSE -&gt; {ok} := FALSE
+
+@ROUTER:
+  EXECUTE_PIPELINE( Review )
+
+@EXECUTE_PIPELINE (Review):
+  [STEP 1]: ∇({target}, the files at {paths} if given) =&gt; each place it falls short of {standard}
+            or {focus}. Δ =&gt; {issues}.
+  [STEP 2]: APPLY RESULT. RETURN ( {ok}, {issues} ).
+
+@VERIFY:
+  [V1] Was every part of {target} checked?      NO  -&gt; RECURSE Review.
+  [V2] Is every issue tied to {standard} or {focus}?  NO  -&gt; RECURSE Review.
+&lt;/example_subroutine&gt;
+
+&lt;example_subroutine&gt;   # logic requirement "improve" on workflow.quality.code; the entry subroutine
+@STATE_INIT:
+  {target}       := PARAM
+  {standard}     := PARAM = "default"
+  {focus}        := PARAM = NULL
+  {paths}        := PARAM = NULL     # where the target lives in the artifact, if the caller knows
+  {max_attempts} := PARAM = 3
+  {ok}           := FALSE
+  {issues}       := []
+
+@CONSTRAINT:
+  +&gt; Acceptance: review returns {ok} = TRUE.
+  +&gt; Review runs on a fresh agent by handoff, so the work is not judged by the agent that did it.
+  +&gt; Raises: none of its own. Errors from fix go to diagnose; errors from review pass to the caller.
+
+@CONDITION (DONE):
+  ?IF ( {ok} ) -&gt; RETURN ( {ok}, {issues} )
+  :ELSE -&gt; continue to STEP 3
+
+@ROUTER:
+  EXECUTE_PIPELINE( Improve )
+
+@EXECUTE_PIPELINE (Improve):
+  [STEP 1]: Loop STEP 2 to STEP 4 UNTIL acceptance, MaxAttempts: {max_attempts}.
+  [STEP 2]: ( {ok}, {issues} ) := workflow.quality.code.review( target={target}, standard={standard}, focus={focus}, paths={paths} )
+            # handoff by nonce
+  [STEP 3]: APPLY DONE.
+  [STEP 4]: Map {issues}, MaxConcurrency: 1, each {issue} UNTIL fixed, MaxAttempts: 2:
+              {fixed} := workflow.quality.code.fix( target={target}, issue={issue} )
+              Catch: [{ ErrorEquals: [any], Next: workflow.quality.code.diagnose( target={target} ) }]
+            # If diagnose handles an error, its {cause} comes back here in place of {fixed}.
+            # Record it with the issue and move to the next issue.
+  [STEP 5]: Attempts used up without acceptance: RETURN ( FALSE, {issues} ).
+
+@VERIFY:
+  [V1] Does every path end in RETURN?   NO -&gt; RECURSE Improve.
+&lt;/example_subroutine&gt;
+
+&lt;example_element_logic&gt;   # logic added on a project element, in a knowledge layer
+@STATE_INIT:
+  {ok}     := NULL
+  {issues} := NULL
+
+@CONSTRAINT:
+  +&gt; this is the element carrying this join.
+  +&gt; Read a value that may be absent with .get, so a missing key does not raise.
+
+@CONDITION (OUTCOME):
+  ?IF ( {ok} ) -&gt; report the element clean
+  :ELSE -&gt; insert {issues} into the next prompt for this element
+
+@ROUTER:
+  EXECUTE_PIPELINE( Run )
+
+@EXECUTE_PIPELINE (Run):
+  [STEP 1]: ( {ok}, {issues} ) := workflow.quality.code.improve( target=this, focus=this.provides,
+                                                                  paths=this.refs.get("path") )
+            # this.provides: the joins this element serves, i.e. what it is for
+            # this.refs.get("path"): its file paths, or None if it has none
+  [STEP 2]: APPLY OUTCOME. YIELD.
+
+@VERIFY:
+  [V1] Did the call pass this, not a written-out address?   NO -&gt; RECURSE Run.
+&lt;/example_element_logic&gt;</axiom-language>
+<metaform-system>The map
+  - The map is a graph of functionality, not of code. A functionality stays the same while the
+    code under it is rewritten. A game stays a game.
+  - Each element sits under a namespace root. Project roots: code, media, document, data,
+    upstream, downstream. Addresses follow namespace-rules.
+  - Read an address backwards to name the element: code.engine.game -&gt; "game engine code".
+  - An element can be named but not built yet. You may attach logic to any named element,
+    built or not.
+  - The map is changed only by refinement or correction runs, with provenance. You do not change
+    it here.
+
+Roles: every element carries one
+  AUE   Artifact Under Examination: the thing being examined.
+  CQU   Cestui Que Use: the explicit receiver which benefits from and drives the improvements on
+        the artifact. It sits outside the artifact, under downstream.cqu.
+  DE    Defining Element: the element whose loss would stop the artifact being the same type.
+  SE    Substantial Element: an element whose function helps the DE serve the CQU's purpose.
+        It counts even when its contribution is weak or works against the design.
+  NE    Notable Element: a component, interface or specification that states an essential
+        demand on its environment.
+
+Joins
+  - Joins connect elements, like database joins. A join records one encounter: a receiver's
+    purpose served by a provider's function. The receiver owns the join. It runs one way.
+  - A join's fields:
+      purpose    the Operative Purpose: why the receiver needs this. Held by the receiver.
+      ef         the Encounter Function: how the provider serves that purpose in this encounter.
+                 Written as an active fragment that opens with a verb ending in -s or -es.
+      ifd        Information Flow Direction: sends, receives or both.
+      elements   the elements that serve the purpose; each is a provider. Parts annealed into one
+                 join are more elements it holds.
+  - Refs are not in the metaform; they are items of the sources layer.
+
+Knowledge layers
+  - The metaform layer holds only the metaform. Knowledge layers lie over the map and switch on
+    and off.
+  - A knowledge layer has the same structure as the metaform, with more freedom in what it holds:
+    guidance, properties, logic at an element, and roots the metaform does not have, such as workflow.
+  - "Workflow layer" means a knowledge layer that holds a workflow. It is not a layer type.
+  - Switching a layer off removes what it holds from that point on. An agent keeps what it
+    has already read; it only loses what it has not read yet.
+
+Element logic
+  - Logic can be added on any element, by name, in a knowledge layer; it is not a join. This is
+    element logic. Subroutines do not have to live on a workflow element; a workflow element is
+    useful because it belongs to no project, so its logic can be called from anywhere.
+  - this is the element the logic is on. In element logic, it is the element carrying
+    the join. Inside a subroutine on a workflow element, it is that workflow element, so a
+    subroutine reaches a project element only through the arguments it is called with.
+  - Values are read in Python's syntax. Ids never appear.
+
+    Fixed fields are attributes
+      this.address        its namespace address
+      this.name           its canonical name
+      this.name_length    how many trailing segments make its short name
+      this.short_name     worked out from the address and name_length
+      this.role           AUE, CQU, DE, SE or NE
+      this.parent         the parent type's address
+      this.layer          the layer that recorded it
+
+    Keys that come from data are subscripts with string keys, since an address or a layer
+    name holds dots
+      this.refs["path"]       the list of that ref key's values from the sources layer; this.refs["path"][0] is
+                              the first
+
+    The joins it receives, keyed by the address of each element the join holds
+      this.require["&lt;provider address&gt;"].purpose
+      this.require["&lt;provider address&gt;"].ef
+      this.require["&lt;provider address&gt;"].ifd
+      this.require["&lt;provider address&gt;"].elements    the addresses of every element the join holds
+
+    The joins it serves, keyed by the receiver's address
+      this.provides["&lt;receiver address&gt;"].&lt;field&gt;     the same fields as above
+
+    What the layers hold at the node
+      this.items["&lt;layer&gt;"]        the list of that layer's items, each with value, read_first
+                                   and always_show
+      this.properties["&lt;layer&gt;"]   the properties attached at the node
+      this.context                 the properties that apply at it, those inherited from
+                                   toward the trunk included
+
+    What the modules hold at the node
+      this.note       the memory note, with text, by and at, or None
+      this.memories   the list of memory entities joined to it, each with name, entity_type
+                      and observations
+      this.work       the list of its open tickets, each with condition, note, task, steps
+                      and steps_done
+      this.messages   the list of its open questions and messages, each with kind, text and answer
+
+    Rules
+      - A value that can hold several entries is a list, chosen from as Python does:
+        this.work[0], len(this.work), [t for t in this.work if t.condition == "broken"].
+      - A missing key raises an error. .get(key) gives None instead:
+        this.require.get("&lt;provider address&gt;").
+      - A field with no value is None.
+      - this is read, never assigned. Logic changes the map only through the calls it makes.
+      - There is no call through this. Every call names an element's address.
+      - The element's extra is not addressable.
+
+  - Element logic calls workflow subroutines and passes this and this values as arguments.
+    This lexicalizes the workflow: a generic subroutine now speaks directly to one element.
+    (Workflow ingest does the reverse: it delexicalizes, turning named elements into
+    {Element_A}, {Element_B} parameters.)
+  - Passing this hands the element to the subroutine: in
+    workflow.quality.code.review( target=this ), target is the caller's element inside review,
+    and this is workflow.quality.code.
+  - Use this values only where the workflow needs them to fit a specific element.
+
+The user
+  - Any agent can ask the user a question at the node it concerns while it works, with the
+    tool ask. Write the question in plain words, since the user answers from the map, not from
+    your context. Give the answers you suggest, the one you recommend first.
+  - Carry on with what does not depend on the answer. The answer comes back to the node.</metaform-system>
+<namespace-rules>A typological ontology, not a taxonomy.
++&gt; METAFORM ROOTS: code, document, media, data, upstream, downstream. The metaform layer holds only the metaform.
++&gt; A knowledge layer has the same structure, with more flexibility in what it holds. It may hold roots the metaform
+   does not; `workflow` is one, and exists only in knowledge layers.
++&gt; No filler segments (domain, class). No segment min or max.
++&gt; REVERSIBILITY: periods→spaces, reversed, reads as a well-understood noun; child takes parent as last name.
++&gt; CONTAINMENT: Artifacts ⊂ Entities ⊂ Elements.
++&gt; PROPER NOUN: each entry names the type of functional approach as a proper noun.
++&gt; NARROWING: each entry is its parent type or a function within it; never a non-functionality.
+!&gt; NEVER type by genre, medium, encoding, language, style, or subject.
++&gt; SEGMENTATION: words forming a valid prefix stay separate segments; underscore-join only when none does,
+   and the result must still read correctly reversed.
++&gt; GENERAL/SPECIFIC: the address names the TYPE; the record at it names what this artifact does.
++&gt; LEXICON: established practitioner terminology; else the plain common noun. NO coinage, shorthand, marketing.
+
+REFERENCE
+  `code.engine.game.platformer` is invalid because it is invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality — proof: spatial navigation and overcoming environmental obstacles. *Load-bearing invalid example.*
+  code.engine.game ✔   code.engine.game.fps ✔ (proof: first-person camera viewpoint + targeting reticle)
+  code.game ✘ (not a function)   code.game.engine ✘ (subject variant; invalid parent)
+  code.cpp ✘ (language)   media.photo.jpg ✘ (encoding)   document.word.story.conflict ✘ (encoding)
+  document.story.conflict ✔   media.image ✔   media.asset.image ✔   media.photo ✔   media.photo.scenery ✔
+READING
+  code.loop.main -&gt; "main loop program code"   code.bus.data.event -&gt; "event data bus code"</namespace-rules>
+<workflow-logic>RECORD
+  LOGIC := {
+    type:      "logic",
+    logic_id:  assigned when submitted; survives moves and refinement,
+    name:      the subroutine's function name, unique on its element,
+    content:   Axiom (axiom-language)
+  }
+
+  CALL FORM   ( {a}, {b} ) := &lt;workflow address&gt;.&lt;name&gt;( param=value, ... )
+
+# --- Workflow elements ---
++&gt; workflow is not a project root. It exists only in knowledge layers. Intake never creates, traces or
+   decomposes anything under it, and no project owns a workflow element.
++&gt; A workflow element is an address for reusable logic. It holds its canonical name, its logic requirements,
+   and, if any, the knowledge layers selected to go with it.
++&gt; Its address follows namespace-rules; reversed, it names the workflow: workflow.quality.code -&gt; "code quality
+   workflow". It names a functional kind of workflow, never a project, tool or genre.
++&gt; It is written into a knowledge layer. Which one is organization: it may have a layer of its own or share one.
+   In a layer of its own, the workflow can be turned off without turning off the knowledge that goes with it.
++&gt; A logic requirement is one subroutine. Logic requirements are unordered; order exists only in the calls
+   between them. A call can reach any workflow's subroutines, so workflows compose.
+
+# --- Subroutines ---
++&gt; Each step is a subroutine: one logic requirement on the workflow element. NEVER flatten a workflow into one script.
++&gt; Each subroutine is a complete Axiom script with all six modules (axiom-language).
++&gt; Each subroutine declares its parameters with PARAM in its own @STATE_INIT, and ends with RETURN of a value
+   or a tuple, or with a call to the next subroutine.
++&gt; The entry subroutine is named. Logic requirements are unordered, so nothing else marks it.
++&gt; Elements a subroutine works on are parameters. The caller passes them.
+!&gt; NEVER write a metaform address or a project-specific name in a workflow subroutine's content.
+   Those belong in element logic or in the run's arguments.
++&gt; Inside a workflow subroutine, this is the workflow element itself. Read the project element the subroutine
+   works on from its parameter, e.g. {target}.require, never from this.
++&gt; A subroutine whose work depends on the artifact takes the element's refs, such as its paths, as a parameter
+   and reads the real material there, never a summary in its place.
+
+# --- Acceptance, loops and errors ---
++&gt; Each subroutine states its acceptance: the condition its work must meet before it returns.
++&gt; Every loop has MaxAttempts. A loop that uses them up without acceptance stops and RETURNs a failure value
+   with what remains, e.g. RETURN ( FALSE, {issues} ). It does not raise an error.
++&gt; Each subroutine lists the errors it can raise, by name (axiom-language, Errors).
++&gt; A Catch handler's RETURN goes back to the caller of the subroutine that failed, in place of that
+   subroutine's result. That caller is written so it can tell the two apart.
++&gt; An error no Catch handles fails the subroutine and passes to its caller. At the top of the call chain,
+   it goes to the orchestrator.
++&gt; Each subroutine holds the conditions for the function it works on: its acceptance, its Retry, its Catch.
+
+# --- Handoffs ---
++&gt; A call that needs a fresh agent runs as a handoff by nonce (the task token): directly where the host
+   supports agent -&gt; agent, otherwise through the orchestrator.
++&gt; A handed-off subroutine carries complete instructions. The fresh agent has no prior context.
++&gt; A handed-off subroutine states the data it accepts and the data it returns, and ends in RETURN.
+   Its RETURN comes back with the nonce.
+!&gt; NEVER request a nonce while writing a workflow; the executor issues nonces at run time.
+
+# --- Returns ---
++&gt; A return is a value in the prompt. The caller may route on it, insert it into the next prompt, or
+   ignore it. Nothing is stored unless the workflow says to store it.
++&gt; A return goes back to whatever made the call: element logic or another subroutine.
+
+# --- Storage ---
++&gt; SUBMIT the workflow element into the knowledge layer given for it, with the knowledge layers selected
+   to go with it (metaform-tools: submit workflow).
++&gt; SUBMIT each subroutine's LOGIC on the workflow element (metaform-tools: submit logic).
++&gt; EXPORT `&lt;workflow name&gt;.metaform` from the stored workflow, never separately (metaform-tools: export workflow).</workflow-logic>
+<metaform-tools>Tools marked &lt;&lt;TO FILL&gt;&gt; are not built yet. NEVER invent a command for one. If a step needs one,
+stop that step, ask the user with ask, carry on with what does not depend on it, and report what is ready.
+
+  read a prompt          metaform prompt &lt;name&gt; &lt;version&gt;
+  list prompts           metaform prompts
+  ask                    metaform map ask &lt;node&gt; "&lt;question&gt;" suggestions='["&lt;recommended&gt;", "&lt;other&gt;"]'
+                         &lt;node&gt; is an element's address.
+  tell                   metaform map tell &lt;node&gt; "&lt;message&gt;"
+  read answers           metaform map messages
+  read an element        metaform map where &lt;address&gt;
+                         Returns the element with its joins, refs, open work, layer items,
+                         properties and open questions.
+
+  list layers            metaform map layers
+  list workflows         metaform workflow list
+  submit workflow        metaform workflow submit &lt;address&gt; &lt;layer&gt; name="&lt;canonical name&gt;" selected='["&lt;layer&gt;"]' provenance='{"prompt":"&lt;prompt version&gt;","model":"&lt;model&gt;","role":"&lt;role&gt;"}'
+  submit logic           metaform workflow logic &lt;address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
+  submit element logic   metaform workflow logic &lt;element address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
+  export workflow        metaform workflow export &lt;address&gt; &lt;layer&gt; file="&lt;workflow name&gt;.metaform"
+  run                    metaform workflow run "&lt;entry call&gt;" element=&lt;caller element address&gt; variables='{"name":"value"}'
+  handoff                metaform workflow handoff "&lt;call&gt;" nonce=&lt;caller nonce&gt; variables='{"name":"value"}'
+                         Give the returned nonce to a fresh agent, directly or through the orchestrator.
+                         Redeem with metaform &lt;nonce&gt;, or workflow resume nonce=&lt;nonce&gt; over MCP.
+                         Return with metaform workflow complete "RETURN {value}" nonce=&lt;nonce&gt; variables='{"value":"result"}'.</metaform-tools>
+<delexicalization-rules>!&gt; NEVER paraphrase, reorder, summarize, or add to any instruction. The only change is replacing a mention with a placeholder.
+!&gt; NEVER leave a project-specific name or address in the output.
++&gt; Every mention of an element becomes a lettered placeholder: {Element_A}, {Element_B}, ...
++&gt; Every mention of the same element gets the same letter.</delexicalization-rules>
+<workflow-authoring># ============================================================
+# AXIOM SCRIPT :: workflow-authoring  (v1.4)
+# Compiled by Metaform Axiom-OS v1.1
+# For the agent that constructs workflows.
+# ============================================================
+#
+# This prompt is one instruction in two pieces:
+#   - the shared sections pinned in {SHARED}: the Axiom language, the system workflows run in,
+#     the namespace rules, the rules every workflow follows, and the tools;
+#   - your task, below.
+# Read the shared sections first, at their pinned versions. They bind as if written here.
+#
+# ============================================================
+
+@STATE_INIT:
+  # ---------- SHARED SECTIONS (pinned; read each with: metaform prompt &lt;name&gt; &lt;version&gt;) ----------
+  {SHARED} := [ axiom-language 1, metaform-system 1, namespace-rules 1, workflow-logic 1, metaform-tools 1 ]
+
+  {Goal}             := [what the workflow must accomplish]
+  {Run_Args}         := [the arguments for this run, from whoever gave you this prompt; NULL if none]
+  {Target_Layer}     := [the knowledge layer to write the workflow into, from whoever gave you this prompt]
+  {Stage}            := LOAD
+  {Workflow_Addr}    := NULL     # the workflow element, e.g. workflow.quality.code
+  {Layers}           := []       # knowledge layers selected to go with the workflow, if any
+  {Subroutines}      := []       # each: name, PARAMs, acceptance, control flow, returns, raises, handoff yes/no
+  {Entry_Subroutine} := NULL     # the subroutine a run starts with
+  {Element_Logic}    := []       # each: element address, layer, the call it makes
+  {Entry_Call}       := NULL     # the call that starts a run, with this run's arguments
+
+@CONSTRAINT:
+  # --- Shared sections ---
+  +&gt; READ every section in {SHARED} at its pinned version before anything else. Each binds as if written here.
+  !&gt; NEVER read a shared section at any version other than the one pinned.
+
+  # --- Writing the workflow ---
+  +&gt; Follow workflow-logic for every workflow element and subroutine you write.
+  +&gt; Choose {Layers} only from the knowledge layers that exist (Tools: list layers).
+  ~&gt; If an existing workflow subroutine already does a step, call it instead of writing it again.
+  +&gt; Anything a step needs but the goal does not settle becomes a parameter with a sensible default.
+  +&gt; Branch with Choice. Run independent work with Parallel. Work through several things with Map.
+  +&gt; Put Retry: [{ ErrorEquals, MaxAttempts, BackoffRate }] on work that can fail.
+  +&gt; Route each error another subroutine can handle with Catch: [{ ErrorEquals, Next: {Workflow_Addr}.{name}(...) }].
+  +&gt; Run a call as a handoff wherever the called work needs a fresh agent, such as a review with fresh eyes.
+
+  # --- Element logic ---
+  +&gt; Write element logic only when {Goal} or {Run_Args} names elements the workflow should run from.
+  +&gt; Put element logic in the knowledge layer {Goal} names. If none is named, put it in {Target_Layer},
+     so turning that layer off also turns the element logic off.
+  +&gt; Element logic passes this and this values as arguments, in the syntax of metaform-system. It never
+     writes out the element's own address; use this or this.address.
+  +&gt; A value that may be absent (for example, its layer is off) is read with .get, which gives None
+     instead of raising. The subroutine it is passed to treats None as not given and uses its PARAM
+     default. With no default, the call fails back to the element logic.
+  !&gt; NEVER assign to this, and NEVER call through it. Every call names an element's address.
+
+  # --- The user and tools ---
+  ~&gt; If you, or a subroutine you write, are blocked on a decision that is the user's to make,
+     ask the user (Tools: ask) and carry on with what does not depend on the answer.
+  +&gt; Use only the tools in metaform-tools, and follow its rule for tools marked &lt;&lt;TO FILL&gt;&gt;.
+
+@CONDITION (ITERATION):           # per subroutine
+  ?IF ( it works through several things ) -&gt; Map, MaxConcurrency: 1, each thing UNTIL acceptance, MaxAttempts
+  :ELSE -&gt; Task UNTIL acceptance, MaxAttempts
+
+@CONDITION (FAILURE):             # per error a subroutine can raise
+  ?IF ( another subroutine handles it ) -&gt; Catch, Next: that subroutine
+  :ELSE -&gt; fail to the caller
+
+@CONDITION (HANDOFF):             # per call
+  ?IF ( the called work needs a fresh agent ) -&gt; mark the call as a handoff; the executor issues
+                                                  its nonce when it runs (Tools: handoff)
+  :ELSE -&gt; run it in the same agent
+
+@CONDITION (ENTRY):               # per run
+  ?IF ( {Element_Logic} is not empty ) -&gt; runs start from the element logic
+  :ELSE ?IF ( {Run_Args} is not NULL ) -&gt; {Entry_Call} := the entry subroutine's call with {Run_Args}
+  :ELSE -&gt; submit only; do not start a run
+
+@ROUTER:
+  @MATCH ( {Stage} ):
+    | [LOAD]   -&gt; EXECUTE_PIPELINE( Load_Shared )
+    | [ORIENT] -&gt; EXECUTE_PIPELINE( Orient )
+    | [WRITE]  -&gt; EXECUTE_PIPELINE( Write_Subroutines )
+    | [SUBMIT] -&gt; EXECUTE_PIPELINE( Submit )
+    | [START]  -&gt; EXECUTE_PIPELINE( Start )
+
+@EXECUTE_PIPELINE (Load_Shared):
+  [STEP 1]: FOR each section in {SHARED}: read it with metaform prompt &lt;name&gt; &lt;version&gt;.
+  [STEP 2]: {Stage} := ORIENT. YIELD.
+
+@EXECUTE_PIPELINE (Orient):
+  [STEP 1]: ∇({Goal}) =&gt; what the workflow is, the kinds of elements it works on, the knowledge
+            layers it needs, and whether it runs from element logic.
+  [STEP 2]: List the existing knowledge layers and workflow elements (Tools: list layers,
+            list workflows). Reuse what fits.
+  [STEP 3]: Δ =&gt; {Workflow_Addr}; {Layers}.
+  [STEP 4]: {Stage} := WRITE. YIELD.
+
+@EXECUTE_PIPELINE (Write_Subroutines):
+  [STEP 1]: ∇({Goal}) =&gt; the steps that reach it.
+  [STEP 2]: FOR each step: APPLY ITERATION, FAILURE, HANDOFF.
+            Δ =&gt; its content in Axiom: all six modules, PARAMs, acceptance, control flow, Retry,
+            Catch, Raises, and RETURN or the next call.
+  [STEP 3]: Δ =&gt; {Subroutines}; {Entry_Subroutine}.
+  [STEP 4]: IF elements to run from are named: Δ =&gt; {Element_Logic}.
+  [STEP 5]: Run @VERIFY. All pass -&gt; {Stage} := SUBMIT. YIELD.
+
+@EXECUTE_PIPELINE (Submit):
+  [STEP 1]: SUBMIT the workflow element at {Workflow_Addr} into {Target_Layer}, with {Layers}
+            (Tools: submit workflow).
+  [STEP 2]: FOR each subroutine: SUBMIT its LOGIC on the workflow element (Tools: submit logic).
+  [STEP 3]: FOR each item in {Element_Logic}: SUBMIT its LOGIC in a join on that element, in its
+            layer (Tools: submit element logic).
+  [STEP 4]: EXPORT `&lt;workflow name&gt;.metaform` from the stored workflow (Tools: export workflow).
+  [STEP 5]: {Stage} := START. YIELD.
+
+@EXECUTE_PIPELINE (Start):
+  [STEP 1]: APPLY ENTRY.
+  [STEP 2]: If there is an {Entry_Call}, hand it to the executor (Tools: run).
+            Report what was submitted and how a run starts. YIELD.
+
+@VERIFY:
+  [V1]  Was every section in {SHARED} read at its pinned version?                          NO  -&gt; {Stage} := LOAD.
+  [V2]  Is there one logic requirement per subroutine, and no flattened script?          NO  -&gt; RECURSE Write_Subroutines.
+  [V3]  Is each subroutine a complete Axiom script with all six modules?                  NO  -&gt; RECURSE Write_Subroutines.
+  [V4]  Does every call name a subroutine that exists at its address?                     NO  -&gt; RECURSE Write_Subroutines.
+  [V5]  Does every subroutine declare its PARAMs, state its acceptance, and end in
+        RETURN or a call?                                                                 NO  -&gt; RECURSE Write_Subroutines.
+  [V6]  Is the entry subroutine named?                                                    NO  -&gt; RECURSE Write_Subroutines.
+  [V7]  Does every loop have MaxAttempts and say what it RETURNs when they run out?       NO  -&gt; RECURSE Write_Subroutines.
+  [V8]  Does every subroutine list the errors it raises, does every Retry and Catch match
+        a listed name or [any], does every Catch name a handler that exists, and can the
+        caller of the failed subroutine use the handler's RETURN?                         NO  -&gt; RECURSE Write_Subroutines.
+  [V9]  Does every handed-off subroutine carry complete instructions, state the data it
+        accepts and returns, and end in RETURN?                                           NO  -&gt; RECURSE Write_Subroutines.
+  [V10] Does any workflow subroutine's content hold a metaform address or a project-specific
+        name, or read a project element from this instead of a parameter?                 YES -&gt; RECURSE Write_Subroutines.
+  [V11] Does element logic pass this instead of a written-out address, read values that may
+        be absent with .get, and never assign to or call through this?                     NO  -&gt; RECURSE Write_Subroutines.
+  [V12] Is every layer in {Layers} one that exists?                                       NO  -&gt; {Stage} := ORIENT.
+  [V13] All pass? -&gt; {Stage} := SUBMIT.</workflow-authoring>
+<workflow-ingest># ============================================================
+# AXIOM SCRIPT :: workflow-ingest  (v1.7)
+# Compiled by Metaform Axiom-OS v1.1
+# Turns an existing prompt or workflow into callable workflow logic.
+# ============================================================
+#
+# This prompt is one instruction in two pieces:
+#   - the shared sections pinned in {SHARED}: the Axiom language, the system workflows run in,
+#     the namespace rules, the rules every workflow follows, the tools, and the delexicalization rules;
+#   - your task, below.
+# Read the shared sections first, at their pinned versions. They bind as if written here.
+#
+# ============================================================
+
+@STATE_INIT:
+  # ---------- SHARED SECTIONS (pinned; read each with: metaform prompt &lt;name&gt; &lt;version&gt;) ----------
+  {SHARED} := [ axiom-language 1, metaform-system 1, namespace-rules 1, workflow-logic 1, metaform-tools 1,
+                delexicalization-rules 1 ]
+
+  {Workflow_Text}    := [the imported workflow or prompt, verbatim]
+  {Target_Layer}     := [the knowledge layer to write the workflow into, from whoever gave you this prompt]
+  {Stage}            := LOAD
+  {Delexicalized}    := NULL     # {Workflow_Text} after delexicalization-rules
+  {Workflow_Addr}    := NULL     # the workflow element, e.g. workflow.quality.code
+  {Layers}           := []       # knowledge layers the workflow says go with it, if any
+  {Subroutines}      := []       # one per step: name, PARAMs, acceptance, control flow, returns, raises
+  {Entry_Subroutine} := NULL     # the subroutine for the workflow's first step
+
+@CONSTRAINT:
+  # --- Shared sections ---
+  +&gt; READ every section in {SHARED} at its pinned version before anything else. Each binds as if written here.
+  !&gt; NEVER read a shared section at any version other than the one pinned.
+
+  # --- Fidelity ---
+  !&gt; NEVER paraphrase, reorder, summarize, or add to any instruction. A step's instructions go into its
+     subroutine verbatim, as delexicalized.
+  !&gt; NEVER add a step, condition, loop, route or error the workflow does not state.
+  +&gt; DELEXICALIZE first, per delexicalization-rules.
+  +&gt; What the workflow leaves unstated becomes a parameter, passed by the caller: acceptance=PARAM, max_attempts=PARAM.
+
+  # --- Writing the workflow ---
+  +&gt; Follow workflow-logic for every workflow element and subroutine you write.
+  +&gt; A subroutine is named for what its step does. The entry subroutine is the workflow's first step.
+  +&gt; Each placeholder a step uses ({Element_A}, ...) is a PARAM of that step's subroutine.
+  +&gt; A subroutine's Raises: line lists only the errors the workflow states, or none.
+  +&gt; {Layers} holds the knowledge layers the workflow says go with it, if any.
+
+  # --- Control flow, as stated ---
+  +&gt; A stated branch is a Choice. Stated independent work is Parallel. A stated set of things is a Map.
+  +&gt; A stated retry is a Retry; a stated failure route is a Catch, Next: the subroutine it names.
+
+  # --- Handoffs ---
+  +&gt; A handoff exists wherever the workflow assigns work to a different agent or persona than the step before it,
+     or calls for independence from prior work (e.g., "fresh eyes", independent review).
+
+  # --- The user and tools ---
+  ~&gt; If you are blocked on a decision that is the user's to make, ask the user (Tools: ask) and carry on
+     with what does not depend on the answer.
+  +&gt; Use only the tools in metaform-tools, and follow its rule for tools marked &lt;&lt;TO FILL&gt;&gt;.
+
+@CONDITION (ITERATION):           # per step
+  ?IF ( the wording works through a set: "each", "every", "all", a list ) -&gt; Map, MaxConcurrency: 1
+  :ELSE -&gt; Task
+
+@CONDITION (ACCEPTANCE):          # per step
+  ?IF ( the wording states when the step is done ) -&gt; that condition
+  :ELSE -&gt; acceptance := PARAM
+
+@CONDITION (FAILURE):             # per step
+  ?IF ( the wording states what to do when it fails ) -&gt; Retry / Catch as stated
+  :ELSE -&gt; fail to the caller
+
+@CONDITION (NEXT):                # per step
+  ?IF ( the wording states a following step ) -&gt; end with a call to that step's subroutine
+  :ELSE -&gt; RETURN what the step produces
+
+@CONDITION (HANDOFF):             # per step
+  ?IF ( the agent changes, or the wording calls for independence ) -&gt; the call into this step runs as a handoff by nonce
+  :ELSE -&gt; same agent
+
+@ROUTER:
+  @MATCH ( {Stage} ):
+    | [LOAD]    -&gt; EXECUTE_PIPELINE( Load_Shared )
+    | [DELEX]   -&gt; EXECUTE_PIPELINE( Delexicalize )
+    | [SEGMENT] -&gt; EXECUTE_PIPELINE( Segment )
+    | [WRITE]   -&gt; EXECUTE_PIPELINE( Write_Subroutines )
+    | [SUBMIT]  -&gt; EXECUTE_PIPELINE( Submit )
+
+@EXECUTE_PIPELINE (Load_Shared):
+  [STEP 1]: FOR each section in {SHARED}: read it with metaform prompt &lt;name&gt; &lt;version&gt;.
+  [STEP 2]: {Stage} := DELEX. YIELD.
+
+@EXECUTE_PIPELINE (Delexicalize):
+  [STEP 1]: APPLY delexicalization-rules to {Workflow_Text}; {Delexicalized} := the result.
+  [STEP 2]: {Stage} := SEGMENT. YIELD.
+
+@EXECUTE_PIPELINE (Segment):
+  [STEP 1]: ∇({Delexicalized}) =&gt; what the workflow is, its steps in order, each step's verbatim text and placeholders,
+            and the knowledge layers it names.
+  [STEP 2]: Δ =&gt; {Workflow_Addr} by namespace-rules; {Layers}.
+  [STEP 3]: {Stage} := WRITE. YIELD.
+
+@EXECUTE_PIPELINE (Write_Subroutines):
+  [STEP 1]: FOR each step: APPLY ITERATION, ACCEPTANCE, FAILURE, NEXT, HANDOFF.
+            Δ =&gt; its content in Axiom: all six modules, PARAMs, the verbatim instructions, acceptance,
+                 control flow, Raises, and RETURN or the next call.
+  [STEP 2]: Δ =&gt; {Subroutines}; {Entry_Subroutine}.
+  [STEP 3]: Run @VERIFY. All pass -&gt; {Stage} := SUBMIT. YIELD.
+
+@EXECUTE_PIPELINE (Submit):
+  [STEP 1]: SUBMIT the workflow element at {Workflow_Addr} into {Target_Layer}, with {Layers}
+            (Tools: submit workflow).
+  [STEP 2]: FOR each subroutine: SUBMIT its LOGIC on the workflow element (Tools: submit logic).
+  [STEP 3]: EXPORT `&lt;workflow name&gt;.metaform` from the stored workflow (Tools: export workflow).
+  [STEP 4]: Report what was submitted and the entry subroutine's call form. YIELD.
+
+@VERIFY:
+  [V1]  Was every section in {SHARED} read at its pinned version?                                NO  -&gt; {Stage} := LOAD.
+  [V2]  Is every step's text in its subroutine exactly as delexicalized?                        NO  -&gt; RECURSE Write_Subroutines.
+  [V3]  Is there one logic requirement per step, and no flattened script?                       NO  -&gt; RECURSE Write_Subroutines.
+  [V4]  Is each subroutine a complete Axiom script with all six modules?                        NO  -&gt; RECURSE Write_Subroutines.
+  [V5]  Does every call name a subroutine that exists at its address?                           NO  -&gt; RECURSE Write_Subroutines.
+  [V6]  Is every placeholder a step uses declared as a PARAM of its subroutine?                  NO  -&gt; RECURSE Write_Subroutines.
+  [V7]  Does any subroutine hold a step, condition, loop, route or error the workflow does not
+        state, other than PARAMs for what it leaves unstated and the rules of workflow-logic?   YES -&gt; RECURSE Write_Subroutines.
+  [V8]  Does every handed-off subroutine carry complete instructions, state the data it accepts
+        and returns, and end in RETURN?                                                         NO  -&gt; RECURSE Write_Subroutines.
+  [V9]  Is the entry subroutine named?                                                          NO  -&gt; RECURSE Write_Subroutines.
+  [V10] Was any nonce requested during ingest?                                                  YES -&gt; REVERT; RECURSE Write_Subroutines.
+  [V11] All pass? -&gt; {Stage} := SUBMIT.</workflow-ingest>
+<prompt-lexicalization># ============================================================
+# AXIOM SCRIPT :: prompt-lexicalization  (v1.0)
+# Compiled by Metaform Axiom-OS v1.0
+# ============================================================
+
+@STATE_INIT:
+  {Prompt_Text}       := [the imported prompt or workflow, verbatim]
+  {Map}               := [this project's namespace, read via {MAP_READ}]
+  {Subjects}          := []      # each: span in {Prompt_Text}, canonical name, namespace address
+  {Unresolved}        := []      # spans that name something with no entry in {Map}
+  {Output}            := NULL
+
+  # ---------- OWNER PLACEHOLDERS (fill before use) ----------
+  {MAP_READ}          := [MCP tool that reads map entries]
+  {PROMPT_STORE}      := [MCP tool that saves a lexicalized prompt]
+  {UNRESOLVED_POLICY} := [keep wording | mark missing | stop and ask]
+  {ADDRESS_PLACEMENT} := [inline after each name | one block of name -&gt; address]
+
+@CONSTRAINT:
+  !&gt; NEVER paraphrase, reorder, summarize, or add to any instruction. The only change is replacing a name.
+  !&gt; NEVER use the short name (name_length lookback). Use the entry's canonical `name` field.
+  !&gt; NEVER invent a name or address that is not in {Map}.
+  +&gt; Every subject the prompt names that has an entry in {Map} carries its canonical name and its namespace address.
+  +&gt; Match by what the wording refers to, not by exact spelling.
+  +&gt; Handle every span with no entry in {Map} per {UNRESOLVED_POLICY}.
+
+@CONDITION (PLACEHOLDER_CHECK):
+  ?IF ( any OWNER PLACEHOLDER is unfilled ) -&gt; SAY which; HALT
+  :ELSE -&gt; CONTINUE
+
+@CONDITION (MATCH):               # per span that names something
+  ?IF ( the span refers to an entry in {Map} ) -&gt; RESOLVED
+  :ELSE -&gt; UNRESOLVED
+
+@ROUTER:
+  APPLY PLACEHOLDER_CHECK.
+  EXECUTE_PIPELINE( Identify_Subjects )
+  FOR each span:
+    @MATCH ( MATCH ):
+      | [RESOLVED]   -&gt; EXECUTE_PIPELINE( Replace_Name )
+      | [UNRESOLVED] -&gt; EXECUTE_PIPELINE( Apply_Unresolved_Policy )
+  EXECUTE_PIPELINE( Assemble )
+
+@EXECUTE_PIPELINE (Identify_Subjects):
+  [STEP 1]: ∇({Prompt_Text}) =&gt; isolate every span that names something in the system. YIELD spans.
+
+@EXECUTE_PIPELINE (Replace_Name):
+  [STEP 1]: ∇(span, {Map}) =&gt; isolate the entry's canonical name and namespace address.
+  [STEP 2]: Δ =&gt; replace the span with the canonical name; APPEND (span, name, address) to {Subjects}. YIELD.
+
+@EXECUTE_PIPELINE (Apply_Unresolved_Policy):
+  [STEP 1]: APPEND span to {Unresolved}; act per {UNRESOLVED_POLICY}. YIELD.
+
+@EXECUTE_PIPELINE (Assemble):
+  [STEP 1]: Δ({Prompt_Text} with replacements, {Subjects}) =&gt; attach addresses per {ADDRESS_PLACEMENT}.
+  [STEP 2]: {Output} := result; SAVE via {PROMPT_STORE}. YIELD.
+
+@VERIFY:
+  [V1] Is every difference between {Prompt_Text} and {Output} a name replacement or an attached address?
+       NO  -&gt; RECURSE Assemble from the original text.
+  [V2] Does every name in {Subjects} match its entry's canonical `name` field exactly?   NO -&gt; RECURSE Replace_Name.
+  [V3] Is every span in {Unresolved} handled per {UNRESOLVED_POLICY}?                   NO -&gt; RECURSE Apply_Unresolved_Policy.
+  [V4] All pass?                                                                         YES -&gt; YIELD {Output}.</prompt-lexicalization>
+<instructions>workflow is active. Use workflow author, ingest or lexicalize to read its authored prompt and inputs. workflow submit and logic record reusable subroutines in ordinary knowledge layers. workflow run starts a call; call composes on the same agent; handoff and parallel register fresh-agent calls. Redeem with workflow resume nonce=&lt;nonce&gt; on MCP or metaform &lt;nonce&gt; on the CLI. complete delivers RETURN; fail delivers a named error. Details: metaform help workflow.</instructions>
+<execution>Axiom is interpreted by the agent reading this subroutine. Its content and bound arguments are supplied unchanged. Follow its conditions, routing, loops, Retry, Catch and verification. Your saved variables are provided beside it.
+Use workflow call for a same-agent subroutine call, and workflow handoff where the authored call requires a fresh agent. Supply this call's nonce, <nonce/>, and your current variables. For authored Parallel, workflow parallel takes the independent calls and returns their handoff nonces; the caller resumes when every branch has returned.
+Use workflow complete with the subroutine's RETURN expression and final variables to deliver its result. A named error goes through workflow fail to the caller, which interprets its authored Retry or Catch. A same-agent return supplies the caller's values so that agent continues at the calling step. A fresh-agent return supplies only its caller's resume nonce: give it back to the caller or orchestrator. The caller redeems its nonce and continues its own Axiom.</execution>
+<handoff>Give nonce <nonce/> to a fresh agent. It redeems the nonce with metaform &lt;nonce&gt; on the CLI or workflow resume nonce=&lt;nonce&gt; over MCP and receives its subroutine and bound values.</handoff>
+</prompts>

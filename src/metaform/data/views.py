@@ -3,7 +3,7 @@
 Every builder works inside one open transaction. A builder given a `Resolver`
 builds for a read in context: it leaves out what the selection does not reach,
 STORE-019. Without one it builds for a raw read, and marks what is orphaned,
-STORE-017. Every element and join, subtype joins included, carries the conditions
+STORE-017. Every element and join carries the conditions
 of its open work records, STORE-042, in context and raw alike, since a work record
 has no layer.
 """
@@ -16,28 +16,8 @@ from typing import Any, cast
 from . import operations, prompts, versions
 from .ids import decode_extra
 from .names import reading, short_name
-from .records import (
-    Element,
-    Item,
-    Join,
-    Layer,
-    Node,
-    Op,
-    Property,
-    Provenance,
-    Subtype,
-    Version,
-    VersionRef,
-)
-from .rows import (
-    address_of,
-    layer_name,
-    node_address,
-    owner_address,
-    read_refs,
-    target_current,
-    whole_number,
-)
+from .records import Element, Held, Item, Join, Layer, Node, Op, Property, Provenance, Version, VersionRef
+from .rows import address_of, held_elements, layer_name, read_refs, target_current, whole_number
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
 from .versions import METAFORM_KINDS
@@ -54,8 +34,9 @@ def element_shows(res: Resolver, layer_id: str, address: str) -> bool:
 
 
 def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, LayerRow] | None = None) -> Element | None:
-    """An element as its current row holds it: its address, name_length and role, STORE-009, with its reading and its
-    short name, the address read through name_length, MAP-012; in context, only when its layer reaches its address."""
+    """An element as its current row holds it: its address, name_length, name and role, STORE-009, with its reading
+    and its short name, the address read through name_length, MAP-012; in context, only when its layer reaches its
+    address."""
     current = tx.db.execute('SELECT c.address, e.* FROM current_elements c JOIN elements e ON e.row = c.row '
                             'WHERE c.element_id=?', (element_id,)).fetchone()
     if current is None:
@@ -66,26 +47,39 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
         return None
     length = current['name_length'] if whole_number(current['name_length']) else None
     return operations.decorate(tx, Element(element_id, address, str(current['layer_id']), known[current['layer_id']].name,
-                   reading(address), short_name(address, length), length, current['role'],
-                   read_refs(tx.db, 'element', current['row']), decode_extra(current['extra']),
+                   reading(address), short_name(address, length), current['name_length'], current['role'],
                    name=current['name']))
 
 
+def held(tx: Tx, join_row: int) -> tuple[Held, ...]:
+    """The elements one version of a join holds, in order, each as its current row holds it, or its last row when it
+    is not current."""
+    found: list[Held] = []
+    for element_id in held_elements(tx.db, join_row):
+        row = tx.db.execute('SELECT e.address, e.name_length, e.name, e.role FROM current_elements c JOIN elements e '
+                            'ON e.row = c.row WHERE c.element_id=?', (element_id,)).fetchone()
+        if row is None:
+            row = tx.db.execute('SELECT address, name_length, name, role FROM elements WHERE element_id=? '
+                                'ORDER BY row DESC LIMIT 1', (element_id,)).fetchone()
+        if row is None:
+            found.append(Held(element_id, None))
+            continue
+        length = row['name_length'] if whole_number(row['name_length']) else None
+        found.append(Held(element_id, str(row['address']), short_name(str(row['address']), length),
+                          row['name_length'], row['name'], row['role']))
+    return tuple(found)
+
+
 def join_orphaned(tx: Tx, row: Row) -> bool:
-    """A join with an end that is not current, STORE-017: its receiver or provider, or for a subtype join its parent
-    join or the element it holds."""
-    if row['parent'] is not None and not target_current(tx, 'join', str(row['parent'])):
-        return True
-    return any(end is not None and address_of(tx, str(end)) is None for end in (row['receiver'], row['provider']))
+    """A join with an end that is not current, STORE-017: its receiver or an element it holds."""
+    ends = [str(row['receiver']), *held_elements(tx.db, int(row['row']))]
+    return any(address_of(tx, end) is None for end in ends)
 
 
 def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
-    receiver_address = address_of(tx, str(row['receiver']))
-    return operations.decorate(tx, Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
-                str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
-                row['name'], row['purpose'], row['ef'], row['verb'], row['non_goal'],
-                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), None, orphaned, ifd=row['ifd'],
-                element=row['element']))
+    return operations.decorate(tx, Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name,
+                str(row['type']), str(row['receiver']), address_of(tx, str(row['receiver'])), row['purpose'],
+                row['ef'], row['ifd'], held(tx, int(row['row'])), None, orphaned))
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
@@ -96,41 +90,6 @@ def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
     if orphaned or not res.reaches(str(row['layer_id']), address_of(tx, str(row['receiver']))):
         return None
     return join(tx, row, res.layers)
-
-
-def subtype(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Subtype:
-    """A subtype join, STORE-011: its own fields and layer, with the element it holds, an ordinary element record read
-    by its id, MAP-030."""
-    element_id = str(row['provider'])
-    held = tx.db.execute('SELECT e.address, e.name_length, e.role, e.name FROM current_elements c JOIN elements e '
-                         'ON e.row = c.row WHERE c.element_id=?', (element_id,)).fetchone()
-    if held is None:
-        held = tx.db.execute('SELECT address, name_length, role, name FROM elements WHERE element_id=? ORDER BY row DESC '
-                             'LIMIT 1', (element_id,)).fetchone()
-    address = None if held is None else str(held['address'])
-    length = held['name_length'] if held is not None and whole_number(held['name_length']) else None
-    return operations.decorate(tx, Subtype(str(row['join_id']), str(row['parent']), str(row['layer_id']), layers[row['layer_id']].name,
-                   str(row['type']), element_id, address, reading(address) if address else '',
-                   short_name(address, length) if address else '', row['name'], length,
-                   None if held is None else held['role'], row['purpose'], row['ef'], row['verb'], row['non_goal'],
-                   read_refs(tx.db, 'join', row['row']),
-                   decode_extra(row['extra']), join_orphaned(tx, row),
-                   ifd=row['ifd'], element_name=None if held is None else held['name']))
-
-
-def visible_subtype(tx: Tx, row: Row, res: Resolver | None) -> Subtype | None:
-    """A subtype join as a raw read returns it, or in context only when its parent join is shown, its own layer
-    reaches its parent's receiver and the element it holds is current, STORE-025."""
-    if res is None:
-        return subtype(tx, row, all_layers(tx.db))
-    parent = tx.db.execute('SELECT j.* FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
-                           (row['parent'],)).fetchone()
-    if parent is None or visible_join(tx, parent, res) is None:
-        return None
-    at = owner_address(tx, row)
-    if at is None or join_orphaned(tx, row) or not res.reaches(str(row['layer_id']), at):
-        return None
-    return subtype(tx, row, res.layers)
 
 
 def item(tx: Tx, row: Row, layers: dict[str, LayerRow]) -> Item:
@@ -197,18 +156,19 @@ def version(tx: Tx, kind: str, row: Row) -> Version:
         fields['value'] = json.loads(str(fields['value']))
     if kind == 'item':
         fields.update(read_first=bool(fields['read_first']), always_show=bool(fields['always_show']))
+    if kind == 'join':
+        fields['elements'] = [address_of(tx, element_id) or element_id
+                              for element_id in held_elements(tx.db, int(row['row']))]
     return Version(str(row[spec.id_column]), kind, str(row['layer_id']), layer_name(tx, str(row['layer_id'])),
                    cast(Op, row['op']), row['reason'], row['evidence'], fields,
-                   read_refs(tx.db, kind, row['row']))
+                   read_refs(tx.db, kind, row['row']) if kind in ('item', 'property') else ())
 
 
 def join_ends(tx: Tx, join_id: str) -> tuple[str | None, str | None]:
-    """A current join's two ends by address; a subtype join's are its parent join's receiver and the element it holds,
-    STORE-010."""
-    ends = tx.db.execute('SELECT receiver, provider FROM current_joins WHERE join_id=?', (join_id,)).fetchone()
-    if ends is not None:
-        return address_of(tx, str(ends[0])), address_of(tx, str(ends[1]))
-    held = tx.db.execute('SELECT provider FROM current_subtypes WHERE join_id=?', (join_id,)).fetchone()
-    if held is not None:
-        return node_address(tx, 'join', join_id), address_of(tx, str(held[0]))
-    return None, None
+    """A current join's receiver and the first element it holds, by address, STORE-010: the two addresses that name
+    it."""
+    found = tx.db.execute('SELECT receiver, row FROM current_joins WHERE join_id=?', (join_id,)).fetchone()
+    if found is None:
+        return None, None
+    first = held_elements(tx.db, int(found[1]))
+    return address_of(tx, str(found[0])), (address_of(tx, first[0]) if first else None)

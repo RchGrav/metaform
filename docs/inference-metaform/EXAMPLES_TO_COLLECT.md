@@ -83,7 +83,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="convergence"></a>
 ### Target 2. Survey, receiving-purpose trace, and convergence
 
-**Mechanism.** Intake surveys the artifact, traces providers through receiving purposes, closes unexplained functionality, and converges compatible contributions into parent functionalities while retaining their refs and internal subtype relationships. See [Canonical Intake](REFERENCE.md#intake).
+**Mechanism.** Intake surveys the artifact, traces providers through receiving purposes, closes unexplained functionality, and converges compatible contributions into parent functionalities while retaining their refs and holding them as elements of the parent's join. See [the intake](REFERENCE.md#intake).
 
 **Material to retain.** Keep the exact served prompt, original workpiece or pinned source, submitted output, resulting graph, refs, notices, and the agent's explicit explanation of grouping where one was recorded. A compact example can accompany the project's larger recorded result. Preserve a contributor that becomes internal and a contributor that remains global because the parent does not carry its separate purpose.
 
@@ -119,7 +119,7 @@ Each target describes material worth retaining and the relationship it would exp
 <a id="relationship-memory"></a>
 ### Target 6. Memory at the relationship that gives it meaning
 
-**Mechanism.** Elements, joins, and internal subtypes are distinct memory targets. An observation about what a provider must do for one receiver belongs to that relationship when its meaning is relationship-specific. See [addressed memory](REFERENCE.md#memory).
+**Mechanism.** Elements and joins are distinct memory targets. An observation about what a provider must do for one receiver belongs to that relationship when its meaning is relationship-specific. See [addressed memory](REFERENCE.md#memory).
 
 **Material to retain.** Preserve the target node identity, receiver, provider, purpose, original observation, write/read operations, and a later task that uses the observation. Include relevant context selection. When demonstrating an edit or deletion, keep an external before/after trace because the current memory layer updates in place and does not automatically retain a version history.
 
@@ -150,7 +150,7 @@ Each target describes material worth retaining and the relationship it would exp
 
 **Material to retain.** Keep the examination request, graph view, source revision or original artifact, inspected locations, finding, explicit rationale, and any resulting clarification or change. Retain whether the critic actually inspected implementation. A Metaform-only observation should keep that source scope rather than inherit evidence from a later code examination.
 
-**What this exposes.** The current `ef` interface omission provides a concrete source-backed case: the intake and store support the field, and the map knowledge interface adds it, while its edit and refine read `ef` but not `verb`. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
+**What this exposes.** The `ef` interface omission of September 26, since closed, was a concrete source-backed case: the intake and store supported the field, and the map knowledge interface added it, while its edit and refine read `ef` but not `verb`. A connected original trace would show how the functional distinction directed source inspection and how the finding was retained. The [existing source analysis](IMPLEMENTATION_MAP.md#c01) supplies correspondence, not an invented execution of a critic module.
 
 <a id="mutation"></a>
 ### Target 10. A relationship-preserving implementation change

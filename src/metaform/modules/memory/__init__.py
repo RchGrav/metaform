@@ -92,7 +92,7 @@ class Key:
 
 
 def _join_key(store: Store, node: Node) -> Key | None:
-    """A map join's two ends; a subtype join's are its parent join's receiver and the element it holds."""
+    """A map join's two ends: its receiver and the first element it holds."""
     ends = store.join_ends(node.id)
     return None if ends is None else Key(*ends)
 
@@ -144,10 +144,7 @@ class _Map:
         if not key.provider:
             return True
         joins = self.store.joins(key.receiver, 'receiver', raw=True, limit=0).results
-        if any(join.provider_address == key.provider for join in joins):
-            return True
-        return any(held.address == key.provider for join in joins
-                   for held in self.store.subtypes(join.join_id, raw=True, limit=0).results)
+        return any(held.address == key.provider for join in joins for held in join.elements)
 
 
 # ------------------------------------------------------------------------------------------------ the memory layer
@@ -373,8 +370,8 @@ def _noted(tx: TableTx, key: Key, text: str) -> bool:
 # ------------------------------------------------------------------------------------------------ the nine commands
 
 def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key | None:
-    """The key of the node a command names by address, MAP-005: a purpose by its receiver and provider, a part by
-    its address inside it, an element by its address; or the node noun as written. A node noun given beside them is
+    """The key of the node a command names by address, MAP-005: a join by its receiver and an element it holds, an
+    element by its address; or the node noun as written. A node noun given beside them is
     named in a notice as not read."""
     if not any(name in nouns for name in NAMING):
         return _key(store, nouns['node']) if nouns.get('node') else None
@@ -393,10 +390,10 @@ def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -
 
 def _held(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key:
     """The key of the node note names, node first, Rich 2026-10-03: with provider beside it, the purpose node holds
-    as its receiver, and with address the part at that address inside it, MAP-005."""
+    as its receiver, and with address the element at that address the join holds, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
-            notices.append({'where': 'address', 'message': 'address names a part only with provider; it was not read.'})
+            notices.append({'where': 'address', 'message': 'address names an element a join holds only with provider; it was not read.'})
         return _key(store, nouns['node'])
     node = str(nouns['node'])
     receiver = node.partition(':')[2] if node.startswith('element:') else node
@@ -802,7 +799,7 @@ NODE = ('The map element whose memories the command acts on, element:<address>. 
         'address the command acts on the whole memory graph.')
 RECEIVER = 'A purpose whose memories the command acts on: the address of the element that holds it, with provider.'
 PROVIDER = 'A purpose whose memories the command acts on: the address of the element that serves it, with receiver.'
-ADDRESS = 'An element, by address; with receiver and provider, the part at that address inside the purpose.'
+ADDRESS = 'An element, by address; with receiver and provider, the element at that address the join holds.'
 NAMED = (Noun('receiver', RECEIVER, required=False), Noun('provider', PROVIDER, required=False),
          Noun('address', ADDRESS, required=False))
 ENTITY = {'type': 'object', 'properties': {
@@ -880,7 +877,7 @@ MODULE = Module(
              nouns=(Noun('node', 'An element, element:<address>; with provider, the purpose it holds as receiver.'),
                     Noun('provider', 'A purpose node holds as its receiver: the address of the element that serves '
                                      'it.', required=False),
-                    Noun('address', 'With provider: the part at that address inside the purpose.', required=False),
+                    Noun('address', 'With provider: the element at that address the join holds.', required=False),
                     Noun('text', f'The note, at most {NOTE_LIMIT} characters.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
              examples=(('metaform memory note element:code.manager.route text="Routes drift under load."',

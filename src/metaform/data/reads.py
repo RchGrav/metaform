@@ -7,7 +7,6 @@ page is one index range read resumed after the last key, STORE-005.
 """
 from __future__ import annotations
 
-import dataclasses
 import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -21,7 +20,6 @@ from .records import (
     ContextView,
     Element,
     GraphElement,
-    GraphJoin,
     GraphPage,
     Item,
     Join,
@@ -36,7 +34,6 @@ from .records import (
     RootEntry,
     Roots,
     Selection,
-    Subtype,
     Version,
     Where,
 )
@@ -66,7 +63,7 @@ def _any_element_id(tx: Tx, ref: str) -> str | None:
 
 
 def joins(tx: Tx, res: Resolver | None, ref: str, as_: str, limit: int, after: str | None) -> Page[Join]:
-    """The joins an element owns, or those it provides for, each with its layer."""
+    """The joins an element receives, or those that hold it, as provider, each with its layer."""
     if as_ not in ('receiver', 'provider'):
         raise StoreError(f'{as_!r} is not receiver or provider.', f'metaform map joins {ref} as=receiver')
     element_id = _any_element_id(tx, ref)
@@ -74,40 +71,28 @@ def joins(tx: Tx, res: Resolver | None, ref: str, as_: str, limit: int, after: s
         return Page((), None)
 
     def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute(f'SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j ON j.row = c.row '
-                             f'WHERE c.{as_}=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
+        if as_ == 'receiver':
+            return tx.db.execute('SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j ON j.row = c.row '
+                                 'WHERE c.receiver=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
+                                 (element_id, cursor or '', count)).fetchall()
+        return tx.db.execute('SELECT DISTINCT c.join_id AS key, j.* FROM join_elements e JOIN current_joins c '
+                             'ON c.row = e.join_row JOIN joins j ON j.row = c.row '
+                             'WHERE e.element_id=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
                              (element_id, cursor or '', count)).fetchall()
     return paged(fetch, lambda row: views.visible_join(tx, row, res), limit, after)
 
 
 def join_ends(tx: Tx, join: str) -> tuple[str, str] | None:
-    """One current join's receiver and provider by address, a subtype join's its parent join's receiver and the
-    element it holds, STORE-010."""
+    """One current join's receiver and the first element it holds, by address, STORE-010."""
     receiver, provider = views.join_ends(tx, join)
     return None if receiver is None or provider is None else (receiver, provider)
 
 
-def subtypes(tx: Tx, res: Resolver | None, join: str, limit: int, after: str | None) -> Page[Subtype]:
-    """The subtype joins in a join, each with the element it holds, STORE-011; in context only when the join is shown
-    and each subtype join's own layer reaches its receiver."""
-    join_row = tx.db.execute('SELECT j.* FROM current_joins c JOIN joins j ON j.row = c.row WHERE c.join_id=?',
-                             (join,)).fetchone()
-    if join_row is None:
-        return Page((), None)
-    if res is not None and views.visible_join(tx, join_row, res) is None:
-        return Page((), None)
-
-    def fetch(cursor: str | None, count: int) -> list[Row]:
-        return tx.db.execute('SELECT c.join_id AS key, j.* FROM current_subtypes c JOIN joins j ON j.row = c.row '
-                             'WHERE c.parent=? AND c.join_id > ? ORDER BY c.join_id LIMIT ?',
-                             (join, cursor or '', count)).fetchall()
-    return paged(fetch, lambda row: views.visible_subtype(tx, row, res), limit, after)
-
-
 def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where | None:
-    """One read of an address, STORE-025: the element, what relies on it, what it relies on, the subtype joins inside
-    those joins and the one holding it with the join it sits in, MAP-031, the joins promoted to it, MAP-054, its open
-    work records and what the layers in context hold at it. In context, the default, every part follows the reading context, LAYER-007."""
+    """One read of an address, STORE-025: the element, what relies on it, the joins that hold it, what it relies on,
+    the joins it receives, each with the elements it holds, its open work records and what the layers in context hold
+    at it, the sources layer's refs among them. In context, the default, every part follows the reading context,
+    LAYER-007."""
     context = None if raw else res
     current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
     if current is None:
@@ -115,57 +100,30 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
     found = views.element(tx, str(current[0]), context)
     if found is None:
         return None
-    held: Subtype | None = None
-    holding: Join | None = None
-    for join_id in rows.holding(tx, found.element_id):
-        row = rows.current_join(tx, join_id)
-        held = None if row is None else views.visible_subtype(tx, row, context)
-        parent = None if held is None else rows.current_join(tx, held.parent)
-        holding = None if parent is None else views.visible_join(tx, parent, context)
-        if held is not None and holding is not None:
-            break
-        held = holding = None
-    kind = 'subtype' if held is not None and rows.held_only(tx, found.element_id) else 'element'
-
-    def with_subtypes(as_: str) -> tuple[GraphJoin, ...]:
-        placed: list[GraphJoin] = []
-        for join in joins(tx, context, found.element_id, as_, 0, None).results:
-            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
-            placed.append(GraphJoin(**fields, subtypes=subtypes(tx, context, join.join_id, 0, None).results))
-        return tuple(placed)
-
-    promoted = [views.visible_join(tx, row, context) for row in tx.db.execute(
-        'SELECT j.* FROM joins j JOIN current_joins c ON c.row = j.row WHERE j.element=? ORDER BY c.join_id',
-        (address,))]
     at = node(tx, res, Node('element', found.element_id), raw)
     reaching = reaching_at(tx, res, address)
-    return operations.decorate(tx, Where(kind, found, held, holding, with_subtypes('provider'),
-                 with_subtypes('receiver'), layers=() if at is None else at.layers,
-                 full=full, applying=reaching.applying, visible=reaching.visible,
-                 promoted_from=tuple(join for join in promoted if join is not None)))
+    return operations.decorate(tx, Where('element', found, None,
+                 joins(tx, context, found.element_id, 'provider', 0, None).results,
+                 joins(tx, context, found.element_id, 'receiver', 0, None).results,
+                 layers=() if at is None else at.layers, full=full, applying=reaching.applying,
+                 visible=reaching.visible))
 
 
 def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:
     """The where read of a node a ticket is on or links, MAP-048: an element's is `where` of its address; a join's is
-    the join, or a subtype join with the join holding it, with its open work, what the layers in context hold at it
-    and its open questions and messages. None when the node is not current or not in context."""
+    the join with its open work, what the layers in context hold at it and its open questions and messages. None when
+    the node is not current or not in context."""
     if target.kind == 'element':
         address = rows.address_of(tx, target.id)
         return None if address is None else where(tx, res, raw, address, False)
     row = rows.current_join(tx, target.id)
     if row is None:
         return None
-    context = None if raw else res
-    if row['parent'] is None:
-        held, holding = None, views.visible_join(tx, row, context)
-    else:
-        held = views.visible_subtype(tx, row, context)
-        parent = rows.current_join(tx, str(row['parent']))
-        holding = None if held is None or parent is None else views.visible_join(tx, parent, context)
+    holding = views.visible_join(tx, row, None if raw else res)
     if holding is None:
         return None
     at = node(tx, res, Node('join', target.id), raw)
-    return operations.decorate(tx, Where('join', None, held, holding, layers=() if at is None else at.layers))
+    return operations.decorate(tx, Where('join', None, holding, layers=() if at is None else at.layers))
 
 
 def children(tx: Tx, address: str, limit: int, after: str | None) -> Page[str]:
@@ -252,8 +210,6 @@ def _locate(tx: Tx, target: object, raw: bool) -> tuple[str, str | None, Callabl
     if join_row is None:
         return None
     address = rows.owner_address(tx, join_row)
-    if join_row['parent'] is not None:
-        return target.id, address, lambda res: views.visible_subtype(tx, join_row, res) is not None
     return target.id, address, lambda res: views.visible_join(tx, join_row, res) is not None
 
 
@@ -356,8 +312,8 @@ def links_to(tx: Tx, res: Resolver, target: Node, layer: str | None, raw: bool, 
 
 
 def citing(tx: Tx, key: str, value: str, limit: int, after: str | None) -> Page[Citation]:
-    """Every current element, join, property and item whose refs hold this key and value, subtype joins included,
-    MAP-021."""
+    """Every current item and property whose refs hold this key and value, the sources layer's among them, with the
+    address it sits at, MAP-021."""
     layers = all_layers(tx.db)
     seen: set[tuple[str, str]] = set()
 
@@ -373,7 +329,12 @@ def citing(tx: Tx, key: str, value: str, limit: int, after: str | None) -> Page[
             return None
         seen.add((owner, current))
         version_row = tx.db.execute(f'SELECT layer_id FROM {spec.table} WHERE row=?', (row['owner_row'],)).fetchone()
-        address = rows.node_address(tx, owner, current) if owner == 'element' else None
+        if owner == 'item':
+            target = tx.db.execute('SELECT target_kind, target_id FROM items WHERE row=?', (row['owner_row'],)).fetchone()
+            address = rows.node_address(tx, str(target[0]), str(target[1]))
+        else:
+            element = tx.db.execute('SELECT element_id FROM properties WHERE row=?', (row['owner_row'],)).fetchone()
+            address = rows.address_of(tx, str(element[0]))
         return Citation(owner, current, address, layers[version_row[0]].name)
     return paged(fetch, build, limit, after)
 
@@ -452,8 +413,7 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
     """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025.
 
     The role is on the element, STORE-009, and its current row's role is indexed, so the entry is one read on
-    `current_elements_by_role`; a root element is one with a role that is not held only by subtype joins, MAP-031.
-    Empty until the intake has finished.
+    `current_elements_by_role`; a root element is one with a role. Empty until the intake has finished.
     """
     if not has_intake(tx):
         return Roots((), (), None)
@@ -462,7 +422,7 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
         for element_id, _role in tx.db.execute("SELECT element_id, role FROM current_elements WHERE role IN ('CQU', 'DE') "
                                                'ORDER BY role DESC, element_id').fetchall():
             found = views.element(tx, str(element_id), res)
-            if found is None or rows.held_only(tx, found.element_id):
+            if found is None:
                 continue
             received = tx.db.execute('SELECT c.join_id AS key, j.* FROM current_joins c JOIN joins j ON j.row = c.row '
                                      'WHERE c.receiver=? ORDER BY c.join_id', (element_id,)).fetchall()
@@ -475,16 +435,11 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
 
     def build(row: Row) -> RootElement | None:
         found = views.element(tx, str(row['key']), res)
-        if found is None or rows.held_only(tx, found.element_id):
+        if found is None:
             return None
         return RootElement(found.element_id, found.address, str(row['role']), found.short_name)
     page = paged(fetch, build, limit, after)
     return Roots(tuple(entry), page.results, page.next)
-
-
-# The joins an element receives or provides, ticket dd2a9caf: those it receives and the subtype joins inside them,
-# whose receiver is their parent's, those it provides, and the subtype joins holding it. A subtype join is never
-# placed inside another, so one level is all there is.
 
 
 def has_intake(tx: Tx) -> bool:
@@ -493,56 +448,46 @@ def has_intake(tx: Tx) -> bool:
 
 
 def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphPage:
-    """A page of the outer map in address order, VIEW-005 and VIEW-010: each element in context that is not held
-    only by subtype joins, MAP-031, with its nearest parent element of the outer map in context, and each join it
-    receives, in context, with its subtype joins. One read; every lookup by index."""
+    """A page of the map in address order, VIEW-005 and VIEW-010: each element in context, with its nearest parent
+    element in context, and each join it receives, in context, with the elements it holds. One read; every lookup by
+    index."""
     found = tx.db.execute('SELECT element_id, address FROM current_elements WHERE address > ? ORDER BY address '
                           'LIMIT ?', (after or '', limit + 1 if limit else -1)).fetchall()
     more = bool(limit) and len(found) > limit
     found = found[:limit] if limit else found
     shown: dict[str, bool] = {}
 
-    def outer(element_id: str) -> Element | None:
-        element_view = views.element(tx, element_id, res)
-        return None if element_view is None or rows.held_only(tx, element_id) else element_view
-
     def in_context(address: str) -> bool:
         if address not in shown:
             current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
-            shown[address] = current is not None and outer(str(current[0])) is not None
+            shown[address] = current is not None and views.element(tx, str(current[0]), res) is not None
         return shown[address]
 
     elements: list[GraphElement] = []
-    held: list[GraphJoin] = []
+    held: list[Join] = []
     for row in found:
-        element_view = outer(str(row['element_id']))
+        element_view = views.element(tx, str(row['element_id']), res)
         shown[str(row['address'])] = element_view is not None
         if element_view is None:
             continue
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
         elements.append(GraphElement(element_view, parent))
-        for join in joins(tx, res, element_view.element_id, 'receiver', 0, None).results:
-            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
-            held.append(GraphJoin(**fields, subtypes=subtypes(tx, res, join.join_id, 0, None).results))
+        held += joins(tx, res, element_view.element_id, 'receiver', 0, None).results
     return GraphPage(tuple(elements), tuple(held), str(found[-1]['address']) if more else None)
 
 
 def layer_graph(tx: Tx, layer: str) -> GraphPage:
-    """One layer's own elements that are not held only by subtype joins, and the joins and subtype joins it wrote,
-    building or finished, BASE-039 and VIEW-005; the element a subtype join holds is read with that subtype join,
-    MAP-031.
+    """One layer's own elements and the joins it wrote, building or finished, BASE-039 and VIEW-005.
 
     The intake agent reads its work back with it while it records, and the viewer follows it live. It is not a
     context read: it shows what one layer wrote and reaches nothing through the selection.
     """
     found = rows.layer(tx, layer)
-    written = [row for row in tx.db.execute('SELECT c.element_id, c.address FROM current_elements c JOIN elements e '
-                                            'ON e.row = c.row WHERE e.layer_id=? ORDER BY c.address',
-                                            (found.layer_id,)).fetchall()
-               if not rows.held_only(tx, str(row['element_id']))]
+    written = tx.db.execute('SELECT c.element_id, c.address FROM current_elements c JOIN elements e '
+                            'ON e.row = c.row WHERE e.layer_id=? ORDER BY c.address', (found.layer_id,)).fetchall()
     addresses = {str(row['address']) for row in written}
     elements: list[GraphElement] = []
-    held: list[GraphJoin] = []
+    held: list[Join] = []
     for row in written:
         element_view = views.element(tx, str(row['element_id']), None)
         if element_view is None:
@@ -550,11 +495,6 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses),
                       None)
         elements.append(GraphElement(element_view, parent))
-        for join in joins(tx, None, element_view.element_id, 'receiver', 0, None).results:
-            if join.layer_id != found.layer_id:
-                continue
-            fields = {item.name: getattr(join, item.name) for item in dataclasses.fields(join)}
-            inside = tuple(subtype for subtype in subtypes(tx, None, join.join_id, 0, None).results
-                           if subtype.layer_id == found.layer_id)
-            held.append(GraphJoin(**fields, subtypes=inside))
+        held += [join for join in joins(tx, None, element_view.element_id, 'receiver', 0, None).results
+                 if join.layer_id == found.layer_id]
     return GraphPage(tuple(elements), tuple(held))

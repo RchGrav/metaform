@@ -2,8 +2,8 @@
 
 One writer for the command `metaform map markdown` and for the web GUI's export, VIEW-024, so the two give the same
 document. It reads through `roots` and `where`, STORE-025, so select, mask and hiding hold. The document holds what a
-reader finds its way by: each element's name, address, role and paths, and each join's receiver, provider, ef,
-purpose and non_goal.
+reader finds its way by: each element's name, address, role and paths, from the sources layer, and each join's
+receiver, the elements it holds, its ef and its purpose.
 """
 from __future__ import annotations
 
@@ -16,19 +16,19 @@ from .errors import Stop
 FIRST = {'CQU': 0, 'AUE': 1, 'DE': 2}
 
 
+def _held(join: dict[str, Any], names: dict[str, str]) -> str:
+    """The elements a join holds, each by its short name."""
+    held = [str(each.get('address') or '') for each in cast(list[dict[str, Any]], join.get('elements') or [])]
+    return ', '.join(names.get(address, address) for address in held if address)
+
+
 def _join_lines(join: dict[str, Any], receiver: str, provider: str) -> list[str]:
-    """One join: who receives from whom, the ef as written, the purpose and the non_goal, and each subtype join as
-    one line."""
+    """One join: who receives from whom, the ef as written, and the purpose."""
     lines = [f'### {receiver} receives from {provider}', '']
-    for text in (str(join.get('ef') or ''),
-                 f"Why: {join['purpose']}" if join.get('purpose') else '',
-                 f"Not: {join['non_goal']}" if join.get('non_goal') else ''):
+    for text in (str(join.get('ef') or ''), f"Why: {join['purpose']}" if join.get('purpose') else ''):
         if text:
             lines += [text, '']
-    held = [': '.join(part for part in (str(subtype.get('short_name') or subtype.get('element') or ''),
-                                        str(subtype.get('ef') or '')) if part)
-            for subtype in cast(list[dict[str, Any]], join.get('subtypes') or [])]
-    return lines + ([f'- {line}' for line in held] + [''] if held else [])
+    return lines
 
 
 def _element_lines(store: Store, address: str, names: dict[str, str], reading: dict[str, Any],
@@ -39,20 +39,29 @@ def _element_lines(store: Store, address: str, names: dict[str, str], reading: d
     element = cast(dict[str, Any], view.get('element') or {})
     if not element:
         return []
-    name = str(element.get('short_name') or address)
+    name = str(element.get('name') or element.get('short_name') or address)  # its name, else its short name
     lines = [f'## {name}', '', f"`{element.get('address', address)}`, {element.get('role') or 'no role'}", '']
-    paths = [str(ref['value']) for ref in cast(list[dict[str, Any]], element.get('refs') or [])
-             if ref.get('key') == 'path']
+    paths = [str(ref['value']) for group in cast(list[dict[str, Any]], view.get('layers') or [])
+             if group.get('layer') == 'sources' for item in cast(list[dict[str, Any]], group.get('items') or [])
+             for ref in cast(list[dict[str, Any]], item.get('refs') or []) if ref.get('key') == 'path']
     if paths:
         lines += ['Paths: ' + ', '.join(paths), '']
     for join in cast(list[dict[str, Any]], view.get('receives') or []):
-        provider = str(join.get('provider') or '')
-        lines += _join_lines(join, name, names.get(provider, provider))
+        lines += _join_lines(join, name, _held(join, names))
     if around:
         for join in cast(list[dict[str, Any]], view.get('provides') or []):
             receiver = str(join.get('receiver') or '')
             lines += _join_lines(join, names.get(receiver, receiver), name)
     return lines
+
+
+def _labels(store: Store, elements: Sequence[Any], reading: dict[str, Any]) -> dict[str, str]:
+    """Each root element's name, the project's name for it, where it has one, Rich 2026-10-04."""
+    found: dict[str, str] = {}
+    for element in elements:
+        record = store.element(element.address, **reading)
+        found[element.address] = (record.name if record is not None else None) or ''
+    return found
 
 
 def markdown(store: Store, address: str | None = None, *, selection: Sequence[str] | None = None,
@@ -61,6 +70,7 @@ def markdown(store: Store, address: str | None = None, *, selection: Sequence[st
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
     found = store.roots(limit=0, **reading)
     names = {element.address: element.short_name for element in found.elements}
+    names.update({address: label for address, label in _labels(store, found.elements, reading).items() if label})
     if address:
         lines = _element_lines(store, address, names, reading, True)
         if not lines:
