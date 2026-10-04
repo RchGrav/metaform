@@ -578,14 +578,14 @@ def test_a_memory_command_that_only_reads_writes_nothing_and_one_that_writes_car
     assert mj(run, 'note', 'element:code.manager.route', cwd=mapped)['note']['text'] == 'Ask Rich before changing it.'
 
 
-REQUIREMENT =('receiver=code.manager.route', 'provider=code.probe.echo')
+PURPOSE =('receiver=code.manager.route', 'provider=code.probe.echo')
 
 
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('MAP-005')
-def test_memory_names_a_requirement_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
+def test_memory_names_a_purpose_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
     """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
-    are internal. An agent names a requirement by its receiver and provider, as refine does, and never handles
+    are internal. An agent names a purpose by its receiver and provider, as refine does, and never handles
     join:<id>."""
     store = Store('proj')
     join_id = store.joins('code.manager.route').results[0].join_id
@@ -596,28 +596,28 @@ def test_memory_names_a_requirement_by_its_receiver_and_provider_and_a_part_by_i
         tabled = store.add_join('intake-1', 'code.manager.route', 'code.manager.table', purpose='Keep the routes.')
         store.add_element('intake-1', 'code.manager.table.row', name_length=3, role='SE')
         store.add_subtype('intake-1', tabled.join_id, 'code.manager.table.row', purpose='Hold one route.')
-    # The route manager holds two requirements, so the provider, not the order they are held in, picks one.
+    # The route manager holds two purposes, so the provider, not the order they are held in, picks one.
     table = ('receiver=code.manager.route', 'provider=code.manager.table')
-    mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), *REQUIREMENT, cwd=mapped)
+    mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), *PURPOSE, cwd=mapped)
     beside = mj(run, 'create_entities', J([entity('table size', 'fact')]), *table, PROBE, cwd=mapped)
     assert beside['notices'] == [{'where': 'node', 'message': 'receiver, provider and address name the node; node '
                                                               'was not read.'}]
-    mj(run, 'create_entities', J([entity('timer drift', 'fact')]), *REQUIREMENT, 'address=code.probe.echo.timer',
+    mj(run, 'create_entities', J([entity('timer drift', 'fact')]), *PURPOSE, 'address=code.probe.echo.timer',
        cwd=mapped)
-    elsewhere = m(run, 'create_entities', J([entity('x', 'fact')]), *REQUIREMENT, 'address=code.manager.table.row',
+    elsewhere = m(run, 'create_entities', J([entity('x', 'fact')]), *PURPOSE, 'address=code.manager.table.row',
                   cwd=mapped, ok=False)
     assert elsewhere.returncode == 2 and 'code.manager.table.row is not a part inside' in elsewhere.stderr
     mj(run, 'create_entities', J([entity('route cost', 'fact')]), 'address=code.manager.route', cwd=mapped)
-    assert mj(run, 'read_graph', *REQUIREMENT, cwd=mapped) == mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)
-    assert [one['name'] for one in mj(run, 'read_graph', *REQUIREMENT, cwd=mapped)['entities']] == ['echo timeout']
+    assert mj(run, 'read_graph', *PURPOSE, cwd=mapped) == mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)
+    assert [one['name'] for one in mj(run, 'read_graph', *PURPOSE, cwd=mapped)['entities']] == ['echo timeout']
     assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{tabled.join_id}', cwd=mapped)['entities']] == [
         'table size']
     assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{part.join_id}', cwd=mapped)['entities']] == [
         'timer drift']
     assert [one['name'] for one in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities']] == ['route cost']
     assert [one['name'] for one in mj(run, 'read_graph', PROBE, cwd=mapped)['entities']] == []
-    assert [one['entity'] for one in mj(run, 'joins', *REQUIREMENT, cwd=mapped)['joins']] == ['echo timeout']
-    # note takes node first, Rich 2026-10-03: provider beside it names the requirement node holds as its receiver.
+    assert [one['entity'] for one in mj(run, 'joins', *PURPOSE, cwd=mapped)['joins']] == ['echo timeout']
+    # note takes node first, Rich 2026-10-03: provider beside it names the purpose node holds as its receiver.
     written = mj(run, 'note', 'element:code.manager.route', 'provider=code.probe.echo',
                  'text=The echo is the only liveness check.', cwd=mapped)
     assert (written['receiver'], written['provider']) == ('code.manager.route', 'code.probe.echo')
@@ -634,18 +634,18 @@ def test_memory_names_a_requirement_by_its_receiver_and_provider_and_a_part_by_i
 
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('MAP-005')
-def test_a_requirement_the_map_does_not_hold_or_cannot_tell_apart_is_refused_by_its_addresses(run, mapped):
-    """Nothing is written when the receiver and provider name no requirement, or several with the same two ends; the
+def test_a_purpose_the_map_does_not_hold_or_cannot_tell_apart_is_refused_by_its_addresses(run, mapped):
+    """Nothing is written when the receiver and provider name no purpose, or several with the same two ends; the
     refusal names them by address and, for several, by their purposes."""
     unheld = m(run, 'create_entities', J([entity('x', 'fact')]), 'receiver=code.manager.route',
                'provider=code.nosuch.node', cwd=mapped, ok=False)
-    assert unheld.returncode == 2 and 'code.manager.route has no requirement served by code.nosuch.node' in unheld.stderr
+    assert unheld.returncode == 2 and 'code.manager.route has no purpose served by code.nosuch.node' in unheld.stderr
     half = m(run, 'create_entities', J([entity('x', 'fact')]), 'receiver=code.manager.route', cwd=mapped, ok=False)
     assert half.returncode == 2 and 'provider' in half.stderr
     store = Store('proj')
     with store.atomic():
         store.add_join('intake-1', 'code.manager.route', 'code.probe.echo', purpose='Measure the route delay.')
-    twice = m(run, 'create_entities', J([entity('x', 'fact')]), *REQUIREMENT, cwd=mapped, ok=False)
+    twice = m(run, 'create_entities', J([entity('x', 'fact')]), *PURPOSE, cwd=mapped, ok=False)
     assert twice.returncode == 2 and 'Know a route is alive.' in twice.stderr and 'Measure the route delay.' in twice.stderr
     assert mj(run, 'read_graph', cwd=mapped)['entities'] == []
 

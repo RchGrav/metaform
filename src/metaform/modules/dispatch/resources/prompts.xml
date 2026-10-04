@@ -2,9 +2,229 @@
 <!-- dispatch's prompts, MCP-031. What is between an element's tags is what is served; an empty element inside one is
      filled with the value of its name. -->
 <prompts>
-<instructions>dispatch is active.</instructions>
-<handoff>Your ticket is work <work_id/> on Metaform's map, and it is taken for you. Read it with `metaform map work id=<work_id/>` and work it. Say how many steps you plan with `metaform map work op=plan id=<work_id/> steps=&lt;n&gt;`, report each step as you finish it with `metaform map work op=step id=<work_id/> said="&lt;one sentence&gt;"`, and when it is done close it with `metaform map work op=done id=<work_id/> resolution="&lt;what you found or changed&gt;"`.</handoff>
-<answered>Your question <message_id/> is answered. You asked: <question/> The answer: <answer/></answered>
-<nodes>The namespace nodes of this work, as the map holds them:</nodes>
-<handed>Give this to the agent you hand the work to, to run: `metaform <nonce/>`</handed>
+
+<instructions>
+@STATE_INIT:
+  {Dispatch}:=ACTIVE
+
+@CONSTRAINT:
+  +> Operate with dispatch active.
+
+@CONDITION:
+  ?IF ({Dispatch}==ACTIVE) -> {State}:=READY
+  :ELSE -> {State}:=INACTIVE
+
+@ROUTER:
+  @MATCH({State}):
+    | [READY] -> EXECUTE_PIPELINE(Ready)
+    | [INACTIVE] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Ready):
+  YIELD
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=({Dispatch}==ACTIVE)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</instructions>
+
+<handoff>
+@STATE_INIT:
+  {Work_ID}:=[<work_id/>]; {Ticket}:=NULL; {Steps}:=UNRESOLVED; {Blocked}:=FALSE; {State}:=READ
+
+@CONSTRAINT:
+  +> Work {Work_ID} is assigned to you and already taken.
+  +> Read it with `metaform map work id=<work_id/>`.
+  +> Work the ticket.
+  +> Report planned steps with `metaform map work op=plan id=<work_id/> steps=&lt;n&gt;`.
+  +> As each step finishes, report it with `metaform map work op=step id=<work_id/> said="&lt;one sentence&gt;"`.
+  +> When complete, close it with `metaform map work op=done id=<work_id/> resolution="&lt;what you found or changed&gt;"`.
+  +> Ask only when the answer is not obvious and more than one correct answer exists.
+  +> Write each question on the ticket with `metaform map ask &lt;node&gt; "&lt;question and the answer you recommend&gt;" work=<work_id/>`.
+  +> Keep working on everything that can proceed while a question is outstanding.
+  +> Stop only when further progress is impossible.
+  +> When blocked from continuing, end the turn so the next agent can start.
+
+@CONDITION:
+  ?IF ({Ticket}==NULL) -> {State}:=READ
+  :ELSE ?IF ( work complete ) -> {State}:=DONE
+  :ELSE ?IF ( answer not obvious AND more than one correct answer exists ) -> {State}:=ASK
+  :ELSE ?IF ( cannot continue ) -> {State}:=BLOCKED
+  :ELSE -> {State}:=WORK
+
+@ROUTER:
+  @MATCH({State}):
+    | [READ] -> EXECUTE_PIPELINE(Read)
+    | [WORK] -> EXECUTE_PIPELINE(Work)
+    | [ASK] -> EXECUTE_PIPELINE(Ask)
+    | [DONE] -> EXECUTE_PIPELINE(Done)
+    | [BLOCKED] -> EXECUTE_PIPELINE(Blocked)
+
+@EXECUTE_PIPELINE(Read):
+  ∇(`metaform map work id=<work_id/>`) => {Ticket}.
+  ∇({Ticket}) => determine work and {Steps}.
+  Δ({Steps}) => `metaform map work op=plan id=<work_id/> steps=&lt;n&gt;`.
+  => EXECUTE_PIPELINE(Work)
+
+@EXECUTE_PIPELINE(Work):
+  ∇({Ticket}) => determine next executable step.
+  Δ(next step) => perform it.
+  Δ(completed step) => `metaform map work op=step id=<work_id/> said="&lt;one sentence&gt;"`.
+  => reevaluate state.
+
+@EXECUTE_PIPELINE(Ask):
+  ∇({Ticket}) => isolate the unresolved choice and recommended answer.
+  Δ(question) => `metaform map ask &lt;node&gt; "&lt;question and the answer you recommend&gt;" work=<work_id/>`.
+  => continue executable work.
+
+@EXECUTE_PIPELINE(Done):
+  Δ({Ticket}, completed work) => `metaform map work op=done id=<work_id/> resolution="&lt;what you found or changed&gt;"`.
+  YIELD
+
+@EXECUTE_PIPELINE(Blocked):
+  {Blocked}:=TRUE
+  YIELD
+
+@VERIFY:
+  {Valid}:=(
+       ticket read
+    AND plan reported
+    AND every completed step reported
+    AND questions asked only under stated condition
+    AND available work continued
+    AND completed work closed with resolution
+    AND stopping occurs only when continuation is impossible
+  )
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</handoff>
+
+<chat>
+@STATE_INIT:
+  {Message_ID}:=[<message_id/>]; {Question}:=[<question/>]; {Ticket}:=NULL; {Answer}:=NULL; {State}:=CONTEXT
+
+@CONSTRAINT:
+  +> Chat was opened for question {Message_ID} from this ticket.
+  +> Read the ticket and {Question}.
+  +> Determine what the question was about.
+  +> Once the person answers, continue the task in this session.
+
+@CONDITION:
+  ?IF ({Ticket}==NULL) -> {State}:=CONTEXT
+  :ELSE ?IF ({Answer}==NULL) -> {State}:=WAIT
+  :ELSE -> {State}:=CONTINUE
+
+@ROUTER:
+  @MATCH({State}):
+    | [CONTEXT] -> EXECUTE_PIPELINE(Context)
+    | [WAIT] -> EXECUTE_PIPELINE(Wait)
+    | [CONTINUE] -> EXECUTE_PIPELINE(Continue)
+
+@EXECUTE_PIPELINE(Context):
+  ∇({Ticket},{Question}) => recover question context.
+  => {State}:=WAIT
+
+@EXECUTE_PIPELINE(Wait):
+  YIELD {Question}
+
+@EXECUTE_PIPELINE(Continue):
+  Δ({Ticket},{Question},{Answer}) => resume task in this session.
+  YIELD continuation.
+
+@VERIFY:
+  {Valid}:=(question context recovered AND answer resumes the originating task in this session)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</chat>
+
+<answered>
+@STATE_INIT:
+  {Message_ID}:=[<message_id/>]; {Question}:=[<question/>]; {Answer}:=[<answer/>]; {State}:=RESUME
+
+@CONSTRAINT:
+  +> Treat {Answer} as the answer to question {Message_ID}: {Question}.
+  +> Apply it to the work that was waiting on that question.
+
+@CONDITION:
+  ?IF ({Answer}!=NULL) -> {State}:=RESUME
+  :ELSE -> {State}:=UNRESOLVED
+
+@ROUTER:
+  @MATCH({State}):
+    | [RESUME] -> EXECUTE_PIPELINE(Resume)
+    | [UNRESOLVED] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Resume):
+  Δ({Question},{Answer}) => apply answer to pending work.
+  YIELD continuation.
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=({Answer} applied to {Question})
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</answered>
+
+<nodes>
+@STATE_INIT:
+  {Nodes}:=[namespace nodes supplied here]
+
+@CONSTRAINT:
+  +> Treat {Nodes} as the namespace nodes of this work as held by the map.
+
+@CONDITION:
+  ?IF ({Nodes}!=NULL) -> {State}:=AVAILABLE
+  :ELSE -> {State}:=EMPTY
+
+@ROUTER:
+  @MATCH({State}):
+    | [AVAILABLE] -> EXECUTE_PIPELINE(Use)
+    | [EMPTY] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Use):
+  ∇({Nodes}) => make node context available to the work.
+  YIELD
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=TRUE
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</nodes>
+
+<handed>
+@STATE_INIT:
+  {Nonce}:=[<nonce/>]; {State}:=HANDOFF
+
+@CONSTRAINT:
+  +> Give the receiving agent this command to run: `metaform <nonce/>`.
+
+@CONDITION:
+  ?IF ({Nonce}!=NULL) -> {State}:=HANDOFF
+  :ELSE -> {State}:=UNRESOLVED
+
+@ROUTER:
+  @MATCH({State}):
+    | [HANDOFF] -> EXECUTE_PIPELINE(Handoff)
+    | [UNRESOLVED] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Handoff):
+  YIELD `metaform <nonce/>`
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=(handoff command contains {Nonce})
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</handed>
+
 </prompts>

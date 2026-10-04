@@ -12,19 +12,22 @@ import re
 
 import dataclasses
 import json
+from datetime import UTC, datetime
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
-from metaform.data import PLACE_KINDS, Column, Node, Notice, Page, Store, Table, Tables, WorkRecord
+from metaform.data import PLACE_KINDS, Item, Node, Notice, Page, Store, WorkRecord
 from metaform.data.records import TICKETS
 from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads, work_reads
 
-from .storage import DATA, FEATURE_TABLES, legacy_fold, legacy_upgrade
+from .storage import DATA, TABLES
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = False
+DATA_SOURCE = 'storage.py'
 
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
 settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
@@ -248,6 +251,57 @@ def approve(ctx: Context) -> Any:
     return _store(ctx).approve(ctx.nouns['challenge'])
 
 
+BLIND_SPOTS = 'The functions and encounters the design should have and does not.'
+
+
+def critic(ctx: Context) -> str:
+    """One critic run: a new blind-spot layer, blinded by its type, and the critic prompt with the whole metaform,
+    LAYER-014 and LAYER-015. The blind critic is the default."""
+    store = _store(ctx)
+    sighted = bool(ctx.nouns.get('sighted', False))
+    kind = 'sighted' if sighted else 'blind'
+    taken = {layer.name for layer in _every(lambda after: store.layers(after=after))}
+    base = f'blind-spot-{kind}-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}'
+    name, count = base, 1
+    while name in taken:
+        count += 1
+        name = f'{base}-{count}'
+    prompt = f'critic_{kind}'
+    store.layer(name, 'map', BLIND_SPOTS, mutable=False, hideable=True,
+                provenance={'module': 'map', 'prompt': prompt, 'role': 'critic', 'blinded': not sighted})
+    metaform = outline.markdown(store, None, **_reading(ctx)).strip()
+    return prompt_files.required(resources.files(__name__), prompt, layer=name, metaform=metaform)
+
+
+def challenges(ctx: Context) -> str:
+    """The answer prompt with each challenge of one blind-spot layer and its state, LAYER-015."""
+    store = _store(ctx)
+    layer = ctx.nouns['layer']
+    lines = []
+    for found in _every(lambda after: store.layer_items(layer, after=after)):
+        if not isinstance(found, Item):
+            continue
+        where = str(found.target)
+        if found.target.kind == 'element':
+            element = store.element(found.target.id, raw=True)
+            where = f'element:{element.address}' if element is not None else where
+        value = found.value if isinstance(found.value, str) else json.dumps(found.value, ensure_ascii=False)
+        lines.append(f'{found.item_id}  {found.state or "open"}  {where}  {value}')
+    return prompt_files.required(resources.files(__name__), 'answer_challenges', layer=layer, challenges='\n'.join(lines))
+
+
+def _every(read: Any) -> list[Any]:
+    """Every result of a paged read, page after page."""
+    held: list[Any] = []
+    after = None
+    while True:
+        page = read(after)
+        held.extend(page.results)
+        if not page.next:
+            return held
+        after = page.next
+
+
 def _need(ctx: Context, *names: str, verb: str = 'knowledge') -> None:
     """Stop a call missing a field its record cannot be stored without at all, before anything is written, BASE-038."""
     missing = [name for name in names if name not in ctx.nouns]
@@ -348,8 +402,8 @@ NAMING = ('receiver', 'provider', 'address')
 
 
 def _said_as(store: Store, thing: str) -> str:
-    """What an agent calls a thing the store names by id: an element by its address, a requirement by the element that
-    requires and the element that serves it, a part by its address inside its requirement."""
+    """What an agent calls a thing the store names by id: an element by its address, a purpose by the element that
+    holds it and the element that serves it, a part by its address inside its purpose."""
     found = store.element(thing, raw=True)
     if found is not None:
         return found.address
@@ -361,7 +415,7 @@ def _said_as(store: Store, thing: str) -> str:
     if fields.get('parent'):
         return f"{at(fields.get('provider'))} inside {_said_as(store, str(fields['parent']))}"
     if fields.get('receiver'):
-        return f"the requirement of {at(fields['receiver'])} served by {at(fields.get('provider'))}"
+        return f"the purpose of {at(fields['receiver'])} served by {at(fields.get('provider'))}"
     return thing
 
 
@@ -376,7 +430,7 @@ def _in_words(store: Store, value: Any) -> Any:
     return value
 
 
-def _requirements(store: Store, receiver: Any, provider: Any) -> list[Any]:
+def _purposes(store: Store, receiver: Any, provider: Any) -> list[Any]:
     owner = store.element(str(receiver), raw=True)
     if owner is None:
         return []
@@ -387,19 +441,19 @@ def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = Fa
     if len(found) == 1:
         return found[0]
     if not found:
-        notices.append(Notice('requirement', f'There is no {what} in the metaform; nothing was changed.'))
+        notices.append(Notice('purpose', f'There is no {what} in the metaform; nothing was changed.'))
     else:
         named = '; '.join(repr(item.purpose) for item in found) if purposes else str(len(found))
-        notices.append(Notice('requirement', f'{len(found)} of {what} cannot be told apart by their addresses, '
+        notices.append(Notice('purpose', f'{len(found)} of {what} cannot be told apart by their addresses, '
                                              f'with the purposes {named}; nothing was changed.'))
     return None
 
 
 def refine(ctx: Context) -> Any:
-    """Refine the metaform: one element, requirement or part changed or removed as its newest version in the
+    """Refine the metaform: one element, purpose or part changed or removed as its newest version in the
     metaform's own layer, every earlier version kept, LAYER-025. It names what it changes by address, never by id: an
-    element by its address, a requirement by the element that requires and the element that serves it, and a part by
-    its address inside that requirement, MAP-005. It is a verb of its own, apart from knowledge, because it changes the
+    element by its address, a purpose by the element that holds it and the element that serves it, and a part by
+    its address inside that purpose, MAP-005. It is a verb of its own, apart from knowledge, because it changes the
     metaform and no knowledge layer. Nothing is refused for its content, BASE-044."""
     nouns = ctx.nouns
     if not any(name in nouns for name in NAMING):
@@ -411,8 +465,8 @@ def refine(ctx: Context) -> Any:
     changes: dict[str, Any] = {name: nouns[name] for name in REFINE_FIELDS if name in nouns}
     thing: str | None = None
     if 'receiver' in nouns or 'provider' in nouns:
-        said = f"the requirement of {nouns.get('receiver')} served by {nouns.get('provider')}"
-        held = _one(_requirements(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
+        said = f"the purpose of {nouns.get('receiver')} served by {nouns.get('provider')}"
+        held = _one(_purposes(store, nouns.get('receiver'), nouns.get('provider')), said, notices, purposes=True)
         if held is not None and 'address' in nouns:
             parts = [item for item in store.subtypes(held.join_id, limit=0).results if item.address == nouns['address']]
             part = _one(parts, f"{nouns['address']} inside {said}", notices)
@@ -424,8 +478,8 @@ def refine(ctx: Context) -> Any:
             changes.update({column: nouns[noun] for noun, column in (('to_receiver', 'receiver'),
                                                                      ('to_provider', 'provider')) if noun in nouns})
             if 'parent_receiver' in nouns or 'parent_provider' in nouns:
-                parent = _one(_requirements(store, nouns.get('parent_receiver'), nouns.get('parent_provider')),
-                              f"the requirement of {nouns.get('parent_receiver')} served by "
+                parent = _one(_purposes(store, nouns.get('parent_receiver'), nouns.get('parent_provider')),
+                              f"the purpose of {nouns.get('parent_receiver')} served by "
                               f"{nouns.get('parent_provider')}", notices, purposes=True)
                 thing = thing if parent is not None else None
                 if parent is not None:
@@ -578,7 +632,7 @@ KNOWLEDGE_NOUNS = (
     _noun('verb', 'add-join and add-subtype: the verb ef opens with, third-person singular present tense, ending in '
                   '-s or -es.'),
     _noun('non_goal', 'add-join and add-subtype: what the receiver does not seek.'),
-    _noun('type', 'add-join: the join type, require by default.'),
+    _noun('type', 'add-join: the join type, purpose by default.'),
     _noun('join', 'add-subtype: the id of the join the subtype join sits in; add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
     _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
@@ -622,24 +676,25 @@ def _refined_noun(noun: Noun) -> Noun:
 
 
 REFINE_NOUNS = (
-    _noun('receiver', 'A requirement: the element that requires it, by address.'),
-    _noun('provider', 'A requirement: the element that serves it, by address.'),
+    _noun('receiver', 'A purpose: the element that holds it, by address.'),
+    _noun('provider', 'A purpose: the element that serves it, by address.'),
     _noun('address', 'An element, by address; with receiver and provider, the part at that address inside the '
-                     'requirement.'),
+                     'purpose.'),
     _noun('reason', 'Why.'),
     _noun('evidence', 'What shows it.'),
     _noun('remove', 'Remove it from the metaform instead of changing it; its versions are kept.', 'bool'),
-    _noun('to_receiver', 'A requirement: its new receiver, by address; it moves and stays the same requirement.'),
-    _noun('to_provider', 'A requirement: its new provider, by address.'),
+    _noun('to_receiver', 'A purpose: its new receiver, by address; it moves and stays the same purpose.'),
+    _noun('to_provider', 'A purpose: its new provider, by address.'),
     _noun('to_address', 'A part: another element for it to hold, by address. An element cannot be moved: given for an '
                         'element, it is not applied.'),
-    _noun('parent_receiver', 'A requirement placed inside another: the receiver of the requirement it goes inside.'),
-    _noun('parent_provider', 'A requirement placed inside another: the provider of the requirement it goes inside.'),
+    _noun('parent_receiver', 'A purpose placed inside another: the receiver of the purpose it goes inside.'),
+    _noun('parent_provider', 'A purpose placed inside another: the provider of the purpose it goes inside.'),
     *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
 )
 
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
+    'glyphs': frozenset(),
     'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'open', 'limit', 'after'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held', 'reviewed',
@@ -662,12 +717,8 @@ AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal'
 
 # The map module's own tables, STORE-045: `glyphs` keeps the agent glyph each ticket is assigned to, keyed by the work
 # id, beside the map as the work records are, so the chassis work table holds no glyph, BASE-046 and ticket 90430bba.
-TABLES = Tables(version=2, legacy_upgrade=legacy_upgrade, legacy_fold=legacy_fold, tables=(*FEATURE_TABLES,
-    Table('glyphs', place='metaform', key=('work_id',),
-          columns=(Column('work_id', required=True), Column('glyph', required=True))),
-))
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
-WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'read': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'glyphs': (), 'read': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
                                           'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
                                           'move': ('id', 'column'), 'distribute': ('agents',)}
 
@@ -680,14 +731,14 @@ def _work_node(value: Any) -> Node:
 
 
 def _named(store: Store, given: dict[str, Any], notices: list[Notice]) -> Node | None:
-    """The node a call names by address, MAP-005: a requirement by its receiver and provider, a part by its address
+    """The node a call names by address, MAP-005: a purpose by its receiver and provider, a part by its address
     inside it, an element by its address; or the node noun as written. A node noun given beside them is named in a
     notice as not read."""
     if 'receiver' in given or 'provider' in given or 'address' in given:
         if 'node' in given:
             notices.append(Notice('node', 'receiver, provider and address name the node; node was not read.'))
         if 'receiver' in given or 'provider' in given:
-            return store.requirement(given.get('receiver'), given.get('provider'), given.get('address'))
+            return store.purpose(given.get('receiver'), given.get('provider'), given.get('address'))
         return Node('element', str(given['address']))
     return _work_node(given['node']) if 'node' in given else None
 
@@ -703,21 +754,22 @@ def _link(store: Store, value: Any) -> Node:
 
 def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
     """The node ask and tell name, node first, Rich 2026-10-03: an element by its address, or with provider beside it
-    the requirement it holds as receiver, and with address the part at that address inside it, MAP-005."""
+    the purpose it holds as receiver, and with address the part at that address inside it, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
             notices.append(Notice('address', 'address names a part only with provider; it was not read.'))
         return _work_node(nouns['node'])
     node = str(nouns['node'])
     receiver = node.partition(':')[2] if node.startswith('element:') else node
-    return store.requirement(receiver, nouns['provider'], nouns.get('address'))
+    return store.purpose(receiver, nouns['provider'], nouns.get('address'))
 
 
 def ask(ctx: Context) -> Any:
     """Ask the user a question at a node, in plain words, with the answers you suggest, MAP-050."""
     store, notices = _store(ctx), list[Notice]()
     return _with_notices(store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'],
-                                   suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by')), notices)
+                                   suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by'),
+                                   work=ctx.nouns.get('work')), notices)
 
 
 def tell(ctx: Context) -> Any:
@@ -763,7 +815,7 @@ def work(ctx: Context) -> Any:
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
-        raise Stop(f'{op!r} is not a work operation: op=list, add, edit, take, plan, step, move, distribute or done; '
+        raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute or done; '
                    'with id= and '
                    'no op, the one ticket is read.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
@@ -772,6 +824,8 @@ def work(ctx: Context) -> Any:
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
+    if op == 'glyphs':
+        return {'glyphs': list(AGENT_GLYPHS)}
     if op == 'list':
         node = _named(store, nouns, notices)
         # An element's list holds the tickets on the joins it receives or provides too, so an agent told its node
@@ -890,21 +944,22 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, str] | None:
 WORK_NOUNS = (
     _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
                 'how many steps the agent plans; step, which says it finished one; move, which puts it in a column '
-                'of the board; distribute, which gives the open tickets the glyphs of N agents; or done.'),
+                'of the board; distribute, which gives the open tickets the glyphs of N agents; glyphs, which reads '
+                'the available agent glyph names; or done.'),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
                   'list gives its own records and those on the joins it receives or provides, subtype joins included.'),
-    _noun('receiver', 'list, add and edit: a requirement, by the address of the element that requires it, with provider.'),
-    _noun('provider', 'list, add and edit: a requirement, by the address of the element that serves it, with receiver.'),
+    _noun('receiver', 'list, add and edit: a purpose, by the address of the element that holds it, with provider.'),
+    _noun('provider', 'list, add and edit: a purpose, by the address of the element that serves it, with receiver.'),
     _noun('address', 'list, add and edit: an element, by address; with receiver and provider, the part at that address '
-                     'inside the requirement.'),
+                     'inside the purpose.'),
     _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, in the specs and not built '
                        'yet; broken; flawed, not broken but not right either; enhancement; or exclude, material '
                        'outside the intake scope or code conflicting with a superseding specification, with the '
                        'reason and references recorded for review.'),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
-                   'objects of receiver and provider, with address for a part inside, each naming a requirement.',
+                   'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [
               {'type': 'string'},
               {'type': 'object', 'properties': {'receiver': {'type': 'string'}, 'provider': {'type': 'string'},
@@ -931,9 +986,9 @@ WORK_NOUNS = (
 )
 
 RAW = ('raw',)
-# ask and tell take node first; these beside it name the requirement it holds, Rich 2026-10-03, MAP-005.
-HELD = (_noun('provider', 'A requirement node holds as its receiver: the address of the element that serves it.'),
-        _noun('address', 'With provider: the part at that address inside the requirement.'))
+# ask and tell take node first; these beside it name the purpose it holds, Rich 2026-10-03, MAP-005.
+HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of the element that serves it.'),
+        _noun('address', 'With provider: the part at that address inside the purpose.'))
 
 
 MODULE = Module(
@@ -1029,21 +1084,27 @@ MODULE = Module(
                                                            'at each node it links.')),
 )),
         Verb('ask', ask, 'Ask the user a question at the node it concerns, with the answers you suggest.',
-             nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the requirement '
+             nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),
                     Noun('question', 'The question, in plain words a person who has not read your context can answer.'),
                     *HELD,
                     _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
                                          'user answers with one click on one of them, or types another.', 'json'),
-                    _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.')),
-             details='Ask, and carry on with what does not depend on the answer. The user answers in the web GUI, '
+                    _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.'),
+                    _noun('work', 'The ticket this question belongs to, by its work id.')),
+             details='Before you ask, look for the answer in the specifications, the code and the map, and ask only '
+                     'what they leave open. The user reads your question on the map with none of your context: say '
+                     'what it is about and why it needs deciding, in plain words, without your own labels or ids. '
+                     'Each suggested answer says what it leads to. '
+                     'Ask, and carry on with what does not depend on the answer. The user answers in the web GUI, '
                      'where the node glows until they do, and the answer is kept at the node for the agent that '
                      'works there next. Read the answers with metaform map messages. If the user answers you another '
                      'way, record that answer with metaform map reply <id> answer="...", so the node stops glowing.',
-             examples=(('metaform map ask code.alarm.audible "Is the quiet tone still wanted?" '
-                        'suggestions=\'["Yes, keep it", "No, make it louder"]\'', 'Ask the user at the alarm.'),)),
+             examples=(('metaform map ask code.alarm.audible "The alarm still has a quiet tone, and the specification '
+                        'no longer mentions one. Should it stay?" suggestions=\'["Keep it: the alarm keeps both tones", '
+                        '"Remove it: the alarm has only the loud tone"]\'', 'Ask the user at the alarm.'),)),
         Verb('tell', tell, 'Leave the user a message at a node, which asks for nothing and waits to be read.',
-             nouns=(Noun('node', 'Where the message applies: an element, by address; with provider, the requirement '
+             nouns=(Noun('node', 'Where the message applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),
                     Noun('message', 'What the user should know, in plain words.'),
                     *HELD,
@@ -1061,7 +1122,7 @@ MODULE = Module(
                                'and closed state.'),
                     _noun('id', 'move: the id of the question or message.'),
                     _noun('node', 'list: only those at this node. move: the destination element, by address; with '
-                                 'provider, the requirement it holds as receiver.'),
+                                 'provider, the purpose it holds as receiver.'),
                     *HELD, _noun('kind', 'list: question or message.'),
                     _noun('open', 'list: true for those that still wait, false for those answered or read.', 'bool'),
                     *PAGING),
@@ -1097,5 +1158,13 @@ MODULE = Module(
                     _noun('link', 'For C: the element or join that already handles it.'))),
         Verb('approve', approve, 'Approve a challenge answered B, making it a plan.',
              nouns=(Noun('challenge', 'The challenge item id.'),), surfaces=('cli',)),
+        Verb('critic', critic, 'Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the '
+                               'whole metaform.',
+             nouns=(_noun('sighted', 'Whether the critic reads the code with the metaform; blind when missing.',
+                          'bool'),),
+             details='Each run creates its own blind-spot layer, with provenance role critic and blinded true unless '
+                     'sighted=true, LAYER-014.'),
+        Verb('challenges', challenges, "The answer prompt with each challenge of a blind-spot layer and its state.",
+             nouns=(Noun('layer', 'The blind-spot layer.'),)),
     ),
 )

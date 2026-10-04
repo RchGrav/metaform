@@ -20,6 +20,7 @@
       <label for="mf">metaform</label>
       <select id="mf"></select>
     </div>
+    <label class="autostart"><input id="autostartAgents" type="checkbox" disabled>Autostart agents</label>
     <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
     <button class="clearbtn" id="boardBtn" title="The project's tickets as a kanban board">Board</button>
     <div class="clearpick">
@@ -29,6 +30,7 @@
         <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
         <button id="removeBtn" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
         <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
+        <button id="agentsBtn" role="menuitem">Agents</button>
         <button id="orphanBtn" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
       </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
@@ -115,7 +117,7 @@
   <div class="body"></div>
 </div>
 <div id="board" hidden role="dialog" aria-label="Board">
-  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><div class="distribute" role="group" aria-label="Distribute the work"><label>Agents <input type="number" min="1" max="16" value="1"></label><button title="Give the tickets not done and not taken the glyphs of this many agents, in turn">Distribute</button></div><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><div class="distribute" role="group" aria-label="Distribute the work"><label>Agents <input type="number" min="1" max="16" value="1"></label><button title="Give the tickets not done and not taken the glyphs of this many agents, in turn">Distribute</button></div><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
   <p class="guidance">Move cards up to prioritize work. Agents take their next ticket from To do before Backlog, higher cards first.</p>
   <div class="columns"></div>
 </div>
@@ -168,6 +170,7 @@
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
   <div class="body">
     <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label>
+    <button class="start-all" hidden>Start all</button>
     <div class="tickets"></div>
   </div>
 </div>
@@ -177,6 +180,9 @@
     <p>How an agent's permission prompts are answered. It is kept in the settings, and every agent reads it at its next prompt, so a change reaches agents already running.</p>
     <div class="choices"></div>
     <p class="saved"></p>
+    <label class="agent-count" for="dispatchAgents">Agents when tickets are not distributed</label>
+    <div class="agent-count"><input id="dispatchAgents" type="number" step="1"><button class="save-agents">Save</button></div>
+    <p class="agents-saved"></p>
   </div>
 </div>
 <div id="agent" hidden role="dialog" aria-label="An agent at work">

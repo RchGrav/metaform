@@ -37,6 +37,7 @@ The runner also imports `acp`, the SDK, and nothing else outside the standard li
 - `nodes`: the line before the namespace nodes in what `metaform <nonce>` prints.
 - `handed`: what `handoff id=<work id>` prints, the nonce to give the next agent.
 - `handoff`: the one prompt the agent is sent. It tells the agent its ticket is taken for it, to read it with `metaform map work id=<id>` and work it, and how to plan, report each step and close it. `metaform <nonce>` serves the same text, then the `nodes` line and the nodes.
+- `chat`: the originating question and instructions to research it and continue the ticket once answered. A new session also receives the ticket's earlier answers.
 
 ## Verbs
 
@@ -45,6 +46,8 @@ The runner also imports `acp`, the SDK, and nothing else outside the standard li
 - `message <id> <text>...`: sends the text to the running agent as `session/prompt`; returns `sent: true`.
 - `stop <id>`: sends `session/cancel`, answers every waiting permission request as cancelled, closes the agent's input and ends its process group; returns `stopped: true`.
 - `handoff`: run through a nonce, `metaform <nonce>`, the hand-off prompt followed by the namespace nodes of the work, the where read of the ticket's node and of each node it links. Run as `handoff id=<work id>`, it makes a new nonce for that ticket and prints `metaform <nonce>` for the agent the work is handed to; it takes nothing. A nonce made this way is not closed by the module.
+- `chat <question id>` reuses the ticket's open session, or assigns a new glyph and starts a new session with the question. Its answer reaches that session as a prompt.
+- `autostart` unpauses answered tickets and, when enabled, starts the free glyphs in board order. Without distributed glyphs it fills the configured agent slots.
 
 `message` and `stop` with no agent running on the ticket name `metaform dispatch start <id> <agent>` as the next step.
 
@@ -53,6 +56,9 @@ The runner also imports `acp`, the SDK, and nothing else outside the standard li
 - `dispatch_claude`, default `npx -y @agentclientprotocol/claude-agent-acp`.
 - `dispatch_codex`, default `npx -y @agentclientprotocol/codex-acp`.
 - `dispatch_gemini`, default `gemini --acp`.
+- `dispatch_autostart`, false by default, labeled Autostart agents; separate from the web GUI autostart setting.
+- `dispatch_agent`, codex by default, the agent for automatic starts.
+- `dispatch_agents`, 5 by default, the number of simultaneous agents when tickets have not been distributed.
 
 `start` and `run` read the one for the agent named. Each command runs the person's own installed agent under the person's own login, with the person's environment passed through unchanged. Metaform never reads, stores or sends credentials, and never answers an agent's authentication; an agent that needs a login says so in the failure note, and the person logs in with the agent itself.
 
@@ -77,6 +83,23 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 ## Lifecycle and cleanup
 
 No `start` or `stop` hook. A runner owns one agent process group, one loopback listening socket and its tasks. The session ends when a prompt turn ends with the ticket done, when `stop` is run, when the agent's process ends, or on Ctrl+C in a foreground `run`. Ending closes the nonce, ends the agent's process group and marks the session record ended.
+
+Session reads, including MCP, CLI, the ticket's `work_read` and the workbench, verify stored running rows against the ticket, the recorded pid and the runner's authenticated `status` reply. The reply checks the ACP adapter as well as the runner. A completed ticket, a pid whose command line is not `dispatch run <work id>`, a refused control connection or a reply for another session reads as ended. A runner on a glyph goes on to the glyph's next ticket in the same process, so its command line names the work id it started on; its own reply shows it runs the later ticket. A timeout or an older runner without status reads as running only when its pid runs that work id. Reads keep the stored row and transcript intact. An idle adapter on an open ticket remains running and can receive another message.
+
+Public session reads also report `activity`, separately from lifecycle: `working` for an executing prompt turn,
+`waiting` for a permission request or an idle turn with its own unanswered questions, and `idle` for no executing
+turn or wait. The runner reports these from its turn and wait tracking, never from a PID. An older runner retains
+its lifecycle uncertainty; one unambiguous latest `end_turn` supports `idle`, while later output, tied latest
+records or incomplete telemetry yield `unknown`. Reads persist no guesses. Turn and permission transitions
+announce a dispatch refresh; idle and waiting sessions keep their tickets, questions and message controls.
+
+A failed background callback wakes the runner into shutdown. Cleanup still closes the agent, nonce, listener and control server when a database schema change prevents a final transcript or session write; that persistence failure is reported in the runner log. The schema compatibility check remains in force, so an old runner never writes through a newer schema.
+
+An agent that asks a question keeps working during its turn. If it ends the turn with its own question unanswered,
+the session ends and returns the ticket to Backlog with its progress intact; its glyph can proceed to another ticket.
+Answering unpauses the ticket. A session explicitly opened with Chat follows the originating question and receives
+its answer while the person and agent discuss it. `start` reserves a ticket atomically before launching the runner,
+which transfers the reservation to its ACP session; a failed launch releases the reservation.
 
 ## Modules relied on
 

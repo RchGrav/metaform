@@ -28,6 +28,10 @@ receives the current transaction, and `Operation(handler, write=True)` joins
 `Store.atomic()`. `tx.tables()` reaches its metaform tables in that same
 transaction. Hello's `count_visit` operation backs `visit`. `Data.decorate`
 adds to native records; `Data.item_write` contributes to item writes.
+For reads needed while the module is disabled, declare a literal
+`DATA_SOURCE = 'storage.py'`. That standalone file exports `DATA` and `TABLES`
+and marks those reads `Operation(handler, retained=True)`; it imports only
+public APIs and its own helpers, without importing this runtime initializer.
 `Table.from_sql(name, schema, on_remove=...)` adopts an existing SQL table
 with its rows, constraints and indexes. Recorded removal rules survive an
 absent owner. Map's storage shows legacy table adoption and upgrades.

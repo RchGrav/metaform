@@ -32,6 +32,14 @@ ticket is kept. The glyphs it held go into no field: they remain only in the bac
 
 Layout 15 to 16, LAYER-021, Rich 2026-10-03, D91 and D92: a knowledge item carries read_first and always_show. The items
 table gains both columns, false on every item; nothing else changes.
+
+Layout 16 to 17, MAP-054, Rich 2026-10-02, D112: "When a join becomes an element it creates an element record for the
+join which can accept more joins itself. they are associated by the namespace name". The joins table gains its element
+column, the address of the element a promoted join names, empty on every join; nothing else changes.
+
+Layout 17 to 18, Rich 2026-10-04: "well I think we need to go back to purpose for semantics"; "yeah, add it to
+purpose..   thats because for certain artifact types like photos you cant call them a requirement but you can more
+easily reason a purpose". Every version of every join of type require is typed purpose again; nothing else changes.
 """
 from __future__ import annotations
 
@@ -54,9 +62,9 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 to 15 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 15.',
+    """Update a store at layout 7 to 17 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 17.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -87,7 +95,7 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
             _fields(db)
         if int(found) >= 10:
             tables.legacy_upgrade(db, found)
-        db.execute("UPDATE joins SET type='require' WHERE type='purpose'")  # layout 13, Rich 2026-10-02
+        db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18, Rich 2026-10-04
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
             raise StoreError(f'{path} could not be updated to version {SCHEMA_VERSION}: {len(problems)} references would break, '

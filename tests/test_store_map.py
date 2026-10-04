@@ -338,7 +338,7 @@ def test_a_join_reads_back_every_field_as_written(store):
                    ifd='receives', non_goal='not this', refs=[('path', 'a.c'), ('doc', 'README')])
     join = store.joins('code.a', raw=True).results[0]
     assert (join.type, join.name, join.purpose, join.ef, join.verb, join.ifd, join.non_goal) == (
-        'require', 'b', 'the why', 'serves a', 'serves', 'receives', 'not this')
+        'purpose', 'b', 'the why', 'serves a', 'serves', 'receives', 'not this')
     assert [(ref.key, ref.value) for ref in join.refs] == [('path', 'a.c'), ('doc', 'README')]
 
 
@@ -369,7 +369,7 @@ def test_the_roots_are_intake_2_1s():
     from pathlib import Path
 
     from metaform.data import roots
-    spec = (Path(__file__).parents[1] / 'specifications' / 'Intake_2.1.md').read_text(encoding='utf-8')
+    spec = (Path(__file__).parents[1] / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'Intake_2.1.md').read_text(encoding='utf-8')
     found = re.search(r'\{NS_ROOTS\}\s*:= \[([^\]]*)\]', spec)
     assert found is not None
     names = [name.strip() for name in found.group(1).split(',')]
@@ -525,7 +525,7 @@ def test_a_subtype_join_is_a_row_of_joins_and_a_joins_identity_holds_no_receiver
     assert columns['join_ids'] == ['join_id'] and 'parent' in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['current_subtypes'] == ['join_id', 'row', 'parent', 'provider']
-    assert version == '16' and kinds == {'require', 'subtype'}  # layout 16: a knowledge item's read_first and always_show, LAYER-021; 15: the glyph column dropped, the map module keeps it, STORE-045; 14: a ticket's glyph, VIEW-040; 13: the type require, Rich 2026-10-02; 12: no relation or observation, 11: no perspective, MAP-020; 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
+    assert version == '18' and kinds == {'purpose', 'subtype'}  # layout 18: the join type is purpose again, Rich 2026-10-04; 17: a join's element, MAP-054; 16: a knowledge item's read_first and always_show, LAYER-021; 15: the glyph column dropped, the map module keeps it, STORE-045; 14: a ticket's glyph, VIEW-040; 13: the type require, Rich 2026-10-02; 12: no relation or observation, 11: no perspective, MAP-020; 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
     assert 'correction_stack' not in tables
 
 

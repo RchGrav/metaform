@@ -89,6 +89,21 @@ def test_a_recorded_harness_sees_no_notice(under, capsys):
 
 
 @pytest.mark.kind('fixture')
+@pytest.mark.parametrize('ready', [True, False])
+def test_never_says_first_run_when_an_intake_exists(under, capsys, store, tmp_path, monkeypatch, ready):
+    from storekit import intake
+    under(HARNESS)
+    assert NOTICE in command(capsys, 'help')[2]
+    intake(store, ready=ready)
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # an intake in any project of the home, not only the folder's own
+    err = command(capsys, 'help')[2]
+    assert 'first run' not in err.lower()
+    assert err.count('Read metaform help provision for each feature') == 1
+
+
+@pytest.mark.kind('fixture')
 def test_no_notice_when_no_harness_is_found_or_it_runs_from_the_temporary_folder(under, capsys):
     under(None)
     assert NOTICE not in command(capsys, 'help')[2]
@@ -106,6 +121,25 @@ def test_provision_done_records_the_running_harness_and_the_notice_stops(under, 
     assert NOTICE not in command(capsys, 'help')[2]
     under(OTHER)
     assert NOTICE in command(capsys, 'help')[2]
+
+
+@pytest.mark.kind('fixture')
+def test_provision_through_timeout_records_only_the_actual_harness(monkeypatch, capsys, home):
+    from metaform import harness
+    wrapper = ROOT / 'usr' / 'bin' / 'timeout'
+    processes = {20: (21, wrapper), 21: (0, HARNESS)}
+    monkeypatch.setattr(os, 'getppid', lambda: 20)
+    monkeypatch.setattr(harness, '_process', lambda pid: processes.get(pid))
+
+    code, _, err = command(capsys, 'provision', 'done')
+    assert code == 0 and NOTICE in err
+    assert harness.known(HARNESS)
+    assert recorded(home) == [harness.key(HARNESS)]
+    assert NOTICE not in command(capsys, '--version')[2]
+
+    processes[21] = (0, OTHER)
+    assert NOTICE in command(capsys, '--version')[2]
+    assert not harness.known(OTHER)
 
 
 @pytest.mark.kind('fixture')
@@ -243,4 +277,12 @@ def test_install_records_the_harness_of_each_tool_it_registers(run, machine, hom
 def test_install_records_no_harness_for_a_tool_whose_registration_failed(run, machine, home):
     executable(machine['claude'], 'claude', 'import sys; sys.exit(1)')
     assert run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False).returncode != 0
+    assert recorded(home) == []
+
+
+@pytest.mark.kind('simulation')
+def test_config_only_install_leaves_the_harness_for_first_use_to_record(run, machine, home):
+    run('install', 'cursor', cwd=machine['folder'], env=machine['env'])
+    config = Path(machine['env']['HOME']) / '.cursor' / 'mcp.json'
+    assert 'metaform' in json.loads(config.read_text(encoding='utf-8'))['mcpServers']
     assert recorded(home) == []

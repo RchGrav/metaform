@@ -133,7 +133,7 @@ def list_reports(where: Path, *, project: str | None = None, kind: str | None = 
                  limit: int = 500, after: str | None = None) -> Page[Report]:
     """The report, feedback and shape files for the folder's project, or the home's when it has none."""
     project_id = context.project_for(where, project)
-    if project_id is not None and hasattr(Store(project_id), 'reports'):
+    if project_id is not None and hasattr(Store(project_id), 'save_report'):
         return Store(project_id).reports(kind, layer, limit=limit, after=after)
     rows = tuple(row for row in _loose(project_id) if kind is None or row.kind == kind)
     start = int(after or 0)
@@ -147,7 +147,7 @@ def read_report(where: Path, name: str, *, project: str | None = None) -> str:
     missing = Stop(f'No report {name}.', 'metaform list reports')
     if Path(name).name != name or NAME.fullmatch(name) is None:
         raise missing
-    if project_id is not None and hasattr(Store(project_id), 'report') and Store(project_id).report(name) is None:
+    if project_id is not None and hasattr(Store(project_id), 'save_report') and Store(project_id).report(name) is None:
         raise missing
     target = folder(project_id) / name
     if not target.is_file():

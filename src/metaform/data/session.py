@@ -13,12 +13,15 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .. import changes, home, sqlite
 from ..errors import StoreError
 from .schema import STORE_SCHEMA
 from .upgrade import upgrade
+
+if TYPE_CHECKING:
+    from .tables import Tables
 
 
 @dataclass
@@ -62,7 +65,7 @@ class Tx:
     def tables(self) -> Any:
         """The operation owner's metaform tables on this same transaction."""
         from . import tables
-        declared = tables.declared(self.module)
+        declared = tables.declared(self.module, retained=True)
         assert self.module is not None
         module = self.module
         path = home.store_path(self.project_id, self.metaform_id) if self.metaform_id else Path()
@@ -85,15 +88,19 @@ _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
 
 
 @contextmanager
-def open_store(path: Path, *, write: bool) -> Generator[sqlite3.Connection, None, None]:
+def open_store(path: Path, *, write: bool,
+               required: tuple[str, Tables] | None = None) -> Generator[sqlite3.Connection, None, None]:
     """A prepared connection to one store file, opened inside its lock, STORE-006."""
     with sqlite.opened(path, STORE_SCHEMA, write=write, version=sqlite.SCHEMA_VERSION, upgrade=upgrade) as db:
         db.row_factory = sqlite3.Row
         from . import tables
-        if not tables.extensions_ready(db):
+        if not tables.extensions_ready(db) or required is not None and tables.state(
+                db, required[0], required[1], 'metaform') != 'ready':
             db.execute('BEGIN IMMEDIATE')
             try:
                 tables.ensure_extensions(db, path)
+                if required is not None:
+                    tables.ensure(db, path, required[0], required[1], 'metaform')
                 db.execute('COMMIT')
             except BaseException:
                 db.execute('ROLLBACK')
@@ -121,6 +128,11 @@ class Session:
             return active if active.metaform_id == self.metaform_id else None
         return None if active.named else active
 
+    @property
+    def in_atomic(self) -> bool:
+        """Whether this session joins the current atomic transaction."""
+        return self._joined() is not None
+
     @contextmanager
     def write(self) -> Generator[Tx, None, None]:
         joined = self._joined()
@@ -143,9 +155,13 @@ class Session:
                 changes.note(self.project_id, metaform.metaform_id)
 
     @contextmanager
-    def read(self) -> Generator[Tx, None, None]:
+    def read(self, *, required: tuple[str, Tables] | None = None) -> Generator[Tx, None, None]:
         joined = self._joined()
         if joined is not None:
+            if required is not None:
+                from . import tables
+                path = home.store_path(self.project_id, joined.metaform_id) if joined.metaform_id else Path()
+                tables.ensure(joined.db, path, required[0], required[1], 'metaform')
             yield joined
             return
         metaform = self._metaform(create=False)
@@ -154,12 +170,14 @@ class Session:
             db.row_factory = sqlite3.Row
             from . import tables
             tables.ensure_extensions(db, Path())
+            if required is not None:
+                tables.ensure(db, Path(), required[0], required[1], 'metaform')
             try:
                 yield Tx(db, None, self.project_id, False)
             finally:
                 db.close()
             return
-        with open_store(home.store_file(self.project_id, metaform.name), write=False) as db:
+        with open_store(home.store_file(self.project_id, metaform.name), write=False, required=required) as db:
             db.execute('BEGIN')
             try:
                 yield Tx(db, metaform.metaform_id, self.project_id, False)

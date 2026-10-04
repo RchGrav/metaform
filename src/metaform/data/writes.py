@@ -131,16 +131,17 @@ def _with(record: RecordT, notices: list[Notice], **changes: Any) -> RecordT:
 
 
 def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-             ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'require',
-             refs: Iterable[Any] = (), extra: Any = None, ifd: Any = None) -> Join | Outcome:
+             ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose',
+             refs: Iterable[Any] = (), extra: Any = None, ifd: Any = None, element: Any = None) -> Join | Outcome:
     """Write one join, owned by its receiver and served by its provider, STORE-010; `name` is the project's own name
-    for the functionality it names, MAP-020."""
+    for the functionality it names, MAP-020. `element` promotes it: the address of the element written for it, which
+    receives and provides joins as any element does, MAP-054."""
     pairs, odd = refs_fit(refs)
     found = rows.layer(tx, layer)
     notices: list[Notice] = []
     texts = {field: rows.text(value, field, notices) for field, value in (
         ('name', name), ('purpose', purpose), ('ef', ef), ('verb', verb), ('non_goal', non_goal))}
-    kind = rows.text(type, 'type', notices) or 'require'
+    kind = rows.text(type, 'type', notices) or 'purpose'
     kept_extra, split = rows.extra_fields(extra, 'the join', notices)
     kept_extra, more = rows.odd_refs(odd, kept_extra, 'the join', notices)
     split += more
@@ -148,16 +149,17 @@ def add_join(tx: Tx, layer: str, receiver: Any, provider: Any, *, name: Any = No
     provider_id = rows.element_at(tx, provider, found, 'provider', notices)
     if receiver_id == provider_id:
         notices.append(Notice('provider', 'The provider is the receiver itself; the join was stored as given, D82.'))
-    if kind != 'require' and not rows.address_form(kind):
-        notices.append(Notice('type', f'{kind!r} is not require or an address; it was stored as given.'))
+    if kind != 'purpose' and not rows.address_form(kind):
+        notices.append(Notice('type', f'{kind!r} is not purpose or an address; it was stored as given.'))
+    promoted_to = promoted(tx, found, element, texts['name'], notices)
     join_id = new_id()
     tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
     rows.identity(tx, join_id, 'join')
     cursor = tx.db.execute(
         'INSERT INTO joins(join_id, layer_id, type, receiver, provider, name, purpose, ef, ifd, verb, non_goal, '
-        'extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'element, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (join_id, found.layer_id, kind, receiver_id, provider_id, texts['name'], texts['purpose'], texts['ef'],
-         _ifd(ifd, notices), texts['verb'], texts['non_goal'], encode_extra(kept_extra, 'the join')))
+         _ifd(ifd, notices), texts['verb'], texts['non_goal'], promoted_to, encode_extra(kept_extra, 'the join')))
     row = int(cursor.lastrowid or 0)
     tx.db.execute('INSERT INTO current_joins(join_id, row, receiver, provider) VALUES (?, ?, ?, ?)',
                   (join_id, row, receiver_id, provider_id))
@@ -208,6 +210,33 @@ def add_subtype(tx: Tx, layer: str, join: Any, address: Any, *, ef: Any = None, 
     rows.split_items(tx, found, 'join', join_id, split)
     record = views.subtype(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
     return _with(record, notices)
+
+
+def promoted(tx: Tx, found: LayerRow, element: Any, name: Any, notices: list[Notice]) -> str | None:
+    """The address a promoted join names, MAP-054, Rich 2026-10-02: "When a join becomes an element it creates an
+    element record for the join which can accept more joins itself. they are associated by the namespace name".
+
+    An address that holds no element gets one in the layer, named with the join's name; an element already there keeps
+    its own fields and is named in a notice. An element given by its id is named by its address. None promotes nothing.
+    """
+    if element is None:
+        return None
+    if not isinstance(element, str):
+        raise StoreError(f'{element!r} is not an address: an address is text.', 'metaform map where <address>')
+    current = rows.current_element(tx, element)
+    if current is None:
+        if is_id(element):
+            raise StoreError(f'No element has the id {element}.', 'metaform map where <address>')
+        if not rows.address_form(element):
+            notices.append(Notice('element', f'{element!r} is not in the address form, dotted lowercase segments of '
+                                             'letters, digits and underscores; it was stored as given.'))
+        rows.new_element(tx, found, element, name=rows.text(name, 'name', notices))
+        return element
+    record = views.element(tx, str(current['element_id']), None)
+    assert record is not None
+    notices.append(Notice('element', f'{record.address} is already element {record.element_id} of layer '
+                                     f'{record.layer}, which keeps its own fields; the join names it.'))
+    return record.address
 
 
 IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction, Rich 2026-10-01
@@ -421,6 +450,9 @@ def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice], *, 
         elif held and key == 'receiver':
             notices.append(Notice('receiver', "A subtype join sits in its parent join, whose receiver owns it; receiver "
                                               'was not applied. parent moves it to another join.'))
+        elif held and key == 'element':
+            notices.append(Notice('element', 'A subtype join already holds an element of its own, which receives and '
+                                             'provides joins; element was not applied, MAP-054.'))
         elif key == 'refs' or key in rows.EDITABLE[kind]:
             allowed[key] = value
         else:
@@ -489,6 +521,8 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             answers = _as_answers(value, notices)
             columns['value'] = encode_value(answers[0] if answers else None, kind)
             split += [('value', answer) for answer in answers[1:]]
+        elif kind == 'join' and key == 'element':
+            columns['element'] = promoted(tx, found, value, changes.get('name', base['name']), notices)
         elif key in ('receiver', 'provider', 'element'):
             columns['element_id' if key == 'element' else key] = rows.element_at(tx, value, found, key, notices)
         elif key == 'parent':

@@ -219,7 +219,16 @@ A feature declares its storage and operations in its module. `Module.data` takes
 `Operation(handler, write=True)` for writes or `Operation(handler)` for reads.
 Calling `store.<name>(...)` gives that handler a `DataTx` followed by its
 arguments. The DAO opens the transaction, and a call inside `Store.atomic()`
-joins the native map writes. With the owner disabled, its operations are absent.
+joins the native map writes. Operations normally follow the owner's enabled state.
+
+For existing records that must remain readable while the owner is disabled,
+declare a literal `DATA_SOURCE = 'storage.py'` in the module's metadata. That
+standalone source exports `DATA` and `TABLES`, and marks those reads with
+`Operation(handler, retained=True)`. The chassis loads the source without
+activating the module's commands, settings, tasks or record contributions.
+Writes still require the enabled module. The source can use relative imports
+of its own helpers and the public base; it does not import the module's runtime
+initializer. Map's `storage.py` shows retained work and message reads.
 
 Hello's `count_visit` backs the existing `visit` verb. The handler uses
 `tx.tables()` to get its declared metaform tables on that same transaction.

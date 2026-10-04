@@ -34,7 +34,7 @@ is the sibling folder `~/tempo`; the copy here is untracked.
 
 ## The specification is the source
 
-`docs/SPEC.md`, indexed from `specifications/README.md`. Sections that decide
+`docs/SPEC.md`, indexed from `specifications/00-index.md`. Sections that decide
 the shape of the chassis:
 
 - 1 to 8: Type identity, OP join roles (hard dependency, property, supportive),

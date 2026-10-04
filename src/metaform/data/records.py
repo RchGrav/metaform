@@ -163,6 +163,7 @@ class Join(Record):
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
     ifd: str | None = None  # IFD, Information Flow Direction: sends, receives or both
+    element: str | None = None  # the address of the element the join was promoted to, MAP-054
 
 
 @dataclass(frozen=True)
@@ -374,6 +375,7 @@ class Where(Record):
     visible: tuple[Property, ...] = ()
     messages: tuple[Message, ...] = ()  # the open questions and unread messages at it, MAP-050
     past_work: tuple[PastWork, ...] = ()  # references only; the log is read by work id, MAP-051
+    promoted_from: tuple[Join, ...] = ()  # the joins promoted to this element, MAP-054
 
     def to_dict(self) -> dict[str, Any]:
         held = None if self.subtype is None else {'subtype': plain(self.subtype), 'join': plain(self.join)}
@@ -384,12 +386,15 @@ class Where(Record):
                     'receives': plain(self.receives), 'held': held, 'work': plain(self.work),
                     'layers': plain(self.layers),
                     'properties': {'applying': plain(self.applying), 'visible': plain(self.visible)},
-                    'messages': plain(self.messages), 'past_work': plain(self.past_work)}
+                    'messages': plain(self.messages), 'past_work': plain(self.past_work),
+                    'promoted_from': plain(self.promoted_from)}
         data: dict[str, Any] = {'kind': self.kind}
         if self.element is not None:
             data['element'] = small(plain(self.element))
         if self.kind == 'join' and self.subtype is None and self.join is not None:
             data['join'] = self._join(plain(self.join), 'receiver', 'provider')
+        if self.promoted_from:
+            data['promoted_from'] = [self._join(plain(join), 'receiver', 'provider') for join in self.promoted_from]
         if self.provides:
             data['provides'] = [self._join(plain(join), 'receiver') for join in self.provides]
         if self.receives:
@@ -527,6 +532,7 @@ class Message(Record):
     closed: str | None
     answer: str | None
     notices: tuple[Notice, ...] = ()
+    work_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,7 @@ from .session import Tx
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('name_length', 'name', 'role', 'extra'),  # never the address: an element cannot be moved, MAP-015
     'join': ('receiver', 'provider', 'parent', 'type', 'name', 'purpose', 'ef', 'ifd', 'verb', 'non_goal',
-             'extra'),  # receiver, provider and parent move it, MAP-003
+             'element', 'extra'),  # receiver, provider and parent move it, MAP-003; element promotes it, MAP-054
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }

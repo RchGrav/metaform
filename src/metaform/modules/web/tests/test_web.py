@@ -5,6 +5,8 @@ import http.client
 import json
 import math
 import socket
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -105,7 +107,7 @@ def test_web_ships_on_and_with_it_off_the_rest_of_metaform_works(run, module_row
     stopped = run('web', ok=False)
     assert stopped.returncode != 0 and 'Next: metaform enable web' in stopped.stderr
     assert 'Intake: none yet' in run(cwd=folder).stdout
-    served = Path(__file__).parents[5] / 'specifications' / 'Intake_2.1.md'  # the served intake, BASE-039
+    served = Path(__file__).parents[2] / 'intake' / 'resources' / 'Intake_2.1.md'  # the served intake, BASE-039
     assert run('intake', 'prompt', cwd=folder).stdout.startswith(served.read_text(encoding='utf-8').splitlines()[0])
     assert run('map', 'roots', cwd=folder).returncode == 0
     assert not any(line.startswith('web') for line in run('help', 'commands').stdout.splitlines())
@@ -2158,7 +2160,7 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     asked.clear()
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
     assert asked == []
-    run('intake', 'add_requirement', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'ef=f', 'verb=tells',
+    run('intake', 'add_purpose', 'stakeholder.cook.home', 'code.timer.kitchen', 'purpose=p', 'ef=f', 'verb=tells',
         cwd=folder)
     page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
@@ -3266,7 +3268,9 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     assert boxes()['#map2d'] == swapped['#map2d']        # the choice is kept
     page.click('#swapBtn')
     page.wait_for_function("""() => { const box = name => document.querySelector(name).getBoundingClientRect();
-        return box('#stage').width * box('#stage').height > 2 * box('#map2d').width * box('#map2d').height; }""")
+        const size = name => [Math.round(box(name).width), Math.round(box(name).height)].join();
+        return box('#stage').width * box('#stage').height > 2 * box('#map2d').width * box('#map2d').height
+            && size('#stage canvas') === size('#stage'); }""")
     assert boxes() == first and chosen
     assert problems == []
 
@@ -3913,7 +3917,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
-    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -4608,6 +4612,48 @@ def test_a_ticket_flashes_its_node_in_its_kinds_light_faster_with_each_step_file
     assert problems == []
 
 
+dispatch_control_port = None  # supplied by the lazy visual-fixture control server below
+ACTIVITY = {}  # what the visual fixtures' runners say a session is doing, by its token; working unless set
+RUNNERS = []  # the stand-in runner processes of the visual fixtures' sessions
+
+
+@pytest.fixture(autouse=True)
+def simulated_dispatch_control(monkeypatch):
+    """Visual fixtures have an authenticated status endpoint, as real runners do; open it only when used."""
+    import socketserver
+    import threading
+
+    servers = []
+
+    def start():
+        if servers:
+            return servers[0].server_address[1]
+
+        class Status(socketserver.StreamRequestHandler):
+            def handle(self):
+                asked = json.loads(self.rfile.readline())
+                self.wfile.write(json.dumps({'session_id': asked['token'], 'state': 'running',
+                                             'agent_alive': True, 'how': None,
+                                             'activity': ACTIVITY.get(asked['token'], 'working')}).encode() + b'\n')
+
+        server = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Status)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        servers.append(server)
+        return server.server_address[1]
+
+    runners = []
+    monkeypatch.setitem(globals(), 'dispatch_control_port', start)
+    monkeypatch.setitem(globals(), 'ACTIVITY', {})
+    monkeypatch.setitem(globals(), 'RUNNERS', runners)
+    yield
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+    for process in runners:
+        process.kill()
+        process.wait()
+
+
 def live_session(work_id, agent='claude', state='running'):
     """A dispatch session row for a ticket, as the runner writes it, so the page counts its agent as working: a figure
     on the map and an entry in the agents key are drawn only for a live session, VIEW-035 and VIEW-039."""
@@ -4616,10 +4662,130 @@ def live_session(work_id, agent='claude', state='running'):
     with Store('proj', module='dispatch').tables() as tx:
         held = tx.get('sessions', {'session_id': f's-{work_id}'})
         if held is None:
+            # a reader takes a session's pid for its runner only when the command line runs that ticket's runner
+            runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', work_id])
+            RUNNERS.append(runner)
             tx.insert('sessions', {'session_id': f's-{work_id}', 'work_id': work_id, 'agent': agent, 'state': state,
+                                   'pid': runner.pid, 'port': dispatch_control_port(), 'token': f's-{work_id}',
                                    'started': '2026-10-03T00:00:00Z', 'seq': len(work_id) + int(work_id[:6], 16) % 1000})
         else:
             tx.update('sessions', {'session_id': f's-{work_id}'}, {'state': state})
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_workbench_and_cli_agree_when_a_runner_dies_with_a_running_row(
+        run, home, web, mapped, browser, tmp_path):
+    from metaform import relay
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
+
+    agent = Dispatch(run, home, mapped, tmp_path)
+    try:
+        agent.start('hold')  # a turn still executing, so the agent is listed as working
+        eventually(lambda: agent.logged('grandchild'))
+        started(run)
+        page, problems, _ = opened(browser, web)
+        button = f'#agents .agent[data-id="{agent.work_id}"]'
+        page.wait_for_selector(button, timeout=15000)
+        assert api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions'][0]['state'] == 'running'
+        agent.process.kill()
+        agent.process.wait()
+        relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})
+        page.wait_for_selector(button, state='hidden', timeout=15000)
+        cli = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=mapped).stdout)
+        served = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]
+        assert cli == served and cli['sessions'][0]['state'] == 'ended'
+        assert agent.session().extra['state'] == 'running'
+        assert problems == []
+    finally:
+        agent.close()
+        for pid in agent.logged('pid'):
+            end_group(pid)
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-035')
+def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_one_stays_reachable(run, web, mapped,
+                                                                                                  browser):
+    """Rich saw five agents under Agent deployed and none on the map; all five were older sessions waiting on him.
+    Rich, 2026-10-03: they are not active so they shouldnt be shown, and dont change that label thats not a correct
+    solution. Agent deployed and the map's figures follow what the runner says a session is doing, activity working;
+    an idle session keeps its lifecycle, and its log, chat and Stop are opened from the node's work history."""
+    from metaform.data import Node, Store
+
+    store = Store('proj')
+    run('enable', 'dispatch')
+    alarm = store.element('code.alarm.audible').element_id
+    idle = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').work_id
+    store.take_work(idle, by='claude')
+    live_session(idle)
+    ACTIVITY[f's-{idle}'] = 'idle'
+    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').work_id
+    store.take_work(working, by='codex')
+    live_session(working, 'codex')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    served = {one['work_id']: (one['state'], one.get('activity'))
+              for one in api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']}
+    assert served == {idle: ('running', 'idle'), working: ('running', 'working')}
+    page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
+    assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
+    assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
+    assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
+    assert page.inner_text('#agents .agent small').endswith(' · working')
+
+    ACTIVITY[f's-{working}'] = 'idle'
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert page.is_hidden('#agents')
+    assert page.eval_on_selector_all('#agents .agent', 'found => found.length') == 0
+    assert page.evaluate('window.metaform.figures()') == []
+
+    page.evaluate(f'window.metaform.menu("{alarm}")')
+    page.click('#menu button.history')
+    page.wait_for_selector('#float:not([hidden]) .dispatch button.log')
+    page.click('#float .dispatch button.log')
+    page.wait_for_selector('#agent:not([hidden])', timeout=10000)
+    assert ' · ' not in page.inner_text('#agent .title').split(' · ', 1)[1]   # running, so not said to be ended
+    assert page.is_enabled('#agent .stop')                                   # an idle session can still be stopped
+    assert page.is_hidden('#agents')
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-035')
+def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor_on_the_map(run, web, mapped, browser):
+    """Rich, 2026-10-03, of the Unverified list added beside Agent deployed: they are not active so they shouldnt be
+    shown i dont understand how saying unverified is a solution. Only a verified running session is shown as at work."""
+    from metaform.data import Node, Store
+
+    store = Store('proj')
+    run('enable', 'dispatch')
+    older = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').work_id
+    store.take_work(older, by='claude')
+    live_session(older)
+    with Store('proj', module='dispatch').tables() as tx:  # its runner answers for another session, so this one is unproven
+        tx.update('sessions', {'session_id': f's-{older}'}, {'token': f'older-{older}'})
+    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').work_id
+    store.take_work(working, by='codex')
+    live_session(working, 'codex')
+    started(run)
+    served = {one['work_id']: one['state']
+              for one in api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']}
+    assert served[working] == 'running' and served[older] != 'running', served
+    page, problems, _ = opened(browser, web)
+    page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
+    assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
+    assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
+    assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
+    assert page.eval_on_selector_all('#agents > *', 'found => found.length') == 2   # the title and the one list
+    assert page.eval_on_selector_all('#agents .list > *', 'found => found.length') == 1
+    shown = page.inner_text('#agents')
+    assert 'Claude Code' not in shown and 'alarm' not in shown and 'nverified' not in shown, shown
+    assert problems == []
 
 
 @pytest.mark.req('VIEW-035')
@@ -5480,6 +5646,43 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
 
 
 @pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-039')
+def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window_when_the_page_reconnects(
+        run, web, mapped, browser):
+    """A Codex agent restarted the web GUI right after it answered Rich, work 109ae725: the announcements of its answer
+    reached no page, and the open window showed it only when some later line came. On its reconnect the page reads the
+    agents and the open window's thread again, with no further line announced."""
+    from metaform import relay
+    from metaform.data import Node, Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
+    store.take_work(worked.work_id, by='codex')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    live_session(worked.work_id, agent='codex')
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-1', 'work_id': worked.work_id,
+                            'kind': 'person', 'text': 'Just checking in how is it going?', 'seq': 1})
+    payload = {'project': 'proj', 'metaform_id': store.active_metaform().metaform_id, 'tables': 'dispatch'}
+    relay.deliver('map.changed', payload)
+    page.wait_for_selector('#agents:not([hidden]) .agent', timeout=10000)
+    page.click('#agents .agent')
+    page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("how is it going")',
+                           timeout=10000)
+    run('web', 'stop')
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-2', 'work_id': worked.work_id,
+                            'kind': 'agent_message_chunk', 'text': 'The routes are in place.', 'seq': 2})
+    relay.deliver('map.changed', payload)  # announced while no server listens
+    started(run)
+    page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("routes are in place")',
+                           timeout=15000)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
 def test_a_change_that_adds_or_removes_no_node_redraws_the_3d_map_in_place_without_starting_its_layout_again(
         run, web, mapped, browser):
     """Handing the 3D map new data starts its force layout again at full strength, which shook the whole map at every
@@ -5632,7 +5835,7 @@ def test_a_task_can_be_created_and_started_in_acp_from_its_editor(run, web, mapp
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
-    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -5663,4 +5866,356 @@ def test_a_task_can_be_created_and_started_in_acp_from_its_editor(run, web, mapp
     kept = next(work for work in store.work(limit=0).results
                 if work.task == 'Keep this task if the adapter cannot start.')
     assert kept.taken is None and kept.done is None
+    assert problems == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-040')
+@pytest.mark.parametrize('glyphed', [False, True])
+def test_start_is_not_offered_or_accepted_for_an_untaken_ticket_with_a_live_session(
+        run, web, mapped, browser, glyphed):
+    from metaform import relay
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    store = Store('proj')
+    busy = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Busy ticket').work_id
+    later = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Same agent later').work_id
+    if glyphed:
+        for work_id in (busy, later):
+            run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
+    live_session(busy)
+    ACTIVITY[f's-{busy}'] = 'waiting'  # awaiting permission still owns the session and glyph
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    page.wait_for_selector(f'#board .card[data-id="{busy}"]')
+    assert store.ticket(busy).work.taken is None
+    for work_id in ((busy, later) if glyphed else (busy,)):
+        assert page.locator(f'#board .card[data-id="{work_id}"] .start').count() == 0
+    for verb in ('start', 'run'):
+        refused = run('dispatch', verb, busy, 'codex', cwd=mapped, ok=False)
+        assert refused.returncode != 0 and busy in refused.stderr and 'session' in refused.stderr
+    status, refused = api(web, '/api/dispatch-start', method='POST', headers=own_write(web),
+                          body=json.dumps({'project': 'proj', 'work_id': busy, 'agent': 'codex'}))
+    assert status == 400 and busy in refused['error'] and 'session' in refused['error']
+    # Session-only changes redraw start controls even though no ticket changed.
+    live_session(busy, state='ended')
+    relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})
+    for work_id in (busy, later):
+        page.wait_for_selector(f'#board .card[data-id="{work_id}"] .start')
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-040')
+@pytest.mark.parametrize('distributed', [False, True])
+def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_board_order(
+        run, web, mapped, browser, tmp_path, watch_dispatch, distributed):
+    import sys
+
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch.tests.test_dispatch import eventually
+
+    run('enable', 'dispatch')
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    store = Store('proj')
+    # Remove the fixture's ordinary waiting work so only this controlled queue is launched.
+    for record in store.work(open=True, limit=0).results:
+        store.finish_work(record.work_id, 'fixture setup')
+    tickets = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Queue {i}').work_id
+               for i in range(4)]
+    for work_id, column, position in zip(tickets, ['backlog', 'todo', 'todo', 'todo'], [0, 2, 0, 1]):
+        store.move_work(work_id, column, position=position)
+    if distributed:
+        for work_id, glyph in zip(tickets, ['kite', 'moth', 'kite', 'moth']):
+            run('map', 'work', 'op=edit', f'id={work_id}', f'glyph={glyph}', cwd=mapped)
+    excluded = store.add_work(Node('element', 'exterior.cook'), 'exclude', task='Excluded material').work_id
+    busy = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Already running').work_id
+    live_session(busy)
+    log = tmp_path / 'all.jsonl'
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
+    page, problems, _ = opened(browser, web)
+    watch_dispatch(page)
+    sent = []
+    page.on('request', lambda req: sent.append(req.post_data_json) if '/api/dispatch-start' in req.url else None)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    page.click('#board .start-all')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    page.select_option('#dispatch select.agent', 'codex')
+    expected = [tickets[2], tickets[3]] if distributed else [tickets[2], tickets[3], tickets[1], tickets[0]]
+    assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == expected
+    page.click('#dispatch .start-all')
+    page.wait_for_selector('#dispatch', state='hidden', timeout=30000)
+    assert [(one['work_id'], one['agent']) for one in sent] == [(work_id, 'codex') for work_id in expected]
+    for work_id in expected:
+        eventually(lambda work_id=work_id: store.ticket(work_id).work.taken)
+    assert store.ticket(excluded).work.taken is None and store.ticket(busy).work.taken is None
+    if distributed:
+        assert store.ticket(tickets[0]).work.taken is None and store.ticket(tickets[1]).work.taken is None
+    shown = page.evaluate(TOPMOST_TOAST)
+    assert shown['on_top'] and str(len(expected)) in shown['text'], shown
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-040')
+def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes(
+        run, web, mapped, browser, tmp_path, watch_dispatch):
+    import sys
+
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    store = Store('proj')
+    for record in store.work(open=True, limit=0).results:
+        store.finish_work(record.work_id, 'fixture setup')
+    failed, success = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Ticket {i}').work_id
+                       for i in range(2)]
+    run('web', '--json', env={'FAKE_ACP_LOG': str(tmp_path / 'retry.jsonl'), 'FAKE_ACP_MODE': 'ask'})
+    page, problems, _ = opened(browser, web)
+    watch_dispatch(page)
+    sent = []
+    page.on('request', lambda req: sent.append(req.post_data_json) if '/api/dispatch-start' in req.url else None)
+
+    held = []
+
+    def refuse_one(route):
+        if route.request.post_data_json['work_id'] == failed:
+            held.append(route)  # keep a launch in flight while the person tries opening Start all again
+        else:
+            route.fallback()
+
+    page.route('**/api/dispatch-start', refuse_one)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    page.click('#board .start-all')
+    page.select_option('#dispatch select.agent', 'codex')
+    page.click('#dispatch .start-all')
+    assert page.locator('#board .start-all').is_disabled()
+    # A stale click queued before the board disabled must not replace the launch window or submit another batch.
+    page.evaluate('async () => { await document.querySelector("#board .start-all").onclick(); }')
+    assert page.locator('#dispatch .start-all').is_disabled()
+    assert [one['work_id'] for one in sent] == [failed]
+    held[0].fulfill(status=400, content_type='application/json', body=json.dumps({'error': 'Fixture refusal'}))
+    page.wait_for_function('() => !document.querySelector("#dispatch .start-all").disabled')
+    assert page.is_visible('#dispatch')
+    assert page.locator(f'#dispatch .ticket[data-id="{failed}"] .start').is_enabled()
+    assert page.locator(f'#dispatch .ticket[data-id="{success}"] .start').is_disabled()
+    shown = page.evaluate(TOPMOST_TOAST)
+    assert shown['on_top'] and '1 could not start' in shown['text'], shown
+    assert store.ticket(failed).work.taken is None
+    page.unroute('**/api/dispatch-start', refuse_one)
+    page.click('#dispatch .start-all')
+    page.wait_for_selector('#dispatch', state='hidden', timeout=30000)
+    assert [one['work_id'] for one in sent].count(success) == 1
+    assert [one['work_id'] for one in sent].count(failed) == 2
+    assert problems == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-039')
+def test_a_read_that_fails_while_the_map_is_read_again_keeps_the_map_the_node_chosen_and_the_agents_at_work(
+        run, web, mapped, browser):
+    """Rich, 2026-10-03: the graph suddenly disappeared while he browsed, shortly after chatting to an agent, and no
+    agents were then shown working. A change pushed to the page reads the map and the agents again; when those reads
+    fail, as every read does while the server is restarted, the page had already let go of the map it drew and drew
+    nothing, and drew an empty agents key. The failure is said, and what was drawn stays."""
+    from metaform import relay
+    from metaform.data import Node, Store
+    store = Store('proj')
+    alarm = store.element('code.alarm.audible').element_id
+    run('enable', 'dispatch')
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').work_id
+    store.take_work(work, by='claude')
+    live_session(work)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 1', timeout=15000)
+    page.evaluate(f'window.metaform.select("{alarm}")')
+    page.wait_for_function(f'() => window.metaform.loaded() && window.metaform.selected() === "{alarm}"')
+    drawn, nodes2d = page.evaluate('window.metaform.drawn()'), page.eval_on_selector_all('#map2d svg g.node', 'found => found.length')
+    changes = page.evaluate('window.metaform.changes()')
+    page.evaluate("""() => { window.failed = []; const fetched = window.fetch;
+        window.fetch = (url, ...rest) => {
+            const read = String(url).match(/^\\/api\\/(graph|dispatch-sessions)\\?/);
+            if (!read) return fetched(url, ...rest);
+            window.failed.push(read[1]);
+            return Promise.reject(new TypeError('Failed to fetch')); }; }""")
+    relay.deliver('map.changed', {'project': 'proj'})  # as a ticket's step filed by the agent announces it
+    page.wait_for_function(f'() => window.metaform.changes() > {changes} && window.metaform.loaded()', timeout=15000)
+    assert {'graph', 'dispatch-sessions'} <= set(page.evaluate('window.failed'))
+    assert page.inner_text('#toast') == 'Failed to fetch'
+    assert page.evaluate('window.metaform.drawn()') == drawn
+    assert page.eval_on_selector_all('#map2d svg g.node', 'found => found.length') == nodes2d
+    assert page.evaluate('window.metaform.selected()') == alarm
+    assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [work]
+    assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [work]
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-035')
+def test_choosing_another_project_takes_the_agents_of_the_project_left_off_the_page(
+        run, web, mapped, browser, tmp_path):
+    """Rich, 2026-10-03: after switching projects the agents stayed on screen. The agents key, the open agent window and
+    the figures on the map are the project's own: choosing another project closes the window and draws that project's
+    agents only, even when a read of the agents of the project left answers after the choice."""
+    from metaform import relay
+    from metaform.data import Node, Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').work_id
+    store.take_work(work, by='claude')
+    live_session(work)
+    folder = tmp_path / 'other'
+    folder.mkdir()
+    run('add', 'project', 'other', str(folder))
+    build(Store('other'))
+    run('set', '--layers', ','.join(TOGGLED), cwd=folder)
+    others = {entry.element.element_id for entry in Store('other').graph(limit=0).elements}
+    started(run)
+    page, problems, _ = opened(browser, web)
+    button = f'#agents .agent[data-id="{work}"]'
+    page.wait_for_selector(button, timeout=15000)
+    page.click(button)
+    page.wait_for_selector('#agent:not([hidden])', timeout=10000)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 1', timeout=15000)
+    page.evaluate("""() => { window.held = 0; const fetched = window.fetch;
+        window.fetch = async (url, ...rest) => {
+            if (/^\\/api\\/dispatch-sessions\\?project=proj&.*thread=false/.test(String(url))) {
+                window.held++; await new Promise(done => setTimeout(done, 1500)); }
+            return fetched(url, ...rest); }; }""")
+    relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})  # a line the agent wrote
+    page.wait_for_function('() => window.held === 1', timeout=10000)
+    page.select_option('#proj', 'other')
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    page.wait_for_timeout(2500)  # past the answer held for the project left
+    assert {node['id'] for node in page.evaluate('window.metaform.graph()')['nodes'] if node['t'] == 'el'} == others
+    assert page.is_hidden('#agents') and page.query_selector_all('#agents .agent') == []
+    assert page.is_hidden('#agent')
+    page.wait_for_function('() => window.metaform.figures().length === 0', timeout=20000)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+def test_a_read_of_the_map_of_the_project_left_that_answers_after_the_choice_is_not_drawn(
+        run, web, mapped, browser, tmp_path):
+    """Found 2026-10-03 with the agents that stayed after a switch of projects: a change pushed for the project shown
+    reads its map again, and when that read answers after the person has chosen another project, while the page still
+    reads the new project's layers, the map of the project left came back into the page."""
+    from metaform import relay
+    from metaform.data import Store
+    folder = tmp_path / 'other'
+    folder.mkdir()
+    run('add', 'project', 'other', str(folder))
+    build(Store('other'))
+    run('set', '--layers', ','.join(TOGGLED), cwd=folder)
+    left = {entry.element.element_id for entry in Store('proj').graph(limit=0).elements}
+    others = {entry.element.element_id for entry in Store('other').graph(limit=0).elements}
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.evaluate("""() => { window.held = 0; const fetched = window.fetch;
+        window.fetch = async (url, ...rest) => {
+            const held = /^\\/api\\/graph\\?project=proj&/.test(String(url)) ? 1200
+                : /^\\/api\\/layers\\?project=other&/.test(String(url)) ? 2500 : 0;
+            if (held) { window.held++; await new Promise(done => setTimeout(done, held)); }
+            return fetched(url, ...rest); };
+        window.shown = []; setInterval(() => window.shown.push(window.metaform.graph().nodes
+            .filter(node => node.t === 'el').map(node => node.id)), 20); }""")
+    relay.deliver('map.changed', {'project': 'proj'})
+    page.wait_for_function('() => window.held === 1', timeout=10000)
+    page.select_option('#proj', 'other')
+    page.wait_for_function('() => window.held === 2 && window.metaform.loaded()', timeout=15000)
+    shown = page.evaluate('window.shown')
+    emptied = next(at for at, ids in enumerate(shown) if not ids)  # the new project's load begins with no map
+    assert not [ids for ids in shown[emptied:] if set(ids) & left]
+    assert set(shown[-1]) == others
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+def test_the_metaforms_of_a_project_left_that_answer_after_the_next_choice_do_not_choose_the_metaform_shown(
+        run, web, mapped, browser, tmp_path):
+    """Found 2026-10-03 in review: two quick choices of project, and the first one's list of metaforms answering after
+    the second, chose the project left's metaform for the project shown, whose map then could not be read."""
+    from metaform.data import Store
+    folder = tmp_path / 'other'
+    folder.mkdir()
+    run('add', 'project', 'other', str(folder))
+    build(Store('other'))
+    run('set', '--layers', ','.join(TOGGLED), cwd=folder)
+    shown = {entry.element.element_id for entry in Store('proj').graph(limit=0).elements}
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    chosen = page.input_value('#mf')
+    page.evaluate("""() => { window.held = 0; const fetched = window.fetch;
+        window.fetch = async (url, ...rest) => {
+            if (/^\\/api\\/metaforms\\?project=other&/.test(String(url))) {
+                window.held++; await new Promise(done => setTimeout(done, 1500)); }
+            return fetched(url, ...rest); }; }""")
+    page.select_option('#proj', 'other')
+    page.wait_for_function('() => window.held === 1', timeout=10000)
+    page.select_option('#proj', 'proj')
+    page.wait_for_timeout(2500)  # past the answer held for the project left
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert page.input_value('#proj') == 'proj' and page.input_value('#mf') == chosen
+    assert {node['id'] for node in page.evaluate('window.metaform.graph()')['nodes'] if node['t'] == 'el'} == shown
+    assert problems == []
+
+
+TOPMOST_TOAST = '''() => { const box = document.querySelector("#toast"); if (box.hidden) return null;
+    const at = box.getBoundingClientRect(), hit = document.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2);
+    return {text: box.textContent, on_top: box.contains(hit), hit: hit && (hit.id || hit.className)}; }'''
+
+
+@pytest.mark.req('VIEW-037')
+@pytest.mark.req('VIEW-039')
+def test_starting_an_agent_from_the_board_says_what_happened_above_the_board(run, web, mapped, browser, tmp_path,
+                                                                              watch_dispatch):
+    """Rich, 2026-10-03: 'On the kanban I tried starting agents and nothing happens'. Start says whether the agent is
+    starting or why it is not only in a toast, and the toast was drawn under the open board, so the start window
+    closed or its Start came back with nothing to see. The toast is the topmost thing where it is drawn."""
+    import sys
+
+    from metaform.data import Node, Store
+    store = Store('proj')
+    refused = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
+    begun = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').work_id
+    log = tmp_path / 'fake.jsonl'
+    run('enable', 'dispatch')
+    run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
+    page, problems, _ = opened(browser, web)
+    watch_dispatch(page)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    # an agent that cannot start: why, above the board, and the window stays for another choice
+    page.click(f'#board .card[data-id="{refused}"] button.start')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    page.select_option('#dispatch select.agent', 'codex')
+    with page.expect_response(lambda response: '/api/dispatch-start' in response.url) as failed:
+        page.click(f'#dispatch .ticket[data-id="{refused}"] button.start')
+    assert failed.value.status == 400
+    page.wait_for_selector('#toast:not([hidden])')
+    shown = page.evaluate(TOPMOST_TOAST)
+    assert shown['on_top'] and 'not found' in shown['text'], shown
+    page.screenshot(path=str(tmp_path / 'refused.png'))
+    page.click('#dispatch .close')
+    page.evaluate('document.querySelector("#toast").hidden = true')
+    # an agent that starts: that it is starting, above the board
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    page.click(f'#board .card[data-id="{begun}"] button.start')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    page.select_option('#dispatch select.agent', 'codex')
+    page.click(f'#dispatch .ticket[data-id="{begun}"] button.start')
+    page.wait_for_selector('#toast:not([hidden])', timeout=30000)
+    shown = page.evaluate(TOPMOST_TOAST)
+    assert shown['on_top'] and 'is starting' in shown['text'], shown
+    page.screenshot(path=str(tmp_path / 'started.png'))
     assert problems == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']

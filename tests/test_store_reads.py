@@ -203,7 +203,7 @@ def test_the_read_of_an_address_leaves_ids_and_empty_fields_out_unless_asked(sto
                                  'name': 'tick loop', 'name_length': 2, 'role': 'SE', 'type': 'subtype',
                                  'ef': 'Advances each countdown.', 'refs': [{'key': 'path', 'value': 'src/tick.c'}],
                                  'layer': 'intake-1'}]
-    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'require',
+    assert small['receives'] == [{'provider': 'code.alarm.audible', 'type': 'purpose',
                                   'purpose': 'Get attention when a countdown ends.', 'ef': 'Plays a loud tone.',
                                   'name': 'audible alarm', 'layer': 'intake-1'}]
     assert [group['layer'] for group in small['layers']] == ['notes', 'memory']

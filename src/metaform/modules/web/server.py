@@ -77,6 +77,9 @@ class Server(ThreadingHTTPServer):
         self.token = None if loopback(bind) else token()
         self.listeners: set[queue.SimpleQueue[dict[str, Any]]] = set()
         self.listening = threading.Lock()
+        self.dispatch_lock = threading.Lock()
+        self.dispatch_pending: set[str] = set()
+        self.dispatch_busy = False
         super().__init__((bind, port), Handler)
         self.port = int(self.server_address[1])
         names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
@@ -105,7 +108,38 @@ class Server(ThreadingHTTPServer):
         such as the removal of one, is not pushed, since a page has nothing of it to read."""
         if home.project(str(payload.get('project', ''))) is None:
             return 0
+        self.schedule_dispatch(str(payload['project']))
         return self.push({'topic': 'map.changed', 'payload': payload})
+
+    def schedule_dispatch(self, project: str) -> None:
+        """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches."""
+        with self.dispatch_lock:
+            self.dispatch_pending.add(project)
+            if self.dispatch_busy:
+                return
+            self.dispatch_busy = True
+        threading.Thread(target=self.dispatch_waiting, daemon=True).start()
+
+    def dispatch_waiting(self) -> None:
+        """Check changed projects in one worker; new changes are coalesced while a batch starts."""
+        while True:
+            with self.dispatch_lock:
+                if not self.dispatch_pending:
+                    self.dispatch_busy = False
+                    return
+                project_id = self.dispatch_pending.pop()
+            project = home.project(project_id)
+            if project is None:
+                continue
+            try:
+                module_verb({'project': project_id}, 'dispatch', 'autostart', {})
+            except StoreError as error:
+                print(f'Automatic dispatch for {project_id}: {error}', file=sys.stderr, flush=True)
+                continue
+            except Stop:  # dispatch is disabled for this project
+                continue
+            for payload in changes.announce(Path(project.path), 'web'):
+                self.changed(dict(payload))
 
     def push(self, event: dict[str, Any]) -> int:
         """Hand one event to every open page's stream, VIEW-018."""
@@ -168,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_sessions({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-prompts':
             return self.dispatch_prompts(query.get('project', [''])[-1])
+        if url.path == '/api/dispatch-autostart':
+            return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/markdown':
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
@@ -269,7 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts}
+                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts,
+                  '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/dispatch-chat': self.dispatch_chat}
         if path not in writes:
             return self.send(404, {'error': f'No such write: {path}.'})
         try:
@@ -525,6 +562,56 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(work_id, str) or not work_id or not isinstance(agent, str) or not agent:
             return self.send(400, {'error': 'An agent is started on a ticket: its work id and the agent.'})
         self.dispatched(given, 'start', [work_id, agent])
+
+    def dispatch_chat(self, given: dict[str, Any]) -> None:
+        """Open a question's asking session or start a new agent on its ticket, VIEW-042."""
+        message_id = given.get('id')
+        if not isinstance(message_id, str) or not message_id:
+            return self.send(400, {'error': 'Chat names the question id.'})
+        nouns = [message_id]
+        if given.get('agent'):
+            nouns.append(str(given['agent']))
+        self.dispatched(given, 'chat', nouns)
+
+    def dispatch_autostart(self, given: dict[str, Any]) -> None:
+        """Read automatic dispatch settings in the registered project's folder, VIEW-042."""
+        project = home.project(str(given.get('project', '')))
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        folder = Path(project.path)
+        loader.follow_enabled()
+        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
+            return self.send(200, {'value': False, 'available': False})
+        self.send(200, {name: settings.value(key, folder) for name, key in
+                        (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'))})
+
+    def set_dispatch_autostart(self, given: dict[str, Any]) -> None:
+        """Save automatic dispatch settings and start waiting work when enabled, VIEW-042."""
+        project = home.project(str(given.get('project', '')))
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        folder = Path(project.path)
+        loader.follow_enabled()
+        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
+            return self.send(400, {'error': 'The dispatch module is not enabled.', 'next': 'metaform enable dispatch'})
+        values = {key: given[name] for name, key in
+                  (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'))
+                  if name in given}
+        if 'value' in given and not isinstance(given['value'], bool):
+            return self.send(400, {'error': 'Autostart agents is checked or unchecked.'})
+        if 'agents' in given and (not isinstance(given['agents'], int) or isinstance(given['agents'], bool)):
+            return self.send(400, {'error': 'The number of agents is a whole number.'})
+        try:
+            for key, value in values.items():
+                settings.checked(key, value, folder, typed=True)
+            for key, value in values.items():
+                settings.put(key, value, folder)
+        except (settings.SettingError, Stop) as error:
+            return self.send(400, {'error': str(error), 'next': getattr(error, 'next_step', None)})
+        self.gui.schedule_dispatch(project.project_id)
+        self.dispatch_autostart(given)
 
     def dispatch_message(self, given: dict[str, Any]) -> None:
         """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039."""
@@ -809,6 +896,8 @@ def main(argv: list[str] | None = None) -> int:
     # Each map.changed published in another process, a command, the MCP server or a runner, reaches every open page.
     listener = relay.listen('web', server.changed)
     ready(server)
+    for project in home.projects():
+        server.schedule_dispatch(project.project_id)
     with server, listener:
         # Wakes only for a connection, QUAL-015; the stop signal ends the process, so nothing checks for shutdown.
         # The stubs type poll_interval as float; the standard library hands it to select, where None is no timeout.

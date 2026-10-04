@@ -497,14 +497,14 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                                                               'name': 'kitchen timer', 'name_length': 2,
                                                               'refs': [{'key': 'path', 'value': 'src/main.c'}]})
         named = json.loads(text(described)[-1])['notices']
-        made = await called(client, 'intake_add_requirement', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
+        made = await called(client, 'intake_add_purpose', {'receiver': 'code.timer.kitchen', 'name': 'countdown alarm',
                                                              'provider': 'code.alarm.audible', 'purpose': 'Get attention.',
                                                              'ef': 'Rings.', 'verb': 'rings'})
         await called(client, 'intake_subtype', {'parent_receiver': 'code.timer.kitchen',
                                                   'parent_provider': 'code.alarm.audible',
                                                   'namespace_address': 'code.loop.tick', 'ef': 'Ticks.',
                                                   'verb': 'advances', 'role': 'SE'})
-        await called(client, 'intake_add_requirement', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
+        await called(client, 'intake_add_purpose', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
                                                       'purpose': 'Keep time.', 'ef': 'Beats.', 'verb': 'beats'})
         absorbed = await called(client, 'intake_absorb', {'receiver': 'code.timer.kitchen', 'provider': 'code.loop.beat',
                                                             'parent_receiver': 'code.timer.kitchen',
@@ -516,19 +516,19 @@ def test_an_intake_is_recorded_over_mcp_one_object_per_call_and_read_back_while_
                 (absorbed.is_error, json.loads(text(made)[-1])), one)
     names, error, shown, finished, named, described_error, absorb, one = session(home, folder, call)
     assert absorb[0] is False and set(absorb[1]) == {'receiver', 'provider', 'layer', 'notices'}
-    assert [row['provider'] for row in one['requirements']] == ['code.alarm.audible']
-    assert {sub['namespace_address'] for sub in one['requirements'][0]['subtypes']} == {'code.loop.tick',
+    assert [row['provider'] for row in one['purposes']] == ['code.alarm.audible']
+    assert {sub['namespace_address'] for sub in one['purposes'][0]['subtypes']} == {'code.loop.tick',
                                                                                         'code.loop.beat'}
-    assert {'intake_start', 'intake_element', 'intake_add_requirement', 'intake_subtype', 'intake_absorb', 'intake_show',
+    assert {'intake_start', 'intake_element', 'intake_add_purpose', 'intake_subtype', 'intake_absorb', 'intake_show',
             'intake_edit', 'intake_remove', 'intake_finish'} <= names and 'intake_join' not in names
     assert error is False and described_error is False
     assert named == []  # the element's name is its own field, Rich 2026-10-01
-    assert [row['name'] for row in shown['requirements']] == ['countdown alarm']
+    assert [row['name'] for row in shown['purposes']] == ['countdown alarm']
     assert [(row['namespace_address'], row['role']) for row in shown['elements']] == [
         ('code.alarm.audible', None), ('code.loop.beat', None), ('code.loop.tick', 'SE'), ('code.timer.kitchen', 'DE')]
     assert shown['undescribed'] == ['code.alarm.audible', 'code.loop.beat']
-    assert len(shown['requirements']) == 1 and len(shown['requirements'][0]['subtypes']) == 2
-    assert (finished['elements'], finished['requirements'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
+    assert len(shown['purposes']) == 1 and len(shown['purposes'][0]['subtypes']) == 2
+    assert (finished['elements'], finished['purposes'], finished['subtypes'], finished['refs']) == (4, 1, 2, 1)
     kitchen = Store('fresh').element('code.timer.kitchen')
     assert [(ref.key, ref.value) for ref in kitchen.refs] == [('path', 'src/main.c')]
     assert (kitchen.short_name, kitchen.name, kitchen.extra) == ('kitchen timer', 'kitchen timer', None)
@@ -877,17 +877,23 @@ def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_
     metaform intake prompt prints for the same folder."""
     async def call(client, init):
         listed = {prompt.name: prompt for prompt in (await client.list_prompts()).prompts}
-        got = {name: await client.get_prompt(name, {}) for name in ('intake', 'tasks', 'status')}
+        got = {name: await client.get_prompt(name, {}) for name in ('intake', 'tasks', 'status', 'refine')}
         return listed, {name: [message.content.text for message in result.messages] for name, result in got.items()}, \
             {name: [message.role for message in result.messages] for name, result in got.items()}
     listed, texts, roles = session(home, mapped, call)
-    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks'} <= set(listed)
-    assert not {'prompt', 'refine', 'correct'} & set(listed)          # open in the spec, D105 to D107
+    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks', 'refine'} <= set(listed)
+    assert not {'prompt', 'correct'} & set(listed)                   # prompt awaits D105; correct was dropped, D106
     assert listed['intake'].description and listed['config'].description
-    assert roles == {'intake': ['user'], 'tasks': ['user'], 'status': ['user']}
+    assert roles == {'intake': ['user'], 'tasks': ['user'], 'status': ['user'], 'refine': ['user']}
     assert texts['intake'] == [run('intake', 'prompt', cwd=mapped).stdout.strip()]
     assert texts['tasks'] == [run('map', 'work', 'open=true', cwd=mapped).stdout.strip()]
     assert texts['status'] == [run(cwd=mapped).stdout.strip()]
+    assert texts['refine'] == [
+        'refine by itself runs a full survey similar to the initial intake but with the purpose of refining whe '
+        'whole map itself, finding nodes with incorrect status, etc.\n'
+        'refine is support to refine what is show what was missed reconsider wording on the metaform, etc, '
+        'the metaform is not documentation its a map to whats built, what remains to be built, etc.']
+    assert not listed['refine'].arguments
     run('set', '--modules', 'intake,mcp', cwd=mapped)                  # map and web off the surface
 
     async def narrowed(client, init):
@@ -899,7 +905,7 @@ def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_
             refused = True
         return names, refused
     names, refused = session(home, mapped, narrowed)
-    assert 'intake' in names and not {'web', 'tasks', 'messages'} & names and refused
+    assert 'intake' in names and not {'web', 'tasks', 'messages', 'refine'} & names and refused
 
 
 def help_agents(run, folder):
@@ -1028,3 +1034,32 @@ def test_the_install_proof_passes_the_real_server_on_the_july_wire(home, mapped)
                   env={**os.environ, 'METAFORM_HOME': str(home)})
     assert proof.ok and proof.tools >= 2, proof.reason
     assert proof.instructions.startswith('Metaform MCP server is active.')
+
+
+@pytest.mark.req('MAP-058')
+def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_initialize(run, home, mapped):
+    """Ticket bd96cbd1: over MCP the claiming agent is the one the client names at initialize, the harness the agent
+    runs in, so a by that names another agent changes nothing. Claude Code takes a ticket for claude; Codex is
+    refused it, whatever its by says, and the ticket stays untaken."""
+    from mcp.types import Implementation
+
+    from metaform.data import Node
+    store = Store('proj')
+    gui = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='GUI work').work_id
+    run('map', 'work', 'op=edit', f'id={gui}', 'eligible=["claude"]', cwd=mapped)
+    params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(mapped),
+                                   env={**os.environ, 'METAFORM_HOME': str(home)})
+
+    def take(client_name, by):
+        async def go():
+            async with stdio_client(params) as (read, write), ClientSession(
+                    read, write, client_info=Implementation(name=client_name, version='1')) as client:
+                await client.initialize()
+                return await called(client, 'map_work', {'op': 'take', 'id': gui, 'by': by})
+        return asyncio.run(go())
+    refused = take('codex-mcp-client', 'claude 41ab')
+    assert refused.is_error and 'claude' in text(refused)[0], text(refused)
+    assert store.ticket(gui).work.taken is None
+    took = take('claude-code', 'the agent')
+    assert not took.is_error, text(took)
+    assert store.ticket(gui).work.taken_by == 'the agent'

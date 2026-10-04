@@ -1,4 +1,4 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 16.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 18.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 An element is its address, name_length and role, STORE-009, and it cannot be
@@ -10,8 +10,8 @@ the same element, STORE-009. A join's identity holds only its id, so it can be
 moved, MAP-003. A subtype join is a row of `joins` with a parent join, and its
 current row is in `current_subtypes`, never in `current_joins`, which every read of
 the element graph uses, STORE-011. Feature tables are declared by their modules.
-One index is added beyond the section's own: `elements_by_address`, for the history of one
-address, STORE-005. A thing keeps every version it was given in its layer, so the
+Two indexes are added beyond the section's own: `elements_by_address`, for the history of one
+address, STORE-005, and `joins_by_element`, for the joins promoted to the element at an address, MAP-054. A thing keeps every version it was given in its layer, so the
 metaform is refined in its own intake layer, LAYER-025: no thing is unique per
 layer, and `<table>_by_id` reads a thing's versions in order.
 """
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS joins(
   row         INTEGER PRIMARY KEY,
   join_id     TEXT NOT NULL REFERENCES join_ids(join_id),
   layer_id    TEXT NOT NULL REFERENCES layers(layer_id),
-  type        TEXT NOT NULL DEFAULT 'require',
+  type        TEXT NOT NULL DEFAULT 'purpose',
   parent      TEXT REFERENCES join_ids(join_id),
   receiver    TEXT REFERENCES element_ids(element_id),
   provider    TEXT NOT NULL REFERENCES element_ids(element_id),
@@ -124,12 +124,14 @@ CREATE TABLE IF NOT EXISTS joins(
   ifd         TEXT,
   verb        TEXT,
   non_goal    TEXT,
+  element     TEXT REFERENCES types(address),
   extra       TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
   evidence    TEXT
 );
 CREATE INDEX IF NOT EXISTS joins_by_id ON joins(join_id, row);
+CREATE INDEX IF NOT EXISTS joins_by_element ON joins(element);
 CREATE TABLE IF NOT EXISTS current_joins(
   join_id  TEXT PRIMARY KEY REFERENCES join_ids(join_id),
   row      INTEGER NOT NULL UNIQUE REFERENCES joins(row),

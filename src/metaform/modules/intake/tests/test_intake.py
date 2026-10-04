@@ -14,7 +14,7 @@ from metaform.data import Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = ROOT / 'specifications' / 'Intake_2.1.md'  # the served intake, Rich 2026-10-03
+SPEC = Path(__file__).parents[1] / 'resources' / 'Intake_2.1.md'  # the served intake, Rich 2026-10-03
 RESOURCE = Path(__file__).parents[1] / 'resources' / 'Intake_2.1.md'
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 
@@ -64,7 +64,7 @@ def submit(run, cwd, document, tmp_path, extra=(), as_json=True):
     for index, element in enumerate(elements):
         for number, join in enumerate(element.get('joins', [])):
             path = f'elements[{index}].joins[{number}]'
-            call(path, 'add_requirement', element['namespace_address'], join.get('provider', ''),
+            call(path, 'add_purpose', element['namespace_address'], join.get('provider', ''),
                  *fields(join, {'name', 'purpose', 'ef', 'verb', 'non_goal', 'refs'}))
             for place, subtype in enumerate(join.get('subtypes', [])):
                 inner = subtype.get('element', {})
@@ -101,10 +101,9 @@ def footer(text):
 
 
 @pytest.mark.req('BASE-039')
-def test_the_served_intake_is_the_stored_file_byte_for_byte():
-    """Rich, 2026-10-03: "We arent even using 2.0 its superceded". The module serves a byte copy of specifications/Intake_2.1.md; Intake 2.0 and the
-    Canonical Intake stay in specifications as earlier versions and are not served."""
-    assert RESOURCE.read_bytes() == SPEC.read_bytes()
+def test_only_intake_2_1_is_served():
+    """Rich, 2026-10-03: "We arent even using 2.0 its superceded". The module serves resources/Intake_2.1.md, the one
+    copy; Intake 2.0 and the Canonical Intake are not served."""
     assert not RESOURCE.with_name('Canonical_Intake.xml').exists() and not RESOURCE.with_name('Intake_2.0.md').exists()
 
 
@@ -168,7 +167,7 @@ def test_debug_and_report_are_chassis_booleans_that_follow_every_settings_rule(r
 @pytest.mark.req('LAYER-001')
 def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run, project, tmp_path):
     report = submit(run, project, FIXTURE, tmp_path, extra=('model=claude', 'role=intake agent'))
-    assert (report['project'], report['metaform'], report['elements'], report['requirements'], report['subtypes'],
+    assert (report['project'], report['metaform'], report['elements'], report['purposes'], report['subtypes'],
             report['work']) == ('timer', 'main', 4, 2, 1, 0)
     assert set(notices(report)) == NAMED
     assert report['layer'] == 'intake'  # LAYER-025: no time or random part
@@ -200,7 +199,7 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert provenance.prompt is None  # the Canonical Intake's purpose never changes, so no copy is kept, STORE-016
     document = export_document(['timer'], layers=[report['layer']])['projects'][0]['metaforms'][0]
     assert len(document['elements']) == 4 and len(document['joins']) == 3 and 'subtypes' not in document
-    assert sorted(row['type'] for row in document['joins']) == ['require', 'require', 'subtype']  # Rich 2026-10-02
+    assert sorted(row['type'] for row in document['joins']) == ['purpose', 'purpose', 'subtype']  # Rich 2026-10-04
     assert all('perspective' not in row for row in document['joins'])
     assert sorted(row['verb'] for row in document['joins']) == ['advances', 'rings', 'tells']
 
@@ -221,7 +220,7 @@ def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(r
                              cwd=project).stdout)
     assert [notice['message'] for notice in unnamed['notices'] if notice['where'] == 'name'] == [
         'name is missing; stored empty.']
-    join = json.loads(run('intake', 'add_requirement', 'code.timer.kitchen', 'code.alarm.audible', 'name=end-of-countdown alarm',
+    join = json.loads(run('intake', 'add_purpose', 'code.timer.kitchen', 'code.alarm.audible', 'name=end-of-countdown alarm',
                           'purpose=Get attention.', 'ef=Rings.', 'ifd=receives',
                           'verb=rings', '--json', cwd=project).stdout)
     assert join['notices'] == []
@@ -230,7 +229,7 @@ def test_a_name_is_recorded_wherever_a_namespace_address_and_a_name_length_are(r
                            'verb=ticks', '--json', cwd=project).stdout)
     assert inner['notices'] == []
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
-    assert [row['name'] for row in shown['requirements']] == ['end-of-countdown alarm']
+    assert [row['name'] for row in shown['purposes']] == ['end-of-countdown alarm']
     kitchen = next(row for row in shown['elements'] if row['namespace_address'] == 'code.timer.kitchen')
     assert (kitchen['short_name'], kitchen['name_length'], kitchen['name'], kitchen['role']) == (
         'kitchen timer', 2, 'kitchen timer daemon', 'DE')
@@ -251,7 +250,7 @@ def test_no_intake_tool_takes_a_perspective():
     its locks in which direction we care about more clearly, and make it easier nd lowers mistakes". No intake tool
     takes a perspective, and no field description names one."""
     import xml.etree.ElementTree as ET
-    for verb in ('add_requirement', 'subtype', 'edit'):
+    for verb in ('add_purpose', 'subtype', 'edit'):
         assert 'perspective' not in nouns_of(verb), verb
     fields = ET.fromstring((RESOURCE.parent / 'prompts.xml').read_text(encoding='utf-8')).find('fields')
     assert fields is not None and fields.find('join/perspective') is None and fields.find('element/perspective') is None
@@ -430,7 +429,7 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('STORE-042')
 def test_the_intake_tools_carry_no_condition_field_and_a_flag_sent_anyway_is_kept_in_extra(run, project, tmp_path):
-    for verb in ('element', 'add_requirement', 'subtype', 'edit'):
+    for verb in ('element', 'add_purpose', 'subtype', 'edit'):
         assert not {'flag', 'flag_note'} & set(nouns_of(verb)), verb
     given = copy.deepcopy(FIXTURE)
     given['elements'][2]['flag'] = 'broken'
@@ -478,7 +477,7 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     import xml.etree.ElementTree as ET
     prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
     notice, line = (prompts.findtext(name, '').strip() for name in ('no_intake', 'unfinished'))
-    record = (ROOT / 'specifications' / 'spec' / '06-mcp-install.md').read_text(encoding='utf-8')
+    record = (ROOT / 'specifications' / '06-mcp-install.md').read_text(encoding='utf-8')
     assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
     assert notice.startswith('This project has no intake yet. Have a subagent perform it.') and notice in record
     assert 'metaform intake prompt' in notice
@@ -581,7 +580,7 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     built, and only a finished intake reaches every other read."""
     run('intake', 'start', 'model=claude', 'role=intake agent', cwd=project)
     run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', 'name=Home cook', cwd=project)
-    made = json.loads(run('intake', 'add_requirement', 'stakeholder.cook.home', 'code.timer.kitchen',
+    made = json.loads(run('intake', 'add_purpose', 'stakeholder.cook.home', 'code.timer.kitchen',
                           'purpose=Know when each dish is done.', 'ef=Counts down and rings.', 'ifd=receives',
                           'verb=tells', '--json', cwd=project).stdout)
     assert [notice['where'] for notice in made['notices']] == ['provider']
@@ -589,13 +588,13 @@ def test_a_building_intake_is_seen_only_through_intake_show_until_it_finishes(ru
     store = Store('timer')
     assert not store.has_intake() and store.element('stakeholder.cook.home') is None
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
-    assert (len(shown['elements']), len(shown['requirements']), len(shown['requirements'][0]['subtypes'])) == (2, 1, 0)
+    assert (len(shown['elements']), len(shown['purposes']), len(shown['purposes'][0]['subtypes'])) == (2, 1, 0)
     assert shown['undescribed'] == ['code.timer.kitchen']
     assert 'Intake: being recorded' in run(cwd=project).stdout
     run('intake', 'element', 'code.timer.kitchen', 'role=DE', 'name=kitchen timer', cwd=project)
     assert json.loads(run('intake', 'show', '--json', cwd=project).stdout)['undescribed'] == []
     finished = json.loads(run('intake', 'finish', '--json', cwd=project).stdout)
-    assert (finished['elements'], finished['requirements']) == (2, 1)
+    assert (finished['elements'], finished['purposes']) == (2, 1)
     store = Store('timer')
     assert store.has_intake() and store.element('code.timer.kitchen').role == 'DE'
     assert store.provenance(finished['layer']).model == 'claude'
@@ -608,12 +607,12 @@ def test_edit_and_remove_change_a_building_intake_and_a_finished_one_changes_onl
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.a', 'role=DE', cwd=project)
     run('intake', 'element', 'code.b', 'role=SE', cwd=project)
-    run('intake', 'add_requirement', 'code.a', 'code.b', 'purpose=p', 'ef=f', 'verb=v', cwd=project)
-    run('intake', 'add_requirement', 'code.b', 'code.a', 'purpose=q', 'ef=g', 'verb=w', cwd=project)
+    run('intake', 'add_purpose', 'code.a', 'code.b', 'purpose=p', 'ef=f', 'verb=v', cwd=project)
+    run('intake', 'add_purpose', 'code.b', 'code.a', 'purpose=q', 'ef=g', 'verb=w', cwd=project)
     run('intake', 'edit', 'receiver=code.a', 'provider=code.b', 'purpose=The better purpose.', cwd=project)
     run('intake', 'remove', 'receiver=code.b', 'provider=code.a', cwd=project)
     shown = json.loads(run('intake', 'show', '--json', cwd=project).stdout)
-    assert [(row['receiver'], row['provider'], row['purpose']) for row in shown['requirements']] == [
+    assert [(row['receiver'], row['provider'], row['purpose']) for row in shown['purposes']] == [
         ('code.a', 'code.b', 'The better purpose.')]
     run('intake', 'finish', cwd=project)
     late = json.loads(run('intake', 'edit', 'receiver=code.a', 'provider=code.b', 'purpose=Too late.', '--json',
@@ -705,12 +704,12 @@ def failsafe_intake(run, project):
     for address, role in (('stakeholder.operator', 'CQU'), ('code.failsafe.gateway', 'DE'), ('code.probe.echo', 'SE'),
                           ('code.alarm', 'SE')):
         recorded(run, project, 'element', address, f'role={role}', 'name_length=1')
-    recorded(run, project, 'add_requirement', 'stakeholder.operator', 'code.failsafe.gateway',
+    recorded(run, project, 'add_purpose', 'stakeholder.operator', 'code.failsafe.gateway',
              'purpose=Catch a dead gateway.', 'ef=Probes the gateway and fails over.', 'verb=watches')
-    recorded(run, project, 'add_requirement', 'stakeholder.operator', 'code.probe.echo', 'name=echo probe',
+    recorded(run, project, 'add_purpose', 'stakeholder.operator', 'code.probe.echo', 'name=echo probe',
              'purpose=Know the gateway answers.', 'ef=Sends an echo each second.', 'verb=pings',
              'non_goal=Measure latency.', 'refs=[{"key": "path", "value": "src/echo.c"}]')
-    recorded(run, project, 'add_requirement', 'code.alarm', 'code.probe.echo', 'purpose=Hear a lost echo.',
+    recorded(run, project, 'add_purpose', 'code.alarm', 'code.probe.echo', 'purpose=Hear a lost echo.',
              'ef=Reports each lost echo.', 'verb=tells')
 
 
@@ -735,21 +734,21 @@ def handed_ids(result):
 
 
 @pytest.mark.req('BASE-039')
-def test_the_agent_adds_a_requirement_and_is_never_handed_an_id_or_a_join(run, project):
+def test_the_agent_adds_a_purpose_and_is_never_handed_an_id_or_a_join(run, project):
     """Rich, 2026-10-02: "you need to have the AI submit stuff how it is being reasoned and then extract the joins,
     joins are a database concept"; "It's, it's just adding a fucking requirement. Why even use the word join?" The
-    intake tool names a requirement by the element that requires and the element that serves it, a subpart by its
-    address inside that requirement, and an element by its address; no verb, noun or result names a join or an id."""
+    intake tool names a purpose by the element that holds it and the element that serves it, a subpart by its
+    address inside that purpose, and an element by its address; no verb, noun or result names a join or an id."""
     from metaform.modules.intake import MODULE
     names = [verb.name for verb in MODULE.verbs]
-    assert 'add_requirement' in names and not [name for name in names if 'join' in name]
+    assert 'add_purpose' in names and not [name for name in names if 'join' in name]
     for verb in MODULE.verbs:
         taken = {noun.name for noun in verb.nouns} - ({'id'} if verb.name == 'start' else set())
         assert not [name for name in taken if 'join' in name or name in ID_KEYS | {'into', 'type'}], verb.name
     failsafe_intake(run, project)
     results = [
         recorded(run, project, 'element', 'code.siren', 'role=SE', 'name_length=1'),
-        recorded(run, project, 'add_requirement', 'code.alarm', 'code.failsafe.gateway', 'purpose=Know of a failover.',
+        recorded(run, project, 'add_purpose', 'code.alarm', 'code.failsafe.gateway', 'purpose=Know of a failover.',
                  'ef=Reports each failover.', 'verb=tells'),
         recorded(run, project, 'subtype', 'stakeholder.operator', 'code.failsafe.gateway', 'code.probe.ping',
                  'role=SE', 'name_length=1', 'ef=Sends a ping.', 'verb=pings'),
@@ -770,33 +769,33 @@ def test_the_agent_adds_a_requirement_and_is_never_handed_an_id_or_a_join(run, p
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
-def test_a_requirement_named_twice_by_the_same_two_elements_is_changed_only_when_named_alone(run, project):
-    """Two requirements of one element on the same provider cannot be told apart by their addresses: an edit or a
+def test_a_purpose_named_twice_by_the_same_two_elements_is_changed_only_when_named_alone(run, project):
+    """Two purposes of one element on the same provider cannot be told apart by their addresses: an edit or a
     removal naming them changes neither, and its notice lists both purposes."""
     recorded(run, project, 'start')
-    recorded(run, project, 'add_requirement', 'code.a', 'code.b', 'purpose=First why.', 'ef=f', 'verb=v')
-    recorded(run, project, 'add_requirement', 'code.a', 'code.b', 'purpose=Second why.', 'ef=g', 'verb=w')
+    recorded(run, project, 'add_purpose', 'code.a', 'code.b', 'purpose=First why.', 'ef=f', 'verb=v')
+    recorded(run, project, 'add_purpose', 'code.a', 'code.b', 'purpose=Second why.', 'ef=g', 'verb=w')
     edited = recorded(run, project, 'edit', 'receiver=code.a', 'provider=code.b', 'purpose=Changed.')
     removed = recorded(run, project, 'remove', 'receiver=code.a', 'provider=code.b')
     for result in (edited, removed):
         message = ' '.join(notice['message'] for notice in result['notices'])
         assert 'First why.' in message and 'Second why.' in message
     part = recorded(run, project, 'subtype', 'code.a', 'code.b', 'code.c', 'ef=h', 'verb=x')
-    recorded(run, project, 'add_requirement', 'code.d', 'code.e', 'purpose=Third why.', 'ef=i', 'verb=y')
+    recorded(run, project, 'add_purpose', 'code.d', 'code.e', 'purpose=Third why.', 'ef=i', 'verb=y')
     folded = recorded(run, project, 'absorb', 'code.d', 'code.e', 'code.a', 'code.b')
     for result in (part, folded):
         message = ' '.join(notice['message'] for notice in result['notices'])
         assert 'First why.' in message and 'Second why.' in message
     shown = recorded(run, project, 'show')
-    assert sorted(row['purpose'] for row in shown['requirements']) == ['First why.', 'Second why.', 'Third why.']
-    assert [sub for row in shown['requirements'] for sub in row['subtypes']] == []
+    assert sorted(row['purpose'] for row in shown['purposes']) == ['First why.', 'Second why.', 'Third why.']
+    assert [sub for row in shown['purposes'] for sub in row['subtypes']] == []
 
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-030')
 @pytest.mark.req('MAP-031')
 @pytest.mark.req('MAP-040')
-def test_absorb_makes_a_recorded_requirement_a_subtype_inside_its_parents_requirement(run, project):
+def test_absorb_makes_a_recorded_purpose_a_subtype_inside_its_parents_purpose(run, project):
     """Rich, 2026-09-27: an element always appears as one element record; annealing places it in its parent's join as
     a subtype join, and the element itself does not move."""
     failsafe_intake(run, project)
@@ -804,9 +803,9 @@ def test_absorb_makes_a_recorded_requirement_a_subtype_inside_its_parents_requir
                         'code.failsafe.gateway')
     assert 'code.alarm' in ' '.join(notice['message'] for notice in absorbed['notices'])
     shown = recorded(run, project, 'show')
-    assert sorted((row['receiver'], row['provider']) for row in shown['requirements']) == [
+    assert sorted((row['receiver'], row['provider']) for row in shown['purposes']) == [
         ('code.alarm', 'code.probe.echo'), ('stakeholder.operator', 'code.failsafe.gateway')]
-    [sub] = next(row for row in shown['requirements'] if row['receiver'] == 'stakeholder.operator')['subtypes']
+    [sub] = next(row for row in shown['purposes'] if row['receiver'] == 'stakeholder.operator')['subtypes']
     assert (sub['namespace_address'], sub['name'], sub['ef'], sub['verb'], sub['non_goal'], sub['purpose'],
             sub['extra']) == (
         'code.probe.echo', 'echo probe', 'Sends an echo each second.', 'pings', 'Measure latency.',
@@ -816,7 +815,7 @@ def test_absorb_makes_a_recorded_requirement_a_subtype_inside_its_parents_requir
     assert element['role'] == 'SE'
     recorded(run, project, 'remove', 'receiver=code.alarm', 'provider=code.probe.echo')
     finished = recorded(run, project, 'finish')
-    assert (finished['elements'], finished['requirements'], finished['subtypes']) == (4, 1, 1)
+    assert (finished['elements'], finished['purposes'], finished['subtypes']) == (4, 1, 1)
     store = Store('timer')
     assert 'code.probe.echo' not in [root.address for root in store.roots().elements]
     assert 'code.probe.echo' not in [placed.element.address for placed in store.graph().elements]
@@ -827,23 +826,23 @@ def test_absorb_makes_a_recorded_requirement_a_subtype_inside_its_parents_requir
 
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-040')
-def test_show_reads_one_receivers_requirements_and_what_they_hold(run, project):
+def test_show_reads_one_receivers_purposes_and_what_they_hold(run, project):
     """Rich, 2026-09-27: the intake must not depend on the size of the agent's context."""
     failsafe_intake(run, project)
     recorded(run, project, 'absorb', 'stakeholder.operator', 'code.probe.echo', 'stakeholder.operator',
              'code.failsafe.gateway')
     operator = recorded(run, project, 'show', 'receiver=stakeholder.operator')
-    assert [row['provider'] for row in operator['requirements']] == ['code.failsafe.gateway']
-    assert [sub['namespace_address'] for sub in operator['requirements'][0]['subtypes']] == ['code.probe.echo']
+    assert [row['provider'] for row in operator['purposes']] == ['code.failsafe.gateway']
+    assert [sub['namespace_address'] for sub in operator['purposes'][0]['subtypes']] == ['code.probe.echo']
     assert {row['namespace_address'] for row in operator['elements']} == {
         'stakeholder.operator', 'code.failsafe.gateway', 'code.probe.echo'}
     alarm = recorded(run, project, 'show', 'receiver=code.alarm')
-    assert [row['provider'] for row in alarm['requirements']] == ['code.probe.echo']
-    assert alarm['requirements'][0]['subtypes'] == []
+    assert [row['provider'] for row in alarm['purposes']] == ['code.probe.echo']
+    assert alarm['purposes'][0]['subtypes'] == []
 
 
 @pytest.mark.req('BASE-039')
-def test_edit_and_remove_name_an_element_a_requirement_and_a_subtype_by_their_addresses(run, project):
+def test_edit_and_remove_name_an_element_a_purpose_and_a_subtype_by_their_addresses(run, project):
     """A Fable intake on 2026-09-27 crashed its own script expecting join_id where intake_show said id; there are no
     ids to expect: each thing is named by the addresses the agent reasoned."""
     failsafe_intake(run, project)
@@ -856,15 +855,15 @@ def test_edit_and_remove_name_an_element_a_requirement_and_a_subtype_by_their_ad
     again = recorded(run, project, 'show')
     assert next(row for row in again['elements'] if row['namespace_address'] == 'code.alarm')['name_length'] == 2
     assert [(row['receiver'], row['provider'], sub['namespace_address'], sub['ef'])
-            for row in again['requirements'] for sub in row['subtypes']] == [
+            for row in again['purposes'] for sub in row['subtypes']] == [
         ('stakeholder.operator', 'code.failsafe.gateway', 'code.probe.ping', 'Sends a ping each second.')]
     assert ('stakeholder.operator', 'code.probe.echo') not in [(row['receiver'], row['provider'])
-                                                               for row in again['requirements']]
+                                                               for row in again['purposes']]
     moved = recorded(run, project, 'edit', 'receiver=code.alarm', 'provider=code.probe.echo',
                      'to_receiver=stakeholder.operator')
     assert moved['notices'] == []
     assert ('stakeholder.operator', 'code.probe.echo') in [(row['receiver'], row['provider'])
-                                                           for row in recorded(run, project, 'show')['requirements']]
+                                                           for row in recorded(run, project, 'show')['purposes']]
     assert 'namespace_address' in nouns_of('element') and 'address' not in nouns_of('element')
     assert {'parent_receiver', 'parent_provider', 'namespace_address'} <= set(nouns_of('subtype'))
     assert not {'receiver', 'provider'} & set(nouns_of('subtype'))  # the intake's provider of a part is the part
@@ -874,7 +873,7 @@ def test_edit_and_remove_name_an_element_a_requirement_and_a_subtype_by_their_ad
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-015')
 @pytest.mark.req('MAP-003')
-def test_edit_never_moves_an_element_and_moves_a_requirement_to_another_receiver(run, project):
+def test_edit_never_moves_an_element_and_moves_a_purpose_to_another_receiver(run, project):
     failsafe_intake(run, project)
     kept = recorded(run, project, 'edit', 'namespace_address=code.alarm', 'to_address=code.alarm.siren', 'role=NE')
     [named] = [notice for notice in kept['notices'] if notice['where'] == 'to_address']
@@ -887,9 +886,9 @@ def test_edit_never_moves_an_element_and_moves_a_requirement_to_another_receiver
                      'to_receiver=code.failsafe.gateway')
     assert moved['notices'] == []
     again = recorded(run, project, 'show', 'receiver=code.failsafe.gateway')
-    assert [(row['provider'], row['purpose']) for row in again['requirements']] == [('code.probe.echo',
+    assert [(row['provider'], row['purpose']) for row in again['purposes']] == [('code.probe.echo',
                                                                                      'Hear a lost echo.')]
-    assert recorded(run, project, 'show', 'receiver=code.alarm')['requirements'] == []
+    assert recorded(run, project, 'show', 'receiver=code.alarm')['purposes'] == []
     recorded(run, project, 'finish')
     late = recorded(run, project, 'absorb', 'stakeholder.operator', 'code.probe.echo', 'stakeholder.operator',
                     'code.failsafe.gateway')
@@ -933,7 +932,7 @@ def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_f
     written = ET.parse(Path(__file__).parents[1] / 'resources' / 'prompts.xml').getroot().find('fields')
     assert written is not None
     assert [group.tag for group in written] == ['element', 'join']  # a subtype join is a join holding an element
-    for verb, groups in (('element', {'element': FIELDS['element']}), ('add_requirement', {'join': FIELDS['join']}),
+    for verb, groups in (('element', {'element': FIELDS['element']}), ('add_purpose', {'join': FIELDS['join']}),
                          ('subtype', SUBTYPE_FIELDS)):
         nouns = nouns_of(verb)
         for group, names in groups.items():
@@ -941,7 +940,7 @@ def test_each_recorded_field_is_described_once_from_the_intake_modules_prompts_f
                 said = written.findtext(f'{group}/{field}')
                 assert said and said.strip() == nouns[field].help, (verb, field)
     for field in ('purpose', 'ef', 'verb', 'non_goal'):
-        assert nouns_of('edit')[field].help == nouns_of('add_requirement')[field].help
+        assert nouns_of('edit')[field].help == nouns_of('add_purpose')[field].help
     source = (Path(__file__).parents[1] / '__init__.py').read_text(encoding='utf-8')
     assert 'schema//elements' not in source and 'SET perspective' not in source  # the Canonical Intake is not parsed for them
 
@@ -973,7 +972,7 @@ UNGLOSSED = {'element/name_length': 'name length', 'element/name': 'name', 'elem
              'element/extra': 'extra', 'join/extra': 'extra', 'element/to_address': 'new namespace address',
              'join/parent_receiver': 'parent receiver', 'join/parent_provider': 'parent provider',
              'join/to_receiver': 'new receiver', 'join/to_provider': 'new provider'}
-RECORDING = ('element', 'add_requirement', 'subtype', 'absorb', 'show', 'edit', 'remove')
+RECORDING = ('element', 'add_purpose', 'subtype', 'absorb', 'show', 'edit', 'remove')
 
 
 @pytest.mark.req('BASE-039')
@@ -994,7 +993,7 @@ def test_every_noun_of_the_intakes_recording_verbs_takes_its_words_from_the_prom
             assert noun.help in defined.get(name, set()), (verb, name, noun.help)
 
 
-GLOSSARY = ROOT / 'specifications' / 'Intake_2.1.md'  # the fields carry the served intake's glossary
+GLOSSARY = SPEC  # the fields carry the served intake's glossary
 
 
 def glossary():
@@ -1040,9 +1039,9 @@ def test_each_intake_field_carries_the_intake_2_glossary_lines_word_for_word():
         assert said[where] == words, where
     for verb, group, field in (('element', 'element', 'namespace_address'), ('element', 'element', 'role'),
                                ('subtype', 'element', 'namespace_address'), ('subtype', 'element', 'role'),
-                               ('add_requirement', 'join', 'receiver'), ('add_requirement', 'join', 'provider'),
-                               ('add_requirement', 'join', 'purpose'), ('add_requirement', 'join', 'ef'),
-                               ('add_requirement', 'join', 'ifd'), ('subtype', 'join', 'purpose'),
+                               ('add_purpose', 'join', 'receiver'), ('add_purpose', 'join', 'provider'),
+                               ('add_purpose', 'join', 'purpose'), ('add_purpose', 'join', 'ef'),
+                               ('add_purpose', 'join', 'ifd'), ('subtype', 'join', 'purpose'),
                                ('subtype', 'join', 'ef'), ('subtype', 'join', 'ifd'), ('edit', 'join', 'purpose'),
                                ('edit', 'join', 'ef'), ('edit', 'join', 'ifd')):
         assert nouns_of(verb)[field].help == said[f'{group}/{field}'], (verb, field)
@@ -1063,7 +1062,7 @@ def test_a_condition_given_with_an_element_a_join_or_a_subtype_join_is_an_open_w
     element = recorded(run, project, 'element', 'code.auth', 'role=SE', 'name=auth', 'condition=broken',
                        'note=Non-debug modes are forced to debug.')
     run('intake', 'element', 'code.timer', 'role=DE', cwd=project)
-    join = recorded(run, project, 'add_requirement', 'code.timer', 'code.auth', 'purpose=p', 'ef=f', 'ifd=receives',
+    join = recorded(run, project, 'add_purpose', 'code.timer', 'code.auth', 'purpose=p', 'ef=f', 'ifd=receives',
                     'verb=v', 'condition=missing', 'note=The demo does not declare its autoap dependency.')
     subtype = recorded(run, project, 'subtype', 'code.timer', 'code.auth', 'code.auth.tofu', 'purpose=q', 'ef=g',
                        'ifd=sends', 'verb=w', 'role=SE',
@@ -1091,14 +1090,14 @@ def test_every_join_and_subtype_join_is_asked_its_information_flow_direction(run
     """IFD, Information Flow Direction, Rich 2026-10-01: the primary flow of information. sends: OP to EF. receives:
     EF to OP. both: equal need. It is a field of the join and the subtype join, defined once in
     prompts.xml, a closed choice of three, kept with the join, and named in a notice when it is missing."""
-    for noun in (nouns_of('add_requirement')['ifd'], nouns_of('subtype')['ifd'], nouns_of('edit')['ifd']):
+    for noun in (nouns_of('add_purpose')['ifd'], nouns_of('subtype')['ifd'], nouns_of('edit')['ifd']):
         assert noun.schema['enum'] == ['sends', 'receives', 'both']
         assert noun.help.startswith('IFD: Information Flow Direction — the primary flow of information')
     run('intake', 'start', cwd=project)
     run('intake', 'element', 'code.store.state', 'role=SE', cwd=project)
-    read = recorded(run, project, 'add_requirement', 'code.selector.route', 'code.store.state', 'purpose=p', 'ef=f',
+    read = recorded(run, project, 'add_purpose', 'code.selector.route', 'code.store.state', 'purpose=p', 'ef=f',
                     'ifd=receives', 'verb=v')
-    write = recorded(run, project, 'add_requirement', 'code.protocol.sync', 'code.store.state', 'purpose=q', 'ef=g',
+    write = recorded(run, project, 'add_purpose', 'code.protocol.sync', 'code.store.state', 'purpose=q', 'ef=g',
                      'verb=w')
     assert 'ifd' in [notice['where'] for notice in write['notices']]
     assert 'ifd' not in [notice['where'] for notice in read['notices']]

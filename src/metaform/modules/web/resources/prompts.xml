@@ -3,7 +3,65 @@
      follows web's instructions in the instructions agents read, VIEW-015, and is shown by `metaform status` before
      the intake. -->
 <prompts>
-<instructions>web is active.</instructions>
+
+<instructions>
+@STATE_INIT:
+  {Web}:=ACTIVE
+
+@CONSTRAINT:
+  +> Operate with web active.
+
+@CONDITION:
+  ?IF ({Web}==ACTIVE) -> {State}:=READY
+  :ELSE -> {State}:=INACTIVE
+
+@ROUTER:
+  @MATCH({State}):
+    | [READY] -> EXECUTE_PIPELINE(Ready)
+    | [INACTIVE] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Ready):
+  YIELD
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=({Web}==ACTIVE)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</instructions>
+
 <commands><web verb="start"/></commands>
-<autostart>Before an intake, start the web GUI with web start if it is not running.</autostart>
+
+<autostart>
+@STATE_INIT:
+  {Phase}:=BEFORE_INTAKE; {Web_Running}:=UNRESOLVED
+
+@CONSTRAINT:
+  +> Before an intake, ensure the web GUI is running.
+  +> If it is not running, start it with `web start`.
+
+@CONDITION:
+  ?IF ({Phase}==BEFORE_INTAKE AND {Web_Running}==FALSE) -> {State}:=START
+  :ELSE -> {State}:=CONTINUE
+
+@ROUTER:
+  @MATCH({State}):
+    | [START] -> EXECUTE_PIPELINE(Start)
+    | [CONTINUE] -> EXECUTE_PIPELINE(Continue)
+
+@EXECUTE_PIPELINE(Start):
+  Δ(`web start`) => start web GUI.
+  YIELD
+
+@EXECUTE_PIPELINE(Continue):
+  YIELD
+
+@VERIFY:
+  {Valid}:=(before intake implies web GUI running)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> EXECUTE_PIPELINE(Start)
+</autostart>
+
 </prompts>

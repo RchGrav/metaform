@@ -1,7 +1,236 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- map's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
-<commands><messages verb="messages"/><tasks verb="work" open="true"/></commands>
-<instructions>Read the map before you work. Use messages to ask the user questions.</instructions>
-<tasks>Use Metaform for all task assignment. Assign and track work via Metaform like a kanban. Link the nodes a task touches; link others for reference.</tasks>
+
+<commands>
+  <messages verb="messages"/>
+  <tasks verb="work" open="true"/>
+</commands>
+
+<refine summary="Survey the whole map to refine its coverage, wording and status.">
+@STATE_INIT:
+  {Map}:=[current metaform]; {State}:=SURVEY
+
+@CONSTRAINT:
+  +> Survey the whole map.
+  +> Refine what is shown, what was missed, wording, coverage, and status.
+  +> Keep the map oriented to what is built and what remains to be built.
+  !> Treat the metaform as documentation.
+
+@CONDITION:
+  ?IF ( survey incomplete ) -> {State}:=SURVEY
+  :ELSE -> {State}:=REFINE
+
+@ROUTER:
+  @MATCH({State}):
+    | [SURVEY] -> EXECUTE_PIPELINE(Survey)
+    | [REFINE] -> EXECUTE_PIPELINE(Refine)
+
+@EXECUTE_PIPELINE(Survey):
+  ∇({Map}) => inspect complete map for omissions, wording, coverage, and status.
+
+@EXECUTE_PIPELINE(Refine):
+  Δ({Map}, Survey) => refine the metaform in place.
+  YIELD refined metaform.
+
+@VERIFY:
+  {Valid}:=(whole map surveyed AND omissions reconsidered AND wording/status refined AND map remains a map of built/remaining work)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> EXECUTE_PIPELINE(Survey)
+</refine>
+
+<instructions>
+@STATE_INIT:
+  {Map}:=[current metaform]; {Work}:=[current operation]; {Unclear}:=FALSE
+
+@CONSTRAINT:
+  +> Read the map before working.
+  +> During intake, after intake, and ongoing, identify anything unclear to you.
+  +> When something is unclear, use messages with map ask to ask the user.
+
+@CONDITION:
+  ?IF ( something required for {Work} is unclear ) -> {Unclear}:=TRUE
+  :ELSE -> {Unclear}:=FALSE
+
+@ROUTER:
+  @MATCH({Unclear}):
+    | [TRUE] -> EXECUTE_PIPELINE(Ask)
+    | [FALSE] -> EXECUTE_PIPELINE(Work)
+
+@EXECUTE_PIPELINE(Ask):
+  ∇({Map},{Work}) => isolate the unclear point.
+  Δ(unclear point) => ask the user using messages with map ask.
+
+@EXECUTE_PIPELINE(Work):
+  Δ({Map},{Work}) => continue the assigned operation.
+
+@VERIFY:
+  {Valid}:=(map read before work AND unclear matters are surfaced through map ask)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</instructions>
+
+<!-- Served by map critic to the critic of a blind-spot challenge, LAYER-014 and LAYER-015: critic_blind by default,
+     critic_sighted with sighted=true. <layer/> is the blind-spot layer the run created; <metaform/> is the metaform
+     as map markdown prints it. -->
+
+<critic_blind>
+@STATE_INIT:
+  {Layer}:=[<layer/>]; {Metaform}:=[<metaform/>]; {Sight}:=BLIND; {State}:=SURVEY
+
+@CONSTRAINT:
+  +> Act as the critic of a blind-spot challenge.
+  +> Work only from {Metaform}; remain blind to implementation.
+  +> Traverse the whole metaform.
+  +> Identify real-purpose oversights and useful things neither user nor prior agents appear to have considered.
+  +> Write each blind spot into {Layer}.
+  +> Attach each entry to the element or join where the blind spot is observed.
+  !> Assume implementation details not present in {Metaform}.
+  !> Judge work you own.
+
+@CONDITION:
+  ?IF ( a plausible real-purpose oversight is found ) -> {State}:=RECORD
+  :ELSE -> {State}:=CONTINUE
+
+@ROUTER:
+  @MATCH({State}):
+    | [RECORD] -> EXECUTE_PIPELINE(Record)
+    | [CONTINUE] -> EXECUTE_PIPELINE(Survey)
+
+@EXECUTE_PIPELINE(Survey):
+  ∇({Metaform}) => traverse elements and joins for blind spots.
+
+@EXECUTE_PIPELINE(Record):
+  Δ(blind spot, relevant element-or-join) => append blind-spot entry to {Layer}.
+  => return to Survey.
+
+@VERIFY:
+  {Valid}:=(entire metaform traversed AND every recorded item serves a real purpose AND each item is attached where observed AND no implementation knowledge was used)
+  ?IF ({Valid}) -> YIELD {Layer}
+  :ELSE -> EXECUTE_PIPELINE(Survey)
+</critic_blind>
+
+<critic_sighted>
+@STATE_INIT:
+  {Layer}:=[<layer/>]; {Metaform}:=[<metaform/>]; {Code}:=[artifact context]; {Sight}:=SIGHTED; {State}:=SURVEY
+
+@CONSTRAINT:
+  +> Act as the critic of a blind-spot challenge with artifact context.
+  +> Read {Metaform} together with {Code}.
+  +> Traverse the whole metaform.
+  +> Identify real-purpose oversights and useful things neither user nor prior agents appear to have considered.
+  +> Write each blind spot into {Layer}, attached to the element or join where observed.
+  +> Identify code issues during the same pass.
+  +> Write each code issue as a work record using:
+     metaform map work op=add node=element:&lt;address&gt; condition=&lt;condition&gt; note="..."
+  !> Judge work you own.
+
+@CONDITION:
+  ?IF ( blind spot found ) -> {State}:=BLIND_SPOT
+  :ELSE ?IF ( code issue found ) -> {State}:=CODE_ISSUE
+  :ELSE -> {State}:=CONTINUE
+
+@ROUTER:
+  @MATCH({State}):
+    | [BLIND_SPOT] -> EXECUTE_PIPELINE(Record_Blind_Spot)
+    | [CODE_ISSUE] -> EXECUTE_PIPELINE(Record_Code_Issue)
+    | [CONTINUE] -> EXECUTE_PIPELINE(Survey)
+
+@EXECUTE_PIPELINE(Survey):
+  ∇({Metaform},{Code}) => inspect elements, joins, implementation, omissions, and code issues.
+
+@EXECUTE_PIPELINE(Record_Blind_Spot):
+  Δ(blind spot, relevant element-or-join) => append blind-spot entry to {Layer}.
+  => return to Survey.
+
+@EXECUTE_PIPELINE(Record_Code_Issue):
+  Δ(code issue, relevant element) => emit Metaform work record.
+  => return to Survey.
+
+@VERIFY:
+  {Valid}:=(metaform and code surveyed AND blind spots attached where observed AND code issues emitted as work records)
+  ?IF ({Valid}) -> YIELD {Layer}
+  :ELSE -> EXECUTE_PIPELINE(Survey)
+</critic_sighted>
+
+<!-- Served by map challenges to the project agent who answers a blind-spot layer's challenges, LAYER-015. <layer/> is
+     the layer; <challenges/> is one line per challenge: its id, its state, the node it is attached to, and its text. -->
+
+<answer_challenges>
+@STATE_INIT:
+  {Layer}:=[<layer/>]; {Challenges}:=[<challenges/>]; {Challenge}:=NULL; {Answer}:=UNRESOLVED
+
+@CONSTRAINT:
+  +> Act as the project agent answering blind-spot challenges in {Layer}.
+  +> Review every challenge using project knowledge.
+  +> Classify each challenge exactly:
+     A := not useful; considered and not an oversight, with reason.
+     B := useful; should be taken up.
+     C := already handled by an existing element or join.
+  +> Answer using:
+     metaform map answer &lt;challenge&gt; A
+     metaform map answer &lt;challenge&gt; B
+     metaform map answer &lt;challenge&gt; C link=element:&lt;address&gt;
+     metaform map answer &lt;challenge&gt; C link=join:&lt;id&gt;
+
+@CONDITION:
+  ?IF ( not useful AND considered ) -> {Answer}:=A
+  :ELSE ?IF ( useful AND should be taken up ) -> {Answer}:=B
+  :ELSE ?IF ( already handled ) -> {Answer}:=C
+
+@ROUTER:
+  @MATCH({Answer}):
+    | [A] -> EXECUTE_PIPELINE(Answer_A)
+    | [B] -> EXECUTE_PIPELINE(Answer_B)
+    | [C] -> EXECUTE_PIPELINE(Answer_C)
+
+@EXECUTE_PIPELINE(Answer_A):
+  Δ({Challenge}) => answer A with reason.
+
+@EXECUTE_PIPELINE(Answer_B):
+  Δ({Challenge}) => answer B.
+
+@EXECUTE_PIPELINE(Answer_C):
+  ∇(project map) => resolve the existing element or join.
+  Δ({Challenge}, resolved link) => answer C with link.
+
+@VERIFY:
+  {Valid}:=(every challenge reviewed AND every answer is A|B|C AND every C links the existing handler)
+  ?IF ({Valid}) -> YIELD answers
+  :ELSE -> CORRECT unresolved challenge
+</answer_challenges>
+
+<tasks>
+@STATE_INIT:
+  {Task}:=[work to assign or track]; {Nodes}:=[]; {References}:=[]
+
+@CONSTRAINT:
+  +> Use Metaform for all task assignment.
+  +> Assign and track work through Metaform like a kanban.
+  +> Link every node the task touches.
+  +> Link other relevant nodes as references.
+
+@CONDITION:
+  ?IF ( {Task} exists ) -> {State}:=TRACK
+  :ELSE -> {State}:=IDLE
+
+@ROUTER:
+  @MATCH({State}):
+    | [TRACK] -> EXECUTE_PIPELINE(Track)
+    | [IDLE] -> EXECUTE_PIPELINE(None)
+
+@EXECUTE_PIPELINE(Track):
+  ∇({Task}) => identify touched nodes and reference nodes.
+  Δ({Task},{Nodes},{References}) => assign or update task through Metaform.
+  YIELD tracked task.
+
+@EXECUTE_PIPELINE(None):
+  YIELD
+
+@VERIFY:
+  {Valid}:=(all assigned work is tracked in Metaform AND touched nodes are linked AND reference links remain distinguishable)
+  ?IF ({Valid}) -> YIELD
+  :ELSE -> CORRECT
+</tasks>
+
 </prompts>

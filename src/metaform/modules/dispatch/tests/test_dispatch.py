@@ -349,10 +349,9 @@ def test_an_answer_that_names_no_option_is_asked_again(dispatch, run):
 
 def asked_by_the_agent(dispatch):
     """The question the fake agent asked with the real command line at UNRELATED, a node its ticket neither is nor
-    links, once its first turn has ended."""
+    links, while its first turn keeps working."""
     from metaform.data import Node
     [printed] = eventually(lambda: dispatch.logged('asked'))
-    eventually(lambda: [item for item in dispatch.items('note') if item.extra['update'] == 'turn'])
     [mine] = dispatch.store.messages(Node('element', UNRELATED), 'question', True, limit=0).results
     assert mine.message_id in printed, 'the agent was shown the id of the question it asked'
     return mine
@@ -368,7 +367,7 @@ def told(dispatch):
 @pytest.mark.req('QUAL-015')
 def test_a_question_the_agent_asked_is_told_to_it_once_when_it_is_answered(dispatch, run):
     dispatch.store.add_element('parts', UNRELATED)
-    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED)
+    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED, FAKE_ACP_QUESTION_HOLD='1')
     mine = asked_by_the_agent(dispatch)
     run('map', 'tell', NODE, 'A change before the answer', 'by=test', cwd=dispatch.folder)  # the runner checks
     time.sleep(1)
@@ -389,7 +388,7 @@ def test_a_question_the_agent_asked_is_told_to_it_once_when_it_is_answered(dispa
 @pytest.mark.req('MAP-050')
 def test_a_question_another_asked_while_the_agent_was_idle_is_not_told_to_it_though_it_read_it(dispatch, run):
     dispatch.store.add_element('parts', UNRELATED)
-    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED)
+    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED, FAKE_ACP_QUESTION_HOLD='1')
     mine = asked_by_the_agent(dispatch)
     time.sleep(1.1)  # the store keeps a question's time to the second
     other = dispatch.store.ask(dispatch.node, 'Is the engine kept?', by='another agent')
@@ -478,6 +477,22 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
     refused = run('dispatch', 'start', dispatch.work_id, 'claude', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'taken' in refused.stdout + refused.stderr
     assert not dispatch.log.exists()
+
+
+@pytest.mark.req('BASE-052')
+def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch_runners):
+    """Found 2026-10-03 with the ghost agents: f566b181 had two sessions from two starts, since start checked the
+    ticket and the runner took it only after the agent had started. Start takes the ticket in the write that checks it."""
+    first = json.loads(run('dispatch', 'start', dispatch.work_id, 'claude', '--json', cwd=dispatch.folder,
+                           env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((first, dispatch.folder, dispatch.log))
+    assert dispatch.ticket().taken, 'the ticket is taken when start returns, before the agent has started'
+    second = run('dispatch', 'start', dispatch.work_id, 'claude', cwd=dispatch.folder, ok=False,
+                 env=dispatch.env('hold'))
+    assert second.returncode != 0 and 'taken' in second.stdout + second.stderr
+    eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+    assert len(dispatch.items('session')) == 1
+    assert json.loads(dispatch.stop().stdout)['stopped'] is True
 
 
 @pytest.mark.req('BASE-052')
@@ -712,3 +727,60 @@ def test_a_ticket_whose_glyph_has_an_agent_at_work_is_not_started_and_another_gl
     dispatch.stop()
     assert dispatch.process.wait(LIMIT) == 0
     assert dispatch.store.ticket(later).work.taken is None, 'a stopped agent takes no further ticket'
+
+
+# ------------------------------------------------------------------ eligible agents, ticket bd96cbd1
+
+def eligible(dispatch, run, work_id, *agents):
+    run('map', 'work', 'op=edit', f'id={work_id}', 'eligible=' + json.dumps(list(agents)), cwd=dispatch.folder)
+
+
+@pytest.mark.req('MAP-058')
+@pytest.mark.req('BASE-052')
+def test_start_and_run_refuse_an_agent_the_ticket_does_not_list_and_name_the_ones_it_does(dispatch, run):
+    """Ticket bd96cbd1: explicit dispatch honors the eligible agents. Codex started on a ticket only Claude is
+    eligible for is refused, by start and by run, with claude named, and the ticket stays untaken."""
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE}"', cwd=dispatch.folder)
+    eligible(dispatch, run, dispatch.work_id, 'claude')
+    for verb in ('start', 'run'):
+        refused = run('dispatch', verb, dispatch.work_id, 'codex', cwd=dispatch.folder, env=dispatch.env('done'),
+                      ok=False)
+        said = refused.stdout + refused.stderr
+        assert refused.returncode != 0 and 'claude' in said and 'codex' in said, said
+        assert dispatch.ticket().taken is None
+    assert dispatch.items('session') == []
+
+
+@pytest.mark.req('MAP-058')
+@pytest.mark.req('VIEW-040')
+def test_the_glyphs_agent_takes_only_the_tickets_it_is_eligible_for_and_the_others_keep_their_glyph(dispatch, run):
+    """Ticket bd96cbd1: automatic selection of the next ticket honors the eligible agents while keeping the glyph
+    assignment and the board order. The claude agent of glyph kite works its own and Any tickets in board order and
+    passes a ticket only Codex is eligible for, which keeps glyph kite and stays untaken."""
+    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    codex_only, anyone, claude_only = glyphed(
+        dispatch, run, ('Codex only', 'kite', False), ('Anyone', 'kite', False), ('Claude only', 'kite', False))
+    eligible(dispatch, run, codex_only, 'codex')
+    eligible(dispatch, run, claude_only, 'claude', 'gemini')
+    dispatch.start('done')
+    assert dispatch.process.wait(LIMIT * 4) == 0, dispatch.process.stderr.read().decode()
+    assert dispatch.logged('work') == [dispatch.work_id, anyone, claude_only]
+    skipped = json.loads(run('map', 'work', f'id={codex_only}', '--json', cwd=dispatch.folder).stdout)
+    assert skipped['taken'] is None and skipped['map']['glyph'] == 'kite'
+
+
+@pytest.mark.req('MAP-058')
+@pytest.mark.req('VIEW-042')
+def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, run, monkeypatch):
+    """Ticket bd96cbd1: an automatic start honors the eligible agents. The configured agent starts the tickets it is
+    eligible for; a ticket that lists other agents is started with the first of them, so it is not left waiting."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    claude_only, = glyphed(dispatch, run, ('Claude only', None, False))
+    eligible(dispatch, run, claude_only, 'claude')
+    run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
+    launched = []
+    monkeypatch.setattr(module, 'start', lambda ctx: launched.append((ctx.nouns['id'], ctx.nouns['agent'])) or
+                        {'work_id': ctx.nouns['id']})
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched == [(dispatch.work_id, 'codex'), (claude_only, 'claude')]

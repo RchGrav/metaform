@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from .. import changes, home
+from .. import changes, home, loader
 from ..errors import StoreError
 from . import history, layering, operations, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
@@ -78,13 +78,18 @@ class Store:
 
     # ------------------------------------------------------------------ plumbing
 
+    def _follow_enabled(self) -> None:
+        if not self._session.in_atomic:
+            loader.follow_enabled()
+
     def __getattr__(self, name: str) -> Any:
         """An enabled module's operation, run by the DAO in one transaction."""
+        self._follow_enabled()
         found = operations.operation(name)
         if found is None:
             raise AttributeError(name)
         def run(*args: Any, **kwargs: Any) -> Any:
-            with (self._write() if found.write else self._read()) as tx:
+            with (self._write() if found.write else self._read(required=operations.preparation(name))) as tx:
                 return operations.invoke(tx, name, *args, **kwargs)
         return run
 
@@ -95,11 +100,13 @@ class Store:
     @contextmanager
     def atomic(self) -> Generator[None, None, None]:
         """Every write inside the block commits together, or none does, STORE-024."""
+        self._follow_enabled()
         with self._session.atomic():
             yield
 
     @contextmanager
     def _write(self) -> Generator[Tx, None, None]:
+        self._follow_enabled()
         try:
             with self._session.write() as tx:
                 tx.toggled = self.toggled
@@ -108,8 +115,9 @@ class Store:
             raise StoreError(f'The write does not fit the store: {error}.', 'metaform help map knowledge') from None
 
     @contextmanager
-    def _read(self) -> Generator[Tx, None, None]:
-        with self._session.read() as tx:
+    def _read(self, *, required: tuple[str, Tables] | None = None) -> Generator[Tx, None, None]:
+        self._follow_enabled()
+        with self._session.read(required=required) as tx:
             tx.toggled = self.toggled
             yield tx
 
@@ -203,15 +211,15 @@ class Store:
                                                   extra=extra, name=name), notice)
 
     def add_join(self, layer: str | None, receiver: Any, provider: Any, *, name: Any = None, purpose: Any = None,
-                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'require', refs: Iterable[Any] = (),
-                 extra: Any = None, ifd: Any = None) -> Join | Outcome:
+                 ef: Any = None, verb: Any = None, non_goal: Any = None, type: Any = 'purpose', refs: Iterable[Any] = (),
+                 extra: Any = None, ifd: Any = None, element: Any = None) -> Join | Outcome:
         """Write one join, owned by its receiver and served by its provider, STORE-010, with the project's name for
-        the functionality it names, MAP-020."""
+        the functionality it names, MAP-020; `element` promotes it to the element at that address, MAP-054."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
             return self._noted(writes.add_join(tx, named, receiver, provider, name=name, purpose=purpose,
                                                ef=ef, verb=verb, non_goal=non_goal, type=type, refs=refs,
-                                               extra=extra, ifd=ifd), notice)
+                                               extra=extra, ifd=ifd, element=element), notice)
 
     def add_subtype(self, layer: str | None, join: Any, address: Any, *, ef: Any = None, verb: Any = None,
                     non_goal: Any = None,
@@ -288,6 +296,7 @@ class Store:
         """One transaction on the tables the store's module declares, STORE-045: on the store of the first table it
         touches, the metaform's or the project's, created or upgraded to the module's version when first reached.
         Inside `atomic()` a metaform-level table joins the map's transaction."""
+        self._follow_enabled()
         declared = tables.declared(self.module)
         module = cast(str, self.module)
         with ExitStack() as stack:
@@ -387,13 +396,13 @@ class Store:
         with self._read() as tx:
             return reads.join_ends(tx, join)
 
-    def requirement(self, receiver: Any, provider: Any, address: Any = None) -> Node:
-        """The node an agent names by address, MAP-005: the requirement of `receiver` served by `provider`, or with
+    def purpose(self, receiver: Any, provider: Any, address: Any = None) -> Node:
+        """The node an agent names by address, MAP-005: the purpose of `receiver` served by `provider`, or with
         `address` the part at that address inside it, read from every stored layer as refine reads them. It stops
         when the map holds none, or several that their addresses cannot tell apart, naming their purposes."""
-        said = f'the requirement of {receiver} served by {provider}'
+        said = f'the purpose of {receiver} served by {provider}'
         if receiver is None or provider is None:
-            raise StoreError(f'{said}: a requirement is named by its receiver and its provider together.',
+            raise StoreError(f'{said}: a purpose is named by its receiver and its provider together.',
                              'metaform map where <receiver>')
         owner = self.element(str(receiver), raw=True)
         if owner is None:
@@ -401,10 +410,10 @@ class Store:
         found = [held for held in self.joins(owner.element_id, raw=True, limit=0).results
                  if held.provider_address == provider]
         if not found:
-            raise StoreError(f'{receiver} has no requirement served by {provider}.', f'metaform map where {receiver}')
+            raise StoreError(f'{receiver} has no purpose served by {provider}.', f'metaform map where {receiver}')
         if len(found) > 1:
             purposes = '; '.join(repr(held.purpose) for held in found)
-            raise StoreError(f'{receiver} has {len(found)} requirements served by {provider}, which their addresses '
+            raise StoreError(f'{receiver} has {len(found)} purposes served by {provider}, which their addresses '
                              f'cannot tell apart, with the purposes {purposes}.', f'metaform map where {receiver}')
         if address is None:
             return Node('join', found[0].join_id)
@@ -552,6 +561,11 @@ class Store:
 
     def active_metaform(self) -> home.Metaform | None:
         return home.active_metaform(self.project_id)
+
+    def bound_metaform(self) -> home.Metaform | None:
+        """The metaform this DAO reads, explicitly bound or currently active."""
+        bound = self._session.metaform_id
+        return home.metaform_by_id(self.project_id, bound) if bound is not None else self.active_metaform()
 
     def add_metaform(self, name: str, *, activate: bool = True) -> home.Metaform:
         """A new, empty metaform; a name already used gets `-2` or the next free number, with a notice, STORE-041."""

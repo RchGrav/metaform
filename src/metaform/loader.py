@@ -21,12 +21,16 @@ import importlib.resources
 import importlib.util
 import inspect
 import re
+import shutil
 import sys
 from collections.abc import Coroutine
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from importlib import metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import ModuleType
 from typing import Any
 
 from . import home, module_metadata, settings
@@ -57,6 +61,7 @@ _cache: list[Found] | None = None
 _cache_project: str | None = None
 _exit_registered = False
 _read_only: set[Path] = set()
+_data_resources: dict[str, ExitStack] = {}
 
 
 def _selected_project() -> str | None:
@@ -164,7 +169,18 @@ def _withdraw_settings(owner: str) -> None:
 
 def _forget(import_name: str) -> None:
     """Drop a module's package and every submodule from `sys.modules`, so the next load runs them again."""
-    for name in [name for name in sys.modules if name == import_name or name.startswith(import_name + '.')]:
+    resources = _data_resources.pop(import_name, None)
+    if resources is not None:
+        resources.close()
+    prefixes = [import_name]
+    if import_name.startswith('metaform_module_system_'):
+        prefixes.append('metaform.modules.' + import_name.removeprefix('metaform_module_system_'))
+    for name in [name for name in sys.modules if any(name == prefix or name.startswith(prefix + '.')
+                                                   for prefix in prefixes)]:
+        parent, _, attribute = name.rpartition('.')
+        package = sys.modules.get(parent)
+        if package is not None and getattr(package, attribute, None) is sys.modules[name]:
+            delattr(package, attribute)
         del sys.modules[name]
 
 
@@ -245,7 +261,75 @@ def enabled() -> list[Module]:
 
 def get(identifier: str) -> Found | None:
     """The module holding this id: the first candidate with it, which is the one that loads."""
-    return next((item for item in discover() if item.id == identifier), None)
+    found = next((item for item in discover() if item.id == identifier), None)
+    if found is not None and found.module is None:
+        follow_enabled()
+        found = next((item for item in discover() if item.id == identifier), None)
+    return found
+
+
+def data_source(identifier: str) -> ModuleType | None:
+    """Load a compatible module's standalone DAO declaration without enabling its runtime module."""
+    item = next((item for item in discover() if item.id == identifier), None)
+    if item is None or item.declared is None or not item.declared.compatible or not item.declared.data_source:
+        return None
+    name = item.import_name + '.data_source'
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    resources = ExitStack()
+    created_package = item.import_name not in sys.modules
+    try:
+        if isinstance(item.path, Path):
+            folder = item.path
+        else:
+            folder = Path(resources.enter_context(TemporaryDirectory(prefix='metaform-data-')))
+            _copy_resources(item.path, folder)
+        source = folder / item.declared.data_source
+        if item.place == 'project':
+            _read_only.add(folder)
+            if _read_only_finder not in sys.path_hooks:
+                sys.path_hooks.insert(0, _read_only_finder)
+            for entry in [entry for entry in sys.path_importer_cache if Path(entry) == folder
+                          or folder in Path(entry).parents]:
+                del sys.path_importer_cache[entry]
+        package = sys.modules.get(item.import_name)
+        if package is None:
+            package = ModuleType(item.import_name)
+            package.__path__ = [str(folder)]
+            package.__package__ = item.import_name
+            package.__spec__ = importlib.util.spec_from_file_location(
+                item.import_name, folder / '__init__.py', submodule_search_locations=[str(folder)])
+            sys.modules[item.import_name] = package
+        spec = importlib.util.spec_from_file_location(name, source,
+                                                      loader=_ReadOnlyLoader(name, str(source)))
+        if spec is None or spec.loader is None:
+            raise ImportError(f'Cannot load {source}.')
+        imported = importlib.util.module_from_spec(spec)
+        sys.modules[name] = imported
+        spec.loader.exec_module(imported)
+    except BaseException as error:
+        resources.close()
+        _forget(item.import_name if created_package else name)
+        if isinstance(error, Exception):
+            item.problem = f'DATA_SOURCE: {type(error).__name__}: {error}'
+            return None
+        raise
+    package.__dict__['data_source'] = imported
+    _data_resources[item.import_name] = resources
+    return imported
+
+
+def _copy_resources(source: Traversable, folder: Path) -> None:
+    """Keep wheel helpers available until unload; Python 3.11's as_file accepts files only."""
+    for resource in source.iterdir():
+        destination = folder / resource.name
+        if resource.is_dir():
+            destination.mkdir()
+            _copy_resources(resource, destination)
+        else:
+            with importlib.resources.as_file(resource) as path:
+                shutil.copyfile(path, destination)
 
 
 def tasks_of(owner: str) -> set[asyncio.Task[Any]]:
@@ -338,6 +422,9 @@ def follow_enabled() -> None:
     if _selected_project() != _cache_project:
         reset()
         return
+    path = home.base_path()
+    if not path.is_file() or not path.stat().st_size:
+        return
     for item in _cache:
         if item.declared is None:
             continue
@@ -359,6 +446,8 @@ def reset() -> None:
         for item in _cache:
             if item.module is not None:
                 _unload(item)
+            else:
+                _forget(item.import_name)
     _cache = None
 
 

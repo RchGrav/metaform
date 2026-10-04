@@ -47,6 +47,7 @@ function keepFill(node, kids) {
 const S = {
   projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
   elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
+  whole: null,  // the last map read whole, {elements, joins}, put back when a read of it fails
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},  // LAYER-013
 };
 /* The memory network open in both views, VIEW-031: the node it belongs to, what is drawn of it, and what the map was
@@ -226,10 +227,8 @@ async function removeProject(project) {
   toast(body.said);
   S.projects = ((await getJson('/api/projects')).projects || []);
   if (!S.projects.length) return location.reload();
-  S.project = S.projects[0].id;
-  location.hash = 'p=' + encodeURIComponent(S.project);
+  toProject(S.projects[0].id);
   fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
-  Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
   await loadProject();
 }
 /* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
@@ -501,7 +500,7 @@ function routeOf(data, from, to) {  // the fewest edges of the drawn map from on
 /* The figures, VIEW-035: one for each ticket an agent is working in a live session, the agents key's own list, so an
  * agent that is not active is not on the map, whatever its ticket says; when its session ends the figure walks back
  * and is gone. */
-const liveWork = () => new Set(D.sessions.filter(one => one.state === 'running' && !ticketOf(one.work_id)?.done)
+const liveWork = () => new Set(D.sessions.filter(one => one.activity === 'working')
   .map(one => one.work_id));
 function figures(tickets) {
   if (!G) return;
@@ -1801,8 +1800,10 @@ const keyOf = node => !node ? null
 const label2d = text => plain2d(String(text ?? '').replace(/\s+/g, ' ')) || '·';
 const samePath = (a, b) => a.length === b.length && a.every((level, index) => level.key === b[index].key);
 /* An element's and a subtype's name is its short name, its address read through name_length, MAP-012; a join's is the
- * project's own name for the functionality, MAP-020, or its purpose when it has none. */
-const joinLabel = join => join.name || join.purpose || join.ef || 'join';
+ * project's own name for the functionality, MAP-020, or when it has none the short namespace name of the element it
+ * refers to, its provider, Rich 2026-10-04. */
+const joinLabel = join => { const held = S.elements.get(join.provider)?.element;
+  return join.name || held?.short_name || held?.address || 'join'; };
 function nameOf(key, fallback = key) {
   if (key.startsWith('s:')) { const found = subtypeOf.get(key)?.subtype; return found ? found.short_name || found.address : fallback; }
   if (key.startsWith('p:')) { const found = joinOf(key); return found ? joinLabel(found) : fallback; }
@@ -2370,7 +2371,25 @@ $('#promptsBtn').onclick = async () => {
                 }}),
     h('b', {}, choice), h('span', {}, PROMPT_WORDS[choice] || ''))));
   $('#prompts .saved').textContent = `Now: ${found.value}`;
+  await readAutostart();
+  $('#dispatchAgents').value = AUTO.agents ?? '';
+  $('#prompts .agents-saved').textContent = '';
   $('#prompts').hidden = false;
+};
+$('#agentsBtn').onclick = () => $('#promptsBtn').click();
+$('#prompts .save-agents').onclick = async event => {
+  const project = S.project;
+  event.target.disabled = true;
+  try {
+    const saved = await wrote('/api/dispatch-autostart', {agents: Number($('#dispatchAgents').value)});
+    if (S.project !== project) return;
+    if (saved) {
+      AUTO.agents = saved.agents;
+      $('#dispatchAgents').value = saved.agents;
+      $('#prompts .agents-saved').textContent = `Saved: ${saved.agents}`;
+    }
+  } catch (error) { toast(error.message); }
+  finally { event.target.disabled = false; }
 };
 $('#prompts .close').onclick = () => { $('#prompts').hidden = true; };
 movable($('#prompts'));
@@ -2762,7 +2781,13 @@ function asked(record, metaform = S.metaform) {
   if (choices) choices.lastChild.addEventListener('click', () => typed.replaceChildren(answer, send), {once: true});
   return h('div', {class: 'item work'},
     h('div', {class: 'pills'}, workPill('question'), h('span', {class: 'pill'}, record.closed ? 'answered' : 'open'),
-      record.by ? h('span', {class: 'pill'}, record.by) : null),
+      record.by ? h('span', {class: 'pill'}, record.by) : null,
+      h('button', {class: 'chat', onclick: async event => {
+        event.target.disabled = true;
+        try { await questionChat(record, metaform); }
+        catch (error) { toast(error.message); }
+        finally { event.target.disabled = false; }
+      }}, 'Chat')),
     h('p', {class: 'asked'}, record.text || ''),
     record.closed ? h('p', {class: 'obs'}, `Answer: ${record.answer || ''}`) : [choices, typed],
     // Answered by mistake: Reopen clears the answer and the question waits again with its suggestions, MAP-050.
@@ -2925,14 +2950,31 @@ function drawBoard() {
       h('div', {class: 'head'}, h('span', {}, title), h('span', {class: 'tally'}, String(tickets.length))), cards);
   }));
   for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box);
+  $('#board .start-all').disabled = D.starting || !B.tickets.some(waiting);
 }
 async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
+  const project = S.project, metaform = S.metaform;
+  await renderAgents();
+  if (S.project !== project || S.metaform !== metaform) return;
   try { B.tickets = (await read('work', {limit: 0})).results || []; } catch (error) { toast(error.message); return; }
+  if (S.project !== project || S.metaform !== metaform) return;
   drawBoard();
 }
 $('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); $('#board .search').focus(); };
 $('#board .close').onclick = () => { $('#board').hidden = true; };
+$('#board .start-all').onclick = async () => {
+  await renderBoard();
+  const glyphs = new Set();
+  const tickets = B.tickets.filter(waiting).sort((one, two) =>
+    Number(Boolean(one.held)) - Number(Boolean(two.held)) || (one.position ?? 1e9) - (two.position ?? 1e9))
+    .filter(ticket => { const glyph = ownGlyph(ticket);
+      if (!glyph) return true;
+      if (glyphs.has(glyph)) return false;
+      glyphs.add(glyph); return true;
+    });
+  startWindow('Start all agents', tickets, true);
+};
 $('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
 /* Distribute, VIEW-040: the tickets not done and not taken are given the glyphs of N agents, in turn. */
 $('#board .distribute button').onclick = async () => {
@@ -3038,8 +3080,45 @@ const DOING = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user
 /* How each line of an agent's thread reads: what it says, what it thinks, what it runs, and what the person said. */
 const THREAD = {agent_message_chunk: 'said', agent_thought_chunk: 'thought', user_message_chunk: 'told', tool_call: 'tool',
   tool_call_update: 'tool', plan: 'plan', turn: 'turn', failed: 'failed', person: 'you'};
-const D = {sessions: [], notes: [], work: null, session: null, drawn: new Map()};
-const waiting = ticket => !ticket.done && !ticket.taken;  // a ticket an agent can be started on
+const D = {sessions: [], notes: [], work: null, session: null, drawn: new Map(), starting: false, chat: null};
+const AUTO = {value: false, agents: null};
+async function readAutostart() {
+  const project = S.project, control = $('#autostartAgents');
+  control.disabled = true;
+  try {
+    const found = await read('dispatch-autostart');
+    if (S.project !== project) return;
+    Object.assign(AUTO, found);
+    control.checked = found.value;
+    if (found.agent) $('#dispatch select.agent').value = found.agent;
+    control.disabled = found.available === false;
+  } catch (error) { if (S.project === project) toast(error.message); }
+}
+$('#autostartAgents').onchange = async () => {
+  const project = S.project, control = $('#autostartAgents');
+  control.disabled = true;
+  try {
+    const saved = await wrote('/api/dispatch-autostart', {value: control.checked, agent: $('#dispatch select.agent').value});
+    if (S.project !== project) return;
+    if (saved) Object.assign(AUTO, saved);
+    control.checked = AUTO.value;
+  } catch (error) { if (S.project === project) { control.checked = AUTO.value; toast(error.message); } }
+  finally { if (S.project === project) control.disabled = false; }
+};
+async function questionChat(record, metaform) {
+  const project = S.project, known = new Set(D.sessions.map(one => one.session_id));
+  const found = await wrote('/api/dispatch-chat', {id: record.message_id, metaform, agent: $('#dispatch select.agent').value});
+  if (!found || S.project !== project || S.metaform !== metaform) return;
+  if (found.state === 'running') { await renderAgents(); agentAt(found.work_id, found.session_id); }
+  else {
+    D.chat = {work: found.work_id, session: found.session_id, known};
+    toast(`${agentName(found.agent)} is starting for the question.`);
+    await renderAgents();
+  }
+}
+const waiting = ticket => !ticket.done && !ticket.taken && ticket.condition !== 'exclude'
+  && !D.sessions.some(one => one.state === 'running'
+    && (one.work_id === ticket.work_id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
 const ticketOf = workId => (S.tickets || []).find(ticket => ticket.work_id === workId);
 function ticketPart(ticket) {
   const element = ticket?.address ? partAt(ticket.address) : null;
@@ -3057,16 +3136,48 @@ async function startAgent(workId, agent) {
   return true;
 }
 /* The window an agent is started from: the tickets, and the agent chosen once for the window. */
-function startWindow(title, tickets) {
+function startWindow(title, tickets, all = false) {
+  if (D.starting) return;
   $('#dispatch .title').textContent = title;
+  const startAll = $('#dispatch .start-all');
+  startAll.hidden = !all;
+  startAll.disabled = !tickets.length;
+  startAll.onclick = async () => {
+    if (D.starting) return;
+    D.starting = true;
+    const agent = $('#dispatch select.agent').value;
+    const buttons = [...$('#dispatch .tickets').querySelectorAll('button.start')];
+    const pending = tickets.filter((ticket, i) => !buttons[i].disabled);
+    startAll.disabled = true;
+    $('#dispatch select.agent').disabled = true;
+    for (const button of buttons) button.disabled = true;
+    drawBoard();
+    let started = 0;
+    for (const ticket of pending) {
+      const button = buttons[tickets.indexOf(ticket)];
+      try {
+        if (await startAgent(ticket.work_id, agent)) { started++; button.textContent = 'Starting'; }
+        else { button.disabled = false; button.textContent = 'Retry'; }
+      } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
+    }
+    $('#dispatch select.agent').disabled = false;
+    D.starting = false;
+    startAll.disabled = !buttons.some(button => !button.disabled);
+    if (started === pending.length) $('#dispatch').hidden = true;
+    toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
+      + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : ''));
+    await renderBoard();
+  };
+  $('#dispatch select.agent').disabled = false;
   fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.work_id},
     h('span', {class: 'kind'}, ticket.condition || 'ticket'),
     h('button', {class: 'start', title: 'Start the agent chosen above on this ticket', onclick: async event => {
       const agent = $('#dispatch select.agent').value;
       event.target.disabled = true;
-      if (await startAgent(ticket.work_id, agent)) {
-        $('#dispatch').hidden = true;
-      } else event.target.disabled = false;
+      try {
+        if (await startAgent(ticket.work_id, agent)) { $('#dispatch').hidden = true; await renderBoard(); }
+        else event.target.disabled = false;
+      } catch (error) { toast(error.message); event.target.disabled = false; }
     }}, 'Start'),
     h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
   $('#dispatch').hidden = false;
@@ -3077,20 +3188,29 @@ movable($('#dispatch'));
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
 async function renderAgents() {
+  const project = S.project, metaform = S.metaform;
   let found = {sessions: []};
   if (!noMetaform()) {
     try { found = await read('dispatch-sessions', {thread: 'false'}); }  // the threads are read for the open window only
-    catch (error) { toast(error.message); }
+    catch (error) { toast(error.message); found = {sessions: D.sessions}; }  // a failed read keeps the agents drawn
   }
+  if (S.project !== project || S.metaform !== metaform) return;  // the answer for a project the person has left
   D.sessions = found.sessions || [];
-  // at work: a live session whose ticket is not done, so an agent idling after its ticket closed is not listed
-  const working = D.sessions.filter(one => one.state === 'running' && !ticketOf(one.work_id)?.done);
+  if (D.chat) {
+    const pending = D.chat;
+    const session = D.sessions.find(one => one.work_id === pending.work && one.state === 'running'
+      && (pending.session ? one.session_id === pending.session : !pending.known.has(one.session_id)));
+    if (session) { D.chat = null; agentAt(session.work_id, session.session_id); }
+  }
+  if (!$('#board').hidden) drawBoard();
+  // at work: a session whose runner says a turn is executing, the same ones the map's figures follow
+  const working = D.sessions.filter(one => one.activity === 'working');
   fill($('#agents .list'), working.map(one => h('button', {
-    class: `agent ${one.state === 'running' ? 'working' : 'ended'}`, 'data-id': one.work_id, 'data-session': one.session_id,
-    title: `${agentName(one.agent)} on work ${one.work_id}: ${one.state === 'running' ? 'working' : `ended, ${one.how || ''}`}`,
+    class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
+    title: `${agentName(one.agent)} on work ${one.work_id}: working`,
     onclick: () => agentAt(one.work_id, one.session_id)},
     h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
-    h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · ${one.state === 'running' ? 'working' : 'ended'}`))));
+    h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · working`))));
   $('#agents').hidden = !working.length;
   figures(S.tickets || []);  // the map's figures follow the same sessions
   if (D.work) await drawAgent();
@@ -3115,9 +3235,12 @@ async function drawAgent() {
   $('#agent .title').textContent = `${agentName(agent)} · ${ticketPart(ticket)}${state && state !== 'running' ? ' · ended' : ''}`;
   $('#agent .task').textContent = ticket ? ticket.task || ticket.note || '' : '';
   // A chat: newest at the bottom, kept in view while the person is reading the end of it, VIEW-039.
-  try { D.notes = (await read('dispatch-sessions', {id: work})).lines || []; }
+  const project = S.project, metaform = S.metaform;
+  let notes = D.notes;
+  try { notes = (await read('dispatch-sessions', {id: work})).lines || []; }
   catch (error) { toast(error.message); }
-  if (D.work !== work) return;
+  if (D.work !== work || S.project !== project || S.metaform !== metaform) return;
+  D.notes = notes;
   const thread = $('#agent .activity');
   const following = !thread.childElementCount || thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
   fill(thread, D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId))
@@ -3738,10 +3861,16 @@ async function agentsChanged() {
     do { AGENTS.again = false; await renderAgents(); } while (AGENTS.again);
   } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }
 }
+/* On the browser's own reconnect the agents and the open agent window are also read again: a line written while the
+ * stream was down, as when an agent restarts this server, was announced to no page, work 109ae725. */
 function listen() {
   const source = new EventSource('/api/events');
+  let opens = 0;
   source.onmessage = message => changed(JSON.parse(message.data));
-  source.onopen = () => recordingNow().catch(error => toast(error.message));
+  source.onopen = () => {
+    recordingNow().catch(error => toast(error.message));
+    if (opens++) agentsChanged();
+  };
 }
 
 /* Every item and property of the layers, read as the context sees them, so selection, masks and hidden layers apply
@@ -3790,30 +3919,39 @@ async function opening(work) {
 function loadGraph() { return opening(readGraph); }
 async function readGraph() {
   if (following()) { LIVE.seen = ''; S.loading = 0; return loadLive(); }
-  const generation = ++S.loading;
+  const generation = ++S.loading, project = S.project, metaform = S.metaform;
+  // a read is dropped once another has begun or the person has chosen another project or metaform
+  const stale = () => generation !== S.loading || S.project !== project || S.metaform !== metaform;
   S.elements = new Map(); S.joins = [];
-  let after = null;
+  let after = null, whole = false;
   try {
     do {
       const page = await read('graph', {limit: 500, ...(after ? {after} : {}), ...viewLayers()});
-      if (generation !== S.loading) return;
+      if (stale()) return;
       for (const entry of page.elements) S.elements.set(entry.element.element_id, entry);
       S.joins.push(...page.joins);
       indexSubtypes();
       draw3D(); renderLegend();
       after = page.next;
     } while (after);
+    whole = true;
+    S.whole = {elements: S.elements, joins: S.joins};
     const items = await itemsOf(generation);
-    if (generation !== S.loading) return;
+    if (stale()) return;
     S.items = items;
     const memory = await memoryOf();
-    if (generation !== S.loading) return;
+    if (stale()) return;
     S.memory = memory;
     renderOrphans();
     S.progress = await progressOf();
     figures(S.tickets || []);
-  } catch (error) { toast(error.message); }
-  if (generation !== S.loading) return;
+  } catch (error) {
+    toast(error.message);
+    // The last whole map read is kept: a read that fails, as every read does while the server restarts, puts it back,
+    // and the failure is said. Another metaform's is never put back, since its load begins with none.
+    if (!stale() && !whole && S.whole) { Object.assign(S, S.whole); indexSubtypes(); }
+  }
+  if (stale()) return;
   S.loading = 0;
   draw3D();
   renderLegend();
@@ -3832,6 +3970,7 @@ async function readGraph() {
 }
 async function loadMetaform() {
   S.view = null; S.selected = null; IN.length = 0; M.base = null; dropMemories(); renderCrumbs();
+  S.elements = new Map(); S.joins = []; S.whole = null;
   S.layers = (await read('layers', {limit: 0})).results;
   renderChips();
   if ($('#p-prov').hidden === false) renderProv();
@@ -3839,7 +3978,11 @@ async function loadMetaform() {
 }
 function loadProject(wanted = null) { return opening(() => readProject(wanted)); }
 async function readProject(wanted) {
+  const project = S.project;
+  await readAutostart();
   const metaforms = (await read('metaforms', {limit: 0})).results;
+  if (S.project !== project) return;  // the metaforms of a project the person has left
+
   S.metaforms = metaforms;
   const active = metaforms.find(item => item.metaform_id === wanted) || metaforms.find(item => item.active) || metaforms[0];
   S.metaform = active ? active.metaform_id : null;
@@ -3848,7 +3991,23 @@ async function readProject(wanted) {
   $('#mf').disabled = !metaforms.length;
   await loadMetaform();
 }
-$('#proj').onchange = () => { S.project = $('#proj').value; location.hash = 'p=' + encodeURIComponent(S.project); Object.assign(LIVE, {layer: null, metaform: null, seen: ''}); loadProject(); };
+/* Another project chosen: the agents drawn are the project left's, so its agent window closes and its agents go,
+ * VIEW-039, and its figures with them at once, having no map here to walk back on, VIEW-035; the new project's are
+ * read with its map. */
+function toProject(id) {
+  S.project = id;
+  location.hash = 'p=' + encodeURIComponent(id);
+  Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+  Object.assign(D, {sessions: [], notes: [], work: null, session: null, drawn: new Map(), chat: null});
+  $('#autostartAgents').checked = false;
+  $('#autostartAgents').disabled = true;
+  $('#agent').hidden = true;
+  for (const list of document.querySelectorAll('#agents .list')) fill(list);
+  $('#agents').hidden = true;
+  for (const [work, figure] of ROAM.figures) { G?.scene().remove(figure.mesh); releaseGlyph(work); }
+  ROAM.figures.clear(); ROAM.seen.clear();
+}
+$('#proj').onchange = () => { toProject($('#proj').value); loadProject(); };
 $('#mf').onchange = () => { S.metaform = $('#mf').value; loadMetaform(); };
 
 async function main() {

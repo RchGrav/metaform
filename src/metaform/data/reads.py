@@ -106,8 +106,8 @@ def subtypes(tx: Tx, res: Resolver | None, join: str, limit: int, after: str | N
 
 def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where | None:
     """One read of an address, STORE-025: the element, what relies on it, what it relies on, the subtype joins inside
-    those joins and the one holding it with the join it sits in, MAP-031, its open work records and what the layers
-    in context hold at it. In context, the default, every part follows the reading context, LAYER-007."""
+    those joins and the one holding it with the join it sits in, MAP-031, the joins promoted to it, MAP-054, its open
+    work records and what the layers in context hold at it. In context, the default, every part follows the reading context, LAYER-007."""
     context = None if raw else res
     current = tx.db.execute('SELECT element_id FROM current_elements WHERE address=?', (address,)).fetchone()
     if current is None:
@@ -134,11 +134,15 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
             placed.append(GraphJoin(**fields, subtypes=subtypes(tx, context, join.join_id, 0, None).results))
         return tuple(placed)
 
+    promoted = [views.visible_join(tx, row, context) for row in tx.db.execute(
+        'SELECT j.* FROM joins j JOIN current_joins c ON c.row = j.row WHERE j.element=? ORDER BY c.join_id',
+        (address,))]
     at = node(tx, res, Node('element', found.element_id), raw)
     reaching = reaching_at(tx, res, address)
     return operations.decorate(tx, Where(kind, found, held, holding, with_subtypes('provider'),
                  with_subtypes('receiver'), layers=() if at is None else at.layers,
-                 full=full, applying=reaching.applying, visible=reaching.visible))
+                 full=full, applying=reaching.applying, visible=reaching.visible,
+                 promoted_from=tuple(join for join in promoted if join is not None)))
 
 
 def node_where(tx: Tx, res: Resolver, raw: bool, target: Node) -> Where | None:

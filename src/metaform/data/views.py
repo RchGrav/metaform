@@ -84,7 +84,8 @@ def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) 
     return operations.decorate(tx, Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name, str(row['type']),
                 str(row['receiver']), receiver_address, str(row['provider']), address_of(tx, str(row['provider'])),
                 row['name'], row['purpose'], row['ef'], row['verb'], row['non_goal'],
-                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), None, orphaned, ifd=row['ifd']))
+                read_refs(tx.db, 'join', row['row']), decode_extra(row['extra']), None, orphaned, ifd=row['ifd'],
+                element=row['element']))
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:

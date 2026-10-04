@@ -995,7 +995,9 @@ docs.command(Command('provision', 'Give an AI tool the installer does not know w
                              'global skills folder as metaform/SKILL.md, a real copy and never a link, and never '
                              'into a project folder. '
                              'Hooks: Metaform has no hooks to set up yet. '
-                             'A tool metaform install sets up is recorded by the install and never sees the notice.',
+                             'A tool registered through a command by metaform install is recorded and never sees '
+                             'the notice. For a tool installed through a config file, finish here with '
+                             'metaform provision done.',
                      see_also=('install',)))
 docs.command(Command('extract', 'Write variants of an origin out to folders, with Python alone.',
                      ('metaform extract <variant id>... <folder> [origin=<id>]', 'metaform extract all <folder> '

@@ -17,7 +17,7 @@ import sqlite3
 import sys
 import uuid
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -519,6 +519,20 @@ def metaforms(project_id: str) -> tuple[Metaform, ...]:
                           (project_id,)).fetchall()
     return tuple(Metaform(row[0], project_id, row[1], row[2], active is not None and row[0] == active[0])
                  for row in rows)
+
+
+def intake_exists() -> bool:
+    """Whether any metaform store of any project in the home holds an intake, finished or not, MCP-028. Read only;
+    a store that cannot be read is passed over."""
+    root = projects_dir()
+    for path in sorted(root.glob(f'*/*{STORE_SUFFIX}')) if root.is_dir() else ():
+        try:
+            with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as db:
+                if db.execute("SELECT 1 FROM layers WHERE kind='intake' LIMIT 1").fetchone():
+                    return True
+        except sqlite3.Error:
+            continue
+    return False
 
 
 def active_metaform(project_id: str) -> Metaform | None:

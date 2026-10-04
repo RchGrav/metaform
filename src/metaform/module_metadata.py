@@ -35,6 +35,7 @@ class Declared:
     ships_disabled: bool
     requires_chassis: str | None
     summary: str | None = None
+    data_source: str | None = None
 
     @property
     def compatible(self) -> bool:
@@ -138,5 +139,6 @@ def read(folder: Any) -> Declared:
     dependencies = declared('DEPENDENCIES', _strings) or ()
     ships_disabled = declared('SHIPS_DISABLED', _boolean) or False
     requires = declared('REQUIRES_CHASSIS', _text)
+    data_source = declared('DATA_SOURCE', _text) or None
     return Declared(None if systems is None else tuple(canonical(name) for name in systems), tuple(dependencies),
-                    ships_disabled, requires, _summary(tree))
+                    ships_disabled, requires, _summary(tree), data_source)

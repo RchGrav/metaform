@@ -47,11 +47,13 @@ from . import (
     REPLY_LIMIT,
     agent_named,
     argv,
+    blocked,
     end_group,
     glyph_of,
     group_options,
     next_ticket,
     prompt,
+    questions,
     startable,
     ticket,
 )
@@ -88,9 +90,21 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     has none waiting or a session ends with its ticket not done."""
     store = ctx.require_store()
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
-    record = ticket(store, work_id)
-    startable(ctx, store, record)
     command = argv(str(ctx.setting(f'dispatch_{agent}')))
+
+    def reserve(record: WorkRecord) -> WorkRecord:
+        with store.atomic():
+            record = ticket(store, record.work_id)
+            reservation = ctx.nouns.get('reservation')
+            if reservation and record.taken_by == reservation:
+                return record
+            startable(ctx, store, record)
+            reservation = 'dispatch starting ' + secrets.token_hex(16)
+            record = store.take_work(record.work_id, by=reservation)
+            ctx.nouns['reservation'] = reservation
+            return record
+
+    record = await asyncio.to_thread(reserve, ticket(store, work_id))
     worked: list[str] = []
     while True:
         ended = await Session(ctx, store, record, agent, command).run()
@@ -99,12 +113,14 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         glyph = await asyncio.to_thread(glyph_of, ctx, record)  # read again, so a glyph given while it ran counts
         if glyph is None:
             return ended if len(worked) == 1 else {**ended, 'worked': worked}
-        found = await asyncio.to_thread(next_ticket, ctx, store, glyph) if record.done else None
-        if found is not None:
-            try:  # an agent of the glyph started on another of its tickets meanwhile has it now
-                await asyncio.to_thread(startable, ctx, store, found)
-            except Stop:
-                found = None
+        def following(glyph: str) -> WorkRecord | None:
+            with store.atomic():
+                found = next_ticket(ctx, store, glyph)
+                return reserve(found) if found is not None else None
+        try:
+            found = await asyncio.to_thread(following, glyph) if record.done or blocked(store, record.work_id) else None
+        except Stop:  # another runner now occupies the glyph
+            found = None
         if found is None:
             return {**ended, 'glyph': glyph, 'worked': worked}
         record = found
@@ -146,7 +162,8 @@ class Session:
         self.exited = asyncio.Event()  # the agent's process has ended
         self.conn: Any = None
         self.recorded = False  # the session's row is written
-        self.took = False  # this session took the ticket, so it gives it back if it ends with the ticket open
+        self.took = bool(ctx.nouns.get('reservation') and record.taken_by == ctx.nouns['reservation'])
+        self.chat_question = ctx.nouns.get('question')
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
         self.lines = 0
         self.tools: dict[str, dict[str, Any]] = {}
@@ -167,6 +184,7 @@ class Session:
         self.over = asyncio.Event()
         self.how = ''
         self.tasks: set[asyncio.Task[Any]] = set()
+        self.failure: Exception | None = None
 
     @property
     def by(self) -> str:
@@ -175,14 +193,29 @@ class Session:
     def spawn(self, coroutine: Coroutine[Any, Any, Any]) -> None:
         task = asyncio.create_task(coroutine)
         self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
+        task.add_done_callback(self.finished)
+
+    def finished(self, task: asyncio.Task[Any]) -> None:
+        self.tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            self.fail(error)
+
+    def fail(self, error: BaseException) -> None:
+        """A failed callback must wake the owner, including callbacks whose errors the ACP SDK catches."""
+        if not self.ending and isinstance(error, Exception):
+            self.failure = self.failure or error
+            self.ended.set()
 
     # ------------------------------------------------------------------ the map
 
     async def write(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """One write through the store, off the loop, then `map.changed`, so an open web GUI shows it at once."""
-        result = await asyncio.to_thread(function, *args, **kwargs)
-        await self.changed()
+        try:
+            result = await asyncio.to_thread(function, *args, **kwargs)
+            await self.changed()
+        except Exception as error:
+            self.fail(error)
+            raise
         return result
 
     async def table(self, change: Callable[[Any], Any]) -> Any:
@@ -191,8 +224,12 @@ class Session:
         def done() -> Any:
             with self.store.tables() as tx:
                 return change(tx)
-        result = await asyncio.to_thread(done)
-        await self.changed(tables='dispatch')
+        try:
+            result = await asyncio.to_thread(done)
+            await self.changed(tables='dispatch')
+        except Exception as error:
+            self.fail(error)
+            raise
         return result
 
     async def changed(self, tables: str | None = None) -> None:
@@ -293,6 +330,7 @@ class Session:
             await self.flush()
             await self.ask(waiting, options, title, '')
         chosen = await waiting
+        await self.changed(tables='dispatch')
         if chosen is None:
             return RequestPermissionResponse(outcome=DeniedOutcome(outcome='cancelled'))
         return RequestPermissionResponse(outcome=AllowedOutcome(option_id=chosen, outcome='selected'))
@@ -305,8 +343,9 @@ class Session:
             return
         text = f'{before}{self.name} asks permission on work {self.work_id}: {title}'
         asked = await self.write(self.store.ask, self.node, text, suggestions=[option.name for option in options],
-                                 by=self.by)
+                                 by=self.by, work=self.work_id)
         self.asked[asked.message_id] = (waiting, options, title)
+        await self.changed(tables='dispatch')
 
     async def learn(self, output: str, began: str) -> None:
         """The questions the agent asked itself in one tool call: each one whose id the call's output shows and that
@@ -318,6 +357,9 @@ class Session:
         for message in found.results:
             if message.message_id in ids and message.created >= began:
                 self.theirs[message.message_id] = message
+                await self.table(lambda tx, message=message: tx.insert(
+                    'questions', {'message_id': message.message_id, 'work_id': self.work_id,
+                                  'session_id': self.session_id}))
 
     async def check(self) -> None:
         """Read the open questions this session asked, and answer the agent for each one the person answered; tell the
@@ -370,15 +412,29 @@ class Session:
         try:
             await self.begin()
             await self.ended.wait()
+            if self.failure is not None:
+                raise self.failure
         except Exception as error:  # noqa: BLE001  the agent did not start; the map says why
             said = 'did not start' if self.session_id is None else 'failed'
             sys.stderr.write(f'{self.name} {said} on work {self.work_id}: {error}\n')
             self.how = f'it {said}: {error}'
-            await self.note(None, 'failed', f'{self.name} {said} on work {self.work_id}: {error}')
+            try:
+                await self.note(None, 'failed', f'{self.name} {said} on work {self.work_id}: {error}')
+            except Exception as note_error:  # noqa: BLE001  a failure note cannot prevent resource cleanup
+                sys.stderr.write(f'Could not record the session failure: {note_error}\n')
         finally:
-            await asyncio.shield(self.end(self.how or 'the runner ended'))
-            await asyncio.to_thread(listener.close)
-            server.close()
+            try:
+                await asyncio.shield(self.end(self.how or 'the runner ended'))
+            finally:
+                pending = tuple(self.tasks)
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                try:
+                    await asyncio.to_thread(listener.close)
+                finally:
+                    server.close()
+                    await server.wait_closed()
         return {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id, 'ended': self.how}
 
     async def begin(self) -> None:
@@ -406,13 +462,29 @@ class Session:
         self.number = await asyncio.to_thread(nonce.request, 'dispatch', 'handoff',
                                               {'work_id': self.work_id, 'agent': self.agent,
                                                'session_id': self.session_id})
-        await self.write(self.store.take_work, self.work_id, None, self.by)
+        def take() -> None:
+            with self.store.atomic():
+                record = ticket(self.store, self.work_id)
+                if self.took:
+                    if record.taken_by != self.ctx.nouns['reservation']:
+                        raise Stop('The startup reservation is no longer held.', 'metaform map work open=true')
+                    self.store.move_work(self.work_id, 'todo', record.position)
+                self.store.take_work(self.work_id, None, self.by)
+        await self.write(take)
         self.took = True
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000)
         await self.table(lambda tx: tx.insert('sessions', row))
         self.recorded = True
-        self.turn(prompt('handoff', work_id=self.work_id))
+        text = prompt('handoff', work_id=self.work_id)
+        for question in await asyncio.to_thread(questions, self.store, self.work_id):
+            if question.closed is not None:
+                text += '\n\n' + prompt('answered', message_id=question.message_id, question=question.text or '',
+                                         answer=question.answer or '')
+            elif question.message_id == self.chat_question:
+                self.theirs[question.message_id] = question
+                text += '\n\n' + prompt('chat', message_id=question.message_id, question=question.text or '')
+        self.turn(text)
 
     def turn(self, text: str) -> None:
         self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
@@ -423,6 +495,7 @@ class Session:
     async def prompted(self, text: str) -> None:
         """One prompt turn; when the last turn ends with the ticket done, the session ends."""
         try:
+            await self.changed(tables='dispatch')
             answer = await self.conn.prompt(session_id=self.session_id, prompt=[acp.text_block(text)])
             reason = str(answer.stop_reason)
         except Exception as error:  # noqa: BLE001  the turn's end is noted whatever ended it
@@ -438,6 +511,8 @@ class Session:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if record.done:
                 await self.end('the ticket is done')
+            elif any(message_id != self.chat_question for message_id in self.theirs):
+                await self.end('cannot continue without an answer')
 
     async def watch(self, process: asyncio.subprocess.Process) -> None:
         await self.exited.wait()
@@ -462,7 +537,15 @@ class Session:
                 return
             said = {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id}
             op = asked.get('op')
-            if op == 'message':
+            if op == 'status':
+                alive = self.process is not None and self.process.returncode is None and not self.exited.is_set()
+                live = alive and not self.ending and self.failure is None
+                activity = ('waiting' if self.asked else 'working' if self.turns else
+                            'waiting' if self.theirs else 'idle') if live else 'idle'
+                await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
+                                          'activity': activity,
+                                          'how': None if live else self.how or 'the agent is no longer running'})
+            elif op == 'message':
                 if self.ending or self.session_id is None:
                     await self.reply(writer, {**said, 'sent': False, 'error': 'The session has not started or is ending.'})
                     return
@@ -474,8 +557,10 @@ class Session:
                 await self.reply(writer, {**said, 'sent': True})
             elif op == 'stop':
                 await self.end('stopped by the person', release=False)
-                await self.reply(writer, {**said, 'stopped': True})
-                self.ended.set()
+                try:
+                    await self.reply(writer, {**said, 'stopped': True})
+                finally:
+                    self.ended.set()
             else:
                 await self.reply(writer, {'error': f'No request {op}.'})
         except (TimeoutError, OSError, ValueError):
@@ -498,42 +583,53 @@ class Session:
                 self.ended.set()
             return
         self.ending, self.how = True, how
-        for waiting, _, _ in self.asked.values():
-            if not waiting.done():
-                waiting.set_result(None)
-        self.asked.clear()
-        process = self.process
-        if process is not None and process.returncode is None:
-            if self.turns and self.conn is not None and self.session_id is not None:
-                with contextlib.suppress(Exception):
-                    await self.conn.cancel(session_id=self.session_id)
+        try:
+            for waiting, _, _ in self.asked.values():
+                if not waiting.done():
+                    waiting.set_result(None)
+            self.asked.clear()
+            process = self.process
+            if process is not None and process.returncode is None:
+                if self.turns and self.conn is not None and self.session_id is not None:
+                    with contextlib.suppress(Exception):
+                        await self.conn.cancel(session_id=self.session_id)
+                    with contextlib.suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(self.idle.wait(), END_LIMIT)
+                if process.stdin is not None:
+                    with contextlib.suppress(Exception):
+                        process.stdin.close()
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(self.idle.wait(), END_LIMIT)
-            if process.stdin is not None:
+                    await asyncio.wait_for(self.exited.wait(), END_LIMIT)
+            if process is not None:
+                await asyncio.to_thread(end_group, process.pid)  # what it started ends with it
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(process.wait(), END_LIMIT)
+            if self.conn is not None:
                 with contextlib.suppress(Exception):
-                    process.stdin.close()
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.exited.wait(), END_LIMIT)
-        if process is not None:
-            await asyncio.to_thread(end_group, process.pid)  # what it started ends with it
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(process.wait(), END_LIMIT)
-        if self.conn is not None:
-            with contextlib.suppress(Exception):
-                await self.conn.close()
-        async with self.lock:
-            await self.flush()
-        if self.number is not None:
-            with contextlib.suppress(Exception):
-                await asyncio.to_thread(nonce.close, self.number)
-        if self.took:  # a ticket this session leaves open goes back to To do, so no figure circles it, VIEW-035
-            with contextlib.suppress(Exception):
-                record = await asyncio.to_thread(ticket, self.store, self.work_id)
-                if not record.done:
-                    await self.write(self.store.move_work, self.work_id, 'todo', None, self.by)
-        if self.recorded:
-            session_id = self.session_id
-            await self.table(lambda tx: tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how}))
-        self.over.set()
-        if release:
-            self.ended.set()
+                    await self.conn.close()
+            try:
+                async with self.lock:
+                    await self.flush()
+            except Exception as error:  # noqa: BLE001  transcript failure cannot prevent nonce and session cleanup
+                sys.stderr.write(f"Could not flush the ended session: {error}\n")
+            if self.number is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(nonce.close, self.number)
+            if self.took:  # a ticket this session leaves open goes back to To do, so no figure circles it, VIEW-035
+                with contextlib.suppress(Exception):
+                    record = await asyncio.to_thread(ticket, self.store, self.work_id)
+                    if not record.done:
+                        waiting = await asyncio.to_thread(blocked, self.store, self.work_id)
+                        await self.write(self.store.move_work, self.work_id, 'backlog' if waiting else 'todo',
+                                         record.position, self.by)
+            if self.recorded:
+                session_id = self.session_id
+                try:
+                    await self.table(lambda tx: tx.update('sessions', {'session_id': session_id},
+                                                         {'state': 'ended', 'how': how}))
+                except Exception as error:  # noqa: BLE001  persistence cannot prevent the shutdown signals
+                    sys.stderr.write(f"Could not record the ended session: {error}\n")
+        finally:
+            self.over.set()
+            if release:
+                self.ended.set()

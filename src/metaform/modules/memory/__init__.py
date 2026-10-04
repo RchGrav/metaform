@@ -111,7 +111,7 @@ def _key(store: Store, text: str) -> Key:
     try:
         node = Node.parse(text)
     except StoreError:
-        raise Stop(f'{text!r} is not a node: name an element by address, or a requirement by receiver and '
+        raise Stop(f'{text!r} is not a node: name an element by address, or a purpose by receiver and '
                    'provider.', 'metaform help memory read_graph') from None
     if node.kind == 'type':
         raise Stop('Memory is kept at an element or a join, not at a bare type address.',
@@ -373,7 +373,7 @@ def _noted(tx: TableTx, key: Key, text: str) -> bool:
 # ------------------------------------------------------------------------------------------------ the nine commands
 
 def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key | None:
-    """The key of the node a command names by address, MAP-005: a requirement by its receiver and provider, a part by
+    """The key of the node a command names by address, MAP-005: a purpose by its receiver and provider, a part by
     its address inside it, an element by its address; or the node noun as written. A node noun given beside them is
     named in a notice as not read."""
     if not any(name in nouns for name in NAMING):
@@ -383,16 +383,16 @@ def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -
     if 'receiver' not in nouns and 'provider' not in nouns:
         return _key(store, f"element:{nouns['address']}")
     if store.active_metaform() is None:
-        raise Stop('A requirement is not a node here: the project has no metaform.', 'metaform memory orphaned')
-    found = _key_of(store, store.requirement(nouns.get('receiver'), nouns.get('provider'), nouns.get('address')))
+        raise Stop('A purpose is not a node here: the project has no metaform.', 'metaform memory orphaned')
+    found = _key_of(store, store.purpose(nouns.get('receiver'), nouns.get('provider'), nouns.get('address')))
     if found is None:
-        raise Stop(f"The requirement of {nouns.get('receiver')} served by {nouns.get('provider')} is not a node of the "
+        raise Stop(f"The purpose of {nouns.get('receiver')} served by {nouns.get('provider')} is not a node of the "
                    'map here.', 'metaform map where')
     return found
 
 
 def _held(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -> Key:
-    """The key of the node note names, node first, Rich 2026-10-03: with provider beside it, the requirement node holds
+    """The key of the node note names, node first, Rich 2026-10-03: with provider beside it, the purpose node holds
     as its receiver, and with address the part at that address inside it, MAP-005."""
     if 'provider' not in nouns:
         if 'address' in nouns:
@@ -800,9 +800,9 @@ def node_read(ctx: Context, node: Node) -> Any:
 
 NODE = ('The map element whose memories the command acts on, element:<address>. Without node, receiver, provider or '
         'address the command acts on the whole memory graph.')
-RECEIVER = 'A requirement whose memories the command acts on: the address of the element that requires it, with provider.'
-PROVIDER = 'A requirement whose memories the command acts on: the address of the element that serves it, with receiver.'
-ADDRESS = 'An element, by address; with receiver and provider, the part at that address inside the requirement.'
+RECEIVER = 'A purpose whose memories the command acts on: the address of the element that holds it, with provider.'
+PROVIDER = 'A purpose whose memories the command acts on: the address of the element that serves it, with receiver.'
+ADDRESS = 'An element, by address; with receiver and provider, the part at that address inside the purpose.'
 NAMED = (Noun('receiver', RECEIVER, required=False), Noun('provider', PROVIDER, required=False),
          Noun('address', ADDRESS, required=False))
 ENTITY = {'type': 'object', 'properties': {
@@ -877,10 +877,10 @@ MODULE = Module(
         Verb('open_nodes', open_nodes, 'Open specific nodes in the knowledge graph by their names.',
              nouns=_at(Noun('names', 'An array of entity names to retrieve', kind='json', schema=NAMES))),
         Verb('note', note, "Read a node's one note, or write it in place of what it held; empty text clears it.",
-             nouns=(Noun('node', 'An element, element:<address>; with provider, the requirement it holds as receiver.'),
-                    Noun('provider', 'A requirement node holds as its receiver: the address of the element that serves '
+             nouns=(Noun('node', 'An element, element:<address>; with provider, the purpose it holds as receiver.'),
+                    Noun('provider', 'A purpose node holds as its receiver: the address of the element that serves '
                                      'it.', required=False),
-                    Noun('address', 'With provider: the part at that address inside the requirement.', required=False),
+                    Noun('address', 'With provider: the part at that address inside the purpose.', required=False),
                     Noun('text', f'The note, at most {NOTE_LIMIT} characters.', required=False),
                     Noun('by', 'Who wrote it.', required=False)),
              examples=(('metaform memory note element:code.manager.route text="Routes drift under load."',

@@ -3,21 +3,24 @@
 An operation runs inside the same transaction as native map operations. Modules
 declare their table layouts with Tables; no feature's SQL belongs to the chassis.
 """
+
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .session import Tx
+    from .tables import Tables
 
 
 @dataclass(frozen=True)
 class Operation:
     run: Callable[..., Any]
     write: bool = False
+    retained: bool = False
 
 
 @dataclass(frozen=True)
@@ -30,11 +33,37 @@ class Data:
 
 def declarations() -> list[tuple[str, Data]]:
     from .. import loader
+
     return [(module.id, module.data) for module in loader.enabled() if module.data is not None]
 
 
 def operation(name: str) -> Operation | None:
-    return next((data.operations[name] for _, data in declarations() if name in data.operations), None)
+    return next((declared for _, declared, _ in _providers(name)), None)
+
+
+def _providers(name: str) -> Generator[tuple[str, Operation, Tables | None], None, None]:
+    from .. import loader
+    from .tables import Tables
+
+    active = [(owner, data.operations[name], None) for owner, data in declarations() if name in data.operations]
+    if active:
+        yield from active
+        return
+    for item in loader.discover():
+        if item.module is not None:
+            continue
+        source = loader.data_source(item.id)
+        data = getattr(source, "DATA", None)
+        declared = getattr(source, "TABLES", None)
+        if not isinstance(data, Data) or not isinstance(declared, Tables):
+            continue
+        found = data.operations.get(name)
+        if found is not None and found.retained and not found.write:
+            yield item.id, found, declared
+
+
+def preparation(name: str) -> tuple[str, Tables] | None:
+    return next(((owner, declared) for owner, _, declared in _providers(name) if declared is not None), None)
 
 
 def _call(tx: Tx, owner: str, handler: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -47,10 +76,9 @@ def _call(tx: Tx, owner: str, handler: Callable[..., Any], *args: Any, **kwargs:
 
 
 def invoke(tx: Tx, name: str, *args: Any, **kwargs: Any) -> Any:
-    for owner, data in declarations():
-        if name in data.operations:
-            return _call(tx, owner, data.operations[name].run, *args, **kwargs)
-    raise AttributeError(f'No enabled module declares the data operation {name}.')
+    for owner, declared, _ in _providers(name):
+        return _call(tx, owner, declared.run, *args, **kwargs)
+    raise AttributeError(f"No enabled module declares the data operation {name}.")
 
 
 def decorate(tx: Tx, record: Any) -> Any:
@@ -62,6 +90,7 @@ def decorate(tx: Tx, record: Any) -> Any:
 
 def cleanup(tx: Tx, kind: str, identity: str) -> None:
     from . import tables
+
     tables.cleanup(tx.db, kind, identity)
     for owner, data in declarations():
         if data.cleanup is not None:

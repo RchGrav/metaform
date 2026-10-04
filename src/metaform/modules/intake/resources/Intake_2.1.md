@@ -1,8 +1,3 @@
-# ============================================================
-# AXIOM SCRIPT :: digital-typology  (source v2.1)
-# Compiled by AxiomOS v1.0 · FINAL
-# ============================================================
-
 @STATE_INIT:
   {Prompt}        := """{prompt}"""    # filled by the server with the stated target or task
   {Target}        := UNRESOLVED        # set by TARGET_RESOLUTION
@@ -17,7 +12,7 @@
 
   # ---------- LOAD-BEARING SITES (VERBATIM; DO NOT PARAPHRASE) ----------
   {LB_GOAL} := """
-  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "require" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+  Map the artifact to a high value metaform capturing the shape of its function, by an element by element trace focused strictly on functionality. Traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants of functionality. Assemble the element types you see as high value, address them by the namespace rules, and record the OP of each CQU — in a join of type "purpose" describing the active why and the EF — of another element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any genre, style, or other thing that is not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
   """
 
   {LB_STEP_1} := """

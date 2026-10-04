@@ -543,7 +543,7 @@ def test_the_example_modules_ship_disabled(module_row):
 def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module, monkeypatch, capsys):
     import platform
 
-    from metaform import cli, loader
+    from metaform import cli, harness, loader
     user_module('narrow', '''
         from metaform.module import Module, Verb
         SUPPORTED_OS = ('linux', 'macos', 'windows', 'plan9')
@@ -560,10 +560,10 @@ def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module,
     listed = capsys.readouterr().out
     assert 'narrow here' in listed and 'narrow elsewhere' not in listed
     assert cli.main(['narrow', 'elsewhere']) == 2
-    err = capsys.readouterr().err.splitlines()
+    err = capsys.readouterr().err.removeprefix(f'Notice: {harness.NOTICE}\n').splitlines()
     assert err == ['Error: narrow elsewhere runs on plan9.', 'Next: metaform help narrow']
     assert cli.main(['help', 'narrow', 'elsewhere']) == 2
-    assert capsys.readouterr().err.splitlines() == err
+    assert capsys.readouterr().err.removeprefix(f'Notice: {harness.NOTICE}\n').splitlines() == err
     assert cli.main(['help', 'narrow']) == 0
     page = capsys.readouterr().out
     assert 'Not on this system' in page and page.index('Not on this system') < page.index('elsewhere')

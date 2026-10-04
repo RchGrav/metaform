@@ -308,7 +308,7 @@ The technical-reference set supplies the deeper engineering account:
 | [EXAMPLES_TO_COLLECT.md](docs/inference-metaform/EXAMPLES_TO_COLLECT.md) | Original traces and measurements that would make preparation and reuse inspectable. |
 | [IDEAS.md](docs/inference-metaform/IDEAS.md) | Separate proposals for additional tools and views. |
 
-This documentation describes the `chassis` branch after step 58 of the [build log](specifications/spec/BUILD-LOG.md). [Edition and validation notes](docs/EDITION.md) record the documentation edition of September 26, 2026, the source it was written against and the checks made on it, and what has changed since.
+This documentation describes the `chassis` branch after step 58 of the [build log](specifications/BUILD-LOG.md). [Edition and validation notes](docs/EDITION.md) record the documentation edition of September 26, 2026, the source it was written against and the checks made on it, and what has changed since.
 
 ## Authorship and independent development
 

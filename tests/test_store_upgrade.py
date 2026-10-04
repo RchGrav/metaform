@@ -17,8 +17,10 @@ LAYOUT_7 = (Path(__file__).parent / 'fixtures' / 'store-v7.sql').read_text(encod
 
 
 def renamed(row: dict) -> dict:
-    """A join row as layout 13 reads it: the join type purpose is require, Rich 2026-10-02."""
-    return {**row, 'type': 'require'} if row.get('type') == 'purpose' else row
+    """A join row as the current layout reads it: from layout 17 it has an element column, empty until the join is
+    promoted, MAP-054, and from layout 18 the join type require is purpose again, Rich 2026-10-04."""
+    row = {**row, 'element': row.get('element')}
+    return {**row, 'type': 'purpose'} if row.get('type') == 'require' else row
 INTAKE, CORRECTION, MEMORY = 'L-intake', 'L-correction', 'L-memory'
 
 
@@ -313,11 +315,11 @@ LAYOUT_12 = (Path(__file__).parent / 'fixtures' / 'store-v12.sql').read_text(enc
 
 @pytest.mark.req('MAP-020')
 @pytest.mark.req('STORE-029')
-def test_a_layout_12_store_opens_with_every_purpose_join_typed_require_and_nothing_else_changed(home: Path,
-                                                                                                tmp_path: Path):
-    """Rich, 2026-10-02: "the join type for requirements is require, rename it across the board from purpose". Every
-    version of every join of type purpose reads as type require; a subtype join keeps its type, and every other field
-    and row is kept. The store is backed up first."""
+def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and_nothing_else_changed(home: Path,
+                                                                                                      tmp_path: Path):
+    """Rich, 2026-10-04: "well I think we need to go back to purpose for semantics". Every version of every join of
+    type purpose still reads as type purpose; a subtype join keeps its type, and every other field and row is kept.
+    The store is backed up first."""
     path = tmp_path / 'main.metaform.sqlite3'
     db = sqlite3.connect(path)
     db.executescript(LAYOUT_12)
@@ -355,8 +357,8 @@ def test_a_layout_12_store_opens_with_every_purpose_join_typed_require_and_nothi
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM joins ORDER BY row')]
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '16'
-    assert [row['type'] for row in after] == ['require', 'require', 'subtype']
+    assert version == SCHEMA_VERSION == '18'
+    assert [row['type'] for row in after] == ['purpose', 'purpose', 'subtype']
     assert after == [renamed(row) for row in before]
     assert broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -429,7 +431,7 @@ def test_a_layout_13_store_opens_with_every_ticket_kept_and_no_glyph_column(home
         after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM work ORDER BY row')]
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '16'
+    assert version == SCHEMA_VERSION == '18'
     assert after == before
     assert [tuple(row) for row in steps] == [('W2', 1, 'Traced it.')] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -483,7 +485,7 @@ def test_a_layout_14_store_opens_with_every_ticket_kept_and_the_glyph_column_dro
         links = opened.execute('SELECT work_id, number, target_id FROM work_links').fetchall()
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '16'
+    assert version == SCHEMA_VERSION == '18'
     assert 'glyph' not in columns
     assert after == [{key: value for key, value in row.items() if key != 'glyph'} for row in before]
     assert [tuple(row) for row in links] == [('W1', 0, 'E1')]
@@ -535,8 +537,55 @@ def test_a_layout_15_store_opens_with_every_item_kept_and_both_flags_false(home:
         after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM items ORDER BY row')]
         current = opened.execute('SELECT item_id, row FROM current_items').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '16'
+    assert version == SCHEMA_VERSION == '18'
     assert after == [{**row, 'read_first': 0, 'always_show': 0} for row in before]
     assert [tuple(row) for row in current] == [('I1', 2)] and broken == []
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
+    assert len(backups) == 1
+
+
+LAYOUT_16 = (Path(__file__).parent / 'fixtures' / 'store-v16.sql').read_text(encoding='utf-8')
+
+
+@pytest.mark.req('MAP-054')
+@pytest.mark.req('STORE-010')
+def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home: Path, tmp_path: Path):
+    """Layout 17, MAP-054, Rich 2026-10-02, D112: a promoted join names the element written for it by its address.
+    A store at layout 16 is backed up, and the joins table gains its element column, empty on every join; nothing
+    else changes."""
+    path = tmp_path / 'main.metaform.sqlite3'
+    db = sqlite3.connect(path)
+    db.executescript(LAYOUT_16)
+    db.executescript(f"""
+        INSERT INTO meta(key, value) VALUES ('schema_version', '16');
+        INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, kind, created, ready)
+          VALUES ('{INTAKE}', 'M', 'intake', 'intake', 'v', 0, 0, 'intake', '2026-10-01', '2026-10-01');
+        INSERT INTO types(address) VALUES ('code'), ('code.b');
+        INSERT INTO element_ids(element_id) VALUES ('E1'), ('E2');
+        INSERT INTO elements(row, element_id, layer_id, address, name_length, name, role)
+          VALUES (1, 'E1', '{INTAKE}', 'code', 1, 'code', 'DE'), (2, 'E2', '{INTAKE}', 'code.b', 1, 'b', 'SE');
+        INSERT INTO current_elements(element_id, row, address, role)
+          VALUES ('E1', 1, 'code', 'DE'), ('E2', 2, 'code.b', 'SE');
+        INSERT INTO address_elements(address, element_id) VALUES ('code', 'E1'), ('code.b', 'E2');
+        INSERT INTO join_ids(join_id) VALUES ('J1');
+        INSERT INTO identities(id, kind) VALUES ('E1', 'element'), ('E2', 'element'), ('J1', 'join');
+        INSERT INTO joins(row, join_id, layer_id, type, receiver, provider, name, purpose, ef, ifd, verb, non_goal)
+          VALUES (1, 'J1', '{INTAKE}', 'require', 'E1', 'E2', 'b', 'Need b.', 'serves b', 'receives', 'serves', 'n'),
+                 (2, 'J1', '{INTAKE}', 'require', 'E1', 'E2', 'b', 'Need b now.', 'serves b', 'receives', 'serves', 'n');
+        INSERT INTO current_joins(join_id, row, receiver, provider) VALUES ('J1', 2, 'E1', 'E2');
+    """)
+    db.commit()
+    db.row_factory = sqlite3.Row
+    before = [dict(row) for row in db.execute('SELECT * FROM joins ORDER BY row')]
+    db.close()
+    with open_store(path, write=False) as opened:
+        version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM joins ORDER BY row')]
+        current = opened.execute('SELECT join_id, row FROM current_joins').fetchall()
+        broken = opened.execute('PRAGMA foreign_key_check').fetchall()
+    assert version == SCHEMA_VERSION == '18'
+    assert after == [renamed(row) for row in before]
+    assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again, Rich 2026-10-04
+    assert [tuple(row) for row in current] == [('J1', 2)] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
     assert len(backups) == 1

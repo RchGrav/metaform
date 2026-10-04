@@ -23,6 +23,52 @@ def dump(home: Path) -> list[str]:
         return list(db.iterdump())
 
 
+def test_running_walks_past_shells_launchers_and_wrappers_to_the_first_other_program(monkeypatch):
+    from metaform import harness
+    wrappers = ('bash', 'uv', 'python3.13', 'sh', 'uvx', 'pythonw.exe', 'cmd.exe', 'pwsh.exe',
+                'timeout', 'nice', 'env', 'xargs', 'nohup', 'TIMEOUT.EXE')
+    processes = {pid: (pid + 1, ROOT / 'launchers' / name) for pid, name in enumerate(wrappers, 20)}
+    end = 20 + len(wrappers)
+    processes[end] = (end + 1, VERSIONS / '2.0.1')
+    processes[end + 1] = (0, OTHER)
+    monkeypatch.setattr(os, 'getppid', lambda: 20)
+    monkeypatch.setattr(harness, '_process', lambda pid: processes.get(pid), raising=False)
+    assert harness.running() == VERSIONS / '2.0.1'
+
+
+def test_running_does_not_select_an_ancestor_when_the_nearest_program_cannot_be_read(monkeypatch):
+    from metaform import harness
+    monkeypatch.setattr(os, 'getppid', lambda: 20)
+    monkeypatch.setattr(harness, '_process', lambda pid: None, raising=False)
+    assert harness.running() is None
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='BusyBox applet detection uses Linux process arguments')
+@pytest.mark.parametrize(('arguments', 'shell'), [(b'busybox\0sh\0-c\0command\0', True),
+                                                (b'/bin/sh\0-c\0command\0', True),
+                                                (b'-sh\0-c\0command\0', True),
+                                                (b'busybox\0timeout\x0060\0command\0', True),
+                                                (b'/bin/timeout\x0060\0command\0', True),
+                                                (b'busybox\0sleep\x0010\0', False)])
+def test_busybox_shells_and_wrappers_are_passed_over_and_other_applets_are_programs(monkeypatch, arguments, shell):
+    from metaform import harness
+    binary = ROOT / 'usr' / 'bin' / 'busybox'
+    processes = {20: (21, binary), 21: (0, OTHER)}
+    monkeypatch.setattr(os, 'getppid', lambda: 20)
+    monkeypatch.setattr(harness, '_process', lambda pid: processes.get(pid))
+    command_lines = {Path('/proc/20/cmdline'): arguments, Path('/proc/21/cmdline'): os.fsencode(OTHER) + b'\0'}
+    monkeypatch.setattr(Path, 'read_bytes', lambda path: command_lines[path])
+    assert harness.running() == (OTHER if shell else binary)
+
+
+@pytest.mark.kind('simulation')
+def test_native_process_lookup_reads_this_process_binary_and_parent():
+    from metaform import harness
+    parent, binary = harness._process(os.getpid())
+    assert parent == os.getppid()
+    assert binary.resolve() == Path(sys.executable).resolve()
+
+
 def test_a_new_version_in_the_same_folder_is_the_same_harness():
     from metaform import harness
     assert harness.key(VERSIONS / '2.0.1') == harness.key(VERSIONS / '2.0.2')

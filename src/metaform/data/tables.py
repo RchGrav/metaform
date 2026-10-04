@@ -3,14 +3,15 @@
 A module declares `Tables(version, tables, upgrade=None)`, each `Table` with its columns, its key, its indexes and
 its place: `metaform`, beside the map in the metaform's store, or `project`, in a store of the project that
 outlives a clear of its metaforms, `projects/<project>/modules/<module>.sqlite3`. A module table is named
-`"<module>.<table>"`; no chassis table has a dot in its name, so none is ever taken for a module's.
+`"<module>.<table>"`; an imported SQL declaration retains its existing physical name.
 
 Each store that holds a module's tables records the module's version and the declaration of the tables it holds in
 its `meta` table under `module:<id>`, so a module's change never changes the chassis store layout, STORE-029, and
 export, import and the chassis's own upgrade can carry the tables without the module loaded.
 
-`TableTx` is the one way a module reads and writes them: one transaction on the store of the first table it touches,
-STORE-006, every read through the key's index or a declared index, STORE-005.
+`TableTx` reads and writes them in one transaction on the store of the first table it touches, STORE-006, every read
+through the key's index or a declared index, STORE-005. A declared `Data` operation can also issue SQL through its
+current DAO transaction.
 """
 from __future__ import annotations
 
@@ -392,9 +393,10 @@ def legacy_fold(db: sqlite3.Connection, correction: str, intake: str) -> None:
 
 def legacy_upgrade(db: sqlite3.Connection, found: str) -> None:
     """Let each enabled owner bring its data from a historical chassis layout."""
-    for _, declared in extensions():
+    for module, declared in extensions():
         if declared.legacy_upgrade is not None:
             declared.legacy_upgrade(db, found)
+            db.execute('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)', ('legacy_upgrade:' + module, found))
 
 
 # ------------------------------------------------------------------------------------------------ versions
@@ -479,8 +481,10 @@ def _adopt(db: sqlite3.Connection, path: Path, module: str, declared: Tables, pl
         if table.place == place:
             _create(db, module, table)
     former = db.execute("SELECT value FROM meta WHERE key='prior_schema_version'").fetchone()
-    if former is not None and declared.legacy_upgrade is not None:
+    applied = db.execute('SELECT 1 FROM meta WHERE key=?', ('legacy_upgrade:' + module,)).fetchone()
+    if former is not None and applied is None and declared.legacy_upgrade is not None:
         declared.legacy_upgrade(db, str(former[0]))
+        db.execute('INSERT INTO meta(key,value) VALUES (?,?)', ('legacy_upgrade:' + module, str(former[0])))
     if changed:
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
@@ -771,7 +775,7 @@ class TableTx:
 
 # ------------------------------------------------------------------------------------------------ the registry
 
-def declared(module: str | None) -> Tables:
+def declared(module: str | None, *, retained: bool = False) -> Tables:
     """The tables a loaded module declares, read from its declaration, BASE-035."""
     if not module:
         raise StoreError('This store works for no module, so it reaches no module\'s tables.',
@@ -779,6 +783,11 @@ def declared(module: str | None) -> Tables:
     from .. import loader
     found = loader.get(module)
     tables = None if found is None or found.module is None else found.module.tables
+    if tables is None and retained:
+        source = loader.data_source(module)
+        candidate = getattr(source, 'TABLES', None)
+        if isinstance(candidate, Tables):
+            tables = candidate
     if tables is None:
         raise StoreError(f'{module} declares no tables.',
                          'declare them as Module(..., tables=Tables(...)), docs/guides/extending-metaform.md')

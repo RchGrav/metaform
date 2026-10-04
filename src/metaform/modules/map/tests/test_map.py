@@ -198,6 +198,88 @@ def test_a_blind_spot_is_answered_and_only_a_person_approves_it(run, mapped):
     assert 'approve' in listed
 
 
+def _intake_snapshot():
+    """The intake layer's record, provenance, elements and joins, read raw."""
+    store = Store('proj')
+    layer = next(layer for layer in store.layers().results if layer.name == 'intake-1')
+    addresses = ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible')
+    return (layer.to_dict(), store.provenance('intake-1'), [store.element(a, raw=True) for a in addresses],
+            [store.joins(a, raw=True).results for a in addresses])
+
+
+def _critic_run(run, mapped, *args):
+    """Run `map critic` once; its served text and the one layer it added."""
+    before = {layer.name for layer in Store('proj').layers().results}
+    served = run('map', 'critic', *args, cwd=mapped).stdout
+    added = {layer.name for layer in Store('proj').layers().results} - before
+    assert len(added) == 1, added
+    return served, added.pop()
+
+
+@pytest.mark.req('LAYER-014')
+@pytest.mark.req('LAYER-015')
+@pytest.mark.req('MCP-031')
+def test_each_critic_run_adds_one_layer_blinded_by_its_type_and_is_given_the_whole_metaform(run, mapped):
+    from importlib import resources
+
+    from metaform import prompt_files
+    folder = resources.files('metaform.modules.map')
+    intake = _intake_snapshot()
+    metaform = run('map', 'markdown', cwd=mapped).stdout.strip()
+    blind, blind_layer = _critic_run(run, mapped)
+    sighted, sighted_layer = _critic_run(run, mapped, 'sighted=true')
+    again, again_layer = _critic_run(run, mapped)
+    assert len({blind_layer, sighted_layer, again_layer}) == 3
+    store = Store('proj')
+    assert (store.provenance(blind_layer).blinded, store.provenance(blind_layer).role) == (True, 'critic')
+    assert (store.provenance(sighted_layer).blinded, store.provenance(sighted_layer).role) == (False, 'critic')
+    assert store.provenance(again_layer).blinded is True
+    assert {(store.provenance(name).module, store.provenance(name).prompt) for name in (blind_layer, again_layer)} == {
+        ('map', 'critic_blind')}
+    assert (store.provenance(sighted_layer).module, store.provenance(sighted_layer).prompt) == ('map', 'critic_sighted')
+    # The blind critic receives everything the intake agent built; the sighted critic reads it with the code.
+    assert metaform in blind and metaform in sighted
+    assert blind_layer in blind and sighted_layer in sighted
+    assert blind.strip() == prompt_files.required(folder, 'critic_blind', layer=blind_layer, metaform=metaform)
+    assert sighted.strip() == prompt_files.required(folder, 'critic_sighted', layer=sighted_layer, metaform=metaform)
+    assert _intake_snapshot() == intake
+
+
+@pytest.mark.req('LAYER-015')
+@pytest.mark.req('STORE-040')
+def test_the_answer_prompt_gives_each_challenge_of_a_layer_with_its_state(run, mapped):
+    from importlib import resources
+
+    from metaform import prompt_files
+    _, layer = _critic_run(run, mapped)
+    hang = json.loads(k(run, mapped, 'op=add-item', f'layer={layer}', 'node=element:code.timer.kitchen',
+                        'value="Nothing recovers a hung loop."').stdout)
+    volume = json.loads(k(run, mapped, 'op=add-item', f'layer={layer}', 'node=element:code.alarm.audible',
+                          'value="The alarm has no volume control."').stdout)
+    linked = json.loads(k(run, mapped, 'op=add-item', f'layer={layer}', 'node=element:code.alarm.audible',
+                          'value="Nobody hears the alarm."').stdout)
+    waiting = json.loads(k(run, mapped, 'op=add-item', f'layer={layer}', 'node=element:code.timer.kitchen',
+                           'value="The timer forgets its count on power loss."').stdout)
+    k(run, mapped, 'op=finish', f'layer={layer}')
+    run('map', 'answer', volume['item_id'], 'A', cwd=mapped)
+    run('map', 'answer', hang['item_id'], 'B', cwd=mapped)
+    run('map', 'answer', linked['item_id'], 'C', 'link=element:code.alarm.audible', cwd=mapped)
+    run('map', 'approve', hang['item_id'], cwd=mapped)
+    served = run('map', 'challenges', layer, cwd=mapped).stdout
+    opening = prompt_files.required(resources.files('metaform.modules.map'), 'answer_challenges', layer=layer,
+                                    challenges='')
+    # The whole fixed text, the three answers included, comes from the XML.
+    assert opening and served.startswith(opening.rstrip())
+    lines = {item: next(line for line in served.splitlines() if item in line)
+             for item in (hang['item_id'], volume['item_id'], linked['item_id'], waiting['item_id'])}
+    assert 'Nothing recovers a hung loop.' in lines[hang['item_id']] and 'plan' in lines[hang['item_id']].split()
+    assert 'The alarm has no volume control.' in lines[volume['item_id']]
+    assert 'A' in lines[volume['item_id']].split()
+    assert 'C' in lines[linked['item_id']].split()
+    assert 'open' in lines[waiting['item_id']].split()
+    assert 'code.timer.kitchen' in lines[hang['item_id']]
+
+
 @pytest.mark.req('STORE-023')
 @pytest.mark.req('BASE-038')
 def test_a_map_verb_outside_a_project_names_the_way_to_register_one(run, tmp_path):
@@ -1159,7 +1241,7 @@ def test_map_where_shows_each_ticket_at_the_address_with_its_work_id(run, mapped
 def test_refine_names_what_it_changes_by_address_and_never_hands_an_agent_an_id(run, mapped):
     """Rich, 2026-10-03: what an agent names is most easily inferred from what it already read, an address; an id it
     must look up and copy is an extra step and the string a model garbles first. Refine takes no id and returns none;
-    two requirements its addresses cannot tell apart are both named, and neither is changed."""
+    two purposes its addresses cannot tell apart are both named, and neither is changed."""
     nouns = {noun.name for verb in __import__('metaform.modules.map', fromlist=['MODULE']).MODULE.verbs
              if verb.name == 'refine' for noun in verb.nouns}
     assert 'id' not in nouns and {'receiver', 'provider', 'address'} <= nouns
@@ -1186,9 +1268,9 @@ def test_refine_names_what_it_changes_by_address_and_never_hands_an_agent_an_id(
 @pytest.mark.req('MAP-005')
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('MAP-048')
-def test_map_work_names_a_requirement_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
+def test_map_work_names_a_purpose_by_its_receiver_and_provider_and_a_part_by_its_address_inside_it(run, mapped):
     """Rich, 2026-10-03, ticket ad135d54: what an agent names is most easily inferred from what it already read; ids
-    are internal. An agent names a requirement by its receiver and provider, as refine does, and never handles
+    are internal. An agent names a purpose by its receiver and provider, as refine does, and never handles
     join:<id>, in the node a ticket is on and in the nodes it links."""
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
@@ -1199,7 +1281,7 @@ def test_map_work_names_a_requirement_by_its_receiver_and_provider_and_a_part_by
         shown = store.add_join('intake-1', 'code.timer.kitchen', 'code.display.digit', purpose='Show the time left.')
         store.add_element('intake-1', 'code.display.digit.segment', name_length=3, role='SE')
         store.add_subtype('intake-1', shown.join_id, 'code.display.digit.segment', purpose='Light each digit.')
-    # The timer holds two requirements, so the provider, not the order they are held in, picks one.
+    # The timer holds two purposes, so the provider, not the order they are held in, picks one.
     named = ('receiver=code.timer.kitchen', 'provider=code.alarm.audible')
     display = ('receiver=code.timer.kitchen', 'provider=code.display.digit')
     on_join = j(run, 'work', 'op=add', *named, 'condition=broken', 'task=fix the tone', cwd=mapped)
@@ -1235,7 +1317,7 @@ def test_map_work_names_a_requirement_by_its_receiver_and_provider_and_a_part_by
                                                                         ('join', shown.join_id)]
     unheld = run('map', 'work', 'op=add', 'receiver=code.timer.kitchen', 'provider=code.nosuch.node',
                  'condition=missing', '--json', cwd=mapped, ok=False)
-    assert unheld.returncode == 2 and 'code.timer.kitchen has no requirement served by code.nosuch.node' in unheld.stderr
+    assert unheld.returncode == 2 and 'code.timer.kitchen has no purpose served by code.nosuch.node' in unheld.stderr
     assert len(j(run, 'work', 'limit=0', cwd=mapped)['results']) == 5
 
 
@@ -1289,8 +1371,8 @@ def test_map_work_ask_and_tell_never_tell_an_agent_to_name_a_node_by_a_join_id(r
 
 @pytest.mark.req('MAP-005')
 @pytest.mark.req('MAP-050')
-def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_requirement_node_holds(run, mapped):
-    """Rich, 2026-10-03, ticket ad135d54: keep node first; provider= beside it names the requirement node holds, node
+def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_purpose_node_holds(run, mapped):
+    """Rich, 2026-10-03, ticket ad135d54: keep node first; provider= beside it names the purpose node holds, node
     being the receiver. A part inside it is named by address beside them, as in memory and map work."""
     store = Store('proj')
     join = store.joins('code.timer.kitchen').results[0]
@@ -1312,7 +1394,7 @@ def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_requireme
     assert (alone['node_kind'], alone['address']) == ('element', 'code.alarm.audible')
     assert said(alone) == [('address', 'address names a part only with provider; it was not read.')]
     unheld = run('map', 'tell', 'code.timer.kitchen', 'x', 'provider=code.nosuch.node', '--json', cwd=mapped, ok=False)
-    assert unheld.returncode == 2 and 'code.timer.kitchen has no requirement served by code.nosuch.node' in unheld.stderr
+    assert unheld.returncode == 2 and 'code.timer.kitchen has no purpose served by code.nosuch.node' in unheld.stderr
     assert [message['node_id'] for message in j(run, 'messages', 'limit=0', cwd=mapped)['results']] == [
         shown.join_id, part.join_id, plain['node_id'], alone['node_id']]
 
@@ -1376,3 +1458,68 @@ def test_knowledge_add_item_takes_the_flags_and_a_task_item_adds_a_ticket_at_its
     read = j(run, 'work', f'id={tickets[0]["work_id"]}', cwd=mapped)
     assert [item['value'] for item in read['read_first']] == ['Read the timer spec first.']
     assert list(read).index('read_first') < list(read).index('at')
+
+
+# ------------------------------------------------------------------ eligible agents, ticket bd96cbd1
+
+def eligible_of(record):
+    """The agent types eligible for a ticket, as the map module shows them under its own id, BASE-035; None when the
+    ticket keeps none, which is any agent."""
+    return (record.get('map') or {}).get('eligible')
+
+
+@pytest.mark.req('MAP-058')
+@pytest.mark.req('STORE-045')
+@pytest.mark.req('BASE-046')
+def test_any_agent_is_eligible_by_default_and_the_eligible_agents_are_kept_in_the_map_modules_own_table(run, mapped):
+    """Rich, ticket bd96cbd1: any agent is eligible by default unless the user specifies otherwise, and existing
+    tickets default to Any. The user's choice is one or more agent types, shown on the ticket; like the glyph it is
+    the map module's own field, a row keyed by the work id, and the work table has no column for it."""
+    old = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='written before the setting')
+    assert eligible_of(j(run, 'work', f'id={old.work_id}', cwd=mapped)) is None
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=flawed', 'task=quieter tone',
+             'eligible=["claude"]', cwd=mapped)
+    assert eligible_of(made) == ['claude']
+    assert eligible_of(j(run, 'work', f'id={made["work_id"]}', cwd=mapped)) == ['claude']
+    both = j(run, 'work', 'op=edit', f'id={made["work_id"]}', 'eligible=["claude", "codex"]', cwd=mapped)
+    assert eligible_of(both) == ['claude', 'codex'] and not both.get('notices')
+    listed = {record['work_id']: record for record in j(run, 'work', 'limit=0', cwd=mapped)['results']}
+    assert eligible_of(listed[made['work_id']]) == ['claude', 'codex'] and eligible_of(listed[old.work_id]) is None
+    untouched = j(run, 'work', 'op=edit', f'id={made["work_id"]}', 'task=quieter still', cwd=mapped)
+    assert eligible_of(untouched) == ['claude', 'codex']
+    with Store('proj', module='map').tables(write=False) as tx:
+        assert tx.get('eligible', {'work_id': made['work_id']}) is not None
+        assert tx.get('eligible', {'work_id': old.work_id}) is None
+    from metaform.modules.map import TABLES
+    work_table = TABLES.table('work').schema.split('CREATE TABLE IF NOT EXISTS work(')[1].split(');')[0]
+    assert 'eligible' not in [line.split()[0] for line in work_table.strip().splitlines()]
+    anyone = j(run, 'work', 'op=edit', f'id={made["work_id"]}', 'eligible=[]', cwd=mapped)
+    assert eligible_of(anyone) is None, 'an empty choice is any agent again'
+    odd = j(run, 'work', 'op=edit', f'id={made["work_id"]}', 'eligible=["cursor"]', cwd=mapped)
+    assert eligible_of(odd) == ['cursor'] and [notice['where'] for notice in odd['notices']] == ['eligible']
+
+
+@pytest.mark.req('MAP-058')
+def test_a_direct_claim_on_the_command_line_is_honored_by_the_agent_its_by_names(run, mapped):
+    """Ticket bd96cbd1: direct agent claims honor the choice. On the command line the claiming agent is the first
+    word of by, as the dispatch runner writes it, `claude <session id>`. An agent not on the list, or a by naming
+    no agent, is refused and the ticket stays untaken; an agent on it takes the ticket. A ticket with no choice is
+    taken by anyone, as before. A person moving the card to Doing is not an agent's claim and is not refused."""
+    store = Store('proj')
+    kitchen = Node('element', 'code.timer.kitchen')
+    gui = store.add_work(kitchen, 'missing', task='GUI work')
+    j(run, 'work', 'op=edit', f'id={gui.work_id}', 'eligible=["claude"]', cwd=mapped)
+    for by in ('codex 9f2c', 'someone', None):
+        refused = run('map', 'work', 'op=take', f'id={gui.work_id}', *([f'by={by}'] if by else []), cwd=mapped,
+                      ok=False)
+        said = refused.stdout + refused.stderr
+        assert refused.returncode != 0 and 'claude' in said, (by, said)
+        assert store.ticket(gui.work_id).work.taken is None
+    took = j(run, 'work', 'op=take', f'id={gui.work_id}', 'by=claude 41ab', cwd=mapped)
+    assert took['taken_by'] == 'claude 41ab'
+    loose = store.add_work(kitchen, 'missing', task='anyone')
+    assert j(run, 'work', 'op=take', f'id={loose.work_id}', 'by=someone', cwd=mapped)['taken_by'] == 'someone'
+    person = store.add_work(kitchen, 'missing', task='the person takes it')
+    j(run, 'work', 'op=edit', f'id={person.work_id}', 'eligible=["codex"]', cwd=mapped)
+    moved = j(run, 'work', 'op=move', f'id={person.work_id}', 'column=doing', 'by=user', cwd=mapped)
+    assert moved['taken_by'] == 'user'

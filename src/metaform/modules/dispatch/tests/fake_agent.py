@@ -92,6 +92,10 @@ def first_turn(prompt_id, text):
     if MODE == 'question':
         log({'asked': tool('t3', 'Ask a question', ['map', 'ask', os.environ['FAKE_ACP_ASK_AT'], 'Is the store kept?',
                                                     'by=fake agent'])})
+        if os.environ.get('FAKE_ACP_QUESTION_HOLD') == '1':
+            CANCELLED.wait()
+            send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
+            return
     if MODE == 'hold':
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])
         log({'grandchild': child.pid})
@@ -104,6 +108,11 @@ def first_turn(prompt_id, text):
 def listing_turn(prompt_id):
     log({'listed': tool('t4', 'List the questions', ['map', 'messages', 'kind=question'])})
     send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'end_turn'}})
+
+
+def held_turn(prompt_id):
+    CANCELLED.wait()
+    send({'jsonrpc': '2.0', 'id': prompt_id, 'result': {'stopReason': 'cancelled'}})
 
 
 def main():
@@ -133,6 +142,8 @@ def main():
                 threading.Thread(target=first_turn, args=(ident, said), daemon=True).start()
             elif PROMPTS[0] == 2 and MODE == 'question':
                 threading.Thread(target=listing_turn, args=(ident,), daemon=True).start()
+            elif os.environ.get('FAKE_ACP_HOLD_LATER') == '1':
+                threading.Thread(target=held_turn, args=(ident,), daemon=True).start()
             else:
                 send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn'}})
         elif method == 'session/cancel':

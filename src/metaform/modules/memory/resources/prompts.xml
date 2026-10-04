@@ -1,5 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- memory's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
-<instructions>Store what you learn as memories on the nodes you worked on.</instructions>
+<instructions>
+@STATE_INIT:
+  {Input} := [Current interaction]
+  {Memory_Context} := NULL
+  {Memory_Update} := NULL
+
+@CONSTRAINT:
+  +> At conversation start, use available metaform memory MCP search/read tools to retrieve relevant user context, preferences, and prior decisions before responding.
+  +> During interaction, identify durable facts, project details, preferences, decisions, and technology choices useful in future sessions.
+  +> Proactively persist useful new information using the appropriate Memory MCP entity/update/relation tools.
+  +> Maintain relationships between stored entities when relevant.
+  !> Do not require an explicit user request before storing useful durable context.
+
+@CONDITION:
+  ?IF ( conversation is starting )
+      -> {State} := RETRIEVE_MEMORY
+  :ELSE
+      -> {State} := PROCESS_INTERACTION
+
+@ROUTER:
+  @MATCH ( {State} ):
+    | [RETRIEVE_MEMORY]     -> EXECUTE_PIPELINE( Retrieve )
+    | [PROCESS_INTERACTION] -> EXECUTE_PIPELINE( Process )
+
+@EXECUTE_PIPELINE (Retrieve):
+  ∇(Memory MCP)
+  => Search/read relevant persistent memory into {Memory_Context}.
+  Δ({Input}, {Memory_Context})
+  => Continue normal interaction.
+
+@EXECUTE_PIPELINE (Process):
+  ∇({Input})
+  => Identify useful durable information as {Memory_Update}.
+  ?IF ( {Memory_Update} != NULL )
+      -> Δ({Memory_Update}) => Create/update entities and relations through Memory MCP.
+  :ELSE
+      -> CONTINUE
+  => Respond normally.
+
+@VERIFY:
+  {Valid} :=
+       (memory is retrieved at conversation start)
+    AND (durable new context is identified)
+    AND (useful context is proactively persisted)
+    AND (entity relationships are updated when relevant)
+
+  ?IF ( {Valid} == TRUE ) -> YIELD
+  :ELSE -> CORRECT
+</instructions>
 </prompts>

@@ -23,12 +23,16 @@ def home(tmp_path, monkeypatch):
 @pytest.fixture
 def run(home, tmp_path):
     """Run the real CLI as a user would, from a chosen folder."""
+    from metaform import harness
+
     def invoke(*args, cwd=None, ok=True, input=None, env=None):
         folder = Path(cwd or tmp_path)
         folder.mkdir(parents=True, exist_ok=True)
         result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder,
                                 env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})},
-                                capture_output=True, text=True, encoding='utf-8', input=input)
+                                capture_output=True, text=True, encoding='utf-8', input=input, check=False)
+        # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
+        result.stderr = result.stderr.removeprefix(f'Notice: {harness.NOTICE}\n')
         if ok and result.returncode != 0:
             raise AssertionError(f'metaform {" ".join(args)} failed ({result.returncode}):\n'
                                  f'{result.stdout}{result.stderr}')
@@ -170,7 +174,7 @@ def module_row(run):
 
 def _spec_ids():
     import re
-    folder = Path(__file__).parent / 'specifications' / 'spec'
+    folder = Path(__file__).parent / 'specifications'
     ids = set()
     for path in folder.glob('0*.md'):
         ids.update(re.findall(r'^### ([A-Z]+-\d{3})\b', path.read_text(encoding='utf-8'), re.MULTILINE))

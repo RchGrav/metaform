@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -89,6 +90,22 @@ def update(nonce: str, *, value: Any = None, function: str | None = None) -> Non
         db.execute('UPDATE nonces SET value=?, function=? WHERE nonce=?',
                    (json.dumps(held.value if value is None else value), function or held.function, nonce))
     found = _held(nonce)
+    if (now := _CURRENT.get()) is not None and now.nonce == nonce:
+        _CURRENT.set(found)
+    return found
+
+
+def mutate(nonce: str, change: Callable[[Any], Any]) -> Nonce:
+    """Read and change a nonce value in one transaction, retaining concurrent updates."""
+    with home.base(write=True) as db:
+        row = db.execute('SELECT nonce, module_id, function, value, created, closed FROM nonces WHERE nonce=?',
+                         (nonce,)).fetchone()
+        if row is None:
+            raise Stop(f'No nonce {nonce} was issued.', 'metaform help')
+        held = _record(row)
+        value = change(held.value)
+        db.execute('UPDATE nonces SET value=? WHERE nonce=?', (json.dumps(value), nonce))
+        found = Nonce(held.nonce, held.module, held.function, value, held.open, held.created, held.closed)
     if (now := _CURRENT.get()) is not None and now.nonce == nonce:
         _CURRENT.set(found)
     return found

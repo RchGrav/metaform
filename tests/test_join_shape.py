@@ -25,6 +25,6 @@ def test_a_join_has_only_the_fields_the_design_names():
     assert columns - STORE_OWN == DESIGN, f'join columns beyond the design: {sorted(columns - STORE_OWN - DESIGN)}'
     from metaform.modules.intake import MODULE
     for verb in MODULE.verbs:
-        if verb.name in ('add_requirement', 'subtype'):
+        if verb.name in ('add_purpose', 'subtype'):
             fields = {noun.name for noun in verb.nouns} - TOOL_OWN
             assert fields <= DESIGN, f'intake {verb.name} takes fields beyond the design: {sorted(fields - DESIGN)}'
