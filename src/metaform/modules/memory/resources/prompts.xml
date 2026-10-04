@@ -3,51 +3,73 @@
 <prompts>
 <instructions>
 @STATE_INIT:
-  {Input} := [Current interaction]
-  {Memory_Context} := NULL
-  {Memory_Update} := NULL
+{Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE
 
 @CONSTRAINT:
-  +> At conversation start, use available metaform memory MCP search/read tools to retrieve relevant user context, preferences, and prior decisions before responding.
-  +> During interaction, identify durable facts, project details, preferences, decisions, and technology choices useful in future sessions.
-  +> Proactively persist useful new information using the appropriate Memory MCP entity/update/relation tools.
-  +> Maintain relationships between stored entities when relevant.
-  !> Do not require an explicit user request before storing useful durable context.
++&gt; Before responding or working, always call memory retrieval tools (e.g. search_nodes/read_graph) for relevant user context, preferences, past decisions, target functionality, inherited context, and selected layers.
++&gt; Treat memory as prior findings; specification, standing instructions, and current evidence take precedence.
++&gt; Verify implementation references before relying on them.
++&gt; While working, understand relevant implementation/execution paths and preserve durable findings another agent would otherwise need to rediscover: non-obvious behavior, constraints, edge cases, decision rationale, demonstrated failures, reproducible diagnoses, verified changes, and cross-function dependencies.
++&gt; Observe work and user interactions for durable project facts, preferences, technology choices, and useful context.
++&gt; Proactively use create_entities/update_entities/create_relations when discovered information or entities warrant durable graph storage; do not require an explicit user memory request.
++&gt; Save findings at the narrowest applicable functionality; place genuinely shared knowledge at the applicable namespace prefix.
++&gt; Each finding states the fact, future consequence, evidence/source, validity conditions, and whether it is observed behavior, intended behavior, or hypothesis.
++&gt; Before saving, read existing memory and integrate rather than duplicate; correct or supersede stale findings with evidence without silently erasing unresolved disagreement.
++&gt; At useful milestones or before handoff, preserve findings the next agent would otherwise have to rediscover.
+!&gt; Do not treat memory as authority over specification, standing instructions, or current evidence.
+!&gt; Do not repeat the functional map or copy large source sections into memory.
+!&gt; Do not save chronological activity logs, filler, task status, unanswered questions belonging in dedicated records, or untested explanations as established facts.
+!&gt; Do not convert implementation observations into new design requirements.
 
 @CONDITION:
-  ?IF ( conversation is starting )
-      -> {State} := RETRIEVE_MEMORY
-  :ELSE
-      -> {State} := PROCESS_INTERACTION
+?IF ({State}==RETRIEVE) -&gt; {State}:=WORK
+?IF (durable finding discovered) -&gt; {State}:=RECORD
+?IF (new durable entity/relation discovered) -&gt; {State}:=GRAPH_UPDATE
+?IF (useful milestone OR handoff) -&gt; {State}:=PRESERVE
+:ELSE -&gt; {State}:=WORK
 
 @ROUTER:
-  @MATCH ( {State} ):
-    | [RETRIEVE_MEMORY]     -> EXECUTE_PIPELINE( Retrieve )
-    | [PROCESS_INTERACTION] -> EXECUTE_PIPELINE( Process )
+@MATCH({State}):
+| [RETRIEVE] -&gt; EXECUTE_PIPELINE(Retrieve)
+| [WORK] -&gt; EXECUTE_PIPELINE(Work)
+| [RECORD] -&gt; EXECUTE_PIPELINE(Record)
+| [GRAPH_UPDATE] -&gt; EXECUTE_PIPELINE(Graph_Update)
+| [PRESERVE] -&gt; EXECUTE_PIPELINE(Preserve)
 
-@EXECUTE_PIPELINE (Retrieve):
-  ∇(Memory MCP)
-  => Search/read relevant persistent memory into {Memory_Context}.
-  Δ({Input}, {Memory_Context})
-  => Continue normal interaction.
+@EXECUTE_PIPELINE(Retrieve):
+∇({Task}) =&gt; identify target functionality, relevant inherited context, selected layers, user context/preferences, past decisions
+=&gt; call search_nodes/read_graph as appropriate
+Δ(results) =&gt; {Memory}; {State}:=WORK
 
-@EXECUTE_PIPELINE (Process):
-  ∇({Input})
-  => Identify useful durable information as {Memory_Update}.
-  ?IF ( {Memory_Update} != NULL )
-      -> Δ({Memory_Update}) => Create/update entities and relations through Memory MCP.
-  :ELSE
-      -> CONTINUE
-  => Respond normally.
+@EXECUTE_PIPELINE(Work):
+∇({Task},{Memory},current evidence) =&gt; inspect implementation references and execution path; identify durable facts, constraints, edge cases, rationale, failures, diagnoses, verified changes, dependencies
+=&gt; continue task; route qualifying discoveries to RECORD or GRAPH_UPDATE
+
+@EXECUTE_PIPELINE(Record):
+∇(existing memory, finding) =&gt; detect duplicates, stale/conflicting entries, narrowest storage location
+Δ(finding) =&gt; store fact + consequence + evidence/source + validity conditions + classification[observed|intended|hypothesis]
+=&gt; {State}:=WORK
+
+@EXECUTE_PIPELINE(Graph_Update):
+∇(existing graph,new entity/relation) =&gt; determine create/update/relation action without duplication
+Δ(result) =&gt; call create_entities/update_entities/create_relations as applicable
+=&gt; {State}:=WORK
+
+@EXECUTE_PIPELINE(Preserve):
+∇({Findings},existing memory) =&gt; select only durable findings otherwise requiring rediscovery
+Δ(selected findings) =&gt; integrate at narrowest applicable functionality/shared namespace
+=&gt; {State}:=WORK
 
 @VERIFY:
-  {Valid} :=
-       (memory is retrieved at conversation start)
-    AND (durable new context is identified)
-    AND (useful context is proactively persisted)
-    AND (entity relationships are updated when relevant)
-
-  ?IF ( {Valid} == TRUE ) -> YIELD
-  :ELSE -> CORRECT
+{Valid}:=
+(memory retrieval occurs before work/response)
+AND (memory remains subordinate to specification/instructions/evidence)
+AND (implementation references are checked before reliance)
+AND (durable findings are integrated without duplication)
+AND (saved findings include consequence,evidence,conditions,class)
+AND (new durable graph entities/relations are proactively persisted)
+AND (prohibited memory content is excluded)
+AND (observations are not promoted into unsupported requirements)
+AND (unresolved disagreement is not silently erased)
 </instructions>
 </prompts>
