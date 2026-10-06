@@ -125,7 +125,7 @@ def _git(folder: Path, *args: str, check: bool = True) -> subprocess.CompletedPr
 def repository(folder: Path) -> Path | None:
     """The repository the folder is in, or None for a plain folder or when git is missing."""
     try:
-        found = subprocess.run(['git', '-C', str(folder), 'rev-parse', '--show-toplevel'], capture_output=True)
+        found = subprocess.run(['git', '-C', str(folder), 'rev-parse', '--show-toplevel'], check=False, capture_output=True)
     except FileNotFoundError:
         return None
     return Path(found.stdout.decode('utf-8').strip()) if found.returncode == 0 else None
@@ -372,7 +372,7 @@ def _diff(before: bytes, after: bytes) -> bytes:
         old.write_bytes(before)
         new.write_bytes(after)
         made = subprocess.run(['git', 'diff', '--no-index', '--no-color', '--no-ext-diff', '--full-index', str(old),
-                               str(new)], capture_output=True)
+                               str(new)], check=False, capture_output=True)
     if made.returncode not in (0, 1):
         raise StoreError(f'git diff failed: {made.stderr.decode("utf-8", "replace").strip()}', 'install git')
     return made.stdout

@@ -22,7 +22,7 @@ MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce',
-          'metaform.prompt_files'}
+          'metaform.prompt_files', 'metaform.axiom', 'metaform.home'}
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
@@ -59,6 +59,39 @@ def alive(pid):
     return True
 
 
+def end_agent(log, forced):
+    """End the fake agent a test's runner started, and the child it started, with their process group, as the runner's
+    own end does, BASE-052: the agent has a group of its own, so ending the runner alone leaves it behind. After the
+    runner was ended by force, read its log for up to 5 s, since a child already starting can log its PID late.
+    Returns the PIDs found."""
+    from metaform.modules.dispatch import end_group
+    children = set()
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            if log.exists():
+                for line in log.read_text(encoding='utf-8').splitlines():
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:  # teardown can meet a line the agent is still writing
+                        continue
+                    children.update(entry[key] for key in ('pid', 'grandchild') if key in entry)
+        finally:
+            for child in children:  # an agent that ended on its own still names the group its child runs in
+                end_group(child)
+        if not forced or time.monotonic() >= deadline:
+            return children
+        time.sleep(0.05)
+
+
+def gone(pids, limit=5):
+    """Whether every one of the PIDs has ended within the limit."""
+    deadline = time.monotonic() + limit
+    while any(alive(pid) for pid in pids) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not any(alive(pid) for pid in pids)
+
+
 class Dispatch:
     """One ticket at NODE in the project proj, dispatch enabled, and claude's start command the fake agent."""
 
@@ -67,7 +100,8 @@ class Dispatch:
         self.run, self.home, self.folder = run, home, folder
         self.log = tmp_path / 'fake.jsonl'
         run('enable', 'dispatch')
-        run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE}"', cwd=folder)
+        for agent in ('claude', 'codex', 'gemini'):  # every agent is the fake, so no test ever starts a real one
+            run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=folder)
         self.store = Store('proj')
         self.store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
         self.store.add_element('parts', NODE)
@@ -125,15 +159,19 @@ class Dispatch:
         return self.store.messages(self.node, 'question', open, limit=0).results
 
     def stop(self):
-        return self.run('dispatch', 'stop', self.work_id, '--json', cwd=self.folder)
+        """Stop the agent. A session ends by itself when a turn ends with its ticket open, so a stop that finds none
+        running is cleanup already done; a test that needs the stop's own report reads its JSON."""
+        result = self.run('dispatch', 'stop', self.work_id, '--json', cwd=self.folder, ok=False)
+        if result.returncode != 0 and 'No agent is running' not in result.stdout + result.stderr:
+            raise AssertionError(f'metaform dispatch stop failed ({result.returncode}):\n{result.stdout}{result.stderr}')
+        return result
 
     def close(self):
-        if self.process is not None and self.process.poll() is None:
+        forced = self.process is not None and self.process.poll() is None
+        if forced:
             self.process.kill()
             self.process.wait()
-        for pid in self.logged('grandchild'):
-            if alive(pid):
-                os.kill(pid, signal.SIGTERM)
+        assert gone(end_agent(self.log, forced)), 'the fake agent or its child survived its runner'
 
 
 @pytest.fixture
@@ -299,10 +337,9 @@ def test_a_permission_request_is_a_question_and_the_answer_from_another_process_
     run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
-    eventually(lambda: [item for item in dispatch.items('note') if item.extra['update'] == 'turn'])
-    assert dispatch.process.poll() is None, 'a turn that ends with the ticket open leaves the session running'
-    assert dispatch.session().extra['state'] == 'running'
-    dispatch.stop()
+    assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
+    assert dispatch.session().extra['how'] == 'the turn ended with the ticket open and no question asked'
+    assert dispatch.ticket().taken is None, 'work never stops: the ticket goes back for the next agent'
 
 
 @pytest.mark.req('QUAL-015')
@@ -312,7 +349,8 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     from metaform import events
     from metaform.module import Context
     from metaform.modules import dispatch as module
-    assert module.MODULE.subscriptions == (), 'the base relays map.changed to the runner; dispatch subscribes to nothing'
+    assert all(one.topic != 'map.changed' for one in module.MODULE.subscriptions), \
+        'the base relays map.changed to the runner; dispatch has no module relay'
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
     dispatch.store.reply(question.message_id, 'Reject')  # written here, and announced by no command
@@ -365,53 +403,48 @@ def told(dispatch):
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('MAP-050')
 @pytest.mark.req('QUAL-015')
-def test_a_question_the_agent_asked_is_told_to_it_once_when_it_is_answered(dispatch, run):
+def test_a_turn_ending_with_a_question_releases_the_ticket_and_the_next_agent_is_told_the_answer(dispatch, run):
+    """An agent can end its turn with a dependency unresolved, leaving progress and answers for its successor."""
     dispatch.store.add_element('parts', UNRELATED)
-    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED, FAKE_ACP_QUESTION_HOLD='1')
+    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED)
     mine = asked_by_the_agent(dispatch)
-    run('map', 'tell', NODE, 'A change before the answer', 'by=test', cwd=dispatch.folder)  # the runner checks
-    time.sleep(1)
-    assert told(dispatch) == [], 'a change to the map before the answer tells the agent nothing'
+    assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
+    assert dispatch.session().extra['how'] == 'cannot continue without an answer'
+    assert dispatch.ticket().taken is None and not dispatch.ticket().held, 'the ticket remains available in To do'
     run('map', 'reply', mine.message_id, 'answer=Yes, keep it', cwd=dispatch.folder)
-    [text] = eventually(lambda: told(dispatch))
-    assert mine.message_id in text and 'Is the store kept?' in text and 'Yes, keep it' in text
-    assert dispatch.received('session/prompt')[1]['params']['sessionId'] == 'fake-session-1'
-    eventually(lambda: [item for item in dispatch.items('note') if item.extra['update'] == 'answered'])
-    run('map', 'tell', NODE, 'A change after the answer', 'by=test', cwd=dispatch.folder)  # the runner checks again
-    time.sleep(1)
-    assert told(dispatch) == [text], 'the answer is told once'
-    assert [item.value for item in dispatch.items('note') if item.extra['update'] == 'answered'] == [text]
+    dispatch.start('ask')
+    [first, second] = eventually(lambda: dispatch.received('session/prompt')[1:] or None)[:1] + [None]
+    del second
+    text = first['params']['prompt'][0]['text']
+    assert mine.message_id in text and 'Yes, keep it' in text, 'the next agent on the ticket is told the answer'
     dispatch.stop()
 
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('MAP-050')
-def test_a_question_another_asked_while_the_agent_was_idle_is_not_told_to_it_though_it_read_it(dispatch, run):
-    dispatch.store.add_element('parts', UNRELATED)
-    dispatch.start('question', FAKE_ACP_ASK_AT=UNRELATED, FAKE_ACP_QUESTION_HOLD='1')
-    mine = asked_by_the_agent(dispatch)
-    time.sleep(1.1)  # the store keeps a question's time to the second
+def test_a_question_another_asked_that_the_agent_only_read_does_not_end_its_session(dispatch, run):
+    """Reading another agent's unlinked question does not associate it with this session or ticket."""
     other = dispatch.store.ask(dispatch.node, 'Is the engine kept?', by='another agent')
-    time.sleep(1.1)
-    run('dispatch', 'message', dispatch.work_id, 'read the questions', cwd=dispatch.folder)
+    time.sleep(1.1)  # the store keeps a question's time to the second
+    dispatch.start('list')
     [listed] = eventually(lambda: dispatch.logged('listed'))
-    assert other.message_id in listed, 'the agent read the other question in a tool call of its next turn'
-    run('map', 'reply', other.message_id, 'answer=No', cwd=dispatch.folder)
-    run('map', 'reply', mine.message_id, 'answer=Yes, keep it', cwd=dispatch.folder)
-    eventually(lambda: told(dispatch)[1:])
+    assert other.message_id in listed, 'the agent read the other question in a tool call'
     time.sleep(1)
-    answered = told(dispatch)[1:]  # after the person's message
-    assert len(answered) == 1 and mine.message_id in answered[0] and other.message_id not in answered[0], answered
+    assert dispatch.process.poll() is None and dispatch.session().extra['state'] == 'running'
     dispatch.stop()
 
 
 @pytest.mark.req('BASE-052')
-def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run):
-    dispatch.start('hold')
-    eventually(lambda: dispatch.logged('grandchild'))
+def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp_path):
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
     sent = json.loads(run('dispatch', 'message', dispatch.work_id, 'also', 'run', 'the', 'tests', '--json',
                           cwd=dispatch.folder).stdout)
     assert sent['sent'] is True
+    assert len(dispatch.received('session/prompt')) == 1
+    (gates / '1').touch()
     prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
     assert prompts[0]['params']['prompt'] == [{'type': 'text', 'text': 'also run the tests'}]
     assert prompts[0]['params']['sessionId'] == 'fake-session-1'
@@ -420,16 +453,19 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run):
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('CLI-003')
-def test_the_help_shows_how_a_message_that_is_a_switch_name_reaches_the_agent_as_written(dispatch, run):
+def test_the_help_shows_how_a_message_that_is_a_switch_name_reaches_the_agent_as_written(dispatch, run, tmp_path):
     page = run('help', 'dispatch', 'message').stdout
     example = next((line.strip() for line in page.splitlines()
                     if line.strip().startswith('metaform dispatch message') and ' -- ' in line), None)
     assert example is not None, page
     words = shlex.split(example)[3:]
     assert words[0] == '198452e1...' and words[1:] == ['--', '--json'], example
-    dispatch.start('hold')
-    eventually(lambda: dispatch.logged('grandchild'))
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: dispatch.received('session/prompt'))
     run('dispatch', 'message', dispatch.work_id, *words[1:], cwd=dispatch.folder)
+    (gates / '1').touch()
     prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
     assert prompts[0]['params']['prompt'] == [{'type': 'text', 'text': '--json'}]
     dispatch.stop()
@@ -491,6 +527,7 @@ def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch
                  env=dispatch.env('hold'))
     assert second.returncode != 0 and 'taken' in second.stdout + second.stderr
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+    eventually(lambda: dispatch.items('session'))  # the runner takes the ticket, then writes its session row
     assert len(dispatch.items('session')) == 1
     assert json.loads(dispatch.stop().stdout)['stopped'] is True
 
@@ -508,7 +545,7 @@ def test_message_and_stop_name_the_next_step_when_no_agent_runs(dispatch, run):
 def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_its_nodes(dispatch, run):
     from metaform import nonce
     made = run('dispatch', 'handoff', f'id={dispatch.work_id}', cwd=dispatch.folder).stdout
-    [number] = [word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()]
+    [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
     held = nonce.read(number)
     assert held is not None and held.module == 'dispatch' and held.function == 'handoff'
     assert held.value['work_id'] == dispatch.work_id
@@ -516,6 +553,16 @@ def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_i
     assert f'metaform map work id={dispatch.work_id}' in read
     assert NODE in read and LINKED in read
     assert not dispatch.ticket().taken, 'making a hand-off takes nothing'
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('MAP-050')
+def test_the_handoff_leads_a_dispatched_agent_to_ask_with_suggestions(dispatch, run):
+    """Questions asked without suggestions show no buttons on the web GUI, so the person cannot answer them there."""
+    made = run('dispatch', 'handoff', f'id={dispatch.work_id}', cwd=dispatch.folder).stdout
+    [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
+    assert 'metaform help map ask' in run(number, cwd=dispatch.folder).stdout
+    assert 'suggestions=' in run('help', 'map', 'ask', cwd=dispatch.folder).stdout.split('Details')[1]
 
 
 @pytest.mark.req('BASE-052')
@@ -607,14 +654,12 @@ def test_a_session_that_ends_without_finishing_its_ticket_releases_it(dispatch):
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-035')
 def test_a_session_ends_when_its_ticket_is_done_whatever_turn_closed_it(dispatch, run):
-    """Found 2026-10-03: an agent closed its ticket in a turn it woke itself into, and the runner, which looked only when
-    a turn it sent ended, kept the session idling. A map change tells the runner to look, and a done ticket ends it."""
+    """Found 2026-10-03: an agent's ticket was closed by another turn and the runner kept the session. The ticket is
+    closed elsewhere while the agent waits on a permission prompt; when that turn ends the session ends as done."""
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
-    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
-    eventually(lambda: [item for item in dispatch.items('note') if item.extra['update'] == 'turn'])  # idle, ticket open
-    assert dispatch.session().extra['state'] == 'running'
     run('map', 'work', 'op=done', f'id={dispatch.work_id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
+    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
     assert eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
     assert dispatch.session().extra['how'] == 'the ticket is done'
 

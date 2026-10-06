@@ -143,17 +143,45 @@ def add_prompt_version(prompt: str, text: str, parent: int | str, *, origin: str
     same as the parent's returns the parent with a notice, BASE-044."""
     with _db(write=True) as db:
         record = _prompt_row(db, prompt)
-        column = 'number' if isinstance(parent, int) else 'version_id'
-        base = db.execute(_VERSION + f'AND v.{column}=?', (record['prompt_id'], parent)).fetchone()
-        if base is None:
-            raise StoreError(f'Prompt {record["name"]} has no version {parent}.', f'metaform prompt {record["name"]}')
-        if base['text'] == text:
-            return _version(base, (Notice('text', f'The text is the same as version {base["number"]}; no version '
-                                                  'was added.'),))
-        newest = _newest(db, record['prompt_id'])
-        assert newest is not None
-        version_id = _insert(db, record['prompt_id'], int(newest['number']) + 1, base['version_id'], text, origin)
-        return _version(db.execute(_VERSION + 'AND v.version_id=?', (record['prompt_id'], version_id)).fetchone())
+        return _edit(db, record, text, parent, origin)
+
+
+def _edit(db: sqlite3.Connection, record: sqlite3.Row, text: str, parent: int | str,
+          origin: str = 'edited') -> PromptVersion:
+    column = 'number' if isinstance(parent, int) else 'version_id'
+    base = db.execute(_VERSION + f'AND v.{column}=?', (record['prompt_id'], parent)).fetchone()
+    if base is None:
+        raise StoreError(f'Prompt {record["name"]} has no version {parent}.', f'metaform prompt {record["name"]}')
+    if base['text'] == text:
+        return _version(base, (Notice('text', f'The text is the same as version {base["number"]}; no version '
+                                              'was added.'),))
+    newest = _newest(db, record['prompt_id'])
+    assert newest is not None
+    version_id = _insert(db, record['prompt_id'], int(newest['number']) + 1, base['version_id'], text, origin)
+    return _version(db.execute(_VERSION + 'AND v.version_id=?', (record['prompt_id'], version_id)).fetchone())
+
+
+def save_prompt(name: str, text: str, *, format: str = 'text', parent: int | None = None) -> PromptVersion:
+    """Create a named prompt or append an edit atomically, using the newest parent when omitted.
+
+    Format describes a new prompt only; an existing prompt keeps its format. A specified parent must exist,
+    including when the name is new, so a misspelled name cannot silently lose the intended version lineage.
+    """
+    if format not in FORMATS:
+        raise StoreError(f'{format} is not a prompt format: {", ".join(FORMATS)}.', 'metaform prompts')
+    with _db(write=True) as db:
+        record = db.execute('SELECT * FROM prompts WHERE name=?', (name,)).fetchone()
+        if record is not None:
+            newest = _newest(db, record['prompt_id'])
+            assert newest is not None
+            return _edit(db, record, text, int(newest['number']) if parent is None else parent)
+        if parent is not None:
+            raise StoreError(f'Prompt {name} has no version {parent}.', f'metaform prompt {name}')
+        prompt_id = uuid.uuid4().hex
+        db.execute('INSERT INTO prompts(prompt_id, name, format, created) VALUES (?, ?, ?, ?)',
+                   (prompt_id, name, format, home.now()))
+        version_id = _insert(db, prompt_id, 1, None, text, 'edited')
+        return _version(db.execute(_VERSION + 'AND v.version_id=?', (prompt_id, version_id)).fetchone())
 
 
 def shipped(name: str, format: str, text: str) -> PromptVersion:

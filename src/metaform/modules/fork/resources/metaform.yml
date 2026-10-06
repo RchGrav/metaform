@@ -1,0 +1,86 @@
+name: Metaform modules
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.14']
+    env:
+      METAFORM_HOME: ${{ runner.temp }}/metaform
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --group dev
+      - run: uv run metaform enable fork
+      - name: Check every module
+        run: uv run metaform fork check
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: checks-${{ matrix.os }}-${{ matrix.python }}
+          path: .metaform/checks/*.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  wheel:
+    needs: checks
+    # PR checks run without the agent key. Only the repository's own push or manual run builds wheels.
+    if: ${{ always() && !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    env:
+      METAFORM_HOME: ${{ runner.temp }}/metaform
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Gemini when selected
+        if: ${{ '@AGENT@' == 'gemini' }}
+        run: npm install -g @google/gemini-cli
+      - run: uv sync --group dev
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: checks-*
+          path: .metaform/checks
+          merge-multiple: true
+      - name: Enable the harness and register this run
+        run: |
+          uv run metaform enable fork
+          uv run metaform enable map
+          uv run metaform enable dispatch
+          uv run metaform enable mcp
+          uv run metaform add project fork .
+          uv run metaform set --dispatch-prompts approve-all
+      - name: Muster through dispatch and build
+        id: build
+        env:
+          @SECRET@: ${{ secrets.@SECRET@ }}
+          DEFAULT_AUTH_REQUEST: '{"methodId":"api-key"}'
+          NO_BROWSER: '1'
+        run: uv run metaform fork wheel --fork-agent @AGENT@ --fork-secret @SECRET@ --json > wheel.json
+      - name: Select the wheel artifact
+        id: artifact
+        run: |
+          uv run python -c "import json,os; data=json.load(open('wheel.json',encoding='utf-8')); open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8').write('wheel='+data['wheel']+'\n')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metaform-wheel
+          path: ${{ steps.artifact.outputs.wheel }}
+          if-no-files-found: error

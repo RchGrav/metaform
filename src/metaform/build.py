@@ -91,7 +91,7 @@ def _uv(*args: str) -> None:
         raise Stop('metaform build needs uv to carry dependencies.', 'curl -LsSf https://astral.sh/uv/install.sh | sh')
     step = f'uv {args[0]} {args[1]}'
     try:
-        result = subprocess.run([uv, *args], capture_output=True, text=True, timeout=UV_TIMEOUT)
+        result = subprocess.run([uv, *args], check=False, capture_output=True, text=True, timeout=UV_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise Stop(f'{step} did not finish in {UV_TIMEOUT // 60} minutes.', 'metaform build') from None
     if result.returncode != 0:

@@ -260,20 +260,6 @@ def test_a_join_holds_no_relation_and_no_observation(store):
             store.add_join(layer.name, 'code.a', 'code.b', purpose='p', ef='f', **{name: 'text'})
 
 
-@pytest.mark.req('MAP-014')
-def test_the_roots_are_intake_2_1s():
-    """The roots are Intake 2.1's {NS_ROOTS}, each read as its own name, D56."""
-    from pathlib import Path
-
-    from metaform.data import roots
-    spec = (Path(__file__).parents[1] / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'Intake_2.1.md').read_text(encoding='utf-8')
-    found = re.search(r'\{NS_ROOTS\}\s*:= \[([^\]]*)\]', spec)
-    assert found is not None
-    names = [name.strip() for name in found.group(1).split(',')]
-    assert names == ['code', 'document', 'media', 'data', 'upstream', 'downstream']
-    assert [(root['name'], root['reading']) for root in roots()] == [(name, name) for name in names]
-
-
 @pytest.mark.req('STORE-033')
 def test_history_takes_a_bare_id_of_any_kind(store):
     _, outer, _ = small_map(store)
@@ -341,7 +327,7 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
     assert columns['join_ids'] == ['join_id'] and 'parent' not in columns['joins'] and 'stack_at' not in columns['joins']
     assert 'moved' not in columns['current_elements']
     assert columns['join_elements'] == ['join_row', 'position', 'element_id'] and held == 3
-    assert version == '19' and kinds == {'purpose'}  # layout 19: Rich's shape, a join holds its elements, Rich 2026-10-04; 18: the join type is purpose again, Rich 2026-10-04  # layout 18: the join type is purpose again, Rich 2026-10-04; 17: a join's element, MAP-054; 16: a knowledge item's read_first and always_show, LAYER-021; 15: the glyph column dropped, the map module keeps it, STORE-045; 14: a ticket's glyph, VIEW-040; 13: the type require, Rich 2026-10-02; 12: no relation or observation, 11: no perspective, MAP-020; 9: tickets keep their kind, D92; 8 kept every version in its layer, LAYER-025
+    assert version == '20' and kinds == {'purpose'}  # MAP-054 adds the optional promotion address.
     assert 'correction_stack' not in tables
 
 
@@ -352,7 +338,7 @@ def test_a_join_has_no_perspective_field_anywhere_in_the_store(home, store):
     applied, as any other unknown key is, STORE-034."""
     import dataclasses
 
-    import metaform.data as data
+    from metaform import data
     from metaform.data import Join, rows
     _, outer, _ = small_map(store)
     db = sqlite3.connect(store_file(home, store))

@@ -1,11 +1,11 @@
 # Vendored files
 
-Every file the web GUI loads is served from this folder or `page/`, so it works offline and sends nothing to a third party, VIEW-003. Each file is an unchanged release file with its license beside it.
+Every file the web GUI loads is served from this folder or `page/`, so it works offline and sends nothing to a third party, VIEW-003. Each library file is an unchanged release file with its license alongside it. The two ngraph module adapters are in `page/`.
 
 | File | What | Version | License | Source | SHA-256 |
 | --- | --- | --- | --- | --- | --- |
-| `3d-force-graph.min.js` | the 3D force graph, with three.js r168 and its force layout bundled in | 3d-force-graph 1.73.4 | MIT, `3d-force-graph.LICENSE`; three.js, MIT, `three.LICENSE` | https://registry.npmjs.org/3d-force-graph/-/3d-force-graph-1.73.4.tgz, `package/dist/3d-force-graph.min.js` | `0ddfb909b551f4fdeb6b43cca567e71f2bc82b2e2eadf1d7cda65af8961b2d0f` |
-| `three.module.min.js` | three.js, for the glass the nodes are made of; the same release the graph library holds and does not give out | three 0.168.0 | MIT, `three.LICENSE` | https://registry.npmjs.org/three/-/three-0.168.0.tgz, `package/build/three.module.min.js` | `ee08b04912b21d9bf71f13658a65da65c113827601377076663e710c0b1772d0` |
+| `3d-force-graph/dist/3d-force-graph.mjs` and its module dependencies | the 3D force graph ES module, importing the shared `three` runtime; unchanged dependency files and licenses | 3d-force-graph 1.73.4 | See `graph-modules.json` and the dependency table below | https://registry.npmjs.org/3d-force-graph/-/3d-force-graph-1.73.4.tgz, `package/dist/3d-force-graph.mjs` | See `graph-modules.json` for every file’s SHA-256 |
+| `three.module.min.js` | three.js, shared by the graph, glass, bloom and agent figures through the import map | three 0.168.0 | MIT, `three.LICENSE` | https://registry.npmjs.org/three/-/three-0.168.0.tgz, `package/build/three.module.min.js` | `ee08b04912b21d9bf71f13658a65da65c113827601377076663e710c0b1772d0` |
 | `three-addons/geometries/RoundedBoxGeometry.js` | three.js's rounded box, which the agent figures are built with, VIEW-035; it imports three.js as `three` | three 0.168.0 | MIT, `three.LICENSE` | https://registry.npmjs.org/three/-/three-0.168.0.tgz, `package/examples/jsm/geometries/RoundedBoxGeometry.js` | `d20aeaf7077c459a8d952d215738d7b44fba028440bb862d84b622a34f0c80bb` |
 | `drei-vanilla/MeshTransmissionMaterial.js` | drei's transmission material in its vanilla form, the glass the nodes are made of; it imports three.js as `three`, which the page's import map names as `three.module.min.js` above | @pmndrs/vanilla 1.25.0 | MIT, `drei-vanilla/LICENSE` | https://registry.npmjs.org/@pmndrs/vanilla/-/vanilla-1.25.0.tgz, `package/materials/MeshTransmissionMaterial.js` | `373f0b920a21e24847855ecd762fa666374e73ec53af60edf23dd62f60926f71` |
 | `codemirror/codemirror.js`, `codemirror.css`, `xml.js`, `markdown.js`, `search.js`, `searchcursor.js`, `dialog.js`, `dialog.css` | the prompt editor: the editor, its XML and Markdown modes, and search and replace with its dialog | CodeMirror 5.65.16, the version the approved prototype used | MIT, `codemirror/LICENSE` | https://registry.npmjs.org/codemirror/-/codemirror-5.65.16.tgz, `package/lib/`, `package/mode/`, `package/addon/search/`, `package/addon/dialog/` | `0644e6418c4129c9584b9b772b8b8bdb0b4fbab1efd848a98baf1fe147381f22`, `eb494ea972d2661ef86f7f6ac656dd6786d721e49c9c1b46e1eb967e4b6f9bf3`, `dc7e44d410399326f802e2924573cbf6f942a79f647fd0b97f0b607973bc9a09`, `8fe7b11848f79cc9119b2a239f38a00944f6f2bb764a00bc837ecf8d34cf7690`, `4949580371fcd81c0ad70164b169dd8bcab2bd9869eddaa0d7e295508bec7a04`, `2c0b8cd8fe7ca5ca2253f4aacc914b390bff5b3cac3475df66c43a9ea8c8ccbe`, `fd8c925fcc25357617faff21220c026bb91a617b995268d96c5d39232fd42833`, `5df690d771f12118348562dd2a90060433ae2edeccd0908abcaa4480b1e3e468` |
@@ -21,3 +21,47 @@ Every file the web GUI loads is served from this folder or `page/`, so it works 
 The three Plex packages carry the same license text.
 
 To update a file, take it unchanged from the named package, replace its license, update this table, and run the web module's tests and the browser checks.
+
+## Graph modules
+
+The graph uses its published ES-module build. `index.html` maps all bare imports to local files, including both Three.js addon prefixes to `three-addons/`. Dependencies are pinned to the releases available when 3d-force-graph 1.73.4 was published (2024-09-25), with Three.js kept at 0.168.0. No npm installation or build runs when the page opens.
+
+`graph-modules.json` records each package’s version and tarball source, and every copied file’s original package path and SHA-256. Only files reachable from the module imports are copied. Relative imports retain their release paths. The Three.js addons retain paths below `examples/jsm/` under `three-addons/`.
+
+The pinned `ngraph.graph` and `ngraph.forcelayout` packages publish CommonJS and UMD rather than ES modules. Their unchanged UMD releases contain no Three.js. `page/ngraph.graph.js` and `page/ngraph.forcelayout.js` import them and export their factories for the graph’s module imports. The licenses of their bundled `ngraph.events`, `ngraph.merge` and `ngraph.random` dependencies are included.
+
+| Package | Version | License file | Source |
+| --- | --- | --- | --- |
+| `3d-force-graph` | 1.73.4 | `3d-force-graph.LICENSE` | https://registry.npmjs.org/3d-force-graph/-/3d-force-graph-1.73.4.tgz |
+| `@babel/runtime` | 7.25.6 | `@babel/runtime/LICENSE` | https://registry.npmjs.org/@babel/runtime/-/runtime-7.25.6.tgz |
+| `@tweenjs/tween.js` | 25.0.0 | `@tweenjs/tween.js/LICENSE` | https://registry.npmjs.org/@tweenjs/tween.js/-/tween.js-25.0.0.tgz |
+| `accessor-fn` | 1.5.1 | `accessor-fn/LICENSE` | https://registry.npmjs.org/accessor-fn/-/accessor-fn-1.5.1.tgz |
+| `d3-array` | 3.2.4 | `d3-array/LICENSE` | https://registry.npmjs.org/d3-array/-/d3-array-3.2.4.tgz |
+| `d3-binarytree` | 1.0.2 | `d3-binarytree/LICENSE` | https://registry.npmjs.org/d3-binarytree/-/d3-binarytree-1.0.2.tgz |
+| `d3-color` | 3.1.0 | `d3-color/LICENSE` | https://registry.npmjs.org/d3-color/-/d3-color-3.1.0.tgz |
+| `d3-dispatch` | 3.0.1 | `d3-dispatch/LICENSE` | https://registry.npmjs.org/d3-dispatch/-/d3-dispatch-3.0.1.tgz |
+| `d3-force-3d` | 3.0.5 | `d3-force-3d/LICENSE` | https://registry.npmjs.org/d3-force-3d/-/d3-force-3d-3.0.5.tgz |
+| `d3-format` | 3.1.0 | `d3-format/LICENSE` | https://registry.npmjs.org/d3-format/-/d3-format-3.1.0.tgz |
+| `d3-interpolate` | 3.0.1 | `d3-interpolate/LICENSE` | https://registry.npmjs.org/d3-interpolate/-/d3-interpolate-3.0.1.tgz |
+| `d3-octree` | 1.0.2 | `d3-octree/LICENSE` | https://registry.npmjs.org/d3-octree/-/d3-octree-1.0.2.tgz |
+| `d3-quadtree` | 3.0.1 | `d3-quadtree/LICENSE` | https://registry.npmjs.org/d3-quadtree/-/d3-quadtree-3.0.1.tgz |
+| `d3-scale` | 4.0.2 | `d3-scale/LICENSE` | https://registry.npmjs.org/d3-scale/-/d3-scale-4.0.2.tgz |
+| `d3-scale-chromatic` | 3.1.0 | `d3-scale-chromatic/LICENSE` | https://registry.npmjs.org/d3-scale-chromatic/-/d3-scale-chromatic-3.1.0.tgz |
+| `d3-time` | 3.1.0 | `d3-time/LICENSE` | https://registry.npmjs.org/d3-time/-/d3-time-3.1.0.tgz |
+| `d3-time-format` | 4.1.0 | `d3-time-format/LICENSE` | https://registry.npmjs.org/d3-time-format/-/d3-time-format-4.1.0.tgz |
+| `d3-timer` | 3.0.1 | `d3-timer/LICENSE` | https://registry.npmjs.org/d3-timer/-/d3-timer-3.0.1.tgz |
+| `data-joint` | 1.3.1 | `data-joint/LICENSE` | https://registry.npmjs.org/data-joint/-/data-joint-1.3.1.tgz |
+| `index-array-by` | 1.4.2 | `index-array-by/LICENSE` | https://registry.npmjs.org/index-array-by/-/index-array-by-1.4.2.tgz |
+| `internmap` | 2.0.3 | `internmap/LICENSE` | https://registry.npmjs.org/internmap/-/internmap-2.0.3.tgz |
+| `kapsule` | 1.14.5 | `kapsule/LICENSE` | https://registry.npmjs.org/kapsule/-/kapsule-1.14.5.tgz |
+| `lodash-es` | 4.17.21 | `lodash-es/LICENSE` | https://registry.npmjs.org/lodash-es/-/lodash-es-4.17.21.tgz |
+| `ngraph.events` | 1.2.2 | `ngraph.events/LICENSE` | https://registry.npmjs.org/ngraph.events/-/ngraph.events-1.2.2.tgz |
+| `ngraph.forcelayout` | 3.3.1 | `ngraph.forcelayout/LICENSE` | https://registry.npmjs.org/ngraph.forcelayout/-/ngraph.forcelayout-3.3.1.tgz |
+| `ngraph.graph` | 20.0.1 | `ngraph.graph/LICENSE` | https://registry.npmjs.org/ngraph.graph/-/ngraph.graph-20.0.1.tgz |
+| `ngraph.merge` | 1.0.0 | `ngraph.merge/LICENSE` | https://registry.npmjs.org/ngraph.merge/-/ngraph.merge-1.0.0.tgz |
+| `ngraph.random` | 1.1.0 | `ngraph.random/LICENSE` | https://registry.npmjs.org/ngraph.random/-/ngraph.random-1.1.0.tgz |
+| `polished` | 4.3.1 | `polished/LICENSE.md` | https://registry.npmjs.org/polished/-/polished-4.3.1.tgz |
+| `three` | 0.168.0 | `three.LICENSE` | https://registry.npmjs.org/three/-/three-0.168.0.tgz |
+| `three-forcegraph` | 1.41.14 | `three-forcegraph/LICENSE` | https://registry.npmjs.org/three-forcegraph/-/three-forcegraph-1.41.14.tgz |
+| `three-render-objects` | 1.29.5 | `three-render-objects/LICENSE` | https://registry.npmjs.org/three-render-objects/-/three-render-objects-1.29.5.tgz |
+| `tinycolor2` | 1.6.0 | `tinycolor2/LICENSE` | https://registry.npmjs.org/tinycolor2/-/tinycolor2-1.6.0.tgz |

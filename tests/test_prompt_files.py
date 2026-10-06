@@ -54,22 +54,66 @@ def test_no_prompt_text_is_written_in_python():
 
 
 @pytest.mark.req('MCP-031')
-def test_the_instructions_are_the_instructions_prompt_with_the_surfaced_modules_listed(run, home, tmp_path):
+def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_modules_listed(run, home, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
+    run('set', '--connect-instructions=full', cwd=folder)
     run('set', '--no-web-autostart', cwd=folder)  # the web message, VIEW-015, is tested with the web module
     run('set', '--no-tasks', cwd=folder)  # the task lines are tested below
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
     def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
-        own = prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text
+        own = prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text.strip()
         notice = ET.parse(SOURCE / 'modules' / module / 'resources' / 'prompts.xml').getroot().findtext('no_intake')
         return own if notice is None else f'{own} {notice}'
     listed = '\n'.join(line(module) for module in sorted(on))
     assert [child.tag for child in element] == ['modules']
     expected = (element.text or '') + listed + (element[0].tail or '')
     assert run('help', 'agents', cwd=folder).stdout.strip() == expected.strip()
+
+
+INTAKE = (('element', 'code.timer.kitchen', 'role=DE', 'name_length=2', 'name=kitchen timer'),
+          ('element', 'code.alarm.audible', 'role=SE', 'name_length=2', 'name=alarm'),
+          ('join', 'code.timer.kitchen', '["code.alarm.audible"]', 'purpose=Get attention.', 'ef=Rings.',
+           'ifd=receives'))
+
+
+@pytest.mark.req('MCP-029')
+@pytest.mark.req('MCP-031')
+def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_state(run, home, tmp_path):
+    """Claude Code keeps the first 2,048 characters of a server's instructions and drops the rest, so the whole
+    default text must fit before an intake, while one is recorded and after it, with every shipped module on."""
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    for module in [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines()
+                   if line.split()[1] != 'on']:
+        run('enable', module, cwd=folder)
+    more = prompt(SOURCE / 'resources' / 'prompts.xml', 'more').text.strip()
+    def served():
+        text = run('help', 'agents', cwd=folder).stdout
+        assert more in text and len(text) <= 2048, len(text)
+        return text
+    assert prompt(SOURCE / 'modules' / 'intake' / 'resources' / 'prompts.xml', 'no_intake').text.strip() in served()
+    run('intake', 'start', cwd=folder)
+    served()
+    for step in INTAKE:
+        run('intake', *step, cwd=folder)
+    run('intake', 'finish', cwd=folder)
+    served()
+
+
+@pytest.mark.req('MCP-029')
+def test_a_module_s_full_instructions_are_read_on_their_own(run, home, tmp_path):
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    run('set', '--no-tasks', cwd=folder)
+    own = prompt(SOURCE / 'modules' / 'map' / 'resources' / 'prompts.xml', 'instructions').text.strip()
+    assert run('help', 'agents', 'map', cwd=folder).stdout.strip() == own
+    assert run('instructions', 'map', cwd=folder).stdout.strip() == own
+    assert own not in run('help', 'agents', cwd=folder).stdout
 
 
 @pytest.mark.req('MCP-031')
@@ -81,6 +125,11 @@ def test_the_kanban_lines_are_served_only_while_tasks_is_on(run, home, tmp_path)
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
     lines = prompt(SOURCE / 'modules' / 'map' / 'resources' / 'prompts.xml', 'tasks').text.strip()
+    assert lines not in run('help', 'agents', cwd=folder).stdout  # no nodes to link work to before an intake
+    run('intake', 'start', cwd=folder)
+    for step in INTAKE:
+        run('intake', *step, cwd=folder)
+    run('intake', 'finish', cwd=folder)
     assert lines in run('help', 'agents', cwd=folder).stdout
     run('set', '--no-tasks', cwd=folder)
     assert lines not in run('help', 'agents', cwd=folder).stdout

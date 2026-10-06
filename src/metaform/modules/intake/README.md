@@ -27,7 +27,7 @@ Started from template 0.2.0.
 - `prompt`: the stored intake text with its prompt slot filled with `text`. Tool `intake_prompt`.
 - `start`: opens the building intake layer, with the model and role the agent gives, or resumes the one being recorded. When the active metaform already has an intake, the new one is recorded in a new metaform `intake-<UTC timestamp>`, which becomes active at the finish. Tool `intake_start`.
 - `element <namespace_address>`: records one element, with optional `name_length`, `name` and `role`. Recording an address again records it again: the fields given replace the ones it had. `refs` given here go in the sources layer, one item at the element, replacing what it held, while `intake_sources` is on. Tool `intake_element`.
-- `join <receiver> <elements>`: records one join: the receiver's purpose served by the elements it holds, a JSON list of addresses, with optional `purpose`, `ef` and `ifd`. A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and the elements it does not hold are added to it, which is how parts are annealed into one join. Tool `intake_join`.
+- `join <receiver> <elements>`: records one join: the receiver's purpose served by the elements it holds, a JSON list of addresses, with optional `purpose`, `ef` and `ifd`. A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and the elements it does not hold are added to it. An annealed part is a join one level deeper: the element it is part of receives it. Tool `intake_join`.
 - `show`: the intake being recorded: whole, every element by `namespace_address`, every join by `receiver` with the `elements` it holds, and the addresses named in a join and never described; with `receiver=<namespace_address>`, only that receiver's joins and the elements they name. Tool `intake_show`.
 - `remove`: removes one recorded thing while the intake is building, named by its addresses: `namespace_address` for an element, `receiver` and `provider` for the join of that receiver holding that element, and all three to take the element at `namespace_address` out of that join. After the finish it writes nothing and names `metaform map refine`, which changes the metaform in the same layer and keeps every version, LAYER-025. Tool `intake_remove`.
 - `finish`: marks the layer ready, saves `report=` and `feedback=` as the intake layer's report and feedback files, reading a value that names a file from the file and `-` from standard input on the command line, while a tool is handed the text and opens no path, and returns the layer, the project, the metaform, the counts of elements and joins, the count of open work records on them as `work`, and the notices, which name any address named in a join and never described. Tool `intake_finish`.
@@ -78,12 +78,12 @@ The same in both; the intake text travels inside the module.
 ```
 metaform intake prompt
 metaform intake start model=opus role="intake agent"
-metaform intake element stakeholder.cook.home role=CQU name_length=2
+metaform intake element downstream.cqu.cook.home role=CQU name_length=2
 metaform intake element code.timer.kitchen role=DE name_length=2 name="dish clock" refs='[{"key": "path", "value": "timer.c"}]'
-metaform intake join stakeholder.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives
+metaform intake join downstream.cqu.cook.home '["code.timer.kitchen"]' purpose="Know when each dish is done." ef="tells the cook when a dish is done" ifd=receives
 metaform intake element code.loop.tick role=SE name_length=2 name="ticker"
-metaform intake join stakeholder.cook.home '["code.timer.kitchen", "code.loop.tick"]'
-metaform intake show receiver=stakeholder.cook.home
+metaform intake join code.timer.kitchen '["code.loop.tick"]' purpose="Advance the countdown." ef="fires once a second" ifd=sends
+metaform intake show receiver=downstream.cqu.cook.home
 metaform intake finish report="The alarm pin is unconnected."
 metaform intake status
 ```

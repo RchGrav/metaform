@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 
-
 class _Vary:
     """The module, imported when a test first uses it. Imported as this file is collected, it would declare the
     packet's setting for every test of the run, and the module ships disabled."""

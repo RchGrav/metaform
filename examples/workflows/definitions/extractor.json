@@ -1,0 +1,1879 @@
+{
+  "id": "metaform.library.extractor",
+  "intent": "TaskEngine: functional core extraction and zero-deviation redevelopment planning, producing user-approved Markdown documentation with target-language pseudocode.",
+  "start": "initialize",
+  "inputs": {
+    "request": "The actual extraction request, as an object containing the original system or source material, target language when known, focus components when known, and requirements. Missing scope or target information is elicited by the Analyst."
+  },
+  "semantic_equations": {
+    "revision": "196ccd2d6a5be177ec581d64a915643c07deac6951cc7f3d6642ca0a2a1bc785",
+    "source": "docs/semantics/semantic_equation_reuse_rule.md",
+    "text": "## Semantic Equation Preservation and Reuse\n\nTreat every authoritative semantic statement, definition, rule, constraint, and example as a semantic equation.\n\nA semantic equation may be referenced, selected, combined, ordered, applied, instantiated, or quoted when constructing prompts and performing inference. Its wording does not need to appear in every generated prompt unless the prompt requires the equation explicitly; however, any use of the equation must preserve the semantic relationship expressed by the source.\n\nDo not rewrite, paraphrase, normalize, summarize, generalize, narrow, invert, reconcile, or replace a semantic equation on the assumption that another expression is equivalent.\n\nWhen constructing a prompt:\n\n1. Select the semantic equations required for the inference being performed.\n2. Preserve each selected equation as an authoritative source constraint.\n3. Compose instructions around those equations without modifying their semantics.\n4. Derived instructions may operationalize an equation for the current task, but the derived instruction does not replace, amend, or become the source equation.\n5. Maintain provenance between source semantics and any instruction, interpretation, implication, or conclusion derived from them.\n6. Reuse an existing semantic equation rather than authoring a semantically equivalent replacement.\n7. If a semantic equation must change, only an explicit source revision changes it. New inference does not modify prior source semantics.\n\nSemantic equations are the maintained source of meaning. Prompts are temporary compositions that use them."
+  },
+  "semantic_binding": {
+    "supplied_metaform": {},
+    "bindings": [],
+    "note": "No Elements, Encounter Functions, Receiving Entities, Operative Purposes, or joins were supplied. Source terms remain grounded in the requested original system and its artifacts; no structural identities are invented."
+  },
+  "source_mapping": [
+    {
+      "source": "Opening identity; ROLES 1–6",
+      "requirements": "Functional core extraction and zero-deviation redevelopment planning by separate Analyst, Planner, Implementer, Critic, Evaluator, and Orchestrator assignments.",
+      "steps": [
+        "initialize",
+        "taskengine.requirements.analyze",
+        "plan",
+        "taskengine.task.draft",
+        "taskengine.task.critic",
+        "taskengine.task.evaluate",
+        "taskengine.task.integrate_reviews"
+      ]
+    },
+    {
+      "source": "ROLES 1; WORKFLOW 1",
+      "quote": "If scope or target info is missing, ask the user; otherwise, confirm understanding.",
+      "requirements": "Target language and focus components are actual request parameters. Analyst elicits missing information through a user step, confirms understanding, and produces FINAL_SPEC as bullet items.",
+      "steps": [
+        "specify",
+        "taskengine.requirements.analyze",
+        "taskengine.requirements.clarify"
+      ]
+    },
+    {
+      "source": "ROLES 2; WORKFLOW 2",
+      "quote": "Each TASK = one pure core feature to extract. No TASK should mix unrelated concerns.",
+      "requirements": "Ordered atomic TASKS collectively cover FINAL_SPEC and record dependencies.",
+      "steps": [
+        "decide_plan",
+        "plan",
+        "select_work"
+      ]
+    },
+    {
+      "source": "ROLES 3; WORKFLOW 3a; QUALITY GUARDRAILS Accuracy & Fidelity, Clarity, Separation of Concerns, Style",
+      "requirements": "Minimal comprehensive documentation of actual core behavior, target-language pseudocode, and a Mermaid diagram or example when helpful. Preserve the source's core/integration boundary.",
+      "steps": [
+        "taskengine.task_queue.prepare_artifacts",
+        "taskengine.task.draft",
+        "taskengine.task.apply_hints"
+      ]
+    },
+    {
+      "source": "ROLES 4; WORKFLOW 3b–3c",
+      "requirements": "Critic produces PATCH_HINTS. Nonempty hints route to a separate Implementer assignment before evaluation.",
+      "steps": [
+        "taskengine.task.critic",
+        "taskengine.task.apply_hints",
+        "taskengine.task.evaluate"
+      ]
+    },
+    {
+      "source": "ROLES 5; WORKFLOW 3d; QUALITY GUARDRAILS No context leakage between agents",
+      "quote": "Operates with fresh eyes using only artefacts.",
+      "requirements": "Evaluator receives task requirements, original-system evidence, necessary dependency artifacts, and current documentation in fresh context. Critic reports, prior evaluator reports, and Implementer deliberation are not supplied. Other workers also receive scoped inputs in fresh context; only Orchestrator's source-reading assignment uses project context.",
+      "steps": [
+        "taskengine.task_queue.prepare_artifacts",
+        "taskengine.task.evaluate"
+      ]
+    },
+    {
+      "source": "ROLES 6; WORKFLOW 4; QUALITY GUARDRAILS Zero Deviation",
+      "quote": "Re-loop Implementer->Critic->Evaluator on a TASK until it passes with **no issues** (PATCH_HINTS and DEVIATIONS are empty).",
+      "requirements": "Integrate both reports. Require both lists to equal [] before completing the task. Nonempty Critic hints repeat the whole cycle even when patched before an otherwise clean evaluation. No retry limit is added.",
+      "steps": [
+        "taskengine.task.integrate_reviews",
+        "taskengine.task.draft",
+        "taskengine.task.complete_task"
+      ]
+    },
+    {
+      "source": "ROLES 6; WORKFLOW 3–4",
+      "quote": "Queue next TASK until all are done.",
+      "requirements": "The queue back-edge processes one task procedure to completion before selecting the next, preserving order and supplying completed dependency artifacts. The source requires no independently executable parallel branches.",
+      "steps": [
+        "select_work",
+        "process_tasks",
+        "taskengine.task_queue.select_next",
+        "taskengine.task_queue.run_task",
+        "taskengine.task_queue.collect"
+      ]
+    },
+    {
+      "source": "ROLES 6; WORKFLOW 5",
+      "requirements": "Assemble all current task outputs into COMPLETE_DELIVERABLE and check terminology and cross-reference consistency.",
+      "steps": [
+        "assemble"
+      ]
+    },
+    {
+      "source": "ROLES 6; WORKFLOW 6",
+      "requirements": "Actual user review and approval. Feedback becomes requirements; Analyst revisits specifications and clarification, Planner runs when tasks or ordering need revision, affected tasks repeat the same review procedure, and the assembled result returns for review.",
+      "steps": [
+        "user_review",
+        "record_feedback",
+        "specify",
+        "decide_plan",
+        "plan",
+        "select_work",
+        "process_tasks",
+        "assemble"
+      ]
+    },
+    {
+      "source": "SIDE-EFFECT CONTROL",
+      "quote": "If an external tool or installation is required (e.g., to parse code or generate a diagram), Implementer must request via `REQUEST-INSTALL-PERMISSION: [tool]`.",
+      "requirements": "Implementer determines tool necessity. Substitute the actual tool name for [tool]. Orchestrator awaits the actual user's literal PERMISSION GRANTED before the external action; other responses remain at permission. Executing the approved action is an explicitly recorded capability gap.",
+      "steps": [
+        "taskengine.task.draft",
+        "taskengine.task.apply_hints",
+        "taskengine.task.draft_permission",
+        "taskengine.task.patch_permission",
+        "taskengine.external_action.permission",
+        "taskengine.external_action.unavailable_action"
+      ]
+    },
+    {
+      "source": "SIDE-EFFECT CONTROL",
+      "quote": "All file system interactions are moderated by Orchestrator for safety.",
+      "requirements": "Only Orchestrator's artifact preparation assignment receives filesystem-reading capabilities. The workflow supplies no destructive capabilities.",
+      "steps": [
+        "taskengine.task_queue.prepare_artifacts"
+      ]
+    },
+    {
+      "source": "OUTPUT STYLE",
+      "requirements": "Role-prefixed coordination messages; compiled Markdown without those prefixes except an optional appendix or log. Code and pseudocode use fenced blocks; diagrams use mermaid fences; each block has an introductory line. Professional, factual content remains within scope.",
+      "steps": [
+        "taskengine.requirements.analyze",
+        "plan",
+        "taskengine.task.draft",
+        "taskengine.task.critic",
+        "taskengine.task.apply_hints",
+        "taskengine.task.evaluate",
+        "assemble",
+        "done"
+      ]
+    },
+    {
+      "source": "WORKFLOW 7; ROLES 6; OUTPUT STYLE final bullet",
+      "quote": "When **user is satisfied** and Evaluator confirms **no deviations**, the Orchestrator outputs the final documentation and declares **DONE**.",
+      "requirements": "Only the approved, issue-free path outputs the final COMPLETE_DELIVERABLE and literal DONE.",
+      "steps": [
+        "taskengine.task.complete_task",
+        "assemble",
+        "user_review",
+        "done"
+      ]
+    },
+    {
+      "source": "QUALITY GUARDRAILS Separation of Concerns; SIDE-EFFECT CONTROL examples",
+      "requirements": "Sensor parsing/callback versus GUI code illustrates the core/integration boundary. Parsing and diagram tools illustrate possible external requirements. These examples introduce no required feature, target language, or installation.",
+      "steps": [
+        "taskengine.task_queue.prepare_artifacts",
+        "taskengine.task.draft",
+        "taskengine.external_action.permission"
+      ]
+    }
+  ],
+  "unresolved_requirements": [],
+  "artifacts": [
+    {
+      "name": "FINAL_SPEC",
+      "producer": "taskengine.requirements.analyze",
+      "destination": "requirements child values.requirements_state.FINAL_SPEC",
+      "format": "Array of bullet-point items defining exactly the core features/functions to extract."
+    },
+    {
+      "name": "TASKS",
+      "producer": "plan",
+      "destination": "inputs.plan.TASKS",
+      "format": "Ordered atomic tasks with specification references and dependencies."
+    },
+    {
+      "name": "documentation",
+      "producer": "taskengine.task.draft / apply_hints",
+      "destination": "Per-task TASK_RESULT.documentation",
+      "format": "Markdown description, target-language pseudocode, and a diagram or example when helpful."
+    },
+    {
+      "name": "PATCH_HINTS",
+      "producer": "taskengine.task.critic",
+      "destination": "inputs.critique.PATCH_HINTS",
+      "format": "List; [] means no issues."
+    },
+    {
+      "name": "DEVIATIONS",
+      "producer": "taskengine.task.evaluate",
+      "destination": "inputs.evaluation.DEVIATIONS",
+      "format": "List; [] represents Ø."
+    },
+    {
+      "name": "COMPLETE_DELIVERABLE",
+      "producer": "assemble / done",
+      "destination": "User presentation and results-layer graph answer named COMPLETE_DELIVERABLE",
+      "format": "Compiled Markdown. The source specifies no filesystem destination."
+    },
+    {
+      "name": "DONE",
+      "producer": "done",
+      "destination": "Final answer",
+      "format": "Literal DONE after user satisfaction and issue-free task completion."
+    }
+  ],
+  "steps": [
+    {
+      "id": "initialize",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Initialize the TaskEngine run from the actual request. Preserve supplied material and requirements. Set requirements.request to the request, retain any supplied target language and focus components, and initialize FINAL_SPEC, TASKS, and completed to empty arrays and feedback to null. Use null for an unspecified target language and [] for unspecified focus components. Initialize requirements.needs_clarification to false and question to an empty string; the Analyst subsequently determines missing information. Prefix the initialization message in requirements.message with Orchestrator:.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "requirements": {
+            "type": "object",
+            "required": [
+              "request",
+              "target_language",
+              "focus_components",
+              "FINAL_SPEC",
+              "feedback",
+              "needs_clarification",
+              "question",
+              "message"
+            ]
+          },
+          "TASKS": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "requirements",
+          "TASKS",
+          "completed",
+          "feedback"
+        ]
+      },
+      "save_as": "state"
+    },
+    {
+      "id": "specify",
+      "kind": "call",
+      "workflow": "metaform.library.extractor.taskengine.requirements",
+      "inputs": {
+        "requirements_state": {
+          "var": "inputs.state.requirements"
+        },
+        "clarification": {
+          "literal": null
+        }
+      },
+      "save_as": "specification"
+    },
+    {
+      "id": "decide_plan",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Determine whether Planner work is needed for the finalized FINAL_SPEC. It is needed on the initial pass and when feedback requires new tasks or re-ordering. Preserve existing TASKS when their decomposition and ordering remain applicable. Return needs_planning and the existing TASKS; the Planner owns decomposition. Prefix message with Orchestrator:.",
+      "inputs": {
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "previous_tasks": {
+          "var": "inputs.state.TASKS"
+        },
+        "feedback": {
+          "var": "inputs.state.feedback"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "needs_planning": {
+            "type": "boolean"
+          },
+          "TASKS": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "TASK": {
+                  "type": "string"
+                },
+                "spec_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dependencies": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "TASK",
+                "spec_refs",
+                "dependencies"
+              ]
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "needs_planning",
+          "TASKS",
+          "message"
+        ]
+      },
+      "save_as": "plan",
+      "transitions": [
+        {
+          "to": "plan",
+          "when": {
+            "var": "inputs.plan.needs_planning"
+          }
+        },
+        {
+          "to": "select_work",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "kind": "prompt",
+      "role": "Planner",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Planner: Turn FINAL_SPEC into an ordered list of TASKS (each a single function or module). Each TASK = one pure core feature to extract. No TASK should mix unrelated concerns. Ensure tasks collectively cover all specs and note dependencies. Use stable task ids when updating a prior plan. Return TASKS with each task's exact scope, spec_refs, and dependencies. Set needs_planning false after producing the plan. Prefix message with Planner:.",
+      "inputs": {
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "previous_tasks": {
+          "var": "inputs.plan.TASKS"
+        },
+        "feedback": {
+          "var": "inputs.state.feedback"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "needs_planning": {
+            "type": "boolean"
+          },
+          "TASKS": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "TASK": {
+                  "type": "string"
+                },
+                "spec_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dependencies": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "TASK",
+                "spec_refs",
+                "dependencies"
+              ]
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "needs_planning",
+          "TASKS",
+          "message"
+        ]
+      },
+      "save_as": "plan"
+    },
+    {
+      "id": "select_work",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Queue tasks in TASKS order. Initially queue all tasks. Following user feedback, queue the affected tasks, including tasks whose required dependency artifacts change. Retain prior outputs for tasks still in the plan, including earlier documentation for queued tasks so Implementer can revise it; the task procedure replaces each queued task's result after successful review. Exclude retired tasks from the current completed collection. Preserve each atomic TASK, its specification references, and dependencies. Carry the user feedback forward. The task procedure completes the current task's review cycle before selecting the next task. Prefix message with Orchestrator:.",
+      "inputs": {
+        "TASKS": {
+          "var": "inputs.plan.TASKS"
+        },
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "previous_results": {
+          "var": "inputs.state.completed"
+        },
+        "feedback": {
+          "var": "inputs.state.feedback"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "queue": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "queue",
+          "completed",
+          "feedback",
+          "message"
+        ]
+      },
+      "save_as": "work"
+    },
+    {
+      "id": "process_tasks",
+      "kind": "call",
+      "workflow": "metaform.library.extractor.taskengine.task_queue",
+      "inputs": {
+        "state": {
+          "var": "inputs.work"
+        },
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "constraints": {
+          "literal": {
+            "quality": "QUALITY GUARDRAILS\n-------------------\n* **Accuracy & Fidelity:** Every piece of pseudocode or description must correspond to an actual behavior or requirement of the original system. *No hallucinated features.*  \n* **Clarity:** Documentation should be understandable in isolation. Explain *why* if a non-obvious decision is made. Use consistent terminology and definitions throughout.  \n* **Separation of Concerns:** Extract **pure core logic** only. Omit or abstract away integration code (UI handlers, network calls, etc.), unless needed to understand the core. (E.g., okay: “This function parses sensor data and triggers alert via callback” – not okay: including the exact GUI code for an alert.)  \n* **Style:** Follow clean coding standards for pseudocode (meaningful naming, simple control structures). Keep paragraphs short and use lists where appropriate in the explanation.  \n* **Zero Deviation:** The Evaluator must be fully satisfied. Any deviation from intended behavior, however small, is addressed. The process repeats until documentation is 100% correct by all checks.  \n* **No context leakage between agents:** Each agent works with necessary info only (Orchestrator provides what’s needed). Evaluator in particular should assess outputs on their own merits for unbiased validation.\n",
+            "style": "OUTPUT STYLE\n-------------\n* The conversation between agents uses role-prefixed messages (Analyst:, Planner:, etc.) for clarity. The final deliverable for the user, however, will be a compiled document without these prefixes (except possibly in an appendix or log).  \n* Use Markdown for the deliverable: headings, subheadings, bullet points, and fenced code blocks for pseudocode and diagrams. Ensure Mermaid diagrams are in ```mermaid blocks and are correct.  \n* Keep the tone professional and factual. No extra commentary outside of the scope.  \n* All code or pseudocode should be in fenced blocks, and all diagrams in fenced mermaid blocks, each preceded by an introductory line of context.  \n* The Orchestrator will signal **DONE** when the final deliverable is ready and verified.\n",
+            "side": "SIDE-EFFECT CONTROL\n--------------------\n*Agents must not execute destructive actions.* If an external tool or installation is required (e.g., to parse code or generate a diagram), Implementer must request via `REQUEST-INSTALL-PERMISSION: [tool]`. The Orchestrator will await `PERMISSION GRANTED` from the user before proceeding. All file system interactions are moderated by Orchestrator for safety.\n"
+          }
+        }
+      },
+      "save_as": "processed",
+      "transitions": [
+        {
+          "to": "assemble",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "assemble",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Compile the outputs of all TASKS into one coherent COMPLETE_DELIVERABLE, organized by sections in TASKS order. Double-check overall consistency, uniform terminology, and alignment of cross-referenced components. Preserve the verified functional descriptions and pseudocode. Apply the supplied OUTPUT STYLE and present the compiled Markdown without agent role prefixes except optionally in an appendix or log. This is the document for user review.",
+      "inputs": {
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "TASKS": {
+          "var": "inputs.plan.TASKS"
+        },
+        "TASK_RESULTS": {
+          "var": "inputs.processed.values.result.TASK_RESULTS"
+        },
+        "output_style": {
+          "literal": "OUTPUT STYLE\n-------------\n* The conversation between agents uses role-prefixed messages (Analyst:, Planner:, etc.) for clarity. The final deliverable for the user, however, will be a compiled document without these prefixes (except possibly in an appendix or log).  \n* Use Markdown for the deliverable: headings, subheadings, bullet points, and fenced code blocks for pseudocode and diagrams. Ensure Mermaid diagrams are in ```mermaid blocks and are correct.  \n* Keep the tone professional and factual. No extra commentary outside of the scope.  \n* All code or pseudocode should be in fenced blocks, and all diagrams in fenced mermaid blocks, each preceded by an introductory line of context.  \n* The Orchestrator will signal **DONE** when the final deliverable is ready and verified.\n"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "COMPLETE_DELIVERABLE": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "COMPLETE_DELIVERABLE"
+        ]
+      },
+      "save_as": "deliverable",
+      "output": {
+        "id": "COMPLETE_DELIVERABLE",
+        "description": "Compiled functional core extraction documentation for user review.",
+        "layer": "results"
+      }
+    },
+    {
+      "id": "user_review",
+      "kind": "user",
+      "prompt": "Review this COMPLETE_DELIVERABLE:\n\n{{ inputs.deliverable.COMPLETE_DELIVERABLE }}\n\nIndicate whether you are satisfied and approve it, or describe the changes or additions you want. Your feedback becomes new requirements for the affected parts of the pipeline.",
+      "inputs": {
+        "COMPLETE_DELIVERABLE": {
+          "var": "inputs.deliverable.COMPLETE_DELIVERABLE"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "feedback": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "feedback"
+        ]
+      },
+      "save_as": "review",
+      "transitions": [
+        {
+          "to": "done",
+          "when": {
+            "==": [
+              {
+                "var": "inputs.review.approved"
+              },
+              true
+            ]
+          }
+        },
+        {
+          "to": "record_feedback",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "record_feedback",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Treat the user's requested changes or additions as new requirements. Preserve the current specification, target language, original request and source material, TASKS, and completed outputs. Put the exact feedback in state.feedback and state.requirements.feedback. Return the updated run state for Analyst clarification/specification work and selective replanning and re-execution. Prefix the coordination message within requirements.message with Orchestrator:.",
+      "inputs": {
+        "specification": {
+          "var": "inputs.specification.values.requirements_state"
+        },
+        "TASKS": {
+          "var": "inputs.plan.TASKS"
+        },
+        "completed": {
+          "var": "inputs.processed.values.result.TASK_RESULTS"
+        },
+        "review": {
+          "var": "inputs.review"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "requirements": {
+            "type": "object",
+            "required": [
+              "request",
+              "target_language",
+              "focus_components",
+              "FINAL_SPEC",
+              "feedback",
+              "needs_clarification",
+              "question",
+              "message"
+            ]
+          },
+          "TASKS": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "requirements",
+          "TASKS",
+          "completed",
+          "feedback"
+        ]
+      },
+      "save_as": "state",
+      "transitions": [
+        {
+          "to": "specify",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "kind": "prompt",
+      "role": "Orchestrator",
+      "context": "fresh",
+      "tools": [],
+      "prompt": "Output the user-approved COMPLETE_DELIVERABLE unchanged and declare DONE. The task procedure has completed with empty PATCH_HINTS and DEVIATIONS for every current task, and the user has approved this document. Return COMPLETE_DELIVERABLE and the literal DONE.",
+      "inputs": {
+        "COMPLETE_DELIVERABLE": {
+          "var": "inputs.deliverable.COMPLETE_DELIVERABLE"
+        },
+        "approval": {
+          "var": "inputs.review"
+        },
+        "TASK_RESULTS": {
+          "var": "inputs.processed.values.result.TASK_RESULTS"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "COMPLETE_DELIVERABLE": {
+            "type": "string"
+          },
+          "DONE": {
+            "const": "DONE"
+          }
+        },
+        "required": [
+          "COMPLETE_DELIVERABLE",
+          "DONE"
+        ]
+      },
+      "save_as": "final",
+      "output": {
+        "id": "COMPLETE_DELIVERABLE",
+        "description": "User-approved, deviation-free final TaskEngine documentation.",
+        "layer": "results"
+      },
+      "transitions": [
+        {
+          "to": null,
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "metaform.library.extractor.taskengine.requirements",
+      "intent": "Analyst clarification and FINAL_SPEC, including user feedback.",
+      "start": "analyze",
+      "inputs": {
+        "requirements_state": "Accumulated request, target language, focus components, current FINAL_SPEC, and feedback.",
+        "clarification": "Latest actual user clarification; initially null."
+      },
+      "steps": [
+        {
+          "id": "analyze",
+          "kind": "prompt",
+          "role": "Analyst",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Analyst: Clarify and finalize requirements; output FINAL_SPEC (bullet points of core features/functions to extract). If scope or target info is missing, ask the user; otherwise, confirm understanding. Ensure input specifies target language and focus components. Preserve the request and supplied source material, incorporating the latest clarification and any user feedback. If information remains missing or feedback needs clarification, set needs_clarification true and write one brief question addressing it; the following user step asks it. Otherwise set needs_clarification false, confirm understanding in message, and output FINAL_SPEC listing exactly what will be documented/reimplemented. FINAL_SPEC is an array of bullet-point items. Prefix message with Analyst:.",
+          "inputs": {
+            "requirements_state": {
+              "var": "inputs.requirements_state"
+            },
+            "clarification": {
+              "var": "inputs.clarification"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "object"
+              },
+              "target_language": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "focus_components": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "FINAL_SPEC": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "feedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "needs_clarification": {
+                "type": "boolean"
+              },
+              "question": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "request",
+              "target_language",
+              "focus_components",
+              "FINAL_SPEC",
+              "feedback",
+              "needs_clarification",
+              "question",
+              "message"
+            ]
+          },
+          "save_as": "requirements_state",
+          "transitions": [
+            {
+              "to": "clarify",
+              "when": {
+                "var": "inputs.requirements_state.needs_clarification"
+              }
+            },
+            {
+              "to": null,
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "clarify",
+          "kind": "user",
+          "prompt": "Analyst: {{ inputs.requirements_state.question }}",
+          "inputs": {
+            "question": {
+              "var": "inputs.requirements_state.question"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "save_as": "clarification",
+          "transitions": [
+            {
+              "to": "analyze",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.extractor.taskengine.task_queue",
+      "intent": "Process tasks sequentially, supplying necessary artifacts and advancing after issue-free completion.",
+      "start": "select_next",
+      "inputs": {
+        "state": "Ordered remaining queue, completed results, and user feedback.",
+        "specification": "Finalized Analyst output including source material and target language.",
+        "constraints": "Selected verbatim source QUALITY GUARDRAILS, OUTPUT STYLE, and SIDE-EFFECT CONTROL."
+      },
+      "steps": [
+        {
+          "id": "select_next",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Select the first remaining TASK in the ordered queue and retain the rest as remaining_queue. Supply the completed dependency artifacts needed by that TASK and any prior documentation for it. Carry all completed results forward unchanged. Set has_task false only when the queue is empty. Prefix message with Orchestrator:.",
+          "inputs": {
+            "state": {
+              "var": "inputs.state"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "has_task": {
+                "type": "boolean"
+              },
+              "TASK": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "remaining_queue": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "completed": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "dependency_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "previous_documentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "has_task",
+              "TASK",
+              "remaining_queue",
+              "completed",
+              "dependency_artifacts",
+              "previous_documentation",
+              "message"
+            ]
+          },
+          "save_as": "cursor",
+          "transitions": [
+            {
+              "to": "prepare_artifacts",
+              "when": {
+                "var": "inputs.cursor.has_task"
+              }
+            },
+            {
+              "to": "return_results",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "prepare_artifacts",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "project",
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "prompt": "Moderate all filesystem interactions for this TASK. Use the supplied original source material and the run's working artifact through workflow.files and workflow.read to assemble the necessary artifact packet. Include the exact TASK, applicable FINAL_SPEC items, target language, requested changes relevant to this TASK, original behavior evidence and relevant source excerpts with provenance, required dependency artifacts, and previous documentation when present. Preserve enough original-system evidence for an independent Evaluator to compare behavior and simulate sample cases. Supply only information needed by the receiving roles. The sensor/callback and GUI statements in the source are illustrative boundaries, not required features. Apply the supplied SIDE-EFFECT CONTROL.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.cursor.TASK"
+            },
+            "specification": {
+              "var": "inputs.specification"
+            },
+            "feedback": {
+              "var": "inputs.state.feedback"
+            },
+            "dependency_artifacts": {
+              "var": "inputs.cursor.dependency_artifacts"
+            },
+            "previous_documentation": {
+              "var": "inputs.cursor.previous_documentation"
+            },
+            "side_effect_control": {
+              "var": "inputs.constraints.side"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "TASK": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "TASK": {
+                    "type": "string"
+                  },
+                  "spec_refs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "dependencies": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "TASK",
+                  "spec_refs",
+                  "dependencies"
+                ]
+              },
+              "FINAL_SPEC": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "target_language": {
+                "type": "string"
+              },
+              "requested_changes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "original_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "content"
+                  ]
+                }
+              },
+              "dependency_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "previous_documentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "TASK",
+              "FINAL_SPEC",
+              "target_language",
+              "requested_changes",
+              "original_artifacts",
+              "dependency_artifacts",
+              "previous_documentation"
+            ]
+          },
+          "save_as": "packet"
+        },
+        {
+          "id": "run_task",
+          "kind": "call",
+          "workflow": "metaform.library.extractor.taskengine.task",
+          "inputs": {
+            "packet": {
+              "var": "inputs.packet"
+            },
+            "implementation": {
+              "literal": {
+                "documentation": null,
+                "tool_needed": false,
+                "tool": null,
+                "permission_request": null,
+                "message": ""
+              }
+            },
+            "repair": {
+              "literal": {
+                "PATCH_HINTS": [],
+                "DEVIATIONS": [],
+                "message": ""
+              }
+            },
+            "constraints": {
+              "var": "inputs.constraints"
+            }
+          },
+          "save_as": "task_run",
+          "transitions": [
+            {
+              "to": "collect",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "collect",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Integrate this completed TASK_RESULT into completed, replacing the prior result for the same task id when revising it. Preserve all other completed results. Set queue to remaining_queue and preserve feedback. The next task may now be selected because this task's PATCH_HINTS and DEVIATIONS are empty. Prefix message with Orchestrator:.",
+          "inputs": {
+            "TASK_RESULT": {
+              "var": "inputs.task_run.values.result.TASK_RESULT"
+            },
+            "completed": {
+              "var": "inputs.cursor.completed"
+            },
+            "remaining_queue": {
+              "var": "inputs.cursor.remaining_queue"
+            },
+            "feedback": {
+              "var": "inputs.state.feedback"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "queue": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "completed": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "feedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "queue",
+              "completed",
+              "feedback",
+              "message"
+            ]
+          },
+          "save_as": "state",
+          "transitions": [
+            {
+              "to": "select_next",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "return_results",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Return all completed task artifacts as TASK_RESULTS with status completed and unresolved null.",
+          "inputs": {
+            "completed": {
+              "var": "inputs.state.completed"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "completed",
+                  "unresolved"
+                ]
+              },
+              "TASK_RESULTS": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "unresolved": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "TASK_RESULTS",
+              "unresolved"
+            ]
+          },
+          "save_as": "result",
+          "transitions": [
+            {
+              "to": null,
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.extractor.taskengine.task",
+      "intent": "Implementer -> Critic -> optional Implementer patch -> independent Evaluator -> Orchestrator; repeat until both issue lists are empty.",
+      "start": "draft",
+      "inputs": {
+        "packet": "Task-specific original artifacts, requirements, language, dependencies, requested changes, and any previous documentation.",
+        "implementation": "Initial empty candidate; subsequently the latest Implementer output.",
+        "repair": "Initially empty PATCH_HINTS and DEVIATIONS; subsequently integrated review findings.",
+        "constraints": "Selected verbatim source constraints passed by Orchestrator."
+      },
+      "steps": [
+        {
+          "id": "draft",
+          "kind": "prompt",
+          "role": "Implementer",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Implementer: For this TASK produce minimal yet comprehensive documentation: a plain-English description of what it does and how; pseudocode in the target language; and a Mermaid diagram or example if helpful. Focus only on core logic; exclude UI, I/O, or platform-specific code. On revision, update the latest documentation or previous_documentation using requested changes, PATCH_HINTS, and DEVIATIONS; recognize fixes already applied. Apply the supplied QUALITY GUARDRAILS and OUTPUT STYLE. Apply SIDE-EFFECT CONTROL: if an external tool or installation is required, set tool_needed true, identify the actual tool, return the exact request form REQUEST-INSTALL-PERMISSION: followed by that tool, and retain any existing documentation while the Orchestrator obtains permission. Otherwise return the Markdown documentation with tool_needed false and null tool and permission_request. Prefix message with Implementer:.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "FINAL_SPEC": {
+              "var": "inputs.packet.FINAL_SPEC"
+            },
+            "target_language": {
+              "var": "inputs.packet.target_language"
+            },
+            "original_artifacts": {
+              "var": "inputs.packet.original_artifacts"
+            },
+            "dependency_artifacts": {
+              "var": "inputs.packet.dependency_artifacts"
+            },
+            "requested_changes": {
+              "var": "inputs.packet.requested_changes"
+            },
+            "previous_documentation": {
+              "var": "inputs.packet.previous_documentation"
+            },
+            "latest_documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "repair": {
+              "var": "inputs.repair"
+            },
+            "quality_constraints": {
+              "var": "inputs.constraints.quality"
+            },
+            "output_style": {
+              "var": "inputs.constraints.style"
+            },
+            "side_effect_control": {
+              "var": "inputs.constraints.side"
+            },
+            "external_action_result": {
+              "var": "inputs.external_action.values.action_result"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "documentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tool_needed": {
+                "type": "boolean"
+              },
+              "tool": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "permission_request": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "documentation",
+              "tool_needed",
+              "tool",
+              "permission_request",
+              "message"
+            ]
+          },
+          "save_as": "implementation",
+          "transitions": [
+            {
+              "to": "draft_permission",
+              "when": {
+                "var": "inputs.implementation.tool_needed"
+              }
+            },
+            {
+              "to": "critic",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "draft_permission",
+          "kind": "call",
+          "workflow": "metaform.library.extractor.taskengine.external_action",
+          "inputs": {
+            "tool": {
+              "var": "inputs.implementation.tool"
+            },
+            "permission_request": {
+              "var": "inputs.implementation.permission_request"
+            },
+            "resume_at": {
+              "literal": "taskengine.task.draft"
+            }
+          },
+          "save_as": "external_action",
+          "transitions": [
+            {
+              "to": "draft",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "critic",
+          "kind": "prompt",
+          "role": "Critic",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Critic: Review the supplied documentation for clarity, style, and completeness. Lint the documentation and output PATCH_HINTS as a list of improvements or corrections; return [] and acknowledge that no changes are needed if perfect. Apply the relevant supplied QUALITY GUARDRAILS and OUTPUT STYLE. Prefix message with Critic:.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "FINAL_SPEC": {
+              "var": "inputs.packet.FINAL_SPEC"
+            },
+            "target_language": {
+              "var": "inputs.packet.target_language"
+            },
+            "documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "quality_constraints": {
+              "var": "inputs.constraints.quality"
+            },
+            "output_style": {
+              "var": "inputs.constraints.style"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "PATCH_HINTS": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "PATCH_HINTS",
+              "message"
+            ]
+          },
+          "save_as": "critique",
+          "transitions": [
+            {
+              "to": "apply_hints",
+              "when": {
+                "!=": [
+                  {
+                    "var": "inputs.critique.PATCH_HINTS"
+                  },
+                  {
+                    "literal": []
+                  }
+                ]
+              }
+            },
+            {
+              "to": "evaluate",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "apply_hints",
+          "kind": "prompt",
+          "role": "Implementer",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Implementer: Apply PATCH_HINTS and update the documentation before Evaluator review. Preserve the original behavior and task requirements, including changes already made. Apply the supplied QUALITY GUARDRAILS, OUTPUT STYLE, and SIDE-EFFECT CONTROL. If an external tool or installation is required, return tool_needed true and REQUEST-INSTALL-PERMISSION: followed by the actual tool, retaining the current documentation. Otherwise return the revised Markdown with tool_needed false and null tool and permission_request. Prefix message with Implementer:.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "FINAL_SPEC": {
+              "var": "inputs.packet.FINAL_SPEC"
+            },
+            "target_language": {
+              "var": "inputs.packet.target_language"
+            },
+            "original_artifacts": {
+              "var": "inputs.packet.original_artifacts"
+            },
+            "dependency_artifacts": {
+              "var": "inputs.packet.dependency_artifacts"
+            },
+            "documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "PATCH_HINTS": {
+              "var": "inputs.critique.PATCH_HINTS"
+            },
+            "quality_constraints": {
+              "var": "inputs.constraints.quality"
+            },
+            "output_style": {
+              "var": "inputs.constraints.style"
+            },
+            "side_effect_control": {
+              "var": "inputs.constraints.side"
+            },
+            "external_action_result": {
+              "var": "inputs.external_action.values.action_result"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "documentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tool_needed": {
+                "type": "boolean"
+              },
+              "tool": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "permission_request": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "documentation",
+              "tool_needed",
+              "tool",
+              "permission_request",
+              "message"
+            ]
+          },
+          "save_as": "implementation",
+          "transitions": [
+            {
+              "to": "patch_permission",
+              "when": {
+                "var": "inputs.implementation.tool_needed"
+              }
+            },
+            {
+              "to": "evaluate",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "patch_permission",
+          "kind": "call",
+          "workflow": "metaform.library.extractor.taskengine.external_action",
+          "inputs": {
+            "tool": {
+              "var": "inputs.implementation.tool"
+            },
+            "permission_request": {
+              "var": "inputs.implementation.permission_request"
+            },
+            "resume_at": {
+              "literal": "taskengine.task.apply_hints"
+            }
+          },
+          "save_as": "external_action",
+          "transitions": [
+            {
+              "to": "apply_hints",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "evaluate",
+          "kind": "prompt",
+          "role": "Evaluator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Evaluator: Verify functional accuracy against requirements. Check the updated documentation and pseudocode against the TASK requirements and original behavior using only the supplied artifacts, with fresh eyes. Simulate logic on sample cases if possible. If something is missing or incorrect, list it in DEVIATIONS with clear notes on what differs from expected functionality. If there are no issues, return DEVIATIONS = [] (Ø) and confirm correctness. Apply the supplied QUALITY GUARDRAILS. Prefix message with Evaluator:.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "FINAL_SPEC": {
+              "var": "inputs.packet.FINAL_SPEC"
+            },
+            "target_language": {
+              "var": "inputs.packet.target_language"
+            },
+            "requested_changes": {
+              "var": "inputs.packet.requested_changes"
+            },
+            "original_artifacts": {
+              "var": "inputs.packet.original_artifacts"
+            },
+            "dependency_artifacts": {
+              "var": "inputs.packet.dependency_artifacts"
+            },
+            "documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "quality_constraints": {
+              "var": "inputs.constraints.quality"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "DEVIATIONS": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sample_checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "case": {
+                      "type": "string"
+                    },
+                    "expected": {
+                      "type": "string"
+                    },
+                    "observed": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "case",
+                    "expected",
+                    "observed"
+                  ]
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "DEVIATIONS",
+              "sample_checks",
+              "message"
+            ]
+          },
+          "save_as": "evaluation"
+        },
+        {
+          "id": "integrate_reviews",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Integrate the Critic's PATCH_HINTS and Evaluator's DEVIATIONS for this TASK. Preserve both exact lists in the repair result. Explain the corrections needed for the next Implementer pass, taking account of patches already applied. A nonempty list from either reviewer repeats the full Implementer -> Critic -> Evaluator cycle, including when hints were patched before this evaluation. Prefix message with Orchestrator:.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "PATCH_HINTS": {
+              "var": "inputs.critique.PATCH_HINTS"
+            },
+            "DEVIATIONS": {
+              "var": "inputs.evaluation.DEVIATIONS"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "PATCH_HINTS": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "DEVIATIONS": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "PATCH_HINTS",
+              "DEVIATIONS",
+              "message"
+            ]
+          },
+          "save_as": "repair",
+          "transitions": [
+            {
+              "to": "complete_task",
+              "when": {
+                "and": [
+                  {
+                    "==": [
+                      {
+                        "var": "inputs.critique.PATCH_HINTS"
+                      },
+                      {
+                        "literal": []
+                      }
+                    ]
+                  },
+                  {
+                    "==": [
+                      {
+                        "var": "inputs.evaluation.DEVIATIONS"
+                      },
+                      {
+                        "literal": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "to": "draft",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "complete_task",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "fresh",
+          "tools": [],
+          "prompt": "Return this issue-free task artifact as TASK_RESULT, preserving the current documentation and task id. Copy the empty PATCH_HINTS and DEVIATIONS lists. Set status completed and unresolved null.",
+          "inputs": {
+            "TASK": {
+              "var": "inputs.packet.TASK"
+            },
+            "documentation": {
+              "var": "inputs.implementation.documentation"
+            },
+            "PATCH_HINTS": {
+              "var": "inputs.critique.PATCH_HINTS"
+            },
+            "DEVIATIONS": {
+              "var": "inputs.evaluation.DEVIATIONS"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "completed"
+              },
+              "TASK_RESULT": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "string"
+                  },
+                  "documentation": {
+                    "type": "string"
+                  },
+                  "PATCH_HINTS": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "DEVIATIONS": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "documentation",
+                  "PATCH_HINTS",
+                  "DEVIATIONS"
+                ]
+              },
+              "unresolved": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "status",
+              "TASK_RESULT",
+              "unresolved"
+            ]
+          },
+          "save_as": "result",
+          "transitions": [
+            {
+              "to": null,
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.extractor.taskengine.external_action",
+      "intent": "Obtain the source-authored explicit permission, execute the authorized external operation through the host, and return its actual result to the interrupted worker.",
+      "start": "permission",
+      "inputs": {
+        "tool": "Actual tool requested by Implementer.",
+        "permission_request": "Literal REQUEST-INSTALL-PERMISSION: followed by the actual tool name.",
+        "resume_at": "Implementer step to resume after successful authorized execution."
+      },
+      "steps": [
+        {
+          "id": "permission",
+          "kind": "user",
+          "prompt": "{{permission_request}}\n\nOrchestrator: Awaiting PERMISSION GRANTED before proceeding with this external tool or installation.",
+          "inputs": {
+            "permission_request": {
+              "var": "inputs.permission_request"
+            },
+            "tool": {
+              "var": "inputs.tool"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "save_as": "permission_response",
+          "transitions": [
+            {
+              "to": "execute_authorized_action",
+              "when": {
+                "==": [
+                  {
+                    "var": "inputs.permission_response"
+                  },
+                  {
+                    "literal": "PERMISSION GRANTED"
+                  }
+                ]
+              }
+            },
+            {
+              "to": "permission",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "execute_authorized_action",
+          "kind": "prompt",
+          "role": "Orchestrator",
+          "context": "project",
+          "tools": [],
+          "prompt": "Orchestrator: Carry out the external tool or installation operation identified by the supplied request and approved by the actual PERMISSION GRANTED response. Use the executing host's process or installation capability. Return the actual operation, observed result and any produced artifacts so the Implementer can resume its interrupted documentation task.",
+          "inputs": {
+            "tool": {
+              "var": "inputs.tool"
+            },
+            "permission_request": {
+              "var": "inputs.permission_request"
+            },
+            "permission_response": {
+              "var": "inputs.permission_response"
+            },
+            "resume_at": {
+              "var": "inputs.resume_at"
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string"
+              },
+              "result": {},
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "operation",
+              "result"
+            ]
+          },
+          "save_as": "action_result",
+          "transitions": [
+            {
+              "to": null,
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "execution_requirements": [
+    {
+      "capability": "host_process_execution",
+      "when": "The Implementer requests an external tool or installation and the actual user grants PERMISSION GRANTED.",
+      "binding": "Execute the separate Orchestrator assignment with a process-capable host such as the Codex command harness; its actual result is passed back to the interrupted Implementer assignment."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- memory's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
+<!-- memory's line in the instructions agents read while memory is on, MCP-029. -->
 <instructions>
 @STATE_INIT:
 {Task}:=[current user task]; {Memory}:=NULL; {Findings}:=[]; {State}:=RETRIEVE; {Valid}:=FALSE

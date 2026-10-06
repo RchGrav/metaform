@@ -8,19 +8,32 @@ in context. `knowledge` is the one read-write verb for layers, LAYER-018.
 """
 from __future__ import annotations
 
-import re
-
 import dataclasses
 import json
+import re
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
-from metaform import outline, prompt_files, settings
-from metaform.data import PLACE_KINDS, Item, Node, Notice, Outcome, Page, Store, WorkRecord
-from metaform.data.records import TICKETS
+from metaform import prompt_files, settings
+from metaform.data import (
+    PLACE_KINDS,
+    TICKETS,
+    Item,
+    Node,
+    Notice,
+    Outcome,
+    Page,
+    Store,
+    WorkRecord,
+    plain,
+)
+from metaform.finish_xml import xml as map_xml
 from metaform.module import Context, Module, Noun, NounKind, Status, Stop, Verb, node_reads, work_reads
+from metaform.outline import markdown as map_markdown
 
 from .storage import DATA, TABLES
 
@@ -30,6 +43,8 @@ SHIPS_DISABLED = False
 DATA_SOURCE = 'storage.py'
 
 settings.boolean('raw', False, help='Read every stored layer, building, hidden and masked ones included.')
+settings.boolean('critic', False, help='map critic: the critic also reads the code and writes tickets; '
+                 'fast mode, blind to the code, when off.')
 settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
                  'keeps its own board.')
 
@@ -119,7 +134,18 @@ def where(ctx: Context) -> Any:
 
 def markdown(ctx: Context) -> Any:
     """The map, or the part around one address, as a short Markdown document to find one's way by, MAP-052."""
-    text = outline.markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
+    text = map_markdown(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
+    target = ctx.nouns.get('file')
+    if not target:
+        return text
+    path = Path(target) if Path(target).is_absolute() else ctx.folder / target
+    path.write_text(text, encoding='utf-8')
+    return {'written': str(path)}
+
+
+def xml(ctx: Context) -> Any:
+    """The map, or one element and all it receives, as an XML document in the Finish shape of Intake 2.1, MAP-059."""
+    text = map_xml(_store(ctx), ctx.nouns.get('address') or None, **_reading(ctx))
     target = ctx.nouns.get('file')
     if not target:
         return text
@@ -202,6 +228,10 @@ def add_metaform(ctx: Context) -> Any:
     return _other_project(ctx).add_metaform(ctx.nouns['name'])
 
 
+def collapse(ctx: Context) -> Any:
+    return _other_project(ctx).collapse(ctx.nouns['name'])
+
+
 def activate(ctx: Context) -> Any:
     return _other_project(ctx).activate_metaform(ctx.nouns['name'])
 
@@ -250,32 +280,34 @@ def approve(ctx: Context) -> Any:
 
 
 BLIND_SPOTS = 'The functions and encounters the design should have and does not.'
+T = TypeVar('T')
 
 
 def critic(ctx: Context) -> str:
     """One critic run: a new blind-spot layer, blinded by its type, and the critic prompt with the whole metaform,
-    LAYER-014 and LAYER-015. The blind critic is the default."""
+    LAYER-014 and LAYER-015. Fast mode, blind to the code, is the default; --critic also reads the code."""
     store = _store(ctx)
-    sighted = bool(ctx.nouns.get('sighted', False))
-    kind = 'sighted' if sighted else 'blind'
+    sighted = bool(ctx.setting('critic'))
+    mode = 'critic' if sighted else 'fast'
     taken = {layer.name for layer in _every(lambda after: store.layers(after=after))}
-    base = f'blind-spot-{kind}-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}'
+    base = f'blind_spot_{mode}_{datetime.now(UTC).strftime("%Y%m%dt%H%M%Sz")}'
     name, count = base, 1
     while name in taken:
         count += 1
-        name = f'{base}-{count}'
-    prompt = f'critic_{kind}'
+        name = f'{base}_{count}'
     store.layer(name, 'map', BLIND_SPOTS, mutable=False, hideable=True,
-                provenance={'module': 'map', 'prompt': prompt, 'role': 'critic', 'blinded': not sighted})
-    metaform = outline.markdown(store, None, **_reading(ctx)).strip()
-    return prompt_files.required(resources.files(__name__), prompt, layer=name, metaform=metaform)
+                provenance={'module': 'map', 'prompt': 'blind_spot_challenge', 'role': 'critic', 'blinded': not sighted})
+    metaform = map_markdown(store, None, **_reading(ctx)).strip()
+    folder = resources.files(__name__)
+    return (prompt_files.required(folder, 'blind_spot_challenge') + '\n\n'
+            + prompt_files.required(folder, f'critic_{mode}', layer=name, metaform=metaform))
 
 
 def challenges(ctx: Context) -> str:
     """The answer prompt with each challenge of one blind-spot layer and its state, LAYER-015."""
     store = _store(ctx)
     layer = ctx.nouns['layer']
-    lines = []
+    lines: list[str] = []
     for found in _every(lambda after: store.layer_items(layer, after=after)):
         if not isinstance(found, Item):
             continue
@@ -288,10 +320,10 @@ def challenges(ctx: Context) -> str:
     return prompt_files.required(resources.files(__name__), 'answer_challenges', layer=layer, challenges='\n'.join(lines))
 
 
-def _every(read: Any) -> list[Any]:
+def _every(read: Callable[[str | None], Page[T]]) -> list[T]:
     """Every result of a paged read, page after page."""
-    held: list[Any] = []
-    after = None
+    held: list[T] = []
+    after: str | None = None
     while True:
         page = read(after)
         held.extend(page.results)
@@ -418,9 +450,9 @@ def _in_words(store: Store, value: Any) -> Any:
     if isinstance(value, str):
         return STORE_ID.sub(lambda match: _said_as(store, match.group(0)), value)
     if isinstance(value, dict):
-        return {key: _in_words(store, item) for key, item in value.items()}
+        return {key: _in_words(store, item) for key, item in cast(dict[Any, Any], value).items()}
     if isinstance(value, (list, tuple)):
-        return [_in_words(store, item) for item in value]
+        return [_in_words(store, item) for item in cast(list[Any] | tuple[Any, ...], value)]
     return value
 
 
@@ -442,6 +474,20 @@ def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = Fa
         notices.append(Notice('purpose', f'{len(found)} of {what} cannot be told apart by their addresses, '
                                              f'with the purposes {named}; nothing was changed.'))
     return None
+
+
+def promote(ctx: Context) -> Any:
+    """Associate a receiver's purpose with an ordinary element, preserving its join, MAP-054."""
+    _need(ctx, 'receiver', 'provider', 'address', verb='promote')
+    store = _store(ctx)
+    nouns = ctx.nouns
+    notices: list[Notice] = []
+    said = f"the purpose of {nouns['receiver']} served by {nouns['provider']}"
+    held = _one(_purposes(store, nouns['receiver'], nouns['provider']), said, notices, purposes=True)
+    if held is None:
+        return Outcome(tuple(notices))
+    return store.promote_join(held.join_id, nouns['address'],
+                              **_optional(ctx, 'name', 'name_length', 'role', 'reason'))
 
 
 def refine(ctx: Context) -> Any:
@@ -672,12 +718,12 @@ REFINE_NOUNS = (
 # The nouns each work operation reads, besides op.
 WORK_READS: dict[str, frozenset[str]] = {
     'glyphs': frozenset(),
-    'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'open', 'limit', 'after'}),
+    'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'open', 'limit', 'after', 'hold'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held', 'reviewed',
-                      'links'}),
+                      'links', 'agent', 'hold', 'eligible'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'note', 'task', 'held',
-                       'reviewed', 'glyph', 'links'}),
+                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible'}),
     'done': frozenset({'id', 'resolution'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
@@ -686,11 +732,15 @@ WORK_READS: dict[str, frozenset[str]] = {
     'distribute': frozenset({'agents'}),
 }
 WORK_FIELDS = ('condition', 'note', 'task', 'held', 'reviewed')  # the chassis work record's own, STORE-042
+# The long fields a list row leaves out, each read with the ticket by id=, so the list stays small, MAP-049 and MAP-053.
+UNLISTED = frozenset({'said', 'resolution', 'task'})
 
-# The agent glyphs a ticket is assigned to, VIEW-040: the sixteen characters the page draws, in the order of GLYPHS in
+# The agent glyphs a ticket is assigned to, VIEW-040: the seventeen characters the page draws, in the order of GLYPHS in
 # the web page's agents3d.js. Tickets with the same glyph signify one agent doing them one at a time.
 AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp', 'comet', 'beetle', 'slime',
-                'plane', 'puffer', 'owl', 'cubebot', 'mushroom')
+                'plane', 'puffer', 'owl', 'cubebot', 'mushroom', 'seahorse')
+TICKET_AGENTS = ('claude', 'codex', 'gemini')  # the agents a ticket can prefer, as dispatch starts them
+AGENT_TYPES = TICKET_AGENTS
 
 # The map module's own tables, STORE-045: `glyphs` keeps the agent glyph each ticket is assigned to, keyed by the work
 # id, beside the map as the work records are, so the chassis work table holds no glyph, BASE-046 and ticket 90430bba.
@@ -741,12 +791,29 @@ def _held(store: Store, nouns: dict[str, Any], notices: list[Notice]) -> Node:
     return store.purpose(receiver, nouns['provider'], nouns.get('address'))
 
 
+FORM_PARTS = (('specs', '#1 Specifications reviewed:'), ('not_option', '#2 Why this is not a configuration option:'),
+              ('rich_said', '#3 Unexplained "Rich said":'))
+
+
 def ask(ctx: Context) -> Any:
-    """Ask the user a question at a node, in plain words, with the answers you suggest, MAP-050."""
+    """Ask the user a question at a node through the question form, MAP-050: the question, then each part of the form
+    the agent filled, each under its heading so the web GUI can show it and make a ticket of it."""
     store, notices = _store(ctx), list[Notice]()
-    return _with_notices(store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'],
-                                   suggestions=ctx.nouns.get('suggestions'), by=ctx.nouns.get('by'),
-                                   work=ctx.nouns.get('work')), notices)
+    parts = [ctx.nouns['question']]
+    # The form travels with the question, MAP-050: the MCP tool's named fields carry it, and a part not filled is
+    # noted, never refused, since the form is instruction to the agent and a gate on an inference step burns tokens.
+    for noun, heading in FORM_PARTS:
+        given = ctx.nouns.get(noun)
+        if given:
+            parts.append(f'{heading}\n{given}')
+        elif noun != 'rich_said':
+            notices.append(Notice(noun, f'The question form\'s {heading[:2]} was not filled: '
+                                        f'{noun}=. metaform help map ask shows the form.'))
+    asked = store.ask(_held(store, ctx.nouns, notices), '\n\n'.join(parts), suggestions=ctx.nouns.get('suggestions'),
+                      by=ctx.nouns.get('by'), work=ctx.nouns.get('work'))
+    result = _with_notices(asked, notices)
+    said = prompt_files.required(resources.files(__name__), 'question_thanks')
+    return {**(result.to_dict() if hasattr(result, 'to_dict') else dict(result)), 'said': said}
 
 
 def tell(ctx: Context) -> Any:
@@ -807,26 +874,46 @@ def work(ctx: Context) -> Any:
         node = _named(store, nouns, notices)
         # An element's list holds the tickets on the joins it receives or provides too, so an agent told its node
         # finds its ticket, ticket dd2a9caf.
-        return _with_notices(_glyphed(store, store.work(node, nouns.get('condition'), nouns.get('open'), **_paging(ctx),
-                                                        joins=True)), notices)
+        # Open records unless open=false asks for the done ones: the done records with their logs made the bare list
+        # too large to read, MAP-049.
+        found = store.work(node, nouns.get('condition'), nouns.get('open', True), **_paging(ctx), joins=True)
+        if not nouns.get('hold'):  # a ticket the person holds is hidden from agents unless asked for with hold=true
+            kept = _settings(store, [record.work_id for record in found.results])
+            found = found._replace(results=tuple(record for record in found.results
+                                                 if not kept.get(record.work_id, {}).get('hold')))
+        listed = plain(_glyphed(store, found))
+        listed['results'] = [{name: value for name, value in row.items() if name not in UNLISTED}
+                             for row in listed['results']]
+        return _with_notices(listed, notices)
     if op == 'add':
         node = _named(store, nouns, notices)
         if node is None:
             raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
-        return _with_notices(store.add_work(node, nouns.get('condition'),
-                                            links=[_link(store, link) for link in nouns.get('links') or ()],
-                                            **_optional(ctx, 'note', 'task', 'held', 'reviewed')), notices)
+        with store.atomic():
+            added = store.add_work(node, nouns.get('condition'),
+                                   links=[_link(store, link) for link in nouns.get('links') or ()],
+                                   **_optional(ctx, 'note', 'task', 'held', 'reviewed'))
+            _keep(store, added.work_id, nouns, notices)
+        return _with_notices(_glyphed(store, added), notices)
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = nouns['id']
     if op == 'read':
         return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
-        return _with_notices(_glyphed(store, store.take_work(work_id, nouns.get('steps'), nouns.get('by'))), notices)
+        with store.atomic():
+            _claim(ctx, store, work_id, nouns.get('by'))
+            taken = store.take_work(work_id, nouns.get('steps'), nouns.get('by'))
+        return _with_notices(_glyphed(store, taken), notices)
     if op == 'move':
-        return _with_notices(_glyphed(store, store.move_work(work_id, nouns['column'], nouns.get('position'),
-                                                             nouns.get('by'))), notices)
+        with store.atomic():
+            previous = store.ticket(work_id).work.column
+            moved = store.move_work(work_id, nouns['column'], nouns.get('position'), nouns.get('by'))
+        if previous != 'todo' and moved.column == 'todo':
+            ctx.publish('work.requeued', {'project': store.project_id, 'work_id': work_id,
+                                         'previous': previous, 'revision': time.time_ns()})
+        return _with_notices(_glyphed(store, moved), notices)
     if op == 'plan':
         return _with_notices(_glyphed(store, store.plan_work(work_id, nouns['steps'])), notices)
     if op == 'step':
@@ -842,14 +929,17 @@ def work(ctx: Context) -> Any:
             edited = store.edit_work(work_id, changes)
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
+            _keep(store, work_id, nouns, notices)
         return _with_notices(_glyphed(store, edited), notices)
     return _with_notices(_glyphed(store, store.finish_work(work_id, nouns.get('resolution'))), notices)
 
 
 def _glyph(value: Any, notices: list[Notice]) -> str | None:
-    """A ticket's agent glyph, VIEW-040: one of the sixteen the page draws, or none; any other name is stored as given
+    """A ticket's agent glyph, VIEW-040: one of the seventeen the page draws, or none; any other name is stored as given
     with a notice, BASE-044."""
-    if value is None or value in AGENT_GLYPHS:
+    if not value:  # none, or an empty choice, takes the glyph away
+        return None
+    if value in AGENT_GLYPHS:
         return value
     notices.append(Notice('glyph', f'{value!r} is not one of the agent glyphs, {", ".join(AGENT_GLYPHS)}; it was stored '
                                    'as given.'))
@@ -873,20 +963,88 @@ def _glyphs(store: Store, work_ids: list[str]) -> dict[str, str]:
     return {work_id: row['glyph'] for work_id, row in found.items() if row is not None}
 
 
+def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Each ticket's preferred agent, hold and eligibility, read in one transaction; a ticket with no
+    settings is left out."""
+    with store.tables(write=False) as tx:
+        found = {work_id: tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids}
+        eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
+    kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold'])} for work_id, row in found.items()
+            if row is not None}
+    for work_id, row in eligible.items():
+        if row is not None:
+            kept.setdefault(work_id, {})['eligible'] = row['agents']
+    return kept
+
+
+def _claim(ctx: Context, store: Store, work_id: str, by: Any) -> None:
+    """A restricted claim uses the transport's client name, or the CLI owner's first word, never the environment."""
+    kept = _settings(store, [work_id]).get(work_id, {})
+    if 'eligible' not in kept:
+        return
+    eligible = kept['eligible']
+    if eligible == []:
+        return
+    agent = None
+    if ctx.client is not None:
+        agent = next((name for name in AGENT_TYPES if ctx.client.lower().startswith(name)), None)
+    elif ctx.surface != 'mcp' and isinstance(by, str):
+        words = by.split()
+        agent = words[0] if words and words[0] in AGENT_TYPES else None
+    if isinstance(eligible, list) and agent is not None and agent in eligible:
+        return
+    names = ', '.join(str(name) for name in cast(list[Any], eligible)) if isinstance(eligible, list) else str(eligible)
+    raise Stop(f'Work {work_id} is restricted to eligible agents: {names}; '
+               f'{agent or "an unidentified agent"} cannot claim it.', f'metaform map work id={work_id}')
+
+
+def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice]) -> None:
+    """Write a ticket's settings, when given, in the map module's own tables, STORE-045."""
+    changes: dict[str, Any] = {}
+    if 'agent' in nouns:
+        agent = nouns['agent'] or None
+        if agent is not None and agent not in TICKET_AGENTS:
+            notices.append(Notice('agent', f'{agent!r} is not one of the agents, {", ".join(TICKET_AGENTS)}; it was '
+                                           'stored as given.'))
+        changes['agent'] = agent
+    if 'hold' in nouns:
+        changes['hold'] = 1 if nouns['hold'] else 0
+    if not changes and 'eligible' not in nouns:
+        return
+    with store.tables() as tx:
+        if changes and tx.update('ticket_settings', {'work_id': work_id}, changes) is None:
+            tx.insert('ticket_settings', {'work_id': work_id, **changes})
+        if 'eligible' in nouns:
+            agents = nouns['eligible']
+            if agents == []:
+                tx.delete('eligible', {'work_id': work_id})
+            else:
+                if not isinstance(agents, list) or any(name not in AGENT_TYPES for name in cast(list[Any], agents)):
+                    notices.append(Notice('eligible', f'{agents!r} is not a list of agent types, '
+                                          f'{", ".join(AGENT_TYPES)}; it was stored as given.'))
+                values: dict[str, Any] = {'agents': agents}
+                if tx.update('eligible', {'work_id': work_id}, values) is None:
+                    tx.insert('eligible', {'work_id': work_id, **values})
+
+
 def _glyphed(store: Store, result: Any) -> Any:
-    """A work operation's record, or page of records, with the glyph the map module keeps on each under `map`, as
-    work_read shows it in `map work id=<id>`, BASE-035; a record with no glyph is returned as it is."""
+    """A work operation's record, or page of records, with what the map module keeps on each under `map`: its glyph,
+    its preferred agent and whether the person holds it, as work_read shows it in `map work id=<id>`, BASE-035; a record
+    with none of these is returned as it is."""
     page = cast(Page[WorkRecord], result) if isinstance(result, Page) else None
     records = list(page.results) if page is not None else [cast(WorkRecord, result)]
-    held = _glyphs(store, [record.work_id for record in records])
-    if not held:
+    ids = [record.work_id for record in records]
+    glyphs, settings = _glyphs(store, ids), _settings(store, ids)
+    if not glyphs and not settings:
         return page if page is not None else records[0]
 
     def one(record: WorkRecord) -> Any:
-        if record.work_id not in held:
+        kept = {**({'glyph': glyphs[record.work_id]} if record.work_id in glyphs else {}),
+                **settings.get(record.work_id, {})}
+        if not kept:
             return record
         data = record.to_dict()
-        data.setdefault('map', {'glyph': held[record.work_id]})
+        data.setdefault('map', kept)
         return data
     if page is not None:
         return {**page.to_dict(), 'results': [one(record) for record in records]}
@@ -909,13 +1067,14 @@ def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
     return Page(tuple(waiting), None)
 
 
-def work_read(ctx: Context, record: WorkRecord) -> dict[str, str] | None:
+def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     """The agent glyph the map module keeps on a work record, VIEW-040; nothing when it keeps none. The chassis puts
     it under `map` in `map work id=<id>`, BASE-035."""
     if ctx.store is None:
         return None
-    held = _glyphs(ctx.store, [record.work_id]).get(record.work_id)
-    return None if held is None else {'glyph': held}
+    glyph = _glyphs(ctx.store, [record.work_id]).get(record.work_id)
+    kept = {**({'glyph': glyph} if glyph else {}), **_settings(ctx.store, [record.work_id]).get(record.work_id, {})}
+    return kept or None
 
 
 WORK_NOUNS = (
@@ -930,26 +1089,34 @@ WORK_NOUNS = (
     _noun('receiver', 'list, add and edit: a join, by the address of the element that holds it, with provider.'),
     _noun('provider', 'list, add and edit: a join, by the address of an element it holds, with receiver.'),
     _noun('address', 'list, add and edit: an element, by address.'),
-    _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, in the specs and not built '
-                       'yet; broken; flawed, not broken but not right either; enhancement; or exclude, material '
-                       'outside the intake scope or code conflicting with a superseding specification, with the '
-                       'reason and references recorded for review.'),
+    _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, the thing does not exist at '
+                       'all or is not built yet; a thing that exists but is wrong is not missing. broken, not '
+                       'working, not connected or orphaned; flawed, works but is not right; enhancement, works and '
+                       'could be better; or exclude, outside the scope or conflicting with a superseding '
+                       'specification, with the reason and references recorded for review.'),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [
               {'type': 'string'},
               {'type': 'object', 'properties': {'receiver': {'type': 'string'}, 'provider': {'type': 'string'},
                                                 'address': {'type': 'string'}}}]}}),
-    _noun('by', 'take and move: who takes it.'),
+    _noun('by', 'take and move: who takes it; on the CLI, take identifies the claiming agent by its first word, '
+                'claude, codex or gemini. Over MCP the client name identifies the agent.'),
     _noun('column', 'move: backlog, todo, doing or done. todo puts a taken task back on the queue, keeping its log.'),
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
+    _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
+                   'time, even while an agent works on it.'),
+    _noun('hold', 'add and edit: true holds the ticket, hidden from agents, automatic starts and consensus mode until '
+                  'the person lets it go; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
                    'done one at a time.'),
-    _noun('agents', 'distribute: how many agents, from 1 to 16; the tickets not done and not taken are given the first '
+    _noun('eligible', 'add and edit: the eligible agent types as a JSON list, claude, codex or gemini; [] allows '
+                     'Any agent, the default for existing and new tickets. Dispatch and agent claims honor it.', 'json'),
+    _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets not done and not taken are given the first '
                     'that many glyphs in turn, To do first and then Backlog.', 'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
@@ -957,7 +1124,8 @@ WORK_NOUNS = (
                 'agents\' memories are attached there, and record your own memories at the nodes you work on. '
                 'past_work lists completed tickets with their age; read one with id= to see its log.'),
     _noun('resolution', 'done: how it was resolved, kept beside the record.'),
-    _noun('open', 'list: true for records not done, false for those done.', 'bool'),
+    _noun('open', 'list: true, the default, for records not done; false for those done. A listed record leaves out '
+                  'its task, said and resolution; read them with id=.', 'bool'),
     *PAGING,
 )
 
@@ -969,7 +1137,9 @@ HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of 
 
 MODULE = Module(
     id='map',
-    status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') else None),
+    # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
+    status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
+                              is not None and ctx.store.has_intake() else None),
     tables=TABLES,
     data=DATA,
     work_read=work_read,
@@ -994,6 +1164,10 @@ MODULE = Module(
                     _noun('full', 'true keeps ids and empty fields, which are left out by default.', 'bool')),
              switches=RAW),
         Verb('markdown', markdown, 'The map, or the part around one address, as a short Markdown document.',
+             nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
+                    _noun('file', 'A file to write the document to; without one, it is printed.')),
+             switches=RAW, surfaces=('cli',)),
+        Verb('xml', xml, 'The map, or one element and all it receives, as an XML document with every field.',
              nouns=(_noun('address', 'A dotted namespace address; without one, the whole map.'),
                     _noun('file', 'A file to write the document to; without one, it is printed.')),
              switches=RAW, surfaces=('cli',)),
@@ -1030,6 +1204,23 @@ MODULE = Module(
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
         Verb('activate', activate, 'Make a metaform the active one.',
              nouns=(Noun('name', 'The metaform name.'), _noun('project', 'A project id.'))),
+        Verb('collapse', collapse, 'Write the current map as a new metaform of one intake layer, each element and '
+                                   'join once with the same ids, and make it active; the old one is kept whole.',
+             nouns=(Noun('name', 'The new metaform name.'), _noun('project', 'A project id.'))),
+        Verb('promote', promote, 'Give a join an ordinary element by address, keeping the original join and its '
+                                 'history, memories and work.',
+             nouns=(_noun('receiver', 'The address of the element that holds the join.'),
+                    _noun('provider', 'The address of an element the join holds.'),
+                    _noun('address', 'The address of the element to create or reuse for the join.'),
+                    _noun('name', 'The canonical name of the new element; an existing element keeps its name.'),
+                    _noun('name_length', 'How many trailing address segments form its short name.', 'int'),
+                    _noun('role', 'The intake classification of the new element: DE, SE, NE, CQU or AUE.'),
+                    _noun('reason', 'Why the join needs an element.')),
+             details='The join records its element by address and keeps its receiver and held elements. The '
+                     'associated element receives and provides ordinary joins. An intake join gains a version '
+                     'in its own layer; a knowledge join follows its existing edit rules. Repeating the same '
+                     'association adds no version. An existing element keeps its authored fields; a different '
+                     'address for an already promoted join returns a notice and writes nothing.'),
         Verb('search', search, 'Items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING)),
         Verb('work', work, 'The work records, the condition of an element or a join apart from the map: list them, '
@@ -1037,7 +1228,11 @@ MODULE = Module(
                            'on the board, or mark it done.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join and never changes the map. Its '
-                     'condition is missing, broken or exclude; its note says what and where, its task what it needs. '
+                     'condition says what kind of work it is. missing means the thing does not exist at all, or is '
+                     'not built yet. A thing that exists but is wrong is not missing: pick broken (not working, not '
+                     'connected, orphaned), flawed (works but is not right), enhancement (works, could be better), '
+                     'or exclude (outside the scope, or conflicting with a superseding specification). Its note '
+                     'says what and where, its task what it needs. '
                      'exclude records material outside the intake scope or code conflicting with a superseding '
                      'specification. The note links the affected material and the specification or scope reason '
                      'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
@@ -1048,7 +1243,7 @@ MODULE = Module(
                      'open until op=done records its resolution, which is kept beside it. Any agent writes one at any '
                      'time, the intake agent as it maps, a critic with its findings, held=true until agents take it.',
              examples=(('metaform map work op=add node=element:code.alarm.audible condition=missing task="build it"',
-                        'Record that the alarm is in the specs and not built yet.'),
+                        'Record that the alarm does not exist yet.'),
                        ('metaform map work op=edit id=<work id> node=code.alarm.audible',
                         'Move a ticket to the alarm, keeping its progress and reference links.'),
                        ('metaform map work condition=broken open=true', 'List the open broken records.'),
@@ -1063,18 +1258,26 @@ MODULE = Module(
                     _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
                                          'user answers with one click on one of them, or types another.', 'json'),
                     _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.'),
-                    _noun('work', 'The ticket this question belongs to, by its work id.')),
-             details='Before you ask, look for the answer in the specifications, the code and the map, and ask only '
-                     'what they leave open. The user reads your question on the map with none of your context: say '
-                     'what it is about and why it needs deciding, in plain words, without your own labels or ids. '
-                     'Each suggested answer says what it leads to. '
-                     'Ask, and carry on with what does not depend on the answer. The user answers in the web GUI, '
-                     'where the node glows until they do, and the answer is kept at the node for the agent that '
-                     'works there next. Read the answers with metaform map messages. If the user answers you another '
-                     'way, record that answer with metaform map reply <id> answer="...", so the node stops glowing.',
-             examples=(('metaform map ask code.alarm.audible "The alarm still has a quiet tone, and the specification '
-                        'no longer mentions one. Should it stay?" suggestions=\'["Keep it: the alarm keeps both tones", '
-                        '"Remove it: the alarm has only the loud tone"]\'', 'Ask the user at the alarm.'),)),
+                    _noun('work', 'The ticket this question belongs to, by its work id.'),
+                    _noun('specs', 'Question form #1: the specification files you reviewed.'),
+                    _noun('not_option', 'Question form #2: in plain English, why this decision is unsuitable to be a '
+                                        'configuration option.'),
+                    _noun('rich_said', 'Question form #3: the exact words of an unexplained "Rich said..." and where '
+                                       'they are, if that is the blocker.')),
+             details=prompt_files.required(resources.files(__name__), 'question_guidance') + '\n\n' +
+                     prompt_files.required(resources.files(__name__), 'question_form'),
+             examples=((('metaform map ask code.alarm.audible "I was checking the alarm\'s stored recordings. The older '
+                         'recordings are their only copies, and the specification gives no retention rule. Keeping '
+                         'them uses storage; permanently deleting them frees storage but loses those recordings. I '
+                         'recommend keeping them while a retention rule is decided. May the existing recordings be '
+                         'permanently deleted?" specs="01-map.md, 09-viewer.md: no recording-retention decision" '
+                         'not_option="A setting can govern future retention, but it cannot restore these recordings '
+                         'after permanent deletion." rich_said="None; the decision and its reason are described in the '
+                         'question." suggestions=\'["Keep the existing recordings (recommended): preserve them and '
+                         'their storage cost", "Permit permanent deletion: free storage and lose the existing '
+                         'recordings"]\' by="builder, recording-retention review" work=<work id>'),
+                        ('Ask through the full form about permanent deletion that a setting cannot undo, '
+                         'with the recommended answer first.')),)),
         Verb('tell', tell, 'Leave the user a message at a node, which asks for nothing and waits to be read.',
              nouns=(Noun('node', 'Where the message applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),
@@ -1112,8 +1315,8 @@ MODULE = Module(
              nouns=REFINE_NOUNS,
              details='The change is written in the metaform\'s own layer, never in a new one, LAYER-025; history '
                      'shows every version.',
-             examples=(('metaform map refine id=<join id> purpose="Know when each dish is done." '
-                        'reason="the old purpose named the clock"', 'Refine one join\'s purpose.'),)),
+             examples=((('metaform map refine id=<join id> purpose="Know when each dish is done." '
+                         'reason="the old purpose named the clock"'), 'Refine one join\'s purpose.'),)),
         Verb('select', select, 'Turn a layer on at an address and at every address toward the leaves from it.',
              nouns=(Noun('address', 'An address.'), Noun('layer', 'A layer.'))),
         Verb('mask', mask, 'Stop a layer flowing into an address and every address toward the leaves from it.',
@@ -1132,10 +1335,10 @@ MODULE = Module(
              nouns=(Noun('challenge', 'The challenge item id.'),), surfaces=('cli',)),
         Verb('critic', critic, 'Start a blind-spot critic run: a new blind-spot layer, and the critic prompt with the '
                                'whole metaform.',
-             nouns=(_noun('sighted', 'Whether the critic reads the code with the metaform; blind when missing.',
-                          'bool'),),
-             details='Each run creates its own blind-spot layer, with provenance role critic and blinded true unless '
-                     'sighted=true, LAYER-014.'),
+             switches=('critic',),
+             details='Fast mode by default: the critic reads the metaform and the specifications, not the code. '
+                     '--critic also lets it read the code and write tickets. Each run creates its own blind-spot '
+                     'layer, with provenance role critic and blinded true unless --critic, LAYER-014.'),
         Verb('challenges', challenges, "The answer prompt with each challenge of a blind-spot layer and its state.",
              nouns=(Noun('layer', 'The blind-spot layer.'),)),
     ),

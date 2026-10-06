@@ -1,11 +1,11 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 19.
+"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 20.
 
 Every table follows STORE-004: one row per thing, and no row holds a collection.
 The metaform is Rich's shape, 2026-10-04: an element is its address, name_length,
 name and role, STORE-009, and it cannot be moved, MAP-015; a join is its type,
 purpose, ef and ifd, held by its receiver, and holds the elements that serve its
 purpose, one `join_elements` row per element for each version of the join, in
-order. Nothing else is a field of the metaform: refs live in the sources layer and
+order. A promoted join also records its element address, MAP-054: refs live in the sources layer and
 anything more in a knowledge layer, as items. `current_elements` carries the
 current row's role, so the map's entry is one read on `current_elements_by_role`.
 `address_elements` remembers the element id of every address the store has held,
@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS joins(
   purpose     TEXT,
   ef          TEXT,
   ifd         TEXT,
+  element     TEXT,
   op          TEXT NOT NULL DEFAULT 'add' CHECK(op IN ('add','change','remove')),
   reason      TEXT,
   evidence    TEXT

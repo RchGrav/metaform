@@ -1,0 +1,623 @@
+{
+  "tool description (what a host shows)": "Serve the Canonical Intake and record its result as it is reasoned. Commands: prompt, start, element, join, subtype, absorb, show, edit, remove, finish, status. Call it with no command for what each takes.",
+  "reply to calling intake with no command": {
+    "tool": "intake",
+    "summary": "Serve the Canonical Intake and record its result as it is reasoned.",
+    "commands": [
+      {
+        "command": "prompt",
+        "summary": "The Canonical Intake instructions for this project.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "What the person asks for: a target or a task. Nothing means this project."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "start",
+        "summary": "Resume the intake being recorded, or start a fresh one. If the active metaform already has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier one untouched. Returns its name; the existing web GUI follows it live.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "The model that performs the intake."
+            },
+            "role": {
+              "type": "string",
+              "description": "The role of the agent that performs it."
+            },
+            "blinded": {
+              "type": "boolean",
+              "description": "Whether the agent sees only the map."
+            },
+            "id": {
+              "type": "string",
+              "description": "The result's generated id."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "element",
+        "summary": "Record one element, or describe again one already recorded.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "namespace_address": {
+              "type": "string",
+              "description": "dotted namespace address. Element: An element is any nameable part of an entity as a type; however, just because an element can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred. Entity: An entity is a whole, independent thing with its own distinct existence, while an element is a smaller part or component that makes up that whole. All entities are elements, but not all elements are entities. Entity or an element depends entirely on your level of abstraction (your scope). The moment you zoom into a component and examine its internal composition, that component transitions conceptually from a passive \"element\" into an active \"entity\" with its own subordinate elements. NS, Namespace Scope: The scope of the Artifact Type. The five base valid types are code, document, media, data, and stakeholder. AT, Artifact Type: This is a general category or classification that groups individual artifacts together based on shared characteristics. Artifact Types can be used to anneal or combine many of the same type of AUE into types (for example photos, data objects, scripts, templates, etc). Parametric: A quality or quantity that can be tuned but does not carry a specific name in the scope of the namespace of this AUE. We do not name parametrics with a namespace address in this graph or as part of this operation."
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "AUE",
+                "CQU",
+                "DE",
+                "SE",
+                "NE"
+              ],
+              "description": "AUE, Artifact Under Examination: The entity (thing or things) being examined, created, or used. Artifacts can include photographs, contracts, stories, resale assets, and software. The work can concern multiple artifacts and projects. Whether an AUE serves as an asset depends on its use in that context. CQU, Cestui Que Use: The explicit RE which benefits from work which can be performed on the type of thing the artifact is: the type or party that holds an objective purpose for this type of object and drives the most improvement in it. The CQU receives the join, holding the Operative Purpose that a Providing Element's Encounter Function serves. DE, Defining Element: The notable element of this AUE whose loss would prevent the AUE from remaining the same type. Its Encounter Function services the OP of a CQU outside of this AUE, names the functional type of the AUE as a converged result of the functionality of the AUE being examined. Its defining function is expressed independently of medium, encoding, genre, and style. SE, Substantial Element: An element whose Encounter Function helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. NE, Notable Element: A component, interface, or specification that defines an essential demand or requirement. It is **notable** because it highlights what a system or component explicitly expects, needs, or depends on from its external environment to operate successfully."
+            },
+            "name_length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "proper_noun_lookback_segment_count"
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              },
+              "description": "Uniform dictionary shape for type-specific or artifact-specific keys"
+            },
+            "extra": {
+              "type": "object"
+            },
+            "name": {
+              "type": "string",
+              "description": "Canonical Name (Project official terminology) or Informal Name"
+            },
+            "condition": {
+              "type": "string",
+              "description": "Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination."
+            },
+            "note": {
+              "type": "string",
+              "description": "record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "namespace_address"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "join",
+        "summary": "Record one join: the receiver's purpose served by the provider's encounter function.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "receiver": {
+              "type": "string",
+              "description": "namespace address of the Receiving Element. RE, Receiving Element/Entity: The **who** or **what** bearing an OP. This is the element, person, group, system, component, or other participant with an Operative Purpose for the Encounter Function of an Element. The OP belongs to that receiver, and the join that records it lives in that receiver. Join: A dictionary object that exists in the Receiving Entity (RE) with a relation in active voice, an observation of the long lasting stable state of what is there; additionally it contains a dictionary of objects containing type specific or AUE specific references and logic."
+            },
+            "provider": {
+              "type": "string",
+              "description": "namespace address of the Providing Element. PE, Providing Element: The part satisfying the requirement actively declared by its CQU through its Operative Purpose. This is the join's other endpoint: whatever's EF fulfills the CQU's OP."
+            },
+            "name": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string",
+              "description": "State the objective or standard this element or action fulfills. OP, Operative Purpose: The **why**. This is the active goal held in a CQU's join dictionary — that an element's encounter function intends to accomplish."
+            },
+            "ef": {
+              "type": "string",
+              "description": "Encounter Function of the PE within the RE context. EF, Encounter Function: The **how** of what is delivered.  This may be understood as the function of an encounter or the encounter of a function depending on the contextual understanding of the Artifact. This is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its CQU. It explains how the effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is stored in the CQU-owned join because a PE element type's functionality on the whole may satisfy different Vested Entities' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins."
+            },
+            "perspective": {
+              "type": "string",
+              "enum": [
+                "Function",
+                "Encounter"
+              ],
+              "description": "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter"
+            },
+            "relation": {
+              "type": "string",
+              "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if perspective is Function, or the RE if perspective is Encounter"
+            },
+            "verb": {
+              "type": "string",
+              "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)"
+            },
+            "observation": {
+              "type": "string",
+              "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation"
+            },
+            "non_goal": {
+              "type": "string",
+              "description": "high-value non-goals consisting of structural constraints"
+            },
+            "type": {
+              "type": "string"
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              },
+              "description": "Uniform dictionary shape for type-specific or artifact-specific keys"
+            },
+            "extra": {
+              "type": "object"
+            },
+            "condition": {
+              "type": "string",
+              "description": "Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination."
+            },
+            "note": {
+              "type": "string",
+              "description": "record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "receiver",
+            "provider"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "subtype",
+        "summary": "Record one subtype join inside its parent join, holding an element.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "into": {
+              "type": "string",
+              "description": "The join_id of the parent join it sits inside, as intake join returned it."
+            },
+            "namespace_address": {
+              "type": "string",
+              "description": "dotted namespace address. Element: An element is any nameable part of an entity as a type; however, just because an element can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred. Entity: An entity is a whole, independent thing with its own distinct existence, while an element is a smaller part or component that makes up that whole. All entities are elements, but not all elements are entities. Entity or an element depends entirely on your level of abstraction (your scope). The moment you zoom into a component and examine its internal composition, that component transitions conceptually from a passive \"element\" into an active \"entity\" with its own subordinate elements. NS, Namespace Scope: The scope of the Artifact Type. The five base valid types are code, document, media, data, and stakeholder. AT, Artifact Type: This is a general category or classification that groups individual artifacts together based on shared characteristics. Artifact Types can be used to anneal or combine many of the same type of AUE into types (for example photos, data objects, scripts, templates, etc). Parametric: A quality or quantity that can be tuned but does not carry a specific name in the scope of the namespace of this AUE. We do not name parametrics with a namespace address in this graph or as part of this operation."
+            },
+            "type": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string",
+              "description": "State the objective or standard this element or action fulfills. OP, Operative Purpose: The **why**. This is the active goal held in a CQU's join dictionary — that an element's encounter function intends to accomplish."
+            },
+            "ef": {
+              "type": "string",
+              "description": "Encounter Function of the PE within the RE context. EF, Encounter Function: The **how** of what is delivered.  This may be understood as the function of an encounter or the encounter of a function depending on the contextual understanding of the Artifact. This is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its CQU. It explains how the effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is stored in the CQU-owned join because a PE element type's functionality on the whole may satisfy different Vested Entities' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins."
+            },
+            "perspective": {
+              "type": "string",
+              "enum": [
+                "Function",
+                "Encounter"
+              ],
+              "description": "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter"
+            },
+            "relation": {
+              "type": "string",
+              "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if perspective is Function, or the RE if perspective is Encounter"
+            },
+            "verb": {
+              "type": "string",
+              "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)"
+            },
+            "observation": {
+              "type": "string",
+              "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation"
+            },
+            "non_goal": {
+              "type": "string",
+              "description": "high-value non-goals consisting of structural constraints"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "DE",
+                "SE",
+                "NE"
+              ],
+              "description": "AUE, Artifact Under Examination: The entity (thing or things) being examined, created, or used. Artifacts can include photographs, contracts, stories, resale assets, and software. The work can concern multiple artifacts and projects. Whether an AUE serves as an asset depends on its use in that context. CQU, Cestui Que Use: The explicit RE which benefits from work which can be performed on the type of thing the artifact is: the type or party that holds an objective purpose for this type of object and drives the most improvement in it. The CQU receives the join, holding the Operative Purpose that a Providing Element's Encounter Function serves. DE, Defining Element: The notable element of this AUE whose loss would prevent the AUE from remaining the same type. Its Encounter Function services the OP of a CQU outside of this AUE, names the functional type of the AUE as a converged result of the functionality of the AUE being examined. Its defining function is expressed independently of medium, encoding, genre, and style. SE, Substantial Element: An element whose Encounter Function helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. NE, Notable Element: A component, interface, or specification that defines an essential demand or requirement. It is **notable** because it highlights what a system or component explicitly expects, needs, or depends on from its external environment to operate successfully."
+            },
+            "name": {
+              "type": "string",
+              "description": "Canonical Name (Project official terminology) or Informal Name"
+            },
+            "name_length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "proper_noun_lookback_segment_count"
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              },
+              "description": "Uniform dictionary shape for type-specific or artifact-specific keys"
+            },
+            "extra": {
+              "type": "object"
+            },
+            "condition": {
+              "type": "string",
+              "description": "Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination."
+            },
+            "note": {
+              "type": "string",
+              "description": "record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "into",
+            "namespace_address"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "absorb",
+        "summary": "Anneal: make a recorded join a subtype join inside its parent's purpose join, keeping every field; the element stays one element record.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "join": {
+              "type": "string",
+              "description": "The join_id of the join where the element provides, the join to place inside its parent."
+            },
+            "into": {
+              "type": "string",
+              "description": "The join_id of the parent's purpose join it goes inside."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "join",
+            "into"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "show",
+        "summary": "The intake being recorded, whole or one receiver at a time, with the ids to edit or remove.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "receiver": {
+              "type": "string",
+              "description": "An element's namespace_address: show only the joins it receives and what they hold."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "edit",
+        "summary": "Change one recorded element, join or subtype join; the fields given replace the ones it had.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "An element's namespace_address or element_id, or a join_id, a subtype join's included."
+            },
+            "purpose": {
+              "type": "string",
+              "description": "State the objective or standard this element or action fulfills. OP, Operative Purpose: The **why**. This is the active goal held in a CQU's join dictionary — that an element's encounter function intends to accomplish."
+            },
+            "ef": {
+              "type": "string",
+              "description": "Encounter Function of the PE within the RE context. EF, Encounter Function: The **how** of what is delivered.  This may be understood as the function of an encounter or the encounter of a function depending on the contextual understanding of the Artifact. This is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its CQU. It explains how the effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is stored in the CQU-owned join because a PE element type's functionality on the whole may satisfy different Vested Entities' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins."
+            },
+            "perspective": {
+              "type": "string",
+              "enum": [
+                "Function",
+                "Encounter"
+              ],
+              "description": "Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter"
+            },
+            "relation": {
+              "type": "string",
+              "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if perspective is Function, or the RE if perspective is Encounter"
+            },
+            "verb": {
+              "type": "string",
+              "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)"
+            },
+            "observation": {
+              "type": "string",
+              "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation"
+            },
+            "non_goal": {
+              "type": "string",
+              "description": "high-value non-goals consisting of structural constraints"
+            },
+            "type": {
+              "type": "string"
+            },
+            "receiver": {
+              "type": "string",
+              "description": "A new receiver for a join, by namespace address: the join moves and keeps its join_id."
+            },
+            "provider": {
+              "type": "string",
+              "description": "A new Providing Element for a join, by namespace address."
+            },
+            "namespace_address": {
+              "type": "string",
+              "description": "On a subtype join, the namespace_address of another element for it to hold. An element cannot be moved: given for an element, it is not applied."
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "AUE",
+                "CQU",
+                "DE",
+                "SE",
+                "NE"
+              ],
+              "description": "AUE, Artifact Under Examination: The entity (thing or things) being examined, created, or used. Artifacts can include photographs, contracts, stories, resale assets, and software. The work can concern multiple artifacts and projects. Whether an AUE serves as an asset depends on its use in that context. CQU, Cestui Que Use: The explicit RE which benefits from work which can be performed on the type of thing the artifact is: the type or party that holds an objective purpose for this type of object and drives the most improvement in it. The CQU receives the join, holding the Operative Purpose that a Providing Element's Encounter Function serves. DE, Defining Element: The notable element of this AUE whose loss would prevent the AUE from remaining the same type. Its Encounter Function services the OP of a CQU outside of this AUE, names the functional type of the AUE as a converged result of the functionality of the AUE being examined. Its defining function is expressed independently of medium, encoding, genre, and style. SE, Substantial Element: An element whose Encounter Function helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved. NE, Notable Element: A component, interface, or specification that defines an essential demand or requirement. It is **notable** because it highlights what a system or component explicitly expects, needs, or depends on from its external environment to operate successfully."
+            },
+            "name": {
+              "type": "string"
+            },
+            "name_length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "proper_noun_lookback_segment_count"
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              },
+              "description": "Uniform dictionary shape for type-specific or artifact-specific keys"
+            },
+            "extra": {
+              "type": "object"
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "remove",
+        "summary": "Remove one recorded element, join or subtype join.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "An element's namespace_address or element_id, or a join_id, a subtype join's included."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "finish",
+        "summary": "Finish and activate the recorded metaform, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining: metaform map knowledge op=refine.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "report": {
+              "type": "string",
+              "description": "Your report on the project you examined: broken code, things that need fixing, anything not working or partially working. On the command line a file is read and - is standard input."
+            },
+            "feedback": {
+              "type": "string",
+              "description": "Feedback on the Metaform process: bad semantics, a tool that did not match its schema, where you got stuck."
+            },
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      {
+        "command": "status",
+        "summary": "Whether this project has an intake, and whether one is being recorded.",
+        "arguments": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string",
+              "description": "A registered project id; overrides the folder's project for this call."
+            },
+            "layers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The layers, by name or tag, toggled on for this call only."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

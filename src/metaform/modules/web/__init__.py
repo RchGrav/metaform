@@ -261,12 +261,12 @@ def held_open(record: dict[str, Any]) -> http.client.HTTPResponse | None:
 
 
 def status(ctx: Context) -> Status:
-    """With `web_autostart` on, the autostart message is in the instructions agents read, VIEW-015, and in status
-    for a project with no map yet, where an intake comes next. Off, it is in neither."""
+    """With `web_autostart` on, the autostart message is in the instructions agents read and in status for a project
+    with no finished intake yet, where an intake comes next, VIEW-015 and MCP-029. Off, it is in neither."""
     if not ctx.setting('web_autostart'):
         return Status()
     mapped = ctx.store is not None and ctx.store.has_intake()
-    return Status(notice=None if mapped else AUTOSTART, instruction=AUTOSTART)
+    return Status() if mapped else Status(notice=AUTOSTART, instruction=AUTOSTART)
 
 
 def serve(ctx: Context) -> None:

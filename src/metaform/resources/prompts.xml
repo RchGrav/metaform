@@ -4,14 +4,36 @@
      <projects/> the registered projects. -->
 <prompts>
 <!-- The slash commands the chassis declares, MCP-032 and MCP-033: each runs the command line named in verb. -->
-<commands><status verb="" summary="This folder's project, its metaform and the modules on."/><config verb="config --show"/></commands>
+<commands><status verb="" summary="This folder's project, its metaform and the modules on."/><config verb="config --show"/><prompt verb="prompt &lt;name&gt; [&lt;version&gt;]"/></commands>
+<!-- The base of the instructions an agent reads when it connects over MCP and from metaform help agents. <modules/>
+     is filled with one line per surfaced module: its active line by default, its whole instructions prompt with
+     connect_instructions=full, MCP-029. -->
 <instructions>Metaform MCP server is active.
 modules available.
 <modules/>
 </instructions>
+<!-- The compact instructions, connect_instructions=compact, MCP-029: each module is listed by active, with its id in
+     place of <module/>, and more follows the list. -->
+<active><module/> is active.</active>
+<!-- Follows the module list in the compact instructions, the default connect_instructions=compact, and tells the
+     agent where a module's full instructions are, MCP-029. -->
+<more>A module's full instructions: call its tool with no command, or run metaform help agents &lt;module&gt;.</more>
+<!-- Added to the instructions when the folder is in no registered project and other projects are registered;
+     <projects/> is filled with their ids. -->
 <registered>Registered projects: <projects/>.</registered>
+<!-- Added to the instructions when the folder is in no registered project, after the registered list, and tells the
+     agent how to register one. -->
 <no_project>This folder is not in a registered project. To register one: metaform add project &lt;id&gt; &lt;path&gt;</no_project>
+<!-- The pointer metaform provision and install write into a harness's global instructions file, such as
+     ~/.claude/CLAUDE.md, so an agent opened directly in its harness knows to read Metaform's instructions; the
+     provision help prints it for other harnesses, MCP-036. -->
+<global_instructions>This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform tool's instructions command.</global_instructions>
+<!-- The passive reminder provision installs as a hook: Claude Code shows it before an Agent, Task or AskUserQuestion
+     call, Gemini after invoke_agent, delegate_to_agent or ask_user, MCP-036. -->
+<work_reminder>Use Metaform for all task assignment and ask the user with map ask.</work_reminder>
 <!-- Served, in this order, only while the debug setting is on, MCP-031. -->
 <stop>If you cannot continue, stop and submit a trouble report: call the metaform tool with command feedback, attaching what you have in its shape field. Do not retry.</stop>
+<!-- Follows stop in the instructions while the debug setting is on, and asks the agent for feedback on the Metaform
+     process, MCP-031 and CLI-034. -->
 <debug>Submit feedback on the Metaform process with the same command: bad semantics, a command that did not match what it said it takes, where you got stuck.</debug>
 </prompts>

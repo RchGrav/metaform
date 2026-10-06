@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- packet's prompts, MCP-031. What is between an element's tags is what is served. -->
 <prompts>
+<!-- packet's line in the instructions agents read while packet is on, MCP-029. -->
 <instructions>packet is active.</instructions>
 </prompts>

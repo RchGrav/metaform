@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from metaform.data.records import Record
+from metaform.data import Record
 
 
 @dataclass(frozen=True)

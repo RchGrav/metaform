@@ -1,4 +1,4 @@
-// Metaform agents 3D: sixteen procedural, animated agent characters for a Three.js graph.
+// Metaform agents 3D: seventeen procedural, animated agent characters for a Three.js graph.
 //
 //   import { createAgent, GLYPHS, drawGlyph, placeAgentOnCurve } from './metaform-agents-3d.js';
 //   const agent = createAgent(drawGlyph(sessionId), { harness: 'codex' });
@@ -16,6 +16,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 export const GLYPHS = [
   'jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp',
   'comet', 'beetle', 'slime', 'plane', 'puffer', 'owl', 'cubebot', 'mushroom',
+  'seahorse',
 ];
 
 export const HARNESS_RING = {
@@ -141,7 +142,18 @@ function waveChain(ch, t, { amp = 0.35, freq = 3, lag = 0.6, axis = 'z', phase =
   ch.segs.forEach((s, i) => { s.rotation[axis] = Math.sin(t * freq - i * lag + phase) * amp * (0.4 + i / ch.segs.length); });
 }
 
-// ---------------------------------------------------------------- the sixteen
+// Scalloped fan fin in the XY plane, opening toward +X from its hinge at the origin.
+function fanGeo(r, spread, scallops = 5) {
+  const sh = new THREE.Shape(); sh.moveTo(0, 0);
+  for (let i = 0; i <= scallops * 2; i++) {
+    const a = -spread / 2 + (spread * i) / (scallops * 2), rr = i % 2 ? r : r * 0.82;
+    sh.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  sh.closePath();
+  return new THREE.ExtrudeGeometry(sh, { depth: 0.012, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.006, bevelSegments: 2 }).translate(0, 0, -0.006);
+}
+
+// ---------------------------------------------------------------- the seventeen
 
 const BUILD = {
   jelly(root) {
@@ -557,11 +569,144 @@ const BUILD = {
       cap.rotation.y = Math.sin(t * 2) * 0.2;
     };
   },
+
+  // Seahorse, after how the animal swims: a rigid upright body, a fast-rippling dorsal
+  // fin for thrust, pectoral fins that steer, buoyancy for up and down, and a prehensile
+  // tail that hangs loose while swimming and coils tight to anchor while working.
+  seahorse(root) {
+    const orange = vinyl(0xff8a2a, { glowAmt: 0.16 }), belly = vinyl(0xffd25a, { glowAmt: 0.2 });
+    const crestMat = vinyl(0xa64ad6, { glowAmt: 0.25 });
+    const N = 110, LB = 0.78, LT = 0.62, neck = new THREE.Vector2(-0.05, 0.36);  // (z, y); snout faces +Z
+    const NB = Math.round(N * LB / (LB + LT));
+    const pts = Array.from({ length: N + 1 }, () => new THREE.Vector3());
+    const heading = new Float32Array(N + 1);
+    const rad = (u) => {               // u: 0 neck .. 1 tail tip
+      const b = LB / (LB + LT);
+      if (u < b) { const k = u / b; return 0.12 + Math.sin(Math.min(1, k * 1.25) * Math.PI) * 0.09 + (1 - k) * 0.02; }
+      const k = (u - b) / (1 - b); return 0.1 * (1 - k) ** 1.15 + 0.022;
+    };
+    // body bend is fixed; only the tail's curl changes (c: -1 back .. +1 forward, tight)
+    function spine(curl) {
+      let z = neck.x, y = neck.y, th = -Math.PI / 2 - 0.42;
+      const ds = (LB + LT) / N;
+      for (let i = 0; i <= N; i++) {
+        const sArc = i * ds; pts[i].set(0, y, z); heading[i] = th;
+        const k = sArc < LB ? 1.05 : curl * 3.1 * (1 + ((sArc - LB) / LT) * 5);
+        th += k * ds; z += Math.cos(th) * ds; y += Math.sin(th) * ds;
+      }
+    }
+    const pointAt = (u) => { const f = u * N, i = Math.min(N - 1, Math.floor(f)); return pts[i].clone().lerp(pts[i + 1], f - i); };
+    const bU = NB / N;
+    // body: round section; tail: four-sided section, as in the real animal
+    const buildBody = () => taperTube((u) => pointAt(u * bU), (u) => rad(u * bU), NB, 18);
+    const buildTail = () => taperTube((u) => pointAt(bU + u * (1 - bU)), (u) => rad(bU + u * (1 - bU)) * 1.05, N - NB, 4);
+
+    spine(0.2);
+    const body = mesh(buildBody(), orange, { parent: root });
+    const tail = mesh(buildTail(), orange, { parent: root });
+    const tailOutline = tail.children[0];
+
+    const frame = (u) => { const p = pointAt(u), i = Math.round(u * N), th = heading[i];
+      return { p, th, fz: -Math.sin(th), fy: Math.cos(th) }; };   // (fz, fy) points to the belly side
+
+    // belly plates and the purple frill on the neck: fixed to the rigid body, placed once
+    for (let i = 0; i < 7; i++) {
+      const u = bU * (0.14 + i * 0.105), f = frame(u), r = rad(u);
+      mesh(new THREE.SphereGeometry(1, 20, 12), belly, { parent: root, outline: false,
+        pos: [0, f.p.y + f.fy * r * 0.58, f.p.z + f.fz * r * 0.58], rot: [-(f.th + Math.PI / 2), 0, 0], scale: [r * 0.86, 0.062, r * 0.5] });
+    }
+    for (let i = 0; i < 3; i++) {
+      const u = bU * (0.02 + i * 0.09), f = frame(u), r = rad(u);
+      mesh(new THREE.SphereGeometry(1, 18, 12), crestMat, { parent: root,
+        pos: [0, f.p.y - f.fy * r * 0.95, f.p.z - f.fz * r * 0.95], scale: [0.022, 0.06 * (1 - i * 0.12), 0.06 * (1 - i * 0.12)] });
+    }
+
+    // dorsal fin: a membrane on the lower back whose rays ripple side to side in a fast travelling wave
+    const FC = 26, FR = 5;                 // columns along the back, rows from base to edge
+    const finGeo = new THREE.BufferGeometry();
+    const finPos = new Float32Array(FC * FR * 3), finCol = new Float32Array(FC * FR * 3), idx = [];
+    const cBase = new THREE.Color(0x8a3cc8), cEdge = new THREE.Color(0xcf8cff);
+    for (let c = 0; c < FC; c++) for (let r = 0; r < FR; r++) {
+      const k = c * FR + r, col = cBase.clone().lerp(cEdge, r / (FR - 1));
+      finCol.set([col.r, col.g, col.b], k * 3);
+      if (c < FC - 1 && r < FR - 1) idx.push(k, k + FR, k + 1, k + 1, k + FR, k + FR + 1);
+    }
+    finGeo.setAttribute('position', new THREE.BufferAttribute(finPos, 3));
+    finGeo.setAttribute('color', new THREE.BufferAttribute(finCol, 3));
+    finGeo.setIndex(idx);
+    const finMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.92,
+      roughness: 0.3, clearcoat: 0.6, emissive: 0x6a2aa0, emissiveIntensity: 0.35 });
+    const fin = new THREE.Mesh(finGeo, finMat); root.add(fin);
+    const finBase = [];
+    for (let c = 0; c < FC; c++) {
+      const q = c / (FC - 1), u = bU * (0.46 + q * 0.36), f = frame(u), r = rad(u);
+      finBase.push({ y: f.p.y - f.fy * r * 0.9, z: f.p.z - f.fz * r * 0.9, ny: -f.fy, nz: -f.fz, h: 0.27 * Math.sin(Math.PI * (0.15 + q * 0.85)) ** 0.7 });
+    }
+    function rippleFin(t, power) {
+      // wave runs head to tail along the fin; amplitude grows toward the free edge
+      const w = t * Math.PI * 2 * (6 + power * 4);
+      for (let c = 0; c < FC; c++) for (let r = 0; r < FR; r++) {
+        const b = finBase[c], v = r / (FR - 1), k = (c * FR + r) * 3;
+        const h = b.h * v * (0.92 + 0.08 * power);
+        finPos[k] = Math.sin(c * 0.9 - w) * 0.035 * v * (0.6 + power * 0.6);
+        finPos[k + 1] = b.y + b.ny * h; finPos[k + 2] = b.z + b.nz * h;
+      }
+      finGeo.attributes.position.needsUpdate = true; finGeo.computeVertexNormals();
+    }
+
+    // head: tube snout, side eyes, still coronet
+    const head = new THREE.Group(); root.add(head);
+    const n0 = frame(0); head.position.set(0, n0.p.y + 0.13, n0.p.z + 0.06); head.rotation.x = 0.05;
+    mesh(new THREE.SphereGeometry(0.17, 32, 24), orange, { parent: head, scale: [0.9, 1, 1.05] });
+    mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.26, 20).rotateX(Math.PI / 2), orange, { parent: head, pos: [0, -0.02, 0.24] });
+    mesh(new THREE.TorusGeometry(0.05, 0.018, 10, 24), vinyl(0xe06a12), { parent: head, outline: false, pos: [0, -0.02, 0.37] });
+    for (const sd of [-1, 1]) {
+      const e = new THREE.Group(); e.position.set(sd * 0.13, 0.04, 0.05); e.rotation.y = sd * (Math.PI / 2 - 0.35); head.add(e);
+      eyes(e, { y: 0, z: 0, gap: 0, r: 0.055 });
+    }
+    [0, 1, 2].forEach((i) => mesh(new THREE.SphereGeometry(1, 18, 12), crestMat, { parent: head,
+      pos: [0, 0.17 - i * 0.05, -0.08 - i * 0.07], scale: [0.022, 0.06, 0.06] }));
+    // pectoral fins just behind the head, one per side
+    const pecs = [-1, 1].map((sd) => {
+      const hinge = new THREE.Group(); hinge.position.set(sd * 0.12, -0.08, -0.08); hinge.scale.x = sd; head.add(hinge);
+      const flap = new THREE.Group(); hinge.add(flap);
+      mesh(fanGeo(0.11, 1.2, 4), vinyl(0xffb066, { side: THREE.DoubleSide, glowAmt: 0.25 }), { parent: flap, outline: false, rot: [0, 0.5, Math.PI] });
+      return { flap, sd };
+    });
+
+    let curl = 0.2, lean = 0;
+    // ctx: busy 0..1 (working, so anchored), turn (rad/s, + = left), climb (units/s)
+    return (t, s, ctx = {}) => {
+      const busy = ctx.busy ?? 0, turn = ctx.turn ?? 0, climb = ctx.climb ?? 0, dt = ctx.dt ?? 1 / 60;
+      // tail: anchored = tight forward coil; swimming = loose, flexing gently forward and back
+      const target = busy > 0.5 ? 1 : 0.15 + Math.sin(t * 0.7) * 0.45;
+      curl += (target - curl) * Math.min(1, dt * (busy > 0.5 ? 2.5 : 1.2));
+      spine(curl);
+      const g = buildTail(); tail.geometry.dispose(); tail.geometry = g; tailOutline.geometry = g;
+
+      // thrust: dorsal fin ripples hard while swimming, idles while anchored
+      rippleFin(t, 1 - busy * 0.75);
+
+      // steering: the pectoral on the outside of the turn beats harder
+      pecs.forEach(({ flap, sd }) => {
+        const amp = 0.45 + Math.max(-0.3, Math.min(0.4, sd * turn * 0.25));
+        flap.rotation.y = Math.sin(t * 22 + (sd > 0 ? 0 : Math.PI)) * amp;
+      });
+      // stability: lean a little into a turn and settle back; never roll over
+      lean += (Math.max(-0.25, Math.min(0.25, -turn * 0.12)) - lean) * Math.min(1, dt * 3);
+      root.rotation.z = lean;
+
+      // buoyancy: slow rise and sink, nose tips with the climb, body stays upright
+      root.position.y = Math.sin(t * 0.55) * 0.05 + Math.sin(t * 1.4) * 0.012;
+      root.rotation.x = Math.max(-0.25, Math.min(0.25, -climb * 0.25)) + Math.sin(t * 0.5) * 0.03;
+    };
+  },
 };
 
 // ---------------------------------------------------------------- public API
 
 // Build one agent. Pass { halo: true, harness } to add a ring in the harness colour.
+const _wq = new THREE.Quaternion(), _wp = new THREE.Vector3(), _ev = new THREE.Euler();
 export function createAgent(name, { harness = 'other', halo = false } = {}) {
   if (!BUILD[name]) throw new Error(`unknown agent glyph: ${name}`);
   const agent = new THREE.Group(); agent.name = `agent-${name}`;
@@ -583,13 +728,25 @@ export function createAgent(name, { harness = 'other', halo = false } = {}) {
     ring.rotation.x = Math.PI / 2; ring.position.y = -0.95; agent.add(ring);
   }
 
-  let t = Math.random() * 10;
+  let t = Math.random() * 10, prev = null;
+  const smooth = { turn: 0, climb: 0 };
   agent.userData = {
     glyph: name, harness,
     // dt in seconds; busy 0..1 speeds the motion up (working rather than travelling)
     update(dt, { busy = 0 } = {}) {
       t += dt;
-      anim(t, 1 + busy * 1.5);
+      // turn rate and climb rate, read from how the graph moved the agent since last frame
+      agent.getWorldQuaternion(_wq); agent.getWorldPosition(_wp);
+      _ev.setFromQuaternion(_wq, 'YXZ');
+      let turn = 0, climb = 0;
+      if (prev && dt > 0) {
+        let dy = _ev.y - prev.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        turn = dy / dt; climb = (_wp.y - prev.y) / dt;
+      }
+      prev = { yaw: _ev.y, y: _wp.y };
+      smooth.turn += (turn - smooth.turn) * Math.min(1, dt * 4);
+      smooth.climb += (climb - smooth.climb) * Math.min(1, dt * 4);
+      anim(t, 1 + busy * 1.5, { busy, turn: smooth.turn, climb: smooth.climb, dt });
       if (ring) { ring.rotation.z += dt * (0.6 + busy * 3); ring.material.opacity = 0.75 + Math.sin(t * 3) * 0.2 + busy * 0.05; }
     },
   };

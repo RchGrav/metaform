@@ -1,0 +1,255 @@
+[
+  {
+    "id": "metaform.library.dual_agent",
+    "intent": "Orchestrate the supplied two-agent pipeline that delivers code with zero deviation from spec. inputs.spec supplies the functional requirements represented by the source SPEC placeholder.",
+    "inputs": {
+      "spec": {
+        "type": "string",
+        "description": "Functional requirements supplied as SPEC in the source procedure."
+      }
+    },
+    "source": "sources/dual_agent.md",
+    "definition": "definitions/dual_agent.json",
+    "source_revision": "af457b378df1722b0fb762b869d79bae9be757efc1dba0d5caa81f9bcd3a4a29",
+    "workflow_revision": "b34803365fcb5f3eb90615f0eb1100affbb2adfabb8dbb739dc31bfa1bf28f1e",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "3a39d6e94a944645b471474145b6a2ea",
+      "request_id": "2dc413fdc3da41fb9f8422d6023a7393"
+    },
+    "unresolved_requirements": []
+  },
+  {
+    "id": "metaform.library.metaprompt",
+    "intent": "Refine a user’s idea, goal, or prompt into a well-structured, carefully verified prompt, with minimal necessary clarification and specialist creation and independent review when needed.",
+    "inputs": {},
+    "source": "sources/metaprompt.md",
+    "definition": "definitions/metaprompt.json",
+    "source_revision": "d946cc587b719aa494b781e678f46d4a7ce94b1e5dc3b93783c1c4dbf8851231",
+    "workflow_revision": "1acb87edaef1e9ce168db2a699604c7c351a5bd6aa7a0e6d3073db17bda5be09",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "295dc2cce0994f84b2500188389a71ab",
+      "request_id": "72494b921535438a8b55c442a991edb2"
+    },
+    "unresolved_requirements": [],
+    "execution_requirements": [
+      {
+        "capability": "host_sandboxed_python",
+        "when": "Advanced computation or code is needed and the actual user desires execution (brief.execution_preference is desired).",
+        "binding": "Run the Expert Python assignment with a host that provides Python execution in a sandbox, such as the Codex command harness. The independent reviewer receives the returned observed evidence."
+      }
+    ]
+  },
+  {
+    "id": "metaform.library.multi_agent_orchestrator",
+    "intent": "Deliver a correct, high-quality solution to the actual software request through separate sequential Analyst, Planner/Architect, Developer, and Evaluator/QA assignments, source-authored user interactions, and repeated correction and evaluation until completion.",
+    "inputs": {
+      "request": "Required: the actual user request for a function, component, or software task, including any supplied specification, output contracts, and artifact destinations. The run’s project context supplies the working artifact."
+    },
+    "source": "sources/multi_agent_orchestrator.md",
+    "definition": "definitions/multi_agent_orchestrator.json",
+    "source_revision": "c15b545b5a1682711cbb2f9756c8cc0206aa985fdb3c69da138f621e6037780f",
+    "workflow_revision": "9b99e2443ee65455300a8ebf9bea55381028aed7b6d3a5b7b87264606221db56",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "890947497a9245f38366c114fabd06c1",
+      "request_id": "b9a4c2a4593f4cc2ae4ca1d0e8bd95f9"
+    },
+    "unresolved_requirements": [
+      {
+        "id": "host_presentation",
+        "source_operation": "Hide internal collaboration and intermediate debugging; show only necessary user interactions and polished final output.",
+        "affected_steps": [
+          "analyze",
+          "incorporate_clarification",
+          "plan",
+          "develop_first",
+          "resume_development",
+          "evaluate",
+          "repair",
+          "develop_next",
+          "final_output"
+        ],
+        "reason": "The supplied grammar distinguishes worker assignments and user steps but specifies no visibility or presentation controls for assignment outputs, tool logs, or the final response.",
+        "resolution": "The host must display user-step prompts and final_answer while retaining intermediate worker records internally."
+      },
+      {
+        "id": "absolute_correctness",
+        "source_operation": "100% accuracy and compliance; absolutely no issues remain.",
+        "affected_steps": [
+          "evaluate",
+          "repair",
+          "route_verified"
+        ],
+        "reason": "The authored acceptance criteria and unbounded correction loop are represented. The grammar cannot prove an absolute absence of all defects beyond the supplied specification and actual verification evidence.",
+        "resolution": "Retain the source’s exact objective and report the evidence produced by evaluation without treating a workflow transition as a proof of universal correctness."
+      }
+    ],
+    "execution_requirements": [
+      {
+        "capability": "host_filesystem_and_process_tools",
+        "when": "Development, approved setup, and evaluation perform the authored artifact edits and checks.",
+        "binding": "The Codex command harness supplies filesystem and process tools in the assignment working scope. Sampling-only or actor-only execution needs a host that supplies these operations; no nonexistent module commands are declared."
+      }
+    ]
+  },
+  {
+    "id": "metaform.library.orchestrator",
+    "intent": "Build the user's project through repository bootstrap, planning, delegated architecture and documentation, sequential module implementation with StrictEvaluator repair loops, integration, artifact staging, and user satisfaction or an authored stopping condition.",
+    "inputs": {
+      "invoked_during_repo_init": "Optional host invocation flag. True selects deferred startup; omitted or false selects immediate bootstrap.",
+      "this_command": "Optional actual command name from the invocation. Otherwise bootstrap chooses a unique workflow command name from the repository inventory.",
+      "runtime_context": "Host-supplied initialization state, execution capabilities, live resource/time usage, and any actual explicit stop signal.",
+      "resource_time_cap": "Optional source-authored stopping bound supplied by the host or invocation.",
+      "workflow_tree": "The host's current workflow definition and execution tree for persistence. Generated step results are also passed to checkpoints."
+    },
+    "source": "sources/orchestrator.md",
+    "definition": "definitions/orchestrator.json",
+    "source_revision": "953780a58c8a1aec63768cfbf5db64b9e656fa57575f7c1e207339e47e94c7d0",
+    "workflow_revision": "5147bd701997087834894f26cc0d41f062b0a78c8c44a294b658d9ac2bc9c3c5",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "14dfed46bac147fe9de7ce17d133e8fa",
+      "request_id": "f9fbcb619b114e15844b3e23b4e35875"
+    },
+    "unresolved_requirements": [
+      {
+        "id": "initialization_event",
+        "source_operations": [
+          "Wait for repo init completion."
+        ],
+        "reason": "The grammar provides branches and assignments but no initialization-event subscription, sleep primitive, or live initialization-status tool.",
+        "representation": "wait_for_repo_init and init_status preserve the wait and its continuation. Actual waiting and status evidence require the host's initialization facility."
+      },
+      {
+        "id": "runtime_stop_and_cap",
+        "source_operations": [
+          "Report and act on actual host resource/time-cap telemetry."
+        ],
+        "reason": "Metaform's abort command stops the selected project's active operation and its command processes. The source supplies no concrete host resource meter or cap value; controller checkpoints need that actual host input.",
+        "representation": "The actual host cap/stop result flows through checkpoints to the authored summary. Generic resource metrics and external host events are not invented."
+      },
+      {
+        "id": "runtime_identity_and_notification",
+        "source_operations": [
+          "Resolve /<this_command> and task/<workflow>_<timestamp>/.",
+          "Inform the user that the deferred flow can be started."
+        ],
+        "reason": "The grammar has no command registration, clock, or dedicated notification operation. Repository discovery can inform name selection, while actual invocation identity and timestamps require runtime context.",
+        "representation": "The bootstrap and deferred_notice assignments request actual unique names, timestamps, paths, and the literal slash-command notice. Delivery of the notice and registration of that command require the host."
+      }
+    ],
+    "execution_requirements": [
+      {
+        "capability": "host_filesystem_and_process_tools",
+        "binding": "The Codex command harness supplies file/process tools for the authored artifact operations. Mirroring controllers read workflow.progress and write the current tree at existing phase/module checkpoints."
+      }
+    ]
+  },
+  {
+    "id": "metaform.library.extractor",
+    "intent": "TaskEngine: functional core extraction and zero-deviation redevelopment planning, producing user-approved Markdown documentation with target-language pseudocode.",
+    "inputs": {
+      "request": "The actual extraction request, as an object containing the original system or source material, target language when known, focus components when known, and requirements. Missing scope or target information is elicited by the Analyst."
+    },
+    "source": "sources/extractor.md",
+    "definition": "definitions/extractor.json",
+    "source_revision": "280106ac180ddfcaf50c41d7fa4f8ccbc88d25a2c6d7b178cea0e14ffdcace50",
+    "workflow_revision": "53be04ff4e91f43b99e9a01943925a8d99de8764aa8638c030be430b10e997da",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "c6fab55c9ce7477881b4888e3abad829",
+      "request_id": "817a86cb536e4cb6bb8ea758dd2334cd"
+    },
+    "unresolved_requirements": [],
+    "execution_requirements": [
+      {
+        "capability": "host_process_execution",
+        "when": "The Implementer requests an external tool or installation and the actual user grants PERMISSION GRANTED.",
+        "binding": "Execute the separate Orchestrator assignment with a process-capable host such as the Codex command harness; its actual result is passed back to the interrupted Implementer assignment."
+      }
+    ]
+  },
+  {
+    "id": "metaform.library.python_to_c",
+    "intent": "Produce comprehensive Python-to-C reimplementation documentation through parallel architecture discovery, component analysis, and C-specific analysis, followed by sequential synthesis, implementation guidance, and validation.",
+    "inputs": {
+      "input_directory": "Required caller parameter: the Python codebase to analyze; example paths are not defaults.",
+      "output_dir": "Required caller parameter: the documentation destination; preserve the authored relative artifact paths."
+    },
+    "source": "sources/python_to_c.md",
+    "definition": "definitions/python_to_c.json",
+    "source_revision": "138ebfa52d52fea2b206e41f8aebe7e5fd96d3130f428561aa7d8f67090d740e",
+    "workflow_revision": "6d19ca1b17231106c1d180c6e539b1130a3e327a57e471aa806514510e4c1f99",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "80d46180b52e45bbbdffbc4f316c5f1a",
+      "request_id": "a1d139f8b77e4402a42758d6aba994ac"
+    },
+    "unresolved_requirements": [
+      {
+        "id": "external_event_schema",
+        "source": "Event System Agent / validation_rules.json_schema",
+        "requirement": "event_system_analysis_schema.json",
+        "reason": "This external schema is named but not supplied. The inline event schema preserves the visible example structure and explicitly required sections, but cannot establish compliance with the missing schema.",
+        "affected_steps": [
+          "python_to_c.event_system/event_system"
+        ]
+      },
+      {
+        "id": "unspecified_worker_contracts",
+        "source": "Agent Orchestration Configuration / orchestration.phases[*].agents",
+        "requirement": "Full prompts, exact JSON contracts, and artifact filenames for the fifteen roles without full configuration examples.",
+        "reason": "Only role names, phase placement, and overall documentation goals are supplied. Derived role prompts and object answer schemas allow those assignments to be expressed; additional original requirements or exact filenames cannot be recovered.",
+        "affected_steps": [
+          "python_to_c.platform_abstraction/platform_abstraction",
+          "python_to_c.plugin_system/plugin_system",
+          "python_to_c.core_structure/core_structure",
+          "python_to_c.data_flow/data_flow",
+          "python_to_c.routing/routing",
+          "python_to_c.state_management/state_management",
+          "python_to_c.algorithm/algorithm",
+          "python_to_c.interface/interface",
+          "python_to_c.resource/resource",
+          "python_to_c.error_handling/error_handling",
+          "python_to_c.data_structure/data_structure",
+          "python_to_c.threading/threading",
+          "python_to_c.performance/performance",
+          "architecture_synthesizer",
+          "implementation_guide"
+        ]
+      }
+    ],
+    "execution_requirements": [
+      {
+        "capability": "host_filesystem_read_write",
+        "binding": "A worker host with access to input_directory and output_dir materializes authored OUTPUT FILES. The Codex command harness supplies filesystem/process tools in its working scope."
+      }
+    ]
+  },
+  {
+    "id": "metaform.library.taskeengineplus",
+    "intent": "Ship deterministic, test-covered, production-quality code from user input through the TaskEngine+ roles, style enforcement, isolated evaluation, unbounded self-repair, optional documentation, and a COMPLETE_DELIVERABLE with cumulative retry logs.",
+    "inputs": {
+      "user_input": "Required software problem or implementation request, including any supplied stack, documentation request, and output constraints. The source contains no concrete problem or placeholder problem to execute."
+    },
+    "source": "sources/taskeengineplus.md",
+    "definition": "definitions/taskeengineplus.json",
+    "source_revision": "d1c708d01cbf21393f2204990f381e85e586e51f4a42bf7ac2168b072b8642b7",
+    "workflow_revision": "01d46c692794dabee6e04c5c9fe2a37a94bb515e5696112a9a1ee90db0d66070",
+    "conversion": {
+      "harness": "codex",
+      "run_id": "42bee2dc50644e4e8cf033d68d9539b0",
+      "request_id": "91104d9aecef4f5fbeadd14bf144bf69"
+    },
+    "unresolved_requirements": [],
+    "execution_requirements": [
+      {
+        "capability": "host_process_execution",
+        "when": "Implementation, external installation approved by the actual user, and isolated evaluation need file/process tools.",
+        "binding": "Use a command harness supplying those operations. Codex executes each fresh assignment with its separate workfolder and workspace sandbox."
+      }
+    ]
+  }
+]

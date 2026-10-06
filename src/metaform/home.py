@@ -6,6 +6,10 @@ Each project is one folder under `projects/`, named by its source's path, holdin
 `project.sqlite3` with its registration, metaforms and the settings of folders inside its source, one store per
 metaform, and everything else of the project. A project is found by looking where its name says. Nothing is ever
 written into a project's own source folder.
+
+Modules use the home through its public names, BASE-004: `home`, `projects`, `project` and `Project`; `to_clear`,
+`clear_project` and `Cleared`; `backups`, `restore_project`, `Backup` and `Restored`; and `not_empty`,
+`removal_caution` and `remove_project`. Everything else here is private to the chassis.
 """
 from __future__ import annotations
 
@@ -15,19 +19,23 @@ import re
 import shutil
 import sqlite3
 import sys
+import threading
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager
-from dataclasses import asdict, dataclass
+from contextvars import ContextVar
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, ParamSpec, TypeVar, cast
 
 from . import changes, sqlite
-from .errors import StoreError
+from .errors import Stop, StoreError
 from .wording import counted, listed
 
-BASE_SCHEMA_VERSION = '2'  # the chassis database's own layout; 2 holds no project, PROJ-026, STORE-029
+BASE_SCHEMA_VERSION = '3'  # 2 holds no project; 3 backfills installed harnesses, PROJ-026, MCP-028, STORE-029
 PROJECT_SCHEMA_VERSION = '1'  # a project's own project.sqlite3, PROJ-026
 # The nonce table, BASE-050. A home made before it existed is given it on the first write of a nonce.
 NONCES = """CREATE TABLE IF NOT EXISTS nonces(
@@ -39,7 +47,7 @@ NONCES = """CREATE TABLE IF NOT EXISTS nonces(
   closed    TEXT
 );
 """
-SETTINGS_SCHEMA = """
+_SETTINGS_TABLES = """
 CREATE TABLE IF NOT EXISTS folders(
   path_key TEXT PRIMARY KEY,
   path     TEXT NOT NULL
@@ -69,7 +77,7 @@ ALIASES = """CREATE TABLE IF NOT EXISTS aliases(
   PRIMARY KEY(path_key, name, position)
 );
 """
-SETTINGS_SCHEMA += ALIASES
+SETTINGS_SCHEMA = _SETTINGS_TABLES + ALIASES
 BASE_SCHEMA = NONCES + """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """ + SETTINGS_SCHEMA + """
@@ -139,9 +147,144 @@ def path_key(path: Path | str) -> str:
     return os.path.normcase(str(Path(path).expanduser().resolve()))
 
 
+@dataclass
+class _Registry:
+    root: Path
+    stamp: tuple[Any, ...]
+    values: dict[tuple[Any, ...], Any] = field(default_factory=dict[tuple[Any, ...], Any])
+    generation: int = 0
+    invalidation: int = 0
+
+
+@dataclass
+class _RegistryScope:
+    registry: _Registry
+    active: bool = True
+
+
+_REGISTRIES: dict[Path, _Registry] = {}
+_REGISTRY_INVALIDATIONS: dict[Path, int] = {}
+_REGISTRY_LOCK = threading.RLock()
+_REGISTRY_SCOPE: ContextVar[_RegistryScope | None] = ContextVar('metaform_registry', default=None)
+_P = ParamSpec('_P')
+_R = TypeVar('_R')
+
+
+def _file_stamp(path: Path) -> tuple[int, ...] | None:
+    try:
+        stat = path.stat()
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+    except OSError:
+        return None
+
+
+def _registry_stamp(root: Path) -> tuple[Any, ...]:
+    # WAL commits need not touch the database file. Include the WAL and source
+    # identities so external commits, replacements and project additions invalidate.
+    projects = root / 'projects'
+    try:
+        folders = sorted(folder for folder in projects.iterdir() if folder.is_dir())
+    except OSError:
+        folders = []
+    paths = [root / 'metaform.sqlite3', root / 'metaform.sqlite3-wal', projects]
+    for folder in folders:
+        paths.extend((folder / SOURCE, folder / PROJECT_DB, folder / (PROJECT_DB + '-wal')))
+    return tuple((str(path), _file_stamp(path)) for path in paths)
+
+
+def in_registry_scope() -> bool:
+    state = _REGISTRY_SCOPE.get()
+    return state is not None and state.active and state.registry.root == home().resolve()
+
+
+def registry_revision() -> tuple[Path, int]:
+    """The local commit revision, including home identity, for request-level module refresh."""
+    root = home().resolve()
+    with _REGISTRY_LOCK:
+        return root, _REGISTRY_INVALIDATIONS.get(root, 0)
+
+
 @contextmanager
-def _transaction(path: Path, schema: str, version: str, write: bool) -> Generator[sqlite3.Connection, None, None]:
-    with sqlite.opened(path, schema, write=write, version=version) as db:
+def registry_scope(*, fresh: bool = False) -> Generator[None, None, None]:
+    """Validate the process registry once per request, sharing nested lookups.
+
+    A fresh scope starts a new request inside a long-lived CLI service. Committed
+    local writes invalidate immediately, while other processes are seen at the
+    next outer request through the file and WAL stamps.
+    """
+    root = home().resolve()
+    active = _REGISTRY_SCOPE.get()
+    if not fresh and active is not None and active.active and active.registry.root == root:
+        yield
+        return
+    with _REGISTRY_LOCK:
+        stamp = _registry_stamp(root)
+        state = _REGISTRIES.get(root)
+        if state is None or state.stamp != stamp:
+            state = _Registry(root, stamp, invalidation=_REGISTRY_INVALIDATIONS.get(root, 0))
+            _REGISTRIES[root] = state
+    scope = _RegistryScope(state)
+    token = _REGISTRY_SCOPE.set(scope)
+    try:
+        yield
+    finally:
+        scope.active = False
+        _REGISTRY_SCOPE.reset(token)
+
+
+def registry_cached(key: tuple[Any, ...], compute: Callable[[], _R]) -> _R:
+    with registry_scope():
+        scope = _REGISTRY_SCOPE.get()
+        assert scope is not None
+        state = scope.registry
+        with _REGISTRY_LOCK:
+            invalidation = _REGISTRY_INVALIDATIONS.get(state.root, 0)
+            if state.invalidation != invalidation:
+                # A fresh concurrent request may have replaced the process cache.
+                # Local commits also invalidate scopes still using its older instance.
+                state.values.clear()
+                state.generation += 1
+                state.invalidation = invalidation
+            found = key in state.values
+            generation = state.generation
+            value: Any = state.values.get(key)
+        if not found:
+            # Do not hold the registry lock while opening SQLite: a write holds
+            # its file lock and invalidates the registry after committing.
+            value = compute()
+            with _REGISTRY_LOCK:
+                if generation == state.generation and invalidation == _REGISTRY_INVALIDATIONS.get(state.root, 0):
+                    state.values[key] = value
+        # A caller may edit a returned setting list without editing the registry.
+        return cast(_R, deepcopy(value) if type(value) in (dict, list) else value)
+
+
+def _cached(function: Callable[_P, _R]) -> Callable[_P, _R]:
+    @wraps(function)
+    def read(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        return registry_cached((function.__name__, args, tuple(sorted(kwargs.items()))),
+                               lambda: function(*args, **kwargs))
+    return read
+
+
+def _invalidate_registry() -> None:
+    with _REGISTRY_LOCK:
+        root = home().resolve()
+        _REGISTRY_INVALIDATIONS[root] = _REGISTRY_INVALIDATIONS.get(root, 0) + 1
+        state = _REGISTRIES.pop(root, None)
+        if state is not None:
+            state.values.clear()
+            state.generation += 1
+        scope = _REGISTRY_SCOPE.get()
+        if scope is not None and scope.registry.root == root and scope.registry is not state:
+            scope.registry.values.clear()
+            scope.registry.generation += 1
+
+
+@contextmanager
+def _transaction(path: Path, schema: str, version: str, write: bool,
+                 upgrade: sqlite.Upgrade | None = None) -> Generator[sqlite3.Connection, None, None]:
+    with sqlite.opened(path, schema, write=write, version=version, upgrade=upgrade) as db:
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
             yield db
@@ -149,13 +292,44 @@ def _transaction(path: Path, schema: str, version: str, write: bool) -> Generato
             db.execute('ROLLBACK')
             raise
         db.execute('COMMIT')
+        if write:
+            _invalidate_registry()
 
 
 @contextmanager
 def base(write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     """One transaction on the chassis database. A read of a home with no chassis database creates nothing."""
-    with _transaction(base_path(), BASE_SCHEMA, BASE_SCHEMA_VERSION, write) as db:
+    with _transaction(base_path(), BASE_SCHEMA, BASE_SCHEMA_VERSION, write, _upgrade_base) as db:
         yield db
+
+
+def _upgrade_base(db: sqlite3.Connection, path: Path, found: str) -> None:
+    """Record earlier installations once, so installed harnesses never see the provisioning notice, MCP-028."""
+    if found != '2':
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only base version 2.',
+                         'install the Metaform release that wrote it')
+    from . import harness, install
+
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        # Another process may have upgraded while this connection waited for its write lock.
+        if db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('2',):
+            db.execute(harness.HARNESSES)
+            tools = install.tools()
+            for name, source, installed in db.execute('SELECT tool, source, installed FROM installs ORDER BY tool'):
+                tool = tools.get(name)
+                if not source or tool is None or tool.merge or tool.add is None:
+                    continue
+                # Only the host executable matters here. Discovery would reopen this home's upgrade.
+                binary = shutil.which(tool.add(['metaform'])[0])
+                if binary is not None and (key := harness.key(binary)) is not None:
+                    db.execute('INSERT OR IGNORE INTO harnesses(path_key, binary, done) VALUES (?, ?, ?)',
+                               (key, binary, installed))
+            db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (BASE_SCHEMA_VERSION,))
+        db.execute('COMMIT')
+    except BaseException:
+        db.execute('ROLLBACK')
+        raise
 
 
 # Project folders, PROJ-026 ------------------------------------------------------------------------------------
@@ -209,6 +383,7 @@ def _project(row: tuple[Any, ...]) -> Project:
     return Project(row[0], row[1], row[2], row[3])
 
 
+@_cached
 def _record_in(folder: Path) -> Project | None:
     """The registration a project folder holds, or None when it holds none."""
     if not (folder / PROJECT_DB).is_file():
@@ -242,6 +417,7 @@ def _folder_at(path: Path | str) -> Path | None:
 _FOUND: dict[tuple[str, str], Path] = {}  # (the home's projects folder, a project id): the folder last found for it
 
 
+@_cached
 def _registration(project_id: str) -> tuple[Path, Project] | None:
     """A registered project's folder with its registration. The folder last found for the id is asked first, so
     finding one project opens its own database and no other's; when that folder no longer holds the project, every
@@ -347,6 +523,7 @@ def register(record: Project) -> Path:
     return folder
 
 
+@_cached
 def project_at(path: str) -> str | None:
     """The project registered with this folder."""
     folder = _folder_at(path)
@@ -354,6 +531,7 @@ def project_at(path: str) -> str | None:
     return None if record is None else record.project_id
 
 
+@_cached
 def folder_project(folder: Path) -> str | None:
     """The project whose source holds this folder: the folder's own project folder, else its nearest parent's,
     found on the file system alone, PROJ-026."""
@@ -369,6 +547,7 @@ def folder_project(folder: Path) -> str | None:
 # A setting of a folder inside a project's source is the project's own, kept in its project.sqlite3; the global
 # scope and folders outside every project are the chassis's, PROJ-026.
 
+@_cached
 def _project_holding(scope: str) -> Path | None:
     if scope == 'global':
         return None
@@ -389,6 +568,7 @@ def settings_db(scope: str, write: bool = False) -> Generator[sqlite3.Connection
             yield db
 
 
+@_cached
 def stored(scope: str, owner: str, key: str) -> list[Any] | None:
     """The stored member values of a setting at one scope, in order, or None when nothing is stored."""
     with settings_db(scope) as db:
@@ -405,13 +585,27 @@ def save(scope: str, owner: str, key: str, members: list[Any], *, folder: Path |
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
         db.executemany('INSERT INTO settings(scope, owner, key, position, value) VALUES (?, ?, ?, ?, ?)',
                        [(scope, owner, key, position, json.dumps(member)) for position, member in enumerate(members)])
+    _settings_changed(scope, owner)
 
 
 def clear(scope: str, owner: str, key: str) -> None:
     with settings_db(scope, write=True) as db:
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
+    _settings_changed(scope, owner)
 
 
+def _settings_changed(scope: str, owner: str) -> None:
+    """Notify related projects after a setting commits, including global and inherited ancestor scopes.
+
+    The owner names its settings in the event. The chassis treats every module alike, BASE-046.
+    """
+    for record in projects():
+        project_path = Path(path_key(record.path))
+        if scope == 'global' or project_path.is_relative_to(scope) or Path(scope).is_relative_to(project_path):
+            changes.note(record.project_id, tables={f'{owner}.settings'})
+
+
+@_cached
 def glued(scope: str, owner: str, key: str) -> bool:
     with settings_db(scope) as db:
         return db.execute('SELECT 1 FROM glue WHERE scope=? AND owner=? AND key=?',
@@ -454,6 +648,7 @@ def save_alias(folder: Path, name: str, modules: list[str]) -> None:
 
 # Module state -----------------------------------------------------------------
 
+@_cached
 def module_state(module_id: str) -> bool | None:
     """The user's stored choice for a module, or None when the module's declaration decides."""
     with base() as db:
@@ -535,6 +730,7 @@ def intake_exists() -> bool:
     return False
 
 
+@_cached
 def active_metaform(project_id: str) -> Metaform | None:
     folder = project_folder(project_id)
     if folder is None:
@@ -588,6 +784,7 @@ def add_metaform(project_id: str, name: str, *, activate: bool = True) -> Metafo
         return _create_metaform(db, project_id, chosen, activate=activate)
 
 
+@_cached
 def metaform_by_id(project_id: str, metaform_id: str) -> Metaform | None:
     folder = project_folder(project_id)
     if folder is None:
@@ -893,7 +1090,17 @@ def not_empty(project_id: str) -> str | None:
 
 def remove_project(project_id: str) -> None:
     """Take an empty project off the list, PROJ-031: its registration and the folder settings that select it. Nothing
-    in its folder is deleted, so registering its source again takes the folder back with what it kept, PROJ-026."""
+    in its folder is deleted, so registering its source again takes the folder back with what it kept, PROJ-026. A
+    project that holds what a clear removes is refused; the caller asks for confirmation first."""
+    held = not_empty(project_id)
+    if held:
+        raise Stop(held, f'metaform clear project {project_id} --confirm')
+    forget_project(project_id)
+
+
+def forget_project(project_id: str) -> None:
+    """Delete a project's registration and the folder settings that select it, whatever it holds. Only the chassis
+    calls it, to undo a registration it made itself; modules remove a project with `remove_project`."""
     folder = _folder_of_project(project_id)
     selecting = json.dumps(project_id)
     with base(write=True) as db:
@@ -933,6 +1140,7 @@ def _innermost(failed: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
 
 def remove_store(path: Path) -> None:
     """Remove a store file and its WAL files: only for a store this operation created."""
+    sqlite.reset_reads(path)
     for part in sorted(path.parent.glob(path.name + '*')):
         part.unlink(missing_ok=True)
 
@@ -944,6 +1152,7 @@ def _stores(folder: Path) -> list[Path]:
 
 def _remove_files(store: Path, failed: list[tuple[str, str]]) -> None:
     """A store and its WAL files, noting each that could not be removed with the system's reason."""
+    sqlite.reset_reads(store)
     for part in sorted(store.parent.glob(store.name + '*')):
         try:
             part.unlink()

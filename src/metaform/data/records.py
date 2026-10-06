@@ -152,7 +152,7 @@ class Held(Record):
 @dataclass(frozen=True)
 class Join(Record):
     """A join, Rich's shape, 2026-10-04: its type, purpose, the ef and the ifd, held by its receiver, holding the
-    elements that serve its purpose. Nothing else is a field of a join; the rest goes in layers."""
+    elements that serve its purpose. A promoted join also records its ordinary element by address, MAP-054."""
     join_id: str
     layer_id: str
     layer: str
@@ -167,6 +167,7 @@ class Join(Record):
     orphaned: bool = False
     open_work: tuple[str, ...] = ()
     notices: tuple[Notice, ...] = ()
+    element: str | None = None  # the associated element's address, MAP-054
 
 
 @dataclass(frozen=True)

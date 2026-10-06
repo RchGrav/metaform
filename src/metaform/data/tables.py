@@ -36,6 +36,8 @@ KINDS: tuple[ColumnKind, ...] = get_args(ColumnKind)
 SQL_TYPE = {'text': 'TEXT', 'int': 'INTEGER', 'real': 'REAL', 'bool': 'INTEGER', 'json': 'TEXT'}
 NAME = re.compile(r'^[a-z][a-z0-9_]{0,62}$')
 MODULE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+# A table no module owns any more keeps the physical name it was held under, `<module>.<table>` included.
+PHYSICAL = re.compile(r'^(?:[A-Za-z0-9_-]{1,64}\.)?[a-z][a-z0-9_]{0,62}$')
 META_PREFIX = 'module:'
 # A project-level module store holds only its meta table and the module's tables; its own layout, STORE-029.
 MODULE_STORE_SCHEMA = 'CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);\n'
@@ -82,7 +84,7 @@ class Table:
     on_remove: tuple[tuple[str, str, str], ...] = ()
 
     def __post_init__(self) -> None:
-        if not NAME.fullmatch(self.name):
+        if not (NAME if self.schema is None else PHYSICAL).fullmatch(self.name):
             raise ValueError(f'Table {self.name!r}: a name is lowercase letters, digits and _, starting with a letter.')
         if self.place not in PLACES:
             raise ValueError(f'Table {self.name}: place must be metaform or project.')
@@ -114,12 +116,13 @@ class Table:
 
     @classmethod
     def from_sql(cls, name: str, schema: str, *, exchange: bool = True,
-                 on_remove: tuple[tuple[str, str, str], ...] = ()) -> Table:
+                 on_remove: tuple[tuple[str, str, str], ...] = (), unowned: bool = False) -> Table:
         """Declare a table with its existing SQL name and constraints, adopting rows already held there.
 
-        Only CREATE TABLE and CREATE INDEX statements for this table belong to its declaration.
+        Only CREATE TABLE and CREATE INDEX statements for this table belong to its declaration. `unowned` retains a
+        table no module declares under its physical name, which may be another module's `<module>.<table>`.
         """
-        if not NAME.fullmatch(name):
+        if not (PHYSICAL if unowned else NAME).fullmatch(name):
             raise ValueError(f'Table {name!r}: a name is lowercase letters, digits and _, starting with a letter.')
         from .schema import STORE_SCHEMA
         core = re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)', STORE_SCHEMA)
@@ -145,10 +148,10 @@ class Table:
         return cls(name, columns, key, indexes, schema=schema, exchange=exchange, on_remove=on_remove)
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> Table:
+    def from_dict(cls, value: Mapping[str, Any], *, unowned: bool = False) -> Table:
         if value.get('schema') is not None:
             return cls.from_sql(value['name'], value['schema'], exchange=bool(value.get('exchange', True)),
-                                on_remove=tuple(tuple(rule) for rule in value.get('on_remove', ())))
+                                on_remove=tuple(tuple(rule) for rule in value.get('on_remove', ())), unowned=unowned)
         return cls(name=value['name'], place=value['place'], key=tuple(value['key']),
                    columns=tuple(Column(name, kind, bool(required), default)
                                  for name, kind, required, default in value['columns']),
@@ -447,18 +450,20 @@ def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, pl
 
 
 def _adopt(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
-    """Bring pre-declaration tables to their owner's layout while retaining every shared column."""
+    """Bring pre-declaration tables, and tables held without their record, to their owner's layout while retaining
+    every shared column."""
     changed: list[Table] = []
     target = sqlite3.connect(':memory:')
     try:
         for table in declared.tables:
-            if table.place != place or table.schema is None:
+            if table.place != place:
                 continue
-            actual = db.execute(f'PRAGMA table_info({_quoted(table.name)})').fetchall()
+            name = _quoted(physical(module, table))
+            actual = db.execute(f'PRAGMA table_info({name})').fetchall()
             if not actual:
                 continue
             target.execute(_create_sql(module, table))
-            wanted = target.execute(f'PRAGMA table_info({_quoted(table.name)})').fetchall()
+            wanted = target.execute(f'PRAGMA table_info({name})').fetchall()
             if [tuple(row)[1:] for row in actual] != [tuple(row)[1:] for row in wanted]:
                 changed.append(table)
     finally:
@@ -478,7 +483,8 @@ def _adopt(db: sqlite3.Connection, path: Path, module: str, declared: Tables, pl
             db.execute(f'DROP TABLE {_quoted(name)}')
             db.execute(f'ALTER TABLE {_quoted(replacement)} RENAME TO {_quoted(name)}')
     for table in declared.tables:
-        if table.place == place:
+        if table.place == place and (table.schema is not None or not db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (physical(module, table),)).fetchone()):
             _create(db, module, table)
     former = db.execute("SELECT value FROM meta WHERE key='prior_schema_version'").fetchone()
     applied = db.execute('SELECT 1 FROM meta WHERE key=?', ('legacy_upgrade:' + module,)).fetchone()
@@ -849,7 +855,7 @@ def export_unowned(db: sqlite3.Connection) -> list[dict[str, Any]]:
             continue
         indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? "
                                                 "AND sql IS NOT NULL ORDER BY name", (name,)).fetchall()]
-        table = Table.from_sql(name, ';\n'.join([schema, *indexes]) + ';', exchange=False)
+        table = Table.from_sql(name, ';\n'.join([schema, *indexes]) + ';', exchange=False, unowned=True)
         names = [column.name for column in table.columns]
         rows = db.execute(f'SELECT {", ".join(_quoted(column) for column in names)} FROM {_quoted(name)} '
                           f'ORDER BY {", ".join(_quoted(column) for column in table.key)}').fetchall()
@@ -872,7 +878,7 @@ def check_unowned(entries: Any, path: str, problems: list[str]) -> None:
             problems.append(f'{where}: holds exactly table and rows')
             continue
         try:
-            table = Table.from_dict(fields['table'])
+            table = Table.from_dict(fields['table'], unowned=True)
             if table.schema is None:
                 raise ValueError('an unowned table retains its SQL declaration')
         except (KeyError, TypeError, ValueError) as error:
@@ -887,7 +893,7 @@ def check_unowned(entries: Any, path: str, problems: list[str]) -> None:
 
 def import_unowned(db: sqlite3.Connection, entries: Sequence[dict[str, Any]]) -> None:
     """Restore unknown tables as they were held; the actual owner can adopt them when it next loads."""
-    declarations = [(Table.from_dict(entry['table']), entry['rows']) for entry in entries]
+    declarations = [(Table.from_dict(entry['table'], unowned=True), entry['rows']) for entry in entries]
     for table, _ in declarations:
         _create(db, '', table)
     if declarations:

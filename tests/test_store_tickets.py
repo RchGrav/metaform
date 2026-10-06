@@ -43,8 +43,8 @@ def test_a_record_with_an_empty_condition_is_taken_worked_and_says_it_waits_on_t
                                              'the answer.')
     assert not stepped.notices
     read = store.ticket(drift.work_id).work
-    assert (read.steps, read.steps_done, read.said[-1].said) == (3, 1, 'Asked the person whether the spec or the '
-                                                                       'timer is right; waiting on the answer.')
+    assert (read.steps, read.steps_done, read.said[-1].said) == (3, 1, ('Asked the person whether the spec or the '
+                                                                       'timer is right; waiting on the answer.'))
     with pytest.raises(StoreError, match='already taken'):
         store.take_work(drift.work_id, by='codex')
 

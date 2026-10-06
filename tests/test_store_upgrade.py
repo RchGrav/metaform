@@ -16,13 +16,13 @@ pytestmark = [pytest.mark.kind("fixture"), pytest.mark.req("STORE-029", "LAYER-0
 LAYOUT_7 = (Path(__file__).parent / 'fixtures' / 'store-v7.sql').read_text(encoding='utf-8')
 
 
-LAYOUT_19_JOIN = ('row', 'join_id', 'layer_id', 'type', 'receiver', 'purpose', 'ef', 'ifd', 'op', 'reason', 'evidence')
+LAYOUT_20_JOIN = ('row', 'join_id', 'layer_id', 'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'op', 'reason', 'evidence')
 
 
 def renamed(row: dict) -> dict:
     """A join row as the current layout reads it: from layout 18 the join type require is purpose again, and from
-    layout 19 a join holds only Rich's fields, Rich 2026-10-04."""
-    row = {key: row.get(key) for key in LAYOUT_19_JOIN}
+    layout 19 a join holds its elements; layout 20 adds its optional promotion address, MAP-054."""
+    row = {key: row.get(key) for key in LAYOUT_20_JOIN}
     return {**row, 'type': 'purpose'} if row.get('type') == 'require' else row
 
 
@@ -112,9 +112,8 @@ def test_a_store_older_than_layout_7_is_refused_and_left_unchanged(home: Path, t
     db.commit()
     db.close()
     before = path.read_bytes()
-    with pytest.raises(StoreError, match='schema version 6'):
-        with open_store(path, write=False):
-            pass
+    with pytest.raises(StoreError, match='schema version 6'), open_store(path, write=False):
+        pass
     assert path.read_bytes() == before
 
 
@@ -196,7 +195,7 @@ def test_a_layout_10_store_opens_with_no_perspective_and_every_other_field_of_ev
     with open_store(path, write=False) as db:
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
-        after = [{key: row[key] for key in row.keys()} for row in db.execute('SELECT * FROM joins ORDER BY row')]
+        after = [dict(row) for row in db.execute('SELECT * FROM joins ORDER BY row')]
         current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
         held = db.execute('SELECT element_id FROM join_elements WHERE join_row=3 ORDER BY position').fetchall()
         refs = sources(db)
@@ -301,7 +300,7 @@ def test_a_layout_11_store_opens_with_ef_holding_the_old_relation_and_no_relatio
     with open_store(path, write=False) as db:
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         columns = [row[1] for row in db.execute('PRAGMA table_info(joins)')]
-        rows = [{key: row[key] for key in row.keys()} for row in db.execute('SELECT * FROM joins ORDER BY row')]
+        rows = [dict(row) for row in db.execute('SELECT * FROM joins ORDER BY row')]
         current = db.execute('SELECT join_id, row FROM current_joins').fetchall()
         refs = sources(db)
         layers = layer_names(db)
@@ -391,13 +390,13 @@ def test_a_layout_12_store_opens_with_every_purpose_join_still_typed_purpose_and
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM joins ORDER BY row')]
+        after = [dict(row) for row in opened.execute('SELECT * FROM joins ORDER BY row')]
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
         layers = layer_names(opened)
         names = element_names(opened)
         held = opened.execute("SELECT e.element_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row "
                               "WHERE c.join_id='J1' ORDER BY e.position").fetchall()
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     assert [row[0] for row in held] == ['E2', 'E3']
     # each element keeps its own name; the joins' verb, non_goal and the subtype join's own fields are not kept
     assert names == {'E1': 'code', 'E2': 'engine', 'E3': 'tick'} and 'intake details' not in layers
@@ -472,10 +471,10 @@ def test_a_layout_13_store_opens_with_every_ticket_kept_and_no_glyph_column(home
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM work ORDER BY row')]
+        after = [dict(row) for row in opened.execute('SELECT * FROM work ORDER BY row')]
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     assert after == before
     assert [tuple(row) for row in steps] == [('W2', 1, 'Traced it.')] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -525,11 +524,11 @@ def test_a_layout_14_store_opens_with_every_ticket_kept_and_the_glyph_column_dro
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
         columns = [row[1] for row in opened.execute('PRAGMA table_info(work)')]
-        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM work ORDER BY row')]
+        after = [dict(row) for row in opened.execute('SELECT * FROM work ORDER BY row')]
         links = opened.execute('SELECT work_id, number, target_id FROM work_links').fetchall()
         steps = opened.execute('SELECT work_id, number, said FROM work_steps').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     assert 'glyph' not in columns
     assert after == [{key: value for key, value in row.items() if key != 'glyph'} for row in before]
     assert [tuple(row) for row in links] == [('W1', 0, 'E1')]
@@ -578,10 +577,10 @@ def test_a_layout_15_store_opens_with_every_item_kept_and_both_flags_false(home:
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM items ORDER BY row')]
+        after = [dict(row) for row in opened.execute('SELECT * FROM items ORDER BY row')]
         current = opened.execute('SELECT item_id, row FROM current_items').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     assert after == [{**row, 'read_first': 0, 'always_show': 0} for row in before]
     assert [tuple(row) for row in current] == [('I1', 2)] and broken == []
     backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/main.metaform.sqlite3'))
@@ -624,10 +623,10 @@ def test_a_layout_16_store_opens_with_every_join_kept_and_naming_no_element(home
     db.close()
     with open_store(path, write=False) as opened:
         version = opened.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        after = [{key: row[key] for key in row.keys()} for row in opened.execute('SELECT * FROM joins ORDER BY row')]
+        after = [dict(row) for row in opened.execute('SELECT * FROM joins ORDER BY row')]
         current = opened.execute('SELECT join_id, row FROM current_joins').fetchall()
         broken = opened.execute('PRAGMA foreign_key_check').fetchall()
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     assert after == [renamed(row) for row in before]
     assert [row['type'] for row in after] == ['purpose', 'purpose']  # require is purpose again, Rich 2026-10-04
     assert [tuple(row) for row in current] == [('J1', 2)] and broken == []
@@ -695,7 +694,7 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
     elements_before = db.execute('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row').fetchall()
     db.close()
     with open_store(path, write=False) as opened:
-        q = lambda sql, *args: [tuple(row) for row in opened.execute(sql, args)]  # noqa: E731
+        q = lambda sql, *args: [tuple(row) for row in opened.execute(sql, args)]
         version = q("SELECT value FROM meta WHERE key='schema_version'")[0][0]
         elements_after = q('SELECT element_id, address, name_length, name, role FROM elements ORDER BY row')
         held = {join_id: [row[0] for row in q('SELECT e.element_id FROM join_elements e JOIN current_joins c '
@@ -712,7 +711,7 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
         moved = q('SELECT target_kind, target_id FROM work UNION ALL SELECT target_kind, target_id FROM messages')
         refs = q("SELECT owner FROM refs WHERE owner <> 'item'")
         broken = q('PRAGMA foreign_key_check')
-    assert version == SCHEMA_VERSION == '19'
+    assert version == SCHEMA_VERSION == '20'
     # J1's name is not E2's, which has its own; J3's is E4's, which had none; the rest of every element is kept
     assert elements_after == [tuple(row) if row[0] != 'E4' else (*row[:3], 'cee', row[4]) for row in elements_before]
     assert held == {'J1': ['E2', 'E3'], 'J3': ['E4']}
@@ -731,7 +730,7 @@ def test_a_layout_16_store_opens_in_richs_shape_with_nothing_it_held_lost(home: 
     assert moved == [('element', 'E3'), ('element', 'E3')]
     assert refs == [] and broken == []
     # Earlier versions' fields and refs remain in the copy kept first.
-    backups = list((home / 'backups' / 'upgrade-19').glob(f'*/{tmp_path.name}/main.metaform.sqlite3'))
+    backups = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob(f'*/{tmp_path.name}/main.metaform.sqlite3'))
     assert len(backups) == 1
     kept = sqlite3.connect(backups[0])
     assert kept.execute("SELECT value FROM refs WHERE owner='join' AND owner_row=1").fetchall() == [('src/old.c',)]

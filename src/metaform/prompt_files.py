@@ -7,19 +7,30 @@ under that element's name. No prompt's words are written in Python.
 """
 from __future__ import annotations
 
+import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from importlib import resources
 from importlib.resources.abc import Traversable
 
 FILE = 'prompts.xml'
+TRIAL = 'METAFORM_PROMPTS'  # a prompts.xml whose non-empty prompts are read before a package's own: prompts on trial, tests
 
 
 def text(folder: Traversable, name: str, **fills: str) -> str | None:
-    """The prompt `name` in the `resources/prompts.xml` of this package folder, or None when there is none."""
+    """The prompt `name` in the `resources/prompts.xml` of this package folder, or None when there is none; a prompt
+    on trial under the same name, in the file `METAFORM_PROMPTS` names, is read first."""
+    trial = os.environ.get(TRIAL)
+    found = None
+    if trial and os.path.isfile(trial):
+        found = ET.fromstring(Path(trial).read_text(encoding='utf-8')).find(name)
+        if found is not None and not (found.text or '').strip() and not len(found):
+            found = None
     path = folder / 'resources' / FILE
-    if not path.is_file():
-        return None
-    found = ET.fromstring(path.read_text(encoding='utf-8')).find(name)
+    if found is None:
+        if not path.is_file():
+            return None
+        found = ET.fromstring(path.read_text(encoding='utf-8')).find(name)
     if found is None:
         return None
     return ((found.text or '') + ''.join(fills.get(child.tag, '') + (child.tail or '') for child in found)).strip()
@@ -45,6 +56,13 @@ def module(identifier: str, name: str, **fills: str) -> str | None:
     return None if found is None else text(found.path, name, **fills)
 
 
+def module_commands(identifier: str) -> list[tuple[str, dict[str, str], str, str, bool]]:
+    """The slash commands of the loaded module `identifier`, as `commands` reads them, or none when it is not found."""
+    from . import loader
+    found = loader.get(identifier)
+    return [] if found is None else commands(found.path)
+
+
 def commands(folder: Traversable) -> list[tuple[str, dict[str, str], str, str, bool]]:
     """The slash commands this package folder declares, MCP-032: each child of `<commands>` in its prompts.xml, by
     name, with its attributes, the verb it runs among them, its text before and after an empty `<result/>`, and
@@ -54,7 +72,9 @@ def commands(folder: Traversable) -> list[tuple[str, dict[str, str], str, str, b
         return []
     found = ET.fromstring(path.read_text(encoding='utf-8')).find('commands')
     held: list[tuple[str, dict[str, str], str, str, bool]] = []
-    for element in found if found is not None else []:
+    if found is None:
+        return held
+    for element in found:
         mark = element.find('result')
         before = element.text or ''
         after = (mark.tail or '') if mark is not None else ''

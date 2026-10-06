@@ -16,7 +16,11 @@ Started from template 0.2.0.
 
 ## Common base used
 
+`basedemo` returns the package source metadata fingerprint as `code_print`, using the public `metaform.module.code_print()` service. Long-running modules use it to detect changed code before attempting schema recovery; it does not guarantee that a replacement can open the store, STORE-029 and QUAL-016.
+
 `metaform.module` for the declaration, `Context`, `Stop`, and the report functions `save_report`, `feedback`, `list_reports` and `read_report`. `metaform.settings` for its five settings, one of each kind. `metaform.data` for its layer, its work records and its own tables. `metaform.nonce` for `noncedemo`.
+
+`basedemo` also uses `metaform.home` for the active home, project lookup and project previews, `settings.toggled_layers` for the folder's layers, and `refresh_modules` from `metaform.module`. It uses `metaform.data` for named reads, `plain` and `NewerStore`. `base-restore` and `base-remove` call the project services of `metaform.home`. These examples show that user modules can use the same capabilities as shipped modules without importing private chassis code, BASE-004 and QUAL-016.
 
 ## Prompts
 
@@ -47,6 +51,9 @@ Started from template 0.2.0.
 - `visit <name>`: counts a visit by the name in hello's own table `visits`, beside the map, and returns `<name>: <n> visits`. It reads the row by its key and adds or changes it in one transaction. Tool `hello_visit`.
 - `note <text>`: keeps a note in hello's own project-level table `notes` and returns its id. Tool `hello_note`.
 - `notes`: returns the notes in time order, read through the table's index on `at`. Tool `hello_notes`.
+- `basedemo`: reads the shared home, project and layer services, runs named map reads, and shows the selected project's backups and removal preview. It demonstrates the public base without clearing, restoring or removing a project. Tool `hello_basedemo`.
+- `base-restore [name] [--confirm]`: restores the selected project's named backup, or its newest backup when no name is supplied. The existing `Verb.caution` confirmation applies, and the project services back up its current contents before replacing them. Tool `hello_base-restore`.
+- `base-remove [--confirm]`: removes the selected empty project's registration and folder selections, retaining its source files, history and backups. A nonempty project must be cleared first. The existing `Verb.caution` confirmation applies. Tool `hello_base-remove`.
 
 ## Settings
 
@@ -99,6 +106,7 @@ metaform enable hello
 metaform add project demo .
 metaform hello greet world --loud
 metaform hello history
+metaform hello basedemo
 metaform hello todo "greet in every language"
 metaform hello done <id> "greets in Latin now"
 metaform hello forget --confirm
@@ -140,6 +148,10 @@ Each public import a module can use, and the command that shows it:
 | `feedback` | `metaform hello feedback "The greet help was clear."` |
 | `list_reports` | `metaform hello reports` |
 | `read_report` | `metaform hello read-report <name>`, a name `reports` lists |
+| Shared home/project, layer, query and record conversion services | `metaform hello basedemo` |
+| `restore_project` | `metaform hello base-restore name=<backup> --confirm` |
+| `remove_project` | `metaform hello base-remove --confirm`, with an empty project selected |
+| `Context.listen` | `metaform hello follow`, then change the map in another process |
 
 `MODULE.data` declares `count_visit` as a DAO operation. `visit` calls
 `store.count_visit(name)`; the handler gets `DataTx` and reaches `visits`

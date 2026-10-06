@@ -79,7 +79,7 @@ def join_orphaned(tx: Tx, row: Row) -> bool:
 def join(tx: Tx, row: Row, layers: dict[str, LayerRow], orphaned: bool = False) -> Join:
     return operations.decorate(tx, Join(str(row['join_id']), str(row['layer_id']), layers[row['layer_id']].name,
                 str(row['type']), str(row['receiver']), address_of(tx, str(row['receiver'])), row['purpose'],
-                row['ef'], row['ifd'], held(tx, int(row['row'])), None, orphaned))
+                row['ef'], row['ifd'], held(tx, int(row['row'])), None, orphaned, element=row['element']))
 
 
 def visible_join(tx: Tx, row: Row, res: Resolver | None) -> Join | None:
@@ -148,7 +148,7 @@ def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hid
 
 def version(tx: Tx, kind: str, row: Row) -> Version:
     spec = versions.KINDS[kind]
-    fields: dict[str, Any] = {key: row[key] for key in row.keys()
+    fields: dict[str, Any] = {key: row[key] for key in row.keys()  # noqa: SIM118  SQLite rows iterate values; keys() returns column names
                               if key not in ('row', spec.id_column, 'layer_id', 'op', 'reason', 'evidence')}
     if 'extra' in fields:
         fields['extra'] = decode_extra(fields['extra'])

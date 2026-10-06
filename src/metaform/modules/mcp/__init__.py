@@ -9,11 +9,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from metaform import settings
 from metaform.module import Context, Module, Verb
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('mcp>=2.2,<3',)
 SHIPS_DISABLED = False
+
+settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
+                help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
+                details='Relay preserves the host connection and retries calls refused before dispatch. '
+                        'Manual returns the schema error. Unchanged package code never starts a replacement.')
 
 
 def serve(ctx: Context) -> None:
@@ -29,4 +35,5 @@ MODULE = Module(
     details='A host starts it with uvx --from <source> metaform mcp serve. It serves the folder it starts in, '
             "whatever that folder's command surface; the surface narrows the tools it serves.",
     verbs=(Verb('serve', serve, 'Serve the MCP server over stdio.', surfaces=('cli',), transport=True),),
+    mcp_server='serve',
 )

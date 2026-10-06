@@ -1,0 +1,28 @@
+{
+  "id": "metaform.element_prompts",
+  "intent": "Analyze the selected latent objects valid for the project and author element-specific instructions.",
+  "steps": [
+    {
+      "id": "per_element",
+      "kind": "foreach",
+      "items": {
+        "var": "inputs.objects"
+      },
+      "focal": "{{ item.id }}",
+      "prompt": "Analyze this latent object for the project. Create 5 imperative prompts for its purpose, 3 creative thinking prompts with foresight, and 3 best practices. Speak directly to the Element and its relationships.",
+      "inputs": {
+        "element": {
+          "var": "item"
+        }
+      },
+      "schema": "metaform:learning",
+      "save_as": "element_prompts",
+      "output": {
+        "id": "data.learning.{{ item.id }}",
+        "subject": "{{ item.id }}",
+        "layer": "learning",
+        "schema": "metaform:learning"
+      }
+    }
+  ]
+}

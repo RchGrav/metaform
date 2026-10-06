@@ -47,6 +47,41 @@ def test_wait_is_an_async_verb(run, hello):
     assert run('hello', 'wait', '0', cwd=hello).stdout.strip() == 'waited 0 s'
 
 
+@pytest.mark.req('BASE-004')
+@pytest.mark.req('BASE-027')
+@pytest.mark.req('QUAL-016')
+def test_shared_services_work_from_hello_and_preserve_project_cleanup(run, hello, home):
+    run('hello', 'greet', 'ada', cwd=hello)
+    got = json.loads(run('hello', 'basedemo', '--json', cwd=hello).stdout)
+    assert got['home'] == str(home)
+    assert got['project']['project_id'] == 'proj'
+    assert got['registered'] == ['proj']
+    assert got['layers'] == []
+    assert 'roots' in got['reads'] and 'roots' in got
+    assert got['backups'] == [] and got['held']
+    assert got['caution'] and got['newer_store_error'] == 'NewerStore'
+    from metaform.module import code_print
+    assert got['code_print'] == code_print()
+
+    refused = run('hello', 'base-remove', '--confirm', cwd=hello, ok=False)
+    assert refused.returncode == 2 and got['held'] in refused.stderr
+    run('clear', 'project', '--confirm', cwd=hello)
+    got = json.loads(run('hello', 'basedemo', '--json', cwd=hello).stdout)
+    assert got['held'] is None and len(got['backups']) == 1
+    refused = run('hello', 'base-restore', cwd=hello, ok=False)
+    assert refused.returncode == 2 and '--confirm' in refused.stderr
+    restored = json.loads(run('hello', 'base-restore', '--confirm', '--json', cwd=hello).stdout)
+    assert restored['project'] == 'proj'
+    assert run('hello', 'history', cwd=hello).stdout.strip() == 'ada'
+    run('clear', 'project', '--confirm', cwd=hello)
+    refused = run('hello', 'base-remove', cwd=hello, ok=False)
+    assert refused.returncode == 2 and '--confirm' in refused.stderr
+    run('hello', 'base-remove', '--confirm', cwd=hello)
+    assert hello.is_dir()
+    assert (home / 'backups' / 'clear' / 'proj').is_dir()
+    assert run('list', 'projects').stdout.startswith('No projects yet.')
+
+
 @pytest.mark.req('BASE-019')
 @pytest.mark.req('BASE-010')
 @pytest.mark.req('STORE-022')

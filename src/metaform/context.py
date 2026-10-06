@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from . import settings
 from .data import Store
@@ -26,19 +26,12 @@ def project_for(folder: Path, named: str | None = None) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def toggled_for(folder: Path) -> list[str]:
-    if 'layers' not in settings.SCHEMA:
-        return []
-    value = settings.value('layers', folder)
-    return [str(item) for item in cast(list[Any], value)] if isinstance(value, list) else []
-
-
 def build(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
           switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
-          surface: Surface = 'cli', resolve: bool = True) -> Context:
+          surface: Surface = 'cli', resolve: bool = True, client: str | None = None) -> Context:
     """A Context for one operation, with the project and store resolved for its folder."""
     chosen = project_for(folder, project) if resolve else project
-    toggled = list(switches['layers']) if switches and isinstance(switches.get('layers'), list) else toggled_for(folder)
+    toggled = list(switches['layers']) if switches and isinstance(switches.get('layers'), list) else settings.toggled_layers(folder)
     store = Store(chosen, toggled=toggled, module=module) if chosen else None
     return Context(module=module, folder=folder, project=chosen, store=store, nouns=dict(nouns or {}),
-                   switches=dict(switches or {}), sink=sink, surface=surface)
+                   switches=dict(switches or {}), sink=sink, surface=surface, client=client)

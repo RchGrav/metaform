@@ -1,0 +1,19 @@
+{
+  "id": "example.review",
+  "intent": "Review an Element against its Operative Purposes and perform the requested revisions.",
+  "steps": [
+    {
+      "id": "review",
+      "prompt": "Review {{ inputs.element }} against its Operative Purposes. State whether revision is needed and describe the work.",
+      "focal": "{{ inputs.element }}",
+      "depth": 2,
+      "schema": {"type": "object", "properties": {"revise": {"type": "boolean"}, "work": {"type": "string"}}},
+      "transitions": [
+        {"when": {"var": "steps.review.revise"}, "to": "revise"},
+        {"to": "record"}
+      ]
+    },
+    {"id": "revise", "prompt": "Perform: {{ steps.review.work }}", "next": "review"},
+    {"id": "record", "prompt": "Record the completed work.", "save_as": "result", "next": null}
+  ]
+}

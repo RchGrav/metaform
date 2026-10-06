@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 from metaform import nonce
-from metaform.errors import Stop
+from metaform.module import Stop
 
 from .binding import Call, Logic, Lookup, prepare, receive, returned
 from .element import ElementValue, Value

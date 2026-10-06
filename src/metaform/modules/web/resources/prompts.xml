@@ -4,6 +4,7 @@
      the intake. -->
 <prompts>
 
+<!-- web's line in the instructions agents read while web is on, MCP-029. -->
 <instructions>
 @STATE_INIT:
   {Web}:=ACTIVE
@@ -32,8 +33,11 @@
   :ELSE -> CORRECT
 </instructions>
 
+<!-- web's slash command, /metaform:web, which runs web start, MCP-032 and MCP-033. -->
 <commands><web verb="start"/></commands>
 
+<!-- While web_autostart is on and the project has no finished intake, web's status hook adds this to the instructions
+     agents read and to metaform status, so the agent starts the web GUI before the intake, VIEW-015 and MCP-029. -->
 <autostart>
 @STATE_INIT:
   {Phase}:=BEFORE_INTAKE; {Web_Running}:=UNRESOLVED

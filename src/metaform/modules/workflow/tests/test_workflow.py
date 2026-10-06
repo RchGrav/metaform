@@ -40,15 +40,15 @@ def read(run, folder, *words):
 def test_cli_stored_call_fresh_handoff_frozen_text_and_return(run, store, project_folder):
     small_map(store)
     read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality')
-    read(run, project_folder, 'workflow', 'logic', ADDRESS, 'procedures', 'improve', SCRIPT)
-    read(run, project_folder, 'workflow', 'logic', ADDRESS, 'procedures', 'review', SCRIPT)
+    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'improve', SCRIPT)
+    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)
     started = read(run, project_folder, 'workflow', 'run',
                    '({ok}, {address}) := workflow.quality.code.improve(target=code.timer.kitchen)')
     word = started['nonce']
     assert started['arguments']['target']['address'] == 'code.timer.kitchen'
     child = read(run, project_folder, word, 'handoff',
                  '({ok}, {address}) := workflow.quality.code.review(target={target})')['nonce']
-    read(run, project_folder, 'workflow', 'logic', ADDRESS, 'procedures', 'review', SCRIPT + '# revised\n')
+    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT + '# revised\n')
     redeemed = read(run, project_folder, child)
     assert redeemed['logic']['content'] == SCRIPT
     assert 'frames' not in redeemed and 'parent' not in redeemed
@@ -79,17 +79,12 @@ def test_mcp_explicit_nonce_redeems_and_returns_the_same_call(store, project_fol
     assert result['variables'] == {'ok': True, 'address': 'code.timer.kitchen'}
 
 
-def test_authored_prompts_and_shared_sections_are_available_at_pinned_versions(run, project_folder):
-    from metaform import prompt_files
-    from metaform.modules.workflow import PACKAGE
-    author = read(run, project_folder, 'workflow', 'author', 'Improve code quality', 'procedures')
-    expected = prompt_files.required(PACKAGE, 'workflow-authoring').strip()
-    assert author['prompt'] == expected
-    assert author['inputs']['Run_Args'] is None
+def test_shared_sections_are_shipped_to_the_prompt_store(run, project_folder):
+    run('workflow', 'lib', 'lib_axiom', cwd=project_folder)
     language = run('prompt', 'axiom-language', '1', cwd=project_folder).stdout
     assert 'The agent reading an Axiom script is its interpreter. There is no other runtime.' in language
     tools = run('prompt', 'metaform-tools', '1', cwd=project_folder).stdout
-    assert 'metaform workflow logic' in tools and '<<TO FILL: record one logic' not in tools
+    assert 'metaform workflow add_logic' in tools and '<<TO FILL: record one logic' not in tools
 
 
 @pytest.mark.req('LAYER-017')
@@ -105,7 +100,7 @@ def test_lexicalize_serves_the_authored_script_with_the_prompt_and_owner_setting
     assert set(inputs) == {'Prompt_Text', *re.findall(r'\{(\w+)\}\s*:=', owner)}
     assert inputs['Prompt_Text'] == text
     assert 'metaform map where' in inputs['MAP_READ']
-    assert inputs['PROMPT_STORE'] is None, 'no command saves a prompt yet'
+    assert 'save_prompt' in inputs['PROMPT_STORE'] and 'metaform prompt save' in inputs['PROMPT_STORE']
     assert inputs['UNRESOLVED_POLICY'] == 'keep wording'
     assert inputs['ADDRESS_PLACEMENT'] == 'one block of name -> address'
     run('set', '--lexicalize-unresolved=mark missing', '--lexicalize-addresses=inline after each name',
@@ -113,6 +108,38 @@ def test_lexicalize_serves_the_authored_script_with_the_prompt_and_owner_setting
     inputs = read(run, project_folder, 'workflow', 'lexicalize', text)['inputs']
     assert inputs['UNRESOLVED_POLICY'] == 'mark missing'
     assert inputs['ADDRESS_PLACEMENT'] == 'inline after each name'
+
+
+@pytest.mark.req('LAYER-017')
+def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, project_folder):
+    import asyncio
+
+    from metaform.data import Node, prompts
+    from metaform.modules.mcp.server import enter
+    from tests.storekit import PROVENANCE
+
+    small_map(store)
+    store.layer('practices', 'test', 'Task knowledge.', mutable=True, hideable=True,
+                provenance=PROVENANCE, ready=True)
+    store.add_item('practices', Node('element', 'code.timer.kitchen'), 'Timer practice.')
+    store.add_item('practices', Node('element', 'code.alarm.audible'), 'Alarm practice.')
+    text = 'Review the kitchen timer.\n'
+    addresses = ['code.timer.kitchen']
+    prepared = read(run, project_folder, 'workflow', 'preprocess', text, json.dumps(addresses))
+    assert prepared['prompt'].startswith(text)
+    assert 'Timer practice.' in prepared['prompt'] and 'Alarm practice.' not in prepared['prompt']
+    assert prepared['scope'] == 'context'
+    failed, blocks = asyncio.run(enter(project_folder, 'workflow', {
+        'command': 'preprocess', 'arguments': {'text': text, 'addresses': addresses}}))
+    assert not failed, blocks
+    assert json.loads(blocks[-1]) == prepared
+    saved = json.loads(run('prompt', 'save', 'prepared-review', prepared['prompt'], '--json',
+                          cwd=project_folder).stdout)
+    assert prompts.prompt_version('prepared-review').text == prepared['prompt'] == saved['text']
+    run('set', '--preprocess-knowledge=whole', cwd=project_folder)
+    whole = read(run, project_folder, 'workflow', 'preprocess', text, json.dumps(addresses))
+    assert whole['scope'] == 'whole' and 'Alarm practice.' in whole['prompt']
+    assert whole['prompt'].endswith('kitchen timer -> code.timer.kitchen')
 
 
 def test_cli_portable_file_runs_on_another_project(run, store, project_folder, tmp_path):
@@ -152,13 +179,13 @@ def test_selected_knowledge_reaches_arguments_and_still_obeys_masks(run, store, 
     assert failed.returncode != 0 and 'KeyError' in failed.stderr
 
 
-def test_existing_prompt_versions_are_kept_and_authored_pins_follow_shipped_sections(run, home, project_folder):
+def test_existing_prompt_versions_are_kept_and_libs_name_the_shipped_section_version(run, home, project_folder):
     from metaform.data import prompts
     old = prompts.add_prompt('metaform-tools', 'text', 'old tool instructions', origin='shipped')
-    author = read(run, project_folder, 'workflow', 'author', 'Improve quality', 'procedures')
+    served = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
     latest = prompts.prompt_version('metaform-tools')
-    assert latest.number == 2 and 'metaform workflow logic' in latest.text
-    assert 'metaform-tools 2' in author['prompt']
+    assert latest.number == 2 and 'metaform workflow add_logic' in latest.text
+    assert 'metaform-tools · version 2' in served and latest.text in served
     assert prompts.prompt_version('metaform-tools', 1).text == old.text
 
 
@@ -204,14 +231,28 @@ def test_workflow_ships_and_runs_in_direct_wheel_without_other_feature_modules(r
     with zipfile.ZipFile(wheel) as archive:
         assert 'metaform/modules/workflow/resources/prompts.xml' in archive.namelist()
         assert not any('/workflow/tests/' in name for name in archive.namelist())
-    result = subprocess.run([sys.executable, '-I', str(wheel), 'workflow', 'author', 'Improve quality', 'procedures',
-                             '--json'], cwd=project_folder, env={**os.environ, 'METAFORM_HOME': str(home)},
+    result = subprocess.run([sys.executable, '-I', str(wheel), 'workflow', 'skill', 'write_workflow'],
+                            cwd=project_folder, env={**os.environ, 'METAFORM_HOME': str(home)},
                             capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)['inputs']['Goal'] == 'Improve quality'
+    assert 'name=write_workflow' in result.stdout
     started = subprocess.run([sys.executable, '-I', str(wheel), 'workflow', 'run',
                               'workflow.quality.code.review(target=this)', f'element={ADDRESS}', '--json'],
                              cwd=project_folder, env={**os.environ, 'METAFORM_HOME': str(home)},
                              capture_output=True, text=True, check=False)
     assert started.returncode == 0, started.stderr
     assert json.loads(started.stdout)['arguments']['target']['address'] == ADDRESS
+
+
+@pytest.mark.req('MCP-035')
+@pytest.mark.req('BASE-057')
+def test_an_incomplete_prompt_is_stored_with_its_notice(run, store, project_folder):
+    small_map(store)
+    assert 'notices' not in read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures')
+    recorded = read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', 'Use X.')
+    assert recorded['content'] == 'Use X.'
+    assert {'where': 'review', 'message': 'Incomplete prompt: It is one line.'} in recorded['notices']
+    submitted = read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality')
+    assert submitted['logic'][0]['content'] == 'Use X.'
+    assert {'where': 'review', 'message': 'Incomplete prompt: @VERIFY is missing.'} in submitted['notices']
+    assert 'notices' not in read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)

@@ -30,7 +30,18 @@ Every call's arguments are read as the command line reads them. A missing requir
 
 ## Settings
 
-None of its own. The `set` tool stores any setting for the server's folder.
+The module declares `mcp_server='serve'`. The chassis installer and provisioning help derive the launch command
+from that declaration. With no enabled server provider, setup copies skills and supported instruction pointers
+and reminders and skips MCP registration and proof. The chassis global setting `install_server` defaults to empty,
+selecting the sole eligible provider automatically. If several modules declare a server, set it to the chosen
+module id with `metaform set --install-server <id>`.
+
+`mcp_recovery` selects `relay` (the default) or `manual` when the server starts. Relay keeps the host connection
+when a pre-dispatch schema check refuses a newer store and the package code on disk has changed. It starts a
+replacement using the same Python interpreter, working folder and environment, replays the host's initialization
+internally, and retries only refused calls. Manual returns the ordinary schema error, leaving restart to the host.
+Unchanged code never starts a replacement. A host pinned to an old wheel must select a newer package source.
+The `set` tool stores any setting for the server's folder.
 
 ## Events
 
@@ -46,7 +57,11 @@ None.
 
 ## Lifecycle and cleanup
 
-The server runs until its standard input closes. It spawns no tasks of its own.
+The server runs until its standard input closes. The relay owns routing tasks and any replacement process through
+SDK transports. Calls already in progress finish before hand-over, with cancellation and host responses still
+delivered to them. July subscription streams finish gracefully, so clients can reopen them. Errors after dispatch
+are never replayed, because the call may already have committed a write. A failed replacement returns the schema
+error and keeps the old session usable. Closing the host connection closes and reaps the replacement.
 
 ## Modules relied on
 

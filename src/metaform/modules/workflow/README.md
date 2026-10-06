@@ -24,24 +24,60 @@ table and the node-read contribution.
 knowledge layers, elements, items, provenance, module tables and bound reads.
 `metaform.nonce` persists call continuations and atomically combines branch
 returns. `metaform.prompt_files` serves the module's authored XML resources.
+`metaform.axiom` checks each stored subroutine, MCP-035 and BASE-057.
 
 ## Prompts
 
-`resources/prompts.xml` holds the authored workflow-authoring and workflow-ingest
-prompts, their six shared sections, module instructions and call/handoff
-transport instructions. Serving a workflow prompt or call registers its
-shipped prompts lazily. Pins follow the deployed shared-section versions;
-previous prompt versions remain available.
+`resources/prompts.xml` holds the six shared sections, the
+prompt-lexicalization script, module instructions and call/handoff transport
+instructions. Serving a lib, a skill or a call registers the shipped sections
+in the prompt store lazily; previous prompt versions remain available.
+
+The same file holds the workflow agent's libs and skills, MCP-034. `lib_axiom`,
+`lib_metaform` and `lib_workflow` are composed at serve time from the newest
+stored version of each shared section they carry, so an edit saved in the
+prompt store reaches them. `lib_quality` and the seven skills are held whole.
+Each skill is a child of `<commands>`, so it is a slash command,
+`/metaform:<skill>`, as well as a command.
 
 ## Verbs
 
-Read the authoring or ingest prompt with its inputs:
+Write a workflow from a goal, or import an existing prompt or workflow, with
+the `write_workflow` and `import_workflow` skills. Read one and follow it, run
+it as `/metaform:write_workflow`, or hand it to a fresh agent with `assign`:
 
 ```sh
 metaform enable workflow
-metaform workflow author "Improve code quality" procedures
-metaform workflow ingest "<existing prompt, verbatim>" procedures
+metaform workflow skill write_workflow
+metaform workflow skill import_workflow
 ```
+
+Prepare incoming work with `workflow_builder`, which follows `write_workflow`
+and seeds its detailed rules at the affected map nodes. Judge results that
+need judgement with `workflow_evaluator` on a separate fresh agent. The
+evaluator takes the result, criteria, nodes and evidence, and reports its
+verdict and supported findings. It never grades a workflow it wrote or work
+it performed, D116. Both roles use the existing transport:
+
+```sh
+metaform workflow assign workflow_builder input="<request and target layer>"
+metaform workflow assign workflow_evaluator input="<result, criteria, nodes and evidence>"
+```
+
+Give each returned nonce to the agent holding that role. The same skills are
+MCP prompts `/metaform:workflow_builder` and `/metaform:workflow_evaluator`.
+All incoming work, including small fixes, goes through the builder under
+D117; a small fix may use a single pass so it receives its rules with little
+preparation overhead. Automatic routing is not implemented, and its mechanism
+and the loop-controller design remain open, BASE-055 and BASE-056.
+The builder records an unavailable operation and its dependency
+rather than naming a command that does not exist.
+
+Under D118, the builder writes proof into every loop whose passes change code
+or specifications: a relevant test command when one exists, otherwise a review
+by a fresh evaluator. A completed ticket suffices for a pass that only reads
+or reports. Changed artifacts need evidence that they meet the intended
+outcome. This policy applies independently of the open controller design.
 
 Read the prompt-lexicalization script with a prompt to lexicalize, LAYER-017:
 
@@ -52,23 +88,52 @@ metaform workflow lexicalize "<prompt or workflow, verbatim>"
 Its inputs fill the script's owner placeholders. `MAP_READ` is the `where`
 read. `UNRESOLVED_POLICY` is the setting `lexicalize_unresolved`, `keep
 wording` until set, and `ADDRESS_PLACEMENT` is `lexicalize_addresses`, `one
-block of name -> address` until set. `PROMPT_STORE` is null because no
-command saves a prompt yet, so the script halts and names it.
+block of name -> address` until set. `PROMPT_STORE` names `metaform prompt
+save <name> <text>`, or the MCP `save_prompt` tool with `name` and `text`.
+Saving creates version 1 or appends a version with the newest as parent.
+`parent=` names an earlier version when needed. Text is preserved exactly,
+and earlier versions and their provenance links stay unchanged.
 
-The module ships the latest authored prompts and their pinned shared sections
-to the versioned prompt store. The tools section supplies the implemented
-commands. Authoring and ingest submit the same stored shape:
+After the agent follows the lexicalization script, assemble context from
+its prompt body and subject addresses. Supply the body without its footer,
+since the assembler writes the canonical names and addresses at the end:
+
+```sh
+metaform workflow preprocess "Review the kitchen timer." '["code.timer.kitchen"]'
+metaform prompt save prepared-review - < prepared-prompt.txt
+```
+
+`preprocess` returns `prompt`, `addresses`, `layers` and `scope`. Over MCP,
+use `workflow` with `command: "preprocess"` and arguments `text` and
+`addresses`. The body stays verbatim, followed by a JSON block of knowledge
+and then the address footer. The agent supplies the name matches, so this
+command does no inference. Save the returned `prompt` text, rather than the
+whole command result, and hand that prepared text to the working agent.
+
+`preprocess_knowledge` defaults to `context`: only the addressed nodes'
+visible knowledge and applying or visible properties accompany the body.
+Set `--preprocess-knowledge=whole` when the job needs all visible items of
+the layers selected at its addresses. This includes more context and can
+cost more tokens. Both modes honor select, mask, hidden and unfinished
+layers through the existing reads. As those reads specify, `always_show`
+items remain visible at the addressed nodes even when their layer is off,
+hidden or masked. Whole mode broadens only the selected layers, while
+retaining those local `always_show` items.
+
+The module ships the latest shared sections to the versioned prompt store.
+The tools section supplies the implemented commands. Writing and importing
+submit the same stored shape:
 
 ```sh
 metaform workflow submit workflow.quality.code procedures name="Code quality"
-metaform workflow logic workflow.quality.code procedures review "<Axiom content>"
+metaform workflow add_logic workflow.quality.code procedures review "<Axiom content>"
 metaform workflow list
 ```
 
 `provenance=` accepts the producing prompt, model and role. A workflow may
 share its knowledge layer with other knowledge. `selected=` lists knowledge
 layers that accompany a workflow's calls. Existing layer lifecycle, selection,
-masking and hiding apply. The `logic` command also attaches a named subroutine
+masking and hiding apply. The `add_logic` command also attaches a named subroutine
 to any project element, including one a join holds. Its `this` is
 that element. Its instructions are stored without content validation.
 
@@ -134,6 +199,37 @@ saved versions and producing provenance. It contains no source project
 ownership. The destination assigns its native identities. Export with no
 `file` returns the same portable document. It carries selected layer names;
 the knowledge in those layers stays in its own layer store.
+
+Read the libs and skills the workflow agent loads, MCP-034:
+
+```sh
+metaform workflow libs
+metaform workflow lib lib_axiom
+metaform workflow skills
+metaform workflow skill write_workflow
+metaform workflow scan "<workflow text>" task=write
+```
+
+`libs` gives each lib's first line, its marker; an agent loads a lib only when
+its marker is not already in its context. `skills` gives each skill with
+`about`, what its `# skill:` line says after its name, and the libs its
+`# requires:` line names. Each skill's slash command has that same text as
+its description in the host's menu, held in its `summary=` attribute; a test
+keeps the two equal. `scan` serves the scan skill with the workflow and its
+task bound as data.
+
+Hand a skill to a fresh agent by nonce:
+
+```sh
+metaform workflow assign write_workflow input='Review the kitchen timer'
+metaform <nonce>
+metaform <nonce> complete
+```
+
+`assign` returns `metaform <nonce>`. Run through it, on MCP as `resume` with
+the nonce, it serves the skill's libs once each, then the skill, then the
+input. `complete` closes an assignment with no `RETURN`; a call nonce still
+needs its `RETURN`.
 
 All commands are available on CLI and MCP from the module's one declaration.
 Run `metaform help workflow` or open the MCP `workflow` tool for the command

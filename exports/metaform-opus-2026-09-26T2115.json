@@ -1,0 +1,3450 @@
+{
+ "metaform_export": 1,
+ "schema_version": "1",
+ "projects": [
+  {
+   "project": {
+    "project_id": "metaform",
+    "path": "/home/rich/metaform",
+    "target_type": "path",
+    "target_value": "/home/rich/metaform"
+   },
+   "metaforms": [
+    {
+     "metaform": {
+      "metaform_id": "a26ecfdde4d749e3a9b52741fef5bdf4",
+      "name": "main",
+      "created": "2026-09-26T21:15:09Z"
+     },
+     "types": [
+      {
+       "address": "stakeholder",
+       "parent": null
+      },
+      {
+       "address": "stakeholder.engineer",
+       "parent": "stakeholder"
+      },
+      {
+       "address": "stakeholder.engineer.context",
+       "parent": "stakeholder.engineer"
+      },
+      {
+       "address": "stakeholder.author",
+       "parent": "stakeholder"
+      },
+      {
+       "address": "stakeholder.author.module",
+       "parent": "stakeholder.author"
+      },
+      {
+       "address": "code",
+       "parent": null
+      },
+      {
+       "address": "code.engine",
+       "parent": "code"
+      },
+      {
+       "address": "code.engine.context",
+       "parent": "code.engine"
+      },
+      {
+       "address": "code.chassis",
+       "parent": "code"
+      },
+      {
+       "address": "code.store",
+       "parent": "code"
+      },
+      {
+       "address": "code.store.metaform",
+       "parent": "code.store"
+      },
+      {
+       "address": "code.stack",
+       "parent": "code"
+      },
+      {
+       "address": "code.stack.correction",
+       "parent": "code.stack"
+      },
+      {
+       "address": "code.layer",
+       "parent": "code"
+      },
+      {
+       "address": "code.layer.knowledge",
+       "parent": "code.layer"
+      },
+      {
+       "address": "code.layer.memory",
+       "parent": "code.layer"
+      },
+      {
+       "address": "code.navigator",
+       "parent": "code"
+      },
+      {
+       "address": "code.navigator.map",
+       "parent": "code.navigator"
+      },
+      {
+       "address": "code.intake",
+       "parent": "code"
+      },
+      {
+       "address": "code.intake.artifact",
+       "parent": "code.intake"
+      },
+      {
+       "address": "document",
+       "parent": null
+      },
+      {
+       "address": "document.procedure",
+       "parent": "document"
+      },
+      {
+       "address": "document.procedure.intake",
+       "parent": "document.procedure"
+      },
+      {
+       "address": "code.challenge",
+       "parent": "code"
+      },
+      {
+       "address": "code.challenge.blind_spot",
+       "parent": "code.challenge"
+      },
+      {
+       "address": "code.registry",
+       "parent": "code"
+      },
+      {
+       "address": "code.registry.project",
+       "parent": "code.registry"
+      },
+      {
+       "address": "code.schema",
+       "parent": "code"
+      },
+      {
+       "address": "code.schema.settings",
+       "parent": "code.schema"
+      },
+      {
+       "address": "code.grammar",
+       "parent": "code"
+      },
+      {
+       "address": "code.grammar.command",
+       "parent": "code.grammar"
+      },
+      {
+       "address": "code.loader",
+       "parent": "code"
+      },
+      {
+       "address": "code.loader.module",
+       "parent": "code.loader"
+      },
+      {
+       "address": "code.api",
+       "parent": "code"
+      },
+      {
+       "address": "code.api.module",
+       "parent": "code.api"
+      },
+      {
+       "address": "document.instructions",
+       "parent": "document"
+      },
+      {
+       "address": "document.instructions.agent",
+       "parent": "document.instructions"
+      },
+      {
+       "address": "code.server",
+       "parent": "code"
+      },
+      {
+       "address": "code.server.mcp",
+       "parent": "code.server"
+      },
+      {
+       "address": "code.installer",
+       "parent": "code"
+      },
+      {
+       "address": "code.gui",
+       "parent": "code"
+      },
+      {
+       "address": "code.gui.web",
+       "parent": "code.gui"
+      },
+      {
+       "address": "code.provenance",
+       "parent": "code"
+      },
+      {
+       "address": "code.provenance.layer",
+       "parent": "code.provenance"
+      },
+      {
+       "address": "code.channel",
+       "parent": "code"
+      },
+      {
+       "address": "code.channel.feedback",
+       "parent": "code.channel"
+      },
+      {
+       "address": "code.store.checkpoint",
+       "parent": "code.store"
+      },
+      {
+       "address": "code.exchange",
+       "parent": "code"
+      },
+      {
+       "address": "code.exchange.data",
+       "parent": "code.exchange"
+      },
+      {
+       "address": "code.builder",
+       "parent": "code"
+      },
+      {
+       "address": "code.builder.wheel",
+       "parent": "code.builder"
+      },
+      {
+       "address": "code.module",
+       "parent": "code"
+      },
+      {
+       "address": "code.module.example",
+       "parent": "code.module"
+      },
+      {
+       "address": "code.check",
+       "parent": "code"
+      },
+      {
+       "address": "code.check.quality",
+       "parent": "code.check"
+      },
+      {
+       "address": "document.specification",
+       "parent": "document"
+      },
+      {
+       "address": "code.interface",
+       "parent": "code"
+      },
+      {
+       "address": "code.interface.query",
+       "parent": "code.interface"
+      },
+      {
+       "address": "code.reader",
+       "parent": "code"
+      },
+      {
+       "address": "code.reader.address",
+       "parent": "code.reader"
+      },
+      {
+       "address": "code.schema.submission",
+       "parent": "code.schema"
+      },
+      {
+       "address": "code.flag",
+       "parent": "code"
+      },
+      {
+       "address": "code.flag.finding",
+       "parent": "code.flag"
+      },
+      {
+       "address": "code.tool",
+       "parent": "code"
+      },
+      {
+       "address": "code.tool.knowledge",
+       "parent": "code.tool"
+      },
+      {
+       "address": "code.resolver",
+       "parent": "code"
+      },
+      {
+       "address": "code.resolver.selection",
+       "parent": "code.resolver"
+      },
+      {
+       "address": "code.property",
+       "parent": "code"
+      },
+      {
+       "address": "code.property.transitive",
+       "parent": "code.property"
+      },
+      {
+       "address": "document.skill",
+       "parent": "document"
+      },
+      {
+       "address": "code.server.web",
+       "parent": "code.server"
+      },
+      {
+       "address": "code.viewer",
+       "parent": "code"
+      },
+      {
+       "address": "code.viewer.graph",
+       "parent": "code.viewer"
+      },
+      {
+       "address": "code.store.prompt",
+       "parent": "code.store"
+      },
+      {
+       "address": "code.server.variant",
+       "parent": "code.server"
+      },
+      {
+       "address": "code.exporter",
+       "parent": "code"
+      },
+      {
+       "address": "code.exporter.origin",
+       "parent": "code.exporter"
+      },
+      {
+       "address": "code.context",
+       "parent": "code"
+      },
+      {
+       "address": "code.context.call",
+       "parent": "code.context"
+      },
+      {
+       "address": "code.bus",
+       "parent": "code"
+      },
+      {
+       "address": "code.bus.event",
+       "parent": "code.bus"
+      },
+      {
+       "address": "code.module.template",
+       "parent": "code.module"
+      },
+      {
+       "address": "code.module.demo",
+       "parent": "code.module"
+      },
+      {
+       "address": "code.session",
+       "parent": "code"
+      },
+      {
+       "address": "code.session.transaction",
+       "parent": "code.session"
+      },
+      {
+       "address": "code.screen",
+       "parent": "code"
+      },
+      {
+       "address": "code.screen.settings",
+       "parent": "code.screen"
+      },
+      {
+       "address": "code.generator",
+       "parent": "code"
+      },
+      {
+       "address": "code.generator.help",
+       "parent": "code.generator"
+      },
+      {
+       "address": "code.suite",
+       "parent": "code"
+      },
+      {
+       "address": "code.suite.test",
+       "parent": "code.suite"
+      },
+      {
+       "address": "code.integration",
+       "parent": "code"
+      },
+      {
+       "address": "code.integration.continuous",
+       "parent": "code.integration"
+      },
+      {
+       "address": "code.client",
+       "parent": "code"
+      },
+      {
+       "address": "code.client.mcp",
+       "parent": "code.client"
+      }
+     ],
+     "layers": [
+      {
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "metaform_id": "a26ecfdde4d749e3a9b52741fef5bdf4",
+       "name": "intake-20260926T211509Z-59ad06",
+       "module": "intake",
+       "variable": "The functional map of the artifact: its elements, and each receiver's purpose served by a provider's encounter function.",
+       "mutable": 0,
+       "hideable": 0,
+       "result_id": "metaform-intake-20260926-da46fa34",
+       "kind": "intake",
+       "created": "2026-09-26T21:15:09Z",
+       "ready": "2026-09-26T21:15:09Z"
+      }
+     ],
+     "layer_fields": [],
+     "layer_tags": [],
+     "layer_sources": [],
+     "provenance": [
+      {
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "module": "intake",
+       "workflow": "canonical-intake",
+       "prompt": null,
+       "model": "claude-opus-5-5",
+       "role": "intake agent",
+       "blinded": null
+      }
+     ],
+     "selections": [],
+     "hidden": [],
+     "elements": [
+      {
+       "element_id": "f7641c252d904e5aba278d4bd912da51",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "stakeholder.engineer.context",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "df8cf4aa53a54decb6f6185d55470b5d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "stakeholder.author.module",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "ce2a5e565a2e4fd29fe1a45c18c6eb00",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.engine.context",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "0eef5f7f6025471597d8bec2cb073c43",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.chassis",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "b411dad2b06a4efe92a6f2aa147db04d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.store.metaform",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "52b01e0f0b2b4d6abb286c34b096f91c",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.stack.correction",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "a14d5cf95c174a839065f644065fd764",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.layer.knowledge",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "70683c22049748099a38c468ea4e9143",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.layer.memory",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.navigator.map",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "8443e2321866467eb7d2cb1e3832ce40",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.intake.artifact",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "9e59b471f821474185b229343f9987aa",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "document.procedure.intake",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "a012b8e9bf2e4cf9a2343cdcbc69ac6a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.challenge.blind_spot",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "05298077f75745c388b546da579c6a0d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.registry.project",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.schema.settings",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "38fff033e11a4437a27e32b87a67b07e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.grammar.command",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "51284aefdfd94594a0e930b57ab5c11b",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.loader.module",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "3602297ebbf648839098236a23025d7f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.api.module",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "49916f2d72bb4c19811e45202ca46808",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "document.instructions.agent",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "7481b1be63674ae69955c0e89459d2ef",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.server.mcp",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "94cea65f77ec42c48d6cb6033950c025",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.installer",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "e7b5d732dc114289a675cd25f789e2c8",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.gui.web",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "f6c58f1d0c344e6097c78297c4381573",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.provenance.layer",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "d0af09888acf4035912d104f4b901859",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.channel.feedback",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "b8de6858674b434c87eb44eaeb990fd6",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.store.checkpoint",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "34ef98220dd94005a6c5606603ab4363",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.exchange.data",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "4d2cf9aece274a9eba085b78caaa748a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.builder.wheel",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "f7874508701748d4bacb75fecbbc5247",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.module.example",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "148c4f70be6e42f8b3e4a98a392f0ce7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.check.quality",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "element_id": "9429f34de09c4d55a91c1fd0d5691704",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "document.specification",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      }
+     ],
+     "joins": [
+      {
+       "join_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "ce2a5e565a2e4fd29fe1a45c18c6eb00",
+       "purpose": "Have every agent that works on a project start from the project's stored functional record, what each part is for, who receives it and how, instead of reconstructing it from the files each session.",
+       "function": "Metaform keeps each registered project's functional map and the layers of knowledge over it in the Metaform home, and hands them to agents on the command line and as MCP tools, from the intake that builds the map to the web GUI that shows it.",
+       "ef": "Function",
+       "relation": "Metaform keeps each project's functional map and hands it to every agent before the agent works.",
+       "verb": "keeps",
+       "observation": "A Python 3.11 package, metaform 0.1.0, with one runtime dependency, prompt_toolkit. About 10,700 lines of chassis under src/metaform and src/metaform/data, and seven shipped modules under src/metaform/modules: intake, map, mcp, memory and web on by default, helloworld and template off. The repository also holds the specification it is built from under specifications/spec, 20 test files in tests/ plus each module's own tests, and a CI workflow. All data lives under ~/.metaform, or METAFORM_HOME, never in the project folder.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "4d518a2b447544d78f2d27295e687222",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "0eef5f7f6025471597d8bec2cb073c43",
+       "purpose": "Compose what agents get from capabilities that can be added, turned off or replaced, while every map, layer and setting stays with one owner that never depends on any of them.",
+       "function": "The chassis owns every project's maps and layers, the settings and the command line in the Metaform home, works as a complete CLI with every module off, and carries each enabled module on one common base, so what agents receive can change module by module while the map stays where it is.",
+       "ef": "Function",
+       "relation": "The chassis owns every project's data, settings and command line and carries the modules loaded onto it.",
+       "verb": "owns",
+       "observation": "The chassis is every top-level file of src/metaform and the data package. cli.py dispatches 20 chassis verbs, from add, list, set and unset to import, export, query, install, build, feedback and extract. metaform with no words prints the home, folder, project, target, active metaform, module count and each module's status lines. A module whose id names a chassis verb is refused by the loader.",
+       "non_goal": "The chassis runs no workflow and holds no MCP server; both are modules.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "b681e40773074ed6b5325f34f0ae4b0a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "purpose": "Before an agent changes a part of the project, it reads what that part is for, who receives it and what it provides, starting from the map's entry.",
+       "function": "The map reads return the entry, the VE and DE with the joins they receive and every root element, then the element or subtype at an address, the joins an element owns or provides for, the next types toward the leaves, the properties applying at an address, everything citing a file path, the items holding given words, and the flagged findings, each in the folder's layer context.",
+       "ef": "Function",
+       "relation": "The map navigator answers each read of the map in the folder's layer context.",
+       "verb": "answers",
+       "observation": "Module map, src/metaform/modules/map, 31 verbs, each calling one Store operation and returning its record as JSON over MCP or as key: value lines on the CLI. The only switch is --raw, which reads every stored layer, building, hidden and masked ones included. Every read of a join names the layer it comes from. The same reads run by name through metaform query and back the web GUI's /api endpoints.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "f1e9cf0ee1f04730ade6eb379836344d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "8443e2321866467eb7d2cb1e3832ce40",
+       "purpose": "Get a project's functional map made once by a fresh agent following the Canonical Intake, and stored whole or not at all.",
+       "function": "The intake module serves the Canonical Intake by name with the project's target filled in, tells the orchestrator to hand it to a subagent while the project has no intake, and stores that subagent's one submission as a new intake layer in one atomic write, naming what does not fit in a notice instead of refusing it.",
+       "ef": "Function",
+       "relation": "The intake module serves the Canonical Intake and stores the finished map as one intake layer.",
+       "verb": "stores",
+       "observation": "src/metaform/modules/intake: intake prompt, intake submit and intake status. submit takes elements as the JSON array over MCP, or a file path or - on the CLI, with id, report, feedback, model, role and blinded. When the active metaform already has an intake, the new one is stored in a new metaform named intake-<UTC time> and made active, and the earlier one is kept whole. The report and feedback are saved as files linked to the layer's provenance. metaform help intake submit shows no elements schema; the shape is only in schema.py and the MCP tool's input schema.",
+       "non_goal": "The module never parses the intake's XML and never judges the map it stores.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "310b8f9df89e4d519e66388460dadfd6",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "a14d5cf95c174a839065f644065fd764",
+       "purpose": "Attach inferred knowledge, such as a language's practices or a porting plan, at the map's nodes, and choose which agents see it at which addresses.",
+       "function": "A knowledge layer answers one question with items and properties at elements, joins, subtypes or new elements it links in, carries its own provenance and tags, and reaches an address only when the folder's toggled layers, the select and mask rows walked from trunk to leaf, and hiding let it through.",
+       "ef": "Function",
+       "relation": "A knowledge layer lays one body of inferred knowledge over the map wherever the selection lets it reach.",
+       "verb": "lays",
+       "observation": "Layers are built one object per call through metaform map knowledge, then finished; a finished knowledge layer stays editable through the same tool. --layers names the layers or tags toggled on in a folder, and empty means every finished layer that is not hidden. map layers lists each layer's kind, module, tags, state and whether it is on. The intake writes no properties; they come only from knowledge layers.",
+       "non_goal": "A knowledge layer never changes the metaform itself; only a correction layer does.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "ed34640bfa864f8fa159e00cdd6f9a1f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "70683c22049748099a38c468ea4e9143",
+       "purpose": "When the map is wrong or incomplete at a node, the next agent reads the note right where it looks, without the intake being edited.",
+       "function": "The memory module offers the reference memory server's operations over the map's own nodes: an entity is an element, join or subtype, an observation is an item at it, and a relation is an item at one node linking to another, all in one mutable, hideable memory layer made on the first write.",
+       "ef": "Function",
+       "relation": "The memory module keeps agents' notes at the map's own nodes.",
+       "verb": "keeps",
+       "observation": "src/metaform/modules/memory: nine verbs, create-entities, create-relations, add-observations, delete-entities, delete-observations, delete-relations, read-graph, search-nodes and open-nodes. The reads work in context, so hiding or masking the memory layer hides the notes too. create-entities on an address the map lacks makes a new element in the memory layer. delete-entities deletes the memories at a node and never the node.",
+       "non_goal": "Memory keeps no provenance record and no history of its changes.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "888926e4b843493b93df594ff066c698",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "52b01e0f0b2b4d6abb286c34b096f91c",
+       "purpose": "Fix what the intake got wrong in the map itself, for every later reader, while the intake stays as written and any fix can be taken back.",
+       "function": "Correction layers change, relocate, remove or add things of the metaform, stack in the order they are finished on top of the intake map, and come off only one at a time from the top; each thing's current row is its intake row with the whole stack applied, and every layer built from a changed thing is marked for re-examination.",
+       "ef": "Function",
+       "relation": "The correction stack applies each finished correction on top of the intake map in order.",
+       "verb": "applies",
+       "observation": "data/corrections.py recomputes current rows on finish and peel. map knowledge op=correct writes a change or removal with a reason and evidence into a building correction layer, op=finish stacks it, and op=peel returns the top one to building. Relocating an element keeps its id, layer items and memories; its joins end and joins at the new place are new. map reexamined clears the mark. The web GUI removes the top correction only after a warning that previews each change.",
+       "non_goal": "A correction layer is never toggled or hidden, and none is removed from the middle of the stack.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "f346afd8a62e46648a813954e1785443",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "a012b8e9bf2e4cf9a2343cdcbc69ac6a",
+       "purpose": "Have a critic that owns nothing it judges name the map's blind spots, have the project agent answer each one, and keep the decision to take up new work with a person.",
+       "function": "Challenges are items in a critic's layer; a project agent answers each A, not beneficial, B, take it up, or C, handled by a linked element or join, through map answer, and only a person's map approve, on the CLI alone, turns a B into a plan with the element and join it carries.",
+       "ef": "Function",
+       "relation": "The blind-spot challenge records each answer beside the critic's layer and turns an approved B into a plan.",
+       "verb": "records",
+       "observation": "data/challenges.py keeps challenge_states and plans outside the critic's layer. approve is declared for the CLI only, so it is never an MCP tool. An agent can add a plan directly with map knowledge op=add-plan, needing no approval. No prompt or module builds the blind-spot layer itself; the critic pass is module work pending D44.",
+       "non_goal": "The critic answers none of its challenges, and no agent approves a B answer.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "ede42af84fa04cc5b146d462b448ca77",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "49916f2d72bb4c19811e45202ca46808",
+       "purpose": "Every agent that reaches a project learns what each module is for and the one next step, such as handing the intake to a subagent, without a person having to tell it.",
+       "function": "The agent instructions are composed live from the chassis base text, each surfaced module's purpose in module id order, and each module's status notice, and are the same text in metaform help agents and in the MCP server's instructions.",
+       "ef": "Function",
+       "relation": "The agent instructions tell each agent what every module is for and what to do next.",
+       "verb": "tell",
+       "observation": "src/metaform/instructions.py: the base text, then the stop rule to submit a trouble report and not retry, the feedback request when --debug is on, then a ## section per module. With no project for the folder it lists the registered projects and how to register one. Today's notices are intake's no-intake notice and web's notice to start the GUI after an intake.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "5d6804e18aa14c8a85e17c4aba4b4540",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "7481b1be63674ae69955c0e89459d2ef",
+       "purpose": "Agents working inside their own AI tools reach the map and its layers as tools, without a shell.",
+       "function": "The MCP server serves over stdio, through the official SDK's low-level Server, one tool named <module>_<verb> for each verb on the folder's command surface, built from the same declaration as its CLI command, plus set, feedback, list_reports and read_report always, and the history and prompt tools while the chassis is on the surface.",
+       "ef": "Function",
+       "relation": "The MCP server serves each module verb as a tool to the agent's host.",
+       "verb": "serves",
+       "observation": "src/metaform/modules/mcp/server.py; the module declares mcp>=2.2, so it is not loaded where the SDK is missing. The tool list is recomputed on every list and call. Every tool takes an optional project and layers for that call, a caution verb needs confirm true, and an error ends with the same Next line the CLI prints. A plain verb runs in a worker thread and a coroutine verb in the server's loop, so a host's cancellation reaches it. The instructions are composed once, when the server starts.",
+       "non_goal": "The server is never a tool itself, and it serves only locally over stdio.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "12e3b7ac186d4f3f9ac9bf89729bb862",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "e7b5d732dc114289a675cd25f789e2c8",
+       "purpose": "See a project's metaform as agents see it, with its layers, provenance and corrections, and change only which layers the folder toggles, a prompt's next version, or the top correction.",
+       "function": "One web server per Metaform home, on one fixed port and loopback by default, serves every registered project's active metaform as a floating 3D graph of receivers, purposes and encounters and a 2D map of the whole in the left window, kept in sync, with inspector, provenance, prompt and correction tabs, and exactly three writes.",
+       "ef": "Encounter",
+       "relation": "The context engineer views each project's metaform, its layers and its provenance in the web GUI.",
+       "verb": "views",
+       "observation": "src/metaform/modules/web: metaform web starts a server detached from the terminal on port 7433 and records it in ~/.metaform/run/web.json; run again from any folder it reports the running one, and web stop ends it. Any bind but loopback needs the home's token. The page loads only bundled files: 3d-force-graph with three.js, Mermaid for the 2D layout, CodeMirror 5 for the prompt editor, and IBM Plex fonts. The writes are apply-layers, save-prompt and remove-correction, each taken only with the page's own Origin and a JSON body.",
+       "non_goal": "Viewing never changes a setting, and the GUI writes nothing beyond its three writes.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "21013eb8dda04e0d9480c02b31b81f9f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "f6c58f1d0c344e6097c78297c4381573",
+       "purpose": "Answer why any layer, and anything in it, is the way it is: which module, workflow, prompt version, model and role made it, and whether that agent saw only the map.",
+       "function": "Every layer except memory has one provenance record of its module and workflow, prompt, model, role and blinded, with its report, feedback and shape files as refs, and a layer made from a stored prompt links to the exact prompt version it was made from.",
+       "ef": "Function",
+       "relation": "Provenance records how each layer was made, down to the exact prompt version.",
+       "verb": "records",
+       "observation": "provenance table in each metaform store; map layers and the web GUI's provenance tab read it. The intake layer's record holds workflow canonical-intake, an empty prompt, and the model, role and blinded the submitting agent gave.",
+       "non_goal": "Provenance keeps no copy of the Canonical Intake text, and editing a prompt changes no provenance record.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "7a981853994a4727aa959b6d6f013a81",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "d0af09888acf4035912d104f4b901859",
+       "purpose": "Learn where the Metaform process failed an agent and what the intake agent found wrong in the project, from the agents themselves, with nothing they submit lost or refused.",
+       "function": "The feedback channel saves process feedback, the intake agent's report on the project and any shape an agent could not submit as files in the home, one row each, listed by kind and layer and read back exactly; it stays on every command surface, so a stuck agent can always stop and report.",
+       "ef": "Function",
+       "relation": "The feedback channel saves every agent's feedback, report and unsubmitted shape in the home.",
+       "verb": "saves",
+       "observation": "src/metaform/reports.py writes projects/<id>/reports/<run id>-report.md, -feedback.md or -shape.txt and appends a timed section on a second write for the same run and kind. metaform feedback, list reports and read report, and the always-on feedback, list_reports and read_report tools. --debug, off by default, asks agents for process feedback; --report, on by default, asks the intake agent for a project report.",
+       "non_goal": "Nothing is written into the project folder, and nothing an agent submits here is refused for its content.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "0cef00798b3f4cc0b439b555c04e521e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "b8de6858674b434c87eb44eaeb990fd6",
+       "purpose": "Keep each piece of agent work in a worktree or folder as a checkpoint against the commit it started from, so it can be compared, rebuilt or carried elsewhere without git.",
+       "function": "History records an origin for each baseline, the commit hash of a repository or a full copy of a plain folder, collects a worktree or folder as a variant holding only the files that differ, whole when small and as a diff against the origin when large, and rebuilds any variant with Python alone, checking each file against its hash.",
+       "ef": "Function",
+       "relation": "History stores each variant against its origin and rebuilds it with Python alone.",
+       "verb": "stores",
+       "observation": "src/metaform/data/history.py with projects/<id>/history.sqlite3 and payloads under the home's origins folder. metaform add origin, add variant <folder> with provenance fields and remove=true for a linked worktree, list origins, list variants and extract, and the same as MCP tools while the chassis is on the surface. Collecting a variant runs git diff even outside a repository, so git is needed there; extraction needs none. metaform export does not carry history.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "c35cb0228d6649c8ab0ce4d1ea3aa75e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "f7641c252d904e5aba278d4bd912da51",
+       "provider": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "purpose": "Give each working folder its own context, the project it works on, the commands it may see and run, and the layers it toggles, so a worker gets a narrowed surface while the orchestrator keeps its own.",
+       "function": "The context settings --project, --modules, --layers, --debug and --report are ordinary folder settings that apply to every folder below until a deeper one sets its own; set folder=<path> stores them for a worker's folder, and a narrowed --modules hides and blocks every other command on the CLI and over MCP and prints the way back.",
+       "ef": "Function",
+       "relation": "The settings schema holds each working folder's project, command surface and toggled layers.",
+       "verb": "holds",
+       "observation": "Chassis settings in settings.py. A git worktree is its own working folder and reaches the same project data. feedback, list reports and unset stay available on a narrowed surface. --layers keeps a name that is no layer or tag with a notice, and refuses a correction layer, since those are always applied.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "1fd2cb1d002b40afb8a3ef1ab9199212",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "df8cf4aa53a54decb6f6185d55470b5d",
+       "provider": "3602297ebbf648839098236a23025d7f",
+       "purpose": "Add a capability as a module against one public base that gives it every Metaform resource, other modules' activity included, declaring each verb once and never importing another module's code.",
+       "function": "The common base gives a module Module, Verb, Noun, Subscription and Status to declare itself, a Context for every call, settings declared in its own code, the data access object and the event bus; from each Verb the chassis builds the CLI command, its help page and its MCP tool.",
+       "ef": "Function",
+       "relation": "The common base turns each verb a module declares into a command, a help page and a tool.",
+       "verb": "turns",
+       "observation": "metaform.module, metaform.settings, metaform.data and metaform.events. A module is a folder whose __init__.py sets SUPPORTED_OS, and optionally DEPENDENCIES and SHIPS_DISABLED, as literals, and MODULE, whose id matches the folder and whose purpose, the agents' concise instructions, is not empty. A verb may be a coroutine, carry a caution that needs --confirm, narrow its systems, be CLI only, or be a transport such as mcp serve. Each shipped module has a README for its developers.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "08c06413b45f4eb4b1fb013a20d4a4c2",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "df8cf4aa53a54decb6f6185d55470b5d",
+       "provider": "f7874508701748d4bacb75fecbbc5247",
+       "purpose": "Start a new module from something that already works under the current contract.",
+       "function": "Two example modules ship off: template, the same module completely empty but scaffolded, and helloworld, a demo of each chassis feature working once.",
+       "ef": "Encounter",
+       "relation": "The module author copies the template and runs helloworld to start a module.",
+       "verb": "copies",
+       "observation": "src/metaform/modules/template and src/metaform/modules/helloworld, both SHIPS_DISABLED = True, each with a README, a CHANGELOG and its own tests.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "f6f40f13312b4c519db2b5b9533d995e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "b411dad2b06a4efe92a6f2aa147db04d",
+       "purpose": "Hold every project's metaforms, maps and layers in the Metaform home behind one door that every module, surface and the web GUI go through, losing nothing when several agents write at once.",
+       "function": "The data access object opens one SQLite store per metaform, runs every write as one transaction that never refuses content, storing what does not fit as given with a notice, and answers every read through an index with selection, masking and hiding applied inside the read.",
+       "ef": "Function",
+       "relation": "The data access object stores and reads each metaform for every caller.",
+       "verb": "stores",
+       "observation": "src/metaform/data: Store in store.py is the only code that issues SQL, over writes.py, reads.py, layering.py, corrections.py, challenges.py, views.py and rows.py, and returns frozen records with to_dict. Each store is projects/<project id>/metaforms/<metaform id>/store.sqlite3 in WAL mode with foreign keys and a 30 second busy timeout. Every element, join, subtype, ref, item and selection is its own row with a stable identity id; an element row is only an id and an address, and its name, name_length, role and refs are a descriptor item. Fields beyond the columns are kept in extra and survive export and import.",
+       "non_goal": "The store never judges whether an address is a valid functional type, and there is no general SQL surface.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "fec18faf3b5646458e42da3cdc7a444b",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "05298077f75745c388b546da579c6a0d",
+       "purpose": "Know which project and which of its metaforms every folder works on, with all of it kept in the home and nothing in the project folder.",
+       "function": "The home's base database registers each project with its folder and target, records each working folder, keeps each project's metaforms with the one active, and holds module on and off state and what the installer set up; a folder's project defaults to the deepest registered project that contains it.",
+       "ef": "Function",
+       "relation": "The home registers every project and resolves each folder to its project and active metaform.",
+       "verb": "registers",
+       "observation": "src/metaform/home.py with ~/.metaform/metaform.sqlite3, or METAFORM_HOME. add project <id> <path> [<target type> <target value>] takes path, url, artifact, inline or inferred. add metaform <name> starts an empty metaform and makes it active, keeping the old one whole, and activate metaform <name> switches back; the first write to a project creates main. A read of a home with no base database creates nothing.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "741e7c157aab45faa985a06dcda1f853",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "purpose": "Every switch a verb reads is a setting from one declaration, passed on one call, stored for a folder, glued, or reset to safe defaults, and shown the same way in help, config and the settings screen.",
+       "function": "The settings schema holds each setting the chassis and each loaded module declare in code with its kind, default, owner and scope, and resolves a folder's value from the nearest folder at or above it that stores one, else the declared default, which is never written.",
+       "ef": "Function",
+       "relation": "The settings schema declares each setting once and resolves its value for any folder.",
+       "verb": "resolves",
+       "observation": "src/metaform/settings.py. Kinds are text, number, boolean, list and select; states are default, set and glued. A boolean has --name and --no-name and never toggles; unset all --unglue returns everything to the declared defaults. A module's settings leave every surface while it is absent and keep their stored values. Declared today: project, modules, layers, debug and report by the chassis, raw by map, intake_file by intake, and web_port, web_bind and web_autostart by web.",
+       "non_goal": "--confirm is never a setting.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "d89d6fbee1bc48ae94a1ad5341014095",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "38fff033e11a4437a27e32b87a67b07e",
+       "purpose": "Read every command line and tool call the same way, verbs then nouns then switches, and answer every mistake with what happened and the one command to run next.",
+       "function": "The command grammar takes required nouns by position, optional nouns as name=value, and switches as the settings the verb reads, with -- ending switches; every error prints one Error line and one Next line, and a verb's result is one value shown as JSON with --json or as key: value lines.",
+       "ef": "Function",
+       "relation": "The command grammar parses each command from its verb's one declaration.",
+       "verb": "parses",
+       "observation": "grammar.py parse and from_json, cli.py dispatch, results.py and errors.py. An async verb runs with the first Ctrl+C cancelling and a second interrupting; exit codes are 0, 1 for a failure, 2 for a user error, 3 for cancelled and 130 for interrupted. --all is refused, since all is an argument. A name=value word the verb does not know goes to the record's extra when the verb has one.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "18a4b1e5d7ec4df190925f7fa159fd00",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "51284aefdfd94594a0e930b57ab5c11b",
+       "purpose": "Carry every module that is enabled and fits this system, and skip one that is off, incompatible, missing a dependency or broken, without the chassis or any other module failing.",
+       "function": "The module loader finds modules in the shipped place, ~/.metaform/modules and metaform.modules entry points, reads each one's SUPPORTED_OS, DEPENDENCIES and SHIPS_DISABLED with ast before importing it, imports the enabled compatible ones, and withdraws a module's settings, code and tasks whole on unload, reload, shutdown or a failed start while its stored data stays.",
+       "ef": "Function",
+       "relation": "The module loader loads each enabled, compatible module and reports why any other is not loaded.",
+       "verb": "loads",
+       "observation": "loader.py and module_metadata.py. A later place's module with an id already found, or an id that names a chassis verb, is refused. list modules shows each module's state, place and problem; enable and disable store the user's choice in the home. A module's own tasks are cancelled and awaited before its stop hook runs.",
+       "non_goal": "The loader never imports a module to learn whether it fits.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "0499ff06d88e44a099ca2d68565a5123",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "34ef98220dd94005a6c5606603ab4363",
+       "purpose": "Carry a project whole to another home and back, by unique id, so an import never duplicates and never loses anything.",
+       "function": "Export writes the chosen projects, metaforms or layers as one JSON document in which every row carries its identity id and layer id; import checks the whole document before writing, then adds only what the target home lacks, each metaform's store in one transaction, and import wheel= brings a directly run wheel's metaforms in as new, inactive ones.",
+       "ef": "Function",
+       "relation": "The data exchange writes a project to one document and adds back only what a home lacks.",
+       "verb": "writes",
+       "observation": "src/metaform/data/exchange.py; metaform export [<project>|all] [file=] [metaform=] [layer=]..., metaform import <file> [<project>], and metaform import wheel=<name>-<version> from ~/.metaform/wheels. A metaform, layer or thing whose id exists is skipped. History is not in the document.",
+       "non_goal": "A pulled wheel's metaform is never merged into one already here or made active.",
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "39ff8863374341e1a32d675fcbc47598",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "4d2cf9aece274a9eba085b78caaa748a",
+       "purpose": "Run Metaform with just the enabled modules from one file, directly with python, including offline in hosted code execution environments, without touching an installed Metaform.",
+       "function": "metaform build writes one wheel of the chassis and the enabled modules with a root __main__.py that runs it directly with its own home under ~/.metaform/wheels/<name>-<version>, carrying every pure-Python dependency under metaform/_vendor and naming each compiled one it leaves out.",
+       "ef": "Function",
+       "relation": "The wheel builder packs the chassis and the enabled modules into one wheel that runs directly.",
+       "verb": "packs",
+       "observation": "src/metaform/build.py writes the wheel with zipfile from the installed package and gathers dependencies with uv pip compile and uv pip install --target, so it needs uv; the stop for a missing uv names a curl | sh install, which does not run on Windows. _build_info.py copies the chassis dependencies because an installed package has no pyproject.toml.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "b2ccc6a602ea46c7933c8eb09831b7c8",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "148c4f70be6e42f8b3e4a98a392f0ce7",
+       "purpose": "Stay correct on Linux, macOS and Windows on every change, with each requirement protected by a check that fails on a wrong build.",
+       "function": "The quality checks run on every push and pull request on Ubuntu, macOS and Windows with Python 3.11 and 3.14: strict pyright over src/metaform, ruff over src, tests and conftest.py, and pytest over the chassis tests and each module's own tests, each test marked with the requirement it protects and whether it is a fixture, a simulation or a real run.",
+       "ef": "Function",
+       "relation": "The quality checks run the tests, the strict type check and the lint on three systems for every change.",
+       "verb": "run",
+       "observation": "Run here on Linux: 486 tests pass in 260 seconds and pyright reports 0 errors, while ruff check src tests conftest.py with the pinned ruff 0.16.9 and its default rules reports 118 findings, so the lint step fails. pyproject.toml pins pyright, ruff and playwright; uv.lock is untracked, so mcp, pytest and prompt_toolkit resolve fresh in each CI job.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "7daca2068772444aa6a423fefe0f7aa2",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "0eef5f7f6025471597d8bec2cb073c43",
+       "provider": "9429f34de09c4d55a91c1fd0d5691704",
+       "purpose": "Be built to one contract that wins wherever documents, code or tests disagree, so every part answers a stated requirement and its reason.",
+       "function": "The specification holds about 230 records in nine sections, the map, layers, storage, chassis and modules, CLI and settings, MCP and install, quality, projects and the viewer, each with the requirement, what it means, why, how it shows, the build, the acceptance tests, relations and status, frozen for the first release.",
+       "ef": "Encounter",
+       "relation": "The chassis follows the specification's records, which win wherever anything else differs.",
+       "verb": "follows",
+       "observation": "specifications/spec: 00-index to 09-viewer, OPEN-QUESTIONS, TRACE of the older REQUIREMENTS.md, CAPTURE, BUILD-BRIEF, BUILD-LOG, HANDOFF, seven critic reviews, seven test reviews, five manual tests, three cold build checks and the approved viewer prototype. Beside it: REQUIREMENTS.md with its corrections, SETTLED.md, code_quality_standards.md and metaprompting_element_segments_example.md. HANDOFF.md still describes an uncommitted third fix step and four open Canonical Intake questions that the tree and the current intake text no longer show.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "26c1cc98da744feda60146365ca2458e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "provider": "b411dad2b06a4efe92a6f2aa147db04d",
+       "purpose": "Answer every read from only the layers that reach the place being read.",
+       "function": "Each Store read resolves one Resolver for the folder's toggled layers, so select, mask, hiding and building apply on every path, and each list read is one index range resumed after its last key.",
+       "ef": "Function",
+       "relation": "The data access object answers each map read in context through an index.",
+       "verb": "answers",
+       "observation": "data/reads.py and paging.py; limit and after page every list read. raw=True, the --raw switch, skips the resolver and marks orphans.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "82b61d94ad934ca58f259ba37fb3e058",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "8443e2321866467eb7d2cb1e3832ce40",
+       "provider": "9e59b471f821474185b229343f9987aa",
+       "purpose": "Hand the performing agent one complete method that turns any artifact into its functional map in the metaform's shape.",
+       "function": "The Canonical Intake defines the core concepts, how to choose the Vested Entity, the namespace rules with valid and invalid examples, an eleven-step trace from the Defining Element through annealing into subtypes, and the response schema of elements, joins and nested subtype joins.",
+       "ef": "Encounter",
+       "relation": "The intake module serves the Canonical Intake unchanged except for its filled target and the submit lines after it.",
+       "verb": "serves",
+       "observation": "modules/intake/resources/Canonical_Intake.xml, process digital-typology version 1.1, 175 lines, identical to specifications/Canonical_Intake.xml; --intake-file serves another file instead. After it come the submit and stop line, the report line when --report is on, and the feedback line when --debug is on. The text asks for an XML answer while intake_submit takes JSON fields, and its schema has no flag or flag_note.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "5398618746d74ef8a624cb6d771d42fc",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "8443e2321866467eb7d2cb1e3832ce40",
+       "provider": "b411dad2b06a4efe92a6f2aa147db04d",
+       "purpose": "Store the whole submission or nothing, so a half-written intake never exists.",
+       "function": "store.atomic() joins the layer creation and every element, join, subtype and ref write of the submission into one transaction.",
+       "ef": "Function",
+       "relation": "The data access object commits the whole submission in one transaction or none of it.",
+       "verb": "commits",
+       "observation": "When the submission goes into a new metaform and the write fails, the new metaform's row and store file are withdrawn.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "5c49f29978a046a8acc9b89dafa9f783",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "provider": "05298077f75745c388b546da579c6a0d",
+       "purpose": "Default each folder's project to the project that contains it, and keep every stored value in the home.",
+       "function": "The home supplies the deepest registered project containing a folder as the default of --project, stops a selection made above a project's folder from reaching inside, and stores each setting's values and glue by folder scope in its base database.",
+       "ef": "Function",
+       "relation": "The home supplies each folder's default project and stores every setting value.",
+       "verb": "supplies",
+       "observation": "settings.py declares project with default_from=home.folder_project and boundary=_project_root; values are rows of the settings table, one per list member, and glue rows of the glue table.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "8647391a2e7c4e84a8f59311f59d830b",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "7481b1be63674ae69955c0e89459d2ef",
+       "provider": "94cea65f77ec42c48d6cb6033950c025",
+       "purpose": "Be started by each AI tool on the machine with the exact command that runs this Metaform.",
+       "function": "The installer first shows the system, Python, uv and the AI tools it finds, previews every file it will change with its backup, registers uvx --from <wheel> metaform mcp serve through each tool's own command or by merging its user config, writes the skill, then starts each registered command, initializes it, lists its tools and reports pass or fail per tool.",
+       "ef": "Function",
+       "relation": "The installer registers the server with each AI tool and proves each can start it.",
+       "verb": "registers",
+       "observation": "src/metaform/install.py sets up Claude Code, Codex, Gemini CLI, Cursor and VS Code, and lists Copilot CLI, Factory, Antigravity and Claude Desktop as unverified, never set up. install asks; install <tool>... and install all do not. uninstall removes only Metaform's entries and skill copies, backing up first.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "9da55acf56a74f1c9619d1b7a158ea09",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "7481b1be63674ae69955c0e89459d2ef",
+       "provider": "38fff033e11a4437a27e32b87a67b07e",
+       "purpose": "Check each tool call exactly as the command line checks the same verb, so a tool and its command never disagree.",
+       "function": "grammar.from_json checks a tool call's required nouns, kinds and switch values with the command line's own Next steps, and lists names that are neither, which are kept in extra with a notice or ignored.",
+       "ef": "Function",
+       "relation": "The command grammar checks each tool call's arguments as it checks a command line.",
+       "verb": "checks",
+       "observation": "module.tool_arguments wraps it for the server; the server's own chassis tools use a small type check of their schemas instead.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "93f90661f52049e6999bb66213189122",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "7481b1be63674ae69955c0e89459d2ef",
+       "provider": "3602297ebbf648839098236a23025d7f",
+       "purpose": "Reach every module verb, the folder's command surface and each call's context through the public base, with no private way into the chassis.",
+       "function": "metaform.module gives the server surface(folder), instructions(folder), context(...), tool_arguments, result_json, feedback, list_reports and read_report, from which it builds every tool and runs every call.",
+       "ef": "Function",
+       "relation": "The common base hands the MCP server every module verb, the folder's surface and each call's context.",
+       "verb": "hands",
+       "observation": "server.py also imports metaform.context.project_for and metaform.instructions.on_surface, which BASE-004 counts as private names.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "7f6b5a9a2bcd49f383106523b57dbda4",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "94cea65f77ec42c48d6cb6033950c025",
+       "provider": "4d2cf9aece274a9eba085b78caaa748a",
+       "purpose": "Register the exact Metaform build this user runs.",
+       "function": "The installer takes the wheel running now, else the last wheel metaform build recorded in the home, as the --from of every uvx entry it registers.",
+       "ef": "Function",
+       "relation": "The wheel builder supplies the wheel the installer registers.",
+       "verb": "supplies",
+       "observation": "install.py source(); with neither wheel it stops with Next: metaform build. MCP-010 also allows the published distribution as the source, which the installer does not offer.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "join_id": "052554d7d8ca4a15a141547361232cf1",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "type": "purpose",
+       "receiver": "e7b5d732dc114289a675cd25f789e2c8",
+       "provider": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "purpose": "Show only what agents would see, through the same reads under the same layer rules.",
+       "function": "The web server answers /api/<read> by running the named map read through query.call on the project's store, with the page's chosen layers or else the --layers of the project's own folder, and pages the whole map in address order with parents, joins and subtypes through the graph read.",
+       "ef": "Function",
+       "relation": "The map reads answer each view of the web GUI.",
+       "verb": "answer",
+       "observation": "modules/web/server.py opened() and read(). The server also imports metaform.home, metaform.query, metaform.results, metaform.context and metaform.data.records, which BASE-004 counts as private names.",
+       "non_goal": null,
+       "extra": null,
+       "stack_at": 0,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      }
+     ],
+     "subtypes": [
+      {
+       "subtype_id": "569f6ca91ea44f8d8295ec66df234fe0",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.interface.query",
+       "name": "query",
+       "name_length": 2,
+       "role": "SE",
+       "function": "metaform query runs any of 25 named store reads with positional nouns and name=value options, and query.call runs the same reads for the web GUI; there is no SQL surface.",
+       "ef": "Function",
+       "relation": "The query interface runs each named store read.",
+       "verb": "runs",
+       "observation": "src/metaform/query.py READS, from roots and graph to has-intake, active-metaform and project; metaform query alone lists them.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "b681e40773074ed6b5325f34f0ae4b0a"
+      },
+      {
+       "subtype_id": "25cf4566b31e4aaa85bba30213156907",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.reader.address",
+       "name": "address reading",
+       "name_length": 2,
+       "role": "SE",
+       "function": "Every address comes back with its reading, its segments reversed with underscores as spaces, and its short name from name_length, so an agent meets each element as a proper noun.",
+       "ef": "Function",
+       "relation": "The address reader turns each dotted address into its readable name.",
+       "verb": "turns",
+       "observation": "src/metaform/data/names.py reads every root as its own name. The five roots, code, document, media, data and stakeholder, are data in data/roots.json, so changing them needs no code change.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "b681e40773074ed6b5325f34f0ae4b0a"
+      },
+      {
+       "subtype_id": "fdb820b9837c4721aba7b90ca32b3cbb",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.schema.submission",
+       "name": "intake_submit schema",
+       "name_length": 2,
+       "role": "SE",
+       "function": "intake_submit's own input schema, elements holding their joins, joins holding their subtypes, refs as key and value, and an optional flag and flag_note on each, is the metaform's general data pattern; the writer stores every element first, then each receiver's joins and their subtypes.",
+       "ef": "Function",
+       "relation": "The submission schema shapes the one submission an intake agent makes.",
+       "verb": "shapes",
+       "observation": "schema.py ELEMENTS and submission.py Writer. A missing field is stored empty, an unknown field is kept in extra, a subtype's purpose is kept in its extra, and each notice carries its path, such as elements[3].joins[1]. Only elements that cannot be read at all store nothing.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "f1e9cf0ee1f04730ade6eb379836344d"
+      },
+      {
+       "subtype_id": "a520eeb91c204dcb879de20c48cdd829",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.flag.finding",
+       "name": "findings flags",
+       "name_length": 2,
+       "role": "SE",
+       "function": "Each submitted element, join or subtype may carry missing, broken or cruft with a short note; each flag is one findings row, shown with the object on every read and listed by metaform map findings.",
+       "ef": "Function",
+       "relation": "The finding flag marks what the intake found unfinished, broken or left over where it sits in the map.",
+       "verb": "marks",
+       "observation": "findings table indexed by flag; a flag outside the three is kept as broken. The Canonical Intake text never mentions flag or flag_note, so an intake agent learns of them only from the tool's input schema.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "f1e9cf0ee1f04730ade6eb379836344d"
+      },
+      {
+       "subtype_id": "423341f03a9041ff8ce01d1a193939f1",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.tool.knowledge",
+       "name": "knowledge tool",
+       "name_length": 2,
+       "role": "SE",
+       "function": "map knowledge, with op create, add-element, add-join, add-subtype, add-property, add-item, add-ref, add-plan, edit, remove, correct, finish, peel or discard, is the one read-write tool that makes a new layer and changes its objects one per call, naming the layer each time.",
+       "ef": "Function",
+       "relation": "The knowledge tool writes each object of a knowledge or correction layer.",
+       "verb": "writes",
+       "observation": "READS in modules/map/__init__.py lists the nouns each op reads. add-join and add-subtype read no ef and no verb, so a call that gives them stores both empty and keeps the words in the record's extra with a notice; reproduced on a scratch project. An object sent without a layer goes to a new building layer unnamed-<time>.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "310b8f9df89e4d519e66388460dadfd6"
+      },
+      {
+       "subtype_id": "69f0cdc72b3c48f4ae8b9554d49ed91b",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.resolver.selection",
+       "name": "select and mask",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The resolver computes the layers reaching each address as (incoming & mask) | select from trunk to leaf, starting from the folder's toggled layers, then removes hidden layers and every layer built from one; building layers are never selected and correction layers take no part.",
+       "ef": "Function",
+       "relation": "The selection resolver decides which layers reach each address.",
+       "verb": "decides",
+       "observation": "data/selection.py Resolver, used by every read in context. map select, mask and clear write the rows at an address; map hide is a caution verb that needs --confirm and also hides every layer built from the hidden one.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "310b8f9df89e4d519e66388460dadfd6"
+      },
+      {
+       "subtype_id": "8ab99ccf652344e1bb58a6ef611cdef0",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.property.transitive",
+       "name": "properties",
+       "name_length": 2,
+       "role": "SE",
+       "function": "A property attached to an element applies at that element's address and every address above it toward the leaves, and is visible, not applying, at every address below it toward the trunk; a property meant for a prefix with no element goes on an element the layer creates there.",
+       "ef": "Function",
+       "relation": "A transitive property applies up the namespace from the element it is attached to.",
+       "verb": "applies",
+       "observation": "properties table, one row each with no join; map context <address> returns the applying and visible sets.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "310b8f9df89e4d519e66388460dadfd6"
+      },
+      {
+       "subtype_id": "de57216402314d2180e13f5acd99f4cc",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "document.skill",
+       "name": "Metaform skill",
+       "name_length": 1,
+       "role": "SE",
+       "function": "One fixed skill of eight lines tells an agent in any AI tool to run metaform in the project's folder before working and to follow the next step it gives.",
+       "ef": "Function",
+       "relation": "The skill sends agents to metaform before they work.",
+       "verb": "sends",
+       "observation": "src/metaform/skill/SKILL.md; the installer writes it to ~/.metaform/skills/metaform/SKILL.md and copies it to each chosen tool's global skill folder, never into a project.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "ede42af84fa04cc5b146d462b448ca77"
+      },
+      {
+       "subtype_id": "45644dfe9fc84a4b8eae9895fbf4a064",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.server.web",
+       "name": "web server",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The standard library's threading HTTP server answers /api reads and the three writes, refusing any request whose Host is not the server's own address and, off loopback, any request without the token from the URL, a cookie or a header.",
+       "ef": "Function",
+       "relation": "The web server answers the page's reads and writes at its own address only.",
+       "verb": "answers",
+       "observation": "modules/web/server.py with a Content-Security-Policy of self only; a prompt read goes to the home's prompt store and every other read to query.call on the project's store.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "12e3b7ac186d4f3f9ac9bf89729bb862"
+      },
+      {
+       "subtype_id": "4762b98b87c3473f9f8124f1f8600092",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.viewer.graph",
+       "name": "viewer",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The page draws the metaform in 3D with each join shown whole as receiver, purpose and encounter, colored by layer with flags on the nodes, and the whole map in 2D with short names and no text on the edges; selecting a node moves the 2D camera to it and flies the 3D view there, arrow keys follow joins and F fits the map.",
+       "ef": "Function",
+       "relation": "The graph viewer draws the metaform in 3D and 2D around one selection.",
+       "verb": "draws",
+       "observation": "modules/web/page/app.js, 738 lines, with index.html and app.css; the layer chips reach the folder's --layers only when Apply is pressed.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "12e3b7ac186d4f3f9ac9bf89729bb862"
+      },
+      {
+       "subtype_id": "79e3ac0868cd45b8ae04464244392a33",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.store.prompt",
+       "name": "prompt store",
+       "name_length": 2,
+       "role": "SE",
+       "function": "One prompt store for the home keeps every prompt as versions; a saved edit is a new version with its parent, no version ever changes, and a module's shipped prompt becomes version 1 when first served.",
+       "ef": "Function",
+       "relation": "The prompt store keeps every version of each prompt unchanged.",
+       "verb": "keeps",
+       "observation": "data/prompts.py with prompts.sqlite3 in the home; metaform prompts and metaform prompt <name> [<version>] read it, and the web GUI saves edits. The Canonical Intake is served as shipped and never stored here.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "21013eb8dda04e0d9480c02b31b81f9f"
+      },
+      {
+       "subtype_id": "53a6bb5b974d4b108f1faa610a2ed8bc",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.server.variant",
+       "name": "variant server",
+       "name_length": 2,
+       "role": "SE",
+       "function": "Variants of a web artifact launch together, each served on its own port, so they open side by side in browser tabs.",
+       "ef": "Function",
+       "relation": "The variant server serves each web variant on its own port.",
+       "verb": "serves",
+       "observation": "PROJ-019 is confirmed as wanted; no command, tool or module serves a variant.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "0cef00798b3f4cc0b439b555c04e521e"
+      },
+      {
+       "subtype_id": "acb1a8cf86004187840e9ced2659f2c4",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.exporter.origin",
+       "name": "origin unit export",
+       "name_length": 2,
+       "role": "SE",
+       "function": "An origin unit, the origin and every variant pinned to it, exports as a wheel whose own CLI reconstructs any of its variants.",
+       "ef": "Function",
+       "relation": "The origin exporter packs an origin unit into a wheel that rebuilds its variants.",
+       "verb": "packs",
+       "observation": "PROJ-020 is confirmed; how it relates to metaform export is open question 5. No code exports an origin unit.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "0cef00798b3f4cc0b439b555c04e521e"
+      },
+      {
+       "subtype_id": "5e4cba7f13a44e8b85df559e6531146f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.context.call",
+       "name": "Context",
+       "name_length": 2,
+       "role": "SE",
+       "function": "Each verb call, event delivery and tool call gets its own Context, built for its folder with the project named for the call or the folder's --project, and a store started from the toggled layers; no operation reads another's.",
+       "ef": "Function",
+       "relation": "The call context carries everything one operation needs.",
+       "verb": "carries",
+       "observation": "context.py build; require_store stops with one next step when the folder has no project, and say sends a message for a person apart from the returned data.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "1fd2cb1d002b40afb8a3ef1ab9199212"
+      },
+      {
+       "subtype_id": "3e761f3b3cba4720ad9041be9330b54f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.bus.event",
+       "name": "event bus",
+       "name_length": 2,
+       "role": "SE",
+       "function": "A module publishes a topic and every enabled subscriber gets a copy of the payload with its own Context; each delivery comes back to the publisher completed with its result, failed with its error, or cancelled, and one failure hides no other.",
+       "ef": "Function",
+       "relation": "The event bus delivers each published topic to every subscribed module.",
+       "verb": "delivers",
+       "observation": "events.py publish and publish_async; a synchronous publish from inside a running loop is refused, so the loop never blocks. Only helloworld publishes and subscribes today.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "1fd2cb1d002b40afb8a3ef1ab9199212"
+      },
+      {
+       "subtype_id": "7feeee47f7eb4db985d9ed75e2b8e857",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.module.template",
+       "name": "template",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The template holds every field helloworld declares, empty, a README with the headings every module README answers, a tests folder, its own CI workflow for three systems, and a changelog of contract changes so a copy can follow them.",
+       "ef": "Encounter",
+       "relation": "The module author copies the template to begin a module.",
+       "verb": "copies",
+       "observation": "modules/template: an __init__.py of 27 lines, a README that starts from template version 0.2.0, and .github/workflows/checks.yml.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "08c06413b45f4eb4b1fb013a20d4a4c2"
+      },
+      {
+       "subtype_id": "890a1701f5cd4f8b80f29aae88410247",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.module.demo",
+       "name": "helloworld",
+       "name_length": 2,
+       "role": "SE",
+       "function": "helloworld declares settings in code, one a select fed from its own data, a sync verb with a switch that publishes an event, a subscriber that records greetings as items in its own layer at an element it creates, an async verb, a caution verb, a verb for one system, and a status line.",
+       "ef": "Encounter",
+       "relation": "The module author runs helloworld to see each chassis feature work.",
+       "verb": "runs",
+       "observation": "modules/helloworld: greet, wait, history, forget and beep; the layer helloworld.greetings at code.module.helloworld.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "08c06413b45f4eb4b1fb013a20d4a4c2"
+      },
+      {
+       "subtype_id": "1fecd507c46a4343b31bc9e83f361850",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.session.transaction",
+       "name": "session",
+       "name_length": 2,
+       "role": "SE",
+       "function": "Each operation opens its own connection for one transaction and closes it; atomic() joins every operation on the same project in the same thread or task into one transaction, and a lock per store file makes this process's writers take turns.",
+       "ef": "Function",
+       "relation": "The transaction session runs each store operation as one transaction.",
+       "verb": "runs",
+       "observation": "data/session.py and sqlite.py; the schema version in the meta table is read before any other access, and a store of an unknown version is refused before anything is written.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "f6f40f13312b4c519db2b5b9533d995e"
+      },
+      {
+       "subtype_id": "6cb84d4088694d009e22477136143d7a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.screen.settings",
+       "name": "settings screen",
+       "name_length": 2,
+       "role": "SE",
+       "function": "metaform config opens a keyboard-driven screen of every group's settings and each module's state, staging changes until they are saved or discarded; config --show prints the same rows.",
+       "ef": "Function",
+       "relation": "The settings screen stages setting changes and saves them through the schema.",
+       "verb": "stages",
+       "observation": "src/metaform/tui.py, 658 lines on prompt_toolkit, the chassis's one runtime dependency; without a terminal, config prints instead.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "741e7c157aab45faa985a06dcda1f853"
+      },
+      {
+       "subtype_id": "d20aa8f96ac143358a769c5607c11af7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.generator.help",
+       "name": "help",
+       "name_length": 2,
+       "role": "SE",
+       "function": "metaform help prints a short overview ending in tips, help commands and help switches print the indexes of the folder's surface, help <thing> prints the full page, and <thing> --help prints only the syntax, all generated from the live chassis and module declarations.",
+       "ef": "Function",
+       "relation": "The help generator writes every help page from the declarations.",
+       "verb": "writes",
+       "observation": "src/metaform/docs.py; help agents prints the composed agent instructions and help intro the introduction.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "d89d6fbee1bc48ae94a1ad5341014095"
+      },
+      {
+       "subtype_id": "1a824dfd6cda421fb6a288ea2724ef29",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.suite.test",
+       "name": "tests",
+       "name_length": 2,
+       "role": "SE",
+       "function": "pytest over tests/ and each module's tests folder uses fixtures for an isolated home, the real CLI run as a subprocess from a chosen folder, a registered empty project and a traced store, and fake executables for the AI tools and uvx the installer drives.",
+       "ef": "Function",
+       "relation": "The test suite checks each requirement against the real build.",
+       "verb": "checks",
+       "observation": "20 test files in tests/, one per module under src/metaform/modules/*/tests, conftest.py, tests/fakes.py, tests/storekit.py and tests/fixtures/intake_timer.json; markers req(id) and kind(kind).",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "b2ccc6a602ea46c7933c8eb09831b7c8"
+      },
+      {
+       "subtype_id": "e0045721128b4401a71d9ccf13f662e7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.integration.continuous",
+       "name": "CI",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The checks workflow installs with uv, adds Playwright's Chromium for the web GUI's browser checks, then runs pyright, ruff and pytest in each of six jobs, each step reporting whatever the one before it did.",
+       "ef": "Function",
+       "relation": "The CI workflow runs every check on each push and pull request.",
+       "verb": "runs",
+       "observation": ".github/workflows/checks.yml; a newer push cancels the older run. The template module carries its own copy for a module's fork.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "b2ccc6a602ea46c7933c8eb09831b7c8"
+      },
+      {
+       "subtype_id": "d70c238e4a09418d9a680c8a41acfdf7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "address": "code.client.mcp",
+       "name": "probe",
+       "name_length": 2,
+       "role": "SE",
+       "function": "The probe starts the registered command, sends initialize, the initialized notification and tools/list as newline-delimited JSON-RPC, and passes when at least one tool comes back; the server always stops.",
+       "ef": "Function",
+       "relation": "The probe proves a registered command starts a working server.",
+       "verb": "proves",
+       "observation": "src/metaform/probe.py, a standard-library MCP client with a time limit; standard error is kept only to show in a failure.",
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null,
+       "join_id": "8647391a2e7c4e84a8f59311f59d830b"
+      }
+     ],
+     "items": [
+      {
+       "item_id": "89951710e42541a8ba92f8d7128f69ed",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "f7641c252d904e5aba278d4bd912da51",
+       "value": "{\"descriptor\": {\"name\": \"context engineer\", \"name_length\": 2, \"role\": \"VE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "9582cec4bd314bb9ab87afb63ac5cab0",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "df8cf4aa53a54decb6f6185d55470b5d",
+       "value": "{\"descriptor\": {\"name\": \"module author\", \"name_length\": 2, \"role\": \"VE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "454e48d53df24603bb2c17cb1246c4c4",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "ce2a5e565a2e4fd29fe1a45c18c6eb00",
+       "value": "{\"descriptor\": {\"name\": \"Metaform\", \"name_length\": 2, \"role\": \"AUE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "aeaab63bf4074032808a74a94e49203d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "0eef5f7f6025471597d8bec2cb073c43",
+       "value": "{\"descriptor\": {\"name\": \"chassis\", \"name_length\": 1, \"role\": \"DE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "7e33a14287884aff9ac2bd7a097b7abf",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "b411dad2b06a4efe92a6f2aa147db04d",
+       "value": "{\"descriptor\": {\"name\": \"data access object\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "2035d88715bb4354b0a962b65c097eb9",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "52b01e0f0b2b4d6abb286c34b096f91c",
+       "value": "{\"descriptor\": {\"name\": \"correction stack\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "7b7d16c67a954e4b8d878d91f0787741",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "a14d5cf95c174a839065f644065fd764",
+       "value": "{\"descriptor\": {\"name\": \"knowledge layer\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "2675297e94434ab7a0f045fe7752cc9a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "70683c22049748099a38c468ea4e9143",
+       "value": "{\"descriptor\": {\"name\": \"memory\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "57ec9bc0d00c4fdcb59d1182e52a9a37",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "value": "{\"descriptor\": {\"name\": \"map module\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "16fb85e271e643e292f4ace859380720",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "8443e2321866467eb7d2cb1e3832ce40",
+       "value": "{\"descriptor\": {\"name\": \"intake module\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "ca4dfc0aa7b74d44a3160230f801d735",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "9e59b471f821474185b229343f9987aa",
+       "value": "{\"descriptor\": {\"name\": \"Canonical Intake\", \"name_length\": 2, \"role\": \"NE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "7b5b0002e8a149bdbe9358b1b3ef9c66",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "a012b8e9bf2e4cf9a2343cdcbc69ac6a",
+       "value": "{\"descriptor\": {\"name\": \"blind-spot challenge\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "c3465bf9163d4946ad672ec8774f1b57",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "05298077f75745c388b546da579c6a0d",
+       "value": "{\"descriptor\": {\"name\": \"home\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "e59b3b878d4e4a82b941a4405a466b58",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "value": "{\"descriptor\": {\"name\": \"settings schema\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "57c5d2924ed1476f9902929190c7d4cd",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "38fff033e11a4437a27e32b87a67b07e",
+       "value": "{\"descriptor\": {\"name\": \"command grammar\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "c46572a7585849f9a517783aff38cd40",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "51284aefdfd94594a0e930b57ab5c11b",
+       "value": "{\"descriptor\": {\"name\": \"module loader\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "f058ab0aecfe4845afce866dec07e2ca",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "3602297ebbf648839098236a23025d7f",
+       "value": "{\"descriptor\": {\"name\": \"common base\", \"name_length\": 2, \"role\": \"NE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "9910ab24a4e8408988ab84e393c884e8",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "49916f2d72bb4c19811e45202ca46808",
+       "value": "{\"descriptor\": {\"name\": \"agent instructions\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "cbf2f1d5ba0b4e7abb219bc2bbc74704",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "7481b1be63674ae69955c0e89459d2ef",
+       "value": "{\"descriptor\": {\"name\": \"MCP server\", \"name_length\": 2, \"role\": \"NE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "aed19bb65cce4f0fa219d5015beb94dd",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "94cea65f77ec42c48d6cb6033950c025",
+       "value": "{\"descriptor\": {\"name\": \"installer\", \"name_length\": 1, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "ecf0b1e289ca4ae89746efdf0a9243c6",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "e7b5d732dc114289a675cd25f789e2c8",
+       "value": "{\"descriptor\": {\"name\": \"web GUI\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "812b0c3b2e22467990dbbd96f8595b16",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "f6c58f1d0c344e6097c78297c4381573",
+       "value": "{\"descriptor\": {\"name\": \"provenance\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "f6102dd7fdb7457dab95625e3e869133",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "d0af09888acf4035912d104f4b901859",
+       "value": "{\"descriptor\": {\"name\": \"reports\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "eff82b32cbfc4881871e398bd614c144",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "b8de6858674b434c87eb44eaeb990fd6",
+       "value": "{\"descriptor\": {\"name\": \"history\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "8ef1fada0e244499b8101e50b12b2af0",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "34ef98220dd94005a6c5606603ab4363",
+       "value": "{\"descriptor\": {\"name\": \"import and export\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "7a3e8ee175c84fa1b8ac7142a916ac50",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "4d2cf9aece274a9eba085b78caaa748a",
+       "value": "{\"descriptor\": {\"name\": \"build\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "5a6a653283c241c685a56daf73433f7c",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "f7874508701748d4bacb75fecbbc5247",
+       "value": "{\"descriptor\": {\"name\": \"example modules\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "76194432569349eca9b1551cf7e266c7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "148c4f70be6e42f8b3e4a98a392f0ce7",
+       "value": "{\"descriptor\": {\"name\": \"quality checks\", \"name_length\": 2, \"role\": \"SE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      },
+      {
+       "item_id": "dce4c76bdc4740358ca12b7ec5e1aa3d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "target_kind": "element",
+       "target_id": "9429f34de09c4d55a91c1fd0d5691704",
+       "value": "{\"descriptor\": {\"name\": \"Metaform specification\", \"name_length\": 1, \"role\": \"NE\"}}",
+       "link_kind": null,
+       "link_id": null,
+       "extra": null,
+       "op": "add",
+       "reason": null,
+       "evidence": null
+      }
+     ],
+     "properties": [],
+     "refs": [
+      {
+       "owner": "item",
+       "owner_id": "454e48d53df24603bb2c17cb1246c4c4",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "."
+      },
+      {
+       "owner": "item",
+       "owner_id": "aeaab63bf4074032808a74a94e49203d",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform"
+      },
+      {
+       "owner": "item",
+       "owner_id": "7e33a14287884aff9ac2bd7a097b7abf",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data"
+      },
+      {
+       "owner": "item",
+       "owner_id": "2035d88715bb4354b0a962b65c097eb9",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/corrections.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "7b7d16c67a954e4b8d878d91f0787741",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/layering.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "2675297e94434ab7a0f045fe7752cc9a",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/memory"
+      },
+      {
+       "owner": "item",
+       "owner_id": "57ec9bc0d00c4fdcb59d1182e52a9a37",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/map"
+      },
+      {
+       "owner": "item",
+       "owner_id": "16fb85e271e643e292f4ace859380720",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake"
+      },
+      {
+       "owner": "item",
+       "owner_id": "ca4dfc0aa7b74d44a3160230f801d735",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake/resources/Canonical_Intake.xml"
+      },
+      {
+       "owner": "item",
+       "owner_id": "7b5b0002e8a149bdbe9358b1b3ef9c66",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/challenges.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "c3465bf9163d4946ad672ec8774f1b57",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/home.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "e59b3b878d4e4a82b941a4405a466b58",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/settings.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "57c5d2924ed1476f9902929190c7d4cd",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/grammar.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "c46572a7585849f9a517783aff38cd40",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/loader.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "f058ab0aecfe4845afce866dec07e2ca",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/module.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "9910ab24a4e8408988ab84e393c884e8",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/instructions.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "cbf2f1d5ba0b4e7abb219bc2bbc74704",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/mcp"
+      },
+      {
+       "owner": "item",
+       "owner_id": "aed19bb65cce4f0fa219d5015beb94dd",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/install.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "ecf0b1e289ca4ae89746efdf0a9243c6",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/web"
+      },
+      {
+       "owner": "item",
+       "owner_id": "812b0c3b2e22467990dbbd96f8595b16",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/views.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "f6102dd7fdb7457dab95625e3e869133",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/reports.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "eff82b32cbfc4881871e398bd614c144",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/history.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "8ef1fada0e244499b8101e50b12b2af0",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/exchange.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "7a3e8ee175c84fa1b8ac7142a916ac50",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/build.py"
+      },
+      {
+       "owner": "item",
+       "owner_id": "5a6a653283c241c685a56daf73433f7c",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/template"
+      },
+      {
+       "owner": "item",
+       "owner_id": "5a6a653283c241c685a56daf73433f7c",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/helloworld"
+      },
+      {
+       "owner": "item",
+       "owner_id": "76194432569349eca9b1551cf7e266c7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": ".github/workflows/checks.yml"
+      },
+      {
+       "owner": "item",
+       "owner_id": "76194432569349eca9b1551cf7e266c7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "tests"
+      },
+      {
+       "owner": "item",
+       "owner_id": "dce4c76bdc4740358ca12b7ec5e1aa3d",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "specifications/spec"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "specifications/spec"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 3,
+       "key": "path",
+       "value": "tests"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 4,
+       "key": "path",
+       "value": "pyproject.toml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "48f3b862568f4931bccbf7154d3c0b74",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 5,
+       "key": "path",
+       "value": "README.md"
+      },
+      {
+       "owner": "join",
+       "owner_id": "4d518a2b447544d78f2d27295e687222",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/cli.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "4d518a2b447544d78f2d27295e687222",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/home.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "4d518a2b447544d78f2d27295e687222",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "src/metaform/data"
+      },
+      {
+       "owner": "join",
+       "owner_id": "b681e40773074ed6b5325f34f0ae4b0a",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/map/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "b681e40773074ed6b5325f34f0ae4b0a",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/reads.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "569f6ca91ea44f8d8295ec66df234fe0",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/query.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "25cf4566b31e4aaa85bba30213156907",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/names.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "25cf4566b31e4aaa85bba30213156907",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/roots.json"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f1e9cf0ee1f04730ade6eb379836344d",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f1e9cf0ee1f04730ade6eb379836344d",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/intake/README.md"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "fdb820b9837c4721aba7b90ca32b3cbb",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake/schema.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "fdb820b9837c4721aba7b90ca32b3cbb",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/intake/submission.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "a520eeb91c204dcb879de20c48cdd829",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/rows.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "a520eeb91c204dcb879de20c48cdd829",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/reads.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "310b8f9df89e4d519e66388460dadfd6",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/layering.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "310b8f9df89e4d519e66388460dadfd6",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/selection.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "310b8f9df89e4d519e66388460dadfd6",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "src/metaform/data/writes.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "423341f03a9041ff8ce01d1a193939f1",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/map/__init__.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "69f0cdc72b3c48f4ae8b9554d49ed91b",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/selection.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "8ab99ccf652344e1bb58a6ef611cdef0",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/reads.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "8ab99ccf652344e1bb58a6ef611cdef0",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/writes.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "ed34640bfa864f8fa159e00cdd6f9a1f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/memory/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "888926e4b843493b93df594ff066c698",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/corrections.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "888926e4b843493b93df594ff066c698",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/layering.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f346afd8a62e46648a813954e1785443",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/challenges.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f346afd8a62e46648a813954e1785443",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/map/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "ede42af84fa04cc5b146d462b448ca77",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/instructions.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "de57216402314d2180e13f5acd99f4cc",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/skill/SKILL.md"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5d6804e18aa14c8a85e17c4aba4b4540",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/mcp/server.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5d6804e18aa14c8a85e17c4aba4b4540",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/mcp/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "12e3b7ac186d4f3f9ac9bf89729bb862",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/web/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "12e3b7ac186d4f3f9ac9bf89729bb862",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/web/server.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "12e3b7ac186d4f3f9ac9bf89729bb862",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "src/metaform/modules/web/page"
+      },
+      {
+       "owner": "join",
+       "owner_id": "12e3b7ac186d4f3f9ac9bf89729bb862",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 3,
+       "key": "path",
+       "value": "src/metaform/modules/web/vendor/README.md"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "45644dfe9fc84a4b8eae9895fbf4a064",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/web/server.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "4762b98b87c3473f9f8124f1f8600092",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/web/page/app.js"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "4762b98b87c3473f9f8124f1f8600092",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/web/page/index.html"
+      },
+      {
+       "owner": "join",
+       "owner_id": "21013eb8dda04e0d9480c02b31b81f9f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/views.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "21013eb8dda04e0d9480c02b31b81f9f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/layering.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "79e3ac0868cd45b8ae04464244392a33",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/prompts.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7a981853994a4727aa959b6d6f013a81",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/reports.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "0cef00798b3f4cc0b439b555c04e521e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/history.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "c35cb0228d6649c8ab0ce4d1ea3aa75e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/settings.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "c35cb0228d6649c8ab0ce4d1ea3aa75e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/instructions.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "1fd2cb1d002b40afb8a3ef1ab9199212",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/module.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "1fd2cb1d002b40afb8a3ef1ab9199212",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/context.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "1fd2cb1d002b40afb8a3ef1ab9199212",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "src/metaform/events.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "5e4cba7f13a44e8b85df559e6531146f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/context.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "5e4cba7f13a44e8b85df559e6531146f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/module.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "3e761f3b3cba4720ad9041be9330b54f",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/events.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "08c06413b45f4eb4b1fb013a20d4a4c2",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/template"
+      },
+      {
+       "owner": "join",
+       "owner_id": "08c06413b45f4eb4b1fb013a20d4a4c2",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/helloworld"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "7feeee47f7eb4db985d9ed75e2b8e857",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/template/__init__.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "7feeee47f7eb4db985d9ed75e2b8e857",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/template/README.md"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "890a1701f5cd4f8b80f29aae88410247",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/helloworld/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f6f40f13312b4c519db2b5b9533d995e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/store.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "f6f40f13312b4c519db2b5b9533d995e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/schema.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "1fecd507c46a4343b31bc9e83f361850",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/session.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "1fecd507c46a4343b31bc9e83f361850",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/sqlite.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "fec18faf3b5646458e42da3cdc7a444b",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/home.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "741e7c157aab45faa985a06dcda1f853",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/settings.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "6cb84d4088694d009e22477136143d7a",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/tui.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "d89d6fbee1bc48ae94a1ad5341014095",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/grammar.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "d89d6fbee1bc48ae94a1ad5341014095",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/cli.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "d89d6fbee1bc48ae94a1ad5341014095",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "src/metaform/results.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "d89d6fbee1bc48ae94a1ad5341014095",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 3,
+       "key": "path",
+       "value": "src/metaform/errors.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "d20aa8f96ac143358a769c5607c11af7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/docs.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "18a4b1e5d7ec4df190925f7fa159fd00",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/loader.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "18a4b1e5d7ec4df190925f7fa159fd00",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/module_metadata.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "0499ff06d88e44a099ca2d68565a5123",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/exchange.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "39ff8863374341e1a32d675fcbc47598",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/build.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "39ff8863374341e1a32d675fcbc47598",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/_build_info.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "b2ccc6a602ea46c7933c8eb09831b7c8",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": ".github/workflows/checks.yml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "b2ccc6a602ea46c7933c8eb09831b7c8",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "pyproject.toml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "b2ccc6a602ea46c7933c8eb09831b7c8",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "conftest.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "1a824dfd6cda421fb6a288ea2724ef29",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "tests"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "1a824dfd6cda421fb6a288ea2724ef29",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "conftest.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "e0045721128b4401a71d9ccf13f662e7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": ".github/workflows/checks.yml"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "e0045721128b4401a71d9ccf13f662e7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/modules/template/.github/workflows/checks.yml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7daca2068772444aa6a423fefe0f7aa2",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "specifications/spec/00-index.md"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7daca2068772444aa6a423fefe0f7aa2",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "specifications/README.md"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7daca2068772444aa6a423fefe0f7aa2",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "specifications/spec/HANDOFF.md"
+      },
+      {
+       "owner": "join",
+       "owner_id": "26c1cc98da744feda60146365ca2458e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/data/reads.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "26c1cc98da744feda60146365ca2458e",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/paging.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "82b61d94ad934ca58f259ba37fb3e058",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake/resources/Canonical_Intake.xml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "82b61d94ad934ca58f259ba37fb3e058",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "specifications/Canonical_Intake.xml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "82b61d94ad934ca58f259ba37fb3e058",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 2,
+       "key": "path",
+       "value": "specifications/Canonical_Intake_test.xml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "82b61d94ad934ca58f259ba37fb3e058",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 3,
+       "key": "path",
+       "value": "specifications/Canonical_Intake_old.xml"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5398618746d74ef8a624cb6d771d42fc",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/intake/__init__.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5398618746d74ef8a624cb6d771d42fc",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/data/session.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5c49f29978a046a8acc9b89dafa9f783",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/settings.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "5c49f29978a046a8acc9b89dafa9f783",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/home.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "8647391a2e7c4e84a8f59311f59d830b",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/install.py"
+      },
+      {
+       "owner": "subtype",
+       "owner_id": "d70c238e4a09418d9a680c8a41acfdf7",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/probe.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "9da55acf56a74f1c9619d1b7a158ea09",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/grammar.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "9da55acf56a74f1c9619d1b7a158ea09",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/module.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "93f90661f52049e6999bb66213189122",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/mcp/server.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "93f90661f52049e6999bb66213189122",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/module.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7f6b5a9a2bcd49f383106523b57dbda4",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/install.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "7f6b5a9a2bcd49f383106523b57dbda4",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/build.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "052554d7d8ca4a15a141547361232cf1",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 0,
+       "key": "path",
+       "value": "src/metaform/modules/web/server.py"
+      },
+      {
+       "owner": "join",
+       "owner_id": "052554d7d8ca4a15a141547361232cf1",
+       "owner_layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "position": 1,
+       "key": "path",
+       "value": "src/metaform/query.py"
+      }
+     ],
+     "challenge_states": [],
+     "plans": [],
+     "element_roles": [
+      {
+       "element_id": "f7641c252d904e5aba278d4bd912da51",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "VE"
+      },
+      {
+       "element_id": "df8cf4aa53a54decb6f6185d55470b5d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "VE"
+      },
+      {
+       "element_id": "ce2a5e565a2e4fd29fe1a45c18c6eb00",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "AUE"
+      },
+      {
+       "element_id": "0eef5f7f6025471597d8bec2cb073c43",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "DE"
+      },
+      {
+       "element_id": "b411dad2b06a4efe92a6f2aa147db04d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "52b01e0f0b2b4d6abb286c34b096f91c",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "a14d5cf95c174a839065f644065fd764",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "70683c22049748099a38c468ea4e9143",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "a0a3292f98cc49fcbf16fec4f8a31735",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "8443e2321866467eb7d2cb1e3832ce40",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "9e59b471f821474185b229343f9987aa",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "NE"
+      },
+      {
+       "element_id": "a012b8e9bf2e4cf9a2343cdcbc69ac6a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "05298077f75745c388b546da579c6a0d",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "2b23ee9d31bf4b57a137078171c1ee2e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "38fff033e11a4437a27e32b87a67b07e",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "51284aefdfd94594a0e930b57ab5c11b",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "3602297ebbf648839098236a23025d7f",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "NE"
+      },
+      {
+       "element_id": "49916f2d72bb4c19811e45202ca46808",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "7481b1be63674ae69955c0e89459d2ef",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "NE"
+      },
+      {
+       "element_id": "94cea65f77ec42c48d6cb6033950c025",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "e7b5d732dc114289a675cd25f789e2c8",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "f6c58f1d0c344e6097c78297c4381573",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "d0af09888acf4035912d104f4b901859",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "b8de6858674b434c87eb44eaeb990fd6",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "34ef98220dd94005a6c5606603ab4363",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "4d2cf9aece274a9eba085b78caaa748a",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "f7874508701748d4bacb75fecbbc5247",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "148c4f70be6e42f8b3e4a98a392f0ce7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "SE"
+      },
+      {
+       "element_id": "9429f34de09c4d55a91c1fd0d5691704",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "role": "NE"
+      }
+     ],
+     "findings": [
+      {
+       "target_kind": "subtype",
+       "target_id": "423341f03a9041ff8ce01d1a193939f1",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "flag": "broken",
+       "note": "add-join and add-subtype cannot set ef or verb, which MAP-020 requires on every join and subtype."
+      },
+      {
+       "target_kind": "join",
+       "target_id": "f346afd8a62e46648a813954e1785443",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "flag": "missing",
+       "note": "The critic pass that builds the blind-spot layer, LAYER-015 pass one, is not built; the answer, approval and plan side is."
+      },
+      {
+       "target_kind": "subtype",
+       "target_id": "53a6bb5b974d4b108f1faa610a2ed8bc",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "flag": "missing",
+       "note": "PROJ-019 is not built."
+      },
+      {
+       "target_kind": "subtype",
+       "target_id": "acb1a8cf86004187840e9ced2659f2c4",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "flag": "missing",
+       "note": "PROJ-020 is not built."
+      },
+      {
+       "target_kind": "subtype",
+       "target_id": "e0045721128b4401a71d9ccf13f662e7",
+       "layer_id": "86b7325d777840a9aa73e2690874bb62",
+       "flag": "broken",
+       "note": "The lint step fails: ruff 0.16.9 reports 118 findings on src, tests and conftest.py."
+      }
+     ],
+     "unapplied": [],
+     "correction_stack": [],
+     "requires": []
+    }
+   ],
+   "active_metaform": "a26ecfdde4d749e3a9b52741fef5bdf4"
+  }
+ ]
+}

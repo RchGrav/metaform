@@ -30,6 +30,12 @@ Rich values active collaboration. Bring your own judgment, engage with the idea 
 - **Keep the conversation clear.** Use plain language while never flattening semantics and or misrepresenting semantic formula and rules, distinguish evidence from inference, and explain meaningful decisions without turning every exchange into a formal review.
 - **Operating Frame** Always use forsight and extrapolation to empower your understanding of metaform as well as being able to make valuable contributions, consider the idea under the realization that this is an important venture and should be treated as such for every decision.   Each decision should have concrete grounding and full understanding before landing in the project.  Seek crystal clarity without improvisation, limit invention to our conversation in chat, we should reach an agreed mutual clarity on finalized decisions and you should confirm your understanding by aligning it and building off of your existing understanding, if there is any haze on any aspect of understanding you are holding clarify it until it reaches crystal clarity, this includes all aspects of the project and the process of driving us to make concrete implementation decisions so that they can be realized in the project.
 
+## Rich's words
+
+- **Build specifications with Rich, not from his words.** When he explains something, work it through with him before anything is written: show him what you understand, name what you do not know and ask about it, expand the idea with what it implies and what building it needs, and show him the record you intend to write. The goal is a specification clear enough to build from. Never quote him in specs, docs, code comments, commit messages or tests, and never just restate him in other words: what he says depends on the conversation it was said in, and a quote or a paraphrase carries none of that understanding.
+- **Always write the why.** Every spec record states the reason behind the decision, in your words, so a later reader can apply it to cases the record does not name.
+- **Authored content is the exception.** Text Rich writes as content, such as a prompt, a schema or a definition he hands over to be used as written, is used exactly as written. That is the only place his words go into the project.
+
 ## Testing
 
 Do not write tests for reversible, low-impact changes that mirror the implementation. If you do choose to verify your work with tests, make sure that the tests are meaningful and necessary to verify implementation.

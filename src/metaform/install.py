@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,8 +24,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from . import _build_info, harness, home
+from . import __version__, _build_info, agent_setup, harness, home, loader, settings
 from .errors import Stop
+from .module import on_this_system
 from .probe import probe
 
 UV_INSTALL = {'windows': 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'}
@@ -133,8 +136,35 @@ def source() -> Path:
     raise Stop('There is no wheel to register yet.', 'metaform build')
 
 
-def entry(wheel: Path) -> list[str]:
-    return ['uvx', '--from', str(wheel), 'metaform', 'mcp', 'serve']
+def server(folder: Path) -> list[str] | None:
+    """The enabled provider's declared stdio command, independent of the folder's tool surface."""
+    providers = {module.id: module.mcp_server for module in loader.enabled()
+                 if module.mcp_server is not None and any(
+                     verb.name == module.mcp_server and on_this_system(verb) for verb in module.verbs)}
+    selected = settings.value('install_server', folder)
+    if selected:
+        if selected not in providers:
+            raise Stop(f'{selected} is not an enabled MCP server provider.', 'metaform unset --install-server')
+    elif len(providers) > 1:
+        raise Stop('Several enabled modules declare an MCP server: ' + ', '.join(sorted(providers)) + '.',
+                   'metaform set --install-server ' + min(providers))
+    elif providers:
+        selected = next(iter(providers))
+    else:
+        return None
+    return ['metaform', selected, providers[selected]]
+
+
+def entry(wheel: Path, command: list[str]) -> list[str]:
+    return ['uvx', '--from', str(wheel), *command]
+
+
+def provision_mcp(folder: Path) -> str:
+    command = server(folder)
+    if command is None:
+        return 'MCP registration: skipped; no enabled module declares an MCP server. '
+    return ('MCP registration: add a stdio MCP server named metaform whose command is ' +
+            ' '.join(command) + ', wherever the tool keeps its MCP servers. ')
 
 
 def skill_text() -> bytes:
@@ -157,6 +187,37 @@ def _backup(path: Path, folder: Path) -> Path | None:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(path, target)
     return target
+
+
+def _agent_changes(names: list[str], *, remove: bool = False) -> dict[str, list[agent_setup.Change]]:
+    return {name: agent_setup.prepare(name, user_home(), _codex_config().parent, remove=remove)
+            for name in dict.fromkeys(names)}
+
+
+def _preview_agent_changes(changes: dict[str, list[agent_setup.Change]], backups: Path,
+                           say: Callable[[str], None]) -> None:
+    for name, edits in changes.items():
+        for edit in edits:
+            say(f'  {name}: {edit.path}, backed up under {backups}: {edit.description}')
+
+
+def _apply_agent_changes(changes: list[agent_setup.Change], backups: Path) -> None:
+    for change in changes:
+        _backup(change.path, backups)
+        change.write()
+
+
+def provision(tool: str, say: Callable[[str], None]) -> None:
+    """Use the approved harness additions independently of MCP registration, MCP-028 and MCP-036."""
+    if tool not in agent_setup.TOOLS:
+        raise Stop(f'{tool} has no global instruction setup.', 'metaform help provision')
+    changes = _agent_changes([tool])
+    backups = home.home() / 'backups' / 'provision' / datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
+    say('Changes:')
+    _preview_agent_changes(changes, backups, say)
+    _apply_agent_changes(changes[tool], backups)
+    say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
+    say('Next: finish the other supported features in metaform help provision, then metaform provision done')
 
 
 def _merge(path: Path, command: list[str], backup: Path | None) -> None:
@@ -185,13 +246,14 @@ def _merge(path: Path, command: list[str], backup: Path | None) -> None:
 TOOL_TIMEOUT = 120  # seconds for one command of a tool, such as claude mcp add, M6
 
 
-def _run(tool: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(tool: str, command: list[str], *, next_step: str | None = None) -> subprocess.CompletedProcess[str]:
     resolved = shutil.which(command[0]) or command[0]
     try:
-        return subprocess.run([resolved, *command[1:]], capture_output=True, text=True, timeout=TOOL_TIMEOUT)
+        return subprocess.run([resolved, *command[1:]], capture_output=True, text=True, timeout=TOOL_TIMEOUT,
+                              check=False)
     except subprocess.TimeoutExpired:
         raise Failed(f'{tool}: {" ".join(command[:3])} did not finish in {TOOL_TIMEOUT} seconds.',
-                     f'metaform install {tool}') from None
+                     next_step or f'metaform install {tool}') from None
 
 
 def _said(result: subprocess.CompletedProcess[str]) -> str:
@@ -199,7 +261,8 @@ def _said(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _recorded() -> set[str]:
-    return set(_installed())
+    with home.base() as db:
+        return {str(row[0]) for row in db.execute("SELECT tool FROM installs WHERE source != ''")}
 
 
 def _installed() -> dict[str, str | None]:
@@ -208,11 +271,12 @@ def _installed() -> dict[str, str | None]:
         return {str(row[0]): row[1] for row in db.execute('SELECT tool, skill_path FROM installs')}
 
 
-def _record(tool: str, wheel: Path, skill: Path | None) -> None:
+def _record(tool: str, wheel: Path | None, skill: Path | None) -> None:
     with home.base(write=True) as db:
         db.execute('INSERT INTO installs(tool, source, skill_path, installed) VALUES (?, ?, ?, ?) '
-                   'ON CONFLICT(tool) DO UPDATE SET source=excluded.source, skill_path=excluded.skill_path, '
-                   'installed=excluded.installed', (tool, str(wheel), str(skill) if skill else None, home.now()))
+                   "ON CONFLICT(tool) DO UPDATE SET source=CASE WHEN excluded.source='' THEN installs.source "
+                   'ELSE excluded.source END, skill_path=excluded.skill_path, installed=excluded.installed',
+                   (tool, str(wheel) if wheel is not None else '', str(skill) if skill else None, home.now()))
 
 
 def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: Callable[[str], None]) -> list[Tool]:
@@ -221,7 +285,7 @@ def _choose(names: list[str], everything: bool, detected: dict[str, Tool], say: 
         return list(offered.values())
     if names:
         chosen: list[Tool] = []
-        for name in names:
+        for name in dict.fromkeys(names):
             if name not in offered:
                 reason = 'is not verified yet' if name in detected else 'is not detected here'
                 raise Stop(f'{name} {reason}.', BOTH_FORMS)
@@ -253,21 +317,115 @@ def _named(verb: str, words: list[str], both: str) -> tuple[list[str], bool]:
     return names, everything
 
 
+def install_options(words: list[str]) -> tuple[list[str], bool, bool]:
+    """Separate the downgrade consent noun from AI tool names, BASE-047 and BASE-043."""
+    tools: list[str] = []
+    force = ended = False
+    for word in words:
+        if not ended and word.startswith('force='):
+            value = word.partition('=')[2]
+            if value not in ('true', 'false'):
+                raise Stop('force= takes true or false.', 'metaform install --help')
+            force = value == 'true'
+        else:
+            tools.append(word)
+            if word == '--':
+                ended = True
+    names, everything = _named('install', tools, BOTH_FORMS)
+    return names, everything, force
+
+
+def _version(version: str) -> tuple[int, ...]:
+    """Compare numeric version components, including multi-digit CalVer months and update counts."""
+    if not re.fullmatch(r'[0-9]+(?:\.[0-9]+)*', version):
+        raise Stop(f'Metaform cannot compare version {version!r}.', 'metaform install --help')
+    return tuple(int(part) for part in version.split('.'))
+
+
+def _check_downgrade(previous: str | None, force: bool, next_step: str) -> None:
+    if previous and _version(__version__) < _version(previous) and not force:
+        raise Stop(f'Metaform {__version__} would downgrade Metaform {previous}; force=true is required.', next_step)
+
+
+def backstage(force: bool = False) -> None:
+    """Protect a home from an installed copy that skipped the wheel's install stage, BASE-047."""
+    if os.environ.get('METAFORM_WHEEL'):
+        return
+    with home.base() as db:
+        versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
+    if not force and versions.get('last_run_version') == __version__:
+        return
+    with home.base(write=True) as db:
+        versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
+        if versions.get('installed_version') != __version__:
+            _check_downgrade(versions.get('last_run_version'), force, 'metaform install force=true')
+            # Approval belongs to this installation, not to a later raw upgrade that replaces it.
+            db.execute("DELETE FROM meta WHERE key='installed_version'")
+        for key in (('installed_version', 'last_run_version') if force else ('last_run_version',)):
+            if versions.get(key) != __version__:
+                db.execute('INSERT INTO meta(key, value) VALUES (?, ?) '
+                           'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, __version__))
+
+
+def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: str) -> None:
+    """Install the running wheel before setting up AI tools; record only a successful install, BASE-047."""
+    next_step = f'python "{wheel}" install force=true'
+    # Keep preflight, executable replacement and approval together. Concurrent installs and
+    # first runs use the same chassis write lock, so an older preflight cannot outlive a newer install.
+    with home.base(write=True) as db:
+        installed = shutil.which('metaform')
+        if installed:
+            probe_next = f'"{installed}" --version'
+            result = _run('metaform', [installed, '--version'], next_step=probe_next)
+            if result.returncode != 0:
+                raise Failed(f'The installed Metaform version could not be read: {_said(result)}',
+                             probe_next)
+            previous = result.stdout.strip().removeprefix('metaform ')
+            _check_downgrade(previous, force, next_step)
+        versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
+        for version in versions.values():
+            _check_downgrade(version, force, next_step)
+        result = _run('uv', [uv, 'tool', 'install', '--force', str(wheel)], next_step=retry)
+        if result.returncode != 0:
+            raise Failed(f'Metaform installation failed: {_said(result)}', retry)
+        db.execute("INSERT INTO meta(key, value) VALUES ('installed_version', ?) "
+                   'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (__version__,))
+    say(f'Installed: Metaform {__version__} from {wheel}')
+
+
 def install(words: list[str], say: Callable[[str], None]) -> None:
-    names, everything = _named('install', words, BOTH_FORMS)
+    names, everything, force = install_options(words)
     asking = not names and not everything
+    if os.environ.get('METAFORM_WHEEL'):
+        uv = shutil.which('uv')
+        if uv is None:
+            raise Stop('uv is not installed; Metaform installs its wheel with uv.',
+                       UV_INSTALL.get(system(), UV_INSTALL_POSIX))
+        wheel = source()
+        retry_words = ['python', str(wheel), 'install', *(['all'] if everything else names)]
+        if force:
+            retry_words.append('force=true')
+        retry = subprocess.list2cmdline(retry_words) if os.name == 'nt' else shlex.join(retry_words)
+        stage(wheel, uv, force, say, retry)
     say(f'System: {system()}')
     say(f'Python: {platform.python_version()} (needs {_build_info.REQUIRES_PYTHON})')
     if not _python_ok():
         raise Stop(f'Python {platform.python_version()} is older than Metaform needs.',
                    f'install Python {_build_info.REQUIRES_PYTHON.lstrip(">=")} or newer')
-    uv, uvx = shutil.which('uv'), shutil.which('uvx')
-    say(f'uv: {uv or "missing"}')
-    if uv is None or uvx is None:
-        raise Stop('uv is not installed; Metaform starts its server with uvx.',
-                   UV_INSTALL.get(system(), UV_INSTALL_POSIX))
-    wheel = source()
-    say(f'Source: {wheel}')
+    server_command = server(Path.cwd())
+    wheel = None
+    command = None
+    if server_command is not None:
+        uv, uvx = shutil.which('uv'), shutil.which('uvx')
+        say(f'uv: {uv or "missing"}')
+        if uv is None or uvx is None:
+            raise Stop('uv or uvx is not installed; Metaform starts its server with uvx.',
+                       UV_INSTALL.get(system(), UV_INSTALL_POSIX))
+        wheel = source()
+        say(f'Source: {wheel}')
+        command = entry(wheel, server_command)
+    else:
+        say('MCP registration and proof: skipped; no enabled module declares an MCP server.')
     catalogue = tools()
     detected = {name: tool for name, tool in catalogue.items() if tool.detect()}
     say('Tools:')
@@ -280,18 +438,21 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     chosen = _choose(names, everything, detected, say)
     if not chosen:
         raise Stop('No tool was chosen.', BOTH_FORMS)
-    command = entry(wheel)
-    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
+    agent_changes = _agent_changes([tool.name for tool in chosen])
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
     backups = home.home() / 'backups' / 'install' / stamp
     skill = skill_text()
     shared = [home.home() / 'skills' / 'metaform' / 'SKILL.md', user_home() / '.agents' / 'skills' / 'metaform' /
               'SKILL.md']
     say('Changes:')
     for tool in chosen:
+        if command is None:
+            continue
         config = tool.config()
         # A tool that does not merge a config always has an add command; the catalogue guarantees it.
         how = f'merge mcpServers.metaform into {config}' if tool.merge else ' '.join(tool.add(command))  # type: ignore[misc]
         say(f'  {tool.name}: {how}; changes {config}, backed up under {backups}')
+    _preview_agent_changes(agent_changes, backups, say)
     skill_files = list(shared) + [folder / 'metaform' / 'SKILL.md' for tool in chosen if (folder := tool.skills())]
     for path in skill_files:
         say(f'  skill: {path}')
@@ -300,9 +461,15 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
     recorded = _recorded()
     for tool in chosen:
         config = tool.config()
-        backup = _backup(config, backups) if config is not None else None
+        backup = _backup(config, backups) if command is not None and config is not None else None
         folder = tool.skills()
-        if tool.merge and config is not None:
+        # Gemini's registration command also edits settings.json. Install the previewed hooks first,
+        # so its own config merge retains them and no prepared edit overwrites the new MCP entry.
+        if tool.name == 'gemini':
+            _apply_agent_changes(agent_changes[tool.name], backups)
+        if command is None:
+            pass  # Skills and instruction pointers remain useful through the CLI.
+        elif tool.merge and config is not None:
             _merge(config, command, backup)
         else:
             removed = ''
@@ -321,23 +488,26 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
                              f'metaform install {tool.name}')
         # Recorded as soon as it is registered, so a later failure never hides it from the next run, MCP-019.
         _record(tool.name, wheel, folder / 'metaform' / 'SKILL.md' if folder else None)
+        if tool.name != 'gemini':
+            _apply_agent_changes(agent_changes[tool.name], backups)
         # The harness of the binary that registered it never sees the first-run notice, D96; a merged config
         # names no binary, so it records none.
-        if not tool.merge and tool.add is not None and (binary := shutil.which(tool.add(command)[0])):
+        if not tool.merge and tool.add is not None and (binary := shutil.which(tool.add(command or ['metaform'])[0])):
             harness.done(binary)
     for path in skill_files:
         _backup(path, backups)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(skill)
-    say('Proof:')
     failed: list[str] = []
-    for tool in chosen:
-        proof = probe(command, cwd=user_home())
-        if proof.ok:
-            say(f'  {tool.name}: server starts, {proof.tools} tools')
-        else:
-            failed.append(tool.name)
-            say(f'  {tool.name}: failed: {proof.reason}')
+    if command is not None:
+        say('Proof:')
+        for tool in chosen:
+            proof = probe(command, cwd=user_home())
+            if proof.ok:
+                say(f'  {tool.name}: server starts, {proof.tools} tools')
+            else:
+                failed.append(tool.name)
+                say(f'  {tool.name}: failed: {proof.reason}')
     say(f'Backups: {backups}' if backups.exists() else 'Backups: none needed')
     if failed:
         raise Failed(f'The server did not start for {", ".join(failed)}.', f'metaform install {failed[0]}')
@@ -382,53 +552,64 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
     left. A config keeps every other entry, the user's later ones included. The data in the home stays, MCP-020."""
     names, everything = _named('uninstall', words, BOTH_UNINSTALL)
     installed = _installed()
-    if not installed:
+    registered = _recorded()
+    available = set(installed) | {name for name in agent_setup.TOOLS
+                                 if agent_setup.owned(name, user_home(), _codex_config().parent)}
+    if not available:
         raise Stop('Metaform is not set up in any tool.', 'metaform install')
     catalogue = tools()
     chosen: list[Tool]
     if everything:
-        chosen = [catalogue[name] for name in installed if name in catalogue]
+        chosen = [tool for name, tool in catalogue.items() if name in available]
     elif names:
         chosen = []
-        for name in names:
-            if name not in installed or name not in catalogue:
+        for name in dict.fromkeys(names):
+            if name not in available or name not in catalogue:
                 raise Stop(f'{name} was not set up by Metaform.', BOTH_UNINSTALL)
             chosen.append(catalogue[name])
     else:
         if not sys.stdin.isatty():
             raise Stop('Name the tools to remove Metaform from; without a terminal nothing is asked.', BOTH_UNINSTALL)
-        chosen = [catalogue[name] for name in installed if name in catalogue and
+        chosen = [catalogue[name] for name in sorted(available) if name in catalogue and
                   input(f'Remove Metaform from {catalogue[name].label} ({name})? [Y/n] ').strip().lower()
                   in ('', 'y', 'yes')]
     if not chosen:
         raise Stop('No tool was chosen.', BOTH_UNINSTALL)
-    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
+    agent_changes = _agent_changes([tool.name for tool in chosen], remove=True)
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
     backups = home.home() / 'backups' / 'uninstall' / stamp
     left = set(installed) - {tool.name for tool in chosen}
-    shared = [] if left else [home.home() / 'skills' / 'metaform' / 'SKILL.md',
+    shared = [] if left or not installed else [home.home() / 'skills' / 'metaform' / 'SKILL.md',
                               user_home() / '.agents' / 'skills' / 'metaform' / 'SKILL.md']
     say('Changes:')
     for tool in chosen:
+        if tool.name not in registered:
+            continue
         config = tool.config()
         how = ' '.join(tool.remove) if tool.remove else f'remove {tool.key}.metaform from {config}'
         say(f'  {tool.name}: {how}; changes {config}, backed up under {backups}')
-    skill_files = [Path(path) for tool in chosen if (path := installed[tool.name])] + shared
+    _preview_agent_changes(agent_changes, backups, say)
+    skill_files = [Path(path) for tool in chosen if (path := installed.get(tool.name))] + shared
     for path in skill_files:
         say(f'  skill: remove {path}')
     if not names and not everything and input('Apply these changes? [y/N] ').strip().lower() not in ('y', 'yes'):
         raise Stop('Nothing was changed.', BOTH_UNINSTALL)
     for tool in chosen:
         config = tool.config()
-        if config is not None:
+        if tool.name in registered and config is not None:
             _backup(config, backups)
-        if tool.remove:
+        if tool.name == 'gemini':
+            _apply_agent_changes(agent_changes[tool.name], backups)
+        if tool.name in registered and tool.remove:
             result = _run(tool.name, tool.remove)
             if result.returncode != 0:
                 raise Failed(f'{tool.name}: removing the registration failed: {_said(result)}',
                              f'metaform uninstall {tool.name}')
-        elif config is not None:
+        elif tool.name in registered and config is not None:
             _unmerge(config, tool.key)
-        skill = installed[tool.name]
+        if tool.name != 'gemini':
+            _apply_agent_changes(agent_changes[tool.name], backups)
+        skill = installed.get(tool.name)
         if skill:
             _remove_file(Path(skill), backups)
         with home.base(write=True) as db:

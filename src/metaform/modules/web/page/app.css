@@ -116,7 +116,7 @@ header{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20p
 .autostart{display:flex;align-items:center;gap:6px;font:12px var(--sans);white-space:nowrap;cursor:pointer}
 .ctx select,.themepick select{background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);height:var(--ctl);padding:0 12px;font:14px var(--sans);max-width:220px}
 .themepick{display:flex;gap:8px;align-items:center;font:12px var(--sans);color:var(--muted);margin-left:auto}
-.layerpick{position:relative}
+.layerpick{position:relative;margin-left:auto}
 .layersbtn{height:var(--ctl);padding:0 16px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel-2);color:var(--text);cursor:pointer;font:500 14px var(--sans)}
 .layersbtn[aria-expanded="true"]{border-color:var(--signal)}
 .layerlist{position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:min(380px,92vw);max-height:65vh;overflow:auto;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;box-shadow:0 10px 30px color-mix(in srgb,var(--shadow) 45%,transparent)}
@@ -125,10 +125,12 @@ header{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20p
 .layerrow .meta{margin-left:auto;font:11px var(--mono);color:var(--faint);white-space:nowrap}
 .layerrow input{accent-color:var(--signal);margin:0}
 .layerrow.fixed,.layerrow:has(input:disabled){cursor:default;color:var(--muted)}
-.clearpick{position:relative}
+.clearpick,.exportpick{position:relative}
 .clearbtn{height:var(--ctl);padding:0 12px;border:0;border-radius:var(--r);background:none;color:var(--muted);cursor:pointer;font:14px var(--sans)}
 .clearbtn:hover{color:var(--text)}
 .clearbtn[aria-expanded="true"]{color:var(--danger)}
+.agentpick{position:relative}
+#agentsMenuBtn[aria-expanded="true"]{color:var(--text)}
 .clearbox{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(420px,92vw);background:var(--panel);border-radius:8px;box-shadow:0 10px 30px color-mix(in srgb,var(--shadow) 45%,transparent)}
 .clearbox .left{font:12px var(--mono);word-break:break-all}
 .adminbox{position:absolute;left:0;top:calc(100% + 6px);z-index:30;min-width:200px;display:grid;gap:2px;padding:4px;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 10px 30px color-mix(in srgb,var(--shadow) 45%,transparent)}
@@ -200,6 +202,9 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 #task .chart g[data-address]{cursor:pointer}
 #task .chart g.chosen rect,#task .chart g.chosen polygon{stroke:var(--signal)!important;stroke-width:2.5px!important}
 #task select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);height:var(--ctl-sm)}
+#task .workflow-entry{display:flex;flex-direction:column;gap:4px}
+#task .workflow-entry[hidden]{display:none}
+#task .workflow-call{width:100%;background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:6px;font:12px var(--mono)}
 #task .text{min-height:110px;max-height:30vh;overflow:auto;background:var(--ground);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:8px;font:14px/1.5 var(--sans);white-space:pre-wrap;outline:none}
 #task .text:focus{border-color:var(--signal)}
 #task span[data-address]{display:inline-block;padding:0 6px;border-radius:4px;background:color-mix(in srgb,var(--signal) 16%,transparent);color:var(--signal);font-weight:600}
@@ -231,10 +236,10 @@ h2{font:600 20px/1.25 var(--cond);margin:0;text-wrap:balance}
 .map2d .node.work-question rect,.map2d .cluster.work-question rect{stroke:var(--question)!important;stroke-width:2px}
 @media (prefers-reduced-motion: reduce){.map2d .work-question{animation:none!important;filter:drop-shadow(0 0 3px var(--text)) drop-shadow(0 0 9px var(--question))}}
 /* In the middle of the header's free space, between what acts on the project and what sets the view. */
-#messages:not([hidden]){margin:0 auto}
-#messages:not([hidden]) + .themepick{margin-left:0}
-#messages{height:var(--ctl);background:color-mix(in srgb,var(--question) 18%,var(--panel-2));border:1px solid var(--question);border-radius:var(--r);padding:0 10px;cursor:pointer;font:600 12px var(--sans);color:var(--text);box-shadow:0 0 14px color-mix(in srgb,var(--question) 55%,transparent)}
-#messages[hidden]{display:none}
+#messages + .themepick{margin-left:0}
+#messages{flex:none;width:112px;margin:0 auto;white-space:nowrap;height:var(--ctl);background:color-mix(in srgb,var(--question) 18%,var(--panel-2));border:1px solid var(--question);border-radius:var(--r);padding:0 10px;cursor:pointer;font:600 12px var(--sans);color:var(--text);box-shadow:0 0 14px color-mix(in srgb,var(--question) 55%,transparent)}
+/* Reserve its space while empty so arrivals and count changes never reflow the header or move the maps. */
+#messages[hidden]{display:block!important;visibility:hidden}
 .item.work .asked{font-weight:600}
 .item.work .choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .item.work .choices button{min-height:var(--ctl-sm);background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;cursor:pointer;font:13px var(--sans);text-align:left}
@@ -419,16 +424,19 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .distribute input{width:46px;height:var(--ctl-sm);margin-left:4px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 6px;color:var(--text);font:12px var(--mono)}
 #board .distribute button{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 12px;cursor:pointer;font:12px var(--sans);color:var(--text)}
 #board .card .glyph{width:16px;height:16px;flex:none}
+/* the agents on the 2D map, VIEW-035: drawn over the boxes, never in the way of a click on them */
+.agents2d{pointer-events:none}
+.agents2d image{filter:drop-shadow(0 1px 2px rgb(0 0 0 / .45))}
 #board .columns{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;padding:12px;overflow:auto}
 #board .column{display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel-2) 72%,transparent);border:1px solid var(--line);border-radius:12px}
 #board .column .head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px 6px;font:600 12px var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 #board .column .tally{min-width:22px;text-align:center;padding:1px 7px;border-radius:999px;background:var(--panel);border:1px solid var(--line-2);color:var(--text);font:11px var(--mono)}
 #board .cards{flex:1;overflow:auto;padding:6px 8px 10px;display:flex;flex-direction:column;gap:8px;min-height:80px;border-radius:0 0 12px 12px;transition:background .2s,box-shadow .2s}
 #board .cards.over{background:color-mix(in srgb,var(--signal) 8%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--signal) 45%,transparent)}
-#board .card{--c:var(--muted);position:relative;padding:10px 10px 10px 16px;border-radius:9px;background:var(--panel);border:1px solid var(--line-2);cursor:grab;transition:transform .15s,box-shadow .2s,opacity .2s}
+#board .card{--c:var(--muted);position:relative;padding:10px 10px 10px 16px;border-radius:9px;background:var(--panel);border:1px solid var(--line-2);cursor:grab;transition:box-shadow .2s,opacity .2s}
 #board .card[hidden]{display:none}
 #board .card::before{content:'';position:absolute;left:0;top:9px;bottom:9px;width:4px;border-radius:4px;background:var(--c);box-shadow:0 0 10px var(--c)}
-#board .card:hover{transform:translateY(-1px);box-shadow:0 8px 22px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+#board .card:hover{box-shadow:0 8px 22px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
 #board .card.dragging{opacity:.35;transform:scale(.98)}
 #board .card[data-kind="broken"],#board .kindtoggle[data-kind="broken"]{--c:var(--broken)}
 #board .card[data-kind="flawed"],#board .kindtoggle[data-kind="flawed"]{--c:var(--k5)}
@@ -482,7 +490,8 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #dispatch .ticket .start,#dispatch .start-all,#agent .send{grid-column:2;grid-row:1 / span 2;height:var(--ctl);background:var(--signal);color:var(--ground);border:0;border-radius:var(--r);padding:0 14px;cursor:pointer;font:600 13px var(--sans)}
 #dispatch .body>.start-all{grid-column:1;grid-row:auto}
 #dispatch .tickets:empty::after{content:'No open ticket here waits for an agent.';color:var(--faint)}
-#agent .task{margin:0;color:var(--text);font:13px/1.45 var(--sans)}
+#agent .task{margin:0;color:var(--text);font:13px/1.45 var(--sans);flex:none;white-space:pre-wrap;cursor:pointer;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+#agent .task.open{display:block;-webkit-line-clamp:unset;line-clamp:none;max-height:33%;overflow:auto;cursor:default}
 #agent{width:560px;height:70vh;min-width:340px;min-height:300px;max-height:100vh;resize:both;overflow:hidden}
 #agent .body{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
 #agent .activity{margin:0;padding:0 4px 0 0;list-style:none;display:flex;flex-direction:column;gap:8px;flex:1;min-height:80px;overflow:auto}
@@ -516,3 +525,112 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .map2d .node.in-memory .nodeLabel,.map2d .node.in-memory text{font:500 11px var(--sans)!important}
 #float .dispatch{display:flex;align-items:center;gap:8px;justify-content:space-between;border-top:1px dashed var(--line);padding-top:6px;margin-top:6px;font:12px var(--sans);color:var(--muted)}
 #float .dispatch .log{height:var(--ctl-sm);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans);color:var(--text)}
+
+/* The question form, read on its parts, VIEW-021: each part under its heading, with Create ticket. */
+.item.work.question-form .asked{white-space:pre-wrap;font-size:14px;line-height:1.5}
+.item.work .form-part{margin-top:8px;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel-2)}
+.item.work .form-part .heading{font:600 12px var(--sans);color:var(--muted);margin-bottom:4px}
+.item.work .form-part .said{white-space:pre-wrap;margin:0 0 6px;line-height:1.45}
+.item.work button.create-ticket,.item.work button.read-full,.item.work button.chat{min-height:var(--ctl-sm);background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans)}
+.item.work .typed{display:block}
+#qa{position:fixed;top:6vh;left:50%;transform:translateX(-50%);width:min(960px,94vw);max-height:86vh;display:flex;flex-direction:column;z-index:60;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 12px 40px color-mix(in srgb,var(--shadow) 45%,transparent)}
+#qa[hidden]{display:none}
+#qa .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line-2)}
+#qa .bar .title{flex:1;font-weight:600}
+#qa .body{overflow:auto;padding:12px 16px}
+#qa .item.work.full .asked{font-size:16px}
+#qa .item.work.full textarea.answer{min-height:120px}
+/* The card's controls, VIEW-035: its preferred agent, its glyph, Recall and Hold. */
+#board .card .ticket-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font:12px var(--sans);color:var(--muted)}
+#board .card .ticket-controls select{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);font:12px var(--sans)}
+#board .card .ticket-controls button{min-height:var(--ctl-sm);background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:0 8px;cursor:pointer;font:12px var(--sans)}
+#board .card .ticket-controls button.hold.on{border-color:var(--question);color:var(--question)}
+.eligible{font:12px var(--sans);color:var(--muted)}
+.eligible summary{cursor:pointer;padding:6px 0}
+.eligible .choices{display:flex;flex-wrap:wrap;gap:8px;padding:6px;border:1px solid var(--line-2);border-radius:var(--r)}
+.eligible .choices label{display:flex;align-items:center;gap:4px}
+#board .card.on-hold{opacity:.6}
+
+/* The review-or-merge flow, VIEW-044: the Review. notice, the offer of help, and the support window. */
+#reviewNotice{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:55;display:flex;flex-direction:column;gap:6px}
+#reviewNotice[hidden],#mergeAsk[hidden],#helpdesk[hidden]{display:none}
+#reviewNotice .notice{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border:1px solid var(--signal);border-radius:var(--r);box-shadow:0 6px 20px color-mix(in srgb,var(--shadow) 40%,transparent);font:13px var(--sans);color:var(--text)}
+#reviewNotice .notice b{color:var(--signal)}
+#reviewNotice .notice button,#mergeAsk button{min-height:var(--ctl-sm);background:var(--signal);color:var(--ground);border:0;border-radius:var(--r);padding:0 12px;cursor:pointer;font:600 12px var(--sans)}
+#mergeAsk{position:fixed;top:30vh;left:50%;transform:translateX(-50%);z-index:65;width:min(440px,92vw);padding:18px 20px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 12px 40px color-mix(in srgb,var(--shadow) 45%,transparent);font:14px var(--sans);color:var(--text)}
+#mergeAsk .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+#mergeAsk button.no{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2)}
+/* The chat dock: a sliver resting at the bottom edge, lifted when the pointer comes near, the chat when clicked. */
+#dock{position:fixed;right:24px;bottom:0;z-index:70;font:13px var(--sans);color:var(--text)}
+#dockTab{width:150px;height:30px;border-radius:12px 12px 0 0;background:var(--signal);color:var(--ground);cursor:pointer;display:flex;justify-content:center;align-items:flex-start;padding-top:6px;font:600 12px var(--sans);letter-spacing:.04em;box-shadow:0 -4px 18px color-mix(in srgb,var(--shadow) 40%,transparent);transform:translateY(24px);transition:transform .18s ease-out}
+#dockTab span{opacity:0;transition:opacity .18s}
+#dock.near #dockTab,#dockTab:focus-visible{transform:translateY(0)}
+#dock.near #dockTab span,#dockTab:focus-visible span{opacity:1}
+#dock.open #dockTab,#dock.open.big #dockTab{display:none}
+@media (prefers-reduced-motion:reduce){#dockTab,#dockTab span{transition:none}}
+#helpdesk{position:fixed;right:20px;bottom:20px;width:360px;height:520px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;box-shadow:0 14px 44px color-mix(in srgb,var(--shadow) 50%,transparent)}
+#dock.big #helpdesk{width:80vw;height:80vh;right:10vw;bottom:10vh}
+#helpdesk .files{display:flex;flex-wrap:wrap;gap:4px;padding:0 10px}
+#helpdesk .files:empty{display:none}
+#helpdesk .chip{background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:2px 8px;font-size:11px}
+#helpdesk .clip{display:grid;place-items:center;width:30px;cursor:pointer;font-size:16px}
+#helpdesk .calls{display:flex;padding:0 10px 10px;background:var(--panel)}
+#helpdesk .call{flex:1;background:var(--add);color:var(--ground);border:0;border-radius:18px;padding:7px;font:600 12px var(--sans);cursor:pointer}
+#helpdesk .system{white-space:pre-wrap}
+#helpdesk .head{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--signal);color:var(--ground)}
+#helpdesk .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--ground);color:var(--signal);font-weight:700}
+#helpdesk .who{flex:1;display:flex;flex-direction:column;line-height:1.2}
+#helpdesk .who small{display:flex;align-items:center;gap:5px;opacity:.85}
+#helpdesk .dot{width:8px;height:8px;border-radius:50%;background:var(--add);display:inline-block}
+#helpdesk .head button{background:transparent;border:0;color:var(--ground);font-size:18px;cursor:pointer;width:26px}
+#helpdesk .log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--panel-2)}
+#helpdesk .system{align-self:center;color:var(--muted);font-size:12px;text-align:center}
+#helpdesk .bubble{max-width:82%;padding:8px 11px;border-radius:14px;white-space:pre-wrap;line-height:1.4}
+#helpdesk .bubble.theirs{align-self:flex-start;background:var(--panel);border:1px solid var(--line-2);border-bottom-left-radius:4px}
+#helpdesk .bubble.mine{align-self:flex-end;background:var(--signal);color:var(--ground);border-bottom-right-radius:4px}
+#helpdesk .typing{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
+#helpdesk .typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:typing 1.2s infinite}
+#helpdesk .typing i:nth-child(2){animation-delay:.2s}
+#helpdesk .typing i:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){#helpdesk .typing i{animation:none}}
+#helpdesk .compose{display:flex;gap:6px;padding:10px;border-top:1px solid var(--line-2);background:var(--panel)}
+#helpdesk .compose textarea{flex:1;resize:none;max-height:120px;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:18px;padding:7px 12px;font:13px var(--sans)}
+#helpdesk .compose button{background:var(--signal);color:var(--ground);border:0;border-radius:18px;padding:0 14px;font:600 12px var(--sans);cursor:pointer}
+
+#agentbox .agent-count{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;font:13px var(--sans);color:var(--text)}
+#agentbox .agent-count input{width:56px;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:3px 6px;font:13px var(--sans)}
+
+/* Voting results, VIEW-043. */
+#votes{position:fixed;top:7vh;left:50%;transform:translateX(-50%);width:min(900px,94vw);max-height:84vh;display:flex;flex-direction:column;z-index:60;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 12px 40px color-mix(in srgb,var(--shadow) 45%,transparent)}
+#votes[hidden]{display:none}
+#votes .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line-2)}
+#votes .bar .title{flex:1;font-weight:600}
+#votes .body{overflow:auto;padding:12px 16px;display:grid;gap:10px}
+#votes .summary{color:var(--muted);margin:0}
+#votes .vote-result{border:1px solid var(--line-2);border-radius:var(--r);padding:10px 12px;background:var(--panel-2)}
+#votes .vote-result .head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--muted)}
+#votes .vote-result .question{white-space:pre-wrap;margin:8px 0;line-height:1.45}
+#votes .vote-result .choices{margin:0;padding-left:18px}
+#votes .vote-result .choices li.won{color:var(--signal)}
+#votes .vote-result .said p{margin:6px 0;white-space:pre-wrap}
+#votes .vote-result button.reopen{margin-top:6px;min-height:var(--ctl-sm);background:var(--panel);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;cursor:pointer;font:12px var(--sans)}
+#agentbox label.agent-count input[type=checkbox]{width:auto}
+#agents .agent-row{display:flex;align-items:center;gap:4px}
+#agents .agent-row>.agent{flex:1;min-width:0}
+button.chat{font:600 11px var(--sans);padding:2px 9px;border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);cursor:pointer}
+button.chat:hover{border-color:var(--signal);color:var(--signal)}
+.advice:empty{display:none}
+.advice{margin:8px 0;padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel-2)}
+.advice .tally .row{display:flex;align-items:center;gap:8px;margin:3px 0}
+.advice .tally .count{font:600 12px var(--sans);color:var(--muted)}
+.advice .reading{color:var(--muted);font-size:12px}
+.advice details .one{border-top:1px solid var(--line);padding-top:4px}
+span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointer}
+#refPop{position:fixed;z-index:90;max-width:min(560px,calc(100vw - 16px));max-height:60vh;overflow:auto;padding:10px 12px;background:var(--panel);border:1px solid var(--line-2);border-radius:10px;box-shadow:0 10px 32px color-mix(in srgb,var(--shadow) 50%,transparent);font:13px var(--sans);color:var(--text)}
+#refPop[hidden]{display:none}
+#refPop .eyebrow{display:flex;justify-content:space-between;align-items:center}
+#refPop .close{background:transparent;border:0;color:var(--muted);font-size:16px;cursor:pointer}
+#refPop h4{margin:4px 0 6px;font-size:13px}
+#refPop .text{white-space:pre-wrap;line-height:1.45}
+#refPop pre.text{font:12px var(--mono, monospace);max-height:40vh;overflow:auto}

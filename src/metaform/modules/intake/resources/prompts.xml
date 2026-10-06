@@ -6,12 +6,21 @@
      prefixed by its term, one per line; Rich 2026-10-02: "I think the long field descriptions get these". A field
      with no glossary line keeps its plainest name and allowed values, MAP-040. -->
 <prompts>
-<instructions>intake is active.</instructions>
+<!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
+     unfinished after it, MCP-009. -->
+<instructions>intake is active.
+When assigned an intake, read its instructions with metaform intake prompt,
+or the intake tool's prompt command, and follow the procedure it serves.
+For recording commands and their arguments, read metaform help intake.</instructions>
 <!-- Added to the instructions while the project has no intake and none is being recorded, MCP-009. -->
 <no_intake>This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake` tool's `prompt` command, and to follow them. When you offer the intake, suggest also creating a blind spot challenge and a knowledge layer that records best practices, and ask the person whether that is all right.</no_intake>
 <!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
 <unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
+<!-- intake's slash command, /metaform:intake, which serves what metaform intake prompt prints, MCP-032 and MCP-033.
+     -->
 <commands><intake verb="prompt"/></commands>
+<!-- Read by intake's code when it loads, never served whole: each child's text is the description every intake
+     recording tool shows for that field, <element> for an element and <join> for a join, MAP-040. -->
 <fields>
   <element>
     <namespace_address>Element: any nameable part, considered as a type. Nameable ≠ notable.

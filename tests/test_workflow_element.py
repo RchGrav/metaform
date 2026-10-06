@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
-from storekit import knowledge, memory, small_map
+from storekit import knowledge, memory, page_note, small_map
 
 from metaform.data import Node, Store
 from metaform.module import Context
@@ -44,12 +44,11 @@ def mapped(store):
     answered = store.ask(Node('element', element.element_id), 'Use a bell?', suggestions=['Yes'])
     store.reply(answered.message_id, 'Yes')
     memory(store)
+    page_note(store.project_id, 'element:code.timer.kitchen', 'A precise clock.', by='Rich')
     mem_store = Store(store.project_id, module='memory')
     ctx = Context('memory', Path(store.project().path), store=mem_store, nouns={
-        'node': 'element:code.timer.kitchen', 'text': 'A precise clock.', 'by': 'Rich'})
-    memory_module.note(ctx)
-    ctx.nouns = {'node': 'element:code.timer.kitchen', 'entities': [
-        {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}]}
+        'node': 'element:code.timer.kitchen', 'entities': [
+            {'name': 'drift', 'entityType': 'behavior', 'observations': ['Drifts under load.']}]})
     memory_module.create_entities(ctx)
     return store, layer, inner
 

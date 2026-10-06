@@ -2,5 +2,6 @@
 <!-- template's prompts, MCP-031. What is between an element's tags is what is served. A copy renames the module in
      its instructions prompt. -->
 <prompts>
+<!-- template's line in the instructions agents read while template is on, MCP-029. -->
 <instructions>template is active.</instructions>
 </prompts>

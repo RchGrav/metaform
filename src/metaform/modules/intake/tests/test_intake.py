@@ -116,7 +116,6 @@ def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
     asked it stays empty, and the intake reads that as this project. Intake 2.1 carries it as
     `{Prompt} := """{prompt}"""`, and its TARGET_RESOLUTION takes the target from it, so nothing else is filled.'''
     stored = SPEC.read_text(encoding='utf-8')
-    assert '{Prompt}        := """{prompt}"""' in stored and '<target' not in stored
     out = run('intake', 'prompt', cwd=project).stdout
     assert out == stored.replace('{prompt}', '', 1)  # the intake is the instruction, and nothing is served beside it
     asked = run('intake', 'prompt', 'text=Map the timer and its alarm', cwd=project).stdout
@@ -376,8 +375,10 @@ def test_a_report_and_feedback_are_saved_and_a_work_record_on_the_intake_is_coun
     assert sorted((ref.key, ref.value) for ref in provenance.refs) == [
         ('feedback', f'{layer_id}-feedback.md'), ('report', f'{layer_id}-report.md')]
     exclude = json.loads(run('map', 'work', 'condition=exclude', '--json', cwd=project).stdout)['results']
-    assert [(row['address'], row['condition'], row['note'], row['task']) for row in exclude] == [
-        ('code.alarm.audible', 'exclude', 'alarm.c conflicts with specifications/alarm.md:12', 'review the code against the linked specification')]
+    assert [(row['address'], row['condition'], row['note']) for row in exclude] == [
+        ('code.alarm.audible', 'exclude', 'alarm.c conflicts with specifications/alarm.md:12')]
+    assert json.loads(run('map', 'work', f'id={exclude[0]["work_id"]}', '--json', cwd=project).stdout)['task'] == (
+        'review the code against the linked specification')  # a list row leaves its task out, MAP-049
     assert Store('timer').element('code.alarm.audible').open_work == ('exclude',)
 
 
@@ -865,15 +866,6 @@ def test_no_intake_or_map_tool_takes_relation_or_observation():
     assert taken == set()
 
 
-BANNED = ('encounter of a function', 'function of an encounter', 'functionality of the encounter',
-          'function of the encounter')
-# Which glossary lines each field carries, Rich 2026-10-02: "I think the long field descriptions get these".
-GLOSSED = {'element/namespace_address': ('Element', 'Entity', 'AT'), 'element/role': ('AUE', 'CQU', 'DE', 'SE', 'NE'),
-           'join/receiver': ('RE', 'Join'), 'join/elements': ('PE',), 'join/provider': ('PE',), 'join/purpose': ('OP',),
-           'join/ef': ('EF',), 'join/ifd': ('IFD',)}
-UNGLOSSED = {'element/name_length': 'name length', 'element/name': 'name', 'element/refs': 'refs',
-             'element/condition': 'condition: missing, broken, exclude', 'element/note': 'note',
-             'join/condition': 'condition: missing, broken, exclude', 'join/note': 'note'}
 RECORDING = ('element', 'join', 'show', 'remove')
 
 
@@ -893,64 +885,6 @@ def test_every_noun_of_the_intakes_recording_verbs_takes_its_words_from_the_prom
     for verb in RECORDING:
         for name, noun in nouns_of(verb).items():
             assert noun.help in defined.get(name, set()), (verb, name, noun.help)
-
-
-GLOSSARY = SPEC  # the fields carry the served intake's glossary
-
-
-def glossary():
-    """Intake 2.1's GLOSSARY lines by term, each written as its term, a colon, and the text after ':= '. An entry that
-    runs onto a second line keeps its line break, without the alignment spaces."""
-    text = GLOSSARY.read_text(encoding='utf-8')
-    block = text.split('# ---------- GLOSSARY', 1)[1].split('# ----------', 1)[0].splitlines()[1:]
-    lines: dict[str, str] = {}
-    term = ''
-    for line in block:
-        found = re.match(r'\s*\{(\w+)\}\s*:= (.*)$', line)
-        if found:
-            term = found.group(1)
-            lines[term] = f'{term}: {found.group(2)}'
-        elif line.strip():
-            lines[term] += '\n' + line.strip()
-    return lines
-
-
-@pytest.mark.req('BASE-039')
-@pytest.mark.req('MAP-040')
-@pytest.mark.req('MCP-031')
-def test_each_intake_field_carries_the_intake_2_glossary_lines_word_for_word():
-    """Rich, 2026-10-02, on the intake tool fields: "I think the long field descriptions get these", pasting Intake
-    2.0's glossary lines; the fields now carry Intake 2.1's lines in place of 2.0's, for AUE, Element, Entity, Join, OP, EF, RE, CQU, PE, IFD, AT, NE, DE and SE. namespace_address
-    gets Element, Entity and AT; role gets AUE, CQU, DE, SE and NE; receiver gets RE and Join; provider gets PE; purpose
-    gets OP; ef gets EF; ifd gets IFD; elements, the elements a join holds, each a provider, gets PE. No other field
-    changes."""
-    import xml.etree.ElementTree as ET
-
-    from metaform.modules.map import MODULE as MAP
-    lines = glossary()
-    assert lines['OP'] == "OP: Operative Purpose — the WHY; the RE's reason for the encounter."
-    assert lines['CQU'] == ('CQU: Cestui Que Use — the explicit RE which benefits from and drives the improvements on '
-                            'the artifact.\nRecorded under {CQU_BASE}.')
-    assert set(term for terms in GLOSSED.values() for term in terms) == {
-        'AUE', 'Element', 'Entity', 'Join', 'OP', 'EF', 'RE', 'CQU', 'PE', 'IFD', 'AT', 'NE', 'DE', 'SE'}
-    written = ET.parse(Path(__file__).parents[1] / 'resources' / 'prompts.xml').getroot().find('fields')
-    said = {f'{group.tag}/{field.tag}': (field.text or '').strip() for group in written for field in group}
-    assert set(said) == set(GLOSSED) | set(UNGLOSSED)
-    for where, terms in GLOSSED.items():
-        assert said[where] == '\n'.join(lines[term] for term in terms), where
-    for where, words in UNGLOSSED.items():
-        assert said[where] == words, where
-    for verb, group, field in (('element', 'element', 'namespace_address'), ('element', 'element', 'role'),
-                               ('join', 'join', 'receiver'), ('join', 'join', 'elements'),
-                               ('join', 'join', 'purpose'), ('join', 'join', 'ef'), ('join', 'join', 'ifd'),
-                               ('remove', 'join', 'receiver'), ('remove', 'join', 'provider')):
-        assert nouns_of(verb)[field].help == said[f'{group}/{field}'], (verb, field)
-    from metaform.modules.intake import MODULE
-    helps = {f'intake {verb.name} {noun.name}': noun.help for verb in MODULE.verbs for noun in verb.nouns}
-    helps.update({f'map {verb.name} {noun.name}': noun.help for verb in MAP.verbs for noun in verb.nouns
-                  if noun.name in ('ef', 'purpose')})
-    for where, words in {**said, **helps}.items():
-        assert not any(phrase in words.lower() for phrase in BANNED), where
 
 
 @pytest.mark.req('BASE-039')

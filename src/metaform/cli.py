@@ -32,6 +32,7 @@ from . import (
     instructions,
     loader,
     nonce,
+    prompt_files,
     query,
     reports,
     results,
@@ -129,7 +130,7 @@ def status_lines(folder: Path, project: str | None) -> list[str]:
             continue
         try:
             got = call(module.status, context.build(module.id, folder, project=project, resolve=False))
-        except Exception as error:  # A failing hook is one line and nothing else.
+        except Exception as error:  # noqa: BLE001 - Isolate arbitrary module status failures to one reported line.
             lines.append(f'{module.id}: status failed: {type(error).__name__}: {error}')
             continue
         if isinstance(got, Status):
@@ -573,12 +574,18 @@ def help_(args: list[str], folder: Path) -> None:
         out(docs.switches_index())
     elif args == ['agents']:
         out(instructions.compose(folder))
+    elif len(args) == 2 and args[0] == 'agents':
+        out(_module_instructions(args[1], folder))
     elif len(args) == 1 and args[0].startswith('-'):
         if not docs.known_switch(args[0]):
             raise Stop(f'No command, module or switch {args[0]}.', 'metaform help commands')
         out(docs.switch_page(args[0], folder))
     elif len(args) == 1 and args[0] in docs.COMMANDS:
-        out(docs.page(args[0]))
+        extra_details = ''
+        if args[0] == 'provision':
+            from . import install
+            extra_details = install.provision_mcp(folder)
+        out(docs.page(args[0], extra_details=extra_details))
     elif len(args) == 1 and loader.get(args[0]) is None and args[0] in aliases.defined(folder):
         run_alias(args[0], [], folder)
     elif args and _module(args[0], folder, quiet=True):
@@ -597,9 +604,17 @@ def help_(args: list[str], folder: Path) -> None:
 
 def instructions_(args: list[str], folder: Path) -> None:
     """The instructions agents read, composed now for the folder, MCP-007; always available, like help agents."""
-    if args:
-        raise Stop(f'instructions takes nothing, not {args[0]}.', 'metaform instructions')
-    out(instructions.compose(folder))
+    if len(args) > 1:
+        raise Stop(f'instructions takes one module, not {" ".join(args)}.', 'metaform instructions')
+    out(_module_instructions(args[0], folder) if args else instructions.compose(folder))
+
+
+def _module_instructions(identifier: str, folder: Path) -> str:
+    """One module's full instructions, MCP-029."""
+    found = instructions.module_text(folder, identifier)
+    if found is None:
+        raise Stop(f'No module {identifier} with instructions on this folder\'s surface.', 'metaform help agents')
+    return found
 
 
 # Data -------------------------------------------------------------------------------------
@@ -661,7 +676,7 @@ def query_(args: list[str], folder: Path) -> None:
         out(query.listing())
         return
     project_id = _project_arg(folder, None)
-    store = Store(project_id, toggled=context.toggled_for(folder))
+    store = Store(project_id, toggled=settings.toggled_layers(folder))
     result = query.run(store, words[0], words[1:])
     if as_json:
         out(results.as_json(result))
@@ -677,13 +692,42 @@ def install_(args: list[str], folder: Path) -> None:
 
 
 def prompts_(args: list[str], folder: Path) -> None:
+    if args == ['review']:  # every prompt agents read, browsed and edited in the terminal, STORE-044
+        from . import prompt_review
+        prompt_review.run()
+        return
     if args:
-        raise Stop('prompts takes no words.', 'metaform prompts')
+        raise Stop('prompts takes no words but review.', 'metaform prompts')
     for item in prompts.prompts():
         out(f'{item.name}  {item.format}  version {item.newest}')
 
 
 def prompt_(args: list[str], folder: Path) -> None:
+    if args[:1] == ['register'] and len(args) >= 2:  # a prompt kept anywhere joins the review, MCP-031
+        from . import prompt_review
+        positional, named = _nouns(args[1:], ('source', 'element', 'purpose', 'used'), 'prompt register')
+        if len(positional) != 1 or not named.get('source') or any(len(v) != 1 for v in named.values()):
+            raise Stop('prompt register takes owner:name and source=<file>, with optional element=, purpose= and used=.',
+                       'metaform help prompt')
+        item = prompt_review.register(positional[0], named['source'][0], element=named.get('element', [''])[0],
+                                      purpose=named.get('purpose', [''])[0], used=named.get('used', [''])[0])
+        out(f'Registered {item["key"]} from {item["source"]}' + (f' element <{item["element"]}>' if item['element'] else ''))
+        return
+    if args[:1] == ['save'] and len(args) >= 3:
+        name, text, *options = args[1:]
+        json_output = '--json' in options
+        options = [option for option in options if option != '--json']
+        extra, named = _nouns(options, ('format', 'parent'), 'prompt')
+        if extra or any(len(values) != 1 for values in named.values()):
+            raise Stop('prompt save takes a name, text and optional format= and parent=.', 'metaform help prompt')
+        parent = named.get('parent', [None])[0]
+        if parent is not None and (not parent.isdecimal() or int(parent) < 1):
+            raise Stop('parent= takes a positive version number.', 'metaform help prompt')
+        saved = prompts.save_prompt(name, sys.stdin.read() if text == '-' else text,
+                                    format=named.get('format', ['text'])[0],
+                                    parent=int(parent) if parent is not None else None)
+        out(results.as_json(saved) if json_output else results.as_text(saved))
+        return
     if len(args) not in (1, 2) or (len(args) == 2 and not args[1].isdigit()):
         raise Stop('prompt takes a prompt name and an optional version number.', 'metaform prompts')
     sys.stdout.write(prompts.prompt_version(args[0], int(args[1]) if len(args) == 2 else None).text)
@@ -701,6 +745,10 @@ def extract(args: list[str], folder: Path) -> None:
 
 def provision(args: list[str], folder: Path) -> None:
     """Record that the agent is done provisioning the harness Metaform runs under, MCP-028 and D96."""
+    if len(args) == 1 and args[0] in ('claude', 'codex', 'gemini'):
+        from . import install
+        install.provision(args[0], out)
+        return
     if args != ['done']:
         raise Stop('provision takes done.', 'metaform provision done')
     binary = harness.running()
@@ -902,17 +950,21 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
 
 docs.command(Command('help', 'Show an overview, an index, or the page for one command, module or switch.',
                      ('metaform help', 'metaform help intro', 'metaform help commands', 'metaform help switches',
-                      'metaform help agents', 'metaform help <command|module|switch>', 'metaform help <module> <verb>'),
+                      'metaform help agents', 'metaform help agents <module>', 'metaform help <command|module|switch>',
+                      'metaform help <module> <verb>'),
                      details='Each command also takes --help, which shows only its syntax.', see_also=('intro',)))
 docs.command(Command('instructions', 'Show the instructions agents read, composed now for this folder.',
-                     ('metaform instructions',),
+                     ('metaform instructions', 'metaform instructions <module>'),
                      details="The same text as metaform help agents and the MCP server's instructions. It runs "
-                             "whatever the folder's command surface.", see_also=('help',)))
+                             "whatever the folder's command surface. With a module, that module's full "
+                             "instructions, as metaform help agents <module> shows them; --connect-instructions "
+                             "chooses whether the instructions list each module in one line or in full.",
+                     see_also=('help',)))
 docs.command(Command('add', 'Register a project, or start a new metaform for one.',
                      ('metaform add project <id> <path> [<target type> <target value>]',
                       'metaform add metaform <name> [<project>]', 'metaform add origin [<project>]',
-                      'metaform add variant <folder> [origin=<id>] [remove=true] [workflow=<text>] [prompt=<text>] '
-                      '[model=<text>] [role=<text>] [module=<text>] [blinded=true|false]'),
+                      ('metaform add variant <folder> [origin=<id>] [remove=true] [workflow=<text>] [prompt=<text>] '
+                       '[model=<text>] [role=<text>] [module=<text>] [blinded=true|false]')),
                      description='Metaform keeps its data in the home, never in the project folder.',
                      details='The target type is path, url, artifact, inline or inferred; with none given it is the '
                              'folder itself.',
@@ -976,42 +1028,74 @@ docs.command(Command('query', "Ask one of the design's questions of the folder's
                      ('metaform query', 'metaform query <read> [<argument>...] [name=value]... [--json]'),
                      details="metaform query alone lists the reads.", see_also=('export',)))
 docs.command(Command('install', 'Set up your AI tools to use Metaform.',
-                     ('metaform install', 'metaform install <tool>...', 'metaform install all'),
+                     ('metaform install [force=<true|false>]', 'metaform install <tool>... [force=<true|false>]',
+                      'metaform install all [force=<true|false>]'),
                      description='Checks the system first, previews every change with its backup, registers the '
-                                 'server with each tool, writes the skill, and proves each tool can start the server.',
-                     details='With no tool named it asks; naming tools, or all, sets up without asking.',
+                                 'declared server when one is enabled, writes the skill and supported global instruction pointers '
+                                 'and reminders, and proves each tool can start the server.',
+                     details='With no tool named it asks; naming tools, or all, sets up without asking. '
+                             'Run from a wheel, install first installs that wheel through uv tool install, '
+                             'then sets up AI tools. An installed copy only sets up tools. '
+                             'force=true allows a downgrade; the default is false. '
+                             'With no enabled MCP server provider, setup writes skills and supported instruction '
+                             'pointers and reminders and skips registration and proof. '
+                             'Use metaform set --install-server <module> to choose among several providers.',
                      see_also=('build',)))
 _provision_skill = resources.files('metaform') / 'skill' / 'SKILL.md'
 _provision_skill_source = (f'extract {_provision_skill.at} from {_provision_skill.root.filename}'
                            if isinstance(_provision_skill, zipfile.Path) else f'copy {_provision_skill}')
 docs.command(Command('provision', 'Give an AI tool the installer does not know what it supports of Metaform.',
-                     ('metaform provision done',),
+                     ('metaform provision <claude|codex|gemini>', 'metaform provision done'),
                      description='The first metaform run under a tool Metaform has not recorded says so. Set up '
                                  'each feature below that the tool supports, skip any it cannot or you do not want, '
                                  'then run metaform provision done; runs under that tool then say nothing of it.',
-                     details='MCP registration: add a stdio MCP server named metaform whose command is metaform mcp '
-                             'serve, wherever the tool keeps its MCP servers. '
-                             f'Skill: {_provision_skill_source} into the tool\'s '
+                     details=f'Skill: {_provision_skill_source} into the tool\'s '
                              'global skills folder as metaform/SKILL.md, a real copy and never a link, and never '
                              'into a project folder. '
-                             'Hooks: Metaform has no hooks to set up yet. '
+                             'Global instructions: run metaform provision claude, codex or gemini to preview '
+                             'and back up additions to ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md '
+                             '(under CODEX_HOME when set), or ~/.gemini/GEMINI.md. '
+                             'Hooks: provision claude also merges a passive PreToolUse reminder for Agent, Task '
+                             'and AskUserQuestion into ~/.claude/settings.json. It changes no permissions '
+                             'or tool arguments. Codex receives no hook. Gemini receives an AfterTool reminder '
+                             'for invoke_agent, delegate_to_agent and ask_user, after the action returns because '
+                             'BeforeTool cannot deliver passive context. Run metaform set --gemini-reminder off to use only '
+                             'global instructions, then rerun provision gemini or install gemini. '
+                             f'Other harnesses: append this pointer: {prompt_files.chassis("global_instructions")} '
+                             'Place it in the harness global instructions file, showing the '
+                             'addition and backing up the file first. Set up only hooks that can pass a '
+                             'reminder to the agent without blocking or changing the tool call. '
                              'A tool registered through a command by metaform install is recorded and never sees '
                              'the notice. For a tool installed through a config file, finish here with '
                              'metaform provision done.',
                      see_also=('install',)))
 docs.command(Command('extract', 'Write variants of an origin out to folders, with Python alone.',
-                     ('metaform extract <variant id>... <folder> [origin=<id>]', 'metaform extract all <folder> '
-                      '[origin=<id>]'),
+                     ('metaform extract <variant id>... <folder> [origin=<id>]', ('metaform extract all <folder> '
+                      '[origin=<id>]')),
                      description="Starts from the origin's files, applies each variant's changes, and checks every "
                                  'file against its recorded hash. Needs no git and no access to the repository.',
                      details='One named variant goes into the folder itself; several, or all, each go into a '
                              'subfolder named by the variant id. A folder that is not empty is refused.',
                      see_also=('add', 'list')))
-docs.command(Command('prompts', 'List the stored prompts, each with its newest version.', ('metaform prompts',),
-                     details='A prompt is edited as a new version, in the web GUI; no version ever changes, so each '
-                             'layer shows the exact text it was made from.', see_also=('prompt',)))
+docs.command(Command('prompts', 'List the stored prompts, each with its newest version; review browses every prompt agents read.',
+                     ('metaform prompts', 'metaform prompts review'),
+                     details='A prompt is edited as a new version with prompt save or in the web GUI; no version ever changes, so each '
+                             'layer shows the exact text it was made from. review lists every prompt in the chassis and the modules '
+                             'with its purpose and where the code uses it; Enter shows one whole, e opens it in an editor, and a '
+                             'changed text is saved as a new version and as a packet under artifacts/prompt-edits for an agent to '
+                             'apply to the source.', see_also=('prompt',)))
 docs.command(Command('prompt', "Show a stored prompt's text, its newest version or a numbered one.",
-                     ('metaform prompt <name> [<version>]',), see_also=('prompts',)))
+                     ('metaform prompt <name> [<version>]',
+                      'metaform prompt save <name> <text|-> [format=<text|markdown|xml>] [parent=<version>]',
+                      'metaform prompt register <owner:name> source=<file> [element=<name>] [purpose=<text>] [used=<where>]'),
+                     details='save creates version 1 or appends an edit, with the newest version as parent unless '
+                             'parent= names one. Use - to read text from standard input. Text is kept verbatim. '
+                             'format= applies only to a new prompt, default text. Identical text returns its '
+                             'parent with a notice. Older versions and provenance links stay unchanged. '
+                             'Over MCP use save_prompt with name, text, optional format and parent. register adds a prompt kept '
+                             'in any file to the review, metaform prompts review, by its owner and name; element= names the '
+                             'XML element inside the file when it holds several.',
+                     see_also=('prompts',)))
 docs.command(Command('uninstall', 'Remove Metaform from your AI tools.',
                      ('metaform uninstall', 'metaform uninstall <tool>...', 'metaform uninstall all'),
                      description="Previews every change with its backup, then removes Metaform's registration and "
@@ -1027,8 +1111,8 @@ docs.command(Command('feedback', 'Save feedback on the Metaform process, and a r
                      details='An agent that cannot continue stops and saves a trouble report here, with the result '
                              'it has in shape=, instead of retrying. A value that names a file reads the file; - reads '
                              'standard input.',
-                     examples=(('metaform feedback "The join fields did not match the intake text." '
-                                'layer=intake-20260925T041500Z-3fa2c1', "Feedback on an intake run."),),
+                     examples=((('metaform feedback "The join fields did not match the intake text." '
+                                 'layer=intake-20260925T041500Z-3fa2c1'), "Feedback on an intake run."),),
                      see_also=('list', 'read')))
 docs.command(Command('read', 'Read one report, feedback or shape file exactly.',
                      ('metaform read report <file name> [<project>]',), see_also=('list', 'feedback')))
@@ -1094,19 +1178,26 @@ def main(argv: list[str] | None = None) -> int:
     folder = Path.cwd()
     if args[:1] == ['--version']:
         return _command(args, folder)
-    try:
-        return _command(args, folder)
-    finally:
-        changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
+    with loader.request_scope():
+        try:
+            loader.follow_enabled()
+            return _command(args, folder)
+        finally:
+            changes.announce(folder, 'cli')  # what the command changed, fired on the event bus, VIEW-018
 
 
 def _command(args: list[str], folder: Path) -> int:
     try:
-        if first_run := harness.notice():
-            sys.stderr.write(f'Notice: {first_run}\n')  # under a harness the home has not recorded, D96
         if args[:1] == ['--version']:
             out(f'metaform {__version__}')
             return 0
+        from . import install
+        force = (install.install_options(args[1:])[2]
+                 if args[:1] == ['install'] and not any(word in ('-h', '--help') for word in args[1:])
+                 else False)
+        install.backstage(force)
+        if first_run := harness.notice():
+            sys.stderr.write(f'Notice: {first_run}\n')  # under a harness the home has not recorded, D96
         loader.discover()
         if not args:
             status(args, folder)
@@ -1146,7 +1237,7 @@ def _command(args: list[str], folder: Path) -> int:
     except KeyboardInterrupt:
         sys.stderr.write('Interrupted.\n')
         return 130
-    except Exception as error:  # A failure: one Error line and one Next line, exit 1, BASE-031 and CLI-009.
+    except Exception as error:  # noqa: BLE001 - Report any unexpected verb failure with exit 1, BASE-031 and CLI-009.
         from .install import Failed
         sys.stdout.flush()
         if isinstance(error, Failed):

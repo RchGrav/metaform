@@ -1,11 +1,15 @@
-"""The instructions agents read, composed live, MCP-031.
+"""The instructions agents read, composed live, MCP-031 and MCP-029.
 
-The chassis's instructions prompt, with each surfaced module's instructions
-prompt listed in module id order where it marks. With no project for the
-folder, the registered projects and the way to register one follow; with debug
-on, the trouble report and debug prompts end it. Every word
-is from the prompt files, never from here. `metaform help agents` and the MCP
-server's instructions are this same text.
+The chassis's instructions prompt, with each surfaced module listed in module id
+order where it marks. With connect_instructions=compact, the default, each module
+is listed in one line, the chassis's `active` prompt and the instruction its
+status hook gives for the folder's state, and the `more` prompt says where each
+module's full instructions are; hosts keep only so much, and Claude Code drops
+everything past 2,048 characters. With full, each module's whole instructions
+prompt is listed. With no project for the folder, the registered projects and
+the way to register one follow; with debug on, the trouble report and debug
+prompts end it. Every word is from the prompt files, never from here.
+`metaform help agents` and the MCP server's instructions are this same text.
 """
 from __future__ import annotations
 
@@ -25,24 +29,40 @@ def surfaced(folder: Path) -> list[Module]:
     return [module for module in sorted(loader.enabled(), key=lambda item: item.id) if on_surface(module.id, folder)]
 
 
-def _listed(module: Module, folder: Path, project: str | None) -> str | None:
-    """A module's line under "modules available.": its instructions prompt, then the instruction its status hook
-    gives for the state the folder is in, VIEW-015."""
-    own = prompt_files.module(module.id, 'instructions')
+def _added(module: Module, folder: Path, project: str | None) -> str | None:
+    """The instruction a module's status hook gives for the state the folder is in, VIEW-015."""
     if module.status is None:
-        return own
+        return None
     try:
         got = call(module.status, context.build(module.id, folder, project=project, resolve=False))
     except Exception:  # noqa: BLE001  a failing hook adds nothing to the instructions
-        return own
-    added = got.instruction if isinstance(got, Status) else None
-    return ' '.join(part for part in (own, added) if part) or None
+        return None
+    return got.instruction if isinstance(got, Status) else None
+
+
+def _listed(module: Module, folder: Path, project: str | None, *, full: bool = True) -> str | None:
+    """A module's line under "modules available.": its instructions prompt, or with full off the `active` line,
+    then the instruction its status hook gives."""
+    own = prompt_files.module(module.id, 'instructions') if full else prompt_files.chassis('active', module=module.id)
+    return ' '.join(part for part in (own, _added(module, folder, project)) if part) or None
+
+
+def module_text(folder: Path, identifier: str, project: str | None = None) -> str | None:
+    """One surfaced module's full instructions, as the full form lists them, or None when it is not on the surface."""
+    found = next((module for module in surfaced(folder) if module.id == identifier), None)
+    if found is None:
+        return None
+    chosen = project if project is not None else context.project_for(folder)
+    return _listed(found, folder, chosen)
 
 
 def compose(folder: Path, project: str | None = None) -> str:
     chosen = project if project is not None else context.project_for(folder)
-    listed = [line for line in (_listed(module, folder, chosen) for module in surfaced(folder)) if line]
+    full = settings.value('connect_instructions', folder) == 'full'
+    listed = [line for line in (_listed(module, folder, chosen, full=full) for module in surfaced(folder)) if line]
     parts = [prompt_files.chassis('instructions', modules='\n'.join(listed))]
+    if not full:
+        parts.append(prompt_files.chassis('more'))
     if chosen is None:
         from . import home
         registered = [record.project_id for record in home.projects()]

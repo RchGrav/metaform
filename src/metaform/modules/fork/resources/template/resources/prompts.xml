@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- template's prompts, MCP-031. What is between an element's tags is what is served. A copy renames the module in
+     its instructions prompt. -->
+<prompts>
+<instructions>template is active.</instructions>
+</prompts>

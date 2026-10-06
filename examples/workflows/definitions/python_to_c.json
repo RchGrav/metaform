@@ -1,0 +1,1740 @@
+{
+  "id": "metaform.library.python_to_c",
+  "intent": "Produce comprehensive Python-to-C reimplementation documentation through parallel architecture discovery, component analysis, and C-specific analysis, followed by sequential synthesis, implementation guidance, and validation.",
+  "start": "phase1_complete",
+  "inputs": {
+    "input_directory": "Required caller parameter: the Python codebase to analyze; example paths are not defaults.",
+    "output_dir": "Required caller parameter: the documentation destination; preserve the authored relative artifact paths."
+  },
+  "steps": [
+    {
+      "id": "phase1_complete",
+      "kind": "parallel",
+      "branches": [
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.event_system",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.platform_abstraction",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.plugin_system",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.core_structure",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.data_flow",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            }
+          }
+        }
+      ],
+      "execution_policy": {
+        "agent_failure": "retry_once_then_fail",
+        "phase_failure": "stop_execution",
+        "timeout_seconds": 3600
+      }
+    },
+    {
+      "id": "phase2_complete",
+      "kind": "parallel",
+      "branches": [
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.routing",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.state_management",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.algorithm",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.interface",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.resource",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            }
+          }
+        }
+      ],
+      "execution_policy": {
+        "agent_failure": "retry_once_then_fail",
+        "phase_failure": "stop_execution",
+        "timeout_seconds": 3600
+      }
+    },
+    {
+      "id": "phase3_complete",
+      "kind": "parallel",
+      "branches": [
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.memory_model",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            },
+            "phase2": {
+              "var": "steps.phase2_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.error_handling",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            },
+            "phase2": {
+              "var": "steps.phase2_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.data_structure",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            },
+            "phase2": {
+              "var": "steps.phase2_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.threading",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            },
+            "phase2": {
+              "var": "steps.phase2_complete"
+            }
+          }
+        },
+        {
+          "workflow": "metaform.library.python_to_c.python_to_c.performance",
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "steps.phase1_complete"
+            },
+            "phase2": {
+              "var": "steps.phase2_complete"
+            }
+          }
+        }
+      ],
+      "execution_policy": {
+        "agent_failure": "retry_once_then_fail",
+        "phase_failure": "stop_execution",
+        "timeout_seconds": 3600
+      }
+    },
+    {
+      "id": "phase4_complete",
+      "kind": "call",
+      "workflow": "metaform.library.python_to_c.phase4",
+      "inputs": {
+        "input_directory": {
+          "var": "inputs.input_directory"
+        },
+        "output_dir": {
+          "var": "inputs.output_dir"
+        },
+        "phase1": {
+          "var": "steps.phase1_complete"
+        },
+        "phase2": {
+          "var": "steps.phase2_complete"
+        },
+        "phase3": {
+          "var": "steps.phase3_complete"
+        }
+      },
+      "execution_policy": {
+        "agent_failure": "retry_once_then_fail",
+        "phase_failure": "stop_execution",
+        "timeout_seconds": 7200
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "metaform.library.python_to_c.python_to_c.event_system",
+      "intent": "Document Python event-driven components for C reimplementation.",
+      "start": "event_system",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller."
+      },
+      "steps": [
+        {
+          "id": "event_system",
+          "kind": "prompt",
+          "role": "event_system_analyzer",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "validation_rules": {
+              "literal": [
+                {
+                  "json_schema": "event_system_analysis_schema.json"
+                },
+                {
+                  "required_sections": [
+                    "event_loops",
+                    "event_handlers",
+                    "message_patterns"
+                  ]
+                },
+                {
+                  "min_coverage": 95
+                },
+                {
+                  "must_have_c_notes": true
+                }
+              ]
+            },
+            "format_examples": {
+              "literal": "\n### JSON Output Format (event_system_analysis.json)\n```json\n{\n  \"metadata\": {\n    \"analysis_timestamp\": \"2024-01-15T10:30:00Z\",\n    \"agent\": \"event_system_analyzer\",\n    \"phase\": 1,\n    \"codebase_root\": \"/path/to/project\",\n    \"files_analyzed\": 145,\n    \"files_skipped\": 23\n  },\n  \"event_loops\": [\n    {\n      \"name\": \"main_event_loop\",\n      \"type\": \"asyncio\",\n      \"location\": \"src/core/main.py:45\",\n      \"initialization\": \"asyncio.new_event_loop()\",\n      \"handlers\": [\"handle_connection\", \"handle_message\", \"handle_disconnect\"],\n      \"thread_context\": \"main_thread\",\n      \"c_implementation_notes\": \"Use epoll/kqueue for event loop. Handlers as function pointer array.\"\n    }\n  ],\n  \"event_handlers\": [\n    {\n      \"name\": \"handle_connection\",\n      \"event_type\": \"connection_established\", \n      \"location\": \"src/handlers/connection.py:12\",\n      \"async\": true,\n      \"dependencies\": [\"user_manager\", \"session_store\"],\n      \"parameters\": [\"connection_id\", \"client_info\"],\n      \"c_equivalent\": \"typedef void (*connection_handler_t)(int conn_id, struct client_info *info);\"\n    }\n  ],\n  \"message_patterns\": {\n    \"pub_sub\": [\n      {\n        \"pattern\": \"redis_pubsub\",\n        \"channels\": [\"events\", \"notifications\"],\n        \"c_implementation\": \"Custom pub/sub with message queues and epoll\"\n      }\n    ],\n    \"queues\": [],\n    \"signals\": []\n  }\n}\n```\n\n### Markdown Output Format (event_system_guide.md)\n```markdown\n# Event System Implementation Guide\n\n## Overview\nThis guide provides a comprehensive mapping of Python event-driven components to C implementations.\n\n## Event Architecture\n\n### Core Event Loop\nThe Python implementation uses asyncio for the main event loop. The C implementation will use:\n\n```c\n// Event loop structure\ntypedef struct {\n    int epoll_fd;           // Linux epoll file descriptor\n    int kqueue_fd;          // macOS/BSD kqueue descriptor  \n    event_handler_t *handlers;\n    size_t handler_count;\n    bool running;\n} event_loop_t;\n\n// Initialize event loop\nevent_loop_t* event_loop_create(void);\nvoid event_loop_run(event_loop_t *loop);\nvoid event_loop_stop(event_loop_t *loop);\n```\n\n### Event Handlers\nPython async handlers map to C function pointers:\n\n| Python Pattern | C Implementation |\n|----------------|------------------|\n| async def handler() | void (*handler)(event_t*) |\n| await async_func() | Callback chain with context |\n| asyncio.create_task() | Thread pool task submission |\n\n### Memory Management Considerations\n1. Event objects use memory pool allocation\n2. Handler contexts are stack-allocated where possible\n3. Cleanup through RAII-style cleanup handlers\n\n### Thread Safety Requirements\n- Event loop runs on single thread\n- Handler registration protected by mutex\n- Event queue uses lock-free ring buffer\n\n## Implementation Checklist\n- [ ] Design event structure\n- [ ] Implement platform-specific event mechanisms\n- [ ] Create handler registration system\n- [ ] Implement event dispatch\n- [ ] Add memory pools for events\n- [ ] Create thread safety mechanisms\n```\n"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "event_system",
+          "prompt": "You are an Event System Analysis specialist for Python-to-C documentation.\nYour role is to analyze Python codebases and identify all event-driven components,\ncreating comprehensive documentation for C reimplementation.\n\nCRITICAL REQUIREMENTS:\n1. Output MUST be in specified JSON format\n2. All event patterns must have C implementation notes\n3. Skip test files and non-core code\n4. Document thread safety requirements\n5. Identify memory management needs\n\nAnalyze the Python codebase in {{ inputs.input_directory }} to identify and document all event-driven components.\n\nINPUT: Python source files from {{ inputs.input_directory }}\n\nFOCUS AREAS:\n- Event loops (asyncio, custom implementations)\n- Event handlers and callbacks  \n- Message queues and pub/sub patterns\n- Signal/slot mechanisms\n- Event dispatching logic\n\nFILE PROCESSING RULES:\n1. SKIP: Files matching patterns:\n   - test_*.py, *_test.py, tests/\n   - docs/, documentation/\n   - build/, dist/, *.egg-info/\n   - venv/, env/, __pycache__/\n   - setup.py, setup.cfg\n\n2. ANALYZE: All other .py files\n\nANALYSIS REQUIREMENTS:\nFor each event pattern found:\n1. Identify the pattern type and implementation\n2. Document all handlers and callbacks\n3. Note threading/async context\n4. Propose C implementation approach\n5. Identify memory ownership\n\nOUTPUT FILES:\n1. {{ inputs.output_dir }}/phase1_architecture/event_system_analysis.json\n2. {{ inputs.output_dir }}/phase1_architecture/event_system_guide.md\n\nApply the supplied validation_rules. Return an object with analysis containing the JSON file body and guide containing the Markdown file body for the two authored OUTPUT FILES. Use the supplied format_examples as format examples; fill them from actual code evidence. Include source coverage and skip reasons for downstream validation.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples. Write the two authored OUTPUT FILES to the supplied output directory and retain their actual paths with the observed result.",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "analysis": {
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "analysis_timestamp": {
+                        "type": "string"
+                      },
+                      "agent": {
+                        "type": "string"
+                      },
+                      "phase": {
+                        "type": "integer"
+                      },
+                      "codebase_root": {
+                        "type": "string"
+                      },
+                      "files_analyzed": {
+                        "type": "integer"
+                      },
+                      "files_skipped": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "event_loops": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "type": "string"
+                        },
+                        "initialization": {
+                          "type": "string"
+                        },
+                        "handlers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "thread_context": {
+                          "type": "string"
+                        },
+                        "c_implementation_notes": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "event_handlers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "event_type": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "type": "string"
+                        },
+                        "async": {
+                          "type": "boolean"
+                        },
+                        "dependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "parameters": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "c_equivalent": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "message_patterns": {
+                    "type": "object",
+                    "properties": {
+                      "pub_sub": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "pattern": {
+                              "type": "string"
+                            },
+                            "channels": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "c_implementation": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "queues": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "signals": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "event_loops",
+                  "event_handlers",
+                  "message_patterns"
+                ]
+              },
+              "guide": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "analysis",
+              "guide"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.platform_abstraction",
+      "intent": "Analyze platform abstractions for Python-to-C documentation.",
+      "start": "platform_abstraction",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller."
+      },
+      "steps": [
+        {
+          "id": "platform_abstraction",
+          "kind": "prompt",
+          "role": "platform_abstraction",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "platform_abstraction",
+          "prompt": "Analyze the Python platform abstractions and platform requirements in {{ inputs.input_directory }}. Document their responsibilities, relevant source locations, and corresponding C implementation approach. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for platform_abstraction; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.plugin_system",
+      "intent": "Analyze the plugin system for Python-to-C documentation.",
+      "start": "plugin_system",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller."
+      },
+      "steps": [
+        {
+          "id": "plugin_system",
+          "kind": "prompt",
+          "role": "plugin_system",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "plugin_system",
+          "prompt": "Analyze the Python plugin system in {{ inputs.input_directory }}. Document its interfaces, discovery, loading, lifecycle, and C reimplementation approach as supported by the code. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for plugin_system; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.core_structure",
+      "intent": "Analyze the core structure for Python-to-C documentation.",
+      "start": "core_structure",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller."
+      },
+      "steps": [
+        {
+          "id": "core_structure",
+          "kind": "prompt",
+          "role": "core_structure",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "core_structure",
+          "prompt": "Analyze the core structure of the Python codebase in {{ inputs.input_directory }}. Document its components, responsibilities, dependencies, and C architectural implications. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for core_structure; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.data_flow",
+      "intent": "Analyze data flow for Python-to-C documentation.",
+      "start": "data_flow",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller."
+      },
+      "steps": [
+        {
+          "id": "data_flow",
+          "kind": "prompt",
+          "role": "data_flow",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "data_flow",
+          "prompt": "Analyze data flow in the Python codebase in {{ inputs.input_directory }}. Document producers, consumers, transformations, and critical paths relevant to C reimplementation. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for data_flow; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.routing",
+      "intent": "Analyze routing for Python-to-C documentation.",
+      "start": "routing",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "routing",
+          "kind": "prompt",
+          "role": "routing",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "routing",
+          "prompt": "Using phase1 and the Python source in {{ inputs.input_directory }}, analyze routing. Document the implemented dispatch or matching behavior and its C reimplementation approach. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for routing; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.state_management",
+      "intent": "Analyze state management for Python-to-C documentation.",
+      "start": "state_management",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "state_management",
+          "kind": "prompt",
+          "role": "state_management",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "state_management",
+          "prompt": "Using phase1 and the Python source in {{ inputs.input_directory }}, analyze state management. Document state representations, scope, transitions, synchronization, and C equivalents. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for state_management; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.algorithm",
+      "intent": "Analyze algorithms for Python-to-C documentation.",
+      "start": "algorithm",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "algorithm",
+          "kind": "prompt",
+          "role": "algorithm",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "algorithm",
+          "prompt": "Using phase1 and the Python source in {{ inputs.input_directory }}, analyze algorithms. Document their behavior and provide C implementation guidance. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for algorithm; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.interface",
+      "intent": "Analyze interfaces for Python-to-C documentation.",
+      "start": "interface",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "interface",
+          "kind": "prompt",
+          "role": "interface",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "interface",
+          "prompt": "Using phase1 and the Python source in {{ inputs.input_directory }}, analyze interfaces. Document their contracts and corresponding C designs. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for interface; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.resource",
+      "intent": "Analyze resources for Python-to-C documentation.",
+      "start": "resource",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "resource",
+          "kind": "prompt",
+          "role": "resource",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "resource",
+          "prompt": "Using phase1 and the Python source in {{ inputs.input_directory }}, analyze resources. Document acquisition, use, ownership, release, and C implementation implications. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for resource; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.memory_model",
+      "intent": "Design C memory allocation and management from Python analyses.",
+      "start": "memory_model",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps.",
+        "phase2": "Complete parallel branch results from phase 2, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "memory_model",
+          "kind": "prompt",
+          "role": "memory_model_designer",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "validation_rules": {
+              "literal": [
+                {
+                  "all_types_covered": true
+                },
+                {
+                  "ownership_defined": true
+                },
+                {
+                  "pools_have_sizing": true
+                },
+                {
+                  "thread_safety_documented": true
+                }
+              ]
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "memory_model",
+          "prompt": "You are a Memory Model specialist for C implementations.\nYour role is to design comprehensive memory allocation and management strategies\nbased on Python codebase analysis.\n\nCRITICAL REQUIREMENTS:\n1. Every Python object must have a defined C memory strategy\n2. Document ownership for all allocations\n3. Design memory pools for high-frequency allocations\n4. Prevent memory leaks through clear ownership\n5. Consider performance implications\n\nDesign memory allocation and management strategies based on analyses from:\n- {{ inputs.output_dir }}/phase1_architecture/\n- {{ inputs.output_dir }}/phase2_components/\n\nANALYSIS TASKS:\n1. Map Python object creation patterns to C allocation strategies\n2. Identify objects suitable for memory pooling\n3. Define ownership rules and transfer mechanisms\n4. Design cleanup strategies replacing Python GC\n5. Document buffer management approaches\n\nSPECIFIC REQUIREMENTS:\n\nFor each allocation pattern:\n- Frequency: Estimate allocation frequency (high/medium/low)\n- Size: Document typical sizes and variations\n- Lifetime: Object lifetime patterns\n- Strategy: Choose stack/heap/pool allocation\n- Ownership: Define clear ownership rules\n\nFor memory pools:\n- Purpose: What objects will use this pool\n- Sizing: Initial size and growth strategy\n- Implementation: Concrete C struct and functions\n- Thread safety: Synchronization needs\n\nOUTPUT FILES:\n1. {{ inputs.output_dir }}/phase3_c_specific/memory_model_analysis.json\n2. {{ inputs.output_dir }}/phase3_c_specific/memory_model_guide.md\n\nVALIDATION REQUIREMENTS:\n- All Python types from previous phases must have memory strategy\n- No allocation without defined ownership\n- Pool designs must include size calculations\n- Thread safety must be explicitly addressed\n\nUse the complete supplied phase1 and phase2 answers alongside their documentation. Apply the supplied validation_rules. Return an object with analysis containing the JSON file body and guide containing the Markdown file body for the two authored OUTPUT FILES.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples. Write the two authored OUTPUT FILES to the supplied output directory and retain their actual paths with the observed result.",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "analysis": {
+                "type": "object",
+                "description": "Allocation patterns, Python object/type coverage, frequency, sizes, lifetime, stack/heap/pool strategy, ownership and transfer, cleanup, buffers, pool purpose and sizing, concrete C definitions and functions, and thread safety."
+              },
+              "guide": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "analysis",
+              "guide"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.error_handling",
+      "intent": "Design C error handling from Python analyses.",
+      "start": "error_handling",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps.",
+        "phase2": "Complete parallel branch results from phase 2, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "error_handling",
+          "kind": "prompt",
+          "role": "error_handling",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "error_handling",
+          "prompt": "Using phase1 and phase2, analyze Python exceptions and failure handling. Document corresponding C error codes, error context, propagation, and cleanup. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for error_handling; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.data_structure",
+      "intent": "Design C data structures from Python analyses.",
+      "start": "data_structure",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps.",
+        "phase2": "Complete parallel branch results from phase 2, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "data_structure",
+          "kind": "prompt",
+          "role": "data_structure",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "data_structure",
+          "prompt": "Using phase1 and phase2, analyze Python types and data structures. Document C equivalents, operations, and representation requirements. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for data_structure; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.threading",
+      "intent": "Design C threading and async approaches from Python analyses.",
+      "start": "threading",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps.",
+        "phase2": "Complete parallel branch results from phase 2, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "threading",
+          "kind": "prompt",
+          "role": "threading",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "threading",
+          "prompt": "Using phase1 and phase2, analyze Python threading and async patterns. Document C approaches, synchronization, and thread safety requirements. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for threading; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.python_to_c.performance",
+      "intent": "Analyze C implementation performance implications from Python analyses.",
+      "start": "performance",
+      "inputs": {
+        "input_directory": "Python codebase directory supplied by the caller.",
+        "output_dir": "Documentation output directory supplied by the caller.",
+        "phase1": "Complete parallel branch results from phase 1, including child values and steps.",
+        "phase2": "Complete parallel branch results from phase 2, including child values and steps."
+      },
+      "steps": [
+        {
+          "id": "performance",
+          "kind": "prompt",
+          "role": "performance",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "performance",
+          "prompt": "Using phase1 and phase2, analyze performance implications for C reimplementation. Document critical paths, allocation and processing costs, and recommendations grounded in the analyses. Return a JSON object containing this responsibility's findings, source evidence, and documentation for the downstream phases. Carry relevant discovered shared-context information in the answer. Use actual project findings.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for performance; the source does not specify further JSON fields."
+          }
+        }
+      ]
+    },
+    {
+      "id": "metaform.library.python_to_c.phase4",
+      "intent": "Run synthesis, implementation guide and validation sequentially within the authored shared phase deadline.",
+      "steps": [
+        {
+          "id": "architecture_synthesizer",
+          "kind": "prompt",
+          "role": "architecture_synthesizer",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "phase3": {
+              "var": "inputs.phase3"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "architecture_synthesis",
+          "prompt": "Using the complete phase1, phase2, and phase3 results and their documentation under {{ inputs.output_dir }}, synthesize the architecture documentation for Python-to-C reimplementation. Connect the architecture, component analyses, and C-specific decisions into a coherent account with traceable cross-references. Return the synthesis as a JSON object.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for architecture_synthesizer; the source does not specify further JSON fields."
+          }
+        },
+        {
+          "id": "implementation_guide",
+          "kind": "prompt",
+          "role": "implementation_guide",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "phase3": {
+              "var": "inputs.phase3"
+            },
+            "architecture_synthesis": {
+              "var": "steps.architecture_synthesizer"
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "all_documentation_complete",
+          "prompt": "Using phase1, phase2, phase3, and architecture_synthesis, produce the C implementation guide. Cover the analyzed core components, algorithms, interfaces, types, exceptions, memory strategies, and threading or async approaches, preserving traceable references to the prior analyses. Return the guide as a JSON object.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples.",
+          "schema": {
+            "type": "object",
+            "description": "Source-grounded analysis and C reimplementation documentation for implementation_guide; the source does not specify further JSON fields."
+          }
+        },
+        {
+          "id": "documentation_complete",
+          "kind": "prompt",
+          "role": "documentation_validator",
+          "context": "project",
+          "requires_answer": true,
+          "tools": [
+            "workflow.files",
+            "workflow.read"
+          ],
+          "inputs": {
+            "input_directory": {
+              "var": "inputs.input_directory"
+            },
+            "output_dir": {
+              "var": "inputs.output_dir"
+            },
+            "phase1": {
+              "var": "inputs.phase1"
+            },
+            "phase2": {
+              "var": "inputs.phase2"
+            },
+            "phase3": {
+              "var": "inputs.phase3"
+            },
+            "architecture_synthesis": {
+              "var": "steps.architecture_synthesizer"
+            },
+            "all_documentation_complete": {
+              "var": "steps.implementation_guide"
+            },
+            "validation_rules": {
+              "literal": [
+                {
+                  "min_coverage": 95
+                },
+                {
+                  "no_critical_gaps": true
+                },
+                {
+                  "all_types_mapped": true
+                },
+                {
+                  "no_conflicts": true
+                }
+              ]
+            },
+            "shared_context_format_example": {
+              "literal": "```yaml\n# Shared context file format\nagent_context:\n  phase1_discoveries:\n    event_patterns: [\"asyncio\", \"custom_events\", \"signals\"]\n    platform_requirements: [\"linux\", \"macos\", \"windows\"]\n    plugin_interfaces: [\"IPlugin\", \"PluginManager\"]\n    core_components: [\"Router\", \"StateManager\", \"EventLoop\"]\n    \n  phase2_analyses:\n    routing_type: \"dynamic_dispatch\"\n    state_scope: \"global_with_threading\"\n    key_algorithms: [\"path_matching\", \"message_routing\"]\n    api_types: [\"rest\", \"websocket\", \"cli\"]\n    \n  phase3_decisions:\n    memory_model: \"pools_with_ownership\"\n    error_strategy: \"error_codes_with_context\"\n    threading_model: \"thread_pool_with_async\"\n    \n  critical_paths:\n    - \"event_dispatch_loop\"\n    - \"message_routing\"\n    - \"state_synchronization\"\n```"
+            }
+          },
+          "save_as": "validation",
+          "prompt": "You are a Validation specialist ensuring completeness and consistency\nof Python-to-C documentation. Your role is critical for project success.\n\nCRITICAL REQUIREMENTS:\n1. Verify >95% code coverage or document why not\n2. Ensure all mappings are complete\n3. Identify any gaps or inconsistencies\n4. Validate all cross-references\n5. Confirm implementation feasibility\n\nValidate all generated documentation in {{ inputs.output_dir }}\n\nVALIDATION TASKS:\n\n1. COVERAGE ANALYSIS:\n   - Count analyzed vs skipped files\n   - Verify skip reasons are valid\n   - Calculate coverage percentage\n   - List any missed critical files\n\n2. COMPLETENESS CHECKS:\n   - Every Python exception has C error code\n   - Every Python type has C equivalent\n   - Every algorithm has implementation guide\n   - Every interface has C design\n   - Every thread/async pattern has C approach\n\n3. CONSISTENCY VERIFICATION:\n   - Cross-reference all phase outputs\n   - Identify conflicting recommendations\n   - Verify naming conventions\n   - Check architectural alignment\n\n4. GAP IDENTIFICATION:\n   - Missing documentation areas\n   - Incomplete mappings\n   - Unclear implementations\n   - Risk areas\n\n5. IMPLEMENTATION VALIDATION:\n   - C code snippets are syntactically valid\n   - Memory strategies are complete\n   - Error handling is comprehensive\n   - Thread safety is addressed\n\nOUTPUT FILES:\n1. {{ inputs.output_dir }}/phase4_synthesis/validation_report.json\n2. {{ inputs.output_dir }}/phase4_synthesis/validation_summary.md\n\nCRITICAL METRICS:\n- Coverage must be >95% or have documented reasons\n- All core components must have guides\n- No high-severity gaps allowed\n- All conflicts must be resolved\n\nUse all supplied phase results, architecture_synthesis, and all_documentation_complete alongside the documentation in {{ inputs.output_dir }}. Apply the supplied validation_rules. Preserve and assess both the textual >95% or documented-reasons requirement and the configured min_coverage: 95. Return report with the exact authored validation-report fields and summary with the Markdown summary for the two authored OUTPUT FILES. Record validation failures in report and summary and retain validation_failure: report_and_continue. Completion of this assignment finishes the documentation phase even when report.validation_passed is false.\n\nThe supplied shared_context_format_example is the authored inter-agent context format. Populate applicable phase discoveries, analyses, decisions and critical paths from actual findings; its sample values are examples. Write the two authored OUTPUT FILES to the supplied output directory and retain their actual paths with the observed result.",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "report": {
+                "type": "object",
+                "properties": {
+                  "coverage": {
+                    "type": "object",
+                    "properties": {
+                      "files_analyzed": {
+                        "type": "integer"
+                      },
+                      "files_skipped": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "coverage_percentage": {
+                        "type": "number"
+                      },
+                      "skip_reasons": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "files_analyzed",
+                      "files_skipped",
+                      "coverage_percentage",
+                      "skip_reasons"
+                    ]
+                  },
+                  "completeness_checks": {
+                    "type": "object",
+                    "properties": {
+                      "all_exceptions_mapped": {
+                        "type": "boolean"
+                      },
+                      "all_types_mapped": {
+                        "type": "boolean"
+                      },
+                      "all_algorithms_documented": {
+                        "type": "boolean"
+                      },
+                      "all_interfaces_defined": {
+                        "type": "boolean"
+                      },
+                      "all_threading_mapped": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "all_exceptions_mapped",
+                      "all_types_mapped",
+                      "all_algorithms_documented",
+                      "all_interfaces_defined",
+                      "all_threading_mapped"
+                    ]
+                  },
+                  "consistency_checks": {
+                    "type": "object",
+                    "properties": {
+                      "conflicts": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "location": {
+                              "type": "string"
+                            },
+                            "issue": {
+                              "type": "string"
+                            },
+                            "severity": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "location",
+                            "issue",
+                            "severity"
+                          ]
+                        }
+                      },
+                      "warnings": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "recommendations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "conflicts",
+                      "warnings",
+                      "recommendations"
+                    ]
+                  },
+                  "gaps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "area": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string",
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low"
+                          ]
+                        },
+                        "impact": {
+                          "type": "string"
+                        },
+                        "mitigation": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "area",
+                        "description",
+                        "severity",
+                        "impact",
+                        "mitigation"
+                      ]
+                    }
+                  },
+                  "validation_passed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "coverage",
+                  "completeness_checks",
+                  "consistency_checks",
+                  "gaps",
+                  "validation_passed"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "report",
+              "summary"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "producer": "python_to_c.event_system/event_system",
+      "answer_field": "analysis",
+      "path": "{output_dir}/phase1_architecture/event_system_analysis.json",
+      "format": "json"
+    },
+    {
+      "producer": "python_to_c.event_system/event_system",
+      "answer_field": "guide",
+      "path": "{output_dir}/phase1_architecture/event_system_guide.md",
+      "format": "markdown"
+    },
+    {
+      "producer": "python_to_c.memory_model/memory_model",
+      "answer_field": "analysis",
+      "path": "{output_dir}/phase3_c_specific/memory_model_analysis.json",
+      "format": "json"
+    },
+    {
+      "producer": "python_to_c.memory_model/memory_model",
+      "answer_field": "guide",
+      "path": "{output_dir}/phase3_c_specific/memory_model_guide.md",
+      "format": "markdown"
+    },
+    {
+      "producer": "documentation_complete",
+      "answer_field": "report",
+      "path": "{output_dir}/phase4_synthesis/validation_report.json",
+      "format": "json"
+    },
+    {
+      "producer": "documentation_complete",
+      "answer_field": "summary",
+      "path": "{output_dir}/phase4_synthesis/validation_summary.md",
+      "format": "markdown"
+    }
+  ],
+  "source_execution_requirements": {
+    "metadata_only": true,
+    "phase_timeouts_seconds": {
+      "phase1": 3600,
+      "phase2": 3600,
+      "phase3": 3600,
+      "phase4": 7200
+    },
+    "checkpoints": [
+      "phase1_complete",
+      "phase2_complete",
+      "phase3_complete",
+      "documentation_complete"
+    ],
+    "error_handling": {
+      "agent_failure": "retry_once_then_fail",
+      "phase_failure": "stop_execution",
+      "validation_failure": "report_and_continue"
+    },
+    "monitoring": {
+      "progress_updates": true,
+      "checkpoint_saves": true,
+      "detailed_logs": true
+    }
+  },
+  "source_mapping": [
+    {
+      "source": "Agent Orchestration Configuration / orchestration.execution_model and phases",
+      "requirement": "phased_parallel: three ordered parallel phases of five workers, then architecture_synthesizer, implementation_guide, validation sequentially.",
+      "steps": [
+        "phase1_complete",
+        "phase2_complete",
+        "phase3_complete",
+        "architecture_synthesizer",
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Agent Orchestration Configuration / orchestration.phases[0].agents",
+      "requirement": "event_system, platform_abstraction, plugin_system, core_structure, data_flow",
+      "steps": [
+        "python_to_c.event_system/event_system",
+        "python_to_c.platform_abstraction/platform_abstraction",
+        "python_to_c.plugin_system/plugin_system",
+        "python_to_c.core_structure/core_structure",
+        "python_to_c.data_flow/data_flow"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Agent Orchestration Configuration / orchestration.phases[1].agents",
+      "requirement": "routing, state_management, algorithm, interface, resource",
+      "steps": [
+        "python_to_c.routing/routing",
+        "python_to_c.state_management/state_management",
+        "python_to_c.algorithm/algorithm",
+        "python_to_c.interface/interface",
+        "python_to_c.resource/resource"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Agent Orchestration Configuration / orchestration.phases[2].agents",
+      "requirement": "memory_model, error_handling, data_structure, threading, performance",
+      "steps": [
+        "python_to_c.memory_model/memory_model",
+        "python_to_c.error_handling/error_handling",
+        "python_to_c.data_structure/data_structure",
+        "python_to_c.threading/threading",
+        "python_to_c.performance/performance"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Agent Orchestration Configuration / depends_on; Memory Model Agent / depends_on",
+      "requirement": "Each phase consumes the completed preceding phases; memory_model consumes phases 1 and 2.",
+      "steps": [
+        "phase2_complete",
+        "phase3_complete",
+        "architecture_synthesizer",
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Validation Agent / depends_on: [all_documentation_complete]",
+      "requirement": "Validation follows all documentation-producing assignments. The implementation_guide result marks all_documentation_complete, preceding the final documentation_complete checkpoint.",
+      "steps": [
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Event System Agent / agent_name, system_prompt, task_prompt, validation_rules",
+      "requirement": "event_system maps to event_system_analyzer. Preserve the authored prompts, exact skip patterns, all-other-.py scope, event categories, handlers, async/thread context, C notes, ownership, required JSON sections, and min_coverage: 95.",
+      "steps": [
+        "python_to_c.event_system/event_system"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Memory Model Agent / agent_name, system_prompt, task_prompt, validation_rules",
+      "requirement": "memory_model maps to memory_model_designer. Preserve object/type coverage, allocation characteristics and strategies, ownership, transfers, cleanup, buffers, pool sizing and concrete C definitions/functions, and thread safety.",
+      "steps": [
+        "python_to_c.memory_model/memory_model"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Validation Agent / agent_name, system_prompt, task_prompt, output_schema, validation_rules",
+      "requirement": "validation maps to documentation_validator. Preserve coverage and skip accounting, exception/type/algorithm/interface/thread mappings, consistency, cross-references, gaps, C syntax and implementation feasibility, and the exact validation report fields.",
+      "steps": [
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Validation Agent / coverage prose and validation_rules.min_coverage",
+      "requirement": "Keep >95% or documented reasons and min_coverage: 95 independently traceable; neither source expression replaces the other.",
+      "steps": [
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Agent Orchestration Configuration / error_handling.validation_failure",
+      "requirement": "report_and_continue: the final validator returns its report and summary and completes with either validation_passed value; no corrective loop is authored.",
+      "steps": [
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "All detailed configurations / {input_directory}, {output_dir}",
+      "requirement": "Caller-supplied directory inputs, propagated through every assignment; no example path becomes a default.",
+      "steps": [
+        "phase1_complete",
+        "phase2_complete",
+        "phase3_complete",
+        "architecture_synthesizer",
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "represented"
+    },
+    {
+      "source": "Standardized Output Format Examples",
+      "requirement": "Preserve event JSON field structure and Markdown format guidance as examples. Timestamp, paths, counts, symbols, platforms, Redis, C snippets, memory choices, and threading choices are illustrative values, not project facts or universal design requirements.",
+      "steps": [
+        "python_to_c.event_system/event_system"
+      ],
+      "treatment": "example structure used; complete literal examples retained in source_instruction"
+    },
+    {
+      "source": "Inter-Agent Communication Format",
+      "requirement": "Pass complete prior-phase answers, including child values and steps, downstream. The shared agent_context example identifies useful information categories; its sample discoveries and decisions are not prefilled.",
+      "steps": [
+        "phase2_complete",
+        "phase3_complete",
+        "architecture_synthesizer",
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "information flow represented; sample text preserved"
+    },
+    {
+      "source": "Agent Orchestration Configuration / named workers without full configurations",
+      "requirement": "The other fifteen responsibilities remain separate assignments. Their prompts are minimal operationalizations of their role names, phase purpose, and downstream documentation requirements.",
+      "steps": [
+        "python_to_c.platform_abstraction/platform_abstraction",
+        "python_to_c.plugin_system/plugin_system",
+        "python_to_c.core_structure/core_structure",
+        "python_to_c.data_flow/data_flow",
+        "python_to_c.routing/routing",
+        "python_to_c.state_management/state_management",
+        "python_to_c.algorithm/algorithm",
+        "python_to_c.interface/interface",
+        "python_to_c.resource/resource",
+        "python_to_c.error_handling/error_handling",
+        "python_to_c.data_structure/data_structure",
+        "python_to_c.threading/threading",
+        "python_to_c.performance/performance",
+        "architecture_synthesizer",
+        "implementation_guide"
+      ],
+      "treatment": "derived prompts; source has no detailed contracts for these roles"
+    },
+    {
+      "source": "Source user interactions, independence, repetition, and recursion",
+      "requirement": "No questions, approvals, feedback steps, fresh context, per-item workflow loop, or recursive call is authored. Per-pattern and per-allocation analysis stays within its designated assignment. Runtime retry is retained separately as unresolved.",
+      "steps": [
+        "python_to_c.event_system/event_system",
+        "python_to_c.memory_model/memory_model"
+      ],
+      "treatment": "source scope preserved"
+    },
+    {
+      "source": "Event System, Memory Model, and Validation Agent / OUTPUT FILES",
+      "requirement": "The six exact path templates map to file-body fields in assignment answers through artifacts metadata.",
+      "steps": [
+        "python_to_c.event_system/event_system",
+        "python_to_c.event_system/event_system",
+        "python_to_c.memory_model/memory_model",
+        "python_to_c.memory_model/memory_model",
+        "documentation_complete",
+        "documentation_complete"
+      ],
+      "treatment": "content and destinations preserved; filesystem writes unresolved"
+    },
+    {
+      "source": "Agent Orchestration Configuration / timeouts, retry and phase failure policies, monitoring, checkpoint saves",
+      "requirement": "Preserve the literal runtime requirements without claiming metadata executes them.",
+      "steps": [
+        "phase1_complete",
+        "phase2_complete",
+        "phase3_complete",
+        "architecture_synthesizer",
+        "implementation_guide",
+        "documentation_complete"
+      ],
+      "treatment": "retained in source_execution_requirements and unresolved_requirements"
+    }
+  ],
+  "unresolved_requirements": [
+    {
+      "id": "external_event_schema",
+      "source": "Event System Agent / validation_rules.json_schema",
+      "requirement": "event_system_analysis_schema.json",
+      "reason": "This external schema is named but not supplied. The inline event schema preserves the visible example structure and explicitly required sections, but cannot establish compliance with the missing schema.",
+      "affected_steps": [
+        "python_to_c.event_system/event_system"
+      ]
+    },
+    {
+      "id": "unspecified_worker_contracts",
+      "source": "Agent Orchestration Configuration / orchestration.phases[*].agents",
+      "requirement": "Full prompts, exact JSON contracts, and artifact filenames for the fifteen roles without full configuration examples.",
+      "reason": "Only role names, phase placement, and overall documentation goals are supplied. Derived role prompts and object answer schemas allow those assignments to be expressed; additional original requirements or exact filenames cannot be recovered.",
+      "affected_steps": [
+        "python_to_c.platform_abstraction/platform_abstraction",
+        "python_to_c.plugin_system/plugin_system",
+        "python_to_c.core_structure/core_structure",
+        "python_to_c.data_flow/data_flow",
+        "python_to_c.routing/routing",
+        "python_to_c.state_management/state_management",
+        "python_to_c.algorithm/algorithm",
+        "python_to_c.interface/interface",
+        "python_to_c.resource/resource",
+        "python_to_c.error_handling/error_handling",
+        "python_to_c.data_structure/data_structure",
+        "python_to_c.threading/threading",
+        "python_to_c.performance/performance",
+        "architecture_synthesizer",
+        "implementation_guide"
+      ]
+    }
+  ],
+  "conversion_notes": {
+    "source_interpretation": "Instantiate the procedure described by the example configurations and orchestration; retain sample payloads and implementation choices as illustrations.",
+    "metadata": "source_instruction, source_mapping, unresolved_requirements, artifacts, source_execution_requirements, and conversion_notes are provenance/contract metadata. Executable structure is in steps and workflows.",
+    "answer_envelopes": "analysis/guide and report/summary are transport envelopes for the paired artifact bodies. The JSON file body is the indicated nested value, preserving its original field contract.",
+    "completion": "After the final validator returns, documentation_complete is reached even if validation_passed is false. Runtime failure, retry, timeout, and durability requirements remain explicitly unresolved.",
+    "semantic_equation_provenance": {
+      "source": "docs/semantics/semantic_equation_reuse_rule.md",
+      "revision": "196ccd2d6a5be177ec581d64a915643c07deac6951cc7f3d6642ca0a2a1bc785"
+    },
+    "supplied_metaform": {}
+  },
+  "execution_requirements": [
+    {
+      "capability": "host_filesystem_read_write",
+      "binding": "A worker host with access to input_directory and output_dir materializes authored OUTPUT FILES. The Codex command harness supplies filesystem/process tools in its working scope."
+    }
+  ]
+}

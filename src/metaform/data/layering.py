@@ -160,7 +160,10 @@ def finish(tx: Tx, layer: str) -> Layer | Outcome:
 def discard(tx: Tx, layer: str) -> Outcome:
     """Delete a knowledge layer's content and the layer; identity and type rows stay, STORE-032."""
     found = rows.layer(tx, layer)
-    if found.kind == 'intake':
+    # The intake layer that made the map's elements and joins is the map itself; a layer of the intake's kind that
+    # holds only items on the map's nodes, such as fields or refs, is discarded like any other.
+    if found.kind == 'intake' and any(tx.db.execute(f'SELECT 1 FROM {table} WHERE layer_id=? LIMIT 1', (found.layer_id,)).fetchone()
+                                      for table in ('elements', 'joins')):
         return Outcome((Notice('layer', f'{found.name} is the intake layer and is never discarded; the metaform '
                                         f'changes by refining: {rows.refine_step()}. Nothing changed.'),))
     if found.kind == 'memory':
@@ -213,6 +216,7 @@ def _heir(db: sqlite3.Connection, element_id: str, leaving: str) -> str | None:
         " UNION ALL SELECT layer_id, 1, row FROM items WHERE (target_kind='element' AND target_id=:e)"
         "  OR (link_kind='element' AND link_id=:e)"
         ' UNION ALL SELECT layer_id, 2, row FROM joins WHERE receiver=:e'
+        '  OR element=(SELECT address FROM current_elements WHERE element_id=:e)'
         '  OR row IN (SELECT join_row FROM join_elements WHERE element_id=:e)) '
         'WHERE layer_id<>:l AND layer_id NOT IN (SELECT layer_id FROM elements WHERE element_id=:e) '
         'ORDER BY kind, row LIMIT 1', {'e': element_id, 'l': leaving}).fetchone()
@@ -310,7 +314,8 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
     allowed = writes.split_changes(kind, given, notices)
     if not remove and given and not allowed:
         return Outcome(tuple(notices))
-    columns = {key: base[key] for key in base.keys() if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
+    columns = {key: base[key] for key in base.keys()  # noqa: SIM118  SQLite rows iterate values; keys() returns column names
+               if key not in ('row', 'layer_id', 'op', 'reason', 'evidence')}
     split: list[tuple[str, Any]] = []
     held: list[str] | None = None
     if not remove:

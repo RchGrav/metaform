@@ -230,6 +230,97 @@ def test_the_notice_and_its_commands_run_whatever_the_folder_surface(under, caps
     assert harness.known(HARNESS)
 
 
+def earlier_installs(home: Path, *, recorded: bool) -> list[str]:
+    """A schema-2 home, including an optional harness recorded before the upgrade."""
+    from metaform import harness
+    from metaform import home as metaform_home
+    home.mkdir()
+    with sqlite3.connect(home / 'metaform.sqlite3') as db:
+        db.executescript(metaform_home.BASE_SCHEMA)
+        db.execute("INSERT INTO meta VALUES ('schema_version', '2')")
+        db.execute("INSERT INTO meta VALUES ('last_run_version', '2026.9.30.2')")
+        db.execute("INSERT INTO module_state VALUES ('hello', 1)")
+        db.execute("INSERT INTO settings VALUES ('global', '', 'debug', 0, 'true')")
+        db.executemany('INSERT INTO installs VALUES (?, ?, ?, ?)',
+                       [(tool, 'original.whl', 'original/SKILL.md', '2026-10-02T12:00:00Z')
+                        for tool in ('claude', 'codex', 'gemini', 'vscode', 'cursor', 'retired')])
+        if recorded:
+            db.execute(harness.HARNESSES)
+            db.execute('INSERT INTO harnesses VALUES (?, ?, ?)',
+                       (harness.key(OTHER), str(OTHER.with_name('earlier')), '2026-10-03T12:00:00Z'))
+        return list(db.iterdump())
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.req('STORE-029')
+@pytest.mark.parametrize('recorded_before', [False, True])
+@pytest.mark.parametrize('write', [False, True])
+def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, recorded_before, write):
+    from metaform import harness, install
+    from metaform import home as metaform_home
+    earlier_installs(home, recorded=recorded_before)
+    temporary = Path(tempfile.gettempdir()) / 'gemini' / 'gemini'
+    binaries = {'claude': str(HARNESS), 'codex': str(OTHER), 'gemini': str(temporary), 'code': None}
+    looked_up = []
+
+    def which(command):
+        looked_up.append(command)
+        return binaries[command]
+
+    monkeypatch.setattr(install.shutil, 'which', which)
+    with metaform_home.base(write=write) as db:
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
+        assert db.execute("SELECT value FROM meta WHERE key='last_run_version'").fetchone() == ('2026.9.30.2',)
+        assert db.execute('SELECT * FROM module_state').fetchall() == [('hello', 1)]
+        assert db.execute('SELECT * FROM settings').fetchall() == [('global', '', 'debug', 0, 'true')]
+        assert db.execute('SELECT COUNT(*) FROM installs').fetchone() == (6,)
+        rows = {key: (binary, done) for key, binary, done in db.execute('SELECT * FROM harnesses')}
+    assert sorted(looked_up) == ['claude', 'code', 'codex', 'gemini']
+    assert rows == {
+        harness.key(HARNESS): (str(HARNESS), '2026-10-02T12:00:00Z'),
+        harness.key(OTHER): ((str(OTHER.with_name('earlier')), '2026-10-03T12:00:00Z')
+                             if recorded_before else (str(OTHER), '2026-10-02T12:00:00Z')),
+    }
+    monkeypatch.setattr(harness, 'running', lambda: HARNESS)
+    assert harness.known(HARNESS) and harness.notice() is None
+    assert harness.known(OTHER)
+    assert not harness.known(temporary)
+    assert not harness.known(ROOT / 'opt' / 'unrecorded' / 'agent')
+
+    def no_more_lookups(command):
+        pytest.fail(f'upgrade repeated the binary lookup for {command}')
+
+    monkeypatch.setattr(install.shutil, 'which', no_more_lookups)
+    with metaform_home.base() as db:
+        assert db.execute('SELECT COUNT(*) FROM harnesses').fetchone() == (2,)
+    assert harness.notice() is None
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.req('STORE-029')
+def test_failed_home_upgrade_preserves_schema_and_records_for_retry(home, monkeypatch):
+    from metaform import harness, install
+    from metaform import home as metaform_home
+    before = earlier_installs(home, recorded=False)
+    monkeypatch.setattr(install.shutil, 'which', lambda command: str(HARNESS if command == 'claude' else OTHER))
+    real_key = harness.key
+
+    def fail_after_first(binary):
+        if binary == str(OTHER):
+            raise OSError('binary lookup failed')
+        return real_key(binary)
+
+    monkeypatch.setattr(harness, 'key', fail_after_first)
+    with pytest.raises(OSError, match='binary lookup failed'), metaform_home.base():
+        pass
+    with sqlite3.connect(home / 'metaform.sqlite3') as db:
+        assert list(db.iterdump()) == before
+    monkeypatch.setattr(harness, 'key', real_key)
+    assert harness.known(HARNESS)
+    with metaform_home.base() as db:
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
+
+
 # metaform install records the harnesses it sets up, so those never see the notice -------------------------------
 
 @pytest.fixture

@@ -2,16 +2,26 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
 from fakes import calls, recorder, server
+
+from metaform import __version__
 
 pytestmark = pytest.mark.kind('simulation')
 
 ROOT = Path(__file__).parents[1]
 SKILL = (ROOT / 'src' / 'metaform' / 'skill' / 'SKILL.md')
 CURSOR_BEFORE = {'mcpServers': {'other': {'command': 'other-server', 'args': []}}}
+VERSION_PARTS = tuple(int(part) for part in __version__.split('.'))
+NEWER_UPDATE = '.'.join(str(part) for part in (*VERSION_PARTS[:3], VERSION_PARTS[3] + 10))
+NEWER_DATE = f'{VERSION_PARTS[0] + 1}.1.1.1'
+OLDER_VERSION = f'{VERSION_PARTS[0] - 1}.1.1.1'
 
 
 @pytest.fixture
@@ -38,6 +48,115 @@ def tree(folder: Path) -> dict[str, bytes]:
 
 def entry(wheel):
     return ['uvx', '--from', str(wheel), 'metaform', 'mcp', 'serve']
+
+
+@pytest.mark.req('BASE-001')
+@pytest.mark.req('MCP-010')
+@pytest.mark.parametrize('disabled', ['mcp', 'all'])
+def test_without_a_server_install_skills_without_touching_mcp(run, machine, home, disabled):
+    modules = ['mcp'] if disabled == 'mcp' else [
+        line.split()[0] for line in run('list', 'modules').stdout.splitlines() if line.strip()]
+    for module in modules:
+        run('disable', module)
+    env = {**machine['env'], 'METAFORM_WHEEL': ''}
+    for binary in ('uv', 'uvx'):
+        path = machine['bin'] / binary
+        path.with_suffix('.cmd').unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
+    config = machine['user'] / '.cursor' / 'mcp.json'
+    original = config.read_bytes()
+    out = run('install', 'claude', 'cursor', cwd=machine['folder'], env=env).stdout
+    assert 'no enabled module declares an MCP server' in out
+    assert config.read_bytes() == original and calls(machine['bin'], 'claude') == []
+    assert not (machine['bin'] / 'uvx.requests').exists()
+    assert (machine['user'] / '.claude/skills/metaform/SKILL.md').read_bytes() == SKILL.read_bytes()
+    assert (machine['user'] / '.cursor/skills/metaform/SKILL.md').read_bytes() == SKILL.read_bytes()
+    assert (home / 'skills/metaform/SKILL.md').read_bytes() == SKILL.read_bytes()
+    page = run('help', 'provision').stdout
+    assert 'no enabled module declares an MCP server' in page and 'metaform mcp serve' not in page
+    run('uninstall', 'all', cwd=machine['folder'], env=env)
+    assert config.read_bytes() == original and calls(machine['bin'], 'claude') == []
+    assert not (home / 'skills/metaform/SKILL.md').exists()
+
+
+@pytest.mark.req('BASE-001')
+@pytest.mark.req('MCP-010')
+def test_install_works_with_the_module_folder_physically_absent(machine, home, monkeypatch, tmp_path):
+    from metaform import install, loader
+    empty = tmp_path / 'absent-modules'
+    monkeypatch.setattr(loader, 'SYSTEM', empty)
+    monkeypatch.chdir(machine['folder'])
+    for key, value in machine['env'].items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv('METAFORM_WHEEL', '')
+    output = []
+    install.install(['claude'], output.append)
+    assert any('no enabled module declares an MCP server' in line for line in output)
+    assert calls(machine['bin'], 'claude') == []
+    assert (home / 'skills/metaform/SKILL.md').read_bytes() == SKILL.read_bytes()
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.req('MCP-010')
+def test_install_and_provision_use_the_declaring_modules_server(run, machine, user_module):
+    user_module('bridge', '''
+        from metaform.module import Module, Verb
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        MODULE = Module(id='bridge', summary='A server.', purpose='A server.', mcp_server='listen',
+                        verbs=(Verb('listen', lambda ctx: None, 'Serve.', surfaces=('cli',), transport=True),))
+    ''')
+    run('disable', 'mcp')
+    out = run('install', 'claude', cwd=machine['folder'], env=machine['env']).stdout
+    command = ['uvx', '--from', str(machine['wheel']), 'metaform', 'bridge', 'listen']
+    assert calls(machine['bin'], 'claude')[-1][-len(command):] == command
+    assert 'claude: server starts, 2 tools' in out
+    page = run('help', 'provision').stdout
+    assert 'metaform bridge listen' in page and 'metaform mcp serve' not in page
+    run('enable', 'mcp')
+    refused = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2 and '--install-server' in refused.stderr
+    run('set', '--install-server', 'bridge')
+    run('install', 'claude', cwd=machine['folder'], env=machine['env'])
+    assert calls(machine['bin'], 'claude')[-1][-len(command):] == command
+    run('disable', 'bridge')
+    refused = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2 and '--install-server' in refused.stderr
+
+
+@pytest.mark.req('BASE-035')
+@pytest.mark.parametrize('declaration', [
+    "mcp_server='missing', verbs=()",
+    "mcp_server='listen', verbs=(Verb('listen', lambda ctx: None, 'Serve.'),)",
+    "mcp_server='listen', verbs=(Verb('listen', lambda ctx: None, 'Serve.', transport=True, surfaces=('mcp',)),)",
+    ("mcp_server='listen', verbs=(Verb('listen', lambda ctx: None, 'Serve.', transport=True, "
+     "nouns=(Noun('required', 'Required.'),)),)"),
+])
+def test_invalid_server_declarations_are_reported_and_never_registered(run, machine, user_module, declaration):
+    user_module('badserver', f'''
+        from metaform.module import Module, Verb, Noun
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        MODULE = Module(id='badserver', summary='Bad server.', purpose='Bad server.', {declaration})
+    ''')
+    row = next(line for line in run('list', 'modules').stdout.splitlines() if line.startswith('badserver '))
+    assert 'error' in row and 'mcp_server' in row
+    run('disable', 'mcp')
+    run('install', 'claude', cwd=machine['folder'], env={**machine['env'], 'METAFORM_WHEEL': ''})
+    assert calls(machine['bin'], 'claude') == []
+
+
+@pytest.mark.req('MCP-019')
+@pytest.mark.req('MCP-020')
+def test_skill_only_rerun_preserves_an_existing_registration_and_its_ownership(run, machine):
+    run('install', 'claude', 'cursor', cwd=machine['folder'], env=machine['env'])
+    config = machine['user'] / '.cursor' / 'mcp.json'
+    original = config.read_bytes()
+    previous_calls = calls(machine['bin'], 'claude')
+    run('disable', 'mcp')
+    run('install', 'claude', 'cursor', cwd=machine['folder'], env={**machine['env'], 'METAFORM_WHEEL': ''})
+    assert config.read_bytes() == original and calls(machine['bin'], 'claude') == previous_calls
+    run('uninstall', 'all', cwd=machine['folder'], env={**machine['env'], 'METAFORM_WHEEL': ''})
+    assert json.loads(config.read_text()) == CURSOR_BEFORE
+    assert calls(machine['bin'], 'claude')[-1][:2] == ['mcp', 'remove']
 
 
 @pytest.mark.req('MCP-013')
@@ -75,14 +194,15 @@ def test_without_a_terminal_or_names_nothing_changes_and_both_forms_are_named(ru
 @pytest.mark.req('MCP-014')
 @pytest.mark.req('MCP-016')
 @pytest.mark.req('MCP-021')
-def test_install_claude_touches_only_claude_and_the_skill(run, machine, home):
+def test_install_claude_touches_only_claude_and_shared_skills(run, machine, home):
     before = tree(machine['user'])
     out = run('install', 'claude', cwd=machine['folder'], env=machine['env']).stdout
     assert calls(machine['bin'], 'claude')[-1] == ['mcp', 'add', '--transport', 'stdio', '--scope', 'user',
                                                    'metaform', '--', *entry(machine['wheel'])]
     assert calls(machine['bin'], 'codex') == []
     changed = {name for name, data in tree(machine['user']).items() if before.get(name) != data}
-    assert changed == {str(Path('.claude/skills/metaform/SKILL.md')), str(Path('.agents/skills/metaform/SKILL.md'))}
+    assert changed == {str(Path('.claude/skills/metaform/SKILL.md')), str(Path('.agents/skills/metaform/SKILL.md')),
+                       str(Path('.claude/CLAUDE.md')), str(Path('.claude/settings.json'))}
     for copy in (machine['user'] / '.claude' / 'skills' / 'metaform' / 'SKILL.md',
                  home / 'skills' / 'metaform' / 'SKILL.md'):
         assert copy.read_bytes() == SKILL.read_bytes()
@@ -235,6 +355,10 @@ def test_uninstall_removes_what_install_added_and_leaves_every_other_entry(run, 
     assert json.loads((machine['user'] / '.cursor' / 'mcp.json').read_text()) == CURSOR_BEFORE
     assert skills(machine['user']) == [] and skills(home / 'skills') == []
     after = tree(machine['user'])
+    # Instructions remain as files, with the installed block removed. Empty hook settings hold no additions.
+    assert after.pop(str(Path('.claude/CLAUDE.md'))) == b''
+    assert after.pop(str(Path('.codex/AGENTS.md'))) == b''
+    assert json.loads(after.pop(str(Path('.claude/settings.json')))) == {}
     assert {name: data for name, data in after.items() if not name.endswith('mcp.json')} == \
         {name: data for name, data in before.items() if not name.endswith('mcp.json')}
     backups = list((home / 'backups' / 'uninstall').rglob('mcp.json'))
@@ -271,3 +395,535 @@ def test_uninstall_without_a_terminal_or_names_changes_nothing(run, machine, hom
     assert result.returncode == 2
     assert result.stderr.splitlines()[-1] == 'Next: metaform uninstall <tool>... or metaform uninstall all'
     assert tree(machine['user']) == before and calls(machine['bin'], 'claude')[-1][:2] == ['mcp', 'add']
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('version', [NEWER_UPDATE, NEWER_DATE])
+def test_a_wheel_refuses_a_newer_installed_version_before_setup(run, machine, home, version):
+    from fakes import executable
+
+    executable(machine['bin'], 'metaform', f'import sys\nassert sys.argv[1:] == ["--version"]\nprint("metaform {version}")')
+    from metaform import home as metaform_home
+    metaform_home.set_meta('installed_version', OLDER_VERSION)
+    metaform_home.set_meta('last_run_version', OLDER_VERSION)
+    before = tree(machine['user'])
+    refused = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2 and version in refused.stderr and 'force=true' in refused.stderr
+    assert calls(machine['bin'], 'uv') == calls(machine['bin'], 'claude') == []
+    assert tree(machine['user']) == before
+    assert metaform_home.meta('installed_version') == metaform_home.meta('last_run_version') == OLDER_VERSION
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('installed', [False, True, 'same'])
+@pytest.mark.parametrize('force', [False, True])
+def test_a_permitted_wheel_installs_before_setup_and_authorizes_the_next_run(run, machine, installed, force):
+    from fakes import executable
+
+    from metaform import home as metaform_home
+    previous = NEWER_DATE if force else OLDER_VERSION
+    if installed:
+        executable_version = __version__ if installed == 'same' else previous
+        executable(machine['bin'], 'metaform', f'import sys\nassert sys.argv[1:] == ["--version"]\nprint("metaform {executable_version}")')
+    metaform_home.set_meta('last_run_version', previous)
+    metaform_home.set_meta('installed_version', previous)
+    read_approval = ('import os, sqlite3\n'
+                     'db = sqlite3.connect(os.path.join(os.environ["METAFORM_HOME"], "metaform.sqlite3"))\n'
+                     'approval = db.execute("SELECT value FROM meta WHERE key=\'installed_version\'").fetchone()[0]\n'
+                     'db.close()\n')
+    uv_script = machine['bin'] / 'uv.py'
+    uv_script.write_text(uv_script.read_text(encoding='utf-8') +
+                         '\n' + read_approval + f'assert approval == {previous!r}\n',
+                         encoding='utf-8')
+    claude_script = machine['bin'] / 'claude.py'
+    claude_script.write_text(read_approval + f'assert approval == {__version__!r}\n' +
+                             claude_script.read_text(encoding='utf-8'), encoding='utf-8')
+    result = run('install', 'claude', f'force={str(force).lower()}', cwd=machine['folder'], env=machine['env'])
+    assert calls(machine['bin'], 'uv') == [['tool', 'install', '--force', str(machine['wheel'])]]
+    assert result.stdout.index('Installed:') < result.stdout.index('Changes:')
+    assert metaform_home.meta('installed_version') == __version__
+    run('list', 'projects', env={**machine['env'], 'METAFORM_WHEEL': ''})
+    assert metaform_home.meta('last_run_version') == __version__
+
+
+@pytest.mark.req('BASE-047')
+def test_a_failed_wheel_install_records_no_success_and_never_sets_up_tools(run, machine):
+    from fakes import executable
+
+    from metaform import home as metaform_home
+    executable(machine['bin'], 'uv', 'import sys\nprint("cannot install", file=sys.stderr)\nsys.exit(1)')
+    before = tree(machine['user'])
+    failed = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert failed.returncode == 1 and 'cannot install' in failed.stderr
+    assert metaform_home.meta('installed_version') is None
+    assert calls(machine['bin'], 'claude') == [] and tree(machine['user']) == before
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('record', ['installed_version', 'last_run_version'])
+def test_the_stage_checks_home_history_even_after_a_raw_install(run, machine, record):
+    from fakes import executable
+
+    from metaform import home as metaform_home
+    executable(machine['bin'], 'metaform', f'print("metaform {OLDER_VERSION}")')
+    metaform_home.set_meta(record, NEWER_DATE)
+    refused = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2 and NEWER_DATE in refused.stderr
+    assert calls(machine['bin'], 'uv') == calls(machine['bin'], 'claude') == []
+    assert metaform_home.meta(record) == NEWER_DATE
+    other = 'installed_version' if record == 'last_run_version' else 'last_run_version'
+    assert metaform_home.meta(other) is None
+
+
+@pytest.mark.req('BASE-047')
+def test_an_installed_copy_only_sets_up_tools_and_force_recovers_a_raw_downgrade(run, machine):
+    from metaform import home as metaform_home
+    metaform_home.set_meta('last_build', str(machine['wheel']))
+    metaform_home.set_meta('last_run_version', NEWER_DATE)
+    run('install', 'claude', 'force=true', cwd=machine['folder'],
+        env={**machine['env'], 'METAFORM_WHEEL': ''})
+    assert calls(machine['bin'], 'uv') == []
+    assert calls(machine['bin'], 'claude')[0][:2] == ['mcp', 'add']
+    assert metaform_home.meta('installed_version') == metaform_home.meta('last_run_version') == __version__
+    run('list', 'projects', env={**machine['env'], 'METAFORM_WHEEL': ''})
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('force', ['false', 'yes'])
+def test_force_must_be_true_to_allow_a_downgrade(run, machine, force):
+    from metaform import home as metaform_home
+    metaform_home.set_meta('last_run_version', NEWER_DATE)
+    refused = run('install', 'claude', f'force={force}', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert refused.returncode == 2
+    assert calls(machine['bin'], 'uv') == calls(machine['bin'], 'claude') == []
+
+
+@pytest.mark.req('BASE-047')
+def test_first_run_checks_a_raw_downgrade_without_changing_its_version_records(run, home, tmp_path):
+    from metaform import home as metaform_home
+    metaform_home.set_meta('installed_version', OLDER_VERSION)
+    metaform_home.set_meta('last_run_version', NEWER_DATE)
+    folder = tmp_path / 'refused-project'
+    folder.mkdir()
+    refused = run('add', 'project', 'refused', str(folder), env={'METAFORM_WHEEL': ''}, ok=False)
+    assert refused.returncode == 2 and __version__ in refused.stderr and NEWER_DATE in refused.stderr
+    assert refused.stderr.splitlines()[-1] == 'Next: metaform install force=true'
+    assert metaform_home.meta('installed_version') == OLDER_VERSION
+    assert metaform_home.meta('last_run_version') == NEWER_DATE
+    assert not metaform_home.projects()
+    assert not (home / 'projects').exists()
+    assert run('--version', env={'METAFORM_WHEEL': ''}).stdout.strip() == f'metaform {__version__}'
+    assert metaform_home.meta('last_run_version') == NEWER_DATE
+
+
+@pytest.mark.req('BASE-047')
+def test_a_raw_upgrade_records_its_version_and_a_direct_wheel_does_not(run, machine):
+    from metaform import home as metaform_home
+    metaform_home.set_meta('installed_version', OLDER_VERSION)
+    metaform_home.set_meta('last_run_version', OLDER_VERSION)
+    run('list', 'projects', env={'METAFORM_WHEEL': ''})
+    assert metaform_home.meta('last_run_version') == __version__
+    assert metaform_home.meta('installed_version') is None
+    metaform_home.set_meta('last_run_version', NEWER_DATE)
+    run('list', 'projects', cwd=machine['folder'], env=machine['env'])
+    assert metaform_home.meta('last_run_version') == NEWER_DATE
+    assert metaform_home.meta('installed_version') is None
+
+
+@pytest.mark.req('BASE-047')
+def test_version_probe_works_without_reading_an_incompatible_home(home, monkeypatch, capsys):
+    from metaform import cli, harness
+    from metaform import home as metaform_home
+
+    with metaform_home.base(write=True) as db:
+        db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
+    before = (home / 'metaform.sqlite3').read_bytes()
+    monkeypatch.setattr(harness, 'running', lambda: Path('/opt/base047-harness/codex'))
+    assert cli.main(['--version']) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f'metaform {__version__}' and captured.err == ''
+    assert (home / 'metaform.sqlite3').read_bytes() == before
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize(('current', 'previous'), [
+    ('2026.10.1.1', '2026.9.30.9'), ('2026.9.30.10', '2026.9.30.9'),
+    ('2026.9.30.9', '2026.10.1.1'), ('2026.9.30.9', '2026.9.30.10'),
+])
+def test_numeric_version_boundaries_control_wheel_installation(machine, home, monkeypatch, current, previous):
+    from fakes import executable
+
+    from metaform import home as metaform_home
+    from metaform import install
+    from metaform.errors import Stop
+
+    for key, value in machine['env'].items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(install, '__version__', current)
+    executable(machine['bin'], 'metaform', f'print("metaform {previous}")')
+    newer = tuple(map(int, current.split('.'))) > tuple(map(int, previous.split('.')))
+    if newer:
+        install.stage(machine['wheel'], 'uv', False, lambda text: None, 'retry')
+        assert calls(machine['bin'], 'uv') == [['tool', 'install', '--force', str(machine['wheel'])]]
+        assert metaform_home.meta('installed_version') == current
+    else:
+        with pytest.raises(Stop, match='downgrade'):
+            install.stage(machine['wheel'], 'uv', False, lambda text: None, 'retry')
+        assert calls(machine['bin'], 'uv') == []
+        assert metaform_home.meta('installed_version') is None
+
+
+@pytest.mark.req('BASE-047')
+def test_raw_upgrade_retires_an_old_stage_approval_before_a_raw_downgrade(home, monkeypatch):
+    from metaform import home as metaform_home
+    from metaform import install
+    from metaform.errors import Stop
+
+    monkeypatch.delenv('METAFORM_WHEEL', raising=False)
+    metaform_home.set_meta('installed_version', OLDER_VERSION)
+    metaform_home.set_meta('last_run_version', OLDER_VERSION)
+    monkeypatch.setattr(install, '__version__', NEWER_DATE)
+    install.backstage()
+    assert metaform_home.meta('installed_version') is None
+    assert metaform_home.meta('last_run_version') == NEWER_DATE
+    monkeypatch.setattr(install, '__version__', OLDER_VERSION)
+    with pytest.raises(Stop, match='downgrade'):
+        install.backstage()
+    assert metaform_home.meta('installed_version') is None
+    assert metaform_home.meta('last_run_version') == NEWER_DATE
+
+
+@pytest.mark.req('BASE-047', 'STORE-002')
+def test_direct_wheel_and_version_probe_do_not_create_a_version_database(home, run, machine):
+    run('--version', env={'METAFORM_WHEEL': ''})
+    assert not (home / 'metaform.sqlite3').exists()
+    run('list', 'projects', cwd=machine['folder'], env=machine['env'])
+    assert not (home / 'metaform.sqlite3').exists()
+
+
+@pytest.mark.req('BASE-047')
+def test_concurrent_wheel_installs_cannot_replace_a_newer_install_with_an_older_one(machine, home):
+    from fakes import executable
+
+    from metaform import home as metaform_home
+
+    state = machine['bin'] / 'installed-version'
+    state.write_text(OLDER_VERSION, encoding='utf-8')
+    started, release = machine['bin'] / 'old-started', machine['bin'] / 'release-old'
+    ready = machine['bin'] / 'new-ready'
+    executable(machine['bin'], 'metaform', f'from pathlib import Path\nprint("metaform " + Path({str(state)!r}).read_text())')
+    executable(machine['bin'], 'uv', f'''
+        import os, time
+        from pathlib import Path
+        version = os.environ['BASE047_TEST_VERSION']
+        if version == {__version__!r}:
+            Path({str(started)!r}).touch()
+            deadline = time.monotonic() + 15
+            while not Path({str(release)!r}).exists():
+                if time.monotonic() > deadline:
+                    raise RuntimeError('test did not release old installation')
+                time.sleep(0.01)
+        Path({str(state)!r}).write_text(version, encoding='utf-8')
+    ''')
+    script = ('import os\nfrom pathlib import Path\nfrom metaform import install\n'
+              'install.__version__ = os.environ["BASE047_TEST_VERSION"]\n'
+              f'if install.__version__ == {NEWER_DATE!r}: Path({str(ready)!r}).touch()\n'
+              f'install.stage(Path({str(machine["wheel"])!r}), "uv", False, print, "retry")\n')
+    processes = []
+    try:
+        for version, marker in ((__version__, started), (NEWER_DATE, ready)):
+            process = subprocess.Popen([sys.executable, '-c', script], cwd=machine['folder'],
+                                       env={**os.environ, **machine['env'], 'METAFORM_HOME': str(home),
+                                            'BASE047_TEST_VERSION': version},
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+            processes.append(process)
+            deadline = time.monotonic() + 10
+            while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert marker.exists(), process.communicate(timeout=5)
+        # Without serialization the newer install completes while the older uv is paused.
+        try:
+            processes[1].communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        release.touch()
+        for process in processes:
+            out, err = process.communicate(timeout=15)
+            assert process.returncode == 0, out + err
+        assert state.read_text(encoding='utf-8') == NEWER_DATE
+        assert metaform_home.meta('installed_version') == NEWER_DATE
+    finally:
+        release.touch()
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+
+
+@pytest.mark.req('BASE-047')
+@pytest.mark.parametrize('command', ['uv', 'metaform'])
+def test_stage_timeouts_name_a_valid_retry_and_keep_downgrade_consent(machine, home, monkeypatch, command):
+    import shlex
+
+    from fakes import executable
+
+    from metaform import install
+    binary = executable(machine['bin'], command, 'import time\ntime.sleep(30)')
+    for key, value in machine['env'].items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(install, 'TOOL_TIMEOUT', 0.2)
+    with pytest.raises(install.Failed) as stopped:
+        install.install(['claude', 'force=true'], lambda text: None)
+    assert 'did not finish' in str(stopped.value)
+    if command == 'metaform':
+        assert stopped.value.next_step == f'"{binary}" --version'
+    else:
+        assert shlex.split(stopped.value.next_step) == ['python', str(machine['wheel']), 'install',
+                                                       'claude', 'force=true']
+    assert calls(machine['bin'], 'claude') == []
+
+
+@pytest.mark.req('BASE-047', 'MCP-013')
+def test_wheel_installation_precedes_ai_setup_prerequisites(run, machine):
+    from metaform import home as metaform_home
+    (machine['bin'] / ('uvx.cmd' if (machine['bin'] / 'uvx.cmd').exists() else 'uvx')).unlink()
+    result = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert result.returncode == 2 and 'uvx' in result.stderr
+    assert calls(machine['bin'], 'uv') == [['tool', 'install', '--force', str(machine['wheel'])]]
+    assert metaform_home.meta('installed_version') == __version__
+    assert calls(machine['bin'], 'claude') == []
+
+
+@pytest.mark.req('MCP-036', 'MCP-015')
+@pytest.mark.parametrize('tool,filename', [('claude', 'CLAUDE.md'), ('codex', 'AGENTS.md'), ('gemini', 'GEMINI.md')])
+def test_global_pointer_preserves_authored_bytes_and_has_a_backup(run, machine, home, tool, filename):
+    recorder(machine['bin'], 'gemini')
+    path = machine['user'] / f'.{tool}' / filename
+    path.parent.mkdir(parents=True)
+    original = b'# My rules\r\nKeep my work private.'
+    path.write_bytes(original)
+    out = run('install', tool, cwd=machine['folder'], env=machine['env']).stdout
+    pointer = ('This system orchestrates work using Metaform. You must use its active features. '
+               'Read them with `metaform help agents`, or the metaform tool\'s instructions command.')
+    assert path.read_bytes().startswith(original)
+    assert pointer in path.read_text()
+    assert str(path) in out and pointer in out
+    backups = list((home / 'backups' / 'install').rglob(filename))
+    assert len(backups) == 1 and backups[0].read_bytes() == original
+    once = path.read_bytes()
+    run('install', tool, cwd=machine['folder'], env=machine['env'])
+    assert path.read_bytes() == once
+    run('uninstall', tool, cwd=machine['folder'], env=machine['env'])
+    assert path.read_bytes() == original
+
+
+@pytest.mark.req('MCP-036', 'MCP-028', 'MCP-020')
+def test_provision_installs_an_executable_passive_claude_hook_and_preserves_other_hooks(run, machine, home):
+    from metaform import prompt_files
+    settings = machine['user'] / '.claude' / 'settings.json'
+    settings.parent.mkdir(parents=True)
+    other = {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'my-check'}]}
+    original = {'permissions': {'deny': ['Bash(rm *)']}, 'hooks': {'PreToolUse': [other]}}
+    settings.write_text(json.dumps(original))
+    before = settings.read_bytes()
+    out = run('provision', 'claude', cwd=machine['folder'], env=machine['env']).stdout
+    assert str(settings) in out
+    configured = json.loads(settings.read_text())
+    assert configured['permissions'] == original['permissions']
+    assert configured['hooks']['PreToolUse'][0] == other
+    added = configured['hooks']['PreToolUse'][1]
+    import re
+    assert all(re.fullmatch(added['matcher'], tool) for tool in ('Agent', 'Task', 'AskUserQuestion'))
+    assert not re.fullmatch(added['matcher'], 'Bash')
+    handler = added['hooks'][0]
+    result = subprocess.run([handler['command'], *handler['args']], cwd=machine['folder'],
+                            input='{}', text=True, capture_output=True, check=False)
+    assert result.returncode == 0 and not result.stderr
+    assert json.loads(result.stdout) == {'hookSpecificOutput': {
+        'hookEventName': 'PreToolUse', 'additionalContext': prompt_files.chassis('work_reminder')}}
+    assert calls(machine['bin'], 'claude') == []
+    assert not (home / 'metaform.sqlite3').exists() or not recorded_installs(home)
+    backups = list((home / 'backups' / 'provision').rglob('settings.json'))
+    assert len(backups) == 1 and backups[0].read_bytes() == before
+    run('provision', 'claude', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == configured
+    run('uninstall', 'claude', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == original
+    assert calls(machine['bin'], 'claude') == []
+
+
+def recorded_installs(home):
+    import sqlite3
+    with sqlite3.connect(home / 'metaform.sqlite3') as db:
+        return list(db.execute('SELECT tool FROM installs'))
+
+
+@pytest.mark.req('MCP-036', 'MCP-015')
+@pytest.mark.parametrize('content', ['{broken', '[]', '{"hooks": []}', '{"hooks": {"PreToolUse": {}}}'])
+def test_invalid_hook_settings_are_unchanged_and_no_global_pointer_is_written(run, machine, content):
+    settings = machine['user'] / '.claude' / 'settings.json'
+    settings.parent.mkdir(parents=True)
+    settings.write_text(content)
+    result = run('install', 'claude', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert result.returncode == 2 and str(settings) in result.stderr
+    assert settings.read_text() == content
+    assert not (settings.parent / 'CLAUDE.md').exists()
+    assert calls(machine['bin'], 'claude') == []
+
+
+@pytest.mark.req('MCP-036')
+def test_codex_pointer_uses_codex_home(run, machine):
+    alternate = machine['user'] / 'my-codex'
+    run('provision', 'codex', cwd=machine['folder'], env={**machine['env'], 'CODEX_HOME': str(alternate)})
+    assert 'This system orchestrates work using Metaform.' in (alternate / 'AGENTS.md').read_text()
+    assert not (machine['user'] / '.codex').exists()
+
+
+@pytest.mark.req('MCP-036', 'MCP-015', 'MCP-020')
+@pytest.mark.parametrize('action', ['provision', 'uninstall'])
+def test_pointer_revision_preserves_existing_rules_and_remains_owned(home, machine, monkeypatch, action):
+    from metaform import install, prompt_files
+
+    monkeypatch.setattr(install, 'user_home', lambda: machine['user'])
+    folder = machine['user'] / 'configured-codex'
+    monkeypatch.setenv('CODEX_HOME', str(folder))
+    folder.mkdir()
+    path = folder / 'AGENTS.md'
+    original = b'# Existing rules\r\nKeep these bytes.'
+    path.write_bytes(original)
+    install.provision('codex', lambda line: None)
+    installed = path.read_bytes()
+    chassis = prompt_files.chassis
+    revised = chassis('global_instructions') + ' Revised test guidance.'
+    monkeypatch.setattr(prompt_files, 'chassis', lambda name, **fills:
+                        revised if name == 'global_instructions' else chassis(name, **fills))
+
+    if action == 'provision':
+        install.provision('codex', lambda line: None)
+        assert path.read_bytes().startswith(original)
+        assert path.read_text().count(revised) == 1
+        assert any(backup.read_bytes() == installed for backup in (home / 'backups').rglob('AGENTS.md'))
+    install.uninstall(['codex'], lambda line: None)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.req('MCP-036', 'MCP-015', 'MCP-020')
+def test_user_edits_inside_owned_pointer_survive_setup_and_uninstall(home, machine, monkeypatch):
+    from metaform import install
+    from metaform.errors import Stop
+
+    monkeypatch.setattr(install, 'user_home', lambda: machine['user'])
+    folder = machine['user'] / 'configured-codex'
+    monkeypatch.setenv('CODEX_HOME', str(folder))
+    install.provision('codex', lambda line: None)
+    path = folder / 'AGENTS.md'
+    edited = path.read_bytes().replace(b'You must use its active features.', b'My own instruction.')
+    path.write_bytes(edited)
+    for action in (lambda: install.provision('codex', lambda line: None),
+                   lambda: install.uninstall(['codex'], lambda line: None)):
+        with pytest.raises(Stop, match='edited Metaform instruction block'):
+            action()
+        assert path.read_bytes() == edited
+
+
+@pytest.mark.req('MCP-015', 'MCP-036')
+def test_provision_preview_runs_before_either_global_file_changes(home, machine, monkeypatch):
+    from metaform import install
+    monkeypatch.setattr(install, 'user_home', lambda: machine['user'])
+    monkeypatch.setattr(install.harness, 'done', lambda binary: pytest.fail('Provisioning marked the harness done'))
+    instructions = machine['user'] / '.claude' / 'CLAUDE.md'
+    settings = instructions.with_name('settings.json')
+    instructions.parent.mkdir()
+    instructions.write_bytes(b'Existing instructions')
+    settings.write_bytes(b'{"model": "chosen"}')
+    before = {path: path.read_bytes() for path in (instructions, settings)}
+    previews = []
+
+    def say(line):
+        if any(str(path) in line for path in before):
+            assert all(path.read_bytes() == content for path, content in before.items())
+            previews.append(line)
+
+    install.provision('claude', say)
+    assert len(previews) == 2
+    assert all(path.read_bytes() != content for path, content in before.items())
+
+
+@pytest.mark.req('MCP-036', 'MCP-028', 'MCP-020')
+def test_gemini_passive_reminder_preserves_settings_and_can_be_turned_off(run, machine, home):
+    import re
+
+    from metaform import prompt_files
+    settings = machine['user'] / '.gemini' / 'settings.json'
+    settings.parent.mkdir()
+    other = {'matcher': 'read_file', 'hooks': [{'type': 'command', 'command': 'my-check'}]}
+    original = {'mcpServers': {'other': {'command': 'other'}}, 'hooks': {'AfterTool': [other]}}
+    settings.write_text(json.dumps(original))
+    before = settings.read_bytes()
+    out = run('provision', 'gemini', cwd=machine['folder'], env=machine['env']).stdout
+    assert 'AfterTool' in out and 'after' in out
+    configured = json.loads(settings.read_text())
+    assert configured['mcpServers'] == original['mcpServers']
+    assert configured['hooks']['AfterTool'][0] == other
+    added = configured['hooks']['AfterTool'][1]
+    assert all(re.fullmatch(added['matcher'], tool) for tool in ('invoke_agent', 'delegate_to_agent', 'ask_user'))
+    assert not re.fullmatch(added['matcher'], 'read_file')
+    handler = added['hooks'][0]
+    shell = ['powershell', '-NoProfile', '-NonInteractive', '-Command'] if os.name == 'nt' else ['bash', '-c']
+    result = subprocess.run([*shell, handler['command']], cwd=machine['folder'],
+                            input='{}', text=True, capture_output=True, check=False)
+    assert result.returncode == 0 and not result.stderr
+    assert json.loads(result.stdout) == {'hookSpecificOutput': {
+        'hookEventName': 'AfterTool', 'additionalContext': prompt_files.chassis('work_reminder')}}
+    backups = list((home / 'backups' / 'provision').rglob('settings.json'))
+    assert len(backups) == 1 and backups[0].read_bytes() == before
+    run('provision', 'gemini', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == configured
+    run('set', '--gemini-reminder', 'off', cwd=machine['folder'], env=machine['env'])
+    run('provision', 'gemini', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == original
+    assert (settings.parent / 'GEMINI.md').exists()
+    run('uninstall', 'gemini', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == original
+
+
+@pytest.mark.req('MCP-036', 'MCP-015')
+def test_gemini_registration_preserves_the_previewed_hook_edits(run, machine):
+    from fakes import RECORDER, executable
+    body = RECORDER + '''
+config = pathlib.Path.home() / '.gemini' / 'settings.json'
+config.parent.mkdir(exist_ok=True)
+data = json.loads(config.read_text()) if config.exists() else {}
+servers = data.setdefault('mcpServers', {})
+if args[:2] == ['mcp', 'add']:
+    servers['metaform'] = {'command': 'registered-by-gemini'}
+elif args[:2] == ['mcp', 'remove']:
+    servers.pop('metaform', None)
+config.write_text(json.dumps(data))
+'''
+    executable(machine['bin'], 'gemini', body)
+    settings = machine['user'] / '.gemini' / 'settings.json'
+    settings.parent.mkdir()
+    other = {'matcher': 'read_file', 'hooks': [{'type': 'command', 'command': 'my-check'}]}
+    original = {'mcpServers': {'other': {'command': 'other'}}, 'hooks': {'AfterTool': [other]}}
+    settings.write_text(json.dumps(original))
+    for _ in range(2):
+        run('install', 'gemini', cwd=machine['folder'], env=machine['env'])
+        data = json.loads((machine['user'] / '.gemini' / 'settings.json').read_text())
+        assert data['mcpServers']['metaform'] == {'command': 'registered-by-gemini'}
+        assert data['mcpServers']['other'] == original['mcpServers']['other']
+        assert len(data['hooks']['AfterTool']) == 2
+    run('uninstall', 'gemini', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(settings.read_text()) == original
+
+
+@pytest.mark.req('MCP-036', 'MCP-015')
+@pytest.mark.parametrize('content', ['{broken', '{"hooks": {"AfterTool": {}}}'])
+def test_invalid_gemini_hooks_leave_global_instructions_unchanged(run, machine, content):
+    settings = machine['user'] / '.gemini' / 'settings.json'
+    settings.parent.mkdir()
+    settings.write_text(content)
+    result = run('provision', 'gemini', cwd=machine['folder'], env=machine['env'], ok=False)
+    assert result.returncode == 2 and str(settings) in result.stderr
+    assert settings.read_text() == content
+    assert not (settings.parent / 'GEMINI.md').exists()

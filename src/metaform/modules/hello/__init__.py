@@ -49,8 +49,25 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from metaform import nonce, settings
-from metaform.data import Column, Data, DataTx, Index, Layer, Node, Operation, Store, Table, Tables, WorkRecord
+from metaform import home, nonce, settings
+from metaform import module as chassis
+from metaform.data import (
+    Column,
+    Data,
+    DataTx,
+    Index,
+    Layer,
+    NewerStore,
+    Node,
+    Operation,
+    Store,
+    Table,
+    Tables,
+    WorkRecord,
+    plain,
+    query_read,
+    query_reads,
+)
 from metaform.module import (
     Context,
     Module,
@@ -108,6 +125,41 @@ async def wait(ctx: Context) -> str:
     seconds = ctx.nouns['seconds']
     await asyncio.sleep(seconds)
     return f'waited {seconds} s\n'
+
+
+def basedemo(ctx: Context) -> dict[str, Any]:
+    """Shared services are available to an ordinary module as they are to shipped servers, BASE-004."""
+    chassis.refresh_modules()
+    project = home.project(ctx.project) if ctx.project else None
+    answer: dict[str, Any] = {
+        'home': str(home.home()),
+        'registered': [one.project_id for one in home.projects()],
+        'project': project.to_dict() if project else None,
+        'layers': settings.toggled_layers(ctx.folder),
+        'reads': list(query_reads()),
+        'newer_store_error': NewerStore.__name__,
+        'code_print': chassis.code_print(),
+    }
+    if ctx.project:
+        answer.update(backups=[one.to_dict() for one in home.backups(ctx.project)],
+                      held=home.not_empty(ctx.project),
+                      caution=home.removal_caution(ctx.project))
+    if ctx.store is not None:
+        answer['roots'] = plain(query_read(ctx.store, 'roots', {'limit': '0'}))
+    return answer
+
+
+def base_restore(ctx: Context) -> dict[str, Any]:
+    """Restore the selected project's backup through the public base after verb confirmation, QUAL-016."""
+    project = ctx.require_store().project().project_id
+    return home.restore_project(project, ctx.nouns.get('name')).to_dict()
+
+
+def base_remove(ctx: Context) -> dict[str, str]:
+    """Remove the selected empty project's registration through the public base, QUAL-016."""
+    project = ctx.require_store().project().project_id
+    home.remove_project(project)
+    return {'project': project}
 
 
 def history(ctx: Context) -> list[str] | str:
@@ -398,6 +450,12 @@ MODULE = Module(
                        ('metaform hello greet world --loud', 'Prints HELLO, WORLD!'))),
         Verb('wait', wait, 'Wait a number of seconds. Shows an async verb.',
              nouns=(Noun('seconds', 'How long to wait.', kind='int'),)),
+        Verb('basedemo', basedemo, 'Show the shared home, project, layer and query services.'),
+        Verb('base-restore', base_restore, 'Restore a clear backup through the public base.',
+             nouns=(Noun('name', 'The backup name, newest when omitted.', required=False),),
+             caution="This restores the selected project's clear backup, backing up what it holds now."),
+        Verb('base-remove', base_remove, "Remove the selected empty project's registration through the public base.",
+             caution="This removes the selected empty project's registration, keeping its files and backups."),
         Verb('history', history, 'List the names greeted so far.'),
         Verb('forget', forget, 'Delete the greeting history.', caution='This deletes the greeting history.'),
         Verb('beep', beep, 'Sound the terminal bell. Shows a verb that runs on one system.',

@@ -1,8 +1,8 @@
 """intake: the intake served by name, recorded one object at a time as it is reasoned, BASE-039.
 
 A subagent reads `intake prompt` and records the map as it works: it starts the
-intake, records each element and each join in its own call, anneals parts into
-one join by recording that join again with more elements, reads the recorded
+intake, records each element and each join in its own call, anneals a part as a
+join one level deeper, received by the element it is part of, reads the recorded
 map back with `intake show`, whole or one receiver at a time, corrects it by
 recording again and with `intake remove`, and ends with `intake finish`. The
 intake layer is building until then: context reads do not see it, and the web
@@ -39,6 +39,7 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 
 RESOURCE = resources.files(__name__) / 'resources' / 'Intake_2.1.md'  # Intake 2.1, the served intake, Rich 2026-10-03
+SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape, Rich 2026-10-04
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -95,6 +96,12 @@ def served(ctx: Context, asked: str = '') -> str:
 
 def prompt(ctx: Context) -> str:
     return served(ctx, ctx.nouns.get('text') or '')
+
+
+def schema(ctx: Context) -> str:
+    """The shape of the metaform, served as written, Rich 2026-10-04: "add this as a tool maybe just to give this
+    shape"."""
+    return SHAPE.read_text(encoding='utf-8')
 
 
 
@@ -331,7 +338,7 @@ JOIN_FIELDS = ('purpose', 'ef', 'ifd')
 def join(ctx: Context) -> Any:
     """Record one join, Rich's shape: the receiver's purpose, the ef and the ifd, holding the elements that serve it.
     A join of the receiver that already holds one of the elements is that join: the fields given replace its own, and
-    the elements given that it does not hold are added to it, which is how parts are annealed into one join."""
+    the elements given that it does not hold are added to it."""
     notices: Notices = []
     rec = _recording(ctx, notices)
     receiver = ctx.nouns['receiver']
@@ -550,6 +557,8 @@ MODULE = Module(
         Verb('prompt', prompt, 'The intake instructions for this project.',
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
                          required=False),)),
+        Verb('schema', schema, 'The shape of the metaform: the namespace roots, the upstream and downstream links, '
+                               'and the element and join forms the intake records.'),
         Verb('start', start, 'Resume the intake being recorded, or start a fresh one. If the active metaform already '
                             'has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier '
                             'one untouched. Returns its name; the existing web GUI follows it live.',

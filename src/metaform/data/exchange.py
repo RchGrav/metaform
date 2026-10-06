@@ -20,7 +20,7 @@ from .. import home
 from ..errors import StoreError
 from ..sqlite import SCHEMA_VERSION
 from . import tables, versions
-from .ids import as_list, as_object, prefixes
+from .ids import as_list, as_object, new_id, prefixes
 from .schema import STORE_SCHEMA
 from .session import open_store
 
@@ -333,6 +333,70 @@ def _validate(document: Any) -> None:
                          'metaform export > <file>, from the home that holds the project')
 
 
+def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, metaform_id: str | None = None,
+              created: str | None = None) -> dict[str, Any]:
+    """A new metaform `name` holding each current intake element and join once, with its held elements, LAYER-026.
+
+    Exchange rows are in stored version order. Track the original per-layer
+    version number to select the held elements of the surviving join version,
+    then remap that version to zero in a fresh single-layer metaform.
+    """
+    _validate(document)
+    projects = document['projects']
+    if len(projects) != 1 or len(projects[0]['metaforms']) != 1:
+        raise StoreError('Collapse takes exactly one project and metaform.', 'metaform export metaform=<name>')
+    project = projects[0]
+    source = project['metaforms'][0]
+    intake = [layer for layer in source['layers'] if layer['kind'] == 'intake']
+    if len(intake) != 1:
+        raise StoreError('Collapse needs the metaform to have one intake layer.', 'metaform map layers')
+    if intake[0]['ready'] is None:  # collapsing would mark a building intake finished
+        raise StoreError('The intake is still building; finish it before collapsing.', 'metaform intake finish')
+    source_layer = intake[0]['layer_id']
+    metaform_id, layer_id, created = metaform_id or new_id(), new_id(), created or home.now()
+    result: dict[str, Any] = {
+        'metaform': {'metaform_id': metaform_id, 'name': name, 'created': created},
+        'layers': [{**intake[0], 'layer_id': layer_id, 'metaform_id': metaform_id,
+                    'name': 'intake', 'result_id': None, 'created': created, 'ready': created}],
+        'provenance': [{'layer_id': layer_id, 'module': 'chassis', 'workflow': workflow,
+                        'prompt': None, 'model': None, 'role': role, 'blinded': None}],
+        'types': [], 'elements': [], 'joins': [], 'join_elements': [],
+    }
+    for key in ('layer_fields', 'layer_tags', 'layer_sources', 'selections', 'hidden', 'items',
+                'properties', 'refs', 'reexamine', 'requires'):
+        result[key] = []
+    surviving_joins: dict[str, int] = {}
+    for table, identity in (('elements', 'element_id'), ('joins', 'join_id')):
+        newest: dict[str, tuple[dict[str, Any], int]] = {}
+        for row in source[table]:
+            if row['layer_id'] == source_layer:
+                previous = newest.get(row[identity])
+                newest[row[identity]] = (row, previous[1] + 1 if previous else 0)
+        for ident, (row, version) in newest.items():
+            if row['op'] == 'remove':
+                continue
+            result[table].append({**row, 'layer_id': layer_id, 'op': 'add', 'reason': None, 'evidence': None})
+            if table == 'joins':
+                surviving_joins[ident] = version
+    result['join_elements'] = [
+        {**held, 'join_layer_id': layer_id, 'join_version': 0}
+        for held in source['join_elements']
+        if held['join_layer_id'] == source_layer and
+        surviving_joins.get(held['join_id']) == held['join_version']
+    ]
+    addresses = {prefix for row in result['elements'] for prefix in prefixes(row['address'])}
+    result['types'] = [row.copy() for row in source['types'] if row['address'] in addresses]
+    elements = {row['element_id'] for row in result['elements']}
+    needed = {row['receiver'] for row in result['joins']} | {
+        held['element_id'] for held in result['join_elements']}
+    result['requires'] = [{'kind': 'element', 'id': ident} for ident in sorted(needed - elements)]
+    released = {**{key: document[key] for key in ('metaform_export', 'schema_version')},
+                'projects': [{'project': project['project'].copy(), 'metaforms': [result],
+                              'active_metaform': metaform_id}]}
+    _validate(released)
+    return released
+
+
 @dataclass
 class Planned:
     """One metaform of the document, with the project it goes to and whether that project is registered here."""
@@ -449,7 +513,7 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
             for path in created:
                 home.remove_store(path)
             for project_id in registered:
-                home.remove_project(project_id)
+                home.forget_project(project_id)
             if isinstance(error, sqlite3.IntegrityError):
                 raise StoreError(f'The document does not fit the store: {error}.', 'metaform export > <file>') from None
             raise

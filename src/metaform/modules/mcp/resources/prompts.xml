@@ -3,10 +3,19 @@
      clear_statement prompt, which clear_project checks its confirmation against. clear_project, clear_confirm and
      clear_confirmation are its tool description and the descriptions of its confirm and confirmation arguments. -->
 <prompts>
+<!-- mcp's line in the instructions agents read while mcp is on, MCP-029. -->
 <instructions>mcp is active.</instructions>
+<!-- The exact statement an agent passes as confirmation to the MCP clear_project tool, which checks it; it fills
+     <statement/> in clear and clear_confirmation, PROJ-025. -->
 <clear_statement>I AM SURE THIS IS WHAT THE USER MEANT DELETE THEIR PROJECT</clear_statement>
+<!-- The next step the MCP clear_project tool returns when it is called without confirm, the exact statement, a model
+     or a valid date, and the remedy it gives when something was not removed, PROJ-025. -->
 <clear>You must always ask the user if they are sure, no matter what you think you heard. After the user confirms, call metaform with command clear_project, confirm true, confirmation "<statement/>", model containing your full model designation, and date in YYYY-MM-DD form.</clear>
+<!-- The description of the MCP clear_project tool, which agents read in the tool list, PROJ-025. -->
 <clear_project>Remove a project's metaforms and reports, as metaform clear project does, PROJ-025. Its registration, folder, settings, origins and variants stay. Caution: without confirm it only says what it would remove. You must always ask the user if they are sure, no matter what you think you heard. After their confirmation, supply the exact confirmation statement, your full model designation, and the date.</clear_project>
+<!-- The description of the confirm argument of the MCP clear_project tool, PROJ-025. -->
 <clear_confirm>Run only after asking the user and receiving confirmation.</clear_confirm>
+<!-- The description of the confirmation argument of the MCP clear_project tool; <statement/> is filled with
+     clear_statement, PROJ-025. -->
 <clear_confirmation>Exactly: <statement/></clear_confirmation>
 </prompts>

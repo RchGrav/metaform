@@ -171,6 +171,12 @@ def _has(scope: str, setting: Setting) -> bool:
 
 
 def scope_of(setting: Setting, folder: Path) -> str:
+    """Resolve the scope once while the process registry is unchanged."""
+    return home.registry_cached(('setting_scope', setting.key, setting.owner, setting.scope, setting.boundary, home.path_key(folder)),
+                                lambda: _scope_of(setting, folder))
+
+
+def _scope_of(setting: Setting, folder: Path) -> str:
     """Where this folder's value lives: the nearest folder at or above it that holds one, CLI-014."""
     if setting.scope == 'global':
         return 'global'
@@ -200,6 +206,14 @@ def value(key: str, folder: Path) -> Any:
     setting = SCHEMA[key]
     scope = scope_of(setting, folder)
     return _stored_value(setting, scope) if _has(scope, setting) else default(setting, folder)
+
+
+def toggled_layers(folder: Path) -> list[str]:
+    """The layers chosen for a folder with `--layers`, CLI-033 and LAYER-019, or an empty list with none chosen."""
+    if 'layers' not in SCHEMA:
+        return []
+    chosen = value('layers', folder)
+    return [str(item) for item in cast(list[Any], chosen)] if isinstance(chosen, list) else []
 
 
 def state(key: str, folder: Path) -> str:
@@ -325,12 +339,16 @@ def reset(key: str, folder: Path, *, unglue: bool = False) -> tuple[str, bool]:
 
 
 def describe(folder: Path) -> list[dict[str, Any]]:
-    return [{'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
-             'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
-             'state': state(key, folder), 'help': setting.help,
-             **({'choices': list(setting.choices)} if setting.kind == 'select' and isinstance(setting.choices, list)
-                else {})}
-            for key, setting in SCHEMA.items()]
+    described: list[dict[str, Any]] = []
+    for key, setting in SCHEMA.items():
+        entry = {'key': key, 'switch': setting.switch, 'owner': setting.owner, 'kind': setting.kind,
+                 'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
+                 'state': state(key, folder), 'help': setting.help}
+        choices = setting.choices
+        if setting.kind == 'select' and isinstance(choices, list):
+            entry['choices'] = list(cast(list[str], choices))
+        described.append(entry)
+    return described
 
 
 def _project_root(folder: Path) -> Path | None:
@@ -382,6 +400,12 @@ modules = items('modules', check=_check_modules,
                 help='Narrows which modules\' commands this folder shows and runs. It does not enable or disable '
                      'modules; use metaform enable and disable for that.')
 
+install_server = text('install_server', scope='global',
+                      help='The enabled module whose MCP server install and provision use.',
+                      details='Empty selects the sole enabled provider automatically. When several modules declare '
+                              'a server, name one explicitly. With no provider, install sets up skills and '
+                              'supported instructions and reminders without changing MCP registrations.')
+
 layers = items('layers', check=_check_layers,
                help='The layers toggled on in this folder, by name or tag. Empty means every finished layer that '
                     'is not hidden.')
@@ -389,4 +413,18 @@ layers = items('layers', check=_check_layers,
 debug = boolean('debug', False, help='Ask agents doing Metaform work for feedback and trouble reports on the Metaform '
                                      'process.')
 
+connect_instructions = choice('connect_instructions', ['compact', 'full'], 'compact',
+                              help='What agents get as instructions: compact lists each module in one line, full '
+                                   'gives every module\'s whole instructions.',
+                              details='Claude Code shows the first 2,048 characters of a server\'s instructions and '
+                                      'drops the rest, so compact keeps them whole there, and each module\'s full '
+                                      'instructions come when its tool is called with no command, or with metaform '
+                                      'help agents <module>. full serves them all at once, for hosts that show more.')
+
 report = boolean('report', True, help='Ask the intake agent for a report on the project it examined.')
+
+gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
+                         help='Gemini setup installs a passive reminder after delegation and questioning, or none.',
+                         details='BeforeTool cannot deliver passive context. after-tool reinforces later decisions. '
+                                 'off keeps global instructions alone. Apply changes with metaform provision gemini '
+                                 'or metaform install gemini.')

@@ -591,8 +591,8 @@ def test_add_and_list_projects(run, tmp_path):
 @pytest.mark.req('MAP-045')
 def test_metaforms_are_added_listed_and_activated(run, project):
     assert lines(run('add', 'metaform', 'fresh', cwd=project)) == [
-        'Added metaform fresh to proj; it is now active. The previous metaform main is kept. To switch back: '
-        'metaform activate metaform main']
+        ('Added metaform fresh to proj; it is now active. The previous metaform main is kept. To switch back: '
+        'metaform activate metaform main')]
     listed = lines(run('list', 'metaforms', cwd=project))
     assert [line.split()[0] for line in listed] == ['main', 'fresh'] and listed[1].endswith('(active)')
     assert lines(run('activate', 'metaform', 'main', cwd=project)) == ['Active metaform for proj: main']
@@ -935,12 +935,18 @@ def test_interrupting_an_async_verb_reports_cancelled_then_interrupted(home, use
     process = subprocess.Popen([sys.executable, '-m', 'metaform', 'sleeper', 'sleep'], cwd=tmp_path,
                                env={**os.environ, 'METAFORM_HOME': str(home)}, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, encoding='utf-8')
-    assert process.stdout.readline().strip() == 'started'
-    time.sleep(0.2)
-    process.send_signal(signal.SIGINT)
-    out, err = process.communicate(timeout=30)
+    try:
+        assert process.stdout.readline().strip() == 'started'
+        time.sleep(0.2)
+        process.send_signal(signal.SIGINT)
+        out, err = process.communicate(timeout=30)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=5)
     assert process.returncode == 3
     assert 'Cancelling sleeper sleep...' in err and 'woke' not in out
+    assert err.splitlines()[-1] == 'Cancelled.'
 
 
 @pytest.mark.req('BASE-035')
@@ -977,7 +983,7 @@ def test_chassis_settings_stay_the_chassiss_when_a_module_is_what_first_imports_
              'from metaform import settings\n'
              "print(settings.SCHEMA['layers'].owner, settings.SCHEMA['web_port'].owner)\n")
     result = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8',
-                            env={**os.environ, 'METAFORM_HOME': str(home)})
+                            env={**os.environ, 'METAFORM_HOME': str(home)}, check=False)
     assert result.stdout.split() == ['chassis', 'web'], result.stderr
 
 

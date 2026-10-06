@@ -84,7 +84,7 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
     env['HOME'] = env['USERPROFILE'] = str(tmp_path / 'user')
     env['PYTHONPATH'] = ''
     (tmp_path / 'user').mkdir()
-    status = subprocess.run([sys.executable, '-I', str(wheel)], cwd=folder, env=env, capture_output=True, text=True, encoding='utf-8')
+    status = subprocess.run([sys.executable, '-I', str(wheel)], cwd=folder, env=env, capture_output=True, text=True, encoding='utf-8', check=False)
     assert status.returncode == 0, status.stderr
     normal = tmp_path / 'user' / '.metaform'
     assert f'Home: {normal}' in status.stdout.splitlines()
@@ -92,17 +92,17 @@ def test_a_wheel_runs_directly_from_itself(run, home, tmp_path):
                    check=True, capture_output=True)
     # Metaform as installed in this environment, run without the wheel, reads the same data folder.
     installed = subprocess.run([sys.executable, '-m', 'metaform', 'list', 'projects'], cwd=tmp_path, env=env,
-                               capture_output=True, text=True, encoding='utf-8')
+                               capture_output=True, text=True, encoding='utf-8', check=False)
     assert installed.returncode == 0, installed.stderr
     assert 'proj' in installed.stdout.split()
     assert not (normal / 'wheels').exists()
     layers = subprocess.run([sys.executable, '-I', str(wheel), 'query', 'layers'], cwd=folder, env=env,
-                            capture_output=True, text=True, encoding='utf-8')
+                            capture_output=True, text=True, encoding='utf-8', check=False)
     assert layers.returncode == 0, layers.stderr
     document = tmp_path / 'export.json'
     for args in (('help',), ('set', '--layers', ''), ('export', f'file={document}'), ('import', str(document))):
         done = subprocess.run([sys.executable, '-I', str(wheel), *args], cwd=folder, env=env, capture_output=True,
-                              text=True, encoding='utf-8')
+                              text=True, encoding='utf-8', check=False)
         assert done.returncode == 0, (args, done.stderr)
     assert not (home / 'projects').exists() or not any((home / 'projects').iterdir())  # nothing reached this home
 
@@ -114,9 +114,9 @@ def test_the_wheel_installs_with_pip(run, tmp_path):
     subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
     python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
     result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
-                            capture_output=True, text=True, encoding='utf-8')
+                            capture_output=True, text=True, encoding='utf-8', check=False)
     assert result.returncode == 0, result.stderr
-    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8')
+    version = subprocess.run([str(python), '-m', 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert version.stdout.startswith('metaform ')
 
 
@@ -134,7 +134,7 @@ def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(ru
     subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
     python = environment / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
     result = subprocess.run([str(python), '-m', 'pip', 'install', '--no-deps', '--no-index', str(wheel)],
-                            capture_output=True, text=True, encoding='utf-8')
+                            capture_output=True, text=True, encoding='utf-8', check=False)
     assert result.returncode == 0, result.stderr
     installed = Path(subprocess.run([str(python), '-c', 'import metaform; print(metaform.__file__)'],
                                     capture_output=True, text=True, encoding='utf-8', check=True).stdout.strip()).parent
@@ -152,7 +152,7 @@ def test_an_installed_build_run_in_a_checkout_says_the_checkout_is_not_packed(ru
 
     def installed_build():
         done = subprocess.run([str(python), '-m', 'metaform', 'build'], cwd=inside, capture_output=True, text=True,
-                              encoding='utf-8', env={**os.environ, 'METAFORM_HOME': str(home)})
+                              encoding='utf-8', env={**os.environ, 'METAFORM_HOME': str(home)}, check=False)
         assert done.returncode == 0, done.stdout + done.stderr
         lines = done.stdout.splitlines()
         wheels = [Path(line.split(':', 1)[1].strip()) for line in lines if line.startswith('Wheel:')]
@@ -193,7 +193,7 @@ def test_uvx_runs_the_built_wheel(run, tmp_path):
         pytest.fail('uvx is required to check the entry points of a built wheel, MCP-013')
     wheel, _ = build(run)
     result = subprocess.run([uvx, '--from', str(wheel), 'metaform', '--version'], capture_output=True, text=True, encoding='utf-8',
-                            cwd=tmp_path)
+                            cwd=tmp_path, check=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().startswith('metaform ')
     from metaform.probe import probe

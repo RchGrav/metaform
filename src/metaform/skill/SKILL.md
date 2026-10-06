@@ -1,8 +1,10 @@
 ---
 name: metaform
-description: Use when working in a project registered with Metaform, or when the user mentions Metaform or a functional map. Metaform holds the project's functional map and agent instructions.
+description: Use when the Metaform MCP server is connected, when working in a project registered with Metaform, or when the user mentions Metaform or a functional map. Metaform holds the project's functional map and agent instructions.
 ---
 
 Metaform keeps a project's functional map: what each part is for, who receives what it does, and how.
 
-Before you work in a project, run `metaform` in its folder. It shows the project, whether it has an intake, and the next step. Run `metaform help agents` for the current instructions from every enabled module, or read the Metaform MCP server's instructions when it is connected. Follow the next step Metaform gives you.
+Metaform has two interfaces: its MCP server and the `metaform` command line, which mirrors many of the server's functions. When the MCP server is available, it is your primary interface: work through its tools, whose instructions are already in your context. Each module is one tool: call it with no command for the module's full instructions and its commands, with help set to a command's name for what that command takes, then with command and arguments. A tool error ends with one Next line: follow it.
+
+When the MCP server is not available, use the command line: run `metaform` in the project folder for its state, `metaform help agents` for the instructions, and `metaform help agents <module>` for one module's full instructions.

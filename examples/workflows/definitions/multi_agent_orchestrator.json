@@ -1,0 +1,1445 @@
+{
+  "id": "metaform.library.multi_agent_orchestrator",
+  "intent": "Deliver a correct, high-quality solution to the actual software request through separate sequential Analyst, Planner/Architect, Developer, and Evaluator/QA assignments, source-authored user interactions, and repeated correction and evaluation until completion.",
+  "source": "[System: Multi-Agent Orchestrator]  \nYou are an advanced autonomous coding system that **spawns multiple internal agents** to solve software tasks with **100% accuracy and compliance**. Your goal is to take any user request for a function, component, or software task and **deliver a correct, high-quality solution** with no deviations from the specification. Use the following process and roles for every task, no matter how small or large:\n\n**Roles & Personas:**  \n- Analyst – deeply understand the requirements. If unclear, ask the user targeted questions *once*. Otherwise, clarify assumptions yourself using best practices.  \n- Planner/Architect – devise a step-by-step solution plan that covers all requirements. Identify any tools or libraries needed.  \n- Developer – write the code or content exactly to spec, following the plan. Adhere to best practices (clean, simple, documented code).  \n- Evaluator/QA – after each development step, rigorously test and review the output against the spec and standards. Flag any discrepancy or poor practice. No error is too minor.  \n\nThese personas **collaborate in sequence** (Analyst → Planner → Developer → Evaluator → repeat) to produce the final solution. They communicate internally, but **only output to the user when necessary** (e.g., asking for clarification or presenting a plan for approval). The user should not see internal reasoning or intermediate debugging, only polished outputs.\n\n**Strict Quality Enforcement:**  \n- The Evaluator must be **uncompromising**. If any requirement is not met exactly, or any bug or style issue is present, work cannot continue. The issue must be fixed by the Developer immediately and re-checked.  \n- Use tools to aid evaluation: run the code in the sandbox, use tests, linters, or type-checkers. You have permission to execute code to validate functionality.  \n- Continue the Develop → Evaluate loop until **absolutely no issues remain** and the solution perfectly matches the request.\n\n**Autonomy and Tool Use:**  \n- If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.  \n- Manage the environment so that the final deliverable is reproducible (e.g., if needed, provide a `requirements.txt` or setup instructions).  \n- Make decisions on implementation details yourself. Do not burden the user with questions unless it’s about clarifying the user’s intent or granting installation permission.\n\n**Communication Protocol:**  \n1. **Clarification (if needed):** If requirements are unclear, the Analyst asks brief, specific questions to the user. Incorporate the answers into the spec.  \n2. **Plan Presentation:** The Planner shares a brief outline of the proposed solution with the user: “**Plan:** ...”. End this message with a polite prompt for approval (e.g., “Shall I proceed with this plan?”).  \n3. **Execution:** Upon approval, the Developer and Evaluator work through implementation and testing internally. Do not output anything to the user during this phase. If an unexpected blocking question arises, ask the user; otherwise, proceed autonomously.  \n4. **Final Output:** Once verified, present the completed solution. Include necessary code blocks, outputs, and a short explanation if helpful. Ensure the answer is well-formatted and clearly addresses the request.\n\nRemember: **No requirement is optional. No error is acceptable.** You are an expert system that takes pride in delivering a flawless result through diligent work and self-correction. Now, begin by analyzing the user’s request and follow the above process.  \n",
+  "semantic_equations": {
+    "revision": "196ccd2d6a5be177ec581d64a915643c07deac6951cc7f3d6642ca0a2a1bc785",
+    "source": "docs/semantics/semantic_equation_reuse_rule.md",
+    "text": "## Semantic Equation Preservation and Reuse\n\nTreat every authoritative semantic statement, definition, rule, constraint, and example as a semantic equation.\n\nA semantic equation may be referenced, selected, combined, ordered, applied, instantiated, or quoted when constructing prompts and performing inference. Its wording does not need to appear in every generated prompt unless the prompt requires the equation explicitly; however, any use of the equation must preserve the semantic relationship expressed by the source.\n\nDo not rewrite, paraphrase, normalize, summarize, generalize, narrow, invert, reconcile, or replace a semantic equation on the assumption that another expression is equivalent.\n\nWhen constructing a prompt:\n\n1. Select the semantic equations required for the inference being performed.\n2. Preserve each selected equation as an authoritative source constraint.\n3. Compose instructions around those equations without modifying their semantics.\n4. Derived instructions may operationalize an equation for the current task, but the derived instruction does not replace, amend, or become the source equation.\n5. Maintain provenance between source semantics and any instruction, interpretation, implication, or conclusion derived from them.\n6. Reuse an existing semantic equation rather than authoring a semantically equivalent replacement.\n7. If a semantic equation must change, only an explicit source revision changes it. New inference does not modify prior source semantics.\n\nSemantic equations are the maintained source of meaning. Prompts are temporary compositions that use them."
+  },
+  "metaform": {},
+  "inputs": {
+    "request": "Required: the actual user request for a function, component, or software task, including any supplied specification, output contracts, and artifact destinations. The run’s project context supplies the working artifact."
+  },
+  "start": "analyze",
+  "source_mapping": [
+    {
+      "source": "deliver a correct, high-quality solution",
+      "steps": [
+        "analyze",
+        "plan",
+        "develop_first",
+        "evaluate",
+        "repair",
+        "develop_next",
+        "final_output"
+      ],
+      "realization": "The request is a required caller input; requirements, an approved plan, work records, and verification results connect the solution to the specification."
+    },
+    {
+      "source": "spawns multiple internal agents",
+      "steps": [
+        "analyze",
+        "plan",
+        "develop_first",
+        "evaluate"
+      ],
+      "realization": "Each role is a separate worker assignment. All use the shared project artifact; the source requires sequential collaboration and does not require isolated fresh workfolders."
+    },
+    {
+      "source": "Analyst → Planner → Developer → Evaluator → repeat",
+      "steps": [
+        "analyze",
+        "plan",
+        "develop_first",
+        "evaluate",
+        "repair",
+        "develop_next"
+      ],
+      "realization": "Initial analysis and planning precede execution; after each development or correction step, QA decides whether correction, the next planned step, or completion follows."
+    },
+    {
+      "source": "If unclear, ask the user targeted questions *once*.",
+      "steps": [
+        "analyze",
+        "clarify",
+        "incorporate_clarification"
+      ],
+      "realization": "A conditional user step collects the initial clarification once and continues directly to planning after incorporation."
+    },
+    {
+      "source": "devise a step-by-step solution plan that covers all requirements. Identify any tools or libraries needed.",
+      "steps": [
+        "plan"
+      ],
+      "realization": "The structured plan identifies ordered steps, dependencies, libraries, setup, verification, and artifact destinations."
+    },
+    {
+      "source": "Plan Presentation:",
+      "steps": [
+        "plan",
+        "approve_plan"
+      ],
+      "realization": "The Planner authors a brief Plan: message and a polite approval request; a user step obtains the actual approval before execution."
+    },
+    {
+      "source": "If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.",
+      "steps": [
+        "develop_first",
+        "route_work",
+        "setup_permission",
+        "resume_development",
+        "develop_next",
+        "repair"
+      ],
+      "realization": "Required setup causes a user permission step before the Developer performs the approved actions; granted permissions remain in the work record."
+    },
+    {
+      "source": "If an unexpected blocking question arises, ask the user; otherwise, proceed autonomously.",
+      "steps": [
+        "route_work",
+        "execution_question",
+        "resume_development"
+      ],
+      "realization": "Blocking intent questions yield to the actual user and then resume the same interrupted development or correction step."
+    },
+    {
+      "source": "after each development step, rigorously test and review the output against the spec and standards.",
+      "steps": [
+        "route_work",
+        "evaluate",
+        "route_verified",
+        "develop_next"
+      ],
+      "realization": "No subsequent development step is selected until the current step passes QA; the final review covers the entire request."
+    },
+    {
+      "source": "Continue the Develop → Evaluate loop until **absolutely no issues remain** and the solution perfectly matches the request.",
+      "steps": [
+        "evaluate",
+        "repair",
+        "route_work",
+        "route_verified",
+        "final_output"
+      ],
+      "realization": "Any failed review routes to immediate Developer correction and then back to evaluation, with no authored retry limit. Completion requires passed QA and a complete solution."
+    },
+    {
+      "source": "Use tools to aid evaluation: run the code in the sandbox, use tests, linters, or type-checkers.",
+      "steps": [
+        "evaluate"
+      ],
+      "realization": "QA requests execution evidence and records check results; unavailable execution capabilities are recorded under unresolved_requirements."
+    },
+    {
+      "source": "Manage the environment so that the final deliverable is reproducible (e.g., if needed, provide a `requirements.txt` or setup instructions).",
+      "steps": [
+        "plan",
+        "develop_first",
+        "resume_development",
+        "develop_next",
+        "repair",
+        "evaluate",
+        "final_output"
+      ],
+      "realization": "Needed setup and reproducibility artifacts are planned, implemented, checked, and delivered. Example filenames do not become mandatory artifacts."
+    },
+    {
+      "source": "The user should not see internal reasoning or intermediate debugging, only polished outputs.",
+      "steps": [
+        "clarify",
+        "approve_plan",
+        "execution_question",
+        "setup_permission",
+        "final_output"
+      ],
+      "realization": "User steps contain polished questions or approvals, and the final assignment formats the verified solution. Other assignments produce internal handoff records; host visibility enforcement is unresolved."
+    },
+    {
+      "source": "Once verified, present the completed solution.",
+      "steps": [
+        "route_verified",
+        "final_output"
+      ],
+      "realization": "The final response includes the requested deliverables, necessary code or outputs, and a short explanation when useful, only after successful complete-solution verification."
+    }
+  ],
+  "conversion_assumptions": [
+    "The source does not specify a continuation for denial of plan approval or setup permission. A negative answer ends this run without presenting a completed solution; it does not authorize the denied work. The actual user answer remains recorded.",
+    "The supplied Metaform is empty, so no project Element, Type, Encounter Function, Receiving Entity, Operative Purpose, or join identity can be resolved. Request requirements and artifact destinations are retained without invented semantic bindings.",
+    "The source’s suggested approval wording and requirements.txt filename are examples. The actual request is the required input; these examples are not input values or universal deliverable requirements."
+  ],
+  "unresolved_requirements": [
+    {
+      "id": "host_presentation",
+      "source_operation": "Hide internal collaboration and intermediate debugging; show only necessary user interactions and polished final output.",
+      "affected_steps": [
+        "analyze",
+        "incorporate_clarification",
+        "plan",
+        "develop_first",
+        "resume_development",
+        "evaluate",
+        "repair",
+        "develop_next",
+        "final_output"
+      ],
+      "reason": "The supplied grammar distinguishes worker assignments and user steps but specifies no visibility or presentation controls for assignment outputs, tool logs, or the final response.",
+      "resolution": "The host must display user-step prompts and final_answer while retaining intermediate worker records internally."
+    },
+    {
+      "id": "absolute_correctness",
+      "source_operation": "100% accuracy and compliance; absolutely no issues remain.",
+      "affected_steps": [
+        "evaluate",
+        "repair",
+        "route_verified"
+      ],
+      "reason": "The authored acceptance criteria and unbounded correction loop are represented. The grammar cannot prove an absolute absence of all defects beyond the supplied specification and actual verification evidence.",
+      "resolution": "Retain the source’s exact objective and report the evidence produced by evaluation without treating a workflow transition as a proof of universal correctness."
+    }
+  ],
+  "steps": [
+    {
+      "id": "analyze",
+      "kind": "prompt",
+      "role": "Analyst",
+      "context": "project",
+      "prompt": "Source: \"Analyst – deeply understand the requirements. If unclear, ask the user targeted questions *once*. Otherwise, clarify assumptions yourself using best practices.\" Analyze the actual request, its goals, acceptance requirements, outputs, and artifact destinations. Decide whether intent needs clarification. If so, compose one brief set of targeted questions in clarification_prompt. Otherwise record your implementation assumptions. Return the requirements record for internal collaboration.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "clarification_prompt": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "requirement": {
+                  "type": "string"
+                },
+                "acceptance": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "requirement",
+                "acceptance"
+              ]
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_contracts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "needs_clarification",
+          "clarification_prompt",
+          "requirements",
+          "assumptions",
+          "artifact_contracts"
+        ]
+      },
+      "save_as": "requirements",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "clarify",
+          "when": {
+            "var": "inputs.requirements.needs_clarification"
+          }
+        },
+        {
+          "to": "plan",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "clarify",
+      "kind": "user",
+      "prompt": "{{requirements.clarification_prompt}}",
+      "inputs": {
+        "requirements": {
+          "var": "inputs.requirements"
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "clarification",
+      "transitions": [
+        {
+          "to": "incorporate_clarification",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "incorporate_clarification",
+      "kind": "prompt",
+      "role": "Analyst",
+      "context": "project",
+      "prompt": "Source: \"If requirements are unclear, the Analyst asks brief, specific questions to the user. Incorporate the answers into the spec.\" Incorporate the actual clarification answer into the requirements, acceptance criteria, assumptions, and artifact contracts. Complete this initial Analyst phase after the single clarification exchange; set needs_clarification=false and clarification_prompt to an empty string. Retain the semantic bindings from the supplied record.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "clarification": {
+          "var": "inputs.clarification"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "clarification_prompt": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "requirement": {
+                  "type": "string"
+                },
+                "acceptance": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "requirement",
+                "acceptance"
+              ]
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_contracts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "semantic_bindings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_term": {
+                  "type": "string"
+                },
+                "metaform_reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_term",
+                "metaform_reference"
+              ]
+            }
+          }
+        },
+        "required": [
+          "needs_clarification",
+          "clarification_prompt",
+          "requirements",
+          "assumptions",
+          "artifact_contracts",
+          "semantic_bindings"
+        ]
+      },
+      "save_as": "requirements",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "plan",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "kind": "prompt",
+      "role": "Planner/Architect",
+      "context": "project",
+      "prompt": "Source: \"Planner/Architect – devise a step-by-step solution plan that covers all requirements. Identify any tools or libraries needed.\" Produce an ordered nonempty plan whose development steps have unique IDs, requirement references, and appropriate verification. Identify required external libraries and environment setup, including server startup when needed, and place setup before work that depends on it. Include the reproducibility artifacts actually needed, such as requirements.txt or setup instructions when applicable; these are source examples, not mandatory filenames. Preserve the request’s output contracts and destinations. In approval_message present a brief outline beginning with **Plan:** and end with a polite request for approval. The source’s suggested approval sentence is illustrative. Return the plan internally; the following user step presents it and collects approval.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "approval_message": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "requirement_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "verification": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "instructions",
+                "requirement_ids",
+                "verification"
+              ]
+            }
+          },
+          "tools_and_libraries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setup_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reproducibility_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_destinations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "approval_message",
+          "steps",
+          "tools_and_libraries",
+          "setup_actions",
+          "reproducibility_artifacts",
+          "artifact_destinations"
+        ]
+      },
+      "save_as": "plan",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ]
+    },
+    {
+      "id": "approve_plan",
+      "kind": "user",
+      "prompt": "{{plan.approval_message}}",
+      "inputs": {
+        "plan": {
+          "var": "inputs.plan"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "feedback": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved"
+        ]
+      },
+      "save_as": "plan_approval",
+      "transitions": [
+        {
+          "to": "develop_first",
+          "when": {
+            "==": [
+              {
+                "var": "inputs.plan_approval.approved"
+              },
+              true
+            ]
+          }
+        },
+        {
+          "to": null,
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "develop_first",
+      "kind": "prompt",
+      "role": "Developer",
+      "context": "project",
+      "prompt": "Begin the first step of the approved plan in the shared working artifact, incorporating any feedback in approved_plan_response. Initialize clarifications, verified_step_ids, verification_history, and pending_findings as empty arrays. Start with no setup permissions granted: plan approval is the authorization to begin development, while the source separately requires permission for external libraries and environment setup. Check the plan’s setup actions before dependent work and request the necessary permission through the work record. Source constraints: \"Developer – write the code or content exactly to spec, following the plan. Adhere to best practices (clean, simple, documented code).\" \"If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.\" \"Make decisions on implementation details yourself. Do not burden the user with questions unless it’s about clarifying the user’s intent or granting installation permission.\" Work on one approved development step at a time and return it for evaluation before advancing. Carry forward the work record, artifacts, permissions already granted, actual user clarifications, verified_step_ids, verification_history, and pending_findings. For external libraries or environment setup required by the plan and not already covered by a granted permission, return needs_setup_permission=true, the exact requested_setup_actions, and a polished permission request in question. If an unexpected question about user intent blocks this step, return needs_clarification=true and the question. These flags identify the pending interaction; otherwise both are false and the completed development step is ready for QA. Use the available capabilities to perform the work and report actual actions and artifacts. Include needed reproducibility material and preserve requested output contracts and artifact destinations. The work record is internal handoff data, not a user-facing progress message.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string"
+                },
+                "content_or_reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "destination",
+                "content_or_reference"
+              ]
+            }
+          },
+          "actions_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setup_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified_step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verification_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "check",
+                "result",
+                "evidence"
+              ]
+            }
+          },
+          "pending_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "needs_setup_permission": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "requested_setup_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "step_id",
+          "summary",
+          "artifacts",
+          "actions_performed",
+          "setup_permissions",
+          "clarifications",
+          "verified_step_ids",
+          "verification_history",
+          "pending_findings",
+          "needs_clarification",
+          "needs_setup_permission",
+          "question",
+          "requested_setup_actions"
+        ]
+      },
+      "save_as": "work",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "route_work",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "route_work",
+      "kind": "branch",
+      "transitions": [
+        {
+          "to": "execution_question",
+          "when": {
+            "var": "inputs.work.needs_clarification"
+          }
+        },
+        {
+          "to": "setup_permission",
+          "when": {
+            "var": "inputs.work.needs_setup_permission"
+          }
+        },
+        {
+          "to": "evaluate",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "execution_question",
+      "kind": "user",
+      "prompt": "{{work.question}}",
+      "inputs": {
+        "work": {
+          "var": "inputs.work"
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "execution_response",
+      "transitions": [
+        {
+          "to": "resume_development",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "setup_permission",
+      "kind": "user",
+      "prompt": "{{work.question}}",
+      "inputs": {
+        "work": {
+          "var": "inputs.work"
+        },
+        "requested_setup_actions": {
+          "var": "inputs.work.requested_setup_actions"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "feedback": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved"
+        ]
+      },
+      "save_as": "execution_response",
+      "transitions": [
+        {
+          "to": "resume_development",
+          "when": {
+            "==": [
+              {
+                "var": "inputs.execution_response.approved"
+              },
+              true
+            ]
+          }
+        },
+        {
+          "to": null,
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "resume_development",
+      "kind": "prompt",
+      "role": "Developer",
+      "context": "project",
+      "prompt": "Resume the interrupted work on the same plan step using the actual execution_response. For an approved setup request, retain the permission question, requested actions, and actual response including feedback in setup_permissions. Perform the actions authorized by that response and continue the interrupted development or correction. For a clarification answer, append the original work.question and actual answer together, verbatim, to clarifications; incorporate the clarified intent and continue the interrupted work. Preserve pending_findings until addressed. Source constraints: \"Developer – write the code or content exactly to spec, following the plan. Adhere to best practices (clean, simple, documented code).\" \"If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.\" \"Make decisions on implementation details yourself. Do not burden the user with questions unless it’s about clarifying the user’s intent or granting installation permission.\" Work on one approved development step at a time and return it for evaluation before advancing. Carry forward the work record, artifacts, permissions already granted, actual user clarifications, verified_step_ids, verification_history, and pending_findings. For external libraries or environment setup required by the plan and not already covered by a granted permission, return needs_setup_permission=true, the exact requested_setup_actions, and a polished permission request in question. If an unexpected question about user intent blocks this step, return needs_clarification=true and the question. These flags identify the pending interaction; otherwise both are false and the completed development step is ready for QA. Use the available capabilities to perform the work and report actual actions and artifacts. Include needed reproducibility material and preserve requested output contracts and artifact destinations. The work record is internal handoff data, not a user-facing progress message.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        },
+        "work": {
+          "var": "inputs.work"
+        },
+        "execution_response": {
+          "var": "inputs.execution_response"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string"
+                },
+                "content_or_reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "destination",
+                "content_or_reference"
+              ]
+            }
+          },
+          "actions_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setup_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified_step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verification_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "check",
+                "result",
+                "evidence"
+              ]
+            }
+          },
+          "pending_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "needs_setup_permission": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "requested_setup_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "step_id",
+          "summary",
+          "artifacts",
+          "actions_performed",
+          "setup_permissions",
+          "clarifications",
+          "verified_step_ids",
+          "verification_history",
+          "pending_findings",
+          "needs_clarification",
+          "needs_setup_permission",
+          "question",
+          "requested_setup_actions"
+        ]
+      },
+      "save_as": "work",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "route_work",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "evaluate",
+      "kind": "prompt",
+      "role": "Evaluator/QA",
+      "context": "project",
+      "prompt": "Source: \"Evaluator/QA – after each development step, rigorously test and review the output against the spec and standards. Flag any discrepancy or poor practice. No error is too minor.\" \"If any requirement is not met exactly, or any bug or style issue is present, work cannot continue. The issue must be fixed by the Developer immediately and re-checked.\" \"Use tools to aid evaluation: run the code in the sandbox, use tests, linters, or type-checkers. You have permission to execute code to validate functionality.\" Evaluate the current development step and its effect on previously completed work, honoring feedback in approved_plan_response and the actual user clarifications carried in work. Use the appropriate execution and checking capabilities and report actual results and evidence. Record any unavailable required verification as a finding rather than a successful check. Future planned work remains pending until its turn; discrepancies in work already produced require immediate correction. Set passed=true only when this review has no remaining issues. Maintain verified_step_ids from the prior verified IDs and verification_history carried in work, updating them with this review and any regressions found. next_step_id is the next unverified step in plan order, or null if none remains. On the last step, also verify the complete solution against every request requirement, artifact contract, and needed reproducibility material. Set all_complete=true only when all steps have passed, no issues remain, and the solution matches the request. Return findings and checks internally without debugging narration.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        },
+        "work": {
+          "var": "inputs.work"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "passed": {
+            "type": "boolean"
+          },
+          "all_complete": {
+            "type": "boolean"
+          },
+          "verified_step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_step_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirement_or_standard": {
+                  "type": "string"
+                },
+                "issue": {
+                  "type": "string"
+                },
+                "required_correction": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "requirement_or_standard",
+                "issue",
+                "required_correction"
+              ]
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "check",
+                "result",
+                "evidence"
+              ]
+            }
+          }
+        },
+        "required": [
+          "passed",
+          "all_complete",
+          "verified_step_ids",
+          "next_step_id",
+          "findings",
+          "checks"
+        ]
+      },
+      "save_as": "review",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "route_verified",
+          "when": {
+            "and": [
+              {
+                "==": [
+                  {
+                    "var": "inputs.review.passed"
+                  },
+                  true
+                ]
+              },
+              {
+                "==": [
+                  {
+                    "var": "inputs.review.findings"
+                  },
+                  []
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "to": "repair",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "route_verified",
+      "kind": "branch",
+      "transitions": [
+        {
+          "to": "final_output",
+          "when": {
+            "==": [
+              {
+                "var": "inputs.review.all_complete"
+              },
+              true
+            ]
+          }
+        },
+        {
+          "to": "develop_next",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "repair",
+      "kind": "prompt",
+      "role": "Developer",
+      "context": "project",
+      "prompt": "Source: \"The issue must be fixed by the Developer immediately and re-checked.\" Correct every finding from the supplied QA review in the current work. Keep the same step_id and address regression or complete-solution findings wherever the correction requires. Include any still-pending correction in pending_findings if an actual user interaction interrupts the repair. Copy review.verified_step_ids into work and append review.checks to verification_history. Return the corrected artifacts for re-evaluation; the workflow then repeats the same QA assignment. Source constraints: \"Developer – write the code or content exactly to spec, following the plan. Adhere to best practices (clean, simple, documented code).\" \"If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.\" \"Make decisions on implementation details yourself. Do not burden the user with questions unless it’s about clarifying the user’s intent or granting installation permission.\" Work on one approved development step at a time and return it for evaluation before advancing. Carry forward the work record, artifacts, permissions already granted, actual user clarifications, verified_step_ids, verification_history, and pending_findings. For external libraries or environment setup required by the plan and not already covered by a granted permission, return needs_setup_permission=true, the exact requested_setup_actions, and a polished permission request in question. If an unexpected question about user intent blocks this step, return needs_clarification=true and the question. These flags identify the pending interaction; otherwise both are false and the completed development step is ready for QA. Use the available capabilities to perform the work and report actual actions and artifacts. Include needed reproducibility material and preserve requested output contracts and artifact destinations. The work record is internal handoff data, not a user-facing progress message.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        },
+        "work": {
+          "var": "inputs.work"
+        },
+        "review": {
+          "var": "inputs.review"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string"
+                },
+                "content_or_reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "destination",
+                "content_or_reference"
+              ]
+            }
+          },
+          "actions_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setup_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified_step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verification_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "check",
+                "result",
+                "evidence"
+              ]
+            }
+          },
+          "pending_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "needs_setup_permission": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "requested_setup_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "step_id",
+          "summary",
+          "artifacts",
+          "actions_performed",
+          "setup_permissions",
+          "clarifications",
+          "verified_step_ids",
+          "verification_history",
+          "pending_findings",
+          "needs_clarification",
+          "needs_setup_permission",
+          "question",
+          "requested_setup_actions"
+        ]
+      },
+      "save_as": "work",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "route_work",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "develop_next",
+      "kind": "prompt",
+      "role": "Developer",
+      "context": "project",
+      "prompt": "The previous step has passed QA. Implement only the next step identified by review.next_step_id in the approved ordered plan, preserving previously verified artifacts and existing setup permissions. Set step_id to that next step’s ID, copy review.verified_step_ids into work, append review.checks to verification_history, and clear the resolved pending_findings. Source constraints: \"Developer – write the code or content exactly to spec, following the plan. Adhere to best practices (clean, simple, documented code).\" \"If the plan requires external libraries or environment setup (e.g. installing a package, starting a local server), ask the user for permission, then perform the setup.\" \"Make decisions on implementation details yourself. Do not burden the user with questions unless it’s about clarifying the user’s intent or granting installation permission.\" Work on one approved development step at a time and return it for evaluation before advancing. Carry forward the work record, artifacts, permissions already granted, actual user clarifications, verified_step_ids, verification_history, and pending_findings. For external libraries or environment setup required by the plan and not already covered by a granted permission, return needs_setup_permission=true, the exact requested_setup_actions, and a polished permission request in question. If an unexpected question about user intent blocks this step, return needs_clarification=true and the question. These flags identify the pending interaction; otherwise both are false and the completed development step is ready for QA. Use the available capabilities to perform the work and report actual actions and artifacts. Include needed reproducibility material and preserve requested output contracts and artifact destinations. The work record is internal handoff data, not a user-facing progress message.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        },
+        "work": {
+          "var": "inputs.work"
+        },
+        "review": {
+          "var": "inputs.review"
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "destination": {
+                  "type": "string"
+                },
+                "content_or_reference": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "destination",
+                "content_or_reference"
+              ]
+            }
+          },
+          "actions_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "setup_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified_step_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verification_history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "check",
+                "result",
+                "evidence"
+              ]
+            }
+          },
+          "pending_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "needs_setup_permission": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "requested_setup_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "step_id",
+          "summary",
+          "artifacts",
+          "actions_performed",
+          "setup_permissions",
+          "clarifications",
+          "verified_step_ids",
+          "verification_history",
+          "pending_findings",
+          "needs_clarification",
+          "needs_setup_permission",
+          "question",
+          "requested_setup_actions"
+        ]
+      },
+      "save_as": "work",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": "route_work",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "final_output",
+      "kind": "prompt",
+      "role": "Developer",
+      "context": "project",
+      "prompt": "Source: \"Once verified, present the completed solution. Include necessary code blocks, outputs, and a short explanation if helpful. Ensure the answer is well-formatted and clearly addresses the request.\" Present the verified solution and its deliverables, using the actual artifact contents in the working project and the supplied review. Preserve literal output contracts, actual user clarifications carried in work, and requested artifact destinations. Include necessary reproducibility instructions and verification outputs where helpful. Format the verified work as the polished final response without introducing new implementation changes. The user receives this final response, not the internal requirements, work records, or QA debugging.",
+      "inputs": {
+        "request": {
+          "var": "inputs.request"
+        },
+        "requirements": {
+          "var": "inputs.requirements"
+        },
+        "plan": {
+          "var": "inputs.plan"
+        },
+        "approved_plan_response": {
+          "var": "inputs.plan_approval"
+        },
+        "work": {
+          "var": "inputs.work"
+        },
+        "review": {
+          "var": "inputs.review"
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "final_answer",
+      "requires_answer": true,
+      "tools": [
+        "workflow.files",
+        "workflow.read"
+      ],
+      "transitions": [
+        {
+          "to": null,
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    }
+  ],
+  "execution_requirements": [
+    {
+      "capability": "host_filesystem_and_process_tools",
+      "when": "Development, approved setup, and evaluation perform the authored artifact edits and checks.",
+      "binding": "The Codex command harness supplies filesystem and process tools in the assignment working scope. Sampling-only or actor-only execution needs a host that supplies these operations; no nonexistent module commands are declared."
+    }
+  ]
+}

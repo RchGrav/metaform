@@ -1,0 +1,1225 @@
+{
+  "id": "metaform.library.metaprompt",
+  "intent": "Refine a user’s idea, goal, or prompt into a well-structured, carefully verified prompt, with minimal necessary clarification and specialist creation and independent review when needed.",
+  "start": "request_topic",
+  "inputs": {},
+  "semantic_equations": {
+    "revision": "196ccd2d6a5be177ec581d64a915643c07deac6951cc7f3d6642ca0a2a1bc785",
+    "source": "docs/semantics/semantic_equation_reuse_rule.md",
+    "text": "## Semantic Equation Preservation and Reuse\n\nTreat every authoritative semantic statement, definition, rule, constraint, and example as a semantic equation.\n\nA semantic equation may be referenced, selected, combined, ordered, applied, instantiated, or quoted when constructing prompts and performing inference. Its wording does not need to appear in every generated prompt unless the prompt requires the equation explicitly; however, any use of the equation must preserve the semantic relationship expressed by the source.\n\nDo not rewrite, paraphrase, normalize, summarize, generalize, narrow, invert, reconcile, or replace a semantic equation on the assumption that another expression is equivalent.\n\nWhen constructing a prompt:\n\n1. Select the semantic equations required for the inference being performed.\n2. Preserve each selected equation as an authoritative source constraint.\n3. Compose instructions around those equations without modifying their semantics.\n4. Derived instructions may operationalize an equation for the current task, but the derived instruction does not replace, amend, or become the source equation.\n5. Maintain provenance between source semantics and any instruction, interpretation, implication, or conclusion derived from them.\n6. Reuse an existing semantic equation rather than authoring a semantically equivalent replacement.\n7. If a semantic equation must change, only an explicit source revision changes it. New inference does not modify prior source semantics.\n\nSemantic equations are the maintained source of meaning. Prompts are temporary compositions that use them."
+  },
+  "metaform_resolution": {
+    "supplied_metaform": {},
+    "bindings": [],
+    "status": "The supplied Metaform is empty. No Element, Type, Encounter Function, Receiving Entity, Operative Purpose, or join identity can be resolved from it. Source terms retain their supplied meanings."
+  },
+  "source_mapping": [
+    {
+      "source": "<System>; <Context>",
+      "requirement": "Understand the user’s desired system and produce a structured, verifiable prompt.",
+      "steps": [
+        "request_topic",
+        "refine_request",
+        "draft_prompt",
+        "deliver_prompt"
+      ]
+    },
+    {
+      "source": "<User Input>",
+      "requirement": "Deliver the literal introduction and await the actual user response.",
+      "steps": [
+        "request_topic"
+      ]
+    },
+    {
+      "source": "<Instructions>/Request the Topic; Refine the Task; Define Output Format; <Constraints>",
+      "requirement": "Confirm purpose, expected output, sources, accuracy preferences and format; ask only necessary questions and incorporate the actual answers.",
+      "steps": [
+        "refine_request",
+        "clarification_route",
+        "ask_clarification",
+        "update_brief"
+      ]
+    },
+    {
+      "source": "<System>/1; <Instructions>/Decompose & Assign Experts (Only if needed)",
+      "requirement": "Decompose complex work and assign appropriate specialists conditionally. The listed specialist names are examples, except the explicitly required Expert Python condition.",
+      "steps": [
+        "plan_experts",
+        "expert_route",
+        "run_expert",
+        "expert_assignment.specialty_route",
+        "expert_assignment.create_specialist",
+        "expert_assignment.create_python"
+      ]
+    },
+    {
+      "source": "<Instructions>/Decompose & Assign Experts/complete instructions",
+      "requirement": "Supply each specialist with the complete brief, task instructions and prerequisite results; consolidate after all required contributions finish.",
+      "steps": [
+        "plan_experts",
+        "run_expert",
+        "advance_expert_plan",
+        "draft_prompt"
+      ],
+      "dataflow": "brief -> expert_plan.tasks -> ready next_task -> child values.candidate and values.review -> expert_plan.completed -> dependent tasks -> draft"
+    },
+    {
+      "source": "<System>/2; <Instructions>/Decompose & Assign Experts/fresh eyes",
+      "requirement": "Use a separate reviewer with fresh context; the creator does not validate its own specialist contribution.",
+      "steps": [
+        "expert_assignment.review_specialist",
+        "verify_prompt"
+      ],
+      "context": "fresh; explicit brief, task, candidate, and evidence inputs"
+    },
+    {
+      "source": "<System>/3; <Constraints>/logically verified result",
+      "requirement": "Iteratively correct and recheck concrete errors while summarizing or disclaiming uncertain aspects.",
+      "steps": [
+        "expert_assignment.review_specialist",
+        "expert_assignment.specialist_review_route",
+        "expert_assignment.revise_specialist",
+        "verify_prompt",
+        "prompt_review_route",
+        "revise_prompt"
+      ],
+      "repetition": "review -> correction when needed -> fresh review; otherwise continue"
+    },
+    {
+      "source": "<System>/5; <Constraints>/complex calculations or coding",
+      "requirement": "Use Expert Python for advanced computation or code generation; sandbox execution is optional according to user desire.",
+      "steps": [
+        "refine_request",
+        "update_brief",
+        "plan_experts",
+        "expert_assignment.create_python"
+      ],
+      "unresolved": [
+        "sandbox_execution_binding"
+      ]
+    },
+    {
+      "source": "<System>/4; <Instructions>/Minimize Hallucination; <Constraints>",
+      "requirement": "Verify or disclaim uncertainty, preserve actual evidence, and request sources where necessary for the desired factual reliability.",
+      "steps": [
+        "refine_request",
+        "ask_clarification",
+        "expert_assignment.create_python",
+        "expert_assignment.create_specialist",
+        "expert_assignment.review_specialist",
+        "draft_prompt",
+        "verify_prompt",
+        "deliver_prompt"
+      ]
+    },
+    {
+      "source": "<Instructions>/Generate the Prompt; <Output Format>",
+      "requirement": "Produce the literal section structure, filling illustrative placeholders with user-specific content; include the optional rationale section only when explicitly requested.",
+      "steps": [
+        "draft_prompt",
+        "verify_prompt",
+        "revise_prompt",
+        "deliver_prompt"
+      ]
+    },
+    {
+      "source": "<Instructions>/Verification and Delivery; <User Input>/then produce the final prompt",
+      "requirement": "Deliver the complete prompt and an accurate review note if experts were used; finish after delivery.",
+      "steps": [
+        "deliver_prompt"
+      ],
+      "artifact": {
+        "name": "final_prompt",
+        "destination": "Workflow answer delivered to the user; no file destination is authored."
+      },
+      "completion": "deliver_prompt transitions to null"
+    }
+  ],
+  "unresolved_requirements": [],
+  "steps": [
+    {
+      "id": "request_topic",
+      "kind": "user",
+      "prompt": "What is the topic or role of the prompt you want to create? Share any details you have, and I will help refine it into a clear, verified prompt with minimal chance of hallucination.",
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "initial_request"
+    },
+    {
+      "id": "refine_request",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Refine the request under the supplied source equations. Record the user’s purpose, expected outputs, known sources, factual-accuracy preferences, output format, and stated constraints in requirements. Preserve the actual question and answer text in dialogue. Confirm what the user has established; distinguish unspecified details from supplied facts. Record whether sandbox execution is desired and whether a rationale was explicitly requested. Encourage the source-authored accuracy and format preferences in any necessary clarification. Set needs_clarification only when leaving an ambiguity or missing detail unresolved could cause errors or confusion. When needed, write one concise clarification_message containing the minimum necessary questions and a brief confirmation of the understood purpose. Ask about code execution desire only when it is relevant and its absence materially affects the task. Otherwise use an empty clarification_message and continue. The example personas, formats, and bracketed template descriptions are illustrative, not required user inputs.",
+      "inputs": {
+        "question": {
+          "literal": "What is the topic or role of the prompt you want to create? Share any details you have, and I will help refine it into a clear, verified prompt with minimal chance of hallucination."
+        },
+        "answer": {
+          "var": "inputs.initial_request"
+        },
+        "source_equations": {
+          "literal": [
+            "   * Confirm the user’s purpose, expected outputs, and any known data sources or references.",
+            "   * Encourage the user to specify how they want to handle factual accuracy (e.g., disclaimers if uncertain).",
+            "   * Check how the user wants the final output or solutions to appear (bullet points, steps, or a structured template).",
+            "   * Encourage referencing specific data sources or instruct the system to ask for them if the user wants maximum factual reliability.",
+            "* Keep user interactions minimal, asking follow-up questions only when the user’s request might cause errors or confusion if left unresolved.",
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data.",
+            "* Limit the total interactions to avoid overwhelming the user."
+          ]
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "requirements": {
+            "type": "string"
+          },
+          "dialogue": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "type": "string"
+                },
+                "answer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "question",
+                "answer"
+              ]
+            }
+          },
+          "execution_preference": {
+            "type": "string",
+            "enum": [
+              "desired",
+              "not_desired",
+              "unspecified"
+            ]
+          },
+          "rationale_requested": {
+            "type": "boolean"
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "clarification_message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirements",
+          "dialogue",
+          "execution_preference",
+          "rationale_requested",
+          "needs_clarification",
+          "clarification_message"
+        ]
+      },
+      "save_as": "brief",
+      "requires_answer": true
+    },
+    {
+      "id": "clarification_route",
+      "kind": "branch",
+      "transitions": [
+        {
+          "to": "ask_clarification",
+          "when": {
+            "var": "inputs.brief.needs_clarification"
+          }
+        },
+        {
+          "to": "plan_experts",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "ask_clarification",
+      "kind": "user",
+      "prompt": "{{ inputs.brief.clarification_message }}",
+      "inputs": {
+        "clarification_message": {
+          "var": "inputs.brief.clarification_message"
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "clarification_answer"
+    },
+    {
+      "id": "update_brief",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Apply the actual user reply to the previous brief, append the exact question and answer to dialogue, and retain earlier requirements unless the user changed them. Refine the request under the supplied source equations. Record the user’s purpose, expected outputs, known sources, factual-accuracy preferences, output format, and stated constraints in requirements. Preserve the actual question and answer text in dialogue. Confirm what the user has established; distinguish unspecified details from supplied facts. Record whether sandbox execution is desired and whether a rationale was explicitly requested. Encourage the source-authored accuracy and format preferences in any necessary clarification. Set needs_clarification only when leaving an ambiguity or missing detail unresolved could cause errors or confusion. When needed, write one concise clarification_message containing the minimum necessary questions and a brief confirmation of the understood purpose. Ask about code execution desire only when it is relevant and its absence materially affects the task. Otherwise use an empty clarification_message and continue. The example personas, formats, and bracketed template descriptions are illustrative, not required user inputs.",
+      "inputs": {
+        "previous_brief": {
+          "var": "inputs.brief"
+        },
+        "question": {
+          "var": "inputs.brief.clarification_message"
+        },
+        "answer": {
+          "var": "inputs.clarification_answer"
+        },
+        "source_equations": {
+          "literal": [
+            "   * Confirm the user’s purpose, expected outputs, and any known data sources or references.",
+            "   * Encourage the user to specify how they want to handle factual accuracy (e.g., disclaimers if uncertain).",
+            "   * Check how the user wants the final output or solutions to appear (bullet points, steps, or a structured template).",
+            "   * Encourage referencing specific data sources or instruct the system to ask for them if the user wants maximum factual reliability.",
+            "* Keep user interactions minimal, asking follow-up questions only when the user’s request might cause errors or confusion if left unresolved.",
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data.",
+            "* Limit the total interactions to avoid overwhelming the user."
+          ]
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "requirements": {
+            "type": "string"
+          },
+          "dialogue": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "type": "string"
+                },
+                "answer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "question",
+                "answer"
+              ]
+            }
+          },
+          "execution_preference": {
+            "type": "string",
+            "enum": [
+              "desired",
+              "not_desired",
+              "unspecified"
+            ]
+          },
+          "rationale_requested": {
+            "type": "boolean"
+          },
+          "needs_clarification": {
+            "type": "boolean"
+          },
+          "clarification_message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirements",
+          "dialogue",
+          "execution_preference",
+          "rationale_requested",
+          "needs_clarification",
+          "clarification_message"
+        ]
+      },
+      "save_as": "brief",
+      "requires_answer": true,
+      "transitions": [
+        {
+          "to": "clarification_route",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "plan_experts",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Plan the specialist work needed to create the requested prompt. For a simple task needing no specialist, return empty tasks and completed, has_next false, and next_task null. For complex work, decompose the task into logical assignments with stable IDs, a suitable persona, complete instructions, and explicit depends_on task IDs. Include an Expert Python assignment with is_python true when advanced computations or code are needed; the other named personas in the source are examples to select only when suitable. Each assignment must say what contribution or verification the final prompt needs and what evidence would support it. Specialist creation and independent validation are separate assignments inside expert_assignment. Select a task whose dependencies are already completed as next_task, and set has_next accordingly. Retain all required work in tasks. The dependency graph must permit the authored sequence to finish. The source does not require simultaneous execution; execute ready tasks in their listed order.",
+      "inputs": {
+        "brief": {
+          "var": "inputs.brief"
+        },
+        "source_equations": {
+          "literal": [
+            "1. Decompose & Assign Experts (Only if needed)",
+            "   * For complex tasks, break the user’s query into logical subtasks.",
+            "   * Summon specialized “expert” personas (e.g., “Expert Mathematician,” “Expert Essayist,” “Expert Python,” etc.) to solve or verify each subtask.",
+            "5. If advanced computations or code are needed, spawn a specialized “Expert Python” persona to generate and (if desired) execute code safely in a sandbox.",
+            "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+            "2. Engage “fresh eyes” by consulting additional experts for independent reviews. Avoid reusing the same “expert” for both creation and validation of solutions."
+          ]
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "persona": {
+                  "type": "string"
+                },
+                "is_python": {
+                  "type": "boolean"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "depends_on": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "persona",
+                "is_python",
+                "instructions",
+                "depends_on"
+              ]
+            }
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "candidate": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uncertainties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "result",
+                    "code",
+                    "evidence",
+                    "uncertainties"
+                  ]
+                },
+                "review": {
+                  "type": "object",
+                  "properties": {
+                    "needs_revision": {
+                      "type": "boolean"
+                    },
+                    "feedback": {
+                      "type": "string"
+                    },
+                    "confirmed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uncertainties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "needs_revision",
+                    "feedback",
+                    "confirmed",
+                    "uncertainties"
+                  ]
+                }
+              },
+              "required": [
+                "task_id",
+                "candidate",
+                "review"
+              ]
+            }
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "next_task": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tasks",
+          "completed",
+          "has_next",
+          "next_task"
+        ]
+      },
+      "save_as": "expert_plan",
+      "requires_answer": true
+    },
+    {
+      "id": "expert_route",
+      "kind": "branch",
+      "transitions": [
+        {
+          "to": "run_expert",
+          "when": {
+            "var": "inputs.expert_plan.has_next"
+          }
+        },
+        {
+          "to": "draft_prompt",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "run_expert",
+      "kind": "call",
+      "workflow": "metaform.library.metaprompt.expert_assignment",
+      "inputs": {
+        "task": {
+          "var": "inputs.expert_plan.next_task"
+        },
+        "brief": {
+          "var": "inputs.brief"
+        },
+        "completed_work": {
+          "var": "inputs.expert_plan.completed"
+        }
+      },
+      "save_as": "expert_result"
+    },
+    {
+      "id": "advance_expert_plan",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Record the selected task’s returned candidate and independent review in completed under its task_id. Preserve tasks, IDs, dependencies, and earlier completed contributions. Select the next unfinished task whose depends_on IDs are completed, in listed order. Its complete instructions and completed_work must give it the evidence produced by its dependencies. Set has_next false and next_task null when all planned assignments are complete. Preserve disclosed uncertainties; completion of a reviewed assignment does not assert verification of every claim.",
+      "inputs": {
+        "previous_plan": {
+          "var": "inputs.expert_plan"
+        },
+        "candidate": {
+          "var": "inputs.expert_result.values.candidate"
+        },
+        "review": {
+          "var": "inputs.expert_result.values.review"
+        },
+        "source_equations": {
+          "literal": [
+            "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+          ]
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "persona": {
+                  "type": "string"
+                },
+                "is_python": {
+                  "type": "boolean"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "depends_on": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "persona",
+                "is_python",
+                "instructions",
+                "depends_on"
+              ]
+            }
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "candidate": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uncertainties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "result",
+                    "code",
+                    "evidence",
+                    "uncertainties"
+                  ]
+                },
+                "review": {
+                  "type": "object",
+                  "properties": {
+                    "needs_revision": {
+                      "type": "boolean"
+                    },
+                    "feedback": {
+                      "type": "string"
+                    },
+                    "confirmed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uncertainties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "needs_revision",
+                    "feedback",
+                    "confirmed",
+                    "uncertainties"
+                  ]
+                }
+              },
+              "required": [
+                "task_id",
+                "candidate",
+                "review"
+              ]
+            }
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "next_task": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tasks",
+          "completed",
+          "has_next",
+          "next_task"
+        ]
+      },
+      "save_as": "expert_plan",
+      "requires_answer": true,
+      "transitions": [
+        {
+          "to": "expert_route",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "draft_prompt",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Consolidate the complete brief and reviewed specialist contributions into one cohesive prompt for the user’s intended system. Follow the literal output contract supplied as output_contract; fill its bracketed descriptions with the task’s actual content. Use the headings <System>:, <Context>:, <Instructions>:, <Constraints>:, and <Output Format>: in that order, with numbered instructions. Include <Reasoning> only for an explicitly requested rationale, expressed as a concise explanation. Encode the requested role, context, verification or uncertainty behavior, relevant expert or tool use, constraints, and final output format. Distinguish tools described for the target system from tools actually used in this run. Preserve supplied source relationships and user intent. Return the prompt text as a JSON string.",
+      "inputs": {
+        "brief": {
+          "var": "inputs.brief"
+        },
+        "expert_work": {
+          "var": "inputs.expert_plan.completed"
+        },
+        "output_contract": {
+          "literal": "<System>: [Short and direct role definition, emphasizing verification and disclaimers for uncertainty.]\n<Context>: [User’s task, goals, or background. Summarize clarifications gleaned from user input.]\n<Instructions>:\n1. [Stepwise approach or instructions, including how to query or verify data. Break into smaller tasks if necessary.]\n2. [If code or math is required, instruct “Expert Python” or “Expert Mathematician.” If writing or design is required, use “Expert Writer,” etc.]\n3. [Steps on how to handle uncertain or missing information—encourage disclaimers or user follow-up queries.]\n<Constraints>: [List relevant limitations (e.g., time, style, word count, references).]\n<Output Format>: [Specify exactly how the user wants the final content or solution to be structured—bullets, paragraphs, code blocks, etc.]\n<Reasoning> (Optional):\n[Include only if user explicitly desires a chain-of-thought or rationale. Otherwise, omit to keep the prompt succinct.]"
+        },
+        "source_equations": {
+          "literal": [
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data.",
+            "   * Instruct the system to verify or disclaim if uncertain.",
+            "   * Encourage disclaimers or references if data is incomplete.",
+            "   * Consolidate all user requirements and clarifications into a single, cohesive prompt with:",
+            "   * A system role or persona, emphasizing verifying facts and disclaiming uncertainty when needed.",
+            "   * Context describing the user’s specific task or situation.",
+            "   * Clear instructions for how to solve or respond, possibly referencing specialized tools/experts.",
+            "   * Constraints for style, length, or disclaimers.",
+            "   * The final format or structure of the output."
+          ]
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "draft",
+      "requires_answer": true,
+      "transitions": [
+        {
+          "to": "verify_prompt",
+          "when": {
+            "!=": [
+              {
+                "var": "inputs.expert_plan.completed"
+              },
+              []
+            ]
+          }
+        },
+        {
+          "to": "deliver_prompt",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "verify_prompt",
+      "kind": "prompt",
+      "role": "Prompt Verifier",
+      "context": "fresh",
+      "prompt": "Independently check the candidate prompt against the complete brief, the literal output contract, the reviewed expert contributions, and the supplied source equations. Check factual support, stated uncertainty, logical consistency, requirement coverage, and the requested headings and format. Record concrete errors or mismatches that require revision in feedback and set needs_revision accordingly. Record what the evidence confirms and what remains uncertain. Disclosed lack of evidence can remain uncertain as permitted by the source. You are a separate verifier and receive the complete materials needed for this review.",
+      "inputs": {
+        "brief": {
+          "var": "inputs.brief"
+        },
+        "expert_work": {
+          "var": "inputs.expert_plan.completed"
+        },
+        "candidate": {
+          "var": "inputs.draft"
+        },
+        "output_contract": {
+          "literal": "<System>: [Short and direct role definition, emphasizing verification and disclaimers for uncertainty.]\n<Context>: [User’s task, goals, or background. Summarize clarifications gleaned from user input.]\n<Instructions>:\n1. [Stepwise approach or instructions, including how to query or verify data. Break into smaller tasks if necessary.]\n2. [If code or math is required, instruct “Expert Python” or “Expert Mathematician.” If writing or design is required, use “Expert Writer,” etc.]\n3. [Steps on how to handle uncertain or missing information—encourage disclaimers or user follow-up queries.]\n<Constraints>: [List relevant limitations (e.g., time, style, word count, references).]\n<Output Format>: [Specify exactly how the user wants the final content or solution to be structured—bullets, paragraphs, code blocks, etc.]\n<Reasoning> (Optional):\n[Include only if user explicitly desires a chain-of-thought or rationale. Otherwise, omit to keep the prompt succinct.]"
+        },
+        "source_equations": {
+          "literal": [
+            "2. Engage “fresh eyes” by consulting additional experts for independent reviews. Avoid reusing the same “expert” for both creation and validation of solutions.",
+            "3. Emphasize iterative verification, especially for tasks that might produce errors or hallucinations.",
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+          ]
+        }
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "needs_revision": {
+            "type": "boolean"
+          },
+          "feedback": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uncertainties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "needs_revision",
+          "feedback",
+          "confirmed",
+          "uncertainties"
+        ]
+      },
+      "save_as": "prompt_review",
+      "requires_answer": true
+    },
+    {
+      "id": "prompt_review_route",
+      "kind": "branch",
+      "transitions": [
+        {
+          "to": "revise_prompt",
+          "when": {
+            "var": "inputs.prompt_review.needs_revision"
+          }
+        },
+        {
+          "to": "deliver_prompt",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "revise_prompt",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Revise the candidate prompt to address the verifier’s concrete feedback while preserving the brief and literal output contract. Use the provided expert evidence, retain accurate content, and express unsupported details as uncertainty or a request for data as appropriate to the target prompt. Return the complete revised prompt string, ready for another independent check.",
+      "inputs": {
+        "brief": {
+          "var": "inputs.brief"
+        },
+        "expert_work": {
+          "var": "inputs.expert_plan.completed"
+        },
+        "candidate": {
+          "var": "inputs.draft"
+        },
+        "review": {
+          "var": "inputs.prompt_review"
+        },
+        "output_contract": {
+          "literal": "<System>: [Short and direct role definition, emphasizing verification and disclaimers for uncertainty.]\n<Context>: [User’s task, goals, or background. Summarize clarifications gleaned from user input.]\n<Instructions>:\n1. [Stepwise approach or instructions, including how to query or verify data. Break into smaller tasks if necessary.]\n2. [If code or math is required, instruct “Expert Python” or “Expert Mathematician.” If writing or design is required, use “Expert Writer,” etc.]\n3. [Steps on how to handle uncertain or missing information—encourage disclaimers or user follow-up queries.]\n<Constraints>: [List relevant limitations (e.g., time, style, word count, references).]\n<Output Format>: [Specify exactly how the user wants the final content or solution to be structured—bullets, paragraphs, code blocks, etc.]\n<Reasoning> (Optional):\n[Include only if user explicitly desires a chain-of-thought or rationale. Otherwise, omit to keep the prompt succinct.]"
+        },
+        "source_equations": {
+          "literal": [
+            "3. Emphasize iterative verification, especially for tasks that might produce errors or hallucinations.",
+            "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+          ]
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "draft",
+      "requires_answer": true,
+      "transitions": [
+        {
+          "to": "verify_prompt",
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "deliver_prompt",
+      "kind": "prompt",
+      "role": "Prompt Generator",
+      "context": "project",
+      "prompt": "Present the verified prompt in full, preserving its text and required section structure. If specialists were used, append a succinct delivery note identifying their contribution and independent review, or explaining how the solution was confirmed. Mention only checks supported by the recorded evidence and summarize relevant remaining uncertainty. Keep the delivery note separate from the prompt text. Return the complete user-facing delivery as a JSON string.",
+      "inputs": {
+        "prompt": {
+          "var": "inputs.draft"
+        },
+        "review": {
+          "var": "inputs.prompt_review"
+        },
+        "expert_work": {
+          "var": "inputs.expert_plan.completed"
+        },
+        "source_equations": {
+          "literal": [
+            "   * If you used experts, mention their review or note how the final solution was confirmed.",
+            "   * Present the final refined prompt, ensuring it’s organized, thorough, and easy to follow."
+          ]
+        }
+      },
+      "schema": {
+        "type": "string"
+      },
+      "save_as": "final_prompt",
+      "requires_answer": true,
+      "transitions": [
+        {
+          "to": null,
+          "when": {
+            "literal": true
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "metaform.library.metaprompt.expert_assignment",
+      "intent": "Create one specialist contribution, independently review it in fresh context, and iterate corrections when needed.",
+      "start": "specialty_route",
+      "inputs": {
+        "task": "The selected specialist assignment and prerequisite IDs.",
+        "brief": "Complete refined requirements and actual user dialogue.",
+        "completed_work": "Completed contributions and reviews, including all prerequisite evidence."
+      },
+      "steps": [
+        {
+          "id": "specialty_route",
+          "kind": "branch",
+          "transitions": [
+            {
+              "to": "create_python",
+              "when": {
+                "var": "inputs.task.is_python"
+              }
+            },
+            {
+              "to": "create_specialist",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "create_python",
+          "kind": "prompt",
+          "role": "Expert Python",
+          "context": "fresh",
+          "prompt": "Act as Expert Python for the supplied task. Use the complete brief, assignment instructions, and completed prerequisite contributions to generate the required code or advanced computation and explain its relevant result. Return generated code in code, the contribution in result, actual supporting evidence in evidence, and uncertain or unexecuted aspects in uncertainties. Distinguish generated code and inferred results from observed execution evidence. When this is the Expert Python task and brief.execution_preference is desired, execute the generated or revised Python in the executing host's sandbox and include its observed result and evidence in the contribution. Otherwise deliver the generated code without executing it.",
+          "inputs": {
+            "task": {
+              "var": "inputs.task"
+            },
+            "brief": {
+              "var": "inputs.brief"
+            },
+            "completed_work": {
+              "var": "inputs.completed_work"
+            },
+            "source_equations": {
+              "literal": [
+                "5. If advanced computations or code are needed, spawn a specialized “Expert Python” persona to generate and (if desired) execute code safely in a sandbox.",
+                "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+                "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+              ]
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "result",
+              "code",
+              "evidence",
+              "uncertainties"
+            ]
+          },
+          "save_as": "candidate",
+          "requires_answer": true,
+          "transitions": [
+            {
+              "to": "review_specialist",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "create_specialist",
+          "kind": "prompt",
+          "role": "Specialized Expert Creator",
+          "context": "fresh",
+          "prompt": "Adopt task.persona and carry out task.instructions using the supplied complete brief and prerequisite contributions. Return the contribution in result, any code in code or an empty string when absent, actual supporting evidence in evidence, and uncertain aspects in uncertainties. Focus on the assigned subtask so its result can be consolidated into the final prompt.",
+          "inputs": {
+            "task": {
+              "var": "inputs.task"
+            },
+            "brief": {
+              "var": "inputs.brief"
+            },
+            "completed_work": {
+              "var": "inputs.completed_work"
+            },
+            "source_equations": {
+              "literal": [
+                "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+                "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+              ]
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "result",
+              "code",
+              "evidence",
+              "uncertainties"
+            ]
+          },
+          "save_as": "candidate",
+          "requires_answer": true,
+          "transitions": [
+            {
+              "to": "review_specialist",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "review_specialist",
+          "kind": "prompt",
+          "role": "Independent Specialist Reviewer",
+          "context": "fresh",
+          "prompt": "Independently review the candidate using expertise appropriate to task.persona, the complete brief, assignment instructions, and prerequisite contributions. You did not create this candidate. Cross-check its logic, facts, calculations or code where relevant, evidence, uncertainties, and fitness for the assigned purpose. Report concrete corrections in feedback and set needs_revision when another creation pass is needed. Record confirmed points and remaining uncertainty. Distinguish logical or code inspection from actual execution.",
+          "inputs": {
+            "task": {
+              "var": "inputs.task"
+            },
+            "brief": {
+              "var": "inputs.brief"
+            },
+            "completed_work": {
+              "var": "inputs.completed_work"
+            },
+            "candidate": {
+              "var": "inputs.candidate"
+            },
+            "source_equations": {
+              "literal": [
+                "2. Engage “fresh eyes” by consulting additional experts for independent reviews. Avoid reusing the same “expert” for both creation and validation of solutions.",
+                "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+                "3. Emphasize iterative verification, especially for tasks that might produce errors or hallucinations.",
+                "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+              ]
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "needs_revision": {
+                "type": "boolean"
+              },
+              "feedback": {
+                "type": "string"
+              },
+              "confirmed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "needs_revision",
+              "feedback",
+              "confirmed",
+              "uncertainties"
+            ]
+          },
+          "save_as": "review",
+          "requires_answer": true
+        },
+        {
+          "id": "specialist_review_route",
+          "kind": "branch",
+          "transitions": [
+            {
+              "to": "revise_specialist",
+              "when": {
+                "var": "inputs.review.needs_revision"
+              }
+            },
+            {
+              "to": null,
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "revise_specialist",
+          "kind": "prompt",
+          "role": "Specialized Expert Creator",
+          "context": "fresh",
+          "prompt": "Adopt the creator specialty in task.persona, including Expert Python for a Python task. Revise the supplied candidate to address the independent reviewer’s concrete feedback using the complete brief and prerequisite contributions. Return the complete updated contribution, any code, actual evidence, and remaining uncertainty. This is a creation assignment; the separate reviewer performs the next validation pass. When this is the Expert Python task and brief.execution_preference is desired, execute the generated or revised Python in the executing host's sandbox and include its observed result and evidence in the contribution. Otherwise deliver the generated code without executing it.",
+          "inputs": {
+            "task": {
+              "var": "inputs.task"
+            },
+            "brief": {
+              "var": "inputs.brief"
+            },
+            "completed_work": {
+              "var": "inputs.completed_work"
+            },
+            "candidate": {
+              "var": "inputs.candidate"
+            },
+            "review": {
+              "var": "inputs.review"
+            },
+            "source_equations": {
+              "literal": [
+                "3. Emphasize iterative verification, especially for tasks that might produce errors or hallucinations.",
+                "   * Use “fresh eyes” to cross-check solutions. Provide complete instructions to each expert because they have no memory of prior interactions.",
+                "* Never assume unverified facts. Instead, disclaim or ask the user for more data."
+              ]
+            }
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "result",
+              "code",
+              "evidence",
+              "uncertainties"
+            ]
+          },
+          "save_as": "candidate",
+          "requires_answer": true,
+          "transitions": [
+            {
+              "to": "review_specialist",
+              "when": {
+                "literal": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "execution_requirements": [
+    {
+      "capability": "host_sandboxed_python",
+      "when": "Advanced computation or code is needed and the actual user desires execution (brief.execution_preference is desired).",
+      "binding": "Run the Expert Python assignment with a host that provides Python execution in a sandbox, such as the Codex command harness. The independent reviewer receives the returned observed evidence."
+    }
+  ]
+}

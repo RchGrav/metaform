@@ -24,7 +24,7 @@ from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
     'element': ('name_length', 'name', 'role'),  # never the address: an element cannot be moved, MAP-015
-    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd'),  # receiver moves it, MAP-003; Rich's shape
+    'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element'),  # receiver moves it, MAP-003; Rich's shape
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }

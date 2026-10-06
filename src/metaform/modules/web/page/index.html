@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/vendor/codemirror/dialog.css">
 <link rel="stylesheet" href="/page/app.css">
 <script src="/page/theme.js"></script>
-<script type="importmap">{"imports": {"three": "/vendor/three.module.min.js", "three/addons/": "/vendor/three-addons/"}}</script>
+<script type="importmap">{"imports": {"three": "/vendor/three.module.min.js", "three/addons/": "/vendor/three-addons/", "three/examples/jsm/": "/vendor/three-addons/", "3d-force-graph": "/vendor/3d-force-graph/dist/3d-force-graph.mjs", "three-forcegraph": "/vendor/three-forcegraph/dist/three-forcegraph.mjs", "d3-force-3d": "/vendor/d3-force-3d/src/index.js", "d3-binarytree": "/vendor/d3-binarytree/src/index.js", "d3-quadtree": "/vendor/d3-quadtree/src/index.js", "d3-octree": "/vendor/d3-octree/src/index.js", "d3-dispatch": "/vendor/d3-dispatch/src/index.js", "d3-timer": "/vendor/d3-timer/src/index.js", "ngraph.graph": "/page/ngraph.graph.js", "ngraph.forcelayout": "/page/ngraph.forcelayout.js", "kapsule": "/vendor/kapsule/dist/kapsule.mjs", "lodash-es/debounce.js": "/vendor/lodash-es/debounce.js", "accessor-fn": "/vendor/accessor-fn/dist/accessor-fn.mjs", "d3-array": "/vendor/d3-array/src/index.js", "internmap": "/vendor/internmap/src/index.js", "data-joint": "/vendor/data-joint/dist/data-joint.mjs", "index-array-by": "/vendor/index-array-by/dist/index-array-by.mjs", "d3-scale": "/vendor/d3-scale/src/index.js", "d3-interpolate": "/vendor/d3-interpolate/src/index.js", "d3-color": "/vendor/d3-color/src/index.js", "d3-format": "/vendor/d3-format/src/index.js", "d3-time": "/vendor/d3-time/src/index.js", "d3-time-format": "/vendor/d3-time-format/src/index.js", "d3-scale-chromatic": "/vendor/d3-scale-chromatic/src/index.js", "tinycolor2": "/vendor/tinycolor2/esm/tinycolor.js", "three-render-objects": "/vendor/three-render-objects/dist/three-render-objects.mjs", "polished": "/vendor/polished/dist/polished.esm.js", "@babel/runtime/helpers/esm/extends": "/vendor/@babel/runtime/helpers/esm/extends.js", "@babel/runtime/helpers/esm/assertThisInitialized": "/vendor/@babel/runtime/helpers/esm/assertThisInitialized.js", "@babel/runtime/helpers/esm/inheritsLoose": "/vendor/@babel/runtime/helpers/esm/inheritsLoose.js", "@babel/runtime/helpers/esm/wrapNativeSuper": "/vendor/@babel/runtime/helpers/esm/wrapNativeSuper.js", "@babel/runtime/helpers/esm/taggedTemplateLiteralLoose": "/vendor/@babel/runtime/helpers/esm/taggedTemplateLiteralLoose.js", "@tweenjs/tween.js": "/vendor/@tweenjs/tween.js/dist/tween.esm.js"}}</script>
 </head>
 <body>
 <div class="app">
@@ -20,8 +20,23 @@
       <label for="mf">metaform</label>
       <select id="mf"></select>
     </div>
-    <label class="autostart"><input id="autostartAgents" type="checkbox" disabled>Autostart agents</label>
-    <button class="clearbtn" id="exportBtn" title="Save the map as a short Markdown document">Export</button>
+    <label class="autostart" title="Start agents on this project's tickets. Each project has its own setting"><input id="autostartAgents" type="checkbox" disabled>Autostart</label>
+    <div class="agentpick">
+      <button class="clearbtn" id="agentsMenuBtn" aria-expanded="false" aria-controls="agentbox" title="The agents at work: how their prompts are answered, and putting them back in order">Agents</button>
+      <div class="adminbox" id="agentbox" hidden role="menu">
+        <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
+        <label class="agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting">Agents at once <input id="agentCount" type="number" min="1" max="17" step="1"></label>
+        <button id="votesBtn" role="menuitem" title="How the agents voted on each question, and what came of it">Voting results</button>
+        <button id="resetAgentsBtn" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
+      </div>
+    </div>
+    <div class="exportpick">
+      <button class="clearbtn" id="exportBtn" aria-expanded="false" aria-controls="exportbox" title="Save the map as a document">Export</button>
+      <div class="adminbox" id="exportbox" hidden role="menu">
+        <button id="exportMarkdown" role="menuitem" title="The map as a short Markdown document">Markdown</button>
+        <button id="exportXml" role="menuitem" title="The map as an XML document with every field">XML</button>
+      </div>
+    </div>
     <button class="clearbtn" id="boardBtn" title="The project's tickets as a kanban board">Board</button>
     <div class="clearpick">
       <button class="clearbtn" id="adminBtn" aria-expanded="false" aria-controls="adminbox" title="Acts on the project as a whole">Administration</button>
@@ -29,8 +44,6 @@
         <button id="clearBtn" role="menuitem" title="Remove this project's metaforms and reports. It is backed up first, it says what goes and what stays, and it asks first">Clear project</button>
         <button id="restoreBtn" role="menuitem" disabled title="Bring back what a clear removed, from the backup the clear made">Restore a backup</button>
         <button id="removeBtn" role="menuitem" title="Take an empty project off the list of projects. Clear it first, which backs it up; nothing is deleted">Remove project</button>
-        <button id="promptsBtn" role="menuitem" title="How agents' permission prompts are answered: approve-all, approve-reads or ask_all">Agent prompts</button>
-        <button id="agentsBtn" role="menuitem">Agents</button>
         <button id="orphanBtn" role="menuitem" title="The memories whose node the map no longer holds, with what each was attached to">Orphaned memories 0</button>
       </div>
       <div class="clearbox" id="clearbox" hidden role="dialog" aria-label="Clear project"></div>
@@ -117,7 +130,7 @@
   <div class="body"></div>
 </div>
 <div id="board" hidden role="dialog" aria-label="Board">
-  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><div class="distribute" role="group" aria-label="Distribute the work"><label>Agents <input type="number" min="1" max="16" value="1"></label><button title="Give the tickets not done and not taken the glyphs of this many agents, in turn">Distribute</button></div><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
+  <div class="bar"><span class="title">Board</span><input class="search" type="search" placeholder="Find a card" aria-label="Find a card"><div class="kinds" role="group" aria-label="Kinds shown"></div><button class="start-all" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button><button class="add" title="Write a new ticket">Add card</button><button class="close" title="Close">Close</button></div>
   <p class="guidance">Move cards up to prioritize work. Agents take their next ticket from To do before Backlog, higher cards first.</p>
   <div class="columns"></div>
 </div>
@@ -125,13 +138,16 @@
   <div class="bar"><span class="title"></span><button class="full" title="Fill the screen, and back">Full screen</button><button class="close" title="Close">Close</button></div>
   <div class="body">
     <div class="write">
-      <div class="kindrow"><label>The work is <select class="condition"><option value="missing">to build something</option><option value="broken">to fix something broken</option><option value="flawed">to fix something not right</option><option value="enhancement">an enhancement</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
+      <div class="kindrow"><label>Kind <select class="condition"><option value="">Choose the kind</option><option value="missing">missing: does not exist or is not built yet</option><option value="broken">broken: not working, not connected or orphaned</option><option value="flawed">flawed: works but is not right</option><option value="enhancement">enhancement: works, could be better</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
+      <label>Workflow <select class="workflow" disabled><option value="">Loading workflows…</option></select></label>
+      <label class="workflow-entry" hidden>Entry call <input class="workflow-call" aria-label="Workflow entry call" placeholder="workflow.quality.code.review(target=this)"><small>Edit the arguments for this run. this is the first node below. Task text is optional for a workflow.</small></label>
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
       <div class="eyebrow">Nodes of this task: the first is the one assigned, the others are for reference</div>
       <div class="linked"></div>
       <div class="kindrow"><label><input type="checkbox" class="start-agent"> Start an agent now</label>
-        <label>Agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label></div>
-      <button class="put" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
+        <label title="The agent this ticket prefers: Claude for front-end and GUI work, Codex for back-end and system work, unless you choose another">Preferred agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label></div>
+      <div class="eligibility"></div>
+      <button class="put" disabled title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
       <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole" title="The whole chart in view">Fit</button></div>
     </div>
     <div class="pick">
@@ -139,6 +155,33 @@
       <div class="acts"><button class="insert" disabled title="Put its name into the text, at the cursor">Insert</button><button class="link" disabled title="Add it to the nodes of this task">Link</button></div>
     </div>
   </div>
+</div>
+<div id="reviewNotice" hidden role="status" aria-live="polite"></div>
+<div id="mergeAsk" hidden role="dialog" aria-label="Agent assistance">
+  <p>Would you like agent assistance with prepping code so it doesn't conflict with the ongoing work?</p>
+  <div class="acts"><button class="yes">Yes</button><button class="no">No</button></div>
+</div>
+<div id="dock" class="resting">
+  <div id="dockTab" role="button" tabindex="0" aria-label="Open the chat with an agent"><span>Chat</span></div>
+  <div id="helpdesk" hidden role="dialog" aria-label="Support chat">
+    <div class="head"><span class="avatar" aria-hidden="true">M</span><div class="who"><b>Metaform Support</b><small><span class="dot"></span> <span class="with">Online</span></small></div><button class="big" title="Make the chat large, and back" aria-label="Make the chat large">&#10530;</button><button class="min" title="Put the chat away" aria-label="Put the chat away">&#8211;</button></div>
+    <div class="log" aria-live="polite"></div>
+    <div class="files"></div>
+    <form class="compose">
+      <label class="clip" title="Attach a file: it is saved in the project and the agent is told where"><input type="file" multiple hidden>&#128206;</label>
+      <textarea class="say" rows="1" placeholder="Type a message, or /help&#8230;" aria-label="Your message"></textarea>
+      <button class="send" type="submit">Send</button>
+    </form>
+    <div class="calls"><button class="call" type="button">Call</button></div>
+  </div>
+</div>
+<div id="votes" hidden role="dialog" aria-label="Voting results">
+  <div class="bar"><span class="title">Voting results</span><button class="close" title="Close">Close</button></div>
+  <div class="body"></div>
+</div>
+<div id="qa" hidden role="dialog" aria-label="A question, read in full">
+  <div class="bar"><span class="title">Question</span><button class="close" title="Close">Close</button></div>
+  <div class="body"></div>
 </div>
 <div id="element" hidden role="dialog" aria-label="Add an element">
   <div class="bar"><span class="title"></span><button class="close" title="Close">Close</button></div>
@@ -180,9 +223,6 @@
     <p>How an agent's permission prompts are answered. It is kept in the settings, and every agent reads it at its next prompt, so a change reaches agents already running.</p>
     <div class="choices"></div>
     <p class="saved"></p>
-    <label class="agent-count" for="dispatchAgents">Agents when tickets are not distributed</label>
-    <div class="agent-count"><input id="dispatchAgents" type="number" step="1"><button class="save-agents">Save</button></div>
-    <p class="agents-saved"></p>
   </div>
 </div>
 <div id="agent" hidden role="dialog" aria-label="An agent at work">
@@ -193,11 +233,10 @@
     <ol class="activity"></ol>
     <div class="asked"></div>
     <textarea class="say" placeholder="A message to the agent" aria-label="A message to the agent"></textarea>
-    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
+    <div class="acts"><button class="send" title="Send it to the agent">Send</button><button class="chat" title="Talk with this agent in the chat at the lower right; an ended one gets a new agent that reads its thread first">Chat</button><button class="stop" title="Stop the agent, and end its session">Stop</button></div>
   </div>
 </div>
 <div id="draw" aria-hidden="true"></div>
-<script src="/vendor/3d-force-graph.min.js"></script>
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/vendor/codemirror/codemirror.js"></script>
 <script src="/vendor/codemirror/xml.js"></script>

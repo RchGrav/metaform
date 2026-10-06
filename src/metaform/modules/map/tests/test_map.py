@@ -38,6 +38,74 @@ def j(run, *args, cwd):
     return json.loads(run('map', *args, '--json', cwd=cwd).stdout)
 
 
+# The parts of the question form map ask refuses a question without, MAP-050; suggestions= is given per call.
+FORM = ('specs=09-viewer.md', 'not_option=A tone is wanted or not.',
+        'rich_said=None; the decision and its reason are described in the question.', 'by=builder')
+YES_NO = 'suggestions=["Yes", "No"]'
+
+
+@pytest.mark.req('MAP-054')
+def test_promote_command_keeps_the_purpose_and_creates_an_ordinary_element(run, mapped):
+    store = Store('proj')
+    original = store.joins('code.timer.kitchen').results[0]
+    ends = ('receiver=code.timer.kitchen', 'provider=code.alarm.audible')
+    run('memory', 'create_entities', json.dumps([{
+        'name': 'delivery insight', 'entityType': 'finding',
+        'observations': ['The cook needs an audible signal.']}]), *ends, cwd=mapped)
+    before = json.loads(run('memory', 'open_nodes', '["delivery insight"]', *ends,
+                            '--json', cwd=mapped).stdout)
+    made = j(run, 'promote', 'receiver=code.timer.kitchen', 'provider=code.alarm.audible',
+             'address=code.delivery', 'name=countdown delivery', cwd=mapped)
+    assert made['join_id'] == original.join_id and made['element'] == 'code.delivery'
+    assert store.element('code.delivery').name == 'countdown delivery'
+    assert store.join_ends(original.join_id) == ('code.timer.kitchen', 'code.alarm.audible')
+    after = json.loads(run('memory', 'open_nodes', '["delivery insight"]', *ends,
+                           '--json', cwd=mapped).stdout)
+    assert before == after and before['entities'][0]['observations'] == ['The cook needs an audible signal.']
+    repeated = j(run, 'promote', 'receiver=code.timer.kitchen', 'provider=code.alarm.audible',
+                 'address=code.delivery', cwd=mapped)
+    assert repeated['join_id'] == original.join_id
+    assert len(store.history(original.join_id).results) == 2
+    missing = j(run, 'promote', 'receiver=code.timer.kitchen', 'provider=code.missing',
+                'address=code.unused', cwd=mapped)
+    assert missing['notices'] and store.element('code.unused', raw=True) is None
+    help_text = run('help', 'map', 'promote', cwd=mapped).stdout
+    assert all(field in help_text for field in ('receiver', 'provider', 'address', 'name', 'reason'))
+
+
+@pytest.mark.req('LAYER-026')
+@pytest.mark.req('STORE-041')
+def test_collapse_command_preserves_current_map_and_switches_back_to_its_history(run, mapped):
+    def without_layer(value):
+        # Collapse gives records a fresh intake layer while preserving their identity and meaning.
+        if isinstance(value, dict):
+            return {key: without_layer(inner) for key, inner in value.items() if key not in ('layer', 'layer_id')}
+        if isinstance(value, list):
+            return [without_layer(inner) for inner in value]
+        return value
+
+    store = Store('proj')
+    old = store.active_metaform()
+    join = store.joins('stakeholder.cook.home').results[0]
+    store.refine(join.join_id, {'purpose': 'Finish cooking on time.'}, reason='schedule the meal')
+    current = store.roots().to_dict()
+    before = store.history(join.join_id).to_dict()
+
+    made = j(run, 'collapse', 'fresh', cwd=mapped)
+    assert made['name'] == 'fresh' and made['active']
+    assert made['metaform_id'] != old.metaform_id
+    assert any('stay with' in notice['message'] for notice in made['notices'])
+    assert without_layer(store.roots().to_dict()) == without_layer(current)
+    assert [(layer.name, layer.kind) for layer in store.layers().results] == [('intake', 'intake')]
+    assert len(store.history(join.join_id).results) == 1
+    assert {form['name']: form['active'] for form in j(run, 'metaforms', cwd=mapped)['results']} == {
+        old.name: False, 'fresh': True}
+
+    j(run, 'activate', old.name, cwd=mapped)
+    assert store.active_metaform().metaform_id == old.metaform_id
+    assert store.history(join.join_id).to_dict() == before
+
+
 def k(run, cwd, *args, ok=True):
     return run('map', 'knowledge', *args, '--json', cwd=cwd, ok=ok)
 
@@ -227,21 +295,23 @@ def test_each_critic_run_adds_one_layer_blinded_by_its_type_and_is_given_the_who
     intake = _intake_snapshot()
     metaform = run('map', 'markdown', cwd=mapped).stdout.strip()
     blind, blind_layer = _critic_run(run, mapped)
-    sighted, sighted_layer = _critic_run(run, mapped, 'sighted=true')
-    again, again_layer = _critic_run(run, mapped)
+    sighted, sighted_layer = _critic_run(run, mapped, '--critic')
+    _again, again_layer = _critic_run(run, mapped)
     assert len({blind_layer, sighted_layer, again_layer}) == 3
+    assert blind_layer.startswith('blind_spot_fast_') and sighted_layer.startswith('blind_spot_critic_')
     store = Store('proj')
     assert (store.provenance(blind_layer).blinded, store.provenance(blind_layer).role) == (True, 'critic')
     assert (store.provenance(sighted_layer).blinded, store.provenance(sighted_layer).role) == (False, 'critic')
     assert store.provenance(again_layer).blinded is True
-    assert {(store.provenance(name).module, store.provenance(name).prompt) for name in (blind_layer, again_layer)} == {
-        ('map', 'critic_blind')}
-    assert (store.provenance(sighted_layer).module, store.provenance(sighted_layer).prompt) == ('map', 'critic_sighted')
-    # The blind critic receives everything the intake agent built; the sighted critic reads it with the code.
+    assert {(store.provenance(name).module, store.provenance(name).prompt)
+            for name in (blind_layer, sighted_layer, again_layer)} == {('map', 'blind_spot_challenge')}
+    # Rich's prompt as written, then the mode's run: its layer and the whole metaform the intake agent built.
+    challenge = prompt_files.required(folder, 'blind_spot_challenge')
+    assert blind.strip() == challenge + '\n\n' + prompt_files.required(folder, 'critic_fast', layer=blind_layer,
+                                                                        metaform=metaform)
+    assert sighted.strip() == challenge + '\n\n' + prompt_files.required(folder, 'critic_critic',
+                                                                          layer=sighted_layer, metaform=metaform)
     assert metaform in blind and metaform in sighted
-    assert blind_layer in blind and sighted_layer in sighted
-    assert blind.strip() == prompt_files.required(folder, 'critic_blind', layer=blind_layer, metaform=metaform)
-    assert sighted.strip() == prompt_files.required(folder, 'critic_sighted', layer=sighted_layer, metaform=metaform)
     assert _intake_snapshot() == intake
 
 
@@ -266,10 +336,10 @@ def test_the_answer_prompt_gives_each_challenge_of_a_layer_with_its_state(run, m
     run('map', 'answer', linked['item_id'], 'C', 'link=element:code.alarm.audible', cwd=mapped)
     run('map', 'approve', hang['item_id'], cwd=mapped)
     served = run('map', 'challenges', layer, cwd=mapped).stdout
-    opening = prompt_files.required(resources.files('metaform.modules.map'), 'answer_challenges', layer=layer,
-                                    challenges='')
-    # The whole fixed text, the three answers included, comes from the XML.
-    assert opening and served.startswith(opening.rstrip())
+    opening, closing = prompt_files.required(resources.files('metaform.modules.map'), 'answer_challenges',
+                                             layer=layer, challenges='\0').split('\0')
+    # The whole fixed text, the three answers included, comes from the XML, on both sides of the challenges.
+    assert opening and served.startswith(opening) and served.rstrip().endswith(closing)
     lines = {item: next(line for line in served.splitlines() if item in line)
              for item in (hang['item_id'], volume['item_id'], linked['item_id'], waiting['item_id'])}
     assert 'Nothing recovers a hung loop.' in lines[hang['item_id']] and 'plan' in lines[hang['item_id']].split()
@@ -583,6 +653,27 @@ def test_a_work_record_sent_without_a_condition_is_stored_empty_with_a_notice(ru
     assert [(row['work_id'], row['condition']) for row in listed] == [(added['work_id'], '')]
 
 
+@pytest.mark.req('MAP-049')
+@pytest.mark.req('MAP-053')
+def test_the_work_list_holds_open_rows_without_their_logs_and_the_ticket_read_holds_everything(run, mapped):
+    """A bare `map work` was 758,000 characters on a project of 220 tickets, mostly the done ones' logs."""
+    store = Store('proj')
+    alarm = Node('element', 'code.alarm.audible')
+    waiting = store.add_work(alarm, 'missing', task='build the driver').work_id
+    finished = store.add_work(alarm, 'broken', task='fix the tone').work_id
+    j(run, 'work', 'op=take', f'id={finished}', 'steps=1', cwd=mapped)
+    j(run, 'work', 'op=step', f'id={finished}', 'said=The tone is fixed.', cwd=mapped)
+    store.finish_work(finished, 'tone set in alarm.c')
+    listed = j(run, 'work', cwd=mapped)['results']
+    assert [row['work_id'] for row in listed] == [waiting]
+    done = j(run, 'work', 'open=false', cwd=mapped)['results']
+    assert [row['work_id'] for row in done] == [finished]
+    assert all(not {'said', 'resolution', 'task'} & set(row) for row in [*listed, *done])
+    read = j(run, 'work', f'id={finished}', cwd=mapped)
+    assert ([one['said'] for one in read['said']], read['resolution'], read['task']) == (
+        ['The tone is fixed.'], 'tone set in alarm.c', 'fix the tone')
+
+
 @pytest.mark.req('BASE-038')
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('STORE-042')
@@ -708,13 +799,118 @@ def test_the_markdown_document_is_written_to_a_file_when_one_is_named(run, descr
 
 
 @pytest.mark.req('MAP-052')
+@pytest.mark.req('MAP-059')
 @pytest.mark.req('CLI-037')
 def test_the_markdown_document_is_a_command_and_never_a_tool(run, described, home, monkeypatch):
     """Writing a document is a person's or an orchestrator's act; it adds nothing to what an agent meets."""
     monkeypatch.setenv('METAFORM_HOME', str(home))
     from metaform.modules.mcp import server
     names = set(server.tools(described))
-    assert 'map_where' in names and 'map_markdown' not in names
+    assert 'map_where' in names and 'map_markdown' not in names and 'map_xml' not in names
+
+
+@pytest.fixture(params=['timer-first', 'alarm-first'])
+def recorded(run, tmp_path, monkeypatch, request):
+    """An intake in Rich's shape: an AUE, a CQU receiving from the DE, the DE receiving from an alarm and from a
+    display with its driver, the cook receiving from the alarm too; refs in the sources layer; a finding on the alarm
+    and one on the display's join."""
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    store = Store('proj')
+    with store.atomic():
+        layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                            hideable=False, provenance={'module': 'intake'}, ready=True)
+        store.add_element(layer.name, 'code.appliance.kitchen', name_length=2, role='AUE', name='Kitchen timer app')
+        store.add_element(layer.name, 'stakeholder.cook.home', name_length=2, role='CQU')
+        store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE', name='kitchen timer')
+        store.add_element(layer.name, 'code.alarm.audible', name_length=2, role='SE')
+        store.add_element(layer.name, 'code.display.digit', name_length=2, role='SE')
+        store.add_element(layer.name, 'code.driver.segment', name_length=1, role='NE')
+        # UUID order need not match creation order. Exercise both sibling orders without relying on random IDs.
+        positions = [1, 2, 3, 4] if request.param == 'timer-first' else [4, 3, 2, 1]
+        join_ids = iter(f'000000000000400080000000000000{position:02x}' for position in positions)
+        with monkeypatch.context() as controlled:
+            controlled.setattr('metaform.data.writes.new_id', lambda: next(join_ids))
+            store.add_join(layer.name, 'stakeholder.cook.home', 'code.timer.kitchen',
+                           purpose='Know when a dish is done.', ef='learns from the timer when a dish is done',
+                           ifd='receives')
+            store.add_join(layer.name, 'stakeholder.cook.home', 'code.alarm.audible', purpose='Hear it from the hall.',
+                           ef='rings loud enough for the hall', ifd='receives')
+            store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible', purpose='Get attention.',
+                           ef='rings for the timer', ifd='sends')
+            shown = store.add_join(layer.name, 'code.timer.kitchen', ['code.display.digit', 'code.driver.segment'],
+                                   purpose='See the time left.', ef='shows the time left to the timer', ifd='both')
+        sources = store.layer('sources', 'intake', 'refs', mutable=True, hideable=True, ready=True)
+        store.add_item(sources.name, Node('element', 'code.display.digit'), 'code.display.digit',
+                       refs=[('path', 'src/display.py'), ('spec', 'DISP-001')])
+    store.add_work(Node('element', 'code.alarm.audible'), 'broken', note='rings too quietly')
+    store.add_work(Node('join', shown.join_id), 'missing', note='no blank between digits')
+    return folder
+
+
+def xml_of(run, *args, cwd):
+    import xml.etree.ElementTree as ET
+    return ET.fromstring(run('map', 'xml', *args, cwd=cwd).stdout)
+
+
+@pytest.mark.req('MAP-059')
+def test_the_xml_document_holds_every_field_the_intake_recorded_in_the_finish_shape(run, recorded):
+    """Review requires every recorded field and finding in the Finish shape, with joins under their receivers and
+    providers under their joins. MAP-059 does not require sibling joins to follow creation order."""
+    store = Store('proj')
+    document = xml_of(run, cwd=recorded)
+    metaform = store.active_metaform()
+    assert document.tag == 'metaform' and document.get('id') == metaform.metaform_id
+    assert document.get('name') == metaform.name
+    aue = document.find('element')
+    assert aue.get('namespace_address') == 'code.appliance.kitchen' and aue.get('role') == 'AUE'
+    cook = document.findall('element')[1]
+    assert cook.get('namespace_address') == 'stakeholder.cook.home' and cook.get('role') == 'CQU'
+    cook_joins = {join.find('element').get('namespace_address'): join for join in cook.findall('join')}
+    assert set(cook_joins) == {'code.timer.kitchen', 'code.alarm.audible'}
+    timer_join = cook_joins['code.timer.kitchen']
+    assert (timer_join.get('type'), timer_join.get('ifd')) == ('purpose', 'receives')
+    assert timer_join.findtext('purpose') == 'Know when a dish is done.'
+    assert timer_join.findtext('ef') == 'learns from the timer when a dish is done'
+    timer = timer_join.find('element')
+    assert timer.get('namespace_address') == 'code.timer.kitchen'
+    for node in document.iter('element'):  # every element carries the four fields the store holds for it
+        stored = store.element(node.get('namespace_address'))
+        assert (node.get('name_length'), node.get('name'), node.get('role')) == (
+            str(stored.name_length), stored.name or '', stored.role), node.get('namespace_address')
+    joins = {join.findtext('purpose'): join for join in document.iter('join')}
+    assert len(joins) == 4
+    assert (joins['Get attention.'].get('ifd'), joins['See the time left.'].get('ifd')) == ('sends', 'both')
+    held = [element.get('namespace_address') for element in joins['See the time left.'].findall('element')]
+    assert held == ['code.display.digit', 'code.driver.segment']
+    display = joins['See the time left.'].find('element')
+    assert [(ref.get('key'), ref.get('value')) for ref in display.findall('ref')] == [
+        ('path', 'src/display.py'), ('spec', 'DISP-001')]
+    assert [(work.get('condition'), work.text) for work in joins['See the time left.'].findall('work')] == [
+        ('missing', 'no blank between digits')]
+    alarms = [element for element in document.iter('element') if element.get('namespace_address') == 'code.alarm.audible']
+    assert len(alarms) == 2  # held by two joins; the first holds what it has, the other refers to it
+    full, bare = alarms
+    assert [(work.get('condition'), work.text) for work in full.findall('work')] == [('broken', 'rings too quietly')]
+    assert len(bare) == 0
+
+
+@pytest.mark.req('MAP-059')
+def test_the_xml_document_of_an_address_is_that_element_and_all_it_receives(run, recorded):
+    document = xml_of(run, 'address=code.timer.kitchen', cwd=recorded)
+    assert [element.get('namespace_address') for element in document.findall('element')] == ['code.timer.kitchen']
+    assert {join.findtext('purpose') for join in document.iter('join')} == {'Get attention.', 'See the time left.'}
+    assert 'stakeholder.cook.home' not in {element.get('namespace_address') for element in document.iter('element')}
+
+
+@pytest.mark.req('MAP-059')
+def test_the_xml_document_is_written_to_a_file_when_one_is_named(run, recorded, tmp_path):
+    target = tmp_path / 'out' / 'map.xml'
+    target.parent.mkdir()
+    said = run('map', 'xml', f'file={target}', cwd=recorded).stdout
+    assert str(target) in said and 'code.timer.kitchen' not in said
+    assert target.read_text(encoding='utf-8') == run('map', 'xml', cwd=recorded).stdout
 
 
 @pytest.mark.req('MAP-046')
@@ -767,44 +963,48 @@ def test_a_question_and_a_note_are_asked_told_answered_and_read_at_the_node(run,
     answers with one click. A note asks for nothing and waits to be read. Neither is the condition of a part, so
     neither is a work record."""
     asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
-              'suggestions=["Yes, keep it", "No, make it louder"]', 'by=builder', cwd=mapped)
+              'suggestions=["Yes, keep it", "No, make it louder"]', *FORM, cwd=mapped)
+    form = ('Is the quiet tone still wanted?\n\n#1 Specifications reviewed:\n09-viewer.md\n\n'
+            '#2 Why this is not a configuration option:\nA tone is wanted or not.\n\n'
+            '#3 Unexplained "Rich said":\nNone; the decision and its reason are described in the question.')
     assert (asked['kind'], asked['address'], asked['text'], asked['suggestions'], asked['by'], asked['closed']) == (
-        'question', 'code.alarm.audible', 'Is the quiet tone still wanted?', ['Yes, keep it', 'No, make it louder'],
-        'builder', None)
-    assert said(asked) == []
-    bare = j(run, 'ask', 'code.alarm.audible', 'Which one?', cwd=mapped)  # told to suggest, never refused
-    assert bare['suggestions'] == [] and [where for where, _ in said(bare)] == ['suggestions']
+        'question', 'code.alarm.audible', form, ['Yes, keep it', 'No, make it louder'], 'builder', None)
+    assert said(asked) == [] and asked['said'].startswith('Your question is recorded at the node.')
+    assert [one['text'] for one in j(run, 'messages', 'limit=0', cwd=mapped)['results']] == [form]
     told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
     assert (told['kind'], told['text'], told['closed']) == ('message', 'The driver is written.', None)
     waiting = j(run, 'messages', 'open=true', cwd=mapped)['results']
-    assert [one['message_id'] for one in waiting] == [asked['message_id'], bare['message_id'], told['message_id']]
-    assert [one['kind'] for one in j(run, 'messages', 'kind=question', cwd=mapped)['results']] == ['question', 'question']
-    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['question', 'question', 'message']
+    assert [one['message_id'] for one in waiting] == [asked['message_id'], told['message_id']]
+    assert [one['kind'] for one in j(run, 'messages', 'kind=question', cwd=mapped)['results']] == ['question']
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == ['question', 'message']
     assert j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results'] == []  # no work record was made
     replied = j(run, 'reply', asked['message_id'], 'answer=No, make it louder', cwd=mapped)
     assert (replied['answer'], bool(replied['closed'])) == ('No, make it louder', True)
     again = j(run, 'reply', asked['message_id'], 'answer=Yes, keep it', cwd=mapped)  # the first answer is kept
     assert again['answer'] == 'No, make it louder' and [where for where, _ in said(again)] == ['message_id']
     at_node = j(run, 'messages', 'node=element:code.alarm.audible', 'open=false', cwd=mapped)['results']
-    assert [(one['text'], one['answer']) for one in at_node] == [('Is the quiet tone still wanted?', 'No, make it louder')]
+    assert [(one['text'], one['answer']) for one in at_node] == [(form, 'No, make it louder')]
     where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
-    assert [(one['kind'], one['text']) for one in where['messages']] == [('question', 'Which one?'),
-                                                                        ('message', 'The driver is written.')]
+    assert [(one['kind'], one['text']) for one in where['messages']] == [('message', 'The driver is written.')]
     old = run('map', 'work', 'op=add', 'node=code.alarm.audible', 'condition=question', 'note=Old form.', '--json',
               cwd=mapped)  # a question is no condition of a part; the agent is told how to ask
     assert 'metaform map ask' in ' '.join(message for _, message in said(json.loads(old.stdout)))
 
+    # a bare question is recorded with a notice for each part of the form not filled, never refused, MAP-050
+    bare = j(run, 'ask', 'code.alarm.audible', 'Which one?', cwd=mapped)
+    assert bare['text'] == 'Which one?' and {where for where, _ in said(bare)} >= {'specs', 'not_option', 'suggestions'}
+    assert 'Which one?' in [one['text'] for one in j(run, 'messages', 'open=true', cwd=mapped)['results']]
 
 @pytest.mark.req('MAP-050')
 def test_where_gives_each_open_message_its_id_so_it_is_answered_from_that_read(run, mapped):
     """perspective-agent, 2026-10-02: where listed the open questions with no message_id, and replying took a second
     call to find it. The where read gives each one its id, and the id it gives answers the question."""
-    asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?', cwd=mapped)
+    asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?', YES_NO, *FORM, cwd=mapped)
     told = j(run, 'tell', 'code.alarm.audible', 'The driver is written.', cwd=mapped)
     where = j(run, 'where', 'code.alarm.audible', cwd=mapped)
     assert [one.get('message_id') for one in where['messages']] == [asked['message_id'], told['message_id']]
     replied = j(run, 'reply', where['messages'][0]['message_id'], 'answer=Yes', cwd=mapped)
-    assert (replied['text'], replied['answer']) == ('Is the quiet tone still wanted?', 'Yes')
+    assert (replied['text'], replied['answer']) == (asked['text'], 'Yes')
 
 
 @pytest.mark.req('MAP-050')
@@ -812,7 +1012,7 @@ def test_a_question_answered_by_mistake_is_reopened_and_waits_again_with_its_sug
     """Rich, 2026-10-03: "How do I reopen a question when I hit the wrong button". The answer is cleared and the
     question waits again, so the right answer can be given."""
     asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
-              'suggestions=["Yes, keep it", "No, make it louder"]', cwd=mapped)
+              'suggestions=["Yes, keep it", "No, make it louder"]', *FORM, cwd=mapped)
     j(run, 'reply', asked['message_id'], 'answer=No, make it louder', cwd=mapped)
     reopened = j(run, 'reopen', asked['message_id'], cwd=mapped)
     assert (reopened['closed'], reopened['answer'], reopened['suggestions']) == (
@@ -902,8 +1102,7 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
     beyond = j(run, 'work', 'op=step', f'id={task.work_id}', 'said=One more than planned.', cwd=mapped)
     assert (beyond['steps'], beyond['steps_done']) == (4, 4)          # nothing is refused: the count follows
     assert [where for where, _ in said(beyond)] == ['steps']
-    read = [row for row in j(run, 'work', 'node=element:code.alarm.audible', cwd=mapped)['results']
-            if row['work_id'] == task.work_id][0]
+    read = j(run, 'work', f'id={task.work_id}', cwd=mapped)  # the list leaves the log out, MAP-053
     assert [one['said'] for one in read['said']] == ['The driver is written.', 'The tone is set.', 'The test passes.',
                                                      'One more than planned.']
     plain = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='no count')
@@ -960,12 +1159,14 @@ def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tick
     assert 'owl' not in first and 'snail' not in first
     assert [glyph_of(record) for record in given] == [first[0], first[1], first[2], first[0], first[1], first[2],
                                                       first[0]]
-    read = {record['work_id']: record for record in j(run, 'work', 'limit=0', cwd=mapped)['results']}
+    read = {record['work_id']: record for given_open in ('true', 'false')
+            for record in j(run, 'work', 'limit=0', f'open={given_open}', cwd=mapped)['results']}
     assert [glyph_of(read[record.work_id]) for record in order] == [glyph_of(record) for record in given]
     assert [glyph_of(read[one.work_id]) for one in (taken, done, outside)] == ['owl', 'snail', None]
     again = j(run, 'work', 'op=distribute', 'agents=1', cwd=mapped)['results']  # one agent: every open ticket in one lane
     assert {glyph_of(record) for record in again} == {AGENT_GLYPHS[0]} and len(again) == 7
-    read = {record['work_id']: record for record in j(run, 'work', 'limit=0', cwd=mapped)['results']}
+    read = {record['work_id']: record for given_open in ('true', 'false')
+            for record in j(run, 'work', 'limit=0', f'open={given_open}', cwd=mapped)['results']}
     assert [glyph_of(read[one.work_id]) for one in (taken, done, outside)] == ['owl', 'snail', None]
 
 
@@ -1007,9 +1208,9 @@ def test_distributing_over_no_agents_or_more_than_there_are_glyphs_is_refused_an
     ticket = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='waiting')
     lane = store.add_work(Node('element', 'code.timer.kitchen'), 'missing', task='in a lane already')
     j(run, 'work', 'op=edit', f'id={lane.work_id}', 'glyph=moth', cwd=mapped)
-    for agents in ('0', '17'):
+    for agents in ('0', '18'):
         refused = run('map', 'work', 'op=distribute', f'agents={agents}', cwd=mapped, ok=False)
-        assert refused.returncode != 0 and '1 to 16' in refused.stderr + refused.stdout
+        assert refused.returncode != 0 and '1 to 17' in refused.stderr + refused.stdout
     assert run('map', 'work', 'op=distribute', 'agents=two', cwd=mapped, ok=False).returncode != 0
     assert glyph_of(j(run, 'work', f'id={ticket.work_id}', cwd=mapped)) is None
     assert glyph_of(j(run, 'work', f'id={lane.work_id}', cwd=mapped)) == 'moth'
@@ -1037,17 +1238,17 @@ def test_a_tickets_glyph_is_kept_in_the_map_modules_own_table_keyed_by_the_work_
 
 
 @pytest.mark.req('VIEW-040')
-def test_the_map_modules_glyphs_are_the_sixteen_the_page_draws_in_its_order():
+def test_the_map_modules_glyphs_are_the_seventeen_the_page_draws_in_its_order():
     """The glyph a ticket holds is drawn by the page, so the names and their order are the page's, VIEW-035."""
     from pathlib import Path
 
     import metaform
     from metaform.modules.map import AGENT_GLYPHS
     page = (Path(metaform.__file__).parent / 'modules' / 'web' / 'page' / 'agents3d.js').read_text(encoding='utf-8')
-    listed = re.search(r'export const GLYPHS = \[(.*?)\];', page, re.S)
+    listed = re.search(r'export const GLYPHS = \[(.*?)\];', page, re.DOTALL)
     assert listed is not None
     assert tuple(re.findall(r"'([a-z]+)'", listed.group(1))) == AGENT_GLYPHS
-    assert len(AGENT_GLYPHS) == 16
+    assert len(AGENT_GLYPHS) == 17
 
 
 @pytest.mark.req('LAYER-025')
@@ -1079,7 +1280,7 @@ def test_map_work_with_an_id_and_no_op_reads_that_one_ticket_with_what_the_map_h
     """Reported 2026-10-02 by the first agent to work a ticket: `map work id=<id>` failed with a TypeError, and an
     agent had to parse the whole work list to read its ticket. The read hands it the ticket with its node's where
     read, its refs, which the sources layer holds, and its open questions, and the same for each node it links."""
-    run('map', 'ask', 'code.display.digit', 'Four digits or six?', 'suggestions=["Four", "Six"]', cwd=described)
+    run('map', 'ask', 'code.display.digit', 'Four digits or six?', 'suggestions=["Four", "Six"]', *FORM, cwd=described)
     made = j(run, 'work', 'op=add', 'node=code.display.digit', 'condition=flawed', 'task=dim the digits at night',
              'links=["element:code.timer.kitchen"]', cwd=described)
     read = run('map', 'work', f'id={made["work_id"]}', '--json', cwd=described)
@@ -1091,7 +1292,7 @@ def test_map_work_with_an_id_and_no_op_reads_that_one_ticket_with_what_the_map_h
     assert at['element']['address'] == 'code.display.digit'
     assert [ref for group in at['layers'] if group['layer'] == 'sources' for item in group['items']
             for ref in item['refs']] == [{'key': 'path', 'value': 'src/display.py'}, {'key': 'spec', 'value': 'DISP-001'}]
-    assert [(one['kind'], one['text']) for one in at['messages']] == [('question', 'Four digits or six?')]
+    assert [(one['kind'], one['text'].split('\n')[0]) for one in at['messages']] == [('question', 'Four digits or six?')]
     assert [join['receiver'] for join in at['provides']] == ['code.timer.kitchen']
     assert [linked['element']['address'] for linked in ticket['linked']] == ['code.timer.kitchen']
     text = run('map', 'work', f'id={made["work_id"]}', cwd=described).stdout
@@ -1292,8 +1493,8 @@ def test_map_work_at_an_element_lists_the_tickets_on_the_joins_it_receives_or_pr
 
     def listed(*given):
         return [row['work_id'] for row in j(run, 'work', *given, 'limit=0', cwd=mapped)['results']]
-    assert listed('node=element:code.alarm.audible.piezo') == [on_join, on_part, finished]
-    assert listed('node=element:code.alarm.audible') == [on_alarm, on_join, finished]
+    assert listed('node=element:code.alarm.audible.piezo') == [on_join, on_part]  # open, the default, MAP-049
+    assert listed('node=element:code.alarm.audible', 'open=false') == [finished]
     assert listed('node=code.alarm.audible', 'open=true') == [on_alarm, on_join]
     assert listed('address=code.alarm.audible', 'open=true') == [on_alarm, on_join]
     assert listed('node=element:code.timer.kitchen', 'open=true') == [on_cook, on_join, on_display]
@@ -1329,13 +1530,13 @@ def test_ask_and_tell_take_node_first_and_provider_beside_it_names_the_purpose_n
         store.add_element('intake-1', 'code.display.digit', name_length=2, role='SE')
         shown = store.add_join('intake-1', 'code.timer.kitchen', 'code.display.digit', purpose='Show the time left.')
     asked = j(run, 'ask', 'code.timer.kitchen', 'Is the display still wanted?', 'provider=code.display.digit',
-              cwd=mapped)
+              YES_NO, *FORM, cwd=mapped)
     assert (asked['node_kind'], asked['node_id'], asked['receiver_address'], asked['provider_address']) == (
         'join', shown.join_id, 'code.timer.kitchen', 'code.display.digit')
     told = j(run, 'tell', 'element:code.timer.kitchen', 'The piezo is quiet.', 'provider=code.alarm.audible',
              'address=code.alarm.audible.piezo', cwd=mapped)
     assert (told['node_kind'], told['node_id']) == ('element', piezo)
-    plain = j(run, 'ask', 'code.alarm.audible', 'Louder?', cwd=mapped)
+    plain = j(run, 'ask', 'code.alarm.audible', 'Louder?', YES_NO, *FORM, cwd=mapped)
     assert (plain['node_kind'], plain['address']) == ('element', 'code.alarm.audible')
     alone = j(run, 'tell', 'code.alarm.audible', 'Quiet.', 'address=code.alarm.audible.piezo', cwd=mapped)
     assert (alone['node_kind'], alone['address']) == ('element', 'code.alarm.audible')
@@ -1361,7 +1562,7 @@ def test_tickets_links_and_questions_move_between_nodes_through_metaform(run, ma
     j(run, 'work', 'op=take', f'id={ticket["work_id"]}', 'steps=2', 'by=codex', cwd=mapped)
     j(run, 'work', 'op=step', f'id={ticket["work_id"]}', 'said=Measured the drift.', cwd=mapped)
     j(run, 'work', 'op=edit', f'id={ticket["work_id"]}', 'glyph=moth', cwd=mapped)
-    question = j(run, 'ask', 'code.timer.kitchen', 'Keep the tone?', 'suggestions=["Yes", "No"]', cwd=mapped)
+    question = j(run, 'ask', 'code.timer.kitchen', 'Keep the tone?', YES_NO, *FORM, cwd=mapped)
     answered = j(run, 'reply', question['message_id'], 'answer=Yes', cwd=mapped)
     moved = j(run, 'work', 'op=edit', f'id={ticket["work_id"]}', 'node=code.alarm.audible',
               'links=["code.alarm.audible", "code.alarm.audible"]', cwd=mapped)
@@ -1399,7 +1600,8 @@ def test_knowledge_add_item_takes_the_flags_and_a_task_item_adds_a_ticket_at_its
                         'value="Stop the alarm after a minute."', 'task=true', 'condition=missing').stdout)
     assert 'task' not in task and (task['read_first'], task['always_show']) == (False, False)
     tickets = j(run, 'work', 'node=element:code.timer.kitchen', 'open=true', cwd=mapped)['results']
-    assert [(ticket['condition'], ticket['task']) for ticket in tickets] == [('missing', 'Stop the alarm after a minute.')]
+    assert [ticket['condition'] for ticket in tickets] == ['missing']
+    assert j(run, 'work', f'id={tickets[0]["work_id"]}', cwd=mapped)['task'] == 'Stop the alarm after a minute.'
     told = [notice for notice in task['notices'] if notice['where'] == 'task']
     assert len(told) == 1 and tickets[0]['work_id'] in told[0]['message']
     k(run, mapped, 'op=finish', 'layer=critic')

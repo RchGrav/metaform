@@ -90,7 +90,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
     def metaform(*args, cwd=tmp_path, ok=True):
         result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=cwd, env=env, capture_output=True,
-                                text=True, encoding='utf-8', timeout=600)
+                                text=True, encoding='utf-8', timeout=600, check=False)
         if ok:
             assert result.returncode == 0, f'metaform {" ".join(args)}:\n{result.stdout}{result.stderr}'
         return result

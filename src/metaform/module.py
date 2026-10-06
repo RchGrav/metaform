@@ -10,10 +10,12 @@ with `metaform.settings`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import re
 import sys
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -21,8 +23,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from .errors import Stop
 
 if TYPE_CHECKING:
-    from .data.operations import Data
     from .data import Node, Store, WorkRecord
+    from .data.operations import Data
     from .data.tables import Tables
     from .relay import Listener
 
@@ -42,14 +44,23 @@ __all__ = [
     'Verb',
     'VerbFunction',
     'WorkReadHook',
+    'aliases',
     'call',
+    'chassis_version',
+    'code_print',
+    'command_summary',
     'context',
     'feedback',
     'instructions',
     'list_reports',
+    'module_instructions',
     'node_reads',
+    'on_surface',
     'on_this_system',
+    'project_for',
     'read_report',
+    'refresh_modules',
+    'request_scope',
     'result_json',
     'save_report',
     'setting_value',
@@ -90,7 +101,7 @@ class Noun:
     def usage(self) -> str:
         if self.many:
             return f'<{self.name}>...' if self.required else f'[{self.name}...]'
-        return f'<{self.name}>' if self.required else f'[{self.name}]'
+        return f'<{self.name}>' if self.required else f'[{self.name}=<{self.kind}>]'
 
 
 @dataclass(frozen=True)
@@ -163,6 +174,7 @@ class Module:
     data: Data | None = None  # module-owned DAO operations, record contributions and cleanup
     node_read: NodeReadHook | None = None  # what the module adds to `map where` and `map node` of a node, BASE-035
     work_read: WorkReadHook | None = None  # what the module keeps on a work record, shown in `map work id=`, BASE-035
+    mcp_server: str | None = None  # this module's verb serving MCP over stdio, used by install and provision
 
 
 @dataclass
@@ -176,6 +188,7 @@ class Context:
     switches: dict[str, Any] = field(default_factory=dict[str, Any])
     sink: Callable[[str], None] | None = None
     surface: Surface = 'cli'
+    client: str | None = None  # the MCP client name, supplied by the transport rather than tool arguments
 
     def say(self, text: str) -> None:
         """A message for a person. The data an agent needs back is the verb's return value, BASE-036."""
@@ -212,8 +225,8 @@ class Context:
     def listen(self, handler: Callable[[dict[str, Any]], Any]) -> Listener:
         """Hear each `map.changed` published in another process of this home, in this module's long-running process;
         the handler runs in the listener's own thread. Close the listener when the process is done, BASE-053."""
-        from . import relay
-        return relay.listen(self.module, handler)
+        from . import events
+        return events.listen(self.module, handler)
 
     def spawn(self, coroutine: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Start a task owned by this module; unload, reload and shutdown cancel it, BASE-018."""
@@ -265,12 +278,80 @@ def instructions(folder: Path, project: str | None = None) -> str:
     return composed.compose(folder, project)
 
 
+def module_instructions(folder: Path, identifier: str, project: str | None = None) -> str | None:
+    """One surfaced module's full instructions, or None when it is not on this folder's surface, MCP-029."""
+    from . import instructions as composed
+    return composed.module_text(folder, identifier, project)
+
+
+def on_surface(group: str, folder: Path) -> bool:
+    """Whether a command group, a module id or `chassis`, is on this folder's command surface, CLI-022."""
+    from . import instructions as composed
+    return composed.on_surface(group, folder)
+
+
+def aliases(folder: Path) -> dict[str, list[Module]]:
+    """Each alias on this folder's command surface with the loaded modules it stands for, CLI-039."""
+    from . import aliases as named
+    return named.shown(folder)
+
+
+def command_summary(name: str) -> str | None:
+    """The summary of the chassis command `name`, or None when the chassis has no such command."""
+    from . import docs
+    record = docs.COMMANDS.get(name)
+    return None if record is None else record.summary
+
+
+def chassis_version() -> str:
+    """The version of the running chassis, BASE-020."""
+    from . import __version__
+    return __version__
+
+
+def project_for(folder: Path, named: str | None = None) -> str | None:
+    """The project a call is about: `named` when given, which must be registered, otherwise the folder's project, or
+    None when it has none."""
+    from . import context as contexts
+    return contexts.project_for(folder, named)
+
+
+def refresh_modules() -> None:
+    """Follow module enablement and the selected project in a long-running process, BASE-037."""
+    from . import loader
+    loader.follow_enabled()
+
+
+def code_print() -> str:
+    """Identify the package's code on disk, so long-running surfaces can detect a replacement, STORE-029.
+
+    This reads file metadata only, creates no state, and works for installed and editable packages alike.
+    """
+    found = hashlib.sha256()
+    for path in sorted(Path(__file__).parent.rglob('*.py')):
+        try:
+            state = path.stat()
+        except OSError:  # removed since it was listed
+            continue
+        found.update(f'{path}\0{state.st_mtime_ns}\0{state.st_size}\n'.encode())
+    return found.hexdigest()
+
+
+@contextmanager
+def request_scope(*, fresh: bool = False) -> Generator[None, None, None]:
+    """Share the chassis registry across the reads and writes of one request, BASE-037."""
+    from . import loader
+    with loader.request_scope(fresh=fresh):
+        yield
+
+
 def context(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,
             switches: dict[str, Any] | None = None, sink: Callable[[str], None] | None = None,
-            surface: Surface = 'cli') -> Context:
+            surface: Surface = 'cli', client: str | None = None) -> Context:
     """A Context for one call, with the project and store resolved for its folder, BASE-028."""
     from . import context as contexts
-    return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface)
+    return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface,
+                          client=client)
 
 
 def node_reads(folder: Path, node: Node, *, project: str | None = None,

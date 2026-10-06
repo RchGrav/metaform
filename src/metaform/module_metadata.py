@@ -64,9 +64,9 @@ def _defines(node: ast.AST, name: str) -> bool:
 def _literal(tree: ast.Module, source: Path, name: str, check: Any) -> Any:
     found: list[ast.stmt] = []
     for statement in tree.body:
-        if isinstance(statement, ast.ImportFrom) and statement.level == 1 and statement.module == 'manifest':
-            if any(alias.name == name for alias in statement.names):
-                continue
+        if (isinstance(statement, ast.ImportFrom) and statement.level == 1 and statement.module == 'manifest'
+                and any(alias.name == name for alias in statement.names)):
+            continue
         targets = (statement.targets if isinstance(statement, ast.Assign)
                    else [statement.target] if isinstance(statement, ast.AnnAssign) else [])
         if any(isinstance(target, ast.Name) and target.id == name for target in targets):

@@ -85,7 +85,7 @@ def syntax(name: str) -> str:
     return '\n'.join(lines + [''] + rows(_setting_rows(record) + [('-h, --help', 'Show this syntax.')])) + '\n'
 
 
-def page(name: str) -> str:
+def page(name: str, *, extra_details: str = '') -> str:
     record = COMMANDS[name]
     lines = [f'{record.name}: {record.summary}', '']
     if record.description:
@@ -94,8 +94,8 @@ def page(name: str) -> str:
     found = _setting_rows(record)
     if found:
         lines += ['Switches'] + rows(found) + ['']
-    if record.details:
-        lines += ['Details', '  ' + record.details, '']
+    if record.details or extra_details:
+        lines += ['Details', '  ' + extra_details + record.details, '']
     if record.examples:
         lines += ['Examples']
         for example, meaning in record.examples:
@@ -118,7 +118,7 @@ def switch_page(name: str, folder: Any = None) -> str:
         if setting.kind == 'select':
             try:
                 options = setting.options(folder)
-            except Exception:  # A module's choices function that fails shows no choices here.
+            except Exception:  # noqa: BLE001  a module's failing choices function leaves its help without choices
                 options = []
             lines += ['Choices: ' + (', '.join(options) if options else 'none yet'), '']
         lines += [f'Owner: {setting.owner}. Kind: {setting.kind}. Applies to: '

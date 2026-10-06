@@ -1,0 +1,7 @@
+<!-- Test-only stand-ins for prompts Rich has not written yet; never shipped text. -->
+<prompts>
+<talk>Test talk prompt. About: <about/>. Read: <read/>.</talk>
+<recommend>Test recommend prompt. Question: <question/>. Choices:
+<choices/>
+Ticket: <ticket/>. Node: <node/>.</recommend>
+</prompts>

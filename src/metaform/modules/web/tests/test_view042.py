@@ -20,8 +20,8 @@ pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
 
 
 @pytest.mark.kind('simulation')
-def test_autostart_clears_waiting_work_and_starts_an_answered_ticket_on_events(
-        run, web, mapped, tmp_path, monkeypatch, dispatch_runners):
+def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_answer(
+        run, web, mapped, tmp_path, monkeypatch, dispatch_runners):  # noqa: F811  imported fixtures keep their names for pytest discovery
     from metaform.data import Node, Store
     from metaform.modules.dispatch.tests.test_dispatch import eventually
 
@@ -36,8 +36,8 @@ def test_autostart_clears_waiting_work_and_starts_an_answered_ticket_on_events(
         store.finish_work(ticket.work_id, 'Existing fixture work completed.')
     node = Node('element', store.element('code.alarm.audible').element_id)
     tickets = [store.add_work(node, 'missing', task=f'Complete task {n}') for n in range(3)]
-    blocked = store.add_work(node, 'missing', task='Continue after the answer', held=True)
-    question = store.ask(node, 'Which approach?', work=blocked.work_id, suggestions=['Use the existing approach'])
+    questioned = store.add_work(node, 'missing', task='Continue independent work', held=True)
+    question = store.ask(node, 'Which approach?', work=questioned.work_id, suggestions=['Use the existing approach'])
     started(run)
     headers = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
     try:
@@ -45,15 +45,16 @@ def test_autostart_clears_waiting_work_and_starts_an_answered_ticket_on_events(
                         body=json.dumps({'project': 'proj', 'value': True}))
         assert status == 200
         eventually(lambda: all(store.ticket(ticket.work_id).work.done for ticket in tickets), limit=30)
-        assert store.ticket(blocked.work_id).work.done is None
+        eventually(lambda: store.ticket(questioned.work_id).work.done, limit=30)
+        assert store.messages(node, 'question', True).results[0].message_id == question.message_id
         status, _ = api(web, '/api/answer', method='POST', headers=headers,
                         body=json.dumps({'project': 'proj', 'id': question.message_id,
                                          'answer': 'Use the existing approach'}))
         assert status == 200
-        eventually(lambda: store.ticket(blocked.work_id).work.done, limit=30)
+        assert store.messages(node, 'question', False).results[0].answer == 'Use the existing approach'
         with Store('proj', module='dispatch').tables(write=False) as tx:
             sessions = tx.rows('sessions', by=('seq',), limit=0).results
-        expected = [ticket.work_id for ticket in tickets] + [blocked.work_id]
+        expected = [ticket.work_id for ticket in tickets] + [questioned.work_id]
         assert [session['work_id'] for session in sessions] == expected
     finally:
         api(web, '/api/dispatch-autostart', method='POST', headers=headers,
@@ -63,7 +64,7 @@ def test_autostart_clears_waiting_work_and_starts_an_answered_ticket_on_events(
         dispatch_runners.extend((dict(session), mapped, log) for session in sessions)
 
 
-def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, mapped, browser):
+def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, mapped, browser):  # noqa: F811  imported fixtures keep their names for pytest discovery
     run('enable', 'dispatch')
     started(run)
     status, found = api(web, '/api/dispatch-autostart?project=proj')
@@ -75,18 +76,26 @@ def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, m
     assert api(web, '/api/dispatch-autostart?project=proj') == (200, found)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.click('#adminBtn')
-    page.click('#agentsBtn')
+    page.click('#agentsMenuBtn')  # the agents' own menu, apart from Administration's removals
+    page.click('#promptsBtn')
     page.wait_for_selector('#prompts:not([hidden])')
-    assert page.locator('#dispatchAgents').input_value() == '3'
-    page.fill('#dispatchAgents', '2')
-    page.click('#prompts .save-agents')
-    page.wait_for_function('() => document.querySelector("#prompts .agents-saved").textContent === "Saved: 2"')
+    assert page.locator('#adminbox #promptsBtn').count() == 0 and page.locator('#adminbox #resetAgentsBtn').count() == 0
+    page.keyboard.press('Escape')
+    page.click('#agentsMenuBtn')
+    page.wait_for_selector('#agentbox:not([hidden])')
+    assert page.locator('#agentCount').input_value() == '3', 'the field shows the saved setting'
+    page.fill('#agentCount', '2')
+    page.locator('#agentCount').dispatch_event('change')
+    page.wait_for_function('() => document.querySelector("#agentCount").value === "2" && !document.querySelector("#agentCount").disabled')
     assert api(web, '/api/dispatch-autostart?project=proj')[1]['agents'] == 2
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#agentsMenuBtn')
+    page.wait_for_function('() => document.querySelector("#agentCount").value === "2"')  # it survives a refresh
     assert problems == []
 
 
-def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, web, mapped, browser, tmp_path):
+def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, web, mapped, browser, tmp_path):  # noqa: F811  imported fixtures keep their names for pytest discovery
     from metaform.data import Store
 
     other = tmp_path / 'other'
@@ -112,7 +121,7 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
     page.route('**/api/dispatch-autostart*', setting)
     page.goto(f'http://127.0.0.1:{web}/#p=proj')
     page.wait_for_function('() => window.metaform.loaded()')
-    control = page.get_by_role('checkbox', name='Autostart agents')
+    control = page.get_by_role('checkbox', name='Autostart')
     assert control.is_visible() and not control.is_checked()
     assert writes == []
     control.check()
@@ -131,7 +140,7 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
 
 
 @pytest.mark.parametrize('state', ['running', 'starting'])
-def test_question_chat_opens_the_returned_session_and_waits_for_a_starting_one(run, web, mapped, browser, state):
+def test_question_chat_opens_the_returned_session_and_waits_for_a_starting_one(run, web, mapped, browser, state):  # noqa: F811  imported fixtures keep their names for pytest discovery
     from metaform.data import Node, Store
 
     store = Store('proj')

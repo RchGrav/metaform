@@ -1,0 +1,214 @@
+> **Historical narrative.** This supplied text retains the earlier two-pass Native/Latent and `01`/`10`/`11` comparison model. Current intake publishes one Native foundation; outside reasoning attaches knowledge. See the [current specification](../SPEC.md) and [runtime guide](../next-version.md). The historical text below is preserved.
+
+# Inference Metaform
+## Full explanation: previously performed inference, reusable meaning, and higher-order work
+
+### What the system does
+
+**The Inference Metaform performs and represents a portion of the reasoning required for subsequent work in advance. Reusing that inferred semantic understanding reduces the prerequisite reasoning each downstream operation must reconstruct, reserving more of its effective reasoning depth for higher-order work.**
+
+The preparation is substantive inference. It develops understanding of what an Element is, what its dependencies mean, how it is realized through its Encounters, what receives its effects, what purposes those relationships serve, and what follows from relevant perspectives. That understanding is represented for reuse rather than being reconstructed entirely within every implementation, review, diagnosis, or design task.
+
+The contextual and latent forms develop this understanding from different relational orientations. A knowledge graph of knowledge graphs represents it beyond the immediate working context. Later prompts operate through that semantic structure, allowing relatively compact instructions to engage highly specific, previously inferred meaning.
+
+The fundamental subject is **semantics: what things are and what their relationships mean**. The system treats these relationships as literal semantics with mathematical definitions. The namespace, graph, prompts, and orchestration make those semantics available to computation and inference. They do not substitute for the semantic definitions themselves.
+
+### Why local reasoning can become limiting
+
+An agent working inside a project may need to reconstruct behavior, understand data structures, follow dependencies, interpret historical decisions, and resolve immediate implementation problems—all while attempting the requested change. Each activity can be necessary, but more local reasoning does not necessarily become higher-order reasoning about the system.
+
+For example, an attempt may repeatedly examine how to accommodate a difficulty within the existing implementation without examining whether that difficulty is required by the function at all. The current realization can become the implicit definition of the thing being changed.
+
+This is the contextual narrowing the Metaform addresses. Existing architecture, terminology, language, dependencies, and prior decisions influence which questions become apparent. A capable agent can reason coherently within that framing while overlooking a relevant possibility outside it.
+
+Supplying more project material is not the same as resolving those relationships. Research on long-context language models has also shown that information being present does not guarantee its effective use: the position of relevant information affected performance in the tasks studied. That result supports the distinction between available information and usable understanding; it does not independently establish the Metaform's bias-reduction mechanism.[1]
+
+The Metaform changes the starting point. An agent can examine a local difficulty through already-inferred functional, receiving, and purpose relationships instead of reconstructing all of them during the same attempt. This makes it possible to ask whether the obstacle belongs to the function or to its current realization while retaining the broader project meaning.
+
+### The contextual and latent forms
+
+Preparation begins with the material under examination: software, photographs, contracts, a story, resale assets, a plan, or a collection containing several artifacts or projects. The Native Expert uses the material and its surrounding context to establish what the artifacts are. Folder structure and neighboring material inform that understanding; a directory does not automatically constitute one coherent artifact.
+
+For each artifact, the Native Expert starts with the exterior Receiving Entity and its Operative Purpose for the artifact, then identifies the Defining Element. The Defining Element's Encounter Function summarizes the combined result the artifact provides: what it is as a whole, without encoding its medium, encoding, genre, or style into that identity. The expert names its actual properties and hard requirements, forms the joins through which their Encounter Functions satisfy the current Element's OPs, and follows those relationships recursively.
+
+This produces the **Native, or Contextual, Metaform**, which is already the project's **Inference Metaform**. Its Elements, descriptions, and joins speak about the actual artifacts, their functions, and their specific receiving purposes. Types organize that understanding in the Namespace; generic Type descriptions do not replace it. For a plan, the subject is the proposed realization rather than an assumed existing implementation. Global reuse is separate from this primary preparation, not a prerequisite for its value.
+
+Latent inference is an operation that can be called on this understanding at any time. The Latent Expert receives **everything the Native Expert built, including the Elements, descriptions, joins, and Operative Purposes**. It remains blind to the repository's implementation details, reasoning from outside the native implementation frame while retaining the artifact's functional explanation. It can agree with the structure, question what it sees, and infer missing or different relationships from its learned understanding.
+
+The independence concerns immersion in implementation particulars, not access to the Native Metaform. It does not assume a model free of learned biases. Native and latent reasoning retain their distinct provenance; the clarified handoff does not determine whether latent output is a full graph or a delta. A difference can reveal an overlooked dependency, a deliberate specialization, a different realization of the same function, or an inappropriate generalization.
+
+Where contextual and latent graphs are represented, their source contents remain independently observable. The following structural meanings do not prescribe a new latent output format or correspondence algorithm.
+
+A separate shape-similarity layer shows structural agreement and divergence between the two graphs. It contains no copied semantic payload from either source graph; it records only structural correspondence and provenance references. Shape membership uses two bits:
+
+| Value | Meaning |
+|---|---|
+| `01` | Structure present in the Contextual Metaform only |
+| `10` | Structure present in the Latent Metaform only |
+| `11` | The same nodes and join structure are present in both |
+
+These values do not encode confidence, correctness, precedence, or semantic reconciliation. When both source graphs contain the same nodes and a join between them, the similarity layer can represent that structural agreement as `11`. If the source join contents differ, both source joins remain intact in their respective graphs and retain their own provenance; the similarity layer does not collapse, copy, or reconcile their contents.
+
+The relationship between these forms and amortization is direct: **the system performs the work of developing differently oriented understanding, then makes that work reusable**. Blind-spot analysis and inference amortization are therefore connected mechanisms, not unrelated benefits.
+
+### Elements, types, and perspectival meaning
+
+Everything under examination can be treated as an **Element**. A **Type** supplies its classification and Namespace organization. The Native description explains the actual artifact or function and the specific purpose it serves, rather than substituting a generic description of its Type.
+
+The dotted namespace participates in that interpretation. In `code.utility.disk`, the meanings of `code`, `code.utility`, and `code.utility.disk` each contribute type structure. They are not merely folder levels or labels attached after analysis.
+
+Names and descriptions provide concise, basic, unambiguous lexical handles. They help refer to an Element, but its identity is not established by string equality. Type and relationships carry the semantics.
+
+The principal perspectival relationship discussed here combines:
+
+| Dimension | Meaning |
+|---|---|
+| **Encounter Function** | How |
+| **Receiving Entity** | Who or what |
+| **Operative Purpose** | Why |
+
+Together, these orient interpretation toward how something operates or is encountered, what receives it, and why that relationship exists. They are not three independent annotations to be read separately.
+
+A Receiving Entity can be a person, system, subsystem, process, component, or another entity occupying that role at the selected resolution. Receiving relationships can continue across resolutions, with a distinct purpose at each relationship. A function serving a subsystem, a subsystem serving a node, and a node serving an operator need not share one undifferentiated purpose.
+
+This preserves the relationship between local work and broader meaning without replacing every local purpose with an ultimate mission statement. Other represented perspectives can also participate; the three dimensions are not a ceiling on the semantic structure.
+
+### Context determines what the material is doing
+
+A photo can be a standalone artifact or an asset serving another artifact. Its visible people, objects, and setting, together with surrounding folders and neighboring images in the camera's sequence, support inference about its purpose. A sequence of Paris photos near wedding photos can suggest an occasion; that contextual inference contributes to the description of the actual images.
+
+In a photo of a couple at the Eiffel Tower, the couple can be the Defining Element and the tower a Supportive Element. A scenery photo can also contain a salient subject, such as a hawk or a donkey on an incline. The classification `media.photo.scenery` does not replace the description that differentiates that particular image, its subject, setting, or inferred occasion. Medium matters insofar as it changes the reasoning. The same semantic method establishes what each artifact is doing in its context.
+
+**Exterior** means not part of the project. **External** means external to the functionality being examined but still in the repository. Control or ownership does not define exterior. An exterior entity can receive what the artifact provides or provide an Encounter Function that satisfies the artifact's OP.
+
+### Encounter changes inference through the type structure
+
+**Function** concerns operative capability. **Encounter** concerns the form through which something is expressed, experienced, or encountered. Programming language is therefore materially significant to code reasoning.
+
+Suppose `code.c` is joined as an Encounter at `code.utility.disk`. The functional type remains `code.utility.disk`; the language is not flattened into `code.utility.disk.c`.
+
+The Encounter propagates transitively backward through the functional type ancestry:
+
+```text
+code.utility.disk → code.utility → code
+```
+
+The Encounter is available when reasoning at broader ancestor types. From its attachment point, it conditions inference through the functional descendants of that branch. Backward visibility does not cause an Encounter to fan back down unrelated sibling branches.
+
+This is more than adding C-specific advice to one component. The Encounter changes how the relevant functional structure is understood: realization of functions, data representation, interfaces, dependencies, memory semantics, error behavior, operating-system interaction, and other relevant consequences. Those consequences can themselves be examined through Receiving Entity, Operative Purpose, and other represented perspectives.
+
+In a mixed-language project, language joins occur where the languages actually occur. The graph preserves that composition while allowing the consequences of each Encounter to be reasoned through the type structure.
+
+The dotted namespace is a strict typology: every prefix must itself express a valid Function or Encounter type. Encoding alone does not qualify as a type; an encoding name may appear where the path is actually expressing a Function, such as an encoder. Thus `document.html` fails when HTML is used only as document encoding, while `code.html` can qualify as a language Encounter and `code.encoder.jpg` can qualify as an encoding Function.
+
+### A knowledge graph of knowledge graphs
+
+The subject's semantic understanding is represented in a **knowledge graph of knowledge graphs**, using reified knowledge hypergraph semantics.
+
+A relationship can itself be represented as something inference examines. Rather than recording only that one component depends on another, the represented relationship can include the participants' roles, the purpose being satisfied, the Receiving Entity, conditions, evidence, procedures, or other meaningful participants.
+
+This matters because the reason for a dependency may be central to a change. Knowing that two Elements are connected is not equivalent to understanding what one requires from the other or why that requirement exists.
+
+Each part of the Metaform can potentially resolve knowledge through any relevant perspective represented in the graph. Local work is therefore not confined to what an agent has reconstructed from the current working fragment. Its meaning can be examined through other functions, receiving relationships, Encounters, and project-wide purposes.
+
+The graph makes previously inferred understanding available. **It does not replace inference with stored answers.** Subsequent operations still reason through the represented relationships and can derive further understanding from them.
+
+### What changes about prompting
+
+The prompt and the Metaform are separately reusable resources. A good prompt expresses an inference operation; the Metaform provides the semantic orientation through which that operation is interpreted.
+
+Consequently, a prompt need not restate every dependency, implementation consequence, receiving relationship, and project-specific implication. Much of that inferential preparation has already happened. The prompt can direct what to compare, examine, derive, or reconsider through the available structure.
+
+This differs in emphasis from established uses of *meta-prompting*. Zhang and colleagues describe meta-prompting around formal task structure and structured prompt transformations. Their work already gives structure a central role; meta-prompting is not simply elaborate role assignment.[2] Suzgun and Kalai describe another approach in which high-level instructions coordinate tailored expert queries and integrate their results.[3]
+
+The defining commitment of the Inference Metaform is **reusable, previously inferred semantic understanding of the subject**, including the contextual and latent orientations, type structure, perspectival relationships, and Encounter propagation. Prompt construction or orchestration can operate through it, but neither is its fundamental definition.
+
+The following are exploratory prompts, not a prescribed procedure. The first two are user-supplied possibilities that have not been tested here.
+
+**Refactoring**
+
+> Compare the proposed plan's shape with the Metaform. Infer where the refactoring becomes complex or difficult to follow. Consider representing that planning with a schema called `refactor_planning` as a layer in the knowledge metagraph.
+
+This directs comparison between represented project meaning and a proposed realization. The possible schema layer would represent newly inferred planning knowledge; it is not an established required schema.
+
+**Porting**
+
+> Link `code.langA` and `code.langB`; work node by node to name and identify function-specific considerations and derive imperatives for addressing them.
+
+This engages multiple Encounters through the functional structure. Their backward propagation and subsequent forward inference make the operation more substantial than collecting local language-conversion tips.
+
+Two further exploratory possibilities illustrate other directions.
+
+**Diagnosis**
+
+> Examine the reported difficulty through the affected Functions, Receiving Entities, and Operative Purposes. Infer which difficulties follow from the functions themselves and which follow from their current realization.
+
+**Foresight**
+
+> Examine differences between contextual and latent relationships through the purposes of their Receiving Entities. Infer which differences suggest useful capabilities that the current realization has not developed.
+
+These prompts ask inference to operate through relationships. They are not generic requests with Metaform terminology added. They also do not define a closed set of operations: implementation, review, decomposition, synthesis, testing, ideation, and other work can engage the same semantic structure differently.
+
+### Protecting type rather than frozen implementation
+
+A content-level frozen core preserves identity by preserving some part of the artifact. The Metaform approach instead places the invariant in semantic relations, allowing the realization to change without requiring arbitrary implementation content to remain untouched.
+
+For a Type `T`, the formal identity is the exact set:
+
+`C(T) = {(rᵢ ∧ pᵢ ∧ e)}`
+
+Each conjunction binds a Receiving Entity `rᵢ`—the who or what receiving the effect; its Operative Purpose `pᵢ`—the why owned by that Receiving Entity; and the Type's single Encounter Function `e`—the how through which the effect is realized or encountered.
+
+The important distinction is between preserving the thing's identity and preserving its present construction. A realization can change substantially while retaining its identity-defining semantic relationship. A Type has one Encounter Function at the represented resolution. A materially different Encounter makes a different Type or variant, represented through a further typological distinction rather than by adding a second EF to the same Type.
+
+Mutation changes the realization while preserving the relevant semantic identity. Transformation changes what the thing is in that semantic sense.
+
+For refactoring, the prepared understanding allows the agent to examine a different structure without treating the existing structure as the definition of the subsystem. For porting, the contextual view describes the current realization, while a target Encounter can orient how the function is realized differently. The objective is preservation of semantic function and receiving-purpose relationships, not mechanical translation of syntax.
+
+**The system removes the need for the core to be a thing. The invariant becomes a relation.**
+
+`C(T)` is exact as a semantic definition. It is not a lower bound, partial signature, similarity measure, confidence score, or candidate identity projection. The identity definition is semantic guidance for reasoning about the Type; it does not itself prescribe an approval gate, lifecycle, or runtime check.
+
+### Why previously performed inference can support deeper work
+
+The AI-side account concerns **effective inferential depth**: how much subsequent reasoning can build on an already-developed understanding. It does not increase the model's physical layers, parameters, context window, or literal compute capacity.
+
+There is relevant precedent for distinguishing what a model knows from what a particular reasoning arrangement elicits. Chain-of-thought prompting research showed that intermediate reasoning demonstrations could improve performance on the studied reasoning tasks.[4] Least-to-most prompting explicitly used answers to earlier subproblems to support later ones.[5] SELF-DISCOVER developed reasoning structures before applying them to task instances.[6]
+
+These studies support the plausibility of arranging prior reasoning to assist later reasoning. They are not measurements of the Inference Metaform or proof of its particular semantics.
+
+Here, the proposed causal mechanism is specific. Preparation has already inferred relationships that would otherwise be prerequisites inside the task. Subsequent inference can start from those relationships, examine their consequences, compare realizations, or follow their effects through other perspectives. Its starting understanding is more developed.
+
+An agent implementing a change can therefore work on how alternative realizations satisfy the represented function, rather than spending the entire attempt determining what that function means while changing it. The graph-wide relationships also allow local problems to remain connected to broader meaning as new obstacles appear.
+
+The intended reductions follow from that mechanism. Repeated semantic reconstruction is reduced by reuse. Contextual omissions can become visible through the retained latent view. Unsupported gap filling can be reduced where relevant relationships have already been inferred and represented. Alignment can improve because effects are interpreted through their Receiving Entities and Operative Purposes rather than only through nearby code.
+
+Reproducibility likewise concerns reuse of the semantic orientation, not identical wording or one predetermined solution. Different operations can reason from the same prepared meaning while producing different, appropriate realizations or conclusions.
+
+The method applies across artifact kinds. Wherever the system represents Elements, Types, Encounters, purposes, and receiving relationships, subsequent work can use the prepared understanding. This semantic scope does not imply that every application has already been demonstrated.
+
+### Development status
+
+The supplied conversation is an **early proof of behavior during development**. Within a worked scenario, the agent used the described perspectives to produce contextual and latent analysis, element-specific development imperatives, and foresight, culminating in a storage-utility work report.
+
+The important observation is that different instructions could engage the prepared semantic understanding and produce specific reasoning. The report is one result of that use—not the definition of the Metaform and not its canonical workflow.
+
+The demonstration does not quantify reasoning gains, establish general superiority in refactoring or porting, or demonstrate elimination of hallucination. Those are distinct from the mechanism it illustrates: **perform part of the required inference beforehand, preserve its semantic results from different orientations, and let subsequent work reason through that understanding rather than reconstructing it entirely afresh.**
+
+---
+
+## Research references
+
+These references support the external AI comparisons, not the system's definitions or unmeasured performance claims. The system account follows the supplied semantics and development conversation.
+
+[1] Nelson F. Liu et al. *Lost in the Middle: How Language Models Use Long Contexts*. Transactions of the Association for Computational Linguistics, 12:157–173, 2024. DOI: 10.1162/tacl_a_00638.
+
+[2] Yifan Zhang, Yang Yuan, and Andrew Chi-Chih Yao. *Meta Prompting for AI Systems*. arXiv:2311.11482, version 10, 2026.
+
+[3] Mirac Suzgun and Adam Tauman Kalai. *Meta-Prompting: Enhancing Language Models with Task-Agnostic Scaffolding*. arXiv:2401.12954, 2024.
+
+[4] Jason Wei et al. *Chain-of-Thought Prompting Elicits Reasoning in Large Language Models*. arXiv:2201.11903, 2022.
+
+[5] Denny Zhou et al. *Least-to-Most Prompting Enables Complex Reasoning in Large Language Models*. ICLR, 2023. arXiv:2205.10625.
+
+[6] Pei Zhou et al. *Self-Discover: Large Language Models Self-Compose Reasoning Structures*. arXiv:2402.03620, 2024.

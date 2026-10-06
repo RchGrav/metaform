@@ -1,0 +1,52 @@
+{Layer_Schema} :=
+
+LAYER(
+  id          := [generated layer id],
+  name        := [unique layer name: sources | medium_type | workflow_name | property_name | other canonical layer name],
+  metaform_id := [metaform id],
+  description := [briefly describe this layer],
+
+  elements := [
+    ELEMENT(
+      namespace_address := [dotted namespace address],
+      role              := [AUE|CQU|DE|SE|NE],
+
+      refs := [
+        REF(
+          key   := [key],
+          value := [value]
+        )
+      ],
+
+      elements := [
+        ELEMENT(
+          namespace_address := [dotted namespace address],
+          role              := [DE|SE|NE],
+          refs              := [],
+          joins             := []
+        )
+      ],
+
+      joins := [
+        JOIN(
+          type     := purpose,
+          purpose  := [RE Operative Purpose],
+          ef       := [PE Encounter Function within this RE encounter],
+          ifd      := [send|receive|both],
+          elements := []
+        )
+      ]
+    )
+  ]
+)
+
+# Notes
++> name identifies the knowledge or function contributed by the layer.
++> description states what the layer holds and how its values are read, so an agent can use it without inferring from the name.
++> Layer names are unique across all layers of the metaform.
++> A layer name can be used as a namespace root, so it is one valid namespace segment: lowercase letters, digits and underscores; no spaces, dots or hyphens.
++> A layer name is never a project root: code, document, media, data, upstream or downstream.
++> Use stable canonical names such as sources, medium_type, workflow_name, or property_name.
++> A layer overlays the metaform identified by metaform_id using the same namespace structure.
++> The layer may contain only the portions of the metaform for which it contributes knowledge.
++> An element is named by its namespace_address alone; its name and name_length come from the metaform.

@@ -1,0 +1,38 @@
+{
+  "project": "mgm-main",
+  "project_id": "7db2a051-0ad5-4ffb-9df8-53b93ca304eb",
+  "run_id": "10c99044b7ca45f8944349b8b23dd21b",
+  "run_created": "2026-09-10T15:57:41.711174+00:00",
+  "status": "complete",
+  "source_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+  "native_prompt_revision": "54449ba7e309d60998d63e9ce290089397d01c1404525c9d657e134037d785fe",
+  "defining_element": "mgm:project",
+  "defining_element_types": [
+    "code.coordinator.gateway"
+  ],
+  "files": {
+    "native.json": {
+      "sha256": "8deabe99d2b987927a0be2737263de72b709075d64cf464ee5509f775caf93b9",
+      "elements": 105,
+      "actual_elements": 58,
+      "types": 47,
+      "joins": 101,
+      "authored_svgs": 47
+    },
+    "latent.json": {
+      "sha256": "efb739ae530e0289f83a6ffd2b3b86ecb393ca373dac289299e57db0a7b8351b",
+      "elements": 119,
+      "actual_elements": 72,
+      "types": 47,
+      "joins": 204,
+      "authored_svgs": 47
+    }
+  },
+  "export_basis": "Exact native_graph and latent_graph stored on the completed intake run. Native includes the understanding supplied to Latent. JSON formatting only; semantic contents are unchanged.",
+  "persisted_join_counts": {
+    "archaeology": 204,
+    "merged": 205,
+    "native": 101
+  },
+  "evidence_limits": "Native reused the prior source-inspection map and checked the current checkout and repository guides. This run is not a fresh exhaustive source audit or runtime validation. Latent reasoned on the supplied Native account without repository access."
+}

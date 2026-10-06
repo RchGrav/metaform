@@ -25,8 +25,8 @@ from metaform.data import (
     DataConnection,
     DataRow,
     Element,
-    Item,
     Index,
+    Item,
     Join,
     Message,
     Node,
@@ -786,10 +786,10 @@ def approve(tx: Tx, item_id: str) -> ChallengeState:
 
 def _join_in_layer(tx: Tx, element_id: str, layer_id: str) -> str | None:
     """The first join of the layer that holds the element, or else the first it receives."""
-    for sql in ("SELECT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row JOIN joins j "
-                "ON j.row = c.row WHERE e.element_id=? AND j.layer_id=? ORDER BY c.row LIMIT 1",
-                "SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row "
-                "WHERE c.receiver=? AND j.layer_id=? ORDER BY c.row LIMIT 1"):
+    for sql in (("SELECT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row JOIN joins j "
+                "ON j.row = c.row WHERE e.element_id=? AND j.layer_id=? ORDER BY c.row LIMIT 1"),
+                ("SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row "
+                "WHERE c.receiver=? AND j.layer_id=? ORDER BY c.row LIMIT 1")):
         row = tx.execute(sql, (element_id, layer_id)).fetchone()
         if row is not None:
             return str(row[0])
@@ -1042,12 +1042,19 @@ def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:
 
 
 TABLES = Tables(
-    version=4,
+    version=6,
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,
     tables=(*FEATURE_TABLES, Table(
         'glyphs', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('glyph', required=True)),
+    ), Table(
+        # each ticket's preferred agent and the person's hold, which hides it from agents and automatic starts
+        'ticket_settings', place='metaform', key=('work_id',),
+        columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0)),
+    ), Table(
+        'eligible', place='metaform', key=('work_id',),
+        columns=(Column('work_id', required=True), Column('agents', 'json', required=True)),
     ), Table(
         'question_work', place='metaform', key=('message_id',),
         columns=(Column('message_id', required=True), Column('work_id', required=True)),

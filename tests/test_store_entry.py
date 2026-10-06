@@ -73,8 +73,10 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
     assert {name: rows for name, rows in after.items() if name != 'work'} == {name: rows for name, rows in before.items()
                                                                               if name != 'work'}, 'the map changed'
     listed = json.loads(run('map', 'work', 'condition=broken', '--json', cwd=folder).stdout)['results']
-    assert [(row['kind'], row['receiver_address'], row['provider_address'], row['condition'], row['task'])
-            for row in listed] == [('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken', 'wire the tone')]
+    assert [(row['kind'], row['receiver_address'], row['provider_address'], row['condition'])
+            for row in listed] == [('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken')]
+    assert json.loads(run('map', 'work', f'id={listed[0]["work_id"]}', '--json', cwd=folder).stdout)['task'] == (
+        'wire the tone')  # a list row leaves its task out, MAP-049
     element = json.loads(run('map', 'element', 'code.alarm.audible', '--json', cwd=folder).stdout)
     assert element['open_work'] == ['missing'] and 'flag' not in element
     assert store.joins('code.timer.kitchen').results[0].open_work == ('broken',)

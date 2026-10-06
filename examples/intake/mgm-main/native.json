@@ -1,0 +1,3541 @@
+{
+  "elements": {
+    "code": {
+      "entity_desc": "A set of precise instructions that tells a computer how to perform a task or process data.",
+      "entity_json_obj": {
+        "aliases": [
+          "program",
+          "software"
+        ],
+        "ef": "Directs computer execution to produce a result.",
+        "en": "Program Code",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.adapter": {
+      "entity_desc": "Adapter program code that makes one interface usable through another.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Translates state, calls, or events between interfaces.",
+        "en": "Adapter",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.builder": {
+      "entity_desc": "Builder program code that assembles inputs into a usable artifact.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Transforms specified inputs into assembled outputs.",
+        "en": "Builder",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.c": {
+      "entity_desc": "C program code expressed through the C programming encounter.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Expresses executable behavior using C constructs.",
+        "en": "C",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.c.c11": {
+      "entity_desc": "C11 C program code expressed through the C11 programming encounter.",
+      "entity_json_obj": {
+        "aliases": [
+          "code.c.11",
+          "11"
+        ],
+        "ef": "Expresses C behavior with C11 facilities.",
+        "en": "C11",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.codec": {
+      "entity_desc": "Codec program code that translates information to and from an exchanged representation.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Encodes information for exchange and decodes received representations.",
+        "en": "Codec",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.coordinator": {
+      "entity_desc": "Coordinator program code that brings participating actions into a coherent result.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Coordinates participating actions through shared decisions and state.",
+        "en": "Coordinator",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.coordinator.gateway": {
+      "entity_desc": "Gateway coordinator program code that coordinates access through a network gateway.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Combines gateway availability and selection into usable network access.",
+        "en": "Gateway Coordinator",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.daemon": {
+      "entity_desc": "Daemon program code that provides an ongoing service.",
+      "entity_json_obj": {
+        "aliases": [
+          "service"
+        ],
+        "ef": "Runs continuously to receive events and perform service work.",
+        "en": "Daemon",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.dispatcher": {
+      "entity_desc": "Dispatcher program code that directs incoming work to its responsible handler.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Routes incoming work to the function that executes it.",
+        "en": "Dispatcher",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.dispatcher.event": {
+      "entity_desc": "Event dispatcher program code that directs event work to its responsible handler.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Dispatches events to the actions responsible for them.",
+        "en": "Event Dispatcher",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.estimator": {
+      "entity_desc": "Estimator program code that derives an approximate quantity from observations.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Updates an estimate from measured evidence.",
+        "en": "Estimator",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.generator": {
+      "entity_desc": "Generator program code that produces an output from inputs or rules.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Applies generation rules to produce a usable result.",
+        "en": "Generator",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.generator.identity": {
+      "entity_desc": "Identity generator program code that produces distinguishing identity from inputs.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Derives repeatable identifying values from selected inputs.",
+        "en": "Identity Generator",
+        "length": 2,
+        "parametric_elements": [
+          "seed",
+          "prefix",
+          "retries"
+        ],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.interface": {
+      "entity_desc": "Interface program code that exposes interaction with a system.",
+      "entity_json_obj": {
+        "aliases": [
+          "api"
+        ],
+        "ef": "Translates requests and results across an interaction boundary.",
+        "en": "Interface",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.javascript": {
+      "entity_desc": "JavaScript program code expressed through the JavaScript programming encounter.",
+      "entity_json_obj": {
+        "aliases": [
+          "js"
+        ],
+        "ef": "Expresses executable behavior using JavaScript constructs.",
+        "en": "JavaScript",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.manager": {
+      "entity_desc": "Manager program code that controls the state of a resource.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Applies requested changes and reconciles managed resource state.",
+        "en": "Manager",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.manager.firewall": {
+      "entity_desc": "Firewall manager program code that controls packet-filtering state.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Reconciles traffic-permission rules with required connectivity.",
+        "en": "Firewall Manager",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.manager.route": {
+      "entity_desc": "Route manager program code that controls forwarding-path state.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Installs, adjusts, and removes forwarding routes.",
+        "en": "Route Manager",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.observer": {
+      "entity_desc": "Observer program code that makes a system’s behavior discernible.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Collects and presents evidence of system behavior.",
+        "en": "Observer",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.policy": {
+      "entity_desc": "Policy program code that determines permitted or preferred actions.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Applies decision rules to produce action constraints and preferences.",
+        "en": "Policy",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.pool": {
+      "entity_desc": "Pool program code that maintains a set of available resources.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Selects, replenishes and retires available resource candidates.",
+        "en": "Pool",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.provisioner": {
+      "entity_desc": "Provisioner program code that prepares resources for use.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Establishes the resources and settings needed for operation.",
+        "en": "Provisioner",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.publisher": {
+      "entity_desc": "Publisher program code that makes information available to consumers.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Transforms retained information into a consumable publication.",
+        "en": "Publisher",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.ranker": {
+      "entity_desc": "Ranker program code that orders candidates by comparative criteria.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Assigns relative preference from candidate measurements.",
+        "en": "Ranker",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.shell": {
+      "entity_desc": "Shell program code that directs command execution through a shell.",
+      "entity_json_obj": {
+        "aliases": [
+          "sh"
+        ],
+        "ef": "Combines commands and shell control flow into executable procedures.",
+        "en": "Shell",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.store": {
+      "entity_desc": "Store program code that retains information for later use.",
+      "entity_json_obj": {
+        "aliases": [
+          "repository"
+        ],
+        "ef": "Accepts, retains, and retrieves information.",
+        "en": "Store",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.synchronizer": {
+      "entity_desc": "Synchronizer program code that reconciles participants’ knowledge or progress.",
+      "entity_json_obj": {
+        "aliases": [
+          "sync"
+        ],
+        "ef": "Exchanges evidence and triggers updates to reduce disagreement.",
+        "en": "Synchronizer",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.tester": {
+      "entity_desc": "Tester program code that evaluates whether a condition holds.",
+      "entity_json_obj": {
+        "aliases": [
+          "probe"
+        ],
+        "ef": "Performs checks and interprets resulting evidence.",
+        "en": "Tester",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "code.tester.connectivity": {
+      "entity_desc": "Connectivity tester program code that evaluates the usability of a communication path.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Sends probes and interprets responses to assess path connectivity.",
+        "en": "Connectivity Tester",
+        "length": 2,
+        "parametric_elements": [
+          "interval",
+          "deadline",
+          "batch",
+          "capacity"
+        ],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"6\" y=\"10\" width=\"52\" height=\"44\" rx=\"7\"/><path d=\"m25 23-9 9 9 9m14-18 9 9-9 9\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "data": {
+      "entity_desc": "Information represented for interpretation or processing.",
+      "entity_json_obj": {
+        "aliases": [
+          "information"
+        ],
+        "ef": "Makes information available to an interpreting receiver.",
+        "en": "Data",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"14\" rx=\"24\" ry=\"8\"/><path d=\"M8 14v36c0 11 48 11 48 0V14M8 32c0 11 48 11 48 0\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "data.configuration": {
+      "entity_desc": "Configuration data that specifies choices for operating a system.",
+      "entity_json_obj": {
+        "aliases": [
+          "config"
+        ],
+        "ef": "Supplies values that select a system’s operating behavior.",
+        "en": "Configuration",
+        "length": 1,
+        "parametric_elements": [
+          "value"
+        ],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"14\" rx=\"24\" ry=\"8\"/><path d=\"M8 14v36c0 11 48 11 48 0V14M8 32c0 11 48 11 48 0\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "data.constraint": {
+      "entity_desc": "Constraint data that expresses a condition limiting acceptable interpretation or action.",
+      "entity_json_obj": {
+        "aliases": [
+          "restriction"
+        ],
+        "ef": "Restricts what may be assumed or performed.",
+        "en": "Constraint",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"14\" rx=\"24\" ry=\"8\"/><path d=\"M8 14v36c0 11 48 11 48 0V14M8 32c0 11 48 11 48 0\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "data.dictionary": {
+      "entity_desc": "Dictionary data that associates symbols with interpretable entries.",
+      "entity_json_obj": {
+        "aliases": [
+          "vocabulary"
+        ],
+        "ef": "Supplies a vocabulary for translating and identifying values.",
+        "en": "Dictionary",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"14\" rx=\"24\" ry=\"8\"/><path d=\"M8 14v36c0 11 48 11 48 0V14M8 32c0 11 48 11 48 0\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "data.state": {
+      "entity_desc": "State data that represents a participant’s condition.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Makes a recorded condition available to decisions and observations.",
+        "en": "State",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"14\" rx=\"24\" ry=\"8\"/><path d=\"M8 14v36c0 11 48 11 48 0V14M8 32c0 11 48 11 48 0\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "document": {
+      "entity_desc": "A recorded work that conveys meaning to a reader.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Communicates an organized account through reading.",
+        "en": "Document",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 5h26l12 12v42H14zM40 5v12h12M22 29h22M22 38h22M22 47h15\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "document.guide": {
+      "entity_desc": "A guide document that directs a reader’s understanding or actions.",
+      "entity_json_obj": {
+        "aliases": [
+          "manual"
+        ],
+        "ef": "Explains how to navigate and act within a subject.",
+        "en": "Guide",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 5h26l12 12v42H14zM40 5v12h12M22 29h22M22 38h22M22 47h15\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "document.report": {
+      "entity_desc": "A report document that records findings from an examination or event.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Presents observations and their supporting circumstances.",
+        "en": "Report",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 5h26l12 12v42H14zM40 5v12h12M22 29h22M22 38h22M22 47h15\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "document.specification": {
+      "entity_desc": "A specification document that states the intended conditions of a work.",
+      "entity_json_obj": {
+        "aliases": [
+          "spec"
+        ],
+        "ef": "Expresses requirements and contracts against which work can be assessed.",
+        "en": "Specification",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 5h26l12 12v42H14zM40 5v12h12M22 29h22M22 38h22M22 47h15\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior": {
+      "entity_desc": "An entity outside the artifact being examined.",
+      "entity_json_obj": {
+        "aliases": [
+          "ext"
+        ],
+        "ef": "Meets the artifact from outside its boundary.",
+        "en": "Exterior",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.framework": {
+      "entity_desc": "A framework acting as an exterior entity that provides established facilities for a work.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Provides facilities and conventions through which a work operates.",
+        "en": "Framework",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.group": {
+      "entity_desc": "A group of participants acting as an exterior entity.",
+      "entity_json_obj": {
+        "aliases": [
+          "collective"
+        ],
+        "ef": "Combines participants in an encounter with the artifact.",
+        "en": "Group",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.group.maintainer": {
+      "entity_desc": "A maintainer group acting as an exterior entity to sustain and revise a work.",
+      "entity_json_obj": {
+        "aliases": [
+          "developer"
+        ],
+        "ef": "Examines, changes, and verifies a work over time.",
+        "en": "Maintainer Group",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.group.operator": {
+      "entity_desc": "An operator group acting as an exterior entity to run and oversee a work.",
+      "entity_json_obj": {
+        "aliases": [
+          "administrator"
+        ],
+        "ef": "Operates and oversees a work through its controls and observations.",
+        "en": "Operator Group",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.group.user": {
+      "entity_desc": "A user group acting as an exterior entity to receive a work’s result.",
+      "entity_json_obj": {
+        "aliases": [
+          "consumer"
+        ],
+        "ef": "Uses a work’s delivered result.",
+        "en": "User Group",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.system": {
+      "entity_desc": "A system acting as an exterior entity through interacting parts.",
+      "entity_json_obj": {
+        "aliases": [],
+        "ef": "Supplies or receives coordinated behavior across an artifact boundary.",
+        "en": "System",
+        "length": 1,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "exterior.system.network": {
+      "entity_desc": "A network system acting as an exterior entity to connect communicating participants.",
+      "entity_json_obj": {
+        "aliases": [
+          "net"
+        ],
+        "ef": "Carries exchanges between connected participants.",
+        "en": "Network System",
+        "length": 2,
+        "parametric_elements": [],
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"25\" stroke-dasharray=\"5 4\"/><path d=\"M16 32h32m-8-8 8 8-8 8\"/></svg>"
+      },
+      "entity_schema": "metaform:element",
+      "layer": "elements"
+    },
+    "mgm:analysis": {
+      "entity_desc": "Repository analyzer tooling builds compile context and evaluates static-analysis evidence with a maintained allowlist.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Repository analyzer tooling builds compile context and evaluates static-analysis evidence with a maintained allowlist.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Static analysis is complementary evidence with a stated compilation context and allowlist. Availability of a target is not execution, and analysis success is not dynamic connectivity acceptance. Native-reported scope and qualifications: make static-analysis may use MVM_SDK_PATH; no analysis run was performed in this pass."
+        },
+        "ef": "Runs the explicit SDK/Clang analysis path and validates findings through static_analysis_verify.py.",
+        "en": "SDK static analysis and verification gate",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:analysis"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:autoap": {
+      "entity_desc": "Per-interface autoapd tries upstream DHCP and maintains fallback management access when no non-fallback IPv4 address is present.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Per-interface autoapd tries upstream DHCP and maintains fallback management access when no non-fallback IPv4 address is present.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Management fallback addresses a different receiving purpose from upstream usability. Ownership/restoration is a sound boundary. Passive DHCP silence and a fixed fallback address leave coexistence and partition-merge questions that need scenario-based verification. Native-reported scope and qualifications: Opt-in proto=autoap; not a wireless radio configurator or an Internet connectivity tester. Defaults: timeout 25 s, fallback 172.16.16.1/24, leases 5 m, loss debounce 5 s. Ownership marker autoap_managed and saved prior DHCP section values govern restoration. A 200 ms passive DHCP-response listen is precautionary, not proof that no DHCP server exists."
+        },
+        "ef": "Keeps a DHCP client running, adds a fallback address after timeout, enables owned DHCP service, and withdraws fallback when upstream addressing returns.",
+        "en": "AutoAP management-interface service",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:autoap"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.daemon"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:autoapproto": {
+      "entity_desc": "Shell protocol launcher and udhcpc helper connecting one management-interface daemon to netifd lifecycle and DHCP lease changes.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Shell protocol launcher and udhcpc helper connecting one management-interface daemon to netifd lifecycle and DHCP lease changes.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The profile/device mapping and lease lifecycle must preserve ownership across renewals, restart and user reconfiguration. The graph supplies a mechanism, but not an acceptance signal for concurrent changes."
+        },
+        "ef": "Resolves profile/device mapping, launches autoapd, applies leases via netifd, and delivers events to autoap.<logical-interface>.",
+        "en": "AutoAP netifd and DHCP-event integration",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:autoapproto"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.adapter"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:batman": {
+      "entity_desc": "External batman-adv subsystem supplies underlying mesh forwarding plus neighbor, originator and throughput observations.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "External batman-adv subsystem supplies underlying mesh forwarding plus neighbor, originator and throughput observations.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Carries mesh frames and exposes current topology/reachability measurements via batman netlink and control interfaces.",
+        "en": "Linux batman-adv mesh forwarding and observations",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:batman"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.system"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:build": {
+      "entity_desc": "Root and package Makefiles assemble and verify the five maintained packages through an external MVM/C3Lab checkout.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Root and package Makefiles assemble and verify the five maintained packages through an external MVM/C3Lab checkout.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Configured profiles and package lists are intent. Installation closure must account for runtime protocols actually selected by profiles, including pi-demo AutoAP, and requires profile-specific build/install evidence. Native-reported scope and qualifications: Configured profiles: x86_64-generic, tplink_eap615-wall-v1, rpi-4. EAP builds runtime packages only; x86 adds mgm-config; rpi-4 also adds pi-demo. A configured profile is not proof of a successful build. src/Makefile.inc builds mgmd and mgm-ready-observe; package Makefile separately builds dnsbench."
+        },
+        "ef": "Root targets register/export this checkout, validate profile-appropriate packages, cross-build them, and invoke optional verification hooks.",
+        "en": "Repository package build entry points",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:build"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.builder"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:c": {
+      "entity_desc": "C source implementation of the standalone identity generator and management daemon.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "C source implementation of the standalone identity generator and management daemon.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Keep ordinary C encounter attribution for IPGen and AutoAP separate from MGM GNU C11 flags. Compilation language does not establish runtime reliability. Native-reported scope and qualifications: These package compile lines do not explicitly request -std=gnu11; the GNU C11 property on mgmd is not assumed for these siblings."
+        },
+        "ef": "Package compilers turn ipgen.c and autoapd.c into their runtime executables.",
+        "en": "C implementation of IPGen and AutoAP",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:c"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.c"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:c11": {
+      "entity_desc": "The MGM daemon and embedded core, readiness observer, and DNS benchmark are compiled with explicit GNU C11 flags.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The MGM daemon and embedded core, readiness observer, and DNS benchmark are compiled with explicit GNU C11 flags.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Retain GNU C11 only for the compiled MGM implementation slice described by Native. Correct the description so it does not imply that IPGen and AutoAP were independently shown to select GNU C11. Native-reported scope and qualifications: -std=gnu11 includes GNU extensions; host MGM tests enforce -Wall -Wextra -Werror. This property is attached to compiled MGM elements, not to shell or documentation siblings.",
+          "scope": {
+            "applies_to": [
+              "mgm:daemon",
+              "mgm:observer",
+              "mgm:dnsbench"
+            ],
+            "basis": "Explicit -std=gnu11 in MGM src/Makefile.inc and package Makefile.",
+            "siblings": "IPGen and AutoAP have separate C compilation evidence in mgm:c; their package compile lines do not explicitly select GNU C11."
+          }
+        },
+        "ef": "Compilers turn the C implementation into target binaries under the relevant package flags.",
+        "en": "GNU C11 implementation encounter",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:c11"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.c.c11"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:c3lab": {
+      "entity_desc": "External build and virtual-lab facilities invoked by repository tooling.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "External build and virtual-lab facilities invoked by repository tooling.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review. Native-reported scope and qualifications: C3Lab EAP package overlay belongs outside this repository and supplies shared-br-lan policy. It was described by repository documentation, not inspected in this pass."
+        },
+        "ef": "Provides repository staging, OpenWrt SDK/profile package builds, platform overlays, and multi-node lab commands.",
+        "en": "MVM / C3Lab build and mesh lab",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:c3lab"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.framework"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:ci": {
+      "entity_desc": "Bitbucket pipeline and change-contract checker require tests and scope-related documentation evidence for submitted changes.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Bitbucket pipeline and change-contract checker require tests and scope-related documentation evidence for submitted changes.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. A change-contract gate is supportive maintenance infrastructure. Stale rule references should not create runtime Elements for removed packages; verify contract coverage against the current active package map. Native-reported scope and qualifications: The current contract config still includes an old c3act rule and docs/C3ACT.md reference. That is not proof of an active C3Act package. Protected instruction/tooling files are not changed by this mapping task."
+        },
+        "ef": "Pipeline runs make test and make change-contract against the PR destination; checker combines committed, staged, unstaged and untracked change scope.",
+        "en": "Pull-request host and change-contract validation",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:ci"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:cli": {
+      "entity_desc": "Installed mgm, mgmctl, mgm-cli and nodelist wrappers expose daemon status, state, routing, wireless, and debugging interfaces.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed mgm, mgmctl, mgm-cli and nodelist wrappers expose daemon status, state, routing, wireless, and debugging interfaces.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The running daemon is necessary for live controls, but the status fallback can serve a narrower diagnostic purpose without it. File-backed status should carry freshness/origin so operators cannot mistake retained observations for a live answer.",
+          "surfaces": {
+            "compiled_service": "mgm.c registers and implements the mgm, mgm.route and mgm.batadv ubus controls.",
+            "property_scope": "mgm:shell describes only shell wrapper execution; compiled daemon handlers receive the GNU C11 encounter through mgm:daemon.",
+            "shell_wrappers": [
+              "mgm",
+              "mgmctl",
+              "mgm-cli.sh",
+              "nodelist"
+            ]
+          }
+        },
+        "ef": "Commands invoke mgm, mgm.route, and mgm.batadv ubus methods; mgm status can fall back to /tmp/mgm/status.json when ubus is unavailable.",
+        "en": "MGM ubus and command-line controls",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:cli"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.interface"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:codec": {
+      "entity_desc": "Current wire codec for sender state and the other-node witness array.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Current wire codec for sender state and the other-node witness array.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that CBOR is the exchange representation of this function. A receiver contract should specify payload bounds, invalid-field handling and mixed-version behavior; those are missing assurances in the graph, not evidence that parsing is unsafe. Native-reported scope and qualifications: Serializes/parses one primary route despite the larger C capacity. CBOR is the codec’s exchange representation, not a standalone functional Type. Unused packed packet design is not the active protocol."
+        },
+        "ef": "Builds and parses CBOR status messages used by multicast synchronization.",
+        "en": "MGM CBOR status encoder and parser",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:codec"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.codec"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:configuration": {
+      "entity_desc": "The shipped MGM skeleton and source-consumed configuration for bridge identity, multicast, ranking, and experimental routing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The shipped MGM skeleton and source-consumed configuration for bridge identity, multicast, ranking, and experimental routing.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Only consumed values are effective controls. UI/config presence is not feature implementation. Document desired, effective, inactive and invalid values so operators can tell which choices affect the running result. Native-reported scope and qualifications: Defaults include br-mesh, ff02::114:9876, 10.128.0.0/16, seed crius, rerank_cadence_ms=500 (minimum 50), experimental_indirect_uplink_routes=0. enabled is not read by mgmd; ipgen_enabled is not a live boolean; safetynet/probe skeleton values do not establish an active probing feature. mesh_originator_timeout_ms is exposed but does not drive the active originator loss algorithm."
+        },
+        "ef": "glue_load_config reads effective UCI values and applies supported settings to daemon behavior.",
+        "en": "MGM UCI runtime settings",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:configuration"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "data.configuration"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:daemon": {
+      "entity_desc": "The MGM control-plane daemon integrating local state, peer multicast, routing, and embedded connectivity testing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The MGM control-plane daemon integrating local state, peer multicast, routing, and embedded connectivity testing.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that a single authoritative integration boundary reduces conflicting ownership. It also concentrates progress dependencies: unrelated observation/publication work must not prevent state withdrawal and route actions. Bounded progress is a requirement to verify, not a claim of current blocking.",
+          "ownership": {
+            "connectivity_authority": "Embedded mgm:sentry; direct callback via mgm:sentryhandoff.",
+            "event_loop": "Single uloop integration boundary.",
+            "forwarding": "IPv4 kernel route actions with firewall reconciliation.",
+            "peer_transport": "IPv6 link-local sender state and witnesses.",
+            "route_authority": "MGM event dispatch and route manager.",
+            "state": "Authoritative local record plus receiver-local remote cache."
+          }
+        },
+        "ef": "Runs one uloop integration boundary that consumes kernel/service/peer events, updates state, and applies route decisions.",
+        "en": "mgmd",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:daemon"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.daemon"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:dictionary": {
+      "entity_desc": "Embedded mnemonic word tables and the shipped mnem001.txt asset provide a readable vocabulary for node identity.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Embedded mnemonic word tables and the shipped mnem001.txt asset provide a readable vocabulary for node identity.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The vocabulary is necessary to the stated mnemonic mapping, whereas a particular installed text file is not established as a runtime requirement. Correct the native join signal that attributes this effect to installed words. Native-reported scope and qualifications: mgm_mnemonic.c directly uses an embedded 512-word table. The package also installs mnem001.txt; installation alone does not establish runtime reading of that text file. The naming dependency is on the vocabulary, not necessarily on an external word-list file."
+        },
+        "ef": "Associates generated identity indices with adjective/noun words used in human-facing names.",
+        "en": "MGM mnemonic vocabulary",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:dictionary"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "data.dictionary"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:dnsbench": {
+      "entity_desc": "Installed dnsbench measures resolver response behavior for probe-pool renewal.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed dnsbench measures resolver response behavior for probe-pool renewal.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Benchmarks DNS targets and supplies ranked responder candidates to Sentry.",
+        "en": "Sentry DNS benchmark utility",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:dnsbench"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:dnsresponders": {
+      "entity_desc": "External DNS servers reached through candidate direct uplinks.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "External DNS servers reached through candidate direct uplinks.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review. Native-reported scope and qualifications: A probe response supplies bounded reachability evidence, not universal reachability of all destinations."
+        },
+        "ef": "Return DNS replies used as evidence that the selected outbound path works.",
+        "en": "Upstream DNS responders",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:dnsresponders"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.system"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:events": {
+      "entity_desc": "Ordered immediate-drain event queue joining local connectivity, inbound peer state, route changes and advertisements.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Ordered immediate-drain event queue joining local connectivity, inbound peer state, route changes and advertisements.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review. Native-reported scope and qualifications: Inactive/offline peers lose routes. Indirect gateway creation is gated by experimental_indirect_uplink_routes, default off."
+        },
+        "ef": "Converts observations to local/remote processing, alignment, deletion/ejection and broadcast actions dispatched to owning components.",
+        "en": "MGM route event boundary",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:events"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.dispatcher.event"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:firewall": {
+      "entity_desc": "Maintains mesh multicast admission and forwarding/NAT between the mesh and discovered direct uplinks.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Maintains mesh multicast admission and forwarding/NAT between the mesh and discovered direct uplinks.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Marker presence establishes a weaker condition than effective per-uplink forwarding and return-path permission. Keep reconciliation and restart continuity, but make semantic rule coverage and actual traffic success separate acceptance signals. Native-reported scope and qualifications: Includes mesh-to-uplink forwarding, established return traffic, masquerading and multicast input. Live check tests expected comment markers rather than full per-uplink semantic equality. Restart marker preserves continuity across daemon restarts."
+        },
+        "ef": "Generates a fw4 include, reconciles on network/reload events, verifies live markers, and retries missing installation.",
+        "en": "MGM firewall4/nftables reconciler",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:firewall"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.manager.firewall"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:guide": {
+      "entity_desc": "README, documentation authority guide, package guide and operations guide orient maintainers and operators to the active package set.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "README, documentation authority guide, package guide and operations guide orient maintainers and operators to the active package set.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Treat documentation authority and drift as operating concerns, not runtime capabilities. Align package counts, configuration consumption and profile dependencies with the accepted functional model. Native-reported scope and qualifications: Current source, installed assets, UCI consumers and tests win over prose. docs/README.md still says six-package map although actual package table/build has five; older pi-demo README and packages/manifest.txt contain stale dependency/topology references. These are evidence qualifications, not active contracts."
+        },
+        "ef": "Provides reading order, package ownership, configuration consumption, runtime commands, build profile composition and bounded validation interpretation.",
+        "en": "Canonical MGM repository and operations guides",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:guide"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "document.guide"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:hosttests": {
+      "entity_desc": "Repository-only checks for metrics, throughput ranking, originator timeout, Sentry behavior/telemetry/route loss, and protocol contracts.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Repository-only checks for metrics, throughput ranking, originator timeout, Sentry behavior/telemetry/route loss, and protocol contracts.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Host checks establish only their covered deterministic conditions when run. They cannot substitute for actual kernel, forwarding, profile-installation or multi-node outcomes. No passing run is claimed. Native-reported scope and qualifications: Not installed package payloads. This intake pass inspected tests and wiring without executing them or claiming passing results."
+        },
+        "ef": "Root make test builds and runs six host C executables and Python change-contract, static-analysis-verifier and protocol-contract suites.",
+        "en": "MGM host unit and protocol contract checks",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:hosttests"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:identityadapter": {
+      "entity_desc": "OpenWrt integration selecting MGM’s actual mesh-L3 identity and distinguishing direct uplinks from mesh routes.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "OpenWrt integration selecting MGM’s actual mesh-L3 identity and distinguishing direct uplinks from mesh routes.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that actual mesh-L3 identity, not a specific identity generator, is the prerequisite. Shared-bridge directness classification and eligible probe selection must agree about the actual gateway path; a device name by itself is insufficient evidence. Native-reported scope and qualifications: Valid mesh-L3 addressing is a runtime prerequisite; IPGen is one provider. Shared bridges require gateway-prefix classification rather than treating all traffic on the bridge as mesh or all as direct uplink."
+        },
+        "ef": "Discovers configured/logical mesh interfaces and addresses, detects IPGen ownership metadata, and combines Sentry findings with real default routes and mesh-prefix gateway classification.",
+        "en": "MGM mesh identity and directness adapter",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:identityadapter"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.adapter"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:identitytests": {
+      "entity_desc": "Focused repository checks for stable selected identity, shared mnemonic mapping and first-install netifd/static handoff.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Focused repository checks for stable selected identity, shared mnemonic mapping and first-install netifd/static handoff.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Deterministic identity and install-handoff checks do not by themselves cover post-partition collisions, fallback acceptance or restored management reachability. Native-reported scope and qualifications: These focused checks are separate from the root make test recipe. Inspected, not executed in this pass."
+        },
+        "ef": "Shell and Python harnesses exercise identity mapping and protocol installation cases.",
+        "en": "IPGen identity and install-handoff regression checks",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:identitytests"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:ipgen": {
+      "entity_desc": "Separate package generating stable mesh IPv4 and mnemonic identity from a selected MAC and seed.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Separate package generating stable mesh IPv4 and mnemonic identity from a selected MAC and seed.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Stable deterministic generation and finite ARP probing reduce manual work but cannot establish uniqueness under partition, probe failure or later merges. Preserve static addressing as an alternative. Distinguish a generated candidate from verified address usability. Native-reported scope and qualifications: Explicit macsrc wins; otherwise /etc/ipgen.mac persists the selected identity, initially the lowest-ifindex valid non-loopback interface. Supports IPv4 /8 through /24; reserves 1/32 at each end and tries ten conflict candidates. Probe errors do not establish conflict; exhaustion can return a fallback with failed=true and exit 2. Not guaranteed collision-free. MGM does not have a package dependency on IPGen; static mesh-L3 configuration is an alternative."
+        },
+        "ef": "Uses seeded FNV-1a, a usable host window, ARP conflict probing and mnemonic generation to output addressing and identity metadata.",
+        "en": "IPGen deterministic mesh identity provider",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:ipgen"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.generator.identity"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:ipgenproto": {
+      "entity_desc": "Shell protocol/defaults assets apply generated identity to an actual mesh-L3 device and persist first-install addressing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Shell protocol/defaults assets apply generated identity to an actual mesh-L3 device and persist first-install addressing.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accepting exit 2 is a described behavior, not verified collision freedom. An adoption contract should state how degraded identity is exposed and whether it may authorize publication or routes. Do not prescribe rejecting all such output without deployment recovery policy. Native-reported scope and qualifications: MAC identity source and ARP DAD device may differ. Shell accepts generator exit 2, so a generated fallback must not be interpreted as collision-free success."
+        },
+        "ef": "netifd proto=ipgen invokes the generator, publishes addresses/metadata and gratuitous ARP; install handoff uses persistent static addressing if that running netifd has not learned the protocol.",
+        "en": "IPGen netifd protocol and first-install handoff",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:ipgenproto"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.adapter"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:javascript": {
+      "entity_desc": "The JavaScript implementation of installed protocol/configuration web interfaces.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The JavaScript implementation of installed protocol/configuration web interfaces.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Scope this encounter to the named web interface assets; their use of backend services does not turn those services into JavaScript."
+        },
+        "ef": "LuCI loads the scripts to render forms and request configuration/status operations.",
+        "en": "LuCI JavaScript implementation encounter",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:javascript"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.javascript"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:labtests": {
+      "entity_desc": "Repository lab scripts inspect convergence, route failover/recovery, multicast restart behavior, ubus responsiveness and control-loop performance.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Repository lab scripts inspect convergence, route failover/recovery, multicast restart behavior, ubus responsiveness and control-loop performance.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Multi-node scenarios are the natural receiver of end-to-end and convergence acceptance contracts. Evidence must identify origin, destination, selected gateway, return path, timing and fault conditions; topology snapshots alone do not establish traffic success. Native-reported scope and qualifications: Requires the exterior lab; scripts are validation tooling outside shipped runtime functionality. No live lab actions were performed for this pass."
+        },
+        "ef": "Drive external MVM lab nodes and capture route, state, timing and diagnostic evidence during controlled scenarios.",
+        "en": "MeshVM event-flow and connectivity regression tooling",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:labtests"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:leds": {
+      "entity_desc": "Conditional GPIO output for direct WAN and mesh state on supported Pi builds.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Conditional GPIO output for direct WAN and mesh state on supported Pi builds.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Keep the hardware and compile scope. A coarse indication is useful only with an explicit legend distinguishing tester confidence, mesh visibility and delivered access; no hardware validation is asserted. Native-reported scope and qualifications: Compiled platform behavior guarded by MGM_PLATFORM_RPI; hardware indication was not exercised during this mapping pass. Sentry also contains tester LED logic; this record names the separate MGM Pi GPIO output boundary."
+        },
+        "ef": "Reads MGM status and presents LED patterns through libgpiod and uloop timers.",
+        "en": "Raspberry Pi MGM LED status output",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:leds"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.observer"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:luci": {
+      "entity_desc": "Installed LuCI assets expose protocol configuration and AutoAP management status.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed LuCI assets expose protocol configuration and AutoAP management status.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "JavaScript forms select interface/profile settings and read AutoAP status through RPC/ubus permissions.",
+        "en": "AutoAP and IPGen LuCI configuration surfaces",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:luci"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.interface"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:maintainers": {
+      "entity_desc": "Contributors maintaining the OpenWrt package set and its verification tooling.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Contributors maintaining the OpenWrt package set and its verification tooling.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Use source, canonical guides, host tests, and profile builds to change and validate the system.",
+        "en": "MGM package maintainers",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:maintainers"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.group.maintainer"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:metrics": {
+      "entity_desc": "Converts local/remote role, uplink type and throughput band into class-aligned route preference.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Converts local/remote role, uplink type and throughput band into class-aligned route preference.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Metric ordering expresses policy after eligibility, not evidence of usability. Stable failover, gateway return behavior and experimental indirect-route safety require explicit acceptance criteria; changing constants alone is not acceptance. Native-reported scope and qualifications: Current bases: local wired 100, remote direct 125/225/325, forwarder 650, stale 775, degraded 800; ordinary direct paths add wireless 50 or other 300. These constants describe preference, not connectivity proof."
+        },
+        "ef": "Calculates start metrics used to align and pack default routes.",
+        "en": "Gateway route metric policy",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:metrics"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.policy"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:mgmconfig": {
+      "entity_desc": "Config-only OpenWrt package establishing a BATMAN_V interface, generic mesh bridge, and mesh L3 provider wiring.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Config-only OpenWrt package establishing a BATMAN_V interface, generic mesh bridge, and mesh L3 provider wiring.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Generic br-mesh provisioning and the external EAP shared-br-lan policy are different actual deployment choices. Applying one profile does not prove the other topology is correctly prepared. Native-reported scope and qualifications: Optional image composition. Generic br-mesh policy does not implement the EAP shared-br-lan profile; dependencies include ipgen, kmod-batman-adv, and batctl-full."
+        },
+        "ef": "UCI defaults and init assets create bat0/br-mesh/mesh_l3, disable mesh DHCP service, and connect MGM to discovered/configured interface names.",
+        "en": "mgm-config generic mesh bootstrap",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:mgmconfig"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.provisioner"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:multicast": {
+      "entity_desc": "Bridge-bound IPv6 link-local exchange advertises only sender-owned state and witnesses of other nodes’ state knowledge.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Bridge-bound IPv6 link-local exchange advertises only sender-owned state and witnesses of other nodes’ state knowledge.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Sender attribution, witness comparison, freshness, authenticity and route-relevant completeness are different assurances. Equal-token packets still process, so token equality is not an update-suppression bug. Gateway-only and metric-only changes need an eventual-delivery contract even though they need not bump tokens. A resettable coalescing timer raises a progress question under repeated triggers; starvation is not proven. Native-reported scope and qualifications: mgm_other_node_hash scopes witness to sender MAC, remote MAC, and remote state token; third-party state is not relayed. Missing own witness arms/resets a one-second coalescing timer. Equal sender tokens do not suppress remote upsert/processing. Token bumps cover participation, online, direct, and primary uplink-name transitions; gateway or metric change alone is not sufficient. ff02::114:9876 is configured default; only IPv6 link-local multicast is accepted."
+        },
+        "ef": "Encodes a local status and sender-scoped FNV1a32 witnesses; a receiver processes the sender, checks its own witness, and schedules its own advertisement when knowledge differs.",
+        "en": "Sender-scoped state witness multicast",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:multicast"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.synchronizer"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:names": {
+      "entity_desc": "Makes mesh identities understandable through names in daemon status and local DNS.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Makes mesh identities understandable through names in daemon status and local DNS.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Mnemonic readability is supportive to gateway use. Mnemonic generation itself requires its vocabulary, while actual DNS resolution additionally requires a consuming resolver. Determinism does not make names authoritative or globally unique. Native-reported scope and qualifications: Host refresh is coalesced at 250 ms rather than performed inline on observation hot paths. IPGen and MGM mnemonic generation share tested mapping expectations."
+        },
+        "ef": "Derives deterministic mnemonic labels and coalesces local/remote state into /tmp/hosts/mgm for dnsmasq addnhosts consumption.",
+        "en": "MGM mnemonic and DNS host publication",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:names"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.publisher"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:network": {
+      "entity_desc": "The physical or virtual deployment carrying mesh traffic and providing candidate upstream connections.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The physical or virtual deployment carrying mesh traffic and providing candidate upstream connections.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Presents links, peer nodes, and uplinks over which MGM coordinates access.",
+        "en": "Deployed OpenWrt mesh",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:network"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.system.network"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:observer": {
+      "entity_desc": "Installed diagnostic executable correlating lifecycle, peer reception, batman originators, interface events, and firewall reload evidence.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed diagnostic executable correlating lifecycle, peer reception, batman originators, interface events, and firewall reload evidence.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Readiness diagnostics are evidence of observed phases, not proof of client reachability. Missing events or observation loss should produce unknown/incomplete evidence rather than invented success; the graph does not establish current behavior in that case. Native-reported scope and qualifications: Diagnostic evidence, not a route owner or end-to-end Internet connectivity guarantee."
+        },
+        "ef": "Subscribes to ubus events and watches fw4 state files, combining observations into readiness timing and optional JSON summaries.",
+        "en": "mgm-ready-observe readiness observer",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:observer"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.observer"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:openwrt": {
+      "entity_desc": "The external OpenWrt environment providing service supervision, configuration, event messaging, network lifecycle, and packet forwarding.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The external OpenWrt environment providing service supervision, configuration, event messaging, network lifecycle, and packet forwarding.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Exposes procd, UCI, ubus/uloop, netifd, Linux netlink, nftables/firewall4, and dnsmasq integration used by the packages.",
+        "en": "OpenWrt runtime facilities",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:openwrt"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.framework"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:operators": {
+      "entity_desc": "People deploying and operating the MGM OpenWrt package set.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "People deploying and operating the MGM OpenWrt package set.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Operational success includes explaining why a path was chosen, knowing what evidence remains current, and retaining management access through faults. Configuration visibility alone does not establish these outcomes."
+        },
+        "ef": "Configure images and services, inspect connectivity and routes, and respond to faults.",
+        "en": "Mesh network operators",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:operators"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.group.operator"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:originators": {
+      "entity_desc": "Collects best-originator measurements, identifies loss against a local age baseline, and prompts rediscovery after recovery.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Collects best-originator measurements, identifies loss against a local age baseline, and prompts rediscovery after recovery.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Topology reachability and originator age support a failure detector but do not establish freshness of peer daemon state or its current upstream access. Preserve the described EWMA-based mechanism; do not infer that the unused timeout setting supplies a lease. Native-reported scope and qualifications: Recovery triggers clear when originators disappear or remote records return. Bootstrap polling is 200 ms; live polling uses rerank_cadence_ms. This active age logic is distinct from the unused configured mesh_originator_timeout_ms expiry control."
+        },
+        "ef": "core_adapter reads throughput/last_seen, ejects routes and purges peer records above prior EWMA plus 1000 ms, then requests rediscovery after two consecutive sub-1000 ms samples.",
+        "en": "Batman snapshot and originator recovery adapter",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:originators"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.observer",
+          "code.adapter"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:pidemo": {
+      "entity_desc": "Config-only Raspberry Pi demonstration package establishing IBSS Wi-Fi through batman-adv with mesh addressing and local management.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Config-only Raspberry Pi demonstration package establishing IBSS Wi-Fi through batman-adv with mesh addressing and local management.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The reported undeclared AutoAP runtime need is a package-composition mismatch, even if root rpi-4 builds supply it. Distinguish standalone package dependency closure from success of the enclosing image composition. Native-reported scope and qualifications: Source uses proto=autoap for LAN although the embedded README describes DHCP. Package Makefile does not declare autoap; root rpi-4 package verification includes it via the runtime package set. Target guard is bcm27xx. This discrepancy is recorded, not repaired. Fixed demo radio/BSSID settings are profile policy, not MGM-wide requirements."
+        },
+        "ef": "First-boot UCI config sets eth0/br-lan to autoap, builds bat0 and br-mesh with IPGen mesh_l3, and supplies USB Ethernet hotplug and operator menu/status assets.",
+        "en": "pi-demo Raspberry Pi mesh profile",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:pidemo"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.provisioner"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:pool": {
+      "entity_desc": "Maintains proven DNS probe candidates, seeds and replacement resources per interface.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Maintains proven DNS probe candidates, seeds and replacement resources per interface.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review. Native-reported scope and qualifications: Current target is 25 entries, capacity 32, refill below 7; Fast Fill batches four. These are tunables/limits, not proof of usable connectivity."
+        },
+        "ef": "Acquires responders through Fast Fill, refills depleted sets, and uses a last-good sentinel after failed acquisition batches.",
+        "en": "Sentry responder acquisition and replacement pools",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:pool"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.pool"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:project": {
+      "entity_desc": "The combined MGM package-set result: mesh nodes discover and share gateway availability, choose usable upstream routes, and adapt local forwarding as connectivity changes.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "defining_element": true,
+        "description": {
+          "account": "The combined MGM package-set result: mesh nodes discover and share gateway availability, choose usable upstream routes, and adapt local forwarding as connectivity changes.",
+          "assessment_status": "accepted with qualifications",
+          "identity_test": "Without the combined discovery, connectivity interpretation, gateway choice and route application, the remaining provisioning and observation tools would no longer constitute a mesh gateway coordinator.",
+          "notes": "Current main at the recorded revision contains five active packages. This pass reuses the supplied inspection evidence and verifies selected repository boundaries. No builds or live connectivity tests were run. Existing untracked .metaform/ and mesh-gateway-manager/core/sentry/src/CLAUDE.md are preserved; graph updates use the supplied actor intake transport.",
+          "receivers": [
+            {
+              "ref": "mgm:users",
+              "role": "Primary recipient of upstream forwarding."
+            },
+            {
+              "ref": "mgm:operators",
+              "role": "Recipient of operational gateway coordination."
+            }
+          ]
+        },
+        "ef": "Coordinates available gateways into usable upstream forwarding paths as local and peer connectivity changes.",
+        "en": "MGM mesh gateway coordination",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:project"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.coordinator.gateway"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:prototype": {
+      "entity_desc": "Historical gateway-manager implementation retained for archaeology and excluded from active package inputs.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Historical gateway-manager implementation retained for archaeology and excluded from active package inputs.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that archival code remains inside the repository but outside active runtime functionality. Its Type does not make it substitutable for the current coordinator. Native-reported scope and qualifications: External to current runtime functionality but inside this repository; not exterior. Archive README identifies upstream commit 0b15a7f39a7b7ecbc6a54842819a53b0e536789c from 2024-12-10. Its presence does not establish a supported runtime or compatibility contract."
+        },
+        "ef": "Lets maintainers reconstruct prior approaches to gateway coordination from a preserved implementation.",
+        "en": "Archived Python MGM prototype",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:prototype"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.coordinator.gateway"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:ranker": {
+      "entity_desc": "Groups online direct gateway providers into throughput preference bands.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Groups online direct gateway providers into throughput preference bands.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Mesh-path throughput grouping supplies comparative preference among eligible providers; it does not measure total Internet-path capacity or application quality. No hysteresis or churn bound is established by the functional description. Native-reported scope and qualifications: Forwarders are excluded from direct-provider fitting; topology throughput is not Sentry connectivity telemetry."
+        },
+        "ef": "Fits fastest/middle/slowest groups using k-means on eligible direct-provider observations and supplies rank to route metric policy.",
+        "en": "Direct-uplink throughput ranker",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:ranker"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.ranker"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:reports": {
+      "entity_desc": "Change reports and retained event-flow artifacts record earlier fixes and their specific validation circumstances.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Change reports and retained event-flow artifacts record earlier fixes and their specific validation circumstances.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Keep historical evidence bounded to its reported run and scope. The Latent review has not repeated any of those executions. Native-reported scope and qualifications: Historical evidence proves only the reported run, date, profile and scope. It does not replace current executable authority or establish that this intake reran validation."
+        },
+        "ef": "Preserves observed command outcomes and source rationale that explain current behavior without making universal support claims.",
+        "en": "Bounded change and lab validation history",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:reports"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "document.report"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:routes": {
+      "entity_desc": "Owns applying MGM route decisions to current IPv4 kernel routes.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Owns applying MGM route decisions to current IPv4 kernel routes.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree with exclusive MGM route-action ownership and the IPv4/main-table scope. Separate intended selection, accepted kernel operation, observed installed route and successful traffic. Reconciliation after interruption and coexistence with netifd-owned routes require an explicit ownership contract. Native-reported scope and qualifications: Active route boundary is IPv4 gateways/main routing table while discovery transport is IPv6. Kernel netlink notifications return observed changes to MGM; Sentry does not install MGM routes."
+        },
+        "ef": "Aligns and packs class metrics, ejects/deletes obsolete routes, retries peer routes with on-link handling when necessary, and refreshes advertised primary state after alignment.",
+        "en": "MGM route manager and alignment library",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:routes"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.manager.route"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:routeverify": {
+      "entity_desc": "Source-only C/shell validation of route-library behavior against Linux network namespaces.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Source-only C/shell validation of route-library behavior against Linux network namespaces.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Real-kernel route checks validate a narrower boundary than mesh client forwarding and NAT. Retain this useful layer and join it to broader acceptance rather than treating it as end-to-end proof. Native-reported scope and qualifications: make route-verify requires iproute2 and CAP_NET_ADMIN. It is not installed by package Makefiles and was not run during intake."
+        },
+        "ef": "Builds a focused route verifier and checks real kernel route operations in isolated test namespaces.",
+        "en": "Kernel route namespace verifier",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:routeverify"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:rto": {
+      "entity_desc": "Derives probe deadlines from accepted response timing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Derives probe deadlines from accepted response timing.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "First accepted replies update the estimator; rounds and correction windows distinguish delayed replies from sustained loss.",
+        "en": "Sentry adaptive probe deadline estimator",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:rto"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.estimator"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:securitylimit": {
+      "entity_desc": "Authentication-related code exists, but current configuration loading forces MGM_MODE_DEBUG.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Authentication-related code exists, but current configuration loading forces MGM_MODE_DEBUG.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The known absence of enforced peer authentication limits trust in peer-controlled route and name inputs. This property must remain visible through state consumption to the defining result; it does not imply that unrelated OpenWrt management access is unauthenticated. Native-reported scope and qualifications: Security configuration/signing/TOFU surfaces are not evidence of authenticated deployment."
+        },
+        "ef": "Constrains interpretation of received state: current peer acceptance must not be treated as enforced signature authentication.",
+        "en": "Current debug-only peer acceptance boundary",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:securitylimit"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "data.constraint"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:sentry": {
+      "entity_desc": "The maintained tester inside mgmd that determines reachability on eligible non-mesh interfaces.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "The maintained tester inside mgmd that determines reachability on eligible non-mesh interfaces.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that this is an embedded connectivity tester, not a route installer or throughput ranker. Its accepted replies are interface/path/destination/time-scoped evidence. ONLINE and TESTING being treated as connected is an explicit availability policy, not proof of equal confidence. Native-reported scope and qualifications: Not a separate daemon or package. Does not probe mesh interfaces, own MGM routes, or supply mesh throughput ranking. Startup may use compiled seeds without successful DNS benchmarking. Telemetry never drives the scheduling loop."
+        },
+        "ef": "Observes interface eligibility, probes resolver responders, and runs OFFLINE/FAST_FILL/TESTING/ONLINE transitions with adaptive timing.",
+        "en": "Embedded Sentry direct-uplink connectivity engine",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:sentry"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.tester.connectivity"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:sentryconfig": {
+      "entity_desc": "Installed /etc/config/sentry and DNS list supply current tester controls and responder input.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed /etc/config/sentry and DNS list supply current tester controls and responder input.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Responder lists and tester settings need to be interpreted with the same path-scoped evidence and eligibility contract as the engine. Configured capacity or cadence alone does not prove responsiveness or coverage."
+        },
+        "ef": "Sentry consumes effective settings and target lists for its probe behavior.",
+        "en": "Sentry UCI and responder configuration",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:sentryconfig"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "data.configuration"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:sentryhandoff": {
+      "entity_desc": "Embedded adapter directly applies Sentry transitions to MGM, then publishes exterior telemetry.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Embedded adapter directly applies Sentry transitions to MGM, then publishes exterior telemetry.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Preserve direct in-process application before telemetry. The same-process callback is authoritative. A remaining event subscriber motivates an idempotence contract for repeated observations; duplicate harmful actions are not established. Native-reported scope and qualifications: MGM treats ONLINE and TESTING as connected. MGM resolves lost gateway identity and owns route actions. A sentry.link subscriber remains, but same-process ubus event delivery is not the authoritative embedded handoff."
+        },
+        "ef": "sentry_ubus_init receives mgm_apply_sentry_state; callbacks update MGM route/local connectivity state before sentry.link publication; sentry ubus also exposes status, stats, history, stream, DNS benchmark and apply controls.",
+        "en": "Sentry-to-MGM connectivity handoff",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:sentryhandoff"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.adapter"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:sentrynet": {
+      "entity_desc": "Tracks carrier, IPv4 addressing and default gateways for direct-uplink testing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Tracks carrier, IPv4 addressing and default gateways for direct-uplink testing.",
+          "assessment_status": "accepted within supplied scope",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Accept the described function and receiver relationships, subject to the stated Native limits and the cross-component requirements added by this review."
+        },
+        "ef": "Kernel interface/route observations enable or withdraw tester eligibility while excluding batman and mesh-bound interfaces.",
+        "en": "Sentry eligible-interface observer",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:sentrynet"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.observer"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:service": {
+      "entity_desc": "Installed init/hotplug assets connect daemon lifetime and multicast rebinding to OpenWrt.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Installed init/hotplug assets connect daemon lifetime and multicast rebinding to OpenWrt.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Supervisor lifecycle and restart continuity are scoped to the installed deployment. Persistence of firewall artifacts must be interpreted separately for restart, intentional shutdown and package removal; the graph does not define all those lifecycle outcomes."
+        },
+        "ef": "procd starts and respawns mgmd; startup ensures dnsmasq addnhosts; interface-up hotplug requests multicast_bind for the configured mesh; restart marker preserves firewall continuity.",
+        "en": "mgmd procd and interface lifecycle assets",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:service"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.provisioner"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:shell": {
+      "entity_desc": "Shell execution used by provisioning, service lifecycle, and CLI integration assets.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Shell execution used by provisioning, service lifecycle, and CLI integration assets.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Scope this encounter to the named shell procedures; invoking a C binary does not make that binary shell code. The property contributes to the composite through those procedures."
+        },
+        "ef": "OpenWrt shell interprets command procedures to configure and interact with runtime facilities.",
+        "en": "OpenWrt shell integration encounter",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:shell"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.shell"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:specs": {
+      "entity_desc": "Canonical design explanations for ownership, state exchange, route policy and direct-uplink testing.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Canonical design explanations for ownership, state exchange, route policy and direct-uplink testing.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Preserve existing architectural intent, but add receiver-level acceptance contracts that cross component boundaries. The proposed contracts in this review are not claims that current docs already contain them. Native-reported scope and qualifications: Map records source differences: direct embedded Sentry callback, one-second absent-witness coalescing, equal-token processing, active originator loss/recovery algorithm, and disabled authentication gating. docs/connectivity_monitor_led_ui_spec.md is a design/specification artifact, not proof that every described UI exists."
+        },
+        "ef": "Explains intended functional boundaries and directs readers to executable sources for implementation details.",
+        "en": "MGM architecture, witness, routing and Sentry contracts",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:specs"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "document.specification"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:state": {
+      "entity_desc": "mgm_node_state_t represents active/online/direct state, identity, alert token, topology hints, and primary route information; remote entries carry locally stamped liveness metadata.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "mgm_node_state_t represents active/online/direct state, identity, alert token, topology hints, and primary route information; remote entries carry locally stamped liveness metadata.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree that sender equality inputs are not global time and receiver last_seen is not wire truth. Distinguish current local authority, peer-reported claims, and receiver observations. One transmitted primary route limits remote knowledge even when local storage can hold more. Native-reported scope and qualifications: Remote cache key is orig_address. last_seen_ms belongs to the receiver and is not wire state. C primary_routes capacity is four, while the current wire codec carries entries[0] only. alert_mono_ns is a sender-owned equality input, not a globally ordered time."
+        },
+        "ef": "Provides the shared node record consumed by advertisement, routing and status.",
+        "en": "MGM node state and receiver-local peer observations",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:state"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "data.state"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:store": {
+      "entity_desc": "Maintains authoritative local state and observed remote records keyed by originator.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "Maintains authoritative local state and observed remote records keyed by originator.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. Agree with local authority versus attributed remote cache. Missing from the functional account is the validity rule when peer MGM stops advertising while its batman originator remains reachable; record existence alone must not imply current gateway authority."
+        },
+        "ef": "Updates local state separately from remote upserts and supplies snapshots to consumers.",
+        "en": "MGM local-state store and remote cache",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:store"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "code.store"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    },
+    "mgm:users": {
+      "entity_desc": "People and workloads whose traffic needs an available path from the mesh to upstream networks.",
+      "entity_json_obj": {
+        "artifact": "mgm:project",
+        "description": {
+          "account": "People and workloads whose traffic needs an available path from the mesh to upstream networks.",
+          "assessment_status": "accepted with qualifications",
+          "notes": "Latent assessment based exclusively on the supplied Native functional account; no implementation inspected. The receiving purpose must distinguish restored access for new traffic from continuity of existing sessions. No service availability target, destination coverage, or session-preservation promise is established by the supplied graph. Native-reported scope and qualifications: Receiving purpose inferred from gateway routing behavior; the repository does not identify a narrower customer population."
+        },
+        "ef": "Send traffic through mesh nodes and the upstream gateways selected there.",
+        "en": "Mesh-connected users and applications",
+        "provenance": [
+          {
+            "assignment": "203828173",
+            "basis": "independent assessment of supplied Native functional account; descriptions retained where agreed",
+            "implementation_inspected": false,
+            "native_element_ids": [
+              "mgm:users"
+            ],
+            "native_revision": "5906ded0cd80177046340df41a822801501a0bcd",
+            "perspective": "latent"
+          }
+        ],
+        "type_ids": [
+          "exterior.group.user"
+        ]
+      },
+      "entity_schema": "metaform:actual-element",
+      "layer": "elements"
+    }
+  },
+  "joins": [
+    {
+      "element_id": "mgm:labtests",
+      "id": "join:02d7797b6e13c21ad53566bbd7a8558b8f144cba40a798360b096c864ef603c1",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Assess multi-node convergence and failure recovery.",
+      "signal": "Controlled lab scenarios capture runtime effects.",
+      "source_id": "421cd59ae1af3a42e1884bb52227eb2d133bfec4d5c82075196f5aa070487747",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:03e3d09801488ad73e2d299dc56258a13eec8fe3a1303665f59f5d2215a64697",
+      "join_scope": "native",
+      "object_id": "mgm:ipgenproto",
+      "purpose": "Execute netifd protocol and install integration procedures.",
+      "signal": "Shell assets invoke the runtime provider and platform facilities.",
+      "source_id": "50ca263cdc8502bf186c122235037d70f1fd4b1eb12767d126981603add296c6",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:store",
+      "id": "join:04b11b8b414b1356add2fb7588257e80cf5cb6f4875270334ca841eba73b1eb5",
+      "join_scope": "native",
+      "object_id": "mgm:multicast",
+      "purpose": "Advertise local truth and compare retained observations.",
+      "signal": "State snapshots supply sender content and witness inputs.",
+      "source_id": "39718f515c57ec92ab1cc008c3ca7d9eef55974c2ad5f9e1a38e0404f9877a3f",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:names",
+      "id": "join:04d50ffc25065c5173c5635b51ad16f33de640fc87659858417e6971eba84689",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Expose readable and resolvable local and peer identity.",
+      "signal": "State changes produce mnemonic/status labels and a coalesced hosts file.",
+      "source_id": "108bbd99e612a0a343cd7648940870531cfa4ad6854cf7cb455e02d8d05e7df0",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:specs",
+      "id": "join:08e93ed5094abeefe5ac9ce4d4a47a60547fdcd979a43a71f4003942f3fa72a9",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Retain explicit intended functional contracts.",
+      "signal": "Architecture and protocol explanations support coherent maintenance.",
+      "source_id": "35b41497270f353c83a6f6078ed90dab895358e83ebd9b18cf91479fdfb4f89c",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:securitylimit",
+      "id": "join:0a0baf16965240312246550e1535b6df167c8c20b9e5fb8d70fd8d08ef021e10",
+      "join_scope": "native",
+      "object_id": "mgm:multicast",
+      "purpose": "Interpret the actual assurance attached to accepted peer state.",
+      "signal": "Map retains the current lack of enforced peer authentication.",
+      "source_id": "201f6ed5c2fc7ff598befecf02b18444ec924a439f896c357dcb148c718b2233",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:daemon",
+      "id": "join:0ab9a2df1642212e951ab09c51f449948e0a1d924c5431d918e890a596e4952b",
+      "join_scope": "native",
+      "object_id": "mgm:cli",
+      "purpose": "Reach authoritative running state and control methods.",
+      "signal": "ubus calls return daemon observations or execute requested controls.",
+      "source_id": "595091337fc3dac1a3fe639d23e75140c38c64158e3f7012a6f2843d3305610e",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:0b87551e05e883cab80ddf2ca4030d20517a46b0561cf7342a4aedeff0d558b7",
+      "join_scope": "native",
+      "object_id": "mgm:pidemo",
+      "purpose": "Execute this component’s command procedures.",
+      "signal": "Shell control flow invokes the target configuration and control facilities.",
+      "source_id": "63031e080921d440ee413d290ddbca70a900aabe302312fe50084dd0587530f4",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:pool",
+      "id": "join:104a38c5379c00887e6a7cab5b51c13b77642cc58578ec0934b693fdf4983792",
+      "join_scope": "native",
+      "object_id": "mgm:sentry",
+      "purpose": "Have usable probe destinations and replacement candidates.",
+      "signal": "Responder pool supplies acquisition and test targets.",
+      "source_id": "809897aa63221e87b66ea9c19376b22315864896fab48af47ccd61d277823f34",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:dictionary",
+      "id": "join:1167cd6b1b257607298cbf479a0c57b52186a01c5cec002b641d3724ad4ca06d",
+      "join_scope": "native",
+      "object_id": "mgm:names",
+      "purpose": "Map mnemonic identity into readable vocabulary.",
+      "signal": "Embedded mnemonic vocabulary supplies stable human-facing labels; the installed text asset is not established as a runtime input.",
+      "source_id": "c379e387985c69755d97116221534ad7d21e5d60ee160fb871ed26ba7b8debb1",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:daemon",
+      "id": "join:1c499790239a8ab577d5e5374e60b06fd2a5f1e1fd4df8c4fd0faa26e87f226d",
+      "join_scope": "native",
+      "object_id": "mgm:leds",
+      "purpose": "Reflect actual MGM state.",
+      "signal": "Current status supplies the displayed condition.",
+      "source_id": "1fbf7272f3884ed899f4d25daeca338a0e828795459a7855336d1abcc0acb70e",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:208ed3cfe1fc620bd599e5a6bcec14210127709a13e699ead4ce5474abca46de",
+      "join_scope": "native",
+      "object_id": "mgm:routes",
+      "purpose": "Read and update actual forwarding routes.",
+      "signal": "Linux netlink interfaces expose and modify kernel routes.",
+      "source_id": "298ec371caae6153a903f069b4c3ad6a7d847d55c1bc2c5a386de00213d09cb4",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:ipgen",
+      "id": "join:23a390cd127a361dcfe4a13b4c87dd3a932df167dd998ba2ff4450e3aa45f32d",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Offer repeatable mesh identity provisioning to images.",
+      "signal": "IPGen can supply mesh-L3 identity without per-node manual addressing.",
+      "source_id": "138dc3d5f86fd2eb98868f0dbb5b6145527adf69db9e885e9bc2c823b90c7334",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:c3lab",
+      "id": "join:250a2acb40365330dd78d275100f94fad7db1bfee5fca1bab4e0e9d70383d26a",
+      "join_scope": "native",
+      "object_id": "mgm:build",
+      "purpose": "Obtain the SDK, staging, profile policy, and build execution required by package-verify.",
+      "signal": "MVM validates and builds the selected packages.",
+      "source_id": "8660619db8c398a48b3dce32a5dbafa198cc3466295c01d06c34e7972bcfaac0",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:mgmconfig",
+      "id": "join:26295365ef6d8b94b165a0ad03a2555bf9ae87ea623590afba2377313e3f1373",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Prepare generic mesh nodes without reconstructing the UCI wiring.",
+      "signal": "Bootstrap creates the configured topology.",
+      "source_id": "8fdf00890b2698bc254b07e7107c0e92db5e7f12e50518eb2e3c8e8fa325a670",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:pidemo",
+      "id": "join:2894410a9e4bddefc4041f0b974bf658de51e3bb478179b5c290306add1e7fb0",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Offer a concrete Raspberry Pi demonstration deployment.",
+      "signal": "A Pi profile configures a mesh and operator access.",
+      "source_id": "b49145d990e989475e6c8b0169d67b4084b863bc932f38353ec555085ee11a68",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:sentry",
+      "id": "join:2ad3cafc8838044181858c451a7e8c47d995e7a0d2fd0d6334d5e6f1bd945200",
+      "join_scope": "native",
+      "object_id": "mgm:sentryhandoff",
+      "purpose": "Receive the tester’s connectivity decisions and observations.",
+      "signal": "Engine transitions and snapshots provide handoff content.",
+      "source_id": "fa244c872f7b22a732dcac437e6accaef33c1397f5fb21f0077b1417d420b439",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:multicast",
+      "id": "join:2ae695ac4064ddfa4387dfe531fb815a9b558fcf55d4e71fc6f9b8d5fcf6f34a",
+      "join_scope": "native",
+      "object_id": "mgm:originators",
+      "purpose": "Recover peer self-state after mesh reachability returns.",
+      "signal": "Recovered originators cause a rediscovery advertisement.",
+      "source_id": "7a1fc68fa5aeb9f5a62a9dc6bd3d9f16f64bcbb7663c390595d4f3f7797fa3ef",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:ipgenproto",
+      "id": "join:2b21b344f571f29d41299f13f5e70892a26db9dba54851aa9f07bfbfd3a73942",
+      "join_scope": "native",
+      "object_id": "mgm:mgmconfig",
+      "purpose": "Install the generic profile’s default mesh-L3 address provider.",
+      "signal": "Configured proto=ipgen applies generated identity.",
+      "source_id": "120dad9258539247a5fb1761679afd755e2844b479ec3bf374ca8d9ae9535c06",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:31acbd43acc3ddbfc44c7e51e4b678af6909faf9b5534447eccb8d3804c96f3f",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Receive service, configuration, networking, and event facilities required by the daemon.",
+      "signal": "OpenWrt facilities supply lifecycle, events, route operations, and status transport.",
+      "source_id": "4517e5d891a527452db828212d314676e338619b495c45726c81db828e13092f",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:cli",
+      "id": "join:324e1b4213b8e34b3a9a4a02121d1bbabb954284a0253a390041796a5b023a21",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Inspect and control running gateway coordination.",
+      "signal": "Status, remote state, route, wireless, and debug methods are accessible.",
+      "source_id": "187207f9dd3c6c8dab2e02098dc3e2841aca7d8b45cbe0980b24f259935ab646",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:sentryconfig",
+      "id": "join:340860ce700f0fca01b92ee13714e68166af367d463b05f8c4f37e185fbb2642",
+      "join_scope": "native",
+      "object_id": "mgm:sentry",
+      "purpose": "Apply configured tester choices.",
+      "signal": "Consumed settings shape probing and responder selection.",
+      "source_id": "4beff48a6a09f163d1c5d8a4e9c03fe79cfea8a0c0cef3fb1ca5f9ee8e1318c4",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:35309d0b655fdac40881f0a83de6ddd805df6f1a053ac7a6498777cd309af763",
+      "join_scope": "native",
+      "object_id": "mgm:identityadapter",
+      "purpose": "Discover the real configured interfaces, addresses and routes.",
+      "signal": "UCI, netifd and kernel observations provide deployment identity.",
+      "source_id": "c71ac0f5122069d087f1960c8961ba9fa970fc09c7220375d4c7e6b6a66c4dad",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:build",
+      "id": "join:3803ffd5a7082d0c95b43e29190e447e533ba76155fc0dc713f2643489442c97",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Produce installable artifacts from the maintained package sources.",
+      "signal": "Package-specific outputs are assembled for selected profiles.",
+      "source_id": "e4823a13ee9f82c39c4a7b0f18ee44e2defd8943b6cd2adec0ceb8a630396d8f",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:events",
+      "id": "join:388a0268b8d53629a470aaae579744ca42396c71bc11d0f79b00bb59fc736480",
+      "join_scope": "native",
+      "object_id": "mgm:multicast",
+      "purpose": "Apply received gateway changes to route decisions.",
+      "signal": "Inbound sender processing reaches the same route event boundary.",
+      "source_id": "0077a8293ebe87ed7aee4f161d717885dee72be9106e133cdda3081c3c6af8ba",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:routeverify",
+      "id": "join:3965a873e9c27677aa4fdf1b54e46ba4476c8cef2d34e592ea2348874fd7b792",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Validate route operations against a real kernel boundary.",
+      "signal": "Namespace checks observe actual route changes.",
+      "source_id": "adee7cf17c8115668ee33c0e1adf4f77071548274d3c5181406227783528b218",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:3a84857f0845fa0b32b0484af4eea23325442ffd2880ffc255afbf557cae2dea",
+      "join_scope": "native",
+      "object_id": "mgm:service",
+      "purpose": "Execute this component’s command procedures.",
+      "signal": "Shell control flow invokes the target configuration and control facilities.",
+      "source_id": "16fb368a3a1cae87932845649934d606d4d59a84549c5041e6f7ea2cbdb700d4",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:originators",
+      "id": "join:3be6e7caf40ae9b1780a2fc404e3bcbb21d9d7cd45f451ff7a8c0d4d66dfb834",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Observe mesh reachability and preference as it changes.",
+      "signal": "Periodic snapshots support loss/recovery and ranking decisions.",
+      "source_id": "a9062ba852f324b1897df505351e2e7f1c0bf06c43d70e70469ab65c980997b5",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:store",
+      "id": "join:3c7c42ac0b5b194460df2812edba494a3596fd55ec772617e9d584f178ca2dcc",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Keep one coherent source of local truth and receiver-local peer observations.",
+      "signal": "State consumers share managed local/remote records.",
+      "source_id": "d09b6d3a6db6e1adfe51124997617770a2f805556cfc6274c8b0c115dd28a23f",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:c11",
+      "id": "join:41f1502d281339348e321db45a384eee8a36694e09337c2eb4047bc6157589cf",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Implement the compiled event-driven control plane.",
+      "signal": "GNU C11 sources produce mgmd.",
+      "source_id": "2f5ae72642ea71cbfc14444bd1197f667acab036aaea4ab67ed94a3134332f99",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:originators",
+      "id": "join:432fb6176aa2f7363faf0e0bd03eee8a807195b8e3880b7b49ec1499a0a97262",
+      "join_scope": "native",
+      "object_id": "mgm:ranker",
+      "purpose": "Compare candidates using current mesh throughput.",
+      "signal": "Best-originator measurements feed eligible direct-provider clustering.",
+      "source_id": "9c7e8f562729457a12af22aebf364441740b78b5c8c4b1a811c173355d89b551",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:autoap",
+      "id": "join:44ade2f6a26ab0d0563f3b7f8bed9aec972c9816c8d2270909b1826ba11d2a51",
+      "join_scope": "native",
+      "object_id": "mgm:luci",
+      "purpose": "Read current management-interface fallback state.",
+      "signal": "autoap status/health/event surfaces provide runtime feedback.",
+      "source_id": "8117f5f65e25d69ae2425f0aff3820eacfd82771a1c77d4b6ac1dcb7e9fd6b5c",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:analysis",
+      "id": "join:44e1c873e36ea80b7f9528e06afd38d189b3782a30102f650136b3469eba9dac",
+      "join_scope": "native",
+      "object_id": "mgm:build",
+      "purpose": "Support target-aware static checking alongside package compilation.",
+      "signal": "SDK analysis is available as an explicit verification target.",
+      "source_id": "a8040adffd637e3e300faffc592d6a34e5d79f43a05c3b69f0c4725c9d15acec",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:observer",
+      "id": "join:462851711932db1d8b06f7bc14b3e3ed5055c01e61b414f7732c8877d8b8fef6",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Distinguish startup phases and confirm bounded readiness evidence.",
+      "signal": "Observer reports event-correlated readiness and timing.",
+      "source_id": "85ef9cff05863b0eebb891544b66beff3a71e21fe3d578f21ac8e2bb74921fcf",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:guide",
+      "id": "join:47c97e3fa94c126b3eb99657c408a106ac889cd62268db39f86c81e47f20a1f2",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Navigate the repository and choose the authoritative starting points.",
+      "signal": "Reading order and package/command maps reduce reconstruction work.",
+      "source_id": "50b862ed85836a513e282d212d9c7827c6df6aa375f5390c194b23826f26ed2b",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:project",
+      "id": "join:49874ee137db750cea606f4681154751cd8067b09c59986ff5ceb0779d85a013",
+      "join_scope": "native",
+      "object_id": "mgm:users",
+      "purpose": "Reach upstream destinations despite changes in available mesh gateways.",
+      "signal": "Traffic has a usable selected gateway when the network and eligible uplinks permit it.",
+      "source_id": "6989b336fa64a3bc95733ab04999004c77cfb098069696c012649119bdc06e39",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:luci",
+      "id": "join:4a16dfcc7acf79ae2e9196cbb3fc893293554a360058f327fecadf7620dd8df5",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Configure address-provider profiles and inspect management fallback.",
+      "signal": "Web forms expose settings and observed status.",
+      "source_id": "b92e2be3f04bbf363f3333acf6b5dc562134b391f078a3131ab288b3dcc0a432",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:4b6add418d54af9ebb69bbfc871e55424aa888967aad73bec69c65132cb71a00",
+      "join_scope": "native",
+      "object_id": "mgm:firewall",
+      "purpose": "Discover uplinks and install forwarding/filtering policy.",
+      "signal": "netifd, fw4 and nftables expose the interfaces and rule state needed.",
+      "source_id": "115eb888b442e9dc99d264ae61e31a035b7271d6937298be5e3116aabc0d8c91",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:batman",
+      "id": "join:4cdbe720b25e8edbdb01c76643d57a949da0174a7f9572d18eca40586e974db4",
+      "join_scope": "native",
+      "object_id": "mgm:originators",
+      "purpose": "Obtain actual originator age and throughput observations.",
+      "signal": "batman-adv observations supply candidate reachability and measured throughput.",
+      "source_id": "cd89641d43f8ef2841e02b259f5f019360ed169531ef9f0ff2a084dd3a6053f5",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:store",
+      "id": "join:5053379deaccf57047825d9b53eb4e559bd24b62bb1603c3896ead41393dca98",
+      "join_scope": "native",
+      "object_id": "mgm:ranker",
+      "purpose": "Include only peer providers meeting current participation/connectivity criteria.",
+      "signal": "Observed peer flags filter ranking candidates.",
+      "source_id": "a0a4936dc82cae231ed667a95ededd4247e509da626d01939993fce878e67525",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:analysis",
+      "id": "join:5382a8b2fa17a98739c088b178d0de835b1e57ff2dd1f63920cae523c0371962",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Identify statically detectable defects in target-aware code.",
+      "signal": "Analyzer results are checked against explicit expectations.",
+      "source_id": "1ed33c62f382f15113f61963c2605c722add1b062fb35a75cb9ee7e83773baa9",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:dnsbench",
+      "id": "join:538a38ca6bdd5d4ed1a70f6660f335c180cd2faa3089da1a4bcbbc5876d75c69",
+      "join_scope": "native",
+      "object_id": "mgm:pool",
+      "purpose": "Refresh ranked resolver candidates.",
+      "signal": "Benchmark results replenish responder choices.",
+      "source_id": "5897ba099a4b54c4bd1b053cbad113bc595735ffc6ddc8b19660bf9cc4fa147a",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:ci",
+      "id": "join:5519f902b8f15dec707bbfbadb32a95dc65b93eee949cc976114a4d7fe1b625d",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Apply repeatable verification to proposed repository changes.",
+      "signal": "PR runs couple tests with documentation/change scope.",
+      "source_id": "306582e241a946a28e58c057cf75c5aceafaada14755fd25eefd12e71ef5bf0a",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:5727ef7355c37de8ecfa00f4feab04ed684265e1765e4827dd16e6ff0f9e0b1d",
+      "join_scope": "native",
+      "object_id": "mgm:ipgenproto",
+      "purpose": "Apply identity to the deployment’s logical interface and device.",
+      "signal": "netifd and UCI retain and activate the chosen address.",
+      "source_id": "45ed0e6462597fc98c14d722e663f918698d8038f8faf7da3bc8c00a6ce67b6f",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:leds",
+      "id": "join:5bd0154e4d688a344c5d10984a970c5700e919f9107084ee928824cfcd8d9666",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "See bounded WAN/mesh status without a command session.",
+      "signal": "GPIO LED patterns present daemon state on supported hardware.",
+      "source_id": "d5fd4e5e49eb922f817ad0c98ea06ffe7ac3403170bfbb5adaa93c871a79875b",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:service",
+      "id": "join:5ccfa3bca3fcb32eac045eb5807eb49c61b971725d482b8d0ead8aea5df77921",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Start reliably and reconnect multicast when mesh interfaces appear.",
+      "signal": "procd lifecycle and hotplug rebinding connect the daemon to the deployment.",
+      "source_id": "deb54e521c1cab5725e007c074c036b2088c302a77a86d79c54b7dcf0a7cf3e2",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:codec",
+      "id": "join:6055498c2f6f02656b83eb0682f35b0c8b6b980fd57cc127bd731aafd948806b",
+      "join_scope": "native",
+      "object_id": "mgm:multicast",
+      "purpose": "Exchange status information in the implemented protocol.",
+      "signal": "CBOR build/parse supplies readable wire messages.",
+      "source_id": "bd46db11ba9c2efcc712f70b5dee9a96a588699fae75c4c09e1a970d9bfb39f5",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:store",
+      "id": "join:61b67cd9c98463631256153853f6c19727ab46e2016a3749bd593e8c6226351c",
+      "join_scope": "native",
+      "object_id": "mgm:events",
+      "purpose": "Turn known local and peer conditions into route actions.",
+      "signal": "Current state determines eligibility and event payloads.",
+      "source_id": "11791d23ab95e38cc334d8e66953283ddf9d598b4383d39f7686b7a20876d492",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:sentryhandoff",
+      "id": "join:638dda296e237513384047803c7e4748e6cd7da102611a56e25412544bc7f980",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Apply tester decisions to MGM state and local route ownership.",
+      "signal": "Direct callback updates MGM before exterior telemetry publication.",
+      "source_id": "2144c8b5d67240e63f0ecc17b6cb905c68135f2cfe7cabdbc02568fc71f2fe73",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:autoap",
+      "id": "join:666b7c5bab560d44c85e3c3b43970ed3ed9b9bb5de285f4b8818bef57baccc76",
+      "join_scope": "native",
+      "object_id": "mgm:autoapproto",
+      "purpose": "Run interface-specific management fallback behavior.",
+      "signal": "Launcher and lease events drive the selected daemon instance.",
+      "source_id": "f4a00b16e7ba093696a9cb7eb6f87239c31cc8d65c03c7493e4d7314ad842d63",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:6736e09a0ce50ecbb553218c70bd6fc3816607570e035d09d4c8012bafcdc4f0",
+      "join_scope": "native",
+      "object_id": "mgm:mgmconfig",
+      "purpose": "Execute this component’s command procedures.",
+      "signal": "Shell control flow invokes the target configuration and control facilities.",
+      "source_id": "25854eaf8ea5dc987bffdbdb60d92763eb6a08ebe2357b951836a33463845c6c",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:pidemo",
+      "id": "join:673c014d95df95d17cef4c7ba8376e484d1b8d724c2a72d78d44c43d217158f6",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Bring up and inspect demonstration nodes.",
+      "signal": "Profile and menu assets provide a ready deployment shape.",
+      "source_id": "2b0ad86482133acccdc3506705304c09f790bc8fc25154f7234c7bb947d54e74",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:identityadapter",
+      "id": "join:69565777fcfc87e14fb1a598af598921016e674a0540533968f392be99bd4b7e",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Use actual mesh identity and classify local routes correctly.",
+      "signal": "Selected mesh IPv4 and gateway-prefix checks support truthful local state.",
+      "source_id": "fd94a49446eb769e1a0564ba771360572148567240b2636a886256facb18d05c",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:ranker",
+      "id": "join:71380f6058c4d2598613954991a915216b71095eb5b51c904d33b2b1b875f246",
+      "join_scope": "native",
+      "object_id": "mgm:metrics",
+      "purpose": "Prefer direct providers according to their throughput group.",
+      "signal": "Ranking band selects the appropriate remote metric class.",
+      "source_id": "9cc06b1999b781fca1f665b10cfa45db020c16a1bd4427beac6e2f12b83c2aff",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:events",
+      "id": "join:75062994112ee64101ee9ae75086a8ab02cf86223c67848b271e10c601ee341a",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Keep connectivity, peer updates and kernel actions connected.",
+      "signal": "Shared event handling applies current state to routing.",
+      "source_id": "2c5691e1cfe8682c5286d35738fc1a7e7e509fd9646e86e5f72c952ed9f0b0d8",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:7c4ef75a0fd67f3af236107000353e404f69a687fdc69e11858436910b1cd04e",
+      "join_scope": "native",
+      "object_id": "mgm:autoapproto",
+      "purpose": "Execute netifd protocol and install integration procedures.",
+      "signal": "Shell assets invoke the runtime provider and platform facilities.",
+      "source_id": "e40760c1dbb57fb103d8c0bc30aa39bd3c4aace1fa7efcf82f3620d038cb82b3",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:c",
+      "id": "join:811c29a0bb42cb66f2b5784f583303eee8cc8b7eba946f709c03fc4e29806128",
+      "join_scope": "native",
+      "object_id": "mgm:autoap",
+      "purpose": "Implement the runtime provider as compiled program code.",
+      "signal": "C compilation produces the executable.",
+      "source_id": "017c52e561c517df708eea2b23ef85cc7d7abe01098f414e2b7071b3520d08e2",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:c11",
+      "id": "join:85693c99af3425e3fb51e0c7d0c6c8fc381f1b6a169c1f823327fbbe5e723c23",
+      "join_logic": {
+        "provenance": [
+          {
+            "path": "mesh-gateway-manager/Makefile",
+            "revision": "5906ded0cd80177046340df41a822801501a0bcd"
+          }
+        ]
+      },
+      "join_scope": "native",
+      "object_id": "mgm:dnsbench",
+      "purpose": "Implement the installed DNS benchmarking executable.",
+      "signal": "The MGM package compiles dnsbench with explicit GNU C11 flags.",
+      "source_id": "143ed6e52f8cd07c09f56363714d37b803a67ab98f020798bb22b9f0e6db764b",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:c",
+      "id": "join:895def7badb13eb08b8f57eca20f7701798d936ce5127ac3e5d93ef69c8ba5ff",
+      "join_scope": "native",
+      "object_id": "mgm:ipgen",
+      "purpose": "Implement the runtime provider as compiled program code.",
+      "signal": "C compilation produces the executable.",
+      "source_id": "fc659e3f07ad8f93d92a5f952c874788d2d6a6f9fdb2402aa9a43cce615cf4ca",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:ipgen",
+      "id": "join:8a03fc7a9b394d3d547dd9bdc55e10d3fa21609137748036f6ce893af31e55ec",
+      "join_scope": "native",
+      "object_id": "mgm:ipgenproto",
+      "purpose": "Generate the address and metadata applied through netifd.",
+      "signal": "Generator output supplies deterministic identity fields.",
+      "source_id": "c6b9ebd257a0ba221ae7fea9e8adb3f7a5c4dd4d96dae514e63db59c56856014",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:guide",
+      "id": "join:8aa0d14de3493a803189531472573b8d1b14beb202161d546a55adaef095b9cb",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Configure, inspect and troubleshoot the deployed package set.",
+      "signal": "Documented runtime commands and configuration caveats guide operations.",
+      "source_id": "05f413ebf1bbd6ec1f050186ec2e47d66e765bd5c16ff1526a82ffd51a88e9be",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:routes",
+      "id": "join:908cc6b7efee09cd71ebc7233912a7edf9d1e9c78e382e9ee3902f98f30f0803",
+      "join_scope": "native",
+      "object_id": "mgm:events",
+      "purpose": "Realize the chosen route changes.",
+      "signal": "Dispatched alignment, deletion and ejection modify kernel forwarding state.",
+      "source_id": "4c349ae9b586fa9872703c322bf6642f0909780be58cb23e0927fa90fc6cf76c",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:shell",
+      "id": "join:91d2127ef5491aac3300b2c2ed3ee9a07fa7d5d37cd6877f99a26a8c04b0c0c3",
+      "join_logic": {
+        "scope": "Installed mgm, mgmctl, mgm-cli.sh and nodelist wrappers only. The compiled mgm.c ubus handlers have the daemon compilation property."
+      },
+      "join_scope": "native",
+      "object_id": "mgm:cli",
+      "purpose": "Execute the installed command-line wrappers that expose the daemon controls.",
+      "signal": "Shell wrapper procedures invoke ubus methods or read fallback status.",
+      "source_id": "95dd0ad72e8b7834578744db6bd11a6723a6d4096f6f07161bd286bb3f3708d1",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:reports",
+      "id": "join:940ce1b7d9aea01340728671b2abca7684c29097b82b3db959ab4138a78a7e46",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Assess what earlier work actually validated.",
+      "signal": "Recorded run circumstances bound historical claims.",
+      "source_id": "05fbb4f860ed687c37e74d606edcaeac8675130afbb1e92b854fa754f06212dc",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:network",
+      "id": "join:97f0bb98e300b2f67b9aa93ec2a71ca39017f51567b0ad8d4028d72be10ad527",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Have actual mesh links and upstream paths on which gateway coordination can act.",
+      "signal": "Deployment supplies communication paths and candidate gateways.",
+      "source_id": "1278caa837807844b615440c3c9c42f5338159b53e9ff4deee48d0e1b2b9cb63",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:specs",
+      "id": "join:99cec2f2cda45a321501ca8d61c43638670e69ea63a98696fe0e74b09de2192b",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Preserve component ownership and protocol/routing intent while changing code.",
+      "signal": "Contracts explain why boundaries and state transitions exist.",
+      "source_id": "4747685381ef32b0e635d48471f7bc10b9412d3f52c712b9494fc2559453d1ce",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:mgmconfig",
+      "id": "join:99daf74a832d69ac8c826975e6ce2c51be3a9b9ac06acd2ea7966a38255d45d5",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Offer generic image preparation for a mesh deployment.",
+      "signal": "Image builders can install consistent mesh bridge and L3 wiring.",
+      "source_id": "6f75f00bbdcea196d20848af6b086404fd4726014769eb0a0b4a1de871734e39",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:prototype",
+      "id": "join:9c621031dfbfb838df2abbb4ba25967bb2f1b256bbb0a2b3d17ac4cbbdb7dacf",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Investigate historical approaches when provenance is useful.",
+      "signal": "Archived implementation provides recoverable design context.",
+      "source_id": "61a29b3e49f99f77b0142dd7231dcdcc6e7764b9942ee05768a5ff6157bfcf2e",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:c3lab",
+      "id": "join:9e90540844ee7df0be047efea460fcece23b48efe52c4d5e4e3e3f3e70ff7846",
+      "join_scope": "native",
+      "object_id": "mgm:labtests",
+      "purpose": "Operate and observe the required multi-node test environment.",
+      "signal": "MVM lab commands provide the scenario execution boundary.",
+      "source_id": "16c5e321c513e5af04a44997b05658b89ee563e3d351e6bb7faa3621e347ab28",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:hosttests",
+      "id": "join:9eeda27da0a6bc5e0dbf99bb7aeb74deeafd0cc4db0edb6275dacdad5f32ec74",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Check deterministic behavior before accepting changes.",
+      "signal": "Host and protocol suites expose covered regressions.",
+      "source_id": "116e1f01166a9e2903863f9dd37def479584b6135ce63fa9bd1a65e23b474b75",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:events",
+      "id": "join:a09950314d4a98a9856654612e16f44a174e918a7368c8370320945467a522ba",
+      "join_scope": "native",
+      "object_id": "mgm:sentryhandoff",
+      "purpose": "Realize connectivity effects through the MGM action owner.",
+      "signal": "MGM boundary translates transitions into route actions and peer-significant updates.",
+      "source_id": "0f8c775cbcbd8ba389916e5a3fe36f7c29652e0f30716d099cee2002107bde54",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:dnsresponders",
+      "id": "join:a55cae551ea3b91d2ef99d823fdcceeb9e2d68f9df35ca7b48ff73d2dde8fd77",
+      "join_scope": "native",
+      "object_id": "mgm:sentry",
+      "purpose": "Obtain external reply evidence for the tested path.",
+      "signal": "Accepted DNS responses establish bounded path reachability.",
+      "source_id": "4c3ae2f76ea01ce1b6665f9c17ee1a7eca021c45a04431ccabc2df4ce8a47320",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:sentryhandoff",
+      "id": "join:a768d7a14f92d26a76fe89ddca51c475436cbe9f8059eae7673dc829fde885a4",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Inspect direct-uplink decisions and probe performance.",
+      "signal": "sentry ubus reports state, statistics and timing history.",
+      "source_id": "81456a2d85860016c003dea4c9bcf5f7cd6dece4110627d088ee5920d02c56f6",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:autoapproto",
+      "id": "join:a8df807670684fe315515532c7b250ad78a4b2595c344d3a5dd393a7dcfcc14e",
+      "join_scope": "native",
+      "object_id": "mgm:pidemo",
+      "purpose": "Use the source-selected LAN management protocol.",
+      "signal": "proto=autoap delegates management addressing to AutoAP.",
+      "source_id": "157e6bcdd141c945824e37c8103f5231fbf745861f4a02953a4a4afb9e957711",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:ipgen",
+      "id": "join:abc51e1ee777c3e55a19b58112371da0c7131cb0b1b02f81643c4fbe41b24b8a",
+      "join_scope": "native",
+      "object_id": "mgm:identitytests",
+      "purpose": "Exercise the actual identity-generation behavior.",
+      "signal": "Tests invoke provider generation and mapping paths.",
+      "source_id": "497f08300e92acba927ddac9095f13a74bb964e526786277f78dc172d5d11531",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:hosttests",
+      "id": "join:ad1d3c9f113630c7400016b12028024a955868a23d9997bb803397ac7253719b",
+      "join_scope": "native",
+      "object_id": "mgm:ci",
+      "purpose": "Run the host validation required for pull requests.",
+      "signal": "make test executes the configured deterministic suites.",
+      "source_id": "bda2b4b72d96ea977320f64c57b9c6b021cd0b85c413c89f8af68f1aeaea42bc",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:project",
+      "id": "join:af845f523a0ea6bfcb7c79f84757ac847df53ec08502bd6a6c197c5b159b9369",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Keep the mesh able to use available upstream gateways with manageable deployment and diagnosis.",
+      "signal": "Gateway availability and route decisions can be configured and observed across deployed nodes.",
+      "source_id": "326e9f64a0eaf299d8551472a2ae3e3584bb681874be084a81af8794ae640ff5",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:rto",
+      "id": "join:b4278c4302ba94026488a73bf3764b8716f9037c6ee9ce2de0a318ff35ee6614",
+      "join_scope": "native",
+      "object_id": "mgm:sentry",
+      "purpose": "Distinguish expected response delay from connectivity loss.",
+      "signal": "Adaptive deadlines interpret timing evidence.",
+      "source_id": "b4633f677e185981d6b39cf3bfedf09bd639f307592028e9e89471a822cd1d78",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:javascript",
+      "id": "join:b528dc022da87469990b5f8dea86559db6409cd53d24e8ca0b4235211b5b5707",
+      "join_scope": "native",
+      "object_id": "mgm:luci",
+      "purpose": "Render and execute the installed web configuration interface.",
+      "signal": "LuCI interprets the JavaScript assets.",
+      "source_id": "c49e4b6c11cf8cf7bd80d3b709d720d5ba3a8411efcf0f01ffe437e62dec13ca",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:autoap",
+      "id": "join:be31e799ace54947341b8d45ef896b7595bc8f1ff3bf0b0ac7387d8671fb90d3",
+      "join_scope": "native",
+      "object_id": "mgm:operators",
+      "purpose": "Retain local management access when upstream DHCP is unavailable.",
+      "signal": "Fallback address and owned DHCP leases enable access.",
+      "source_id": "c9880193328cd6ea0d557c2420227eb4d9d23722540a91f3f156e243fc656bf2",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:sentry",
+      "id": "join:c080bca30f78d19348aed61c77bdbfd244e290b5313b96f88c9821e661326e14",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Obtain current direct-uplink connectivity authority.",
+      "signal": "Embedded tester produces interface-specific connectivity transitions.",
+      "source_id": "4bb40c8d73ca213ac1d9b9c4d54cd397d27c7a7bd29310bdd2a6f88c3eedaf93",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:sentrynet",
+      "id": "join:c1e925f07d5dd539ae3820f745a3c1f6244112db6469fe56257aad68428e610f",
+      "join_scope": "native",
+      "object_id": "mgm:sentry",
+      "purpose": "Probe only eligible direct uplink paths.",
+      "signal": "Carrier/address/default-gateway observations gate interface testing.",
+      "source_id": "eb3a4794a9caa39b3efd7718aed073bd87cbf656b089398d114b02cc7fc3e584",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:multicast",
+      "id": "join:c1fe77ea205510c01f654dcd8387ad6cc1c8fe4f28ce5cf63f18631084f74f9f",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Learn peer gateway availability and inform peers of local state.",
+      "signal": "Self-state exchange converges knowledge without relaying third-party state.",
+      "source_id": "228e16032ec2922b307b0815c2952190736303ba9489d26025b254b093f79c85",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:daemon",
+      "id": "join:c3c8f9f6dededa25bf8d3046d1efdd394bddeb4c5234568f78ba46ac2c32e1f9",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Coordinate node participation, uplink knowledge, and route actions as one running control plane.",
+      "signal": "Local and peer changes reach the shared state and routing pipeline.",
+      "source_id": "c1b72d9c5794ac05a6ef147c5e0f876c039aa1bd8309cf9712f2ce91ca196b0e",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:ca1429dcf99eac077789d8ca896011b57e070097d49e3bc2147f0a9d4a39ec96",
+      "join_scope": "native",
+      "object_id": "mgm:autoap",
+      "purpose": "Manage interface addresses and owned DHCP service.",
+      "signal": "netlink, netifd, udhcpc, UCI, ubus and dnsmasq provide the needed operations.",
+      "source_id": "2ac0b8d29702b2b7a7f6f8a3f6074506f08e19da0d03a90ba9a7e2f9b8ed81eb",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:sentryhandoff",
+      "id": "join:cbc1cc7b9aef198b049290db6f6296cd2d881e900dec3ae926de250030e43484",
+      "join_scope": "native",
+      "object_id": "mgm:identityadapter",
+      "purpose": "Combine route evidence with current direct-uplink connectivity decisions.",
+      "signal": "Sentry findings inform online/direct derivation.",
+      "source_id": "1957c543756618438de6306efdc202c2841d5de37a5c1b0628c7a9b2f4e265c3",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:firewall",
+      "id": "join:d4f0bbcc2240a06d81d89f732c441360e6a80dead9bb3f4fb3f6acff1f50d257",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Permit the coordinated mesh gateway traffic through the host firewall.",
+      "signal": "Required multicast, forwarding and NAT rules are reconciled.",
+      "source_id": "45050d1a9d284664a37007602d015dc2dfd38764b5872bec98c4af6bc056ebd1",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:metrics",
+      "id": "join:d64aa7b86b8d4ea4b404c12fba1129fcf3c68e735d10829ccb81d309ba4e94f1",
+      "join_scope": "native",
+      "object_id": "mgm:routes",
+      "purpose": "Apply consistent role and uplink preferences.",
+      "signal": "Metric classes determine alignment and packing.",
+      "source_id": "e8045583f74b138a3bda198b6f19773c859e341b4a83d844ab8aeecc9f322347",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:c11",
+      "id": "join:d74607d37dd222dce3fa08489215e945ccdd0d329b9aff0ec7adea6c50957ce0",
+      "join_scope": "native",
+      "object_id": "mgm:observer",
+      "purpose": "Implement the installed readiness observer.",
+      "signal": "GNU C11 sources produce mgm-ready-observe.",
+      "source_id": "1a8ea60b486bb9982885903301515cdcba3557aac411ca898b30a845ad1ff614",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:identitytests",
+      "id": "join:da1f80b67395d6050451154017fee078173f5df46c686d0d291a30eeb2374e1c",
+      "join_scope": "native",
+      "object_id": "mgm:maintainers",
+      "purpose": "Preserve addressing and mnemonic identity across provider changes.",
+      "signal": "Focused regressions examine deterministic mapping and install handoff.",
+      "source_id": "d94c308364114c7d98962370d03a0092cb18349797b6b13eea3833dc73029020",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:store",
+      "id": "join:ded97449cd82afe8ce4b90d9c2dfc2d4ca3cb8b56d53d6b1bc9f14aac7b8e75c",
+      "join_scope": "native",
+      "object_id": "mgm:names",
+      "purpose": "Publish names matching current local and peer records.",
+      "signal": "Stored identity and address fields supply host entries.",
+      "source_id": "67c33e21270dd4e110719023327b3a03183908edd91e4477de037b7e8503a6aa",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:autoap",
+      "id": "join:e0c06a54ef324c5866f2591bf584ecffaebf59b7abd44d1809f170a8815fea79",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Provide optional management access across DHCP availability changes.",
+      "signal": "Fallback keeps a management interface addressable without changing mesh gateway selection.",
+      "source_id": "b2caa001e750c3caf6ff396197946da298a08d9130b825e459bc35203601dd11",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:state",
+      "id": "join:e173e346a50262ae3d8e0b7b908eb68095b928f2822f140467e19920d3c6302a",
+      "join_scope": "native",
+      "object_id": "mgm:store",
+      "purpose": "Retain the identity and condition needed by consumers.",
+      "signal": "Records expose authoritative local fields and attributed remote observations.",
+      "source_id": "5bd1c46865367670e460bd192984b0e58ccc7565c2b60bccf7008d0ee5e6d982",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:specs",
+      "id": "join:ecd6a01dea311ff0e0daf66306d264481b791169828b3ce18e629b927d58193b",
+      "join_scope": "native",
+      "object_id": "mgm:hosttests",
+      "purpose": "Check declared protocol and ownership invariants.",
+      "signal": "Contract tests reference expected semantics.",
+      "source_id": "9be51492b27e4427218683a911d399972517ad2705b922691d692f11c38096ca",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:guide",
+      "id": "join:ef3f03a9cfaa73add5eb77b28b73a367722a390200a54d5537c17cb2f4eabb95",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Make the implemented system operable and navigable.",
+      "signal": "Canonical guides explain package and runtime entry points.",
+      "source_id": "0e1dbe94bc330646183c7830d5999caf5436b64b98bd9a1a5673239177f26082",
+      "type": "supportive"
+    },
+    {
+      "element_id": "mgm:configuration",
+      "id": "join:f25a9d77839f41a5f75d6ccc08dda69cee2f83489b495e6dddc14cf32939a358",
+      "join_scope": "native",
+      "object_id": "mgm:daemon",
+      "purpose": "Use the deployment’s supported interface and policy choices.",
+      "signal": "Consumed UCI values shape the running daemon.",
+      "source_id": "b44979767ccc22792cfdd7336b9bacbbb632ea6d34aa7a8639145fe722e031d7",
+      "type": "property"
+    },
+    {
+      "element_id": "mgm:batman",
+      "id": "join:f2d099855da3cf5aef75d4a2cf30d689f9b49f46e692e702b542f400da8f2e1e",
+      "join_scope": "native",
+      "object_id": "mgm:project",
+      "purpose": "Have an underlying mesh forwarding substrate.",
+      "signal": "Nodes exchange mesh traffic and control messages over batman-adv.",
+      "source_id": "047b75069b53fecf0e17ed37e3bc18122bb1317638b70cd8ba11685471534a75",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:openwrt",
+      "id": "join:f518eacb986cf3643d1debd82099e4c639d9c71dbb88069db1ba0f6c6c550ae8",
+      "join_scope": "native",
+      "object_id": "mgm:sentrynet",
+      "purpose": "Learn physical/logical interface and route conditions.",
+      "signal": "Kernel/OpenWrt observations provide current eligibility inputs.",
+      "source_id": "5981bfd63165fba4ff566a4b2e28ad0b3903f3e6ce25f1edfb1869cceafff1cd",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:daemon",
+      "id": "join:fa32f942dc1c8400c896cd804e0d654d7c13d7a59d60a71906d794f2ae35f6a4",
+      "join_scope": "native",
+      "object_id": "mgm:observer",
+      "purpose": "Receive local state and peer-processing evidence.",
+      "signal": "mgm.packet, mgm.observe, status and originator surfaces feed the observer.",
+      "source_id": "3d239913d5df949856e95a52add49228237230828508066743f89e843dadd875",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:ipgenproto",
+      "id": "join:fec93d0c32fdc04eb0b582fb558cae57b9b2df18010628aa33d35e10535245fd",
+      "join_scope": "native",
+      "object_id": "mgm:identitytests",
+      "purpose": "Exercise first-install protocol and persistence behavior.",
+      "signal": "Harness checks runtime protocol availability and address handoff.",
+      "source_id": "376020f0e2946de7f704ae8e25fd0277a65e7686c89c5c3b68aa7a33e25448a3",
+      "type": "hard dependency"
+    },
+    {
+      "element_id": "mgm:ipgenproto",
+      "id": "join:fed615cd9899d36c50a807fbe312340eb3f9167b33f46b76ebcdfd98cd53857f",
+      "join_scope": "native",
+      "object_id": "mgm:pidemo",
+      "purpose": "Assign stable mesh-L3 identity on the demonstration bridge.",
+      "signal": "IPGen protocol sets the mesh address and hostname metadata.",
+      "source_id": "94505eeb2b26bbaff5ac1d9a8c50835b02759962d738538933fffdaab5bca325",
+      "type": "hard dependency"
+    }
+  ],
+  "references": {},
+  "understanding": {
+    "defining_element": {
+      "combined_result": "Coordinates available gateways into usable upstream forwarding paths as local and peer connectivity changes.",
+      "loss_test": "Without the combined discovery, connectivity interpretation, gateway choice and route application, the remaining provisioning and observation tools would no longer constitute a mesh gateway coordinator.",
+      "ref": "mgm:project"
+    },
+    "diagram": "flowchart LR\n  dns[DNS responders] --> sentry[Embedded Sentry]\n  sentry --> handoff[Direct MGM callback]\n  peers[Peer self-state] --> multicast[State and witness exchange]\n  multicast --> store[Local and remote state]\n  handoff --> events[Route event boundary]\n  store --> events\n  batman[Batman observations] --> ranking[Direct-provider ranking]\n  ranking --> metrics[Metric policy]\n  metrics --> routes[Route manager]\n  events --> routes\n  routes --> forwarding[Kernel forwarding with firewall policy]\n  forwarding --> users[Mesh users and workloads]",
+    "interpretation": {
+      "actual_identity": "Existing mgm:* identities are reused. Their freeform descriptions carry specific behavior, limits, and provenance. Applicable Type namespaces are referenced in type_ids, without membership OP joins.",
+      "evidence_limits": [
+        "Accepted DNS replies establish bounded path evidence, not universal Internet reachability.",
+        "Current source forces debug peer acceptance; authentication surfaces are not proof of enforcement.",
+        "Indirect uplink routing is experimental and defaults off.",
+        "Configured profiles and historical reports are not proof of a successful current build or live deployment."
+      ],
+      "op_direction": "element_id provides the Encounter Function; object_id receives it and bears the purpose.",
+      "parametrics": "Tunable names remain in Type parametric_elements arrays; actual values and limits remain in descriptions. Parameter changes alone do not prove satisfaction.",
+      "property_scope": "Language and configuration encounters retain their originating property joins. Visibility toward the project trunk and applicable composed parts preserves those origins; it does not transfer shell, C or JavaScript properties to unrelated siblings."
+    },
+    "operation": [
+      "OpenWrt and batman-adv supply interface lifecycle, kernel routing, mesh forwarding and topology observations. Valid mesh-L3 identity is required; IPGen supplies it optionally, while static addressing is another provider.",
+      "Embedded Sentry observes eligible direct uplinks and probes external DNS responders using candidate pools and adaptive deadlines. Its direct callback updates MGM before exterior sentry.link telemetry. MGM treats ONLINE and TESTING as connected and owns the route effects.",
+      "The store separates local authoritative state from receiver-local observations of peers. IPv6 link-local multicast exchanges sender-owned state and sender-scoped witnesses; it does not relay third-party state.",
+      "Peer state, originator loss/recovery and local connectivity meet at the event boundary. Direct-provider throughput ranking feeds metric policy; the route manager applies IPv4 forwarding decisions and the firewall reconciler permits the required traffic.",
+      "CLI, readiness observation, readable names, optional LEDs and LuCI expose controls and evidence. AutoAP preserves optional management access. Generic and Pi provisioning compose deployment choices.",
+      "Build tooling, source-only tests, guides and reports support maintenance. The archived Python prototype remains inside the repository but outside current runtime functionality."
+    ],
+    "receiving_purposes": [
+      {
+        "provider": "mgm:project",
+        "purpose": "Reach upstream destinations through available mesh gateways despite changing connectivity.",
+        "receiver": "mgm:users"
+      },
+      {
+        "provider": "mgm:project",
+        "purpose": "Keep upstream access available and gateway decisions configurable and observable across the deployed mesh.",
+        "receiver": "mgm:operators"
+      }
+    ],
+    "scope": {
+      "artifact": "mgm:project",
+      "basis": "Supplied Native source-inspection map, checked against the same checkout and current repository guides. This pass restructures that understanding; it does not claim a fresh exhaustive source audit or runtime validation.",
+      "packages": [
+        "mesh-gateway-manager",
+        "ipgen",
+        "autoap",
+        "mgm-config",
+        "pi-demo"
+      ],
+      "repository": "/home/rich/mgm-main",
+      "revision": "5906ded0cd80177046340df41a822801501a0bcd"
+    },
+    "validation": {
+      "actual_elements": 58,
+      "checks": [
+        "All saved records match intended content on intake.get readback.",
+        "All actual records use metaform:actual-element, descriptions, provenance and resolvable type_ids.",
+        "Exactly one Defining Element, mgm:project.",
+        "All OP endpoints are actual Elements, with receiver-owned purposes and supported roles.",
+        "All 100 pre-existing Native joins are preserved by identity; one GNU C11 benchmark property join was added.",
+        "All Type SVGs parse as XML; namespaces, aliases arrays and Parametric placement pass structural checks."
+      ],
+      "limitations": "Graph validation only; no build, host test, security audit, or live lab validation was performed.",
+      "native_op_joins": 101,
+      "types": 47
+    }
+  }
+}

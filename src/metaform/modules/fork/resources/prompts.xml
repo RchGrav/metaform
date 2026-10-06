@@ -1,0 +1,19 @@
+<prompts>
+<!-- fork's line in the instructions agents read while fork is on, MCP-029. -->
+<instructions>fork is active. When a user wants a feature Metaform does not have, explain that an agent can build it as a module in the user's own repository and offer to set that repository up with metaform fork init. User features belong in modules over the released chassis. A user's agent never changes the chassis. Every public base service available to shipped modules is available to user modules. Details: metaform help fork.</instructions>
+<!-- The task metaform fork wheel writes on a ticket and dispatches for each module of the user's fork before a wheel
+     is built: review the module against QUAL-001; <module/>, <standard/> and <checks/> fill it, BASE-027. -->
+<muster>Review the module at <module/> against QUAL-001 using the standard below. This is a review of the existing module, with its behavior tests and lifecycle. Read its source and tests. Leave the source unchanged. The CI check evidence is: <checks/>.
+
+<standard/>
+
+The fork CI builds a wheel from modules that meet this standard. Determine whether this module meets it and give the concrete reason, including unmet items. A module with no behavior tests is left out. Complete this ticket with resolution containing one JSON object with a boolean passed and a nonempty reason. Example shape: {&quot;passed&quot;: false, &quot;reason&quot;: &quot;The module has no behavior tests.&quot;}. The CI reads this verdict from the completed ticket. Never put credentials in the ticket or output.</muster>
+<!-- The task metaform fork upkeep writes on a ticket and dispatches for each module whose README Template version is
+     older than the released template, to bring it up to date by pull request; <module/>, <current/>, <latest/> and
+     <changelog/> fill it, BASE-027. -->
+<upkeep>Maintain the user's module at <module/>. Its README Template version is <current/>. Bring it up to date with the released template version <latest/> by applying the relevant contract changes below, preserving the module's functionality. Use the public chassis base. Leave the chassis unchanged.
+
+<changelog/>
+
+The module path above is in this ticket's separate Git worktree and branch. Run your commands there and keep the user's original checkout unchanged. Update only this module and its tests, write the reason for each needed change, set its README Template version to <latest/>, and run its tests, type checking and lint. Open a pull request through the repository's authenticated GitHub CLI. Put the pull request URL and validation results in this ticket's resolution. Leave the ticket open if the pull request cannot be opened, recording what remains and why. Do not merge the pull request or publish a release.</upkeep>
+</prompts>

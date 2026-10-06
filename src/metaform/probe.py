@@ -95,7 +95,7 @@ class Session:
                 raise EOFError(f'the server exited before answering {method}')
             decoded = json.loads(line)
             if not isinstance(decoded, dict):
-                raise ValueError('a line of standard output is not a JSON object')
+                raise ValueError('a line of standard output is not a JSON object')  # noqa: TRY004  valid JSON violates the wire shape
             message = cast(dict[str, Any], decoded)
             if 'method' in message and 'id' in message:
                 self._send({'id': message['id'], 'error': {'code': -32601, 'message': 'not supported'}})

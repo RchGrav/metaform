@@ -1,0 +1,168 @@
+# ------------------------------------------------------------
+# EXTERNAL NAMESPACE / LINK DEFINITIONS
+# ------------------------------------------------------------
+
+@STATE_INIT:
+{NS_ROOTS} := [code,document,media,data,upstream,downstream]
+{UPSTREAM} := upstream.[code|document|media|data]
+{CQU_BASE} := downstream.cqu
+{CQU}      := Cestui Que Use
+
+@CONSTRAINT:
+
+# CQU
++> CQU := the explicit RE which benefits from and drives improvements on the artifact.
++> Every CQU is recorded under {CQU_BASE}.
++> Other external parties receiving from the artifact are recorded under downstream.[type] only when a join names them as an RE.
+
+# Upstream / Downstream links
++> upstream and downstream entries are links in this project's namespace to things outside the project.
++> upstream links external code, documents, media, or data named by a join as a provider.
++> downstream links external parties receiving from the project.
++> Every CQU links from {CQU_BASE}.
++> A link may own joins as an RE, including a CQU's OP.
++> A link holds no elements beneath it.
++> Upstream links name types.
++> The specific external thing represented by an upstream link goes in the upstream element's refs in the sources layer.
+!> NEVER trace or decompose a link; its target is outside the AUE.
+!> NEVER place a project element under upstream or downstream.
+!> NEVER record another mapped project under downstream; find dependent projects by searching joins that point upstream.
+
+# Namespace
++> Namespace root ∈ {NS_ROOTS}.
++> No filler segments such as domain or class.
++> No minimum or maximum namespace segment count.
++> upstream and downstream.cqu are structural prefixes.
++> REVERSIBILITY, PROPER NOUN, and LEXICON rules apply only to segments following those structural prefixes.
+
+# Join schema
++> provider := PE namespace address.
++> When the PE is external, provider := its upstream namespace address.
+
+# ------------------------------------------------------------
+# EXTERNAL LINK ELEMENT FORMS
+# ------------------------------------------------------------
+
+{Upstream_Link_Schema} :=
+
+ELEMENT(
+  namespace_address := upstream.[code|document|media|data].[functional type],
+  name_length       := [lookback count after structural prefix],
+  name              := [canonical or industry type name],
+  role              := [DE|SE|NE as applicable],
+
+  refs := [
+    # Sources-layer references identifying the specific external thing
+    REF(
+      key   := [source reference type],
+      value := [specific external source]
+    )
+  ],
+
+  elements := [],
+
+  joins := [
+    # Optional only when this link itself bears an OP as an RE
+    JOIN(...)
+  ]
+)
+
+{CQU_Link_Schema} :=
+
+ELEMENT(
+  namespace_address := downstream.cqu.[CQU type],
+  name_length       := [lookback count after downstream.cqu],
+  name              := [industry title of the CQU role],
+  role              := CQU,
+
+  refs := [],
+
+  elements := [],
+
+  joins := [
+    JOIN(
+      type     := purpose,
+      provider := [PE namespace address],
+      purpose  := [CQU Operative Purpose],
+      ef       := [Providing Element Encounter Function],
+      ifd      := [send|receive|both]
+    )
+  ]
+)
+
+{Downstream_Link_Schema} :=
+
+ELEMENT(
+  namespace_address := downstream.[external receiver type],
+  name_length       := [lookback count after structural prefix],
+  name              := [canonical or industry type name],
+
+  refs := [],
+
+  elements := [],
+
+  joins := [
+    # Present only when this external receiver is named as an RE
+    JOIN(...)
+  ]
+)
+
+# ------------------------------------------------------------
+# LINK ROUTING
+# ------------------------------------------------------------
+
+@CONDITION (EXTERNAL_PLACEMENT):
+
+?IF (PE is external code)
+    -> {Namespace_Address} := upstream.code.[type]
+
+?IF (PE is external document)
+    -> {Namespace_Address} := upstream.document.[type]
+
+?IF (PE is external media)
+    -> {Namespace_Address} := upstream.media.[type]
+
+?IF (PE is external data)
+    -> {Namespace_Address} := upstream.data.[type]
+
+?IF (RE is CQU)
+    -> {Namespace_Address} := downstream.cqu.[type]
+
+?IF (RE is external AND RE is not CQU)
+    -> {Namespace_Address} := downstream.[type]
+
+@ROUTER:
+@MATCH({Namespace_Address}):
+| [upstream.*]       -> EXECUTE_PIPELINE(Record_Upstream_Link)
+| [downstream.cqu.*] -> EXECUTE_PIPELINE(Record_CQU_Link)
+| [downstream.*]     -> EXECUTE_PIPELINE(Record_Downstream_Link)
+
+@EXECUTE_PIPELINE(Record_Upstream_Link):
+[1] ∇(external PE) => identify reusable functional type and specific external source
+[2] Δ(type) => create upstream link element
+[3] Δ(specific source) => record in upstream element refs within sources layer
+[4] YIELD link without subordinate elements
+
+@EXECUTE_PIPELINE(Record_CQU_Link):
+[1] ∇(CQU) => identify specific reusable beneficiary role
+[2] Δ(role) => create beneath downstream.cqu
+[3] Δ(OP,PE EF) => record CQU-owned purpose join
+[4] YIELD link without subordinate elements
+
+@EXECUTE_PIPELINE(Record_Downstream_Link):
+[1] ∇(external RE) => identify reusable receiving type
+[2] Δ(type) => create downstream link only when a join names it as RE
+[3] YIELD link without subordinate elements
+
+@VERIFY:
+{Valid}:=
+({NS_ROOTS} == [code,document,media,data,upstream,downstream])
+AND (every CQU address begins downstream.cqu)
+AND (external providers use upstream addresses)
+AND (external upstream instances are recorded in element refs in sources layer)
+AND (no join contains refs)
+AND (no upstream/downstream link contains child elements)
+AND (no project element exists beneath upstream or downstream)
+AND (no link is traced or decomposed)
+AND (structural prefixes are excluded from reversibility/proper-noun/lexicon evaluation)
+AND (dependent mapped projects are discovered through joins pointing upstream, not downstream records)

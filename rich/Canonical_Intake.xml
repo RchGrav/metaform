@@ -136,7 +136,7 @@
            <instruction>non_goal is optional and records a structural constraint on the join: something the RE does not seek from the PE, stated as a boundary the PE must not cross, where it materially clarifies the OP. Omit it when it does not apply.</instruction>
        </instructions>
        <schema>
-            <metaform id="[generated map id]" name="[a description of the AT and AUE present]">
+            <metaform id="[metaform_id] name="[project]" description="[a description of the AT and AUE present]">
                 <elements>
                     <!-- All namespace records remain elements -->
                     <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[AUE|CQU|DE|SE|NE]">
@@ -160,9 +160,6 @@
             </metaform>
             <!-- Layer Sample -->
             <layer id="[generated sources id]" name="sources" metaform_id="[metaform id]" >
-               <refs>
-                 <ref key="path" value="[project folder path]" />
-               </refs>
                <elements>
                    <!-- All namespace records remain elements -->
                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[AUE|CQU|DE|SE|NE]">
@@ -170,17 +167,15 @@
                             <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
                             <ref key="[key]" value="[value]" />
                         </refs>
+                        <elements>
+                            <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
+                                <refs />
+                                <joins />
+                            </element>
+                        </elements>
                         <joins>
                             <join type="purpose" purpose="[State the objective or standard this element or action fulfills.]" ef="[Encounter Function of the PE within the RE context]" ifd="[send|receive|both]">
-                                <elements>
-                                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
-                                        <refs>
-                                            <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
-                                            <ref key="[key]" value="[value]" />
-                                        </refs>
-                                        <joins />
-                                    </element>
-                                </elements>
+                                <elements />
                             </join>
                         </joins>
                    </element>

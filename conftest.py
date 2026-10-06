@@ -32,7 +32,9 @@ def run(home, tmp_path):
                                 env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})},
                                 capture_output=True, text=True, encoding='utf-8', input=input, check=False)
         # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
-        result.stderr = result.stderr.removeprefix(f'Notice: {harness.NOTICE}\n')
+        # The notice drops its first-run sentence once an intake exists, so both forms are stripped.
+        for notice in (harness.NOTICE, harness.NOTICE.removeprefix(harness.FIRST_RUN)):
+            result.stderr = result.stderr.removeprefix(f'Notice: {notice}\n')
         if ok and result.returncode != 0:
             raise AssertionError(f'metaform {" ".join(args)} failed ({result.returncode}):\n'
                                  f'{result.stdout}{result.stderr}')
@@ -43,14 +45,14 @@ def run(home, tmp_path):
 @pytest.fixture
 def dispatch_runners(run):
     """Detached test launches, recorded before assertions; Stop and verify they end even when the test fails."""
-    import json
     import time
 
     from metaform.modules.dispatch import end_group
-    from metaform.modules.dispatch.tests.test_dispatch import alive
+    from metaform.modules.dispatch.tests.test_dispatch import alive, end_agent, gone
 
     runners = []
     yield runners
+    survived = []
     for started, folder, log in runners:
         pid = started['pid']
         try:
@@ -65,32 +67,57 @@ def dispatch_runners(run):
             while alive(pid) and time.monotonic() < deadline:
                 time.sleep(0.05)
         finally:
-            # The fake agent has its own group; killing just the runner would leave its children behind.
             forced = alive(pid)
             if forced:
                 end_group(pid)
-            children = set()
-            deadline = time.monotonic() + 5
-            while True:
-                try:
-                    if log.exists():
-                        for line in log.read_text(encoding='utf-8').splitlines():
-                            try:
-                                entry = json.loads(line)
-                            except json.JSONDecodeError:  # teardown can meet a line the agent is still writing
-                                continue
-                            children.update(entry[key] for key in ('pid', 'grandchild') if key in entry)
-                finally:
-                    for child in children:
-                        if alive(child):
-                            end_group(child)
-                if not forced or time.monotonic() >= deadline:
-                    break
-                time.sleep(0.05)  # a child already spawned can publish its PID after the runner is killed
-            deadline = time.monotonic() + 5
-            while any(alive(one) for one in [pid, *children]) and time.monotonic() < deadline:
-                time.sleep(0.05)
-            assert not any(alive(one) for one in [pid, *children]), 'a detached test runner or its children survived'
+            if not gone([pid, *end_agent(log, forced)]):
+                survived.append(pid)
+    assert not survived, f'detached test runners or their children survived: {survived}'
+
+
+# The command lines of the processes a test home must not leave behind; matching them keeps a PID the system has
+# since given to another process, such as an xdist worker with its own listener, from being ended.
+SURVIVORS = ('-m metaform.modules.web.server ', '-m metaform dispatch ')
+
+
+def pytest_sessionfinish(session):
+    """No metaform web server or dispatch runner started under a test home outlives the test session: each records
+    its PID in its home's run/web.json or run/listeners. One still alive fails the run and is ended, VIEW-002 and
+    BASE-052. Under xdist only the controller checks, once every worker has finished."""
+    import json
+    import time
+
+    if hasattr(session.config, 'workerinput'):
+        return
+    folder = getattr(getattr(session.config, '_tmp_path_factory', None), '_basetemp', None)
+    if folder is None:  # the run made no temporary folder, so it started nothing under a test home
+        return
+    from metaform.modules.dispatch import command_line, end_group
+    from metaform.modules.dispatch.tests.test_dispatch import alive
+
+    pids = set()
+    for path in [*folder.glob('**/run/web.json'), *folder.glob('**/run/listeners/*.json')]:
+        try:
+            pids.add(int(json.loads(path.read_text(encoding='utf-8'))['pid']))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    deadline = time.monotonic() + 5  # a server told to stop by the last teardown can still be exiting
+    while True:
+        said = {pid: ' '.join(command_line(pid)) for pid in pids if alive(pid)}
+        left = {pid: words for pid, words in said.items() if any(one in words for one in SURVIVORS)}
+        if not left or time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+    if not left:
+        return
+    for pid in left:
+        end_group(pid)
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+    if reporter is not None:
+        reporter.write_line('Test homes left these metaform processes running; they are now ended:', red=True)
+        for pid, words in left.items():
+            reporter.write_line(f'  {pid} {words}', red=True)
 
 
 @pytest.fixture

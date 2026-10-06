@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="metaform-code-only-20260924">
+    <elements>
+        <element namespace_address="stakeholder.owner.project" name_length="2" role="VE">
+            <name>Project owner</name>
+            <joins>
+                <join type="purpose" provider="code.chassis.module" purpose="Have every agent that works in the project's folders start from the project's recorded purpose instead of rebuilding it from the code." function="The chassis registers the project folder under an id, resolves that folder and every folder below it to the project, keeps the project's functional map and settings in the Metaform home, and offers the enabled modules' verbs there as metaform commands and as MCP tools." relation="The module chassis ties the project's folders to the project's functional map and to the commands and tools agents use in them." observation="Two modules ship inside the package, map and template, and both are on after install. A map enters a project only through metaform map import of an XML file; no code in this package writes a map.">
+                    <refs>
+                        <ref key="path" value="src/metaform" />
+                        <ref key="path" value="pyproject.toml" />
+                    </refs>
+                </join>
+            </joins>
+        </element>
+        <element namespace_address="stakeholder.agent.coding" name_length="2" role="VE">
+            <name>Coding agent</name>
+            <joins>
+                <join type="purpose" provider="code.chassis.module" purpose="Know what a part of the project is for, who receives it and how, before changing it." function="A harness launches metaform mcp in the project folder; the chassis answers with instructions that tell the agent to read the map before changing code and that carry each module's purpose, lists each module verb allowed in that folder as a tool named module_verb, runs every call through the same verb code as the command line, and ends each error with the one next step to take." relation="The module chassis gives the coding agent the project's map tools and each module's purpose before the agent changes code." observation="Only module verbs become tools; add, list, enable, disable, set, unset and config stay on the command line. The server works on the project of the folder it starts in and reads the module list once, when it starts." non_goal="Rebuild the project's purpose from the code at the start of every task." />
+            </joins>
+        </element>
+        <element namespace_address="stakeholder.author.module" name_length="2" role="VE">
+            <name>Module author</name>
+            <joins>
+                <join type="purpose" provider="code.chassis.module" purpose="Add commands, settings and event handlers to Metaform without changing the chassis." function="The chassis finds the author's module as a folder in the modules folder of the Metaform home or as an installed package named by a metaform.modules entry point, reads its SUPPORTED_OS without running it, imports its MODULE declaration, and gives its verbs, settings and subscriptions the same command line, help pages, settings screen and MCP tools that the chassis's own commands get." relation="The module chassis runs the module author's module as part of the metaform command." observation="A module is a package folder with __init__.py; a lone .py file is not found. A module stays unloaded, listed with its reason, when its id is a chassis command name or an id already taken, it lacks SUPPORTED_OS, it names only other operating systems, a setting it declares belongs to another owner, or its import raises. A user module cannot replace a shipped module of the same id." non_goal="Edit chassis code to add a command." />
+                <join type="purpose" provider="code.template.module" purpose="Start a module from working code that uses each module feature once." function="The template folder declares a text setting, a select setting whose choices come from its own data, a sync verb with a noun and an adverb that publishes template.greeted, an async verb, a verb that reads what its subscriber recorded, a caution verb that runs only with --confirm, and a subscription to its own event; its README explains each part and the ctx calls a verb can make." relation="The module template shows the module author every module feature in one folder to copy." observation="It greets names and records each one in history.json in its data folder; forget deletes that file by building the home path itself instead of using ctx.data. It is on after install, so its four verbs are tools and greeting and favorite are settings in every project.">
+                    <refs>
+                        <ref key="path" value="src/metaform/modules/template" />
+                    </refs>
+                </join>
+            </joins>
+        </element>
+        <element namespace_address="code.chassis.module" name_length="2" role="DE">
+            <name>Metaform chassis</name>
+            <joins>
+                <join type="purpose" provider="code.dispatcher.command" purpose="Turn each metaform command line into one chassis command or one module verb, run for the folder it was typed in." function="main takes the first word as the verb, shows status when there is none, runs help, add, list, set, unset, config, enable, disable and mcp itself, and hands any other first word to the module with that id, where the next word picks the verb, plain words become nouns and words starting with -- become that verb's adverbs." relation="The command dispatcher routes every metaform invocation to the chassis command or module verb it names." observation="pyproject.toml installs main as the metaform console script, and python -m metaform runs the same main. A refused command writes an Error line and a Next line to stderr and exits with 2. -h or --help after a command prints only its syntax; metaform help prints its full page.">
+                    <refs>
+                        <ref key="path" value="src/metaform/cli.py" />
+                        <ref key="path" value="src/metaform/__main__.py" />
+                        <ref key="path" value="pyproject.toml" />
+                    </refs>
+                    <element namespace_address="code.parser.command" name_length="2" role="SE">
+                        <name>verb, noun and adverb parser</name>
+                        <refs>
+                            <ref key="relation" value="The command parser separates what a verb acts on from how it runs." />
+                            <ref key="function" value="set reads --key value, --key=value and a bare boolean switch as on; a module verb takes plain words as nouns, takes only the adverbs it declares, reads the value after an adverb that takes one, and accepts --confirm only when it has a caution." />
+                            <ref key="path" value="src/metaform/cli.py" />
+                        </refs>
+                    </element>
+                    <element namespace_address="code.report.status" name_length="2" role="SE">
+                        <name>bare metaform status</name>
+                        <refs>
+                            <ref key="relation" value="The status report tells whoever runs metaform with no words where they stand." />
+                            <ref key="function" value="It prints the version, the home, the folder, the folder's project with its path and whether it was selected here, the number of registered projects, the modules on and the ones that did not load, and the allowed command groups when the folder has any." />
+                            <ref key="path" value="src/metaform/cli.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.server.tool" purpose="Offer each module verb allowed in a folder to agents as a tool that behaves exactly like the command line verb." function="metaform mcp serves over stdio and builds each tool from the Verb declaration, with nouns as an array of strings, each adverb as a boolean or string argument named without its dashes, and confirm on a caution verb; it runs the verb in a worker thread, collects what the verb says through the context sink, and returns a Stop as an error result that ends in its Next line." relation="The tool server turns the declared module verbs into MCP tools for the coding agent." observation="The instructions are a fixed base text followed by one section per allowed module with its purpose. A tool name that falls outside letters, digits, dash and underscore up to 64 characters, or that holds a double underscore, is dropped without notice. Only Stop is caught; any other exception in a verb is left to the MCP library.">
+                    <refs>
+                        <ref key="path" value="src/metaform/mcp_server.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.loader.module" purpose="Know every module it can see, load the ones that are on and fit this system, and say why any other did not load." function="discover looks in the package's modules folder, then the modules folder of the home, then the metaform.modules entry points; it refuses ids that name a chassis command or repeat an earlier id, reads SUPPORTED_OS before any import, imports each enabled module while the settings it declares are recorded as its own, puts the settings schema back when an import fails, and keeps the result for the rest of the process. enable module and disable module record the id in the disabled_modules table of the base database." relation="The module loader supplies the module chassis with the loaded modules and a reason for each one that is off or broken." observation="metaform list modules prints each id with on, off or error, where it was found, and its summary or its reason. A disabled module is not imported, so its settings leave the schema while their saved values stay in the home." non_goal="Run a module's code to learn whether it can load.">
+                    <refs>
+                        <ref key="path" value="src/metaform/loader.py" />
+                    </refs>
+                    <element namespace_address="code.reader.declaration" name_length="2" role="SE">
+                        <name>module declaration reader</name>
+                        <refs>
+                            <ref key="relation" value="The declaration reader tells the module loader whether a module fits this operating system without running it." />
+                            <ref key="function" value="It parses __init__.py, and manifest.py beside it when one exists, with ast; it accepts SUPPORTED_OS and DEPENDENCIES only as one top-level literal tuple or list of strings, reads darwin as macos, and raises when the two files declare different values." />
+                            <ref key="observation" value="DEPENDENCIES is read and returned, and nothing uses it." />
+                            <ref key="path" value="src/metaform/module_metadata.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.contract.module" purpose="Receive every module in one declared shape, so it can list, run, document and serve any module's verbs from the declaration alone." function="A module's __init__.py sets SUPPORTED_OS and sets MODULE to a Module with an id equal to its folder or entry point name, a purpose, a summary, Verb records that each carry a name, a function, a summary, a nouns pattern, Adverb switches, details, examples and an optional caution, and Subscription records that pair a topic with a handler; call runs a sync or an async function the same way." relation="The module contract states what the module chassis needs from every module." observation="The same Module and Verb records produce the command line usage, the help pages and the MCP tool schemas. A module with two verbs of one name is refused. An Adverb only changes how a verb runs; what the verb acts on arrives as nouns.">
+                    <refs>
+                        <ref key="path" value="src/metaform/module.py" />
+                    </refs>
+                    <element namespace_address="code.context.execution" name_length="2" role="SE">
+                        <name>verb context</name>
+                        <refs>
+                            <ref key="relation" value="The execution context hands each verb and subscriber what it acts on and the chassis services it may use." />
+                            <ref key="function" value="Context holds the module id, the folder, the nouns and the adverbs; say writes a line to stdout or to the tool server's sink, setting reads a setting for the folder, data creates and returns the module's folder under data in the home, and publish sends a topic through the event bus." />
+                            <ref key="path" value="src/metaform/module.py" />
+                        </refs>
+                    </element>
+                    <element namespace_address="code.error.user" name_length="2" role="SE">
+                        <name>Stop with one next step</name>
+                        <refs>
+                            <ref key="relation" value="The user error ends every refused command with the one command to run next." />
+                            <ref key="function" value="Stop carries a message and a next step; the command line prints them as Error and Next and exits with 2, and the tool server returns them as an error result." />
+                            <ref key="path" value="src/metaform/module.py" />
+                        </refs>
+                    </element>
+                    <element namespace_address="code.check.confirmation" name_length="2" role="SE">
+                        <name>caution and --confirm</name>
+                        <refs>
+                            <ref key="relation" value="The confirmation check holds a caution verb until the caller confirms it." />
+                            <ref key="function" value="A verb with a caution explains itself and names the exact command with --confirm, or on MCP the call with confirm true, and runs only when that is given; an ordinary verb refuses --confirm as an unknown switch." />
+                            <ref key="path" value="src/metaform/cli.py" />
+                            <ref key="path" value="src/metaform/mcp_server.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.registry.project" purpose="Know which project a command works on from the folder it runs in." function="add project stores an id with an existing folder, replacing the folder of an id already registered; the folder's project is the registered one whose folder is the deepest that contains it, and the folder-scoped --project setting defaults to that project or, when set, points the folder and the folders below it at another registered project." relation="The project registry resolves each folder to the project whose map and settings the module chassis uses there." observation="list projects prints each id and folder. --project accepts only registered ids and answers none yet when there are none. No command removes a project.">
+                    <refs>
+                        <ref key="path" value="src/metaform/home.py" />
+                        <ref key="path" value="src/metaform/settings.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.registry.settings" purpose="Hold one definition of each setting that set, unset, validation, defaults, help and the settings screen all read." function="declare registers a Setting with its key, a default or a function that computes one from the folder, help, details, a kind of str, int, bool, list or select, a global or folder scope, and its owner; a select's choices are a list or a function that returns the current list. value, state, assign, put, glue, reset and describe read and write settings in the base database, and a glued setting keeps its value through unset all until unset --unglue." relation="The settings registry gives the chassis and each module one shared set of switches, values and states." observation="The chassis declares project and commands, and the template declares greeting and favorite. Each switch is its key with underscores turned to dashes. Values are stored as JSON by scope and key. A module that declares a key another owner already holds is refused.">
+                    <refs>
+                        <ref key="path" value="src/metaform/settings.py" />
+                    </refs>
+                    <element namespace_address="code.scope.folder" name_length="2" role="SE">
+                        <name>folder settings inherited by subfolders</name>
+                        <refs>
+                            <ref key="relation" value="The folder scope lets a setting made in one folder apply to every folder below it until a deeper folder sets its own." />
+                            <ref key="function" value="A folder setting is saved under the resolved path of the folder where set runs; a read walks up from the current folder to the nearest folder that holds a saved or glued value; unset clears the value where that walk finds it, which can be a folder above the current one." />
+                            <ref key="path" value="src/metaform/settings.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.allowlist.command" purpose="Show and run in each folder only the command groups chosen for it, and always leave the way back open." function="The folder-scoped commands setting lists groups, where a group is chassis or a module id, and an empty list allows every group; the dispatcher refuses a module verb or chassis command outside the list with a Next line naming metaform unset --commands, and the help index and the MCP tools and instructions list only allowed groups, while help, set, unset, config and mcp always run." relation="The command allowlist narrows what agents and people in a folder can see and run." observation="set --commands prints the groups shown, that every other command and its help is now hidden and will not run, and how to restore them. The narrowed help index lists help, set, unset and config but not mcp, which still runs. Folders below inherit the list." non_goal="Hide the commands that restore the full set.">
+                    <refs>
+                        <ref key="path" value="src/metaform/cli.py" />
+                        <ref key="path" value="src/metaform/docs.py" />
+                        <ref key="path" value="src/metaform/mcp_server.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.home.data" purpose="Keep all Metaform data in one global place that a command in any folder can reach." function="The home is METAFORM_HOME or ~/.metaform; it holds metaform.sqlite3 with the projects, settings, glue and disabled_modules tables, a store.sqlite3 per project under projects, a folder per module under data, and user modules under modules." relation="The data home stores the registries, each project's map and each module's files for the module chassis." observation="Reading a base database that does not exist uses an empty in-memory one, so a read creates nothing; the first write creates the home." non_goal="Write anything into a registered project's folder.">
+                    <refs>
+                        <ref key="path" value="src/metaform/home.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.module.map" purpose="Put the project's functional map where an agent can ask what a file or an element is for." function="The map module imports a map XML into the folder's project and answers where with the joins and internal subtypes whose refs cite a file, element with one element's role, the joins stored on it, the joins that name it as provider and their subtypes, and list with the root elements; where and element print JSON with --json." relation="The map module gives the module chassis the project's functional map to serve." observation="Its purpose, sent in the MCP instructions, tells agents to use where to find the elements a file implements and element before changing one. The where example names src/mgm_safetynet.c from another project.">
+                    <refs>
+                        <ref key="path" value="src/metaform/modules/map" />
+                    </refs>
+                    <element namespace_address="code.importer.map" name_length="2" role="SE">
+                        <name>map import</name>
+                        <refs>
+                            <ref key="relation" value="The map importer reads a map file into the project's join store." />
+                            <ref key="function" value="import stores each element as an element record, each join under the id type:provider with its refs and internal subtypes, and the whole XML with its sha256 as a source record on the project address, then prints the counts, adding unchanged when nothing changed." />
+                            <ref key="observation" value="Two joins on one element with the same type and provider share one id, so only the later one stays current." />
+                            <ref key="path" value="src/metaform/modules/map/__init__.py" />
+                        </refs>
+                    </element>
+                    <element namespace_address="code.lookup.reverse" name_length="2" role="SE">
+                        <name>map where</name>
+                        <refs>
+                            <ref key="relation" value="The reverse lookup tells an agent which parts of the map a file implements." />
+                            <ref key="function" value="where compares the first word of every path or source ref on joins and internal subtypes with the file, whole or by trailing path, and lists as within the joins whose folder ref contains the file." />
+                            <ref key="path" value="src/metaform/modules/map/__init__.py" />
+                        </refs>
+                    </element>
+                    <element namespace_address="code.view.element" name_length="2" role="SE">
+                        <name>map element</name>
+                        <refs>
+                            <ref key="relation" value="The element view shows one element from both ends of its joins." />
+                            <ref key="function" value="element returns the role, vested, name and notes of an element, the joins stored on it, the joins that name it as provider and the subtypes inside them; for an internal subtype address it returns the subtype with the receiver and provider of its parent join." />
+                            <ref key="path" value="src/metaform/modules/map/__init__.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.reference.command" purpose="Explain every command, switch, module and verb from the same records that define them." function="Command and Switch records for the chassis commands, the settings schema, and the Module and Verb declarations render as a full page through metaform help and as syntax only through -h or --help after a command, alongside an overview, an intro, a commands index that adds each enabled module's verbs, and a switches index." relation="The command reference documents the chassis and every loaded module without separate help text." observation="set and unset list every declared setting as a switch. A switch page for a setting shows its usage, choices, owner, kind and scope. The add example registers mgm from ~/mgm-main.">
+                    <refs>
+                        <ref key="path" value="src/metaform/docs.py" />
+                        <ref key="path" value="src/metaform/cli.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.screen.settings" purpose="Let the settings of the chassis and every module, and each module's on or off state, be reviewed and changed in one place." function="metaform config opens a full-screen keyboard screen when stdin and stdout are terminals, with the chassis and each found module on the left and the selected group's settings on the right; edits, glue, resets and module toggles are staged, filtered with /, previewed with P, and saved with S or F10 through the settings registry and the module loader." relation="The settings screen gives the module chassis one keyboard view of every registered setting and module state." observation="Strings are edited as plain text and every other kind as JSON. The chassis row cannot be turned off. Without a terminal, or with --show, config prints the settings instead, and --json prints them as JSON.">
+                    <refs>
+                        <ref key="path" value="src/metaform/tui.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.suite.test" purpose="Keep what it promises its receivers from changing unnoticed." function="pytest runs the real metaform command in a subprocess, from a chosen folder, against a throwaway METAFORM_HOME, and checks project registration and folder inheritance, glue, both help forms, one Next line per error, every template feature, module refusals, the allowlist, map import, where, element and revisions, MCP tools against the command line's answers, and the settings screen driven through a pipe input." relation="The test suite checks the module chassis's behavior through the command its receivers use." observation="The glue test holds set and unset output to mvm's wording line for line. The kitchen timer map is the only map the tests import. The settings screen tests call the screen's methods directly instead of running the command.">
+                    <refs>
+                        <ref key="path" value="tests" />
+                    </refs>
+                </join>
+            </joins>
+        </element>
+        <element namespace_address="code.dispatcher.command" name_length="2" role="SE">
+            <name>metaform command line</name>
+        </element>
+        <element namespace_address="code.server.tool" name_length="2" role="SE">
+            <name>metaform mcp</name>
+        </element>
+        <element namespace_address="code.loader.module" name_length="2" role="SE">
+            <name>module loader</name>
+        </element>
+        <element namespace_address="code.contract.module" name_length="2" role="NE">
+            <name>module contract</name>
+            <joins>
+                <join type="purpose" provider="code.bus.event" purpose="Let one module's verb reach every module that responds to what happened, without either importing the other." function="publish gives each enabled module's Subscription with a matching topic its own copy of the payload, in load order, runs its handler with a Context for that module and the publisher's folder, and returns each delivery's module, status and result or error." relation="The event bus carries a module's published topic to every subscribing module." observation="Delivery is synchronous and in-process within one metaform command; nothing is queued, so a module that is off never receives the event. The template module subscribes to its own template.greeted." non_goal="Let one failing subscriber stop the publisher or the other subscribers.">
+                    <refs>
+                        <ref key="path" value="src/metaform/events.py" />
+                    </refs>
+                </join>
+            </joins>
+        </element>
+        <element namespace_address="code.bus.event" name_length="2" role="SE">
+            <name>event bus</name>
+        </element>
+        <element namespace_address="code.registry.project" name_length="2" role="SE">
+            <name>registered projects and folder project</name>
+        </element>
+        <element namespace_address="code.registry.settings" name_length="2" role="SE">
+            <name>settings with glue</name>
+        </element>
+        <element namespace_address="code.allowlist.command" name_length="2" role="SE">
+            <name>commands setting</name>
+        </element>
+        <element namespace_address="code.home.data" name_length="2" role="SE">
+            <name>Metaform home</name>
+        </element>
+        <element namespace_address="code.module.map" name_length="2" role="SE">
+            <name>map module</name>
+            <joins>
+                <join type="purpose" provider="data.map.functional" purpose="Get the project's functional map as a file it can read into the store." function="The map file is XML with elements/element carrying namespace_address, name_length, role, vested, name and notes; joins/join carrying type, provider, purpose, non_goal, function, relation, observation and role; refs/ref key and value pairs; and internal subtypes as join/elements/element with graph set to internal." relation="The functional map supplies the map module with the elements and joins of a map made outside this package." observation="Import refuses only XML that is not well-formed. An element without namespace_address is skipped and a missing name_length becomes 1. An element nested straight under a join, or one without graph set to internal, is not read as a subtype.">
+                    <refs>
+                        <ref key="path" value="tests/fixtures/kitchen_timer.xml" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.store.join" purpose="Keep the imported map with each join stored on the element that receives it, and every earlier revision still readable." function="Store opens store.sqlite3 in the project's folder under projects in the home, records each address with its name_length, saves a join body as JSON with sorted keys under address, join id and revision, adds a revision only when the body changed, and returns every join at its latest revision or any revision by reference." relation="The join store holds the map module's elements and joins as revisioned records on their receivers." observation="Nothing is deleted, so an element or join missing from a later import stays current at its last revision. An address keeps the name_length of its first save. Element records and the source record are stored as joins too, with the ids element and source." non_goal="Overwrite an earlier revision.">
+                    <refs>
+                        <ref key="path" value="src/metaform/store.py" />
+                    </refs>
+                </join>
+                <join type="purpose" provider="code.registry.project" purpose="Know which project's store to import into and read from." function="The --project setting of the folder, which defaults to the registered project that contains the folder, names the store." relation="The project registry points the map module at the folder's project." observation="With no project, every map verb stops with This folder has no project and a Next line naming metaform add project." />
+            </joins>
+        </element>
+        <element namespace_address="code.store.join" name_length="2" role="SE">
+            <name>join store with revisions</name>
+        </element>
+        <element namespace_address="data.map.functional" name_length="2" role="NE">
+            <name>functional map XML</name>
+        </element>
+        <element namespace_address="code.reference.command" name_length="2" role="SE">
+            <name>help pages and syntax</name>
+        </element>
+        <element namespace_address="code.screen.settings" name_length="2" role="SE">
+            <name>settings screen</name>
+        </element>
+        <element namespace_address="code.template.module" name_length="2" role="SE">
+            <name>template module</name>
+        </element>
+        <element namespace_address="code.suite.test" name_length="2" role="SE">
+            <name>chassis tests</name>
+        </element>
+    </elements>
+</result>

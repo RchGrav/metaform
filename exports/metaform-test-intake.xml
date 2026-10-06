@@ -1,0 +1,461 @@
+<?xml version='1.0' encoding='utf-8'?>
+<metaform id="926e258867b948189f5c8efa1075a326" project="metaform-test" name="main" description="">
+  <element namespace_address="code.graph.knowledge" name_length="2" name="Metaform" role="AUE" short_name="knowledge graph">
+    <ref key="path" value="src/metaform" />
+    <ref key="path" value="pyproject.toml" />
+    <work condition="">A knowledge graph of a project's functions, recorded once and served to agents and people over CLI, MCP and a web GUI.</work>
+    <element namespace_address="stakeholder.agent.coding" name_length="2" name="coding agent" role="CQU" short_name="coding agent">
+      <work condition="">The AI agent that works on the project and needs its purpose before it works.</work>
+      <join type="purpose" ifd="both">
+        <purpose>Take up the work assigned to it and report each step on the nodes the work touches.</purpose>
+        <ef>gives the agent its ticket's prompt and namespace nodes when it runs metaform &lt;nonce&gt;, then takes the ticket, plans its steps and reports each one</ef>
+        <element namespace_address="code.tracker.issue" name_length="2" name="work queue" role="SE" short_name="issue tracker">
+          <ref key="path" value="src/metaform/modules/map/storage.py" />
+          <ref key="path" value="src/metaform/modules/map/__init__.py" />
+        </element>
+        <element namespace_address="code.service.nonce" name_length="2" name="nonce service" role="SE" short_name="nonce service">
+          <ref key="path" value="src/metaform/nonce.py" />
+        </element>
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>Start each piece of work already knowing what each part of the project is for, what relies on it and what it relies on.</purpose>
+        <ef>returns, for any address, the element, the joins that hold it and the joins it holds, with the layers and memory in context there</ef>
+        <element namespace_address="data.model.functional" name_length="2" name="metaform" role="DE" short_name="functional model">
+          <ref key="path" value="src/metaform/data/schema.py" />
+          <ref key="path" value="src/metaform/data/records.py" />
+          <ref key="path" value="src/metaform/data/store.py" />
+          <join type="purpose" ifd="receives">
+            <purpose>Give each element a type a model already understands, from trunk to leaf.</purpose>
+            <ef>reads an address backward through its name_length into the element's short name, under the five root types code, document, media, data and stakeholder</ef>
+            <element namespace_address="data.namespace" name_length="1" name="namespace" role="SE" short_name="namespace">
+              <ref key="path" value="src/metaform/data/names.py" />
+              <ref key="path" value="src/metaform/data/roots.json" />
+              <ref key="path" value="src/metaform/data/ids.py" />
+            </element>
+          </join>
+          <join type="purpose" ifd="both">
+            <purpose>Keep every element and join, and every version of each, durable and consistent for every reader and writer.</purpose>
+            <ef>stores the metaform one row per thing, each write one transaction and each read one index read, applying select, mask and hiding inside every read and keeping every version a refinement writes</ef>
+            <element namespace_address="code.object.data_access" name_length="2" name="data access object" role="SE" short_name="data access object">
+              <ref key="path" value="src/metaform/data/store.py" />
+              <ref key="path" value="src/metaform/data/reads.py" />
+              <ref key="path" value="src/metaform/data/writes.py" />
+              <ref key="path" value="src/metaform/data/session.py" />
+              <ref key="path" value="src/metaform/data/views.py" />
+              <ref key="path" value="src/metaform/data/rows.py" />
+              <ref key="path" value="src/metaform/data/paging.py" />
+              <ref key="path" value="src/metaform/data/versions.py" />
+              <ref key="path" value="src/metaform/data/upgrade.py" />
+              <ref key="path" value="src/metaform/data/tables.py" />
+              <ref key="path" value="src/metaform/data/operations.py" />
+              <ref key="path" value="src/metaform/data/ids.py" />
+              <ref key="path" value="src/metaform/data/__init__.py" />
+              <join type="purpose" ifd="both">
+                <purpose>Hold each store in a file that survives concurrent writers and stores written at an earlier layout.</purpose>
+                <ef>opens each store with WAL, foreign keys and a busy timeout, reads the schema version before anything else, and upgrades an earlier layout in place</ef>
+                <element namespace_address="code.database.embedded" name_length="2" name="SQLite" role="NE" short_name="embedded database">
+                  <ref key="path" value="src/metaform/sqlite.py" />
+                </element>
+              </join>
+              <join type="purpose" ifd="receives">
+                <purpose>Open the store of the project the call is made for, kept outside the project's folder.</purpose>
+                <ef>resolves the folder's project and keeps one folder per project under the Metaform home, with its own project.sqlite3 holding its registration and metaforms</ef>
+                <element namespace_address="code.registry.project" name_length="2" name="home" role="SE" short_name="project registry">
+                  <ref key="path" value="src/metaform/home.py" />
+                  <ref key="path" value="src/metaform/context.py" />
+                </element>
+              </join>
+            </element>
+          </join>
+        </element>
+        <element namespace_address="code.interface.query" name_length="2" name="map module" role="SE" short_name="query interface">
+          <ref key="path" value="src/metaform/modules/map/__init__.py" />
+          <ref key="path" value="src/metaform/query.py" />
+          <ref key="path" value="src/metaform/outline.py" />
+          <join type="purpose" ifd="both">
+            <purpose>Be called by agents as tools and by people as commands, from one set of verbs.</purpose>
+            <ef>exposes each map verb as metaform map &lt;verb&gt; on the command line and as a command of the map tool over MCP</ef>
+            <element namespace_address="code.system.plugin" name_length="2" name="module contract and loader" role="SE" short_name="plugin system">
+              <ref key="path" value="src/metaform/module.py" />
+              <ref key="path" value="src/metaform/loader.py" />
+              <ref key="path" value="src/metaform/module_metadata.py" />
+              <ref key="path" value="src/metaform/context.py" />
+              <join type="purpose" ifd="both">
+                <purpose>Expose each module's verbs on every surface from the module's one declaration.</purpose>
+                <ef>runs each verb as metaform &lt;module&gt; &lt;verb&gt; on the command line and as the command &lt;verb&gt; of the tool &lt;module&gt; over MCP, with the same help, errors and results on both</ef>
+                <element namespace_address="code.interface.line.command" name_length="3" name="metaform command" role="SE" short_name="command line interface">
+                  <ref key="path" value="src/metaform/cli.py" />
+                  <ref key="path" value="src/metaform/grammar.py" />
+                  <ref key="path" value="src/metaform/docs.py" />
+                  <ref key="path" value="src/metaform/errors.py" />
+                  <ref key="path" value="src/metaform/results.py" />
+                  <ref key="path" value="src/metaform/aliases.py" />
+                  <ref key="path" value="src/metaform/__main__.py" />
+                  <join type="purpose" ifd="receives">
+                    <purpose>Take each switch a verb reads as a setting, with one meaning everywhere it is used.</purpose>
+                    <ef>parses, validates, defaults and documents every setting from the one schema its module declares, as default, set or glued, per folder or global</ef>
+                    <element namespace_address="code.configuration" name_length="1" name="settings" role="SE" short_name="configuration">
+                      <ref key="path" value="src/metaform/settings.py" />
+                      <ref key="path" value="src/metaform/tui.py" />
+                      <join type="purpose" ifd="receives">
+                        <purpose>Show and stage every setting on one screen in the terminal.</purpose>
+                        <ef>draws the settings screen the chassis and every module declare, and saves staged changes through the settings module</ef>
+                        <element namespace_address="code.library.terminal" name_length="2" name="prompt_toolkit" role="NE" short_name="terminal library">
+                          <ref key="path" value="pyproject.toml" />
+                          <ref key="path" value="src/metaform/tui.py" />
+                        </element>
+                      </join>
+                    </element>
+                  </join>
+                </element>
+                <element namespace_address="code.server.mcp" name_length="2" name="mcp module" role="SE" short_name="mcp server">
+                  <ref key="path" value="src/metaform/modules/mcp" />
+                  <join type="purpose" ifd="both">
+                    <purpose>Speak to AI tools in the protocol they launch servers with.</purpose>
+                    <ef>serves every surfaced module verb as a tool over stdio through the official SDK's low-level server, with the instructions composed again for each request</ef>
+                    <element namespace_address="code.protocol.context.model" name_length="3" name="MCP" role="NE" short_name="model context protocol">
+                      <ref key="path" value="src/metaform/probe.py" />
+                      <ref key="path" value="src/metaform/modules/mcp/server.py" />
+                    </element>
+                  </join>
+                </element>
+              </join>
+              <join type="purpose" ifd="both">
+                <purpose>Let a module hear what other modules publish, in this process and in every other process of the home.</purpose>
+                <ef>delivers each published topic to every loaded subscriber with its own Context, and hands map.changed to listeners in other processes over a loopback port</ef>
+                <element namespace_address="code.bus.event" name_length="2" name="event bus" role="SE" short_name="event bus">
+                  <ref key="path" value="src/metaform/events.py" />
+                  <ref key="path" value="src/metaform/relay.py" />
+                  <ref key="path" value="src/metaform/changes.py" />
+                </element>
+              </join>
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>Know which of Metaform's features are active here and how to use them before it acts.</purpose>
+        <ef>composes the chassis instructions with each surfaced module's instructions, live for the folder, as metaform help agents and as the MCP server's instructions</ef>
+        <element namespace_address="document.instruction.agent" name_length="2" name="agent instructions" role="SE" short_name="agent instruction">
+          <ref key="path" value="src/metaform/instructions.py" />
+          <ref key="path" value="src/metaform/prompt_files.py" />
+          <ref key="path" value="src/metaform/resources/prompts.xml" />
+          <ref key="path" value="src/metaform/skill/SKILL.md" />
+          <ref key="path" value="src/metaform/data/prompts.py" />
+        </element>
+      </join>
+      <join type="purpose" ifd="both">
+        <purpose>Correct a wrong or missing inference at the node where it found it, so the next agent reading that node sees the correction.</purpose>
+        <ef>records entities, observations and relations in the reference memory server's terms and ties them to the node by a memory join</ef>
+        <element namespace_address="data.memory.agent" name_length="2" name="memory" role="SE" short_name="agent memory">
+          <ref key="path" value="src/metaform/modules/memory" />
+          <join type="purpose" ifd="both">
+            <purpose>Present memory in the terms agents already use for it.</purpose>
+            <ef>offers the reference memory server's entity, relation and observation tools at each node, kept in project-level tables a clear of the metaforms leaves in place</ef>
+            <element namespace_address="code.server.memory" name_length="2" name="MCP reference memory server" role="NE" short_name="memory server">
+              <ref key="path" value="src/metaform/modules/memory/__init__.py" />
+              <work condition="">The external tool interface the memory module presents: entities, relations and observations.</work>
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>See exactly the knowledge in scope at its position in the map, and none that was hidden or masked there.</purpose>
+        <ef>selects and masks layers from trunk to leaf, so every read at an address returns only the layers that reach it</ef>
+        <element namespace_address="data.layer.knowledge" name_length="2" name="knowledge layer" role="SE" short_name="knowledge layer">
+          <ref key="path" value="src/metaform/data/layering.py" />
+          <ref key="path" value="src/metaform/data/selection.py" />
+          <ref key="path" value="src/metaform/data/prompts.py" />
+        </element>
+      </join>
+    </element>
+    <element namespace_address="stakeholder.developer.plugin" name_length="2" name="module author" role="CQU" short_name="plugin developer">
+      <work condition="">Adds a capability to Metaform as a module.</work>
+      <join type="purpose" ifd="both">
+        <purpose>Add a capability to Metaform as a module declared once in its own folder, running as a metaform command and an MCP tool with its own settings, events and lifecycle, without changing the chassis.</purpose>
+        <ef>reads the module's literal declarations without running it, loads it from the system, user, entry-point or project place, and gives each verb a Context with the project, store, folder and settings; the template supplies the empty start and hello exercises every feature once</ef>
+        <element namespace_address="code.system.plugin" name_length="2" name="module contract and loader" role="SE" short_name="plugin system" />
+        <element namespace_address="code.template.module" name_length="2" name="template" role="SE" short_name="module template">
+          <ref key="path" value="src/metaform/modules/template" />
+        </element>
+        <element namespace_address="code.example.module" name_length="2" name="hello" role="SE" short_name="module example">
+          <ref key="path" value="src/metaform/modules/hello" />
+        </element>
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>Change Metaform and know every requirement still holds on Linux, macOS and Windows.</purpose>
+        <ef>runs the tests tagged with the requirement each protects, strict pyright and ruff, in CI on all three systems, under the rules the repository gives agents that work on it</ef>
+        <element namespace_address="code.suite.test" name_length="2" name="tests" role="SE" short_name="test suite">
+          <ref key="path" value="tests" />
+          <ref key="path" value="conftest.py" />
+          <ref key="path" value="src/metaform/modules/intake/tests" />
+          <ref key="path" value="src/metaform/modules/map/tests" />
+          <ref key="path" value=".github/workflows/checks.yml" />
+          <ref key="path" value="pyproject.toml" />
+          <join type="purpose" ifd="receives">
+            <purpose>Protect each requirement by the record it comes from.</purpose>
+            <ef>states each requirement with its reason, its build detail and the tests that protect it, and wins where it and the code differ</ef>
+            <element namespace_address="document.specification.requirements" name_length="2" name="Metaform specification" role="NE" short_name="requirements specification">
+              <ref key="path" value="specifications/00-index.md" />
+              <ref key="path" value="specifications/HANDOFF.md" />
+              <ref key="path" value="specifications/OPEN-QUESTIONS.md" />
+              <work condition="">specifications/00-index.md makes this folder the contract. HANDOFF.md still describes the fix pass stopped after step 11, the viewer not yet built and an uncommitted src/metaform/data/corrections.py; the web GUI exists and corrections.py does not. The index's absorbed sources are under ../rich/, which this project folder does not hold.</work>
+              <join type="purpose" ifd="receives">
+                <purpose>Take in older material only where it matches the specification.</purpose>
+                <ef>holds superseded intake samples, proposals, feature briefs and an older docs dump that name files this project no longer has</ef>
+                <element namespace_address="document.specification.design" name_length="2" name="superseded design material" role="SE" short_name="design specification">
+                  <ref key="path" value="out.md" />
+                  <ref key="path" value="specs" />
+                  <ref key="path" value="feature-briefs" />
+                  <work condition="exclude">out.md is a dump of an older docs/ tree; specs/ holds earlier intake samples and code_metaform XML results and a superseded agent-surface proposal; feature-briefs/ cite docs/SPEC.md, docs/semantics/ and docs/rulebook/, which this project does not have.</work>
+                </element>
+              </join>
+            </element>
+          </join>
+        </element>
+        <element namespace_address="document.instruction.development" name_length="2" name="repository agent instructions" role="SE" short_name="development instruction">
+          <ref key="path" value="CLAUDE.md" />
+          <ref key="path" value="AGENTS.md" />
+          <ref key="path" value=".claude/agents" />
+          <ref key="path" value=".agents/skills/metaform-dev/SKILL.md" />
+        </element>
+      </join>
+    </element>
+    <element namespace_address="stakeholder.engineer.knowledge" name_length="2" name="intake agent" role="CQU" short_name="knowledge engineer">
+      <work condition="">The agent that performs the intake: it examines the workpiece and records its functional map.</work>
+      <join type="purpose" ifd="sends">
+        <purpose>Record a project's functional understanding once, one object per call as it is reasoned, so later work starts from it instead of reasoning it again.</purpose>
+        <ef>serves the intake method, records each element and join into an intake layer no context read sees while it builds, reads it back whole or one receiver at a time, and activates it at finish</ef>
+        <element namespace_address="code.acquisition.knowledge" name_length="2" name="intake" role="SE" short_name="knowledge acquisition">
+          <ref key="path" value="src/metaform/modules/intake/__init__.py" />
+          <ref key="path" value="src/metaform/modules/intake/schema.py" />
+          <ref key="path" value="src/metaform/modules/intake/resources/prompts.xml" />
+          <join type="purpose" ifd="sends">
+            <purpose>Put what it records into the project's metaform, where every later reader finds it.</purpose>
+            <ef>writes each element and join into the metaform's intake layer and each element's refs into the sources layer</ef>
+            <element namespace_address="data.model.functional" name_length="2" name="metaform" role="DE" short_name="functional model" />
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Give every intake the same method, word for word.</purpose>
+            <ef>serves Intake 2.1 as stored, with its prompt slot filled</ef>
+            <work condition="broken">The intake_file setting's help says an empty value means the Canonical Intake, but the module serves resources/Intake_2.1.md (intake/__init__.py, RESOURCE, line 41) and the specification says the Canonical Intake is no longer served.</work>
+            <element namespace_address="document.procedure.intake" name_length="2" name="Intake 2.1" role="SE" short_name="intake procedure">
+              <ref key="path" value="src/metaform/modules/intake/resources/Intake_2.1.md" />
+            </element>
+            <element namespace_address="data.file.backup" name_length="2" name="editor backup files" role="SE" short_name="backup file">
+              <ref key="path" value="src/metaform/modules/intake/resources/Canonical_Intake.xml~" />
+              <ref key="path" value="specs/intake_sample_d.xml~" />
+              <ref key="path" value="prompts/.README.md.kate-swp" />
+              <ref key="path" value="prompts/super meta agent/prompt1.md~" />
+              <work condition="exclude">Editor backups and a swap file. Canonical_Intake.xml~ sits in the intake module's resources folder, which the wheel packages, and holds a procedure the module no longer serves.</work>
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="sends">
+        <purpose>Leave its report on the project and its feedback on the process with the map it finished.</purpose>
+        <ef>saves each report, feedback and shape as a file in the home, outside the project folder, with one row in the active metaform</ef>
+        <element namespace_address="document.report" name_length="1" name="reports and feedback" role="SE" short_name="report">
+          <ref key="path" value="src/metaform/reports.py" />
+        </element>
+      </join>
+    </element>
+    <element namespace_address="stakeholder.engineer.prompt" name_length="2" name="workflow author" role="CQU" short_name="prompt engineer">
+      <work condition="">Turns prompts into reusable Axiom subroutines agents call.</work>
+      <join type="purpose" ifd="both">
+        <purpose>Turn an existing prompt into a reusable subroutine that agents call, hand off and return from, its authored words kept verbatim.</purpose>
+        <ef>ingests, authors and lexicalizes Axiom subroutines into knowledge layers and carries their calls, bound values, errors and returns, handing a call to a fresh agent by nonce</ef>
+        <element namespace_address="code.engine.workflow" name_length="2" name="workflow" role="SE" short_name="workflow engine">
+          <ref key="path" value="src/metaform/modules/workflow" />
+          <join type="purpose" ifd="sends">
+            <purpose>Keep subroutines where the map's knowledge already lives, attached to the element they serve.</purpose>
+            <ef>stores each workflow element and its logic as items of an ordinary knowledge layer, every saved version kept</ef>
+            <element namespace_address="data.layer.knowledge" name_length="2" name="knowledge layer" role="SE" short_name="knowledge layer" />
+          </join>
+          <join type="purpose" ifd="both">
+            <purpose>Hand a call to a fresh agent and resume the caller when it returns.</purpose>
+            <ef>issues a callee nonce that the fresh agent redeems for only its current subroutine and values</ef>
+            <element namespace_address="code.service.nonce" name_length="2" name="nonce service" role="SE" short_name="nonce service" />
+          </join>
+        </element>
+        <element namespace_address="document.library.prompt" name_length="2" name="prompts" role="SE" short_name="prompt library">
+          <ref key="path" value="prompts" />
+          <work condition="missing">prompts/README.md says the goal is to ingest these prompts into Metaform as bundled workflows. The workflow module ships no bundled workflow, and none of these prompts is recorded as one.</work>
+        </element>
+      </join>
+    </element>
+    <element namespace_address="stakeholder.manager.project" name_length="2" name="project manager" role="CQU" short_name="project manager">
+      <work condition="">The person who directs agents' work on the project, watches the map and answers agents' questions.</work>
+      <join type="purpose" ifd="both">
+        <purpose>Assign, order and track agents' work on the nodes it touches, and answer their questions where they arise.</purpose>
+        <ef>keeps work records on elements and joins as tickets on a board in priority order, with questions and messages left at the node each concerns</ef>
+        <element namespace_address="code.tracker.issue" name_length="2" name="work queue" role="SE" short_name="issue tracker" />
+      </join>
+      <join type="purpose" ifd="both">
+        <purpose>Keep each worker's files against one origin and bring back any variant.</purpose>
+        <ef>stores each variant as the files that differ from its origin and reconstructs, extracts or serves them</ef>
+        <element namespace_address="code.control.version" name_length="2" name="history" role="SE" short_name="version control">
+          <ref key="path" value="src/metaform/data/history.py" />
+          <ref key="path" value="src/metaform/cli.py" />
+          <ref key="path" value="src/metaform/modules/web/__init__.py" />
+          <join type="purpose" ifd="receives">
+            <purpose>Start a history from a commit the repository already keeps.</purpose>
+            <ef>takes a repository's commit as the origin, whose files git keeps, or a full copy of a plain folder</ef>
+            <element namespace_address="code.control.source" name_length="2" name="git" role="NE" short_name="source control">
+              <ref key="path" value="src/metaform/data/history.py" />
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="sends">
+        <purpose>Connect each AI tool to Metaform once.</purpose>
+        <ef>checks first and changes nothing, then registers the uvx launch in each chosen tool, copies the skill to it, and starts and proves the registered command</ef>
+        <element namespace_address="code.installer" name_length="1" name="install" role="SE" short_name="installer">
+          <ref key="path" value="src/metaform/install.py" />
+          <ref key="path" value="src/metaform/probe.py" />
+          <ref key="path" value="src/metaform/harness.py" />
+          <join type="purpose" ifd="receives">
+            <purpose>Register a command that starts the same Metaform on Linux, macOS and Windows.</purpose>
+            <ef>builds one wheel of the chassis and the enabled modules with their pure-Python dependencies, and registers its uvx launch</ef>
+            <element namespace_address="code.builder.package" name_length="2" name="build" role="SE" short_name="package builder">
+              <ref key="path" value="src/metaform/build.py" />
+              <ref key="path" value="src/metaform/_build_info.py" />
+              <ref key="path" value="scripts/calver.py" />
+            </element>
+            <element namespace_address="code.runner.package" name_length="2" name="uvx" role="NE" short_name="package runner">
+              <ref key="path" value="src/metaform/install.py" />
+            </element>
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Prove the registered command really starts a server before it reports success.</purpose>
+            <ef>starts the command and speaks MCP 2026-07-28 to it, server/discover then tools/list, reading one JSON object per line</ef>
+            <element namespace_address="code.protocol.context.model" name_length="3" name="MCP" role="NE" short_name="model context protocol" />
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Know which AI tools are present and what each was given.</purpose>
+            <ef>finds each harness by the folder of its binary and records it once the agent says it is done provisioning it</ef>
+            <element namespace_address="code.harness.agent" name_length="2" name="Claude Code, Codex and Gemini CLI" role="NE" short_name="agent harness">
+              <ref key="path" value="src/metaform/harness.py" />
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="both">
+        <purpose>Carry a project's work to another home and back without losing its identity or provenance.</purpose>
+        <ef>exports and imports the project as one JSON document by unique id, adding only what the target lacks, or writes it as a packet, a plain ZIP with its provenance and data sealed inside</ef>
+        <element namespace_address="code.exchange.data" name_length="2" name="export and import" role="SE" short_name="data exchange">
+          <ref key="path" value="src/metaform/data/exchange.py" />
+        </element>
+        <element namespace_address="code.archive" name_length="1" name="packet" role="SE" short_name="archive">
+          <ref key="path" value="src/metaform/modules/packet" />
+          <join type="purpose" ifd="receives">
+            <purpose>Show whether a packet was changed after it was written.</purpose>
+            <ef>seals the provenance and data in an AES-256-GCM envelope keyed from the manifest, so a changed work file fails the manifest's hashes</ef>
+            <element namespace_address="code.library.cryptography" name_length="2" name="cryptography" role="NE" short_name="cryptography library">
+              <ref key="path" value="src/metaform/modules/packet/__init__.py" />
+              <ref key="path" value="src/metaform/modules/packet/seal.py" />
+            </element>
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Credit the container it carries over from Tempo.</purpose>
+            <ef>records which imported files the repository carries, from where and at which commit</ef>
+            <element namespace_address="document.notice.attribution" name_length="2" name="NOTICE.md" role="SE" short_name="attribution notice">
+              <ref key="path" value="NOTICE.md" />
+              <ref key="path" value="src/metaform/modules/packet/seal.py" />
+              <work condition="broken">NOTICE.md attributes src/metaform/modules/_imagegen.py and src/metaform/data/semantics/*.source.md, and points to sources.json and docs/rulebook/seed-sources.md; none of these exist in the project. It does not name the packet seal, which modules/packet/seal.py says is carried over from Tempo's tempo.data, version 3.</work>
+            </element>
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="sends">
+        <purpose>Register a workpiece folder as a project, and take its intake again from nothing when it needs to be.</purpose>
+        <ef>registers the folder as a project under the home, and clears its metaforms and reports while its registration, settings and history stay, with a backup restore brings back</ef>
+        <element namespace_address="code.registry.project" name_length="2" name="home" role="SE" short_name="project registry" />
+      </join>
+      <join type="purpose" ifd="sends">
+        <purpose>Put an agent to work on a ticket, and message or stop it, without leaving the map.</purpose>
+        <ef>starts Claude Code, Codex or Gemini CLI on one ticket, one session per ticket in the project's folder, its notes and permission questions shown at the ticket's node</ef>
+        <element namespace_address="code.dispatcher.agent" name_length="2" name="dispatch" role="SE" short_name="agent dispatcher">
+          <ref key="path" value="src/metaform/modules/dispatch/__init__.py" />
+          <ref key="path" value="src/metaform/modules/dispatch/runner.py" />
+          <join type="purpose" ifd="both">
+            <purpose>Hand a ticket to an agent by a number it runs.</purpose>
+            <ef>issues a nonce whose run gives the ticket's prompt and its namespace nodes, and closes it when the session ends</ef>
+            <element namespace_address="code.service.nonce" name_length="2" name="nonce service" role="SE" short_name="nonce service" />
+          </join>
+          <join type="purpose" ifd="both">
+            <purpose>Drive a coding agent's session as its client.</purpose>
+            <ef>runs as the ACP client, with the agent's ACP adapter as a child process in its own process group, its standard input and output carrying the protocol</ef>
+            <element namespace_address="code.protocol.client.agent" name_length="3" name="ACP" role="NE" short_name="agent client protocol">
+              <ref key="path" value="src/metaform/modules/dispatch/runner.py" />
+            </element>
+            <element namespace_address="code.harness.agent" name_length="2" name="Claude Code, Codex and Gemini CLI" role="NE" short_name="agent harness" />
+          </join>
+        </element>
+      </join>
+      <join type="purpose" ifd="sends">
+        <purpose>Set how Metaform behaves everywhere or for one folder and the folders below it.</purpose>
+        <ef>saves, glues and unsets each setting globally or per folder, and shows them on the settings screen or with config --show</ef>
+        <element namespace_address="code.configuration" name_length="1" name="settings" role="SE" short_name="configuration" />
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>Learn to install Metaform, run an intake and read and use its map.</purpose>
+        <ef>walks through install, intake, reading a map, layers, memory and extending, with a worked project example and the method's preprint</ef>
+        <element namespace_address="document.documentation.user" name_length="2" name="documentation" role="SE" short_name="user documentation">
+          <ref key="path" value="README.md" />
+          <ref key="path" value="docs" />
+          <work condition="broken">README.md says every join carries ef as one of two words, Function or Encounter, with a verb and a relation, and that an element is only its address, name_length and role. The store's shape, data/schema.py at layout 19, is a join of type, purpose, ef and ifd and an element of address, name_length, name and role. README also says the lexicalization producer is not a shipped command, while workflow lexicalize exists, and that it describes the chassis after build-log step 58.</work>
+        </element>
+      </join>
+      <join type="purpose" ifd="receives">
+        <purpose>Watch the map, its layers and each node's condition while agents record and change them.</purpose>
+        <ef>draws the metaform as a 3D graph and a 2D drill-in in the browser, redrawn on every map change, a node with missing work ghostly and one with broken work flashing red</ef>
+        <element namespace_address="code.interface.user.web" name_length="3" name="web GUI" role="SE" short_name="web user interface">
+          <ref key="path" value="src/metaform/modules/web/__init__.py" />
+          <ref key="path" value="src/metaform/modules/web/server.py" />
+          <ref key="path" value="src/metaform/modules/web/page" />
+          <join type="purpose" ifd="receives">
+            <purpose>Draw the graph, diagrams and editors in the browser from files it ships.</purpose>
+            <ef>renders the 3D force graph, the 2D diagram and the note editor from the vendored libraries</ef>
+            <element namespace_address="code.library.visualization" name_length="2" name="three.js, 3d-force-graph, mermaid and CodeMirror" role="NE" short_name="visualization library">
+              <ref key="path" value="src/metaform/modules/web/vendor" />
+            </element>
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Redraw every open page as soon as the map changes in any process of the home.</purpose>
+            <ef>hears map.changed published by the command line, the MCP server or a dispatch runner, so nothing polls</ef>
+            <element namespace_address="code.bus.event" name_length="2" name="event bus" role="SE" short_name="event bus" />
+          </join>
+          <join type="purpose" ifd="sends">
+            <purpose>Start the agent for a ticket from the board, by hand or automatically.</purpose>
+            <ef>starts waiting tickets on free agent glyphs while Autostart agents is checked, up to the dispatch-agents limit, and starts one ticket at a time from Start or Add Task</ef>
+            <element namespace_address="code.dispatcher.agent" name_length="2" name="dispatch" role="SE" short_name="agent dispatcher" />
+          </join>
+          <join type="purpose" ifd="receives">
+            <purpose>Show each ticket on the project's board and each node's open work in its panel.</purpose>
+            <ef>reads the store's work records for the board's columns, the cards' order and the panel's list of records with their notes, tasks and flags</ef>
+            <element namespace_address="code.tracker.issue" name_length="2" name="work queue" role="SE" short_name="issue tracker" />
+          </join>
+        </element>
+      </join>
+    </element>
+    <element namespace_address="stakeholder.reviewer.design" name_length="2" name="blind-spot critic" role="CQU" short_name="design reviewer">
+      <work condition="">Examines the metaform for functions and encounters the design lacks.</work>
+      <join type="purpose" ifd="both">
+        <purpose>Find the functions and encounters the design should have and does not, and have the project answer each one.</purpose>
+        <ef>starts a blind-spot layer with the critic prompt and the whole metaform, records each challenge, and takes the project's A, B or C answer, an approved B becoming a plan</ef>
+        <element namespace_address="code.analysis.gap" name_length="2" name="blind-spot analysis" role="SE" short_name="gap analysis">
+          <ref key="path" value="src/metaform/modules/map/__init__.py" />
+          <ref key="path" value="src/metaform/modules/map/storage.py" />
+          <ref key="path" value="src/metaform/modules/map/resources/prompts.xml" />
+          <join type="purpose" ifd="receives">
+            <purpose>Read the whole metaform it critiques, purposes and encounters together.</purpose>
+            <ef>gives the critic every element and join of the active metaform with the critic prompt</ef>
+            <element namespace_address="data.model.functional" name_length="2" name="metaform" role="DE" short_name="functional model" />
+          </join>
+        </element>
+      </join>
+    </element>
+  </element>
+  <unplaced />
+</metaform>

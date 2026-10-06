@@ -1,0 +1,579 @@
+{
+  "tool": "intake",
+  "summary": "Serve the Canonical Intake and record its result as it is reasoned.",
+  "commands": [
+    {
+      "command": "start",
+      "summary": "Resume the intake being recorded, or start a fresh one. If the active metaform already has an intake, creates a separate intake-<UTC timestamp> metaform, keeping the earlier one untouched. Says its name, and hands you the Canonical Intake to follow; the existing web GUI follows it live.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The model that performs the intake."
+          },
+          "role": {
+            "type": "string",
+            "description": "The role of the agent that performs it."
+          },
+          "blinded": {
+            "type": "boolean",
+            "description": "Whether the agent sees only the map."
+          },
+          "id": {
+            "type": "string",
+            "description": "The result's generated id."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "element",
+      "summary": "Record one element, or describe again one already recorded.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "namespace_address": {
+            "type": "string",
+            "description": "The element's namespace_address, its identity."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "AUE",
+              "VE",
+              "DE",
+              "SE",
+              "NE"
+            ],
+            "description": "AUE, VE, DE, SE or NE."
+          },
+          "name_length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "proper_noun_lookback_segment_count: how many segments, read from the leaf, name it."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "value"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific references, such as key path and a relative path."
+          },
+          "extra": {
+            "type": "object",
+            "description": "Any other field, as a JSON object, kept in the extra."
+          },
+          "name": {
+            "type": "string",
+            "description": "An element holds no name: it is its address, name_length and role. The project's name for a functionality goes on the join, with intake_join name. Given here, it is kept in the element's extra."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "namespace_address"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "join",
+      "summary": "Record one join: the receiver's purpose served by the provider's encounter function.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "The namespace address of the Vested Entity whose Operative Purpose this join states."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The namespace address of the Providing Element."
+          },
+          "name": {
+            "type": "string",
+            "description": "The Canonical Name, the project's official terminology, or an informal name."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "State the objective or standard this element or action fulfills."
+          },
+          "function": {
+            "type": "string",
+            "description": "Encounter Function of the PE within the RE context."
+          },
+          "ef": {
+            "type": "string",
+            "enum": [
+              "Function",
+              "Encounter"
+            ],
+            "description": "Function if it is the encounter of a functionality, Encounter if it is the functionality of the encounter."
+          },
+          "relation": {
+            "type": "string",
+            "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is Encounter."
+          },
+          "verb": {
+            "type": "string",
+            "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)."
+          },
+          "observation": {
+            "type": "string",
+            "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation."
+          },
+          "non_goal": {
+            "type": "string",
+            "description": "High-value non-goals consisting of structural constraints."
+          },
+          "type": {
+            "type": "string",
+            "description": "The join type: purpose."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "value"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific references, such as key path and a relative path."
+          },
+          "extra": {
+            "type": "object",
+            "description": "Any other field, as a JSON object, kept in the extra."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "receiver",
+          "provider"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "subtype",
+      "summary": "Record one subtype join inside its parent join, holding an element.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "into": {
+            "type": "string",
+            "description": "The join_id of the parent join it sits inside, as intake join returned it."
+          },
+          "namespace_address": {
+            "type": "string",
+            "description": "The namespace_address of the element the subtype join holds: the absorbed element, recorded as intake element records one when there is none."
+          },
+          "type": {
+            "type": "string",
+            "description": "The join type: purpose."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "State the objective or standard this element or action fulfills."
+          },
+          "function": {
+            "type": "string",
+            "description": "Encounter Function of the PE within the RE context."
+          },
+          "ef": {
+            "type": "string",
+            "enum": [
+              "Function",
+              "Encounter"
+            ],
+            "description": "Function if it is the encounter of a functionality, Encounter if it is the functionality of the encounter."
+          },
+          "relation": {
+            "type": "string",
+            "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is Encounter."
+          },
+          "verb": {
+            "type": "string",
+            "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)."
+          },
+          "observation": {
+            "type": "string",
+            "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation."
+          },
+          "non_goal": {
+            "type": "string",
+            "description": "High-value non-goals consisting of structural constraints."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "DE",
+              "SE",
+              "NE"
+            ],
+            "description": "The role of the element it holds: DE, SE or NE."
+          },
+          "name": {
+            "type": "string",
+            "description": "The Canonical Name, the project's official terminology, or an informal name."
+          },
+          "name_length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "proper_noun_lookback_segment_count of the element it holds: how many segments, read from the leaf, name it."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "value"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific references, such as key path and a relative path."
+          },
+          "extra": {
+            "type": "object",
+            "description": "Any other field, as a JSON object, kept in the extra."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "into",
+          "namespace_address"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "absorb",
+      "summary": "Anneal: make a recorded join a subtype join inside its parent's purpose join, keeping every field; the element stays one element record.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "join": {
+            "type": "string",
+            "description": "The join_id of the join where the element provides, the join to place inside its parent."
+          },
+          "into": {
+            "type": "string",
+            "description": "The join_id of the parent's purpose join it goes inside."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "join",
+          "into"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "show",
+      "summary": "The intake being recorded, whole or one receiver at a time, with the ids to edit or remove.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "An element's namespace_address: show only the joins it receives and what they hold."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "edit",
+      "summary": "Change one recorded element, join or subtype join; the fields given replace the ones it had.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "An element's namespace_address or element_id, or a join_id, a subtype join's included."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "State the objective or standard this element or action fulfills."
+          },
+          "function": {
+            "type": "string",
+            "description": "Encounter Function of the PE within the RE context."
+          },
+          "ef": {
+            "type": "string",
+            "enum": [
+              "Function",
+              "Encounter"
+            ],
+            "description": "Function if it is the encounter of a functionality, Encounter if it is the functionality of the encounter."
+          },
+          "relation": {
+            "type": "string",
+            "description": "Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is Encounter."
+          },
+          "verb": {
+            "type": "string",
+            "description": "The single root verb extracted from the relation (e.g., provides, tracks, restricts)."
+          },
+          "observation": {
+            "type": "string",
+            "description": "Only high-value observations consisting of long-lasting, stable state for agent orientation."
+          },
+          "non_goal": {
+            "type": "string",
+            "description": "High-value non-goals consisting of structural constraints."
+          },
+          "type": {
+            "type": "string",
+            "description": "The join type: purpose."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "A new receiver for a join, by namespace address: the join moves and keeps its join_id."
+          },
+          "provider": {
+            "type": "string",
+            "description": "A new Providing Element for a join, by namespace address."
+          },
+          "namespace_address": {
+            "type": "string",
+            "description": "On a subtype join, the namespace_address of another element for it to hold. An element cannot be moved: given for an element, it is not applied."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "AUE",
+              "VE",
+              "DE",
+              "SE",
+              "NE"
+            ],
+            "description": "AUE, VE, DE, SE or NE."
+          },
+          "name": {
+            "type": "string",
+            "description": "The Canonical Name, the project's official terminology, or an informal name."
+          },
+          "name_length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "proper_noun_lookback_segment_count: how many segments, read from the leaf, name it."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "value"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Refs as a JSON array of objects with a key and a value, for type-specific or artifact-specific references, such as key path and a relative path."
+          },
+          "extra": {
+            "type": "object",
+            "description": "Any other field, as a JSON object, kept in the extra."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "remove",
+      "summary": "Remove one recorded element, join or subtype join.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "An element's namespace_address or element_id, or a join_id, a subtype join's included."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "finish",
+      "summary": "Finish and activate the recorded metaform, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. The finished intake changes only through a correction layer.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "description": "Your report on the project you examined: broken code, things that need fixing, anything not working or partially working. On the command line a file is read and - is standard input."
+          },
+          "feedback": {
+            "type": "string",
+            "description": "Feedback on the Metaform process: bad semantics, a tool that did not match its schema, where you got stuck."
+          },
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "command": "status",
+      "summary": "Whether this project has an intake, and whether one is being recorded.",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "A registered project id; overrides the folder's project for this call."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The layers, by name or tag, toggled on for this call only."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

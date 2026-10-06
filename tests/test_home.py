@@ -64,11 +64,20 @@ def test_every_file_created_is_under_the_home(home, tmp_path, run, monkeypatch):
 
 
 @pytest.mark.req('STORE-002')
-def test_a_read_only_command_on_an_empty_home_creates_no_file(home, run, tmp_path):
+@pytest.mark.req('BASE-047')
+def test_read_only_commands_create_only_first_run_version_records(home, run, tmp_path):
+    from metaform import __version__
     run(cwd=tmp_path)
     run('list', 'projects', cwd=tmp_path)
     run('config', '--show', cwd=tmp_path)
-    assert not home.exists() or not any(home.rglob('*'))
+    assert not (home / 'projects').exists()
+    with metaform_home.base() as db:
+        assert dict(db.execute('SELECT key, value FROM meta')) == {
+            'schema_version': metaform_home.BASE_SCHEMA_VERSION,
+            'last_run_version': __version__,
+        }
+        assert db.execute('SELECT COUNT(*) FROM settings').fetchone()[0] == 0
+        assert db.execute('SELECT COUNT(*) FROM folders').fetchone()[0] == 0
 
 
 @pytest.mark.req('STORE-002')

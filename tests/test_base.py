@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import subprocess
@@ -14,7 +15,7 @@ pytestmark = pytest.mark.kind('fixture')
 
 MODULES = Path(__file__).parents[1] / 'src' / 'metaform' / 'modules'
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.nonce',
-          'metaform.prompt_files'}
+          'metaform.prompt_files', 'metaform.axiom', 'metaform.home', 'metaform.outline', 'metaform.finish_xml'}
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 
 
@@ -47,19 +48,26 @@ def test_the_chassis_imports_with_every_module_package_unimportable(tmp_path):
               "import metaform, metaform.cli, metaform.data\n"
               "print('imported')\n")
     result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, encoding='utf-8',
-                            env={**os.environ, 'METAFORM_HOME': str(tmp_path / 'h')})
+                            env={**os.environ, 'METAFORM_HOME': str(tmp_path / 'h')}, check=False)
     assert result.stdout.strip() == 'imported', result.stderr
 
 
 @pytest.mark.req('BASE-004')
 @pytest.mark.req('STORE-023')
-def test_the_example_modules_import_only_the_public_base(tmp_path):
-    for name in ('hello', 'template'):
-        for source in (MODULES / name).rglob('*.py'):
+def test_every_shipped_module_imports_only_the_public_base():
+    for folder in sorted(MODULES.iterdir()):
+        for source in folder.rglob('*.py'):
             if 'tests' in source.parts:
                 continue
             tree = ast.parse(source.read_text(encoding='utf-8'))
+            package = '.'.join(('metaform', 'modules', *source.relative_to(MODULES).parts[:-1]))
             for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.level:
+                    target = importlib.util.resolve_name('.' * node.level + (node.module or ''), package)
+                    if target == 'metaform':
+                        assert all(f'metaform.{alias.name}' in PUBLIC for alias in node.names), source
+                    elif not target.startswith(f'metaform.modules.{folder.name}'):
+                        assert target in PUBLIC, (source, target)
                 if isinstance(node, ast.ImportFrom) and node.module == 'metaform':
                     for alias in node.names:
                         assert f'metaform.{alias.name}' in PUBLIC, (source, alias.name)
@@ -79,11 +87,11 @@ def test_the_example_modules_import_only_the_public_base(tmp_path):
 
 
 @pytest.mark.req('BASE-004')
-def test_importing_the_public_base_creates_no_files(tmp_path):
+@pytest.mark.parametrize('public', sorted(PUBLIC))
+def test_importing_the_public_base_creates_no_files(tmp_path, public):
     home = tmp_path / 'missing-home'
-    result = subprocess.run([sys.executable, '-c', 'import metaform.module, metaform.settings, metaform.data, '
-                                                   'metaform.events, metaform.nonce, metaform.prompt_files'],
-                            env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True, text=True, encoding='utf-8')
+    result = subprocess.run([sys.executable, '-c', f'import {public}'],
+                            env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True, text=True, encoding='utf-8', check=False)
     assert result.returncode == 0, result.stderr
     assert not home.exists()
 
@@ -92,6 +100,7 @@ def test_importing_the_public_base_creates_no_files(tmp_path):
 @pytest.mark.req('MCP-031')
 def test_a_module_reads_its_own_prompts_through_the_public_base():
     from importlib import resources
+
     from metaform import prompt_files
     assert 'metaform.prompt_files' in PUBLIC
     folder = resources.files('metaform.modules.template')
@@ -132,6 +141,8 @@ def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     assert 'scratch show' in run('help', 'commands').stdout
     page = run('help', 'scratch').stdout
     assert 'show' in page and 'local' in page
+    assert run('scratch', 'show', '--help').stdout.splitlines()[0] == \
+        'Usage: metaform scratch show <first> [count=<int>] [rest...]'
     refused = run('scratch', 'show', ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform scratch show --help'
     early = run('scratch', 'show', 'count=3', 'a', ok=False)
@@ -292,7 +303,7 @@ def test_a_second_module_with_one_id_is_refused_naming_the_first(home, tmp_path,
     ''')
     env = {**os.environ, 'METAFORM_HOME': str(home), 'PYTHONPATH': str(site)}
     lines = subprocess.run([sys.executable, '-m', 'metaform', 'list', 'modules'], env=env, cwd=tmp_path,
-                           capture_output=True, text=True, encoding='utf-8').stdout.splitlines()
+                           capture_output=True, text=True, encoding='utf-8', check=False).stdout.splitlines()
     shelves = [line.split(None, 3) for line in lines if line.startswith('shelf')]
     assert [row[1:3] for row in shelves] == [['on', 'user'], ['error', 'entry']]
     assert 'user' in shelves[1][3]
@@ -311,7 +322,7 @@ def test_an_entry_point_module_loads(home, tmp_path):
     ''')
     env = {**os.environ, 'METAFORM_HOME': str(home), 'PYTHONPATH': str(site)}
     out = subprocess.run([sys.executable, '-m', 'metaform', 'books', 'count'], env=env, cwd=tmp_path,
-                         capture_output=True, text=True, encoding='utf-8').stdout
+                         capture_output=True, text=True, encoding='utf-8', check=False).stdout
     assert out == '3 books'
 
 
@@ -428,11 +439,11 @@ def test_loading_and_running_a_project_module_leaves_the_project_folder_unchange
     env['METAFORM_HOME'] = str(home)
     for args in (('list', 'modules'), ('notes', 'count'), ('control', 'count')):
         result = subprocess.run([sys.executable, '-m', 'metaform', *args], env=env, cwd=proj,
-                                capture_output=True, text=True, encoding='utf-8')
+                                capture_output=True, text=True, encoding='utf-8', check=False)
         assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout == 'controlcontrol'
     assert subprocess.run([sys.executable, '-m', 'metaform', 'notes', 'count'], env=env, cwd=proj,
-                          capture_output=True, text=True, encoding='utf-8').stdout == 'proj notes'
+                          capture_output=True, text=True, encoding='utf-8', check=False).stdout == 'proj notes'
     assert (control / '__pycache__').is_dir(), 'the control shows this Python writes bytecode beside a module'
     assert _snapshot(proj) == before
 
@@ -469,17 +480,17 @@ def test_a_long_lived_process_follows_the_folders_project_selection(home, tmp_pa
 LEFTOVER ="from metaform import settings\nsettings.text('{name}_leftover', 'x')"
 REFUSALS = {
     'missing_os': ("raise SystemExit('must not run')", 'SUPPORTED_OS is required'),
-    'wrong_id': (f"{OS}\n{{leftover}}\nfrom metaform.module import Module\n"
-                 "MODULE = Module(id='other', summary='x', purpose='x')", 'must match'),
-    'twin_verbs': (f"{OS}\n{{leftover}}\nfrom metaform.module import Module, Verb\n"
+    'wrong_id': ((f"{OS}\n{{leftover}}\nfrom metaform.module import Module\n"
+                 "MODULE = Module(id='other', summary='x', purpose='x')"), 'must match'),
+    'twin_verbs': ((f"{OS}\n{{leftover}}\nfrom metaform.module import Module, Verb\n"
                    "MODULE = Module(id='twin_verbs', summary='x', purpose='x', verbs=(Verb('a', print, 'a'), "
-                   "Verb('a', print, 'a')))", 'share one name'),
-    'bad_verb': (f"{OS}\n{{leftover}}\nfrom metaform.module import Module, Verb\n"
-                 "MODULE = Module(id='bad_verb', summary='x', purpose='x', verbs=(Verb('a' * 70, print, 'a'),))",
+                   "Verb('a', print, 'a')))"), 'share one name'),
+    'bad_verb': ((f"{OS}\n{{leftover}}\nfrom metaform.module import Module, Verb\n"
+                 "MODULE = Module(id='bad_verb', summary='x', purpose='x', verbs=(Verb('a' * 70, print, 'a'),))"),
                  'tool name'),
     'crashes': (f"{OS}\n{{leftover}}\nraise RuntimeError('boom')", 'RuntimeError: boom'),
-    'no_purpose': (f"{OS}\n{{leftover}}\nfrom metaform.module import Module\n"
-                   "MODULE = Module(id='no_purpose', summary='x', purpose='')", 'purpose'),
+    'no_purpose': ((f"{OS}\n{{leftover}}\nfrom metaform.module import Module\n"
+                   "MODULE = Module(id='no_purpose', summary='x', purpose='')"), 'purpose'),
     'odd_os': ("SUPPORTED_OS = ('plan9',)\nraise SystemExit('must not run')", 'plan9'),
 }
 

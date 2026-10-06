@@ -2,3 +2,13 @@
 __pycache__/
 *.egg-info/
 dist/
+!/src/metaform/modules/web/vendor/**
+
+# local working folders, never committed, 2026-10-06
+artifacts/
+.test-tmp/
+.tmp/
+archives/
+tempo/
+node_modules/
+.metaform/

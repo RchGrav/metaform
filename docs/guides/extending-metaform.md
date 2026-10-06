@@ -6,6 +6,50 @@ Metaform's community extension mechanism is implemented. A module contributes a 
 
 The project's own map records this as the module author's receiving purpose: add a capability once, in its own folder, with the required surfaces and lifecycle, without changing the chassis. This guide follows that purpose into the actual code.
 
+## Read Metaform's released functional map
+
+Metaform ships its own current functional map as [resources/metaform.json](../../src/metaform/resources/metaform.json). It gives agents developing Metaform or administering a fork the functional understanding to start from. The snapshot contains one finished intake layer, with each current element and join once, including elements held by joins. It leaves development history, knowledge, memory, sources, items, properties, tickets, messages and module-owned data in the development home.
+
+Import is explicit. Register your checkout or fork first, then import into its registered project id. From a Metaform source checkout, replace `my-metaform` below with that id:
+
+```sh
+metaform import src/metaform/resources/metaform.json my-metaform
+```
+
+The resource also ships in the wheel and installed package. With a Python environment containing the installed Metaform package, run this Python snippet after replacing the project id. It extracts the resource temporarily and uses the same import command on Linux, macOS and Windows:
+
+```python
+from importlib.resources import files
+from pathlib import Path
+import subprocess
+import tempfile
+
+project = "my-metaform"
+with tempfile.TemporaryDirectory() as temporary:
+    snapshot = Path(temporary) / "metaform.json"
+    snapshot.write_bytes(
+        files("metaform").joinpath("resources", "metaform.json").read_bytes()
+    )
+    subprocess.run(["metaform", "import", str(snapshot), project], check=True)
+```
+
+The working map is stored in the Metaform home. Import keeps the registered project's path, target and existing active map. In that project's folder, select the imported snapshot when you want to work from it:
+
+```sh
+metaform map activate metaform-release
+```
+
+Importing the same snapshot again adds no duplicates. Installation, project registration and first run do not import it automatically.
+
+To refresh the bundled snapshot while developing Metaform, export the current development map and prepare the release document:
+
+```sh
+metaform export metaform=main file=metaform-export.json
+python -m scripts.release_metaform metaform-export.json
+```
+
+Run both commands from the registered Metaform checkout. The preparation command writes `src/metaform/resources/metaform.json` by default; an optional second argument chooses another output file. It gives the released metaform and layer new ids, keeps element and join ids, and writes only the current functional records. It changes neither the source store nor its active map.
+
 ## See the contract working first
 
 In a registered project:
@@ -98,9 +142,16 @@ The declaration uses [Module, Verb, Noun, Subscription, and Status](../../src/me
 | `Module.subscriptions` | Event topics and handlers. |
 | `Module.start`, `stop`, `status` | Lifecycle and status contributions. |
 | `Module.default` | The verb invoked by the bare module command. |
+| `Module.mcp_server` | Optional name of this module's stdio MCP transport verb for installation and provisioning. |
 | `Module.node_read` | What the module adds to `map where` and `map node` of a node, under its id. |
 
 Required nouns are positional on the CLI; optional nouns use `name=value`. Nouns can be text, integer, boolean, or JSON. Only the last noun may accept multiple values. Verb names use lowercase letters, digits, hyphens and underscores.
+
+A module serving MCP over stdio declares `mcp_server='<verb>'` and marks that verb `transport=True` with a CLI
+surface. The verb starts without required nouns or confirmation. The installer derives its command from this
+declaration. With no enabled provider, setup copies skills and supported instruction pointers and reminders and
+skips registration and proof. The global `install_server` setting defaults to empty, choosing the sole eligible
+provider automatically. If several modules declare servers, select one with `metaform set --install-server <id>`.
 
 The ordinary surfaces are `cli` and `mcp`; declarations may choose one. For example, the current `map approve` operation is CLI-only. The MCP transport's `serve` verb is a CLI transport entry rather than a tool an agent calls. This is why “declared once” does not mean every operation must be exposed identically everywhere.
 
@@ -115,6 +166,45 @@ Return the structured result an agent needs. Use `ctx.say(text)` for a person-fa
 Start and stop hooks receive module/folder context, not an already resolved project store. Their lifetime is the module lifetime, not the duration of one selected project's task. Status hooks receive context for the status being requested and can contribute `Status(lines=(...), notice=...)`. A notice can orient an arriving agent; for example, intake supplies the notice to delegate an intake when the project has none.
 
 Source: [context.py](../../src/metaform/context.py), [module.py](../../src/metaform/module.py), and [instructions.py](../../src/metaform/instructions.py).
+
+## Use the same public services as shipped modules
+
+The public base is `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.nonce`, `metaform.prompt_files`, `metaform.axiom` and `metaform.home`. Shipped modules and user modules use the same services, BASE-004. This gives extensions the existing project and transport behavior without importing private chassis code or rebuilding those resources. Importing these public names creates no project, database or process state. Services resolve the active context when called.
+
+Import the following functions from `metaform.module`:
+
+| Service | Use |
+|---|---|
+| `project_for(folder, named=None)` | Resolve the folder's project or a supplied registered id. |
+| `surface(folder)`, `on_surface(group, folder)`, `aliases(folder)` | Loaded modules, visibility of a module or `chassis`, and aliases on the folder's command surface. |
+| `command_summary(name)`, `chassis_version()` | A chassis command's summary or `None`, and the running chassis version. |
+| `instructions(folder, project=None)`, `module_instructions(folder, identifier, project=None)` | The instructions agents read for the folder, compact or full by `connect_instructions`, and one surfaced module's full instructions, or `None` when it is not on the surface. |
+| `refresh_modules()` | Load or drop the modules enabled or disabled since a long-running process started, and follow the selected project. |
+| `code_print()` | Fingerprint the package's Python source paths, modification times and sizes on disk, so a long-running process can detect changed code. This reads metadata only, works with installed and editable packages, and creates no state. A change permits a replacement attempt but does not prove that the replacement can open the store. |
+
+Import the home and its projects from `metaform.home`:
+
+| Service | Use |
+|---|---|
+| `home()` | The active home, including a directly running wheel's home. |
+| `project(id)`, `projects()` | One registered project or `None`, and all registered projects. |
+| `to_clear(project)`, `clear_project(project)` | Preview clearing a project, and clear its metaforms and reports with a backup. |
+| `backups(project)`, `restore_project(project, name=None)` | List backups newest first, and restore a named backup or the newest. Restoration backs up current contents first. |
+| `not_empty(project)`, `removal_caution(project)`, `remove_project(project)` | Read why removal is prevented, obtain its caution text, and remove an empty project's registration and folder selections. Source files, history and backups remain. |
+
+An operation that clears, restores or removes uses its declared `Verb.caution` to obtain confirmation before calling the service. `remove_project` checks that the project is empty and stops with the existing explanation when it is not.
+
+`settings.toggled_layers(folder)` reads the layers chosen for a folder with `--layers`, or an empty list when none are chosen.
+
+`metaform.events` carries map changes between processes. `ctx.listen(handler)`, or `events.listen(module, handler)` in a process with no `Context`, lets a long-running module hear another process's `map.changed` events. Close the listener when its process is done, as hello's `follow` does. `events.announce(folder, surface)` is for a long-running process after a call it ran itself: it loads or drops modules enabled or disabled since, publishes the call's pending map changes and returns the payloads published. Ordinary module verbs have their writes announced by the chassis.
+
+Import `query_reads`, `query_read`, `Record`, `plain` and `NewerStore` from `metaform.data`. `query_reads()` returns the named reads. `query_read(store, name, arguments)` uses their existing conversions of text arguments to booleans, integers, lists and node references and reports missing required arguments through `Stop`. `Record` gives a module's dataclass a `to_dict()` method, `plain(value)` converts nested records to JSON-ready data, and `NewerStore` is the `StoreError` subclass identifying data that requires newer code.
+
+The map's Markdown and XML documents belong to the map module. Another module gets them by running the map module's `markdown` and `xml` commands, as the web GUI's export does.
+
+`prompt_files.module_commands(id)` reads the slash commands declared by a loaded module, returning an empty list if it is not found. A transport can use this service without looking up the module's private loader record.
+
+Run `metaform hello basedemo` to see the shared reads and project previews. `metaform hello base-restore name=<backup> --confirm` and `metaform hello base-remove --confirm` demonstrate the project actions with the existing confirmation contract. The latter requires an empty selected project. These examples and the template documentation carry the capabilities to every module author, QUAL-016.
 
 ## Declare settings rather than building a second settings system
 

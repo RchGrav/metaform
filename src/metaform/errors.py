@@ -18,3 +18,8 @@ class Stop(Exception):
 
 class StoreError(Stop):
     """A shape error from the data access object. It never judges content."""
+
+
+class NewerStore(StoreError):
+    """A file at a schema version newer than this Metaform's code, STORE-029: a long-running process, such as the web
+    GUI's server, can tell it apart and hand over to newer code on disk."""

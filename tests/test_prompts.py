@@ -1,6 +1,7 @@
 """Prompts: versioned records in the home's prompt store, and the version each layer was made from, STORE-044."""
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -100,3 +101,44 @@ def test_prompts_and_prompt_list_and_show_the_stored_versions(run, home):
     assert run('prompt', 'practices', '1').stdout == 'one\n'
     missing = run('prompt', 'nothing', ok=False)
     assert missing.returncode != 0 and missing.stderr.splitlines()[-1] == 'Next: metaform prompts'
+
+
+@pytest.mark.req('STORE-044')
+def test_prompt_save_preserves_text_versions_parents_and_layer_provenance(run, home):
+    from metaform.data import prompts
+    text = 'name=value\nReview café {target}.\n'
+    first = json.loads(run('prompt', 'save', 'review', text, 'format=markdown', '--json').stdout)
+    assert first['number'] == 1 and first['text'] == text and first['format'] == 'markdown'
+    kept = row(home, first['version_id'])
+    prompts.record_use(first['version_id'], 'project', 'map', 'layer')
+    second = json.loads(run('prompt', 'save', 'review', '-', '--json', input='New text\n').stdout)
+    assert second['number'] == 2 and second['parent_id'] == first['version_id']
+    assert second['format'] == 'markdown'
+    assert run('prompt', 'review', '1').stdout == text
+    assert run('prompt', 'review').stdout == 'New text\n'
+    assert row(home, first['version_id']) == kept
+    assert prompts.use_of('project', 'map', 'layer').version_id == first['version_id']
+    branch = prompts.save_prompt('review', 'Branch', parent=1)
+    assert branch.number == 3 and branch.parent_id == first['version_id']
+    same = prompts.save_prompt('review', 'Branch')
+    assert same.version_id == branch.version_id and same.notices
+
+
+@pytest.mark.req('STORE-044')
+def test_prompt_save_rejects_unknown_parent_without_creating_a_prompt(home):
+    from metaform.data import StoreError, prompts
+    with pytest.raises(StoreError, match='has no version 2'):
+        prompts.save_prompt('missing', 'text', parent=2)
+    assert not prompts.prompts()
+    prompts.save_prompt('existing', 'one')
+    with pytest.raises(StoreError, match='has no version 3'):
+        prompts.save_prompt('existing', 'two', parent=3)
+    assert len(prompts.prompt_versions('existing')) == 1
+
+
+@pytest.mark.req('CLI-009')
+def test_prompt_save_invalid_parent_uses_the_regular_validation_error(run):
+    invalid = run('prompt', 'save', 'review', 'Text', 'parent=²', ok=False)
+    assert invalid.returncode == 2
+    assert invalid.stderr.splitlines() == [
+        'Error: parent= takes a positive version number.', 'Next: metaform help prompt']

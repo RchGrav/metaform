@@ -43,6 +43,35 @@ def session(home, folder, fn, heard=None):
     return asyncio.run(go())
 
 
+@pytest.mark.req('MCP-034')
+@pytest.mark.req('MCP-032')
+def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mapped):
+    run('enable', 'workflow')
+    from metaform.modules.workflow import SKILLS
+    names = SKILLS
+
+    async def check(client, init):
+        assert 'workflow' in await listed(client)
+        declared = {one.name for one in (await client.list_prompts()).prompts}
+        assert set(names) <= declared
+        results = {}
+        for name in names:
+            tool = await called(client, 'workflow_skill', {'name': name})
+            assert not tool.is_error
+            skill = text(tool)[-1].strip()
+            prompt = await client.get_prompt(name, {})
+            results[name] = (skill, prompt.messages[0].content.text)
+        return results
+
+    from metaform import prompt_files
+    from metaform.modules.workflow import PACKAGE
+    declared = {name: (before, after) for name, _, before, after, _ in prompt_files.commands(PACKAGE)}
+    for name, (skill, prompt) in session(home, mapped, check).items():
+        before, after = declared[name]
+        assert prompt == (before + skill + after).strip()
+        assert skill == run('workflow', 'skill', name, cwd=mapped).stdout.strip()
+
+
 def text(result):
     return [item.text for item in result.content if getattr(item, 'text', None) is not None]
 
@@ -529,7 +558,9 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
     read, written, after = session(home, mapped, call)
     active = Store('proj').active_metaform()
     assert read == []
-    assert written == [{'project': 'proj', 'metaform_id': active.metaform_id}]  # once, for the one write
+    assert written == [{'project': 'proj', 'metaform_id': active.metaform_id,
+                        'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
+                                   'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # once, for the one write
     assert after == written  # the notes were taken once: the read announces nothing, not the write again
 
 
@@ -575,7 +606,9 @@ def test_a_module_enabled_or_disabled_after_the_server_started_is_loaded_or_drop
     active = Store('proj').active_metaform()
     assert (off[0], on[0], dropped[0]) == (False, False, False)  # each of the three notes was written
     assert off[1] == []
-    assert on[1] == [{'project': 'proj', 'metaform_id': active.metaform_id, 'surface': 'mcp'}]  # heard in the server
+    assert on[1] == [{'project': 'proj', 'metaform_id': active.metaform_id, 'surface': 'mcp',
+                      'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
+                                 'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # heard in the server
     assert dropped[1] == on[1]
 
 
@@ -632,6 +665,67 @@ def test_the_prompt_reads_are_tools(run, home, mapped):
     listed, newest, first = session(home, mapped, check)
     assert [(item['name'], item['newest']) for item in listed] == [('practices', 2)]
     assert (newest['number'], newest['text'], first['text']) == (2, 'two\n', 'one\n')
+
+
+@pytest.mark.req('STORE-044')
+@pytest.mark.req('MCP-003')
+@pytest.mark.req('BASE-044')
+def test_save_prompt_creates_and_versions_exact_text_through_mcp(run, home, mapped):
+    from metaform.data import prompts
+    original = '  First prompt.\n\n'
+    revised = 'Second prompt.\n'
+
+    async def check(client, init):
+        schema = (await tool_names(client))['save_prompt'].input_schema
+        results = []
+        for arguments in ({'name': 'personal', 'text': original, 'format': 'markdown'},
+                          {'name': 'personal', 'text': revised},
+                          {'name': 'personal', 'text': revised},
+                          {'name': 'personal', 'text': 'A separate revision.', 'parent': 1},
+                          {'name': 'plain', 'text': 'Plain prompt.'}):
+            result = await called(client, 'save_prompt', arguments)
+            assert not result.is_error, text(result)
+            results.append(json.loads(text(result)[-1]))
+        first = json.loads(text(await called(client, 'prompt', {'name': 'personal', 'number': 1}))[-1])
+        return schema, results, first
+
+    schema, (created, updated, repeated, branch, plain), first = session(home, mapped, check)
+    assert schema['required'] == ['name', 'text'] and schema['additionalProperties'] is False
+    assert schema['properties']['format']['enum'] == ['xml', 'markdown', 'text']
+    assert schema['properties']['parent']['minimum'] == 1
+    assert (created['number'], created['parent_id'], created['text']) == (1, None, original)
+    assert (updated['number'], updated['parent_id'], updated['text']) == (2, created['version_id'], revised)
+    assert updated['format'] == 'markdown'
+    assert repeated['version_id'] == updated['version_id']
+    assert repeated['notices'] and 'no version was added' in repeated['notices'][0]['message']
+    assert (branch['number'], branch['parent_id']) == (3, created['version_id'])
+    assert (plain['number'], plain['format']) == (1, 'text')
+    assert first == created
+    assert [version.number for version in prompts.prompt_versions('personal')] == [3, 2, 1]
+
+
+@pytest.mark.req('STORE-044')
+@pytest.mark.req('MCP-005')
+@pytest.mark.req('MCP-006')
+def test_save_prompt_rejects_invalid_arguments_without_adding_versions(run, home, mapped):
+    from metaform.data import prompts
+    initial = prompts.add_prompt('personal', 'text', 'Original.')
+
+    async def check(client, init):
+        for arguments in ({'name': 'personal'},
+                          {'name': 'personal', 'text': 'Changed.', 'format': 'html'},
+                          {'name': 'personal', 'text': 'Changed.', 'parent': 99},
+                          {'name': 'personal', 'text': 'Changed.', 'parent': 0},
+                          {'name': 'personal', 'text': 'Changed.', 'parent': True},
+                          {'name': 'personal', 'text': 'Changed.', 'parent': '1'},
+                          {'name': 'new', 'text': 'Changed.', 'parent': 1}):
+            result = await called(client, 'save_prompt', arguments)
+            assert result.is_error, arguments
+            assert text(result)[-1].startswith('Error: ') and '\nNext: ' in text(result)[-1]
+
+    session(home, mapped, check)
+    assert prompts.prompt_versions('personal') == (initial,)
+    assert [prompt.name for prompt in prompts.prompts()] == ['personal']
 
 
 @pytest.mark.req('PROJ-025')
@@ -838,25 +932,32 @@ def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_
     """Rich, 2026-10-01: metaform still doesn't have its : commands, none for intake. Each command is an XML element
     of its owner's prompts.xml naming the verb it runs; /metaform:intake puts into the conversation exactly what
     metaform intake prompt prints for the same folder."""
+    from metaform import prompt_files
+    from metaform.data import prompts
+    prompts.add_prompt('practices', 'markdown', 'one\n')
+    prompts.add_prompt_version('practices', 'two\n', 1)
+
     async def call(client, init):
         listed = {prompt.name: prompt for prompt in (await client.list_prompts()).prompts}
         got = {name: await client.get_prompt(name, {}) for name in ('intake', 'tasks', 'status', 'refine')}
+        got['prompt'] = await client.get_prompt('prompt', {'name': 'practices'})
+        got['prompt 1'] = await client.get_prompt('prompt', {'name': 'practices', 'version': '1'})
         return listed, {name: [message.content.text for message in result.messages] for name, result in got.items()}, \
             {name: [message.role for message in result.messages] for name, result in got.items()}
     listed, texts, roles = session(home, mapped, call)
-    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks', 'refine'} <= set(listed)
-    assert not {'prompt', 'correct'} & set(listed)                   # prompt awaits D105; correct was dropped, D106
-    assert listed['intake'].description and listed['config'].description
-    assert roles == {'intake': ['user'], 'tasks': ['user'], 'status': ['user'], 'refine': ['user']}
+    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks', 'refine', 'prompt'} <= set(listed)
+    assert 'correct' not in listed                                     # dropped, D106
+    assert listed['intake'].description and listed['config'].description and listed['prompt'].description
+    assert all(role == ['user'] for role in roles.values())
     assert texts['intake'] == [run('intake', 'prompt', cwd=mapped).stdout.strip()]
     assert texts['tasks'] == [run('map', 'work', 'open=true', cwd=mapped).stdout.strip()]
     assert texts['status'] == [run(cwd=mapped).stdout.strip()]
-    assert texts['refine'] == [
-        'refine by itself runs a full survey similar to the initial intake but with the purpose of refining whe '
-        'whole map itself, finding nodes with incorrect status, etc.\n'
-        'refine is support to refine what is show what was missed reconsider wording on the metaform, etc, '
-        'the metaform is not documentation its a map to whats built, what remains to be built, etc.']
+    declared = {name: before for name, _, before, _, _ in prompt_files.module_commands('map')}
+    assert texts['refine'] == [declared['refine'].strip()]             # Rich's survey instruction as declared, D107
     assert not listed['refine'].arguments
+    # D105: the stored prompt's exact text, the newest or the version named, as metaform prompt prints it
+    assert [(one.name, one.required) for one in listed['prompt'].arguments] == [('name', True), ('version', False)]
+    assert texts['prompt'] == ['two'] and texts['prompt 1'] == ['one']
     run('set', '--modules', 'intake,mcp', cwd=mapped)                  # map and web off the surface
 
     async def narrowed(client, init):
@@ -942,6 +1043,30 @@ def test_the_instructions_are_composed_for_each_request_and_read_with_the_instru
     assert run('instructions', cwd=mapped).stdout == help_agents(run, mapped)
 
 
+@pytest.mark.req('MCP-029')
+@pytest.mark.req('MCP-032')
+def test_a_module_s_full_instructions_come_on_entering_its_tool_and_skills_are_told_apart(run, home, mapped):
+    """The compact connect-time text names each module in one line, so its full instructions come when an agent
+    enters its tool or asks the instructions command for it; the workflow skills all ran one verb and showed one
+    description, so each declares its own."""
+    run('enable', 'workflow')
+    full = run('help', 'agents', 'map', cwd=mapped).stdout.strip()
+
+    async def check(client, init):
+        entered = json.loads(text(await client.call_tool('map', {}))[-1])
+        asked = text(await client.call_tool('metaform', {'command': 'instructions', 'arguments': {'module': 'map'}}))
+        wrong = await client.call_tool('metaform', {'command': 'instructions', 'arguments': {'module': 'nope'}})
+        prompts = {one.name: one.description for one in (await client.list_prompts()).prompts}
+        return init.instructions, entered, asked, wrong, prompts
+    started, entered, asked, wrong, prompts = session(home, mapped, check)
+    assert full not in started and len(started) <= 2048
+    assert entered['instructions'].strip() == full and [block.strip() for block in asked] == [full]
+    assert wrong.is_error
+    from metaform.modules.workflow import SKILLS
+    described = [prompts[name] for name in SKILLS]
+    assert len(set(described)) == len(SKILLS) and all(described)
+
+
 @pytest.mark.req('MCP-004')
 @pytest.mark.req('MCP-007')
 def test_a_change_to_the_surface_reaches_a_running_session_as_a_list_change(run, home, mapped):
@@ -1020,9 +1145,10 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
                 await client.initialize()
                 return await called(client, 'map_work', {'op': 'take', 'id': gui, 'by': by})
         return asyncio.run(go())
-    refused = take('codex-mcp-client', 'claude 41ab')
-    assert refused.is_error and 'claude' in text(refused)[0], text(refused)
-    assert store.ticket(gui).work.taken is None
+    for client_name in ('codex-mcp-client', 'unknown-client'):
+        refused = take(client_name, 'claude 41ab')
+        assert refused.is_error and 'claude' in text(refused)[0], text(refused)
+        assert store.ticket(gui).work.taken is None
     took = take('claude-code', 'the agent')
     assert not took.is_error, text(took)
     assert store.ticket(gui).work.taken_by == 'the agent'

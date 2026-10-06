@@ -1,0 +1,13 @@
+Feedback on the intake process.
+
+1. intake start on a layer already being recorded resumes it and silently drops the model, role, blinded and id it is given. This layer had been started before I ran, with model "opus", no role and no result id; my generated id, metaform-intake-20260927-083d481d, and role "intake agent" were not stored, and the notice said only that it resumed. Provenance cannot change after creation, so the notice should at least name what was not applied, and the result id has no other way in.
+
+2. This intake ran inside the repository as a subagent of a working session, which HANDOFF.md says an intake of this repository must never do. My context held CLAUDE.md with the MetaformFoundation and the user's memory index, and the README I read quotes an earlier export using code.chassis, code.system.plugin, code.bus.event, stakeholder.author.module, code.template.module and code.module.example. I reasoned the chassis as DE from BASE-001, the chassis alone being a complete working Metaform, and kept those addresses because they name the functionality, but the map is not free of that contamination. The line "Do not read past memories" cannot stop what the harness puts in context before the prompt is read.
+
+3. Step 2's "create a namespace entry for the entity as a VE" reads two ways. I read "as a VE" as "as a receiver", matching step 3's "observe DE as a VE", and recorded the AUE element receiving the DE's join with the member paths in its refs, beside the external VE's join to the DE. Plain words for which element receives that join would settle it.
+
+4. The Canonical Intake defines SE as Substantial Element; the spec's terms say Supportive Element. The tool help does not name it either way, so the role list reads SE with two meanings depending on the document.
+
+5. Recording the map was smooth: every call returned its id, notices were clear, intake show receiver= kept proofing small, and nothing was refused. map work took work records during the intake without trouble. One small gap: intake element has no way to record the element-level statement CAPTURE's voice rule asks for, which is fine while that rule is not in the intake text.
+
+6. The instructions ask for the report and the feedback in one finish call; long texts on the command line need a file or heavy quoting. metaform feedback reads a file path or - for report and shape; intake finish reads only inline text.

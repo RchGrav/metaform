@@ -51,6 +51,10 @@ the join was the name for the element". Every current element's refs, and those 
 one item of a layer named sources. Items, tickets and messages at a subtype join move to its element. Nothing else of
 the old shape is kept in the store, Rich 2026-10-04: "I want all of that fucikiong  shit gone"; the backup made first
 holds every field and every earlier version.
+
+Layout 19 to 20, MAP-054: the join gains its nullable element address again.
+Every existing row and version is kept, and a backup supports restoring layout 19.
+No other removed join fields return.
 """
 from __future__ import annotations
 
@@ -69,7 +73,7 @@ from . import tables
 from .schema import STORE_SCHEMA
 from .versions import KINDS, recompute
 
-RENAMED = {'reexamine': {'changed_in': 'correction_layer_id'}}  # a new column read from its old name
+RENAMED: dict[str, dict[str, str]] = {'reexamine': {'changed_in': 'correction_layer_id'}}  # a new column read from its old name
 VERSIONED = ('elements', 'joins', 'items', 'properties')
 LAYERED = VERSIONED + ('item_ids', 'current_items', 'current_properties')  # kept, moved to the intake
 SETTINGS = ('hidden_layers', 'layer_fields', 'layer_tags', 'provenance', 'selections')  # the correction layer's own
@@ -77,9 +81,9 @@ LEFT_OUT = {'layers': "kind <> 'correction'"}  # rows the new layout cannot hold
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Update a store at layout 7 to 18 to the current layout in one transaction, after keeping a copy of it."""
-    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 18.',
+    """Update a store at layout 7 to 19 to the current layout in one transaction, after keeping a copy of it."""
+    if found not in ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 19.',
                          'install the Metaform release that wrote it')
     _backup(db, path)
     target = sqlite3.connect(':memory:')
@@ -109,7 +113,8 @@ def upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
                 ids = [row[0] for row in db.execute(f'SELECT DISTINCT {kind.id_column} FROM {kind.table}')]
                 recompute(db, _kind_name(kind.table), ids)
         tables.legacy_upgrade(db, found)
-        db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18, Rich 2026-10-04
+        if int(found) < 19:
+            db.execute("UPDATE joins SET type='purpose' WHERE type='require'")  # layout 18, Rich 2026-10-04
         db.execute('DROP TABLE IF EXISTS temp.subtype_moves')
         problems = db.execute('PRAGMA foreign_key_check').fetchall()
         if problems:
@@ -152,9 +157,9 @@ def _relayout(db: sqlite3.Connection, wanted: list[tuple[str, str, str]]) -> Non
             continue
         if _plain(have[name]) == _plain(sql):
             continue
-        old = [row[1] for row in db.execute(f'PRAGMA table_info("{name}")')]
+        old: list[str] = [row[1] for row in db.execute(f'PRAGMA table_info("{name}")')]
         db.execute(re.sub(rf'^CREATE TABLE\s+"?{name}"?\s*\(', f'CREATE TABLE "{name}__8"(', sql, count=1))
-        new = [row[1] for row in db.execute(f'PRAGMA table_info("{name}__8")')]
+        new: list[str] = [row[1] for row in db.execute(f'PRAGMA table_info("{name}__8")')]
         sources = [RENAMED.get(name, {}).get(column, column) if RENAMED.get(name, {}).get(column) in old else column
                    for column in new]
         kept = [(column, source) for column, source in zip(new, sources) if source in old]
@@ -185,7 +190,8 @@ def _ef_from_relation(db: sqlite3.Connection) -> None:
             base = db.execute('SELECT * FROM joins WHERE row=?', (current,)).fetchone()
             if base['ef'] == base['relation'] or not base['relation']:  # no relation, nothing to move
                 continue
-            columns = {key: base[key] for key in base.keys() if key != 'row'}
+            # sqlite3.Row iterates values, so column names must come from keys().
+            columns = {key: base[key] for key in base.keys() if key != 'row'}  # noqa: SIM118
             columns.update(ef=base['relation'], op='change', reason=EF_REASON, evidence=None)
             cursor = db.execute(f'INSERT INTO joins({", ".join(columns)}) VALUES ({", ".join("?" for _ in columns)})',
                                 tuple(columns.values()))

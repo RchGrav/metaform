@@ -4,6 +4,10 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `metaform.module.code_print()` exposes the shared package source metadata fingerprint used by MCP and the web GUI to detect changed code before attempting schema recovery, STORE-029 and QUAL-016. It works with installed and editable packages, creates no state, and does not guarantee replacement compatibility. Hello's `basedemo` demonstrates it.
+
+- Shipped and user modules share the public chassis services, BASE-004 and QUAL-016: `metaform.module` exposes home/project lookup, layer selection, command surfaces and aliases, module refresh and change announcement, version and command summaries, and project clear, removal, backup and restore services. `metaform.data` exposes Markdown/XML rendering, named reads with their text conversions, `Record`, `plain` and `NewerStore`. `prompt_files.module_commands` reads loaded modules' slash commands. These services keep extensions on the same implementation as shipped modules without private imports. Hello's `basedemo`, `base-restore`, `base-remove` and existing `follow` demonstrate them.
+
 - Public module-owned DAO operations: `Module.data` declares `Data` with named `Operation` handlers, record contributions and item-write contributions. `DataTx.tables()` joins an operation's metaform tables to its current transaction. Hello's existing `visit` uses `count_visit`; the template includes `data=`. `Table.from_sql` adopts an existing table layout, with persisted `on_remove` rules and module-owned historical upgrade callbacks.
 
 - A module's long-running process hears `map.changed` published in other processes, BASE-053: `ctx.listen(handler)` returns a `Listener`, a loopback port recorded under the home's `run/listeners`, and the bus hands each `map.changed` to every listener of another process, one more entry each in the deliveries. The handler runs in the listener's thread; close the listener when the process is done. The web module's `/api/notify` and its subscriber, and dispatch's subscriber and `changed` request, are gone. hello's `follow` shows it.
