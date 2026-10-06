@@ -1006,6 +1006,8 @@ class Handler(BaseHTTPRequestHandler):
             found = module_verb(given, 'dispatch', 'sessions', nouns)
         except Stop:
             return self.send(200, {'sessions': [], 'lines': []})
+        except StoreError as error:  # the project is gone or its store cannot be read: said, as every other read says it
+            return self.refuse(error, 404)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_prompts(self, project_id: str) -> None:

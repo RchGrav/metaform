@@ -389,3 +389,17 @@ def test_each_condition_that_does_not_fit_is_a_notice_and_never_an_error(home, s
     after = dump(store_file(home, store))
     assert (after != before) is writes
     assert check(store, world, got, before)
+
+
+@pytest.mark.req('STORE-004')
+@pytest.mark.req('STORE-012')
+def test_an_edit_that_changes_refs_and_extra_together_keeps_the_records_split_from_both(home, store):
+    """Records in refs and records in an extra each become items of their own, STORE-004. When one edit carries both,
+    the refs' records were dropped: the extra branch replaced the split list instead of adding to it. Found by review,
+    2026-10-06."""
+    world = build(store)
+    at = Node('element', 'code.k.a')
+    before = len(store.layer_items('k', at).results)
+    store.edit(world.item.item_id, {'refs': [{'file': 'a.c'}, {'file': 'b.c'}], 'extra': {'steps': [{'n': 1}]}})
+    after = store.layer_items('k', at).results
+    assert len(after) == before + 3, [(item.value, item.extra) for item in after]   # two from refs, one from the extra

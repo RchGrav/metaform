@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import nonce
-from metaform.data import Store
 from metaform.module import Context
+
+from .signals import own_store
 
 
 def identity(pid: int) -> str | None:
@@ -173,7 +174,7 @@ def recover(ctx: Context) -> dict[str, Any]:
     if policy != 'automatic':
         return result
     store = ctx.require_store()
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     for row in sessions(own, verify=False):
         if row['state'] != 'running':
             continue

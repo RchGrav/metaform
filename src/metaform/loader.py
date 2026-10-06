@@ -23,6 +23,7 @@ import inspect
 import re
 import shutil
 import sys
+import threading
 from collections.abc import Coroutine, Generator
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -60,6 +61,9 @@ class Found:
 
 _cache: list[Found] | None = None
 _cache_project: str | None = None
+# Discovery imports modules and runs their start hooks, and the web and MCP servers reach it from several threads:
+# one thread discovers, the others wait and read its result. Re-entrant, since a module may ask for another as it loads.
+_discovering = threading.RLock()
 _exit_registered = False
 _read_only: set[Path] = set()
 _data_resources: dict[str, ExitStack] = {}
@@ -255,52 +259,55 @@ def discover() -> list[Found]:
     global _cache, _cache_project
     if _cache is not None:
         return _cache
-    _cache_project = _selected_project()
-    found = _candidates(_cache_project)
-    seen: dict[str, Found] = {}
-    for item in found:
-        if item.problem:
-            continue
-        if item.id in RESERVED:
-            item.problem = f'The name {item.id!r} belongs to a chassis command.'
-            continue
-        if item.id in seen:
-            item.problem = f'The {seen[item.id].place} place already holds a module with the id {item.id!r}.'
-            continue
-        seen[item.id] = item
-        try:
-            item.declared = module_metadata.read(item.path)
-        except (ValueError, OSError, SyntaxError) as error:
-            item.problem = str(error)
-            continue
-        state = home.module_state(item.id)
-        item.enabled = state if state is not None else not item.declared.ships_disabled
-        if not item.declared.compatible:
-            item.problem = item.declared.reason or 'incompatible'
-            continue
-        if not item.enabled:
-            continue
-        needed = missing_dependencies(item.declared.dependencies)
-        if needed:
-            item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
-            continue
-        try:
-            with settings.owned_by(item.id):
-                item.module = _import(item)
-        except Exception as error:  # noqa: BLE001  a broken module is reported and withdrawn; the chassis goes on
-            _withdraw_settings(item.id)
-            _forget(item.import_name)
-            item.problem = f'{type(error).__name__}: {error}'
-    _cache = found
-    _register_exit()
-    for item in found:
-        if item.module is not None and item.module.start is not None:
+    with _discovering:
+        if _cache is not None:  # another thread discovered while this one waited
+            return _cache
+        _cache_project = _selected_project()
+        found = _candidates(_cache_project)
+        seen: dict[str, Found] = {}
+        for item in found:
+            if item.problem:
+                continue
+            if item.id in RESERVED:
+                item.problem = f'The name {item.id!r} belongs to a chassis command.'
+                continue
+            if item.id in seen:
+                item.problem = f'The {seen[item.id].place} place already holds a module with the id {item.id!r}.'
+                continue
+            seen[item.id] = item
             try:
-                call(item.module.start, Context(module=item.id, folder=Path.cwd()))
-            except Exception as error:  # noqa: BLE001  any failed start unloads its module and records the problem, BASE-018
-                _unload(item)
+                item.declared = module_metadata.read(item.path)
+            except (ValueError, OSError, SyntaxError) as error:
+                item.problem = str(error)
+                continue
+            state = home.module_state(item.id)
+            item.enabled = state if state is not None else not item.declared.ships_disabled
+            if not item.declared.compatible:
+                item.problem = item.declared.reason or 'incompatible'
+                continue
+            if not item.enabled:
+                continue
+            needed = missing_dependencies(item.declared.dependencies)
+            if needed:
+                item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
+                continue
+            try:
+                with settings.owned_by(item.id):
+                    item.module = _import(item)
+            except Exception as error:  # noqa: BLE001  a broken module is reported and withdrawn; the chassis goes on
+                _withdraw_settings(item.id)
+                _forget(item.import_name)
                 item.problem = f'{type(error).__name__}: {error}'
-    return found
+        _cache = found
+        _register_exit()
+        for item in found:
+            if item.module is not None and item.module.start is not None:
+                try:
+                    call(item.module.start, Context(module=item.id, folder=Path.cwd()))
+                except Exception as error:  # noqa: BLE001  any failed start unloads its module and records the problem, BASE-018
+                    _unload(item)
+                    item.problem = f'{type(error).__name__}: {error}'
+        return found
 
 
 def enabled() -> list[Module]:

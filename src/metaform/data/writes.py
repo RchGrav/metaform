@@ -348,7 +348,8 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
             split += more
             continue
         if key == 'extra':
-            kept, split = rows.extra_fields(value, kind, notices)
+            kept, more = rows.extra_fields(value, kind, notices)
+            split += more  # added to what refs split out in the same change, never in its place
             columns['extra'] = encode_extra(kept, kind)
         elif key == 'value':
             answers = _as_answers(value, notices)

@@ -37,7 +37,7 @@ from metaform import nonce, prompt_files, settings
 from metaform.data import Column, Index, Message, Store, StoreError, Table, Tables, WorkRecord
 from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, surface, work_reads
 
-from .signals import collect, requeued, rework_limit
+from .signals import collect, own_store, requeued, rework_limit
 from .signals import read as read_signals
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -265,7 +265,7 @@ def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
              open_work: Sequence[WorkRecord] | None = None) -> list[dict[str, Any]]:
     """The sessions, oldest first, of one ticket or of every ticket, read through this module's own tables whatever
     module the store was opened for."""
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     try:
         with own.tables(write=False) as tx:
             found = (tx.rows('sessions', {'work_id': work_id}, by=('work_id', 'seq'), limit=0) if work_id
@@ -450,7 +450,7 @@ def map_work(ctx: Context, **nouns: Any) -> Any:
 
 def questions(store: Store, work_id: str | None = None) -> list[Message]:
     """Questions on a ticket, including legacy associations observed in tool output."""
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     attached: dict[str, str] = {}
     try:
         with own.tables(write=False) as tx:
@@ -489,7 +489,7 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
 
 def unanswered(store: Store) -> tuple[dict[str, list[Message]], set[str]]:
     """Each ticket's unanswered questions, oldest first, and every ticket that has been asked one, read once."""
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     attached: dict[str, str] = {}
     try:
         with own.tables(write=False) as tx:
@@ -565,7 +565,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
     from .recovery import recover
     recovered = recover(ctx)
     store = ctx.require_store()
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     if not ctx.setting('dispatch_autostart'):
         consensus.end_mode(own, 'Autostart agents was unchecked')
         return {'started': [], 'recovery': recovered}

@@ -52,6 +52,8 @@ from metaform import axiom
 from metaform.data import Message, Node, Store, WorkRecord
 from metaform.module import Context, Stop
 
+from .signals import own_store
+
 MAX_OPEN = 5  # Max 5 agents open
 CAP_LIMIT = 8  # {Cap} := min(|voters|, 8)
 PASSES = 8  # @LOOP (max=|Tickets|*8)
@@ -340,7 +342,7 @@ def coordinate(ctx: Context, store: Store, tickets: Sequence[WorkRecord], waitin
                workers: int) -> dict[str, Any]:
     """One pass of the coordinator: record what the votes settle, then fill the free slots with voters."""
     from . import ticket as read_ticket
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     mode = _round(own, len(tickets))
     voters = int(ctx.setting('dispatch_agents'))
     limit = cap(voters)
@@ -388,7 +390,7 @@ def coordinate(ctx: Context, store: Store, tickets: Sequence[WorkRecord], waitin
 def results(store: Store) -> list[dict[str, Any]]:
     """Every question consensus voted on, newest first, for the person to review: the question and its choices, how
     many votes each choice got, every write-in and comment in the voter's own words, and what came of it."""
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     with own.tables(write=False) as tx:
         rows = [dict(row) for state in (OPEN, CLOSED, HALTED, TIE_REVIEW)
                 for row in tx.rows('consensus', {'state': state}, limit=0).results]

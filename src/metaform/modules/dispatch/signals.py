@@ -10,10 +10,15 @@ from metaform.data import Store
 from metaform.module import Context
 
 
+def own_store(store: Store) -> Store:
+    """The dispatch module's own store for this project: the one given when it is already that."""
+    return store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+
+
 def record(store: Store, signal: str, *, work_id: str = '', session_id: str = '', key: str = '',
            active: bool = True, **details: Any) -> dict[str, Any] | None:
     """Keep one signal per source/key; repeated evidence does not raise duplicate events."""
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     source = session_id or f'work:{work_id}'
     name = f'signal:{signal}:{key}'
     with own.tables() as tx:
@@ -45,7 +50,7 @@ def publish(ctx: Context, signal: str, **details: Any) -> None:
 
 
 def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
-    own = store if store.module == 'dispatch' else Store(store.project_id, module='dispatch')
+    own = own_store(store)
     with own.tables(write=False) as tx:
         rows = tx.rows('lines', {'work_id': work_id}, by=('work_id', 'seq'), limit=0).results if work_id else tx.rows(
             'lines', limit=0).results
