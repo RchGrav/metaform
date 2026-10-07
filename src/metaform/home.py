@@ -380,6 +380,9 @@ def _upgrade_project(db: sqlite3.Connection, path: Path, found: str) -> None:
             db.execute('ALTER TABLE bases RENAME COLUMN metaform_id TO id')
             db.execute('ALTER TABLE active_metaforms RENAME TO active_bases')
             db.execute('ALTER TABLE active_bases RENAME COLUMN metaform_id TO base_id')
+        # The layer the intake writes is named base now; a folder's layers setting that named it as intake names it
+        # as base, so what was in view stays in view, STORE-046.
+        db.execute("UPDATE settings SET value='\"base\"' WHERE key='layers' AND value='\"intake\"'")
         db.execute("UPDATE meta SET value=? WHERE key='schema_version'", (PROJECT_SCHEMA_VERSION,))
         db.execute('COMMIT')
     except BaseException:
