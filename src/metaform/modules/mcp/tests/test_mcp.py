@@ -561,8 +561,9 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
     read, written, after = session(home, mapped, call)
     active = Store('proj').active_base()
     assert read == []
-    assert written == [{'project': 'proj', 'base_id': active.id,
-                        'tables': ['objects', 'op:item', 'ops']}]  # once, for the one write: the log and the kind of op
+    assert [{key: value for key, value in event.items() if key != 'seq'} for event in written] == [
+        {'project': 'proj', 'base_id': active.id, 'tables': ['objects', 'op:item', 'ops']}]  # once, for the one write
+    assert written[0]['seq'] > 0  # the sequence the base reached, which a page applies the ops up to, STORE-046
     assert after == written  # the notes were taken once: the read announces nothing, not the write again
 
 
@@ -608,8 +609,8 @@ def test_a_module_enabled_or_disabled_after_the_server_started_is_loaded_or_drop
     active = Store('proj').active_base()
     assert (off[0], on[0], dropped[0]) == (False, False, False)  # each of the three notes was written
     assert off[1] == []
-    assert on[1] == [{'project': 'proj', 'base_id': active.id, 'surface': 'mcp',
-                      'tables': ['objects', 'op:item', 'ops']}]  # heard in the server
+    assert [{key: value for key, value in event.items() if key != 'seq'} for event in on[1]] == [
+        {'project': 'proj', 'base_id': active.id, 'surface': 'mcp', 'tables': ['objects', 'op:item', 'ops']}]  # heard
     assert dropped[1] == on[1]
 
 

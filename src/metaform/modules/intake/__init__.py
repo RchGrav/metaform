@@ -398,7 +398,7 @@ def _join_entry(held: Join) -> dict[str, Any]:
 
 def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[str, dict[str, Any]]:
     """The open condition and note on each recorded element and join, by id, so an agent reads its marks back."""
-    ids = {element.element_id for element in elements} | {held.join_id for held in joins}
+    ids = {element.id for element in elements} | {held.id for held in joins}
     return {row.id: {'condition': row.condition, 'note': row.note}
             for row in store.work(open=True, limit=0).results if row.id in ids}
 
@@ -406,7 +406,7 @@ def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[
 def _refs(store: Store, found: Element) -> list[dict[str, str]]:
     """An element's refs, the items of the sources layer at it; none when there is no sources layer."""
     try:
-        held = store.layer_items(SOURCES, Node('element', found.element_id), limit=0).results
+        held = store.layer_items(SOURCES, Node('element', found.id), limit=0).results
     except StoreError:
         return []
     return [{'key': ref.key, 'value': ref.value} for item in held if isinstance(item, Item) for ref in item.refs]
@@ -421,7 +421,7 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         entry = _element_entry(found)
         if store is not None:
             entry['refs'] = _refs(store, found)
-        listed.append({**entry, **marks.get(found.element_id, {})})
+        listed.append({**entry, **marks.get(found.id, {})})
     roots = [found.address for found in elements if found.role == 'AUE']
     joined = {held.receiver_address for held in joins} | {each.address for held in joins for each in held.elements}
 
@@ -429,7 +429,7 @@ def _map(elements: list[Element], joins: list[Join], store: Store | None = None)
         return any(address == root or address.startswith(root + '.') for root in roots)
 
     return {'elements': listed,
-            'joins': [{**_join_entry(held), **marks.get(held.join_id, {})} for held in joins],
+            'joins': [{**_join_entry(held), **marks.get(held.id, {})} for held in joins],
             'root': roots[0] if len(roots) == 1 else roots,
             'disconnected': [found.address for found in elements if not under(found.address)
                              and found.address not in joined],
