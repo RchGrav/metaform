@@ -80,9 +80,8 @@ def _condition(value: Any, notices: list[Notice]) -> str:
     """The condition as given; a missing one is stored as empty text, since the column is never null, BASE-044."""
     if value in CONDITIONS:
         return str(value)
-    if value is None:
-        notices.append(Notice("condition", "condition is missing; stored empty."))
-        return ""
+    if value is None or value in ("", "none"):
+        return ""  # a plain task: the part's state is not in question, MAP-046
     if value in MESSAGES:
         notices.append(
             Notice(

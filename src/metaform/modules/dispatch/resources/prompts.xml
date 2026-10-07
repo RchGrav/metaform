@@ -53,7 +53,7 @@
   +&gt; Write a question at the node it concerns with `metaform map ask`, filling every field of the question form shown by `metaform help map ask`; give suggested answers with the recommended answer first, identify who asks with by=, and link this ticket with work=<work_id/>.
   +&gt; A question stands alone: say what you were doing, what you found, why a decision is needed, the choices, what each leads to, and which you recommend, in plain words for a person with none of your context.
   +&gt; Record what depends on the answer on the ticket and carry on with work that does not depend on it. If no work remains that you can continue, end your turn with the ticket incomplete so the next ticket can start.
-  +> When you stop with the ticket open, edit its condition and note so they say what is true now, with `metaform map work op=edit id=<work_id/> condition=&lt;condition&gt; note="&lt;what and where&gt;"`, using the meaning of each condition in `metaform help map work`.
+  +> When you stop with the ticket open, edit its note so it says what is true now, with `metaform map work op=edit id=<work_id/> note="&lt;what and where&gt;"`. The condition is the part's state, not the ticket's: leave it alone unless you built a missing part or found the part broken, and then set it as `metaform help map work` says.
 
 @CONDITION:
   ?IF ({Ticket}==NULL) -&gt; {State}:=READ
@@ -89,7 +89,7 @@
   =&gt; reevaluate state and carry on with the work that does not depend on the answer.
 
 @EXECUTE_PIPELINE(Blocked):
-  Δ({Ticket}, work so far) => `metaform map work op=edit id=<work_id/> condition=&lt;condition&gt; note="&lt;what and where&gt;"`.
+  Δ({Ticket}, work so far) => `metaform map work op=edit id=<work_id/> note="&lt;what and where&gt;"`.
   YIELD with the ticket incomplete and what depends on the answer recorded, so the next ticket can start.
 
 @EXECUTE_PIPELINE(Done):

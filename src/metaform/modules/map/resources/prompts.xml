@@ -229,7 +229,9 @@ A blind spot that proposes something new adds its element and join to the same l
 op=add-join, layer=<layer/>. When you are done: metaform map knowledge op=finish layer=<layer/>
 
 Write each ticket for the code on the element or join where it is:
-  metaform map work op=add node=element:&lt;address&gt; condition=&lt;missing, broken, flawed, enhancement or exclude&gt; note="&lt;what and where&gt;" task="&lt;what it needs&gt;"
+  metaform map work op=add node=element:&lt;address&gt; note="&lt;what and where&gt;" task="&lt;what it needs&gt;"
+Add condition=&lt;missing, broken, flawed, enhancement or exclude&gt; only when the part itself is in that state: missing
+means not built yet, broken means not working. A ticket on a part that exists and works carries no condition.
 
 The metaform:
 

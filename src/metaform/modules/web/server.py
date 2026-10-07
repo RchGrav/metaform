@@ -713,8 +713,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A task says what is to be done.'})
         if not isinstance(nodes, list) or not nodes or not all(isinstance(node, str) for node in cast(list[Any], nodes)):
             return self.send(400, {'error': 'A task is given at one node or more.'})
-        if condition not in TICKETS:
-            return self.send(400, {'error': 'Work is missing, broken, flawed or an enhancement.'})
+        if condition and condition not in TICKETS:  # none: a task on a part that exists, MAP-046
+            return self.send(400, {'error': 'The part is missing, broken, flawed, could be better, or none of these.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():

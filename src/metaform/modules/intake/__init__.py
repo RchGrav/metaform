@@ -327,8 +327,8 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
                notices: Notices) -> None:
     """A condition given with what was recorded is an open work record at it, with its note, MAP-046: the missing,
     broken and exclude marks of the intake, apart from the map. A note alone is no finding and opens nothing."""
-    if thing is None or ctx.nouns.get('condition') is None:
-        if thing is not None and ctx.nouns.get('note') is not None:
+    if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding, MAP-046
+        if thing is not None and ctx.nouns.get('note'):
             notices.append({'where': 'note', 'message': 'A note goes with a condition, missing, broken or exclude; '
                                                         'without one it was not recorded.'})
         return

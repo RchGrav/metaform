@@ -140,7 +140,7 @@
   <div class="bar"><span class="title"></span><button class="full" title="Fill the screen, and back">Full screen</button><button class="close" title="Close">Close</button></div>
   <div class="body">
     <div class="write">
-      <div class="kindrow"><label>Kind <select class="condition"><option value="">Choose the kind</option><option value="missing">missing: does not exist or is not built yet</option><option value="broken">broken: not working, not connected or orphaned</option><option value="flawed">flawed: works but is not right</option><option value="enhancement">enhancement: works, could be better</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
+      <div class="kindrow"><label title="The state of the part, not the kind of ticket: leave it as none unless the part is in that state">Part is <select class="condition"><option value="">none: a task on a part that exists</option><option value="missing">missing: does not exist or is not built yet</option><option value="broken">broken: not working, not connected or orphaned</option><option value="flawed">flawed: works but is not right</option><option value="enhancement">enhancement: works, could be better</option></select></label><label class="hold"><input type="checkbox" class="backlog"> Put it in the backlog</label></div>
       <label>Workflow <select class="workflow" disabled><option value="">Loading workflows…</option></select></label>
       <label class="workflow-entry" hidden>Entry call <input class="workflow-call" aria-label="Workflow entry call" placeholder="workflow.quality.code.review(target=this)"><small>Edit the arguments for this run. this is the first node below. Task text is optional for a workflow.</small></label>
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task"></div>
@@ -149,7 +149,7 @@
       <div class="kindrow"><label><input type="checkbox" class="start-agent"> Start an agent now</label>
         <label title="The agent this ticket prefers: Claude for front-end and GUI work, Codex for back-end and system work, unless you choose another">Preferred agent <select class="agent"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option></select></label></div>
       <div class="eligibility"></div>
-      <button class="put" disabled title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
+      <button class="put" title="Write this task on its node, linking the others, where agents find it and take it">Add task</button>
       <div class="chartbox"><div class="chart" aria-label="A chart of the project to look around and choose parts from"></div><button class="whole" title="The whole chart in view">Fit</button></div>
     </div>
     <div class="pick">

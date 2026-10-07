@@ -689,7 +689,8 @@ KNOWLEDGE_NOUNS = (
     _noun('always_show', 'add-item and edit: the item is always shown.', 'bool'),
     _noun('task', 'add-item: the item is a task; it adds a ticket at its node, and the flag is not stored on the item.',
           'bool'),
-    _noun('condition', "add-item with task: the ticket's kind, missing, broken, flawed or enhancement."),
+    _noun('condition', "add-item with task: the part's state, missing, broken, flawed or enhancement, only when the "
+                       "part is in that state; left out for a task on a part that exists and works."),
     _noun('owner', 'add-ref: the id of the thing the ref belongs to.'),
     _noun('key', 'add-ref: the ref key.'),
     _noun('id', 'edit and remove: the id of the thing.'),
@@ -1105,12 +1106,8 @@ WORK_NOUNS = (
     _noun('receiver', 'list, add and edit: a join, by the address of the element that holds it, with provider.'),
     _noun('provider', 'list, add and edit: a join, by the address of an element it holds, with receiver.'),
     _noun('address', 'list, add and edit: an element, by address.'),
-    _noun('condition', 'add, edit, and list as a filter: the kind of ticket. missing, the thing does not exist at '
-                       'all or is not built yet; a thing that exists but is wrong is not missing. broken, not '
-                       'working, not connected or orphaned; flawed, works but is not right; enhancement, works and '
-                       'could be better; or exclude, outside the scope or conflicting with a superseding '
-                       'specification, with the reason and references recorded for review.',
-          schema={'type': 'string', 'enum': ['missing', 'broken', 'flawed', 'enhancement', 'exclude']}),
+    _noun('condition', 'add, edit, and list as a filter: the state of the part, not the kind of ticket. Give one only when the part is in that state, and leave it out for a task on a part that exists and works: a record with no condition is a plain task and marks nothing on the map. missing, the part does not exist at all or is not built yet, and its task builds it; once built it is not missing. broken, not working, not connected or orphaned; flawed, works but is not right; enhancement, works and could be better; exclude, outside the scope or conflicting with a superseding specification, with the reason and references recorded for review. condition=none on edit clears it.',
+          schema={'type': 'string', 'enum': ['missing', 'broken', 'flawed', 'enhancement', 'exclude', 'none']}),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [
@@ -1253,11 +1250,13 @@ MODULE = Module(
                            'on the board, or mark it done.',
              nouns=WORK_NOUNS,
              details='A work record is attached to one element or join and never changes the map. Its '
-                     'condition says what kind of work it is. missing means the thing does not exist at all, or is '
-                     'not built yet. A thing that exists but is wrong is not missing: pick broken (not working, not '
-                     'connected, orphaned), flawed (works but is not right), enhancement (works, could be better), '
-                     'or exclude (outside the scope, or conflicting with a superseding specification). Its note '
-                     'says what and where, its task what it needs. '
+                     'condition is the state of that part, not the kind of ticket: most tasks carry none. Give '
+                     'missing only when the part does not exist at all or is not built yet; its task builds it, and '
+                     'once built it is not missing. A part that exists but is wrong is not missing: broken (not '
+                     'working, not connected, orphaned), flawed (works but is not right), enhancement (works, could '
+                     'be better), or exclude (outside the scope, or conflicting with a superseding specification). '
+                     'A task on a part that exists and works has no condition and marks nothing on the map. Its '
+                     'note says what and where, its task what it needs. '
                      'exclude records material outside the intake scope or code conflicting with a superseding '
                      'specification. The note links the affected material and the specification or scope reason '
                      'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '

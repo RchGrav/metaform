@@ -3288,6 +3288,18 @@ addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#menu')
 const B = {tickets: [], off: new Set()};
 const KINDS = ['missing', 'broken', 'flawed', 'enhancement', 'exclude'];
 const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
+/* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
+   to the ticket; the ticket is the work on it. A record with no condition is a plain task. */
+const CONDITION_WORDS = {missing: 'not built yet', broken: 'broken', flawed: 'works, not right',
+  enhancement: 'works, could be better', exclude: 'outside the artifact', 'in-progress': 'being built', fixing: 'being fixed'};
+function conditionLabel(ticket, extra = '') {
+  const condition = ticket.condition;
+  const words = condition ? CONDITION_WORDS[condition] || condition : 'task';
+  const title = condition ? `${ticketPart(ticket)} is ${words} (${condition}): this ticket is the work on it.`
+    : `A task at ${ticketPart(ticket)}, with no condition recorded on the part.`;
+  return h('span', {class: `kind kind-${condition || 'none'}${extra}`, title}, words);
+}
+const when = text => { const d = new Date(text || ''); return isNaN(d) ? '' : d.toLocaleString(); };
 const ago = text => {
   const seconds = Math.max(0, (Date.now() - Date.parse(text || '')) / 1000);
   return !isFinite(seconds) ? '' : seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
@@ -3468,9 +3480,9 @@ function card(ticket, place, total) {
     onclick: () => { const element = partAt(ticket.address); if (element) { select(element.id, true); history(element.id); } }},
     h('div', {class: 'top'}, glyph ? h('img', {class: 'glyph', src: `/page/agent-glyphs/${glyph}.svg`, alt: glyph,
       title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
-      h('span', {class: 'kind'}, ticket.condition || 'unsorted'),
+      conditionLabel(ticket),
       ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
-      h('span', {class: 'age', title: ticket.done ? 'Since completion' : ticket.taken ? 'Since taken' : 'Since opened'},
+      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${when(ticket.done || ticket.taken || ticket.created)}`},
         ago(ticket.done || ticket.taken || ticket.created))),
     h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
     h('div', {class: 'nodes'}, nodeChip({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
@@ -3553,11 +3565,11 @@ async function history(id) {
   Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
   $('#float .title').textContent = `Work history · ${calledOf(id)}`;
   fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => h('div', {class: 'ticket'},
-    h('div', {class: 'head'}, h('span', {class: `kind kind-${ticket.condition}`}, ticket.condition || 'ticket'),
+    h('div', {class: 'head'}, conditionLabel(ticket),
       h('span', {class: 'column'}, COLUMN_NAMES[columnOf(ticket)]),
       ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
-      ticket.done || ticket.taken ? h('span', {class: 'age', title: ticket.done ? 'Since completion' : 'Since taken'},
-        ago(ticket.done || ticket.taken)) : null),
+      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${when(ticket.done || ticket.taken || ticket.created)}`},
+        ago(ticket.done || ticket.taken || ticket.created))),
     ticket.task ? h('p', {class: 'task'}, ...linked(ticket.task)) : null,
     ticket.note ? h('p', {class: 'note'}, ...linked(ticket.note)) : null,
     h('div', {class: 'when'}, `opened ${when(ticket.created)}`, ticket.taken ? ` · taken ${when(ticket.taken)}` : '',
@@ -3741,7 +3753,7 @@ function startWindow(title, tickets, all = false) {
     }) : candidates;
     startAll.disabled = !tickets.length;
     fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
-    h('span', {class: 'kind'}, ticket.condition || 'ticket'),
+    conditionLabel(ticket),
     h('button', {class: 'start', disabled: !allowsAgent(ticket, agent),
       title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
         : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: async event => {
@@ -3908,13 +3920,11 @@ $('#task .workflow').onchange = () => {
   $('#task .workflow-entry').hidden = !chosen;
   $('#task .workflow-call').value = chosen ? `${chosen}()` : '';
 };
-$('#task .condition').onchange = () => { $('#task .put').disabled = !$('#task .condition').value; };
 function giveWork(id, text = '') {
   const element = S.elements.get(id)?.element;
   if (!element) { toast('Work is given at an element.'); return; }
   Object.assign(K, {nodes: [element.address], chosen: null, at: null, project: S.project, base: S.base, eligible: []});
   $('#task .condition').value = '';
-  $('#task .put').disabled = true;
   $('#task .backlog').checked = false;
   $('#task .start-agent').checked = false;
   $('#task select.agent').value = defaultAgent(element.address);
@@ -4055,12 +4065,12 @@ const taskText = () => [...$('#task .text').childNodes].map(function told(node) 
   return (node.tagName === 'DIV' || node.tagName === 'BR' ? '\n' : '') + [...node.childNodes].map(told).join('');
 }).join('').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
 $('#task .put').onclick = async () => {
-  if (!$('#task .condition').value) return;
   if (K.project !== S.project || K.base !== S.base) {
     toast('This task belongs to the map you left. Reopen Add Task at its target.');
     return;
   }
   let task = taskText();
+  if (!task.trim() && !$('#task .workflow').value) { toast('Say what is to be done.'); return; }
   if ($('#task .workflow').value) {
     const call = $('#task .workflow-call').value.trim();
     if (!call) { toast('Give the workflow an entry call.'); return; }
@@ -4079,7 +4089,7 @@ $('#task .put').onclick = async () => {
   const project = S.project, metaform = S.base, generation = K.generation;
   const agent = $('#task select.agent').value, startNow = $('#task .start-agent').checked;
   const eligible = [...K.eligible];
-  const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value, held: $('#task .backlog').checked,
+  const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value || null, held: $('#task .backlog').checked,
     agent, eligible});
   if (project !== S.project || metaform !== S.base || generation !== K.generation) {
     if (written) toast(`Task saved in ${project}. Open that map to start its agent.`);
