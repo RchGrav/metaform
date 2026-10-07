@@ -3299,7 +3299,7 @@ function conditionLabel(ticket, extra = '') {
     : `A task at ${ticketPart(ticket)}, with no condition recorded on the part.`;
   return h('span', {class: `kind kind-${condition || 'none'}${extra}`, title}, words);
 }
-const when = text => { const d = new Date(text || ''); return isNaN(d) ? '' : d.toLocaleString(); };
+const dated = text => { const d = new Date(text || ''); return isNaN(d) ? '' : d.toLocaleString(); };
 const ago = text => {
   const seconds = Math.max(0, (Date.now() - Date.parse(text || '')) / 1000);
   return !isFinite(seconds) ? '' : seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
@@ -3482,7 +3482,7 @@ function card(ticket, place, total) {
       title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
       conditionLabel(ticket),
       ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
-      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${when(ticket.done || ticket.taken || ticket.created)}`},
+      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${dated(ticket.done || ticket.taken || ticket.created)}`},
         ago(ticket.done || ticket.taken || ticket.created))),
     h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
     h('div', {class: 'nodes'}, nodeChip({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
@@ -3568,7 +3568,7 @@ async function history(id) {
     h('div', {class: 'head'}, conditionLabel(ticket),
       h('span', {class: 'column'}, COLUMN_NAMES[columnOf(ticket)]),
       ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
-      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${when(ticket.done || ticket.taken || ticket.created)}`},
+      h('span', {class: 'age', title: `${ticket.done ? 'Done' : ticket.taken ? 'Taken' : 'Opened'} ${dated(ticket.done || ticket.taken || ticket.created)}`},
         ago(ticket.done || ticket.taken || ticket.created))),
     ticket.task ? h('p', {class: 'task'}, ...linked(ticket.task)) : null,
     ticket.note ? h('p', {class: 'note'}, ...linked(ticket.note)) : null,
