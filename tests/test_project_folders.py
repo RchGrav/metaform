@@ -71,7 +71,7 @@ def test_each_metaform_is_a_store_named_by_the_metaform_in_the_project_folder(ru
     folder = folder_for(home, source)
     run('intake', 'element', 'code.timer', 'role=DE', cwd=source)
     assert (folder / 'main.metaform.sqlite3').is_file()
-    run('add', 'metaform', 'fresh', cwd=source)
+    run('add', 'base', 'fresh', cwd=source)
     run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', cwd=source)
     assert (folder / 'fresh.metaform.sqlite3').is_file()
     assert not (folder / 'metaforms').exists()

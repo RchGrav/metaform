@@ -231,7 +231,7 @@ def test_an_import_meeting_a_metaform_another_project_owns_writes_nothing_of_it_
     assert (report['metaforms_added'], report['metaforms_skipped'], report['layers_added']) == (0, 1, 0)
     assert any('one' in notice['message'] for notice in report['notices'])
     assert sorted(str(path.relative_to(home)) for path in home.rglob('*')) == listing
-    assert [form.name for form in metaform_home.metaforms('two')] == []
+    assert [form.name for form in metaform_home.bases('two')] == []
 
 
 @pytest.mark.req('STORE-027')

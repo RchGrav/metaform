@@ -150,7 +150,7 @@ def test_an_ignored_harness_is_never_recorded(home, tmp_path):
 def test_a_home_made_before_the_record_reads_as_knowing_none(home):
     from metaform import harness
     from metaform import home as metaform_home
-    with metaform_home.base(write=True):
+    with metaform_home.chassis(write=True):
         pass
     assert not harness.known(VERSIONS / '2.0.1')
     harness.done(VERSIONS / '2.0.1')

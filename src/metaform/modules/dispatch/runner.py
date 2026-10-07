@@ -111,14 +111,14 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
 
     def reserve(record: WorkRecord) -> WorkRecord:
         with store.atomic():
-            record = ticket(store, record.work_id)
+            record = ticket(store, record.id)
             reservation = ctx.nouns.get('reservation')
             if reservation and record.taken_by == reservation:
                 require_eligible(ctx, record, agent)
                 return record
             startable(ctx, store, record, agent)
             reservation = 'dispatch starting ' + secrets.token_hex(16)
-            record = store.take_work(record.work_id, by=reservation)
+            record = store.take_work(record.id, by=reservation)
             ctx.nouns['reservation'] = reservation
             return record
 
@@ -128,18 +128,18 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         folder = None
         if ctx.setting('dispatch_worktrees'):  # VIEW-044: each ticket's agent works in a worktree of its own
             from .merge import worktree_for
-            folder = await asyncio.to_thread(worktree_for, store.project().path, record.work_id)
+            folder = await asyncio.to_thread(worktree_for, store.project().path, record.id)
         ended = await Session(ctx, store, record, agent, command, folder).run()
-        worked.append(record.work_id)
+        worked.append(record.id)
         if ended.get('ended') == TERMINATED:  # a terminated runner reads nothing more, so a store it cannot reach is no error
             return ended if len(worked) == 1 else {**ended, 'worked': worked}
-        record = await asyncio.to_thread(ticket, store, record.work_id)
+        record = await asyncio.to_thread(ticket, store, record.id)
         if folder is not None and record.done:  # its work committed, tested and checked to merge, VIEW-044
             from .merge import finished
             await asyncio.to_thread(finished, ctx, store, record, folder)
-            active = await asyncio.to_thread(store.active_metaform)
+            active = await asyncio.to_thread(store.active_base)
             await ctx.publish_async('map.changed', {'project': store.project_id, 'tables': 'dispatch',
-                                                    'metaform_id': active.metaform_id if active else None})
+                                                    'base_id': active.id if active else None})
         glyph = await asyncio.to_thread(glyph_of, ctx, record)  # read again, so a glyph given while it ran counts
         if glyph is None:
             return ended if len(worked) == 1 else {**ended, 'worked': worked}
@@ -183,7 +183,7 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
         return (f'ticket {ref}, {"done" if record.done else "open"}: {record.task or record.note or ""}',
                 f'`metaform map work id={ref}`, and what its agents did with `metaform dispatch sessions id={ref}`')
     if kind == 'question':
-        asked = next((one for one in store.messages(None, 'question', None, limit=0).results if one.message_id == ref), None)
+        asked = next((one for one in store.messages(None, 'question', None, limit=0).results if one.id == ref), None)
         text = asked.text or '' if asked else ''
         return (f'question {ref}{", answered" if asked and asked.closed else ""}: {text}',
                 f'`metaform map messages kind=question` for question {ref}, and its ticket with `metaform map work id={work_id}`')
@@ -202,11 +202,11 @@ class Session:
         self.system = system  # the person's system agent: no ticket work, a conversation that lasts until stopped
         self.prep = prep  # helping the person prepare a merge, VIEW-044: it takes no ticket and lives between turns
         self.ctx, self.store, self.agent, self.command = ctx, store, agent, command
-        self.work_id = record.work_id
-        self.node = Node.of(record.kind, record.id)
+        self.work_id = record.id
+        self.node = Node.of(record.node_kind, record.node_id)
         self.folder = str(folder) if folder is not None else store.project().path  # its worktree, VIEW-044
         self.name = AGENTS[agent][0]
-        self.metaform_id: str | None = None
+        self.base_id: str | None = None
         self.session_id: str | None = None
         self.number: str | None = None  # the agent's nonce
         self.token = secrets.token_hex(16)
@@ -346,10 +346,10 @@ class Session:
         self.lines_at = time.monotonic()
 
     async def changed(self, tables: str | None = None, *, dispatch_tables: list[str] | None = None) -> None:
-        if self.metaform_id is None:
-            active = await asyncio.to_thread(self.store.active_metaform)
-            self.metaform_id = active.metaform_id if active is not None else None
-        payload: dict[str, Any] = {'project': self.store.project_id, 'metaform_id': self.metaform_id}
+        if self.base_id is None:
+            active = await asyncio.to_thread(self.store.active_base)
+            self.base_id = active.id if active is not None else None
+        payload: dict[str, Any] = {'project': self.store.project_id, 'base_id': self.base_id}
         if tables:
             payload['tables'] = tables
         if dispatch_tables is not None and self.lines_due is not None:
@@ -488,8 +488,8 @@ class Session:
         text = f'{before}{self.name} asks permission on work {self.work_id}: {title}'
         asked = await self.write(self.store.ask, self.node, text, suggestions=[option.name for option in options],
                                  by=self.by, work=self.work_id)
-        self.asked[asked.message_id] = (waiting, options, title)
-        await self.raise_signal('permission-waiting', key=asked.message_id, message_id=asked.message_id, tool=title)
+        self.asked[asked.id] = (waiting, options, title)
+        await self.raise_signal('permission-waiting', key=asked.id, message_id=asked.id, tool=title)
         await self.changed(tables='dispatch')
 
     async def learn(self, output: str, began: str) -> None:
@@ -500,10 +500,10 @@ class Session:
             return
         found = await asyncio.to_thread(self.store.messages, None, 'question', True, limit=0)
         for message in found.results:
-            if message.message_id in ids and message.created >= began:
-                self.theirs[message.message_id] = message
+            if message.id in ids and message.created >= began:
+                self.theirs[message.id] = message
                 await self.table(lambda tx, message=message: tx.insert(
-                    'questions', {'message_id': message.message_id, 'work_id': self.work_id,
+                    'questions', {'message_id': message.id, 'work_id': self.work_id,
                                   'session_id': self.session_id}), name='questions')
 
     async def check(self) -> None:
@@ -519,27 +519,27 @@ class Session:
             await self.progress()
             if self.questions_ready and not self.ending:
                 for message in await asyncio.to_thread(questions, self.store, self.work_id):
-                    if message.message_id in self.asked:
+                    if message.id in self.asked:
                         continue  # ACP permission answers are returned through their waiting request
                     if message.closed is None:
-                        self.answers.pop(message.message_id, None)
-                        self.theirs[message.message_id] = message
-                    elif self.answers.get(message.message_id) != (message.closed, message.answer):
-                        self.theirs[message.message_id] = message
+                        self.answers.pop(message.id, None)
+                        self.theirs[message.id] = message
+                    elif self.answers.get(message.id) != (message.closed, message.answer):
+                        self.theirs[message.id] = message
             if self.theirs and not self.ending:
                 await self.answered()
             if not self.asked:
                 return
             found = await asyncio.to_thread(self.store.messages, self.node, 'question', None, limit=0)
             for message in found.results:
-                held = self.asked.get(message.message_id)
+                held = self.asked.get(message.id)
                 if held is None or message.closed is None:
                     continue
-                del self.asked[message.message_id]
-                await self.raise_signal('permission-waiting', key=message.message_id, active=False,
-                                        message_id=message.message_id, tool=held[2])
+                del self.asked[message.id]
+                await self.raise_signal('permission-waiting', key=message.id, active=False,
+                                        message_id=message.id, tool=held[2])
                 self.progress_at = time.monotonic()  # waiting for a person is not agent spinning
-                self.answers[message.message_id] = (message.closed, message.answer)
+                self.answers[message.id] = (message.closed, message.answer)
                 waiting, options, title = held
                 chosen = choose(options, message.answer)
                 if chosen is not None:
@@ -552,11 +552,11 @@ class Session:
         """Each tracked question's answer, told to the ticket's current holder as a prompt, once per revision."""
         found = await asyncio.to_thread(self.store.messages, None, 'question', False, limit=0)
         for message in found.results:
-            asked = self.theirs.pop(message.message_id, None)
+            asked = self.theirs.pop(message.id, None)
             if asked is None:
                 continue
-            self.answers[message.message_id] = (message.closed, message.answer)
-            text = prompt('answered', message_id=message.message_id, question=asked.text or '',
+            self.answers[message.id] = (message.closed, message.answer)
+            text = prompt('answered', message_id=message.id, question=asked.text or '',
                           answer=message.answer or '')
             await self.flush()
             await self.note(None, 'answered', text)
@@ -674,13 +674,13 @@ class Session:
         text = prompt('handoff', work_id=self.work_id)
         for question in await asyncio.to_thread(questions, self.store, self.work_id):
             if question.closed is not None:
-                self.answers[question.message_id] = (question.closed, question.answer)
-                text += '\n\n' + prompt('answered', message_id=question.message_id, question=question.text or '',
+                self.answers[question.id] = (question.closed, question.answer)
+                text += '\n\n' + prompt('answered', message_id=question.id, question=question.text or '',
                                          answer=question.answer or '')
             else:
-                self.theirs[question.message_id] = question
-                if question.message_id == self.chat_question:
-                    text += '\n\n' + prompt('chat', message_id=question.message_id, question=question.text or '')
+                self.theirs[question.id] = question
+                if question.id == self.chat_question:
+                    text += '\n\n' + prompt('chat', message_id=question.id, question=question.text or '')
         text = await self.checked(text)
         if not self.ending:
             self.questions_ready = True

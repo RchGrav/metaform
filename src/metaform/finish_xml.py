@@ -55,17 +55,17 @@ class _Writer:
                     ET.SubElement(node, 'item', layer=group.layer).text = _text(item.value)
             for prop in group.properties:
                 ET.SubElement(node, 'property', layer=group.layer).text = _text(prop.value)
-        self.work(node, Node('element', found.element.element_id))
+        self.work(node, Node('element', found.element.id))
         for join in found.receives:
             self.join(node, join)
 
     def join(self, parent: ET.Element, join: Join, receiver: bool = False) -> None:
-        self.joined.add(join.join_id)
+        self.joined.add(join.id)
         node = ET.SubElement(parent, 'join', {**({'receiver': join.receiver_address or ''} if receiver else {}),
                                               'type': join.type or '', 'ifd': join.ifd or ''})
         ET.SubElement(node, 'purpose').text = join.purpose or ''
         ET.SubElement(node, 'ef').text = join.ef or ''
-        self.work(node, Node('join', join.join_id))
+        self.work(node, Node('join', join.id))
         for held in join.elements:
             if held.address:
                 self.element(node, held.address)
@@ -75,8 +75,8 @@ def xml(store: Store, address: str | None = None, *, selection: Sequence[str] | 
         raw: bool = False) -> str:
     """The whole map from its AUE, or with an address that element and all it receives, as an XML document."""
     reading: dict[str, Any] = {'selection': selection, 'raw': raw}
-    metaform = store.active_metaform()
-    root = ET.Element('metaform', id=metaform.metaform_id if metaform else '', name=metaform.name if metaform else '',
+    metaform = store.active_base()
+    root = ET.Element('metaform', id=metaform.id if metaform else '', name=metaform.name if metaform else '',
                       project=store.project().project_id)
     writer = _Writer(store, reading)
     if address:
@@ -96,7 +96,7 @@ def xml(store: Store, address: str | None = None, *, selection: Sequence[str] | 
             if found.element.address not in writer.placed:
                 writer.element(unplaced, found.element.address)
         for join in graph.joins:
-            if join.join_id not in writer.joined:
+            if join.id not in writer.joined:
                 writer.join(unplaced, join, receiver=True)
         if len(unplaced):
             root.append(unplaced)

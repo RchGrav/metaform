@@ -9,15 +9,15 @@ Use Metaform to bring prepared understanding into a task, examine the relevant r
 ```sh
 metaform
 metaform list projects
-metaform list metaforms
+metaform list bases
 metaform config --show
 ```
 
-The current folder supplies context. A registered project establishes its default, and folder settings can select a different project or layer set. A project may contain multiple Metaforms; one is active.
+The current folder supplies context. A registered project establishes its default, and folder settings can select a different project or layer set. A project may hold several bases, each a map with a store of its own; one is active.
 
 ```sh
 metaform set --project kitchen
-metaform activate metaform main
+metaform activate base main
 ```
 
 `set` persists the selection for the folder. To return to the folder's inherited/default project choice:

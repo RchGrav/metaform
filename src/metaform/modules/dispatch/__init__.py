@@ -278,7 +278,7 @@ def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
     # one read of the open tickets for every running row, rather than a ticket read for each
     opened: set[str] = set()
     if any(row['state'] == 'running' for row in rows):
-        opened = {record.work_id for record in (open_work if open_work is not None
+        opened = {record.id for record in (open_work if open_work is not None
                                                else store.work(open=True, limit=0).results)}
     return [session_status(own, row, done=row['work_id'] not in opened) for row in rows]
 
@@ -333,9 +333,9 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     agent was dispatched on."""
     if ctx.store is None:
         return None
-    found = sessions(ctx.store, record.work_id)
+    found = sessions(ctx.store, record.id)
     from .signals import rows
-    signals = rows(ctx.store, record.work_id)
+    signals = rows(ctx.store, record.id)
     if not found and not signals:
         return None
     return {'sessions': [{key: value for key, value in session.items() if key not in PRIVATE} for session in found],
@@ -371,16 +371,16 @@ def eligible_of(ctx: Context, record: WorkRecord) -> list[str]:
     kept = work_reads(ctx.folder, record, project=ctx.project).get('map')
     agents: Any = cast(dict[str, Any], kept).get('eligible', []) if isinstance(kept, dict) else []
     if not isinstance(agents, list) or any(not isinstance(agent, str) for agent in cast(list[Any], agents)):
-        raise Stop(f'Work {record.work_id} has an unreadable eligible agents choice: {agents!r}.',
-                   f'metaform map work id={record.work_id}')
+        raise Stop(f'Work {record.id} has an unreadable eligible agents choice: {agents!r}.',
+                   f'metaform map work id={record.id}')
     return cast(list[str], agents)
 
 
 def require_eligible(ctx: Context, record: WorkRecord, agent: str) -> None:
     agents = eligible_of(ctx, record)
     if agents and agent not in agents:
-        raise Stop(f'{agent} is not eligible for work {record.work_id}; eligible agents: {", ".join(agents)}.',
-                   f'metaform map work id={record.work_id}')
+        raise Stop(f'{agent} is not eligible for work {record.id}; eligible agents: {", ".join(agents)}.',
+                   f'metaform map work id={record.id}')
 
 
 def agent_for(ctx: Context, record: WorkRecord, agent: str | None = None) -> str:
@@ -395,24 +395,24 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
     tickets with one glyph are one agent's, done one at a time."""
     require_eligible(ctx, record, agent)
     if record.done:
-        raise Stop(f'Work {record.work_id} was done at {record.done}.', 'metaform map work open=true')
+        raise Stop(f'Work {record.id} was done at {record.done}.', 'metaform map work open=true')
     if record.taken:
-        raise Stop(f'Work {record.work_id} is already taken by {record.taken_by or "an agent"}.',
+        raise Stop(f'Work {record.id} is already taken by {record.taken_by or "an agent"}.',
                    'metaform map work open=true')
     glyph = glyph_of(ctx, record)
     if glyph is not None:
         occupied = next((held for held in store.work(open=True, limit=0).results
                          if held.taken and (held.taken_by or '').startswith('dispatch starting ') and
-                         held.work_id != record.work_id and glyph_of(ctx, held) == glyph), None)
+                         held.id != record.id and glyph_of(ctx, held) == glyph), None)
         if occupied is not None:
-            raise Stop(f'Agent {glyph} is at work on work {occupied.work_id}; the tickets with its glyph are done '
-                       'one at a time.', f'metaform map work id={occupied.work_id}')
-    for session in sessions(store, record.work_id if glyph is None else None):
+            raise Stop(f'Agent {glyph} is at work on work {occupied.id}; the tickets with its glyph are done '
+                       'one at a time.', f'metaform map work id={occupied.id}')
+    for session in sessions(store, record.id if glyph is None else None):
         if session.get('state') != 'running':
             continue
-        if session['work_id'] == record.work_id:
-            raise Stop(f'Work {record.work_id} already has an agent session.',
-                       f'metaform dispatch sessions id={record.work_id}')
+        if session['work_id'] == record.id:
+            raise Stop(f'Work {record.id} already has an agent session.',
+                       f'metaform dispatch sessions id={record.id}')
         if glyph is not None and glyph_of(ctx, ticket(store, session['work_id'])) == glyph:
             raise Stop(f'Agent {glyph} is at work on work {session["work_id"]}; the tickets with its glyph are done one '
                        f'at a time.', f'metaform map work id={session["work_id"]}')
@@ -424,12 +424,12 @@ def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = N
     its place, a ticket with none after, as Distribute deals them; an exclude record is no ticket."""
     kept = ticket_settings(ctx)
     waiting = [record for record in store.work(open=True, limit=0).results
-               if not record.taken and record.condition != 'exclude' and record.work_id not in exclude
-               and not kept.get(record.work_id, {}).get('hold')]
+               if not record.taken and record.condition != 'exclude' and record.id not in exclude
+               and not kept.get(record.id, {}).get('hold')]
     waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
     chosen = agent or ctx.nouns.get('agent') or str(ctx.setting('dispatch_agent'))
     for record in waiting:
-        if kept.get(record.work_id, {}).get('glyph') != glyph:
+        if kept.get(record.id, {}).get('glyph') != glyph:
             continue
         try:
             require_eligible(ctx, record, chosen)
@@ -459,7 +459,7 @@ def questions(store: Store, work_id: str | None = None) -> list[Message]:
         pass
     return [message for message in store.messages(None, 'question', None, limit=0).results
             if work_id is None or getattr(message, 'work_id', None) == work_id or
-            attached.get(message.message_id) == work_id]
+            attached.get(message.id) == work_id]
 
 
 def release(store: Store, work_id: str, by: str, took: bool, session_id: str | None, how: str) -> None:
@@ -499,7 +499,7 @@ def unanswered(store: Store) -> tuple[dict[str, list[Message]], set[str]]:
     waiting: dict[str, list[Message]] = {}
     asked: set[str] = set()
     for message in store.messages(None, 'question', None, limit=0).results:
-        work_id = getattr(message, 'work_id', None) or attached.get(message.message_id)
+        work_id = getattr(message, 'work_id', None) or attached.get(message.id)
         if not work_id:
             continue
         asked.add(work_id)
@@ -572,7 +572,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
     kept = ticket_settings(ctx)
     opened = store.work(open=True, limit=0).results
     open_work = [record for record in opened
-                 if not kept.get(record.work_id, {}).get('hold')]
+                 if not kept.get(record.id, {}).get('hold')]
     candidates = [record for record in open_work
                   if not record.taken and record.condition != 'exclude']
     active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
@@ -585,38 +585,38 @@ def autostart(ctx: Context) -> dict[str, Any]:
              if record.taken and (record.taken_by or '').startswith('dispatch starting ')]
     # A reservation whose runner never made its session is a start that died: it goes back to the queue, so a
     # crashed start never holds a slot for good.
-    stale = [record for record in taken if record.work_id not in {row['work_id'] for row in active}
+    stale = [record for record in taken if record.id not in {row['work_id'] for row in active}
              and time.time() - _seconds(record.taken) > STALE_START]
     for record in stale:
-        store.move_work(record.work_id, 'backlog' if record.held else 'todo', record.position)
+        store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
         from .signals import publish
-        publish(ctx, 'not-smooth', work_id=record.work_id, key=record.taken_by or '', reason='startup reservation expired')
-        publish(ctx, 'requeue', work_id=record.work_id, key=record.taken_by or '', reason='startup reservation expired')
+        publish(ctx, 'not-smooth', work_id=record.id, key=record.taken_by or '', reason='startup reservation expired')
+        publish(ctx, 'requeue', work_id=record.id, key=record.taken_by or '', reason='startup reservation expired')
     taken = [record for record in taken if record not in stale]
-    occupied.update(glyph.get(record.work_id) for record in taken)
+    occupied.update(glyph.get(record.id) for record in taken)
     # An agent at work always holds its ticket, so the tickets in motion are the agents at work: a runner on its
     # glyph's next ticket, or one too busy to answer a status check, is counted all the same. The one ticket the
     # person's summoned chat holds is the +1 and does not count.
     chatting = {row['work_id'] for row in active if summoned(row)}
-    in_motion = {record.work_id for record in opened if record.taken and not record.done} - chatting
+    in_motion = {record.id for record in opened if record.taken and not record.done} - chatting
     capacity = max(0, int(ctx.setting('dispatch_agents')) -
-                   len(in_motion | {row['work_id'] for row in workers} | {record.work_id for record in taken}))
+                   len(in_motion | {row['work_id'] for row in workers} | {record.id for record in taken}))
     started: list[dict[str, Any]] = []
     for record in candidates:
         if capacity == 0:
             break
-        mark = glyph.get(record.work_id)
+        mark = glyph.get(record.id)
         if mark is not None and mark in occupied:
             continue
         try:
-            raw: Any = kept.get(record.work_id, {}).get('eligible', [])
+            raw: Any = kept.get(record.id, {}).get('eligible', [])
             if not isinstance(raw, list) or any(not isinstance(agent, str) for agent in cast(list[Any], raw)):
                 continue  # unreadable eligibility is refused, as by the individual start check
             agents = cast(list[str], raw)
-            chosen = preferred(record, kept.get(record.work_id))  # the ticket's own choice, else by its area
+            chosen = preferred(record, kept.get(record.id))  # the ticket's own choice, else by its area
             agent = agent_named(chosen if not agents or chosen in agents else agents[0])
             result = start(context('dispatch', ctx.folder, project=ctx.project,
-                                   nouns={'id': record.work_id,
+                                   nouns={'id': record.id,
                                           'agent': agent}))
         except Stop:
             continue
@@ -640,7 +640,7 @@ def results(ctx: Context) -> dict[str, Any]:
 
 
 def _question(store: Store, message_id: str) -> tuple[Message, WorkRecord | None]:
-    asked = next((one for one in questions(store) if one.message_id == message_id), None)
+    asked = next((one for one in questions(store) if one.id == message_id), None)
     if asked is None:
         raise Stop(f'No question {message_id}.', 'metaform map messages kind=question')
     with store.tables(write=False) as tx:
@@ -657,13 +657,13 @@ def recommend(ctx: Context) -> dict[str, Any]:
     store = ctx.require_store()
     asked, record = _question(store, str(ctx.nouns['id']))
     if asked.closed is not None:
-        raise Stop(f'Question {asked.message_id} is answered already.', 'metaform map messages kind=question')
+        raise Stop(f'Question {asked.id} is answered already.', 'metaform map messages kind=question')
     started = consensus.recommend(ctx, store, asked, record)
     if not started:
         agent = str(ctx.setting('dispatch_agent'))
         raise Stop(f'No helper started: the start command of {agent} is not found on this system.',
                    f'metaform set --dispatch-{agent} "<command>"')
-    return {'message_id': asked.message_id, 'helpers': started}
+    return {'message_id': asked.id, 'helpers': started}
 
 
 def advice(ctx: Context) -> dict[str, Any]:
@@ -695,11 +695,11 @@ def reset(ctx: Context) -> dict[str, Any]:
                     reason='its runner was gone; ended by dispatch reset')
     released: list[str] = []
     for record in store.work(open=True, limit=0).results:
-        if record.taken and record.work_id not in alive:
-            store.move_work(record.work_id, 'backlog' if record.held else 'todo', record.position)
-            released.append(record.work_id)
+        if record.taken and record.id not in alive:
+            store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+            released.append(record.id)
             from .signals import publish
-            publish(ctx, 'requeue', work_id=record.work_id, key=record.taken_by or '', reason='dispatch reset')
+            publish(ctx, 'requeue', work_id=record.id, key=record.taken_by or '', reason='dispatch reset')
     consensus.end_mode(own, 'dispatch reset')
     return {'released': released, 'sessions_ended': ended, 'still_working': sorted(alive)}
 
@@ -733,7 +733,7 @@ def chat(ctx: Context) -> dict[str, Any]:
     """Chat with a question's asker while open; otherwise start a new session that researches and continues its ticket."""
     store = ctx.require_store()
     message_id = ctx.nouns['id']
-    asked = next((question for question in questions(store) if question.message_id == message_id), None)
+    asked = next((question for question in questions(store) if question.id == message_id), None)
     if asked is None:
         raise Stop(f'No question {message_id}.', 'metaform map messages kind=question')
     association = None
@@ -748,15 +748,15 @@ def chat(ctx: Context) -> dict[str, Any]:
     if work_id is None:
         # Older questions carry their node and their named asker; only an unambiguous open ticket is enough.
         candidates = [record for record in store.work(open=True, limit=0).results
-                      if record.kind == asked.node_kind and record.id == asked.node_id]
+                      if record.node_kind == asked.node_kind and record.node_id == asked.node_id]
         if len(candidates) == 1:
-            work_id = candidates[0].work_id
+            work_id = candidates[0].id
     if work_id is None:
         # VIEW-042: Chat works on every question, so one with no ticket gets one at its node with the question as its
         # task; the link makes a second Chat reach that ticket, and the link's key refuses a concurrent duplicate.
         with store.atomic():
             work_id = map_work(ctx, op='add', node=f'{asked.node_kind}:{asked.node_id}', task=asked.text or '',
-                               note=f'Opened by Chat on question {message_id}, which named no ticket.').work_id
+                               note=f'Opened by Chat on question {message_id}, which named no ticket.').id
             with store.tables() as tx:
                 tx.insert('questions', {'message_id': message_id, 'work_id': work_id, 'session_id': ''})
     chatting = next((row for row in all_sessions if row['state'] == 'running' and summoned(row)
@@ -896,10 +896,10 @@ def system(ctx: Context) -> dict[str, Any]:
     about anything in the project, from the project's folder, and stays until stopped. A running one is reused."""
     store = ctx.require_store()
     held = anchor(ctx, store)
-    live = next((row for row in sessions(store, held.work_id) if row['state'] == 'running'), None)
+    live = next((row for row in sessions(store, held.id) if row['state'] == 'running'), None)
     if live is not None:
-        return {'state': 'running', 'work_id': held.work_id, 'agent': live['agent'], 'session_id': live['session_id']}
-    return converse(ctx, store, held.work_id, str(ctx.nouns.get('agent') or 'claude'), [])
+        return {'state': 'running', 'work_id': held.id, 'agent': live['agent'], 'session_id': live['session_id']}
+    return converse(ctx, store, held.id, str(ctx.nouns.get('agent') or 'claude'), [])
 
 
 def talk(ctx: Context) -> dict[str, Any]:
@@ -915,23 +915,23 @@ def talk(ctx: Context) -> dict[str, Any]:
     everyone = sessions(store)
     running = [row for row in everyone if row['state'] == 'running']
     if kind == 'id':
-        work_id, about = ticket(store, ref).work_id, f'ticket:{ref}'
+        work_id, about = ticket(store, ref).id, f'ticket:{ref}'
     elif kind == 'session':
         work_id, _, session_id = ref.partition(':')
         if not any(row['work_id'] == work_id and row['session_id'] == session_id for row in everyone):
             raise Stop(f'No agent session {ref}.', 'metaform dispatch sessions thread=false')
         about = f'thread:{session_id}'
     elif kind == 'question':
-        asked = next((one for one in questions(store) if one.message_id == ref), None)
+        asked = next((one for one in questions(store) if one.id == ref), None)
         if asked is None:
             raise Stop(f'No question {ref}.', 'metaform map messages kind=question')
         with store.tables(write=False) as tx:
             link = tx.get('questions', {'message_id': ref})
         work_id = getattr(asked, 'work_id', None) or (link['work_id'] if link else None) \
-            or anchor(ctx, store, f'{asked.node_kind}:{asked.node_id}').work_id
+            or anchor(ctx, store, f'{asked.node_kind}:{asked.node_id}').id
         about = f'question:{ref}'
     else:
-        work_id, about = anchor(ctx, store, ref).work_id, f'node:{ref}'
+        work_id, about = anchor(ctx, store, ref).id, f'node:{ref}'
     if kind in ('id', 'question', 'session'):  # an agent at work on it is talked to directly, never restarted
         working = next((row for row in reversed(running) if row['work_id'] == work_id and not summoned(row)), None)
         if working is not None and (kind != 'session' or working['session_id'] == ref.partition(':')[2]):

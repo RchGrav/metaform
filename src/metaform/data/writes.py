@@ -24,7 +24,7 @@ from .records import ROLES, Element, Item, Join, Node, Notice, Outcome, Property
 from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
-from .versions import METAFORM_KINDS
+from .versions import BASE_KINDS
 
 RecordT = TypeVar('RecordT', Element, Join, Item, Property, Version)
 
@@ -54,7 +54,7 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
         notices.append(Notice('name_length', 'name_length is less than 1; it was stored as given.'))
     stored_role: str | None = None
     aside: list[tuple[str, Any]] = []
-    if role is not None and found.kind not in METAFORM_KINDS:
+    if role is not None and found.kind not in BASE_KINDS:
         aside.append(('role', role))
         notices.append(Notice('role', f"A role is the intake's classification of the artifact, and {found.name} is "
                                       f'not the intake; the role was kept as an item of {found.name} at the element.'))
@@ -305,7 +305,7 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     if found.kind == 'memory':
         return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
                             'delete_observations. Nothing was written.')
-    if found.kind in METAFORM_KINDS and found.finished:
+    if found.kind in BASE_KINDS and found.finished:
         return Notice('id', f'{thing} belongs to {found.name}; the metaform changes by refining, which keeps every '
                             f'version: {rows.refine_step(thing)}. Nothing was written.')
     return None

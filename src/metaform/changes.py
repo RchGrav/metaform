@@ -37,12 +37,12 @@ def watch(db: sqlite3.Connection) -> set[str]:
     return written
 
 
-def note(project_id: str, metaform_id: str | None = None, tables: set[str] | None = None) -> None:
+def note(project_id: str, base_id: str | None = None, tables: set[str] | None = None) -> None:
     """A change to a project's map: one metaform's store, or, with no metaform, the project's metaforms themselves;
     with the tables it wrote when they are known. One change whose tables are not known makes the metaform's unknown."""
     with _LOCK:
         noted = _NOTED.setdefault(project_id, {})
-        key = metaform_id or ''
+        key = base_id or ''
         known = noted.get(key, set())
         noted[key] = None if known is None or not tables else known | tables
 
@@ -66,7 +66,7 @@ def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
     for project, metaforms in sorted(take().items()):
         source = Context(module='chassis', folder=folder, project=project, surface=surface)
         for metaform, tables in sorted(metaforms.items()):
-            payload: dict[str, Any] = {'project': project, 'metaform_id': metaform or None}
+            payload: dict[str, Any] = {'project': project, 'base_id': metaform or None}
             if tables:
                 payload['tables'] = sorted(tables)
             events.publish('map.changed', dict(payload), source)

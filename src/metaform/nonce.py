@@ -56,7 +56,7 @@ def request(module: str, function: str, value: Any = None) -> str:
         word = _draw()
         if _taken(word):
             continue
-        with home.base(write=True) as db:
+        with home.chassis(write=True) as db:
             db.execute(home.NONCES)
             if db.execute('SELECT 1 FROM nonces WHERE nonce=?', (word,)).fetchone():
                 continue
@@ -66,9 +66,9 @@ def request(module: str, function: str, value: Any = None) -> str:
 
 
 def read(nonce: str) -> Nonce | None:
-    if not home.base_path().exists():
+    if not home.chassis_path().exists():
         return None
-    with home.base() as db:
+    with home.chassis() as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='nonces'").fetchone():
             return None
         row = db.execute('SELECT nonce, module_id, function, value, created, closed FROM nonces WHERE nonce=?',
@@ -86,7 +86,7 @@ def _held(nonce: str) -> Nonce:
 def update(nonce: str, *, value: Any = None, function: str | None = None) -> Nonce:
     """Change what the next run of the nonce is sent, the function it calls, or both."""
     held = _held(nonce)
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         db.execute('UPDATE nonces SET value=?, function=? WHERE nonce=?',
                    (json.dumps(held.value if value is None else value), function or held.function, nonce))
     found = _held(nonce)
@@ -97,7 +97,7 @@ def update(nonce: str, *, value: Any = None, function: str | None = None) -> Non
 
 def mutate(nonce: str, change: Callable[[Any], Any]) -> Nonce:
     """Read and change a nonce value in one transaction, retaining concurrent updates."""
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         row = db.execute('SELECT nonce, module_id, function, value, created, closed FROM nonces WHERE nonce=?',
                          (nonce,)).fetchone()
         if row is None:
@@ -115,7 +115,7 @@ def close(nonce: str) -> Nonce:
     """The task is complete: the nonce gives no menu and runs no command from now on. Its record is kept."""
     held = _held(nonce)
     if held.open:
-        with home.base(write=True) as db:
+        with home.chassis(write=True) as db:
             db.execute('UPDATE nonces SET closed=? WHERE nonce=?', (home.now(), nonce))
     found = _held(nonce)
     if (now := _CURRENT.get()) is not None and now.nonce == nonce:

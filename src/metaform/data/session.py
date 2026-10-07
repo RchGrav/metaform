@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 class Tx:
     """One open transaction: its connection, its metaform, and the layers created inside it."""
     db: sqlite3.Connection
-    metaform_id: str | None
+    base_id: str | None
     project_id: str
     writing: bool
     created: set[str] = field(default_factory=set[str])
@@ -112,21 +112,21 @@ def open_store(path: Path, *, write: bool,
 class Session:
     """Opens transactions on one metaform of one project: the active one, or the one named."""
 
-    def __init__(self, project_id: str, metaform_id: str | None = None) -> None:
+    def __init__(self, project_id: str, base_id: str | None = None) -> None:
         self.project_id = project_id
-        self.metaform_id = metaform_id
+        self.base_id = base_id
 
-    def _metaform(self, *, create: bool) -> home.Metaform | None:
-        if self.metaform_id is not None:
-            return home.metaform_by_id(self.project_id, self.metaform_id)
-        return home.ensure_metaform(self.project_id) if create else home.active_metaform(self.project_id)
+    def _metaform(self, *, create: bool) -> home.Base | None:
+        if self.base_id is not None:
+            return home.base_by_id(self.project_id, self.base_id)
+        return home.ensure_base(self.project_id) if create else home.active_base(self.project_id)
 
     def _joined(self) -> Tx | None:
         active = _ATOMIC.get()
         if active is None or active.project_id != self.project_id:
             return None
-        if self.metaform_id is not None:
-            return active if active.metaform_id == self.metaform_id else None
+        if self.base_id is not None:
+            return active if active.base_id == self.base_id else None
         return None if active.named else active
 
     @property
@@ -142,19 +142,19 @@ class Session:
             return
         metaform = self._metaform(create=True)
         if metaform is None:
-            raise StoreError(f'Project {self.project_id} has no metaform {self.metaform_id}.', 'metaform list metaforms')
+            raise StoreError(f'Project {self.project_id} has no base {self.base_id}.', 'metaform list bases')
         path = home.store_file(self.project_id, metaform.name)
         with open_store(path, write=True) as db:
             written = changes.watch(db)
             db.execute('BEGIN IMMEDIATE')
             try:
-                yield Tx(db, metaform.metaform_id, self.project_id, True, named=self.metaform_id is not None, path=path)
+                yield Tx(db, metaform.id, self.project_id, True, named=self.base_id is not None, path=path)
             except BaseException:
                 db.execute('ROLLBACK')
                 raise
             db.execute('COMMIT')
             if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
-                changes.note(self.project_id, metaform.metaform_id, written)
+                changes.note(self.project_id, metaform.id, written)
 
     @contextmanager
     def read(self, *, required: tuple[str, Tables] | None = None) -> Generator[Tx, None, None]:
@@ -183,7 +183,7 @@ class Session:
         with open_store(path, write=False, required=required) as db:
             db.execute('BEGIN')
             try:
-                yield Tx(db, metaform.metaform_id, self.project_id, False, path=path)
+                yield Tx(db, metaform.id, self.project_id, False, path=path)
             finally:
                 db.execute('COMMIT')
 

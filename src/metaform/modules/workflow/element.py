@@ -115,13 +115,13 @@ def element_value(store: Store, address: str, *, selection: Sequence[str] | None
     if where is None or where.element is None:
         raise KeyError(address)
     element = where.element
-    active = store.bound_metaform()
+    active = store.bound_base()
     memory_store = Store(store.project_id, module='memory',
-                         metaform=None if active is None else active.metaform_id,
+                         base=None if active is None else active.id,
                          toggled=store.toggled if selection is None else selection)
     ctx = Context('memory', Path(store.project().path), store=memory_store)
     provider = next((module for module in surface(ctx.folder) if module.id == 'memory'), None)
-    held: dict[str, Any] = (call(provider.node_read, ctx, Node('element', element.element_id)) or {}
+    held: dict[str, Any] = (call(provider.node_read, ctx, Node('element', element.id)) or {}
                             if provider is not None and provider.node_read is not None else {})
     fields: dict[str, Any] = {name: getattr(element, name) for name in (
         'address', 'name', 'name_length', 'short_name', 'role', 'layer')}

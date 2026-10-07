@@ -15,9 +15,9 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
     from metaform.modules.dispatch import recovery
 
     run('set', '--dispatch-autostart', '--dispatch-agents=2', cwd=dispatch.folder)
-    first = dispatch.work_id
-    second = dispatch.store.add_work(dispatch.node, 'missing', task='Second ticket').work_id
-    held = dispatch.store.add_work(dispatch.node, 'missing', task='Held ticket').work_id
+    first = dispatch.id
+    second = dispatch.store.add_work(dispatch.node, 'missing', task='Second ticket').id
+    held = dispatch.store.add_work(dispatch.node, 'missing', task='Held ticket').id
     run('map', 'work', 'op=edit', f'id={held}', 'hold=true', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', 'glyph=kite', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={second}', 'eligible=["gemini"]', cwd=dispatch.folder)
@@ -50,7 +50,7 @@ def test_session_verification_reuses_the_unfiltered_open_work_snapshot(dispatch,
     from metaform.modules import dispatch as module
 
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 'live', 'work_id': dispatch.work_id, 'agent': 'codex',
+        tx.insert('sessions', {'session_id': 'live', 'work_id': dispatch.id, 'agent': 'codex',
                                'state': 'running', 'started': '2026-10-05', 'pid': 1, 'port': 1, 'token': 'test',
                                'nonce': '1234567', 'seq': 1})
     opened = dispatch.store.work(open=True, limit=0).results

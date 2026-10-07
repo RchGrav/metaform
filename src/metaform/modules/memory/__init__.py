@@ -116,7 +116,7 @@ def _key(store: Store, text: str) -> Key:
     if node.kind == 'type':
         raise Stop('Memory is kept at an element or a join, not at a bare type address.',
                    f'metaform memory read_graph node=element:{node.id}')
-    if store.active_metaform() is None:
+    if store.active_base() is None:
         raise Stop(f'{text} is not a node here: the project has no metaform.', 'metaform memory orphaned')
     key = _key_of(store, node)
     if key is None:
@@ -129,7 +129,7 @@ class _Map:
 
     def __init__(self, store: Store) -> None:
         self.store = store
-        self.active = store.active_metaform() is not None
+        self.active = store.active_base() is not None
         self._held: dict[tuple[str, str], bool] = {}
 
     def holds(self, key: Key) -> bool:
@@ -155,7 +155,7 @@ def _memory(store: Store, *, create: bool) -> str | None:
     found = store.layers(kind='memory', limit=0).results
     if found:
         return found[0].name
-    if not create or store.active_metaform() is None:
+    if not create or store.active_base() is None:
         return None
     return store.layer(LAYER, 'memory', VARIABLE, kind='memory', mutable=True, hideable=True, ready=True).name
 
@@ -163,7 +163,7 @@ def _memory(store: Store, *, create: bool) -> str | None:
 def _reaches(store: Store, address: str) -> bool:
     """Whether memory shows at an address: the memory layer reaches it, with select, mask, hiding and the toggled
     layers; with no memory layer, or no metaform, unless the toggled layers leave memory out."""
-    layer = _memory(store, create=False) if store.active_metaform() is not None else None
+    layer = _memory(store, create=False) if store.active_base() is not None else None
     if layer is None:
         return not store.toggled or LAYER in store.toggled
     return layer in store.effective_selection(address).layers
@@ -300,7 +300,7 @@ def _carry(store: Store) -> None:
     entity named by its node's address and joined to it, a relation a relation between two such entities, and a
     person's note the node's note. Each item is carried once and left where it was. An item whose node the active map
     does not hold waits until it does."""
-    if store.active_metaform() is None:
+    if store.active_base() is None:
         return
     layer = _memory(store, create=False)
     if layer is None:
@@ -310,7 +310,7 @@ def _carry(store: Store) -> None:
         return
     with store.tables(write=False) as tx:
         carried = {row['item_id'] for row in tx.rows('carried', limit=0).results}
-    pending = [item for item in items if item.item_id not in carried]
+    pending = [item for item in items if item.id not in carried]
     if not pending:
         return
     keyed: list[tuple[Item, Key, Key | None]] = []
@@ -344,7 +344,7 @@ def _carry(store: Store) -> None:
                 pass
             else:
                 _observe(tx, graph, source, [_text(item.value)])
-            tx.insert('carried', {'item_id': item.item_id, 'at': _now()})
+            tx.insert('carried', {'item_id': item.id, 'at': _now()})
 
 
 def _noted(tx: TableTx, key: Key, text: str) -> bool:
@@ -379,7 +379,7 @@ def _named(store: Store, nouns: dict[str, Any], notices: list[dict[str, str]]) -
         notices.append({'where': 'node', 'message': 'receiver, provider and address name the node; node was not read.'})
     if 'receiver' not in nouns and 'provider' not in nouns:
         return _key(store, f"element:{nouns['address']}")
-    if store.active_metaform() is None:
+    if store.active_base() is None:
         raise Stop('A purpose is not a node here: the project has no metaform.', 'metaform memory orphaned')
     found = _key_of(store, store.purpose(nouns.get('receiver'), nouns.get('provider'), nouns.get('address')))
     if found is None:
@@ -767,7 +767,7 @@ def node_read(ctx: Context, node: Node) -> Any:
     joined to it with the relations between them, and for an element, the memories on the joins it receives and
     provides."""
     store = ctx.store
-    if store is None or store.active_metaform() is None:
+    if store is None or store.active_base() is None:
         return None
     key = _key_of(store, node)
     if key is None:

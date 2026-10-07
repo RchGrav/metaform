@@ -148,9 +148,9 @@ def _words(store: Store, layer: Layer | None) -> dict[str, str]:
     if layer is None:
         return {}
     graph = store.layer_graph(layer.name)
-    words = {placed.element.element_id: placed.element.address for placed in graph.elements}
+    words = {placed.element.id: placed.element.address for placed in graph.elements}
     for held in graph.joins:
-        words[held.join_id] = _said(held)
+        words[held.id] = _said(held)
         words.update({each.element_id: str(each.address) for each in held.elements if each.address})
     return words
 
@@ -161,8 +161,8 @@ def _joins_holding(store: Store, layer: Layer | None, receiver: Any, elements: l
     owner = store.element(str(receiver), raw=True)
     if owner is None:
         return []
-    return [held for held in store.joins(owner.element_id, raw=True, limit=0).results
-            if (layer is None or held.layer_id == layer.layer_id)
+    return [held for held in store.joins(owner.id, raw=True, limit=0).results
+            if (layer is None or held.layer_id == layer.id)
             and any(each.address in elements for each in held.elements)]
 
 
@@ -221,24 +221,24 @@ def _building(store: Store) -> Recording | None:
     if not page:
         return None
     found = page[0]
-    return Recording(Store(store.project_id, metaform=found.metaform_id), found.layer, found.metaform, found.active)
+    return Recording(Store(store.project_id, base=found.base_id), found.layer, found.base, found.active)
 
 
 def _open(ctx: Context, store: Store, notices: Notices) -> Recording:
     """A new building intake layer: in the active metaform, or in a new one when that one has an intake."""
-    active = store.active_metaform()
+    active = store.active_base()
     target, name, is_active = store, active.name if active is not None else 'main', True
     if active is not None and store.has_intake():
-        fresh = store.add_metaform(f'intake-{_stamp()}', activate=False)
-        target, name, is_active = Store(store.project_id, metaform=fresh.metaform_id), fresh.name, False
-        notices.append({'where': 'metaform', 'message': f'This project already has an intake in metaform '
-                                                        f'{active.name}. This one is recorded in the new metaform '
+        fresh = store.add_base(f'intake-{_stamp()}', activate=False)
+        target, name, is_active = Store(store.project_id, base=fresh.id), fresh.name, False
+        notices.append({'where': 'base', 'message': f'This project already has an intake in base '
+                                                        f'{active.name}. This one is recorded in the new base '
                                                         f'{name}, which becomes the active one when the intake '
                                                         'finishes; the earlier one is kept whole.'})
     # No copy of the intake text is kept: the intake's purpose never changes, STORE-016.
     provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': None,
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role')}
-    layer = target.layer('intake', 'intake', VARIABLE, kind='intake', mutable=False, hideable=False,
+    layer = target.layer('base', 'intake', VARIABLE, kind='intake', mutable=False, hideable=False,
                          provenance=provenance)
     return Recording(target, layer, name, is_active)
 
@@ -268,7 +268,7 @@ def start(ctx: Context) -> Any:
         _note(notices, found.store.complete(found.layer.name, {name: ctx.nouns.get(name) for name in ('model', 'role')}))
     else:
         found = _open(ctx, store, notices)
-    return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform, 'notices': notices}
+    return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform, 'notices': notices}
 
 
 def _described(element: Element) -> bool:
@@ -287,9 +287,9 @@ def _sources(ctx: Context, rec: Recording, element_id: str, address: str, refs: 
     held = [item for item in store.layer_items(SOURCES, Node('element', element_id), limit=0).results
             if isinstance(item, Item)]
     if held:
-        _note(notices, store.edit(held[0].item_id, {'refs': refs}))
+        _note(notices, store.edit(held[0].id, {'refs': refs}))
         for extra in held[1:]:
-            _note(notices, store.remove(extra.item_id))
+            _note(notices, store.remove(extra.id))
     else:
         _note(notices, store.add_item(SOURCES, Node('element', element_id), address, refs=refs))
 
@@ -304,18 +304,18 @@ def element(ctx: Context) -> Any:
              'role': ctx.nouns.get('role')}
     current = rec.store.element(address, raw=True)
     element_id: str | None
-    if current is not None and current.layer_id == rec.layer.layer_id:
+    if current is not None and current.layer_id == rec.layer.id:
         changes = {key: value for key, value in given.items() if value is not None}
         if changes:
-            _note(notices, rec.store.edit(current.element_id, changes))
-        element_id = current.element_id
+            _note(notices, rec.store.edit(current.id, changes))
+        element_id = current.id
     else:
         for field in ('role', 'name'):
             if given[field] is None:
                 notices.append({'where': field, 'message': f'{field} is missing; stored empty.'})
         made = rec.store.add_element(rec.layer.name, address, **given)
         _note(notices, made)
-        element_id = getattr(made, 'element_id', None)
+        element_id = getattr(made, 'id', None)
     refs = _list(ctx, 'refs')
     if refs is not None and element_id is not None:
         _sources(ctx, rec, element_id, address, refs, notices)
@@ -364,8 +364,8 @@ def join(ctx: Context) -> Any:
         if added:
             changes['elements'] = [*holding, *added]
         if changes:
-            _note(notices, rec.store.edit(held.join_id, changes), words)
-        _condition(ctx, rec, 'join', held.join_id, notices)
+            _note(notices, rec.store.edit(held.id, changes), words)
+        _condition(ctx, rec, 'join', held.id, notices)
         return result
     for field in JOIN_FIELDS:
         if ctx.nouns.get(field) is None:
@@ -373,7 +373,7 @@ def join(ctx: Context) -> Any:
     made = rec.store.add_join(rec.layer.name, receiver, elements,
                               **{field: ctx.nouns.get(field) for field in JOIN_FIELDS})
     _note(notices, made, words)
-    _condition(ctx, rec, 'join', getattr(made, 'join_id', None), notices)
+    _condition(ctx, rec, 'join', getattr(made, 'id', None), notices)
     return result
 
 
@@ -395,7 +395,7 @@ def _join_entry(held: Join) -> dict[str, Any]:
 def _recorded(store: Store, layer: Layer) -> tuple[list[Element], list[Join]]:
     """What this intake recorded: its elements, with every element its joins hold that it wrote, and its joins."""
     graph: GraphPage = store.layer_graph(layer.name)
-    listed = {placed.element.element_id: placed.element for placed in graph.elements}
+    listed = {placed.element.id: placed.element for placed in graph.elements}
     return sorted(listed.values(), key=lambda found: found.address), list(graph.joins)
 
 
@@ -413,7 +413,7 @@ def show(ctx: Context) -> Any:
     store = ctx.require_store()
     found = _building(store)
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': [], 'joins': [],
+        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': [], 'joins': [],
                 'undescribed': [], 'notices': [{'where': 'intake', 'message': NOTHING}]}
     elements, joins = _recorded(found.store, found.layer)
     receiver = ctx.nouns.get('receiver')
@@ -425,7 +425,7 @@ def show(ctx: Context) -> Any:
         if not elements:
             notices.append({'where': 'receiver', 'message': f'{receiver} is not an element of this intake; nothing '
                                                             'is recorded under it.'})
-    return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform,
+    return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
             **_map(elements, joins), 'notices': notices}
 
 
@@ -455,15 +455,15 @@ def remove(ctx: Context) -> Any:
                 notices.append({'where': ADDRESS, 'message': f'{_said(held[0])} does not hold {named[ADDRESS]}; '
                                                              'nothing was changed.'})
             else:
-                _note(notices, found.store.edit(held[0].join_id, {'elements': kept}), words)
+                _note(notices, found.store.edit(held[0].id, {'elements': kept}), words)
         else:
-            _note(notices, found.store.remove(held[0].join_id), words)
+            _note(notices, found.store.remove(held[0].id), words)
     elif ADDRESS in named and 'receiver' not in named and 'provider' not in named:
         current = found.store.element(named[ADDRESS], raw=True)
         if current is None:
             notices.append({'where': ADDRESS, 'message': f'{named[ADDRESS]} is not an element; nothing was changed.'})
         else:
-            _note(notices, found.store.remove(current.element_id), words)
+            _note(notices, found.store.remove(current.id), words)
     else:
         notices.append({'where': ADDRESS, 'message': NAMED_BY})
     return {**named, 'layer': found.layer.name, 'notices': notices}
@@ -477,7 +477,7 @@ def finish(ctx: Context) -> Any:
     feedback = _given(ctx, 'feedback', notices)
     found = _building(store)
     if found is None:
-        return {'layer': None, 'project': store.project_id, 'metaform': None, 'elements': 0, 'joins': 0, 'work': 0,
+        return {'layer': None, 'project': store.project_id, 'base': None, 'elements': 0, 'joins': 0, 'work': 0,
                 'notices': notices + [{'where': 'intake', 'message': 'No intake is being recorded; there is nothing '
                                                                      'to finish.'}]}
     elements, joins = _recorded(found.store, found.layer)
@@ -489,21 +489,21 @@ def finish(ctx: Context) -> Any:
                                                            'without a role or a name_length.'})
     _note(notices, found.store.finish(found.layer.name))
     if not found.active:
-        previous = store.active_metaform()
-        store.activate_metaform(found.metaform)
+        previous = store.active_base()
+        store.activate_base(found.metaform)
         if previous is not None:
-            notices.append({'where': 'metaform', 'message': f'This intake was stored as the new active metaform '
-                                                            f'{found.metaform}; the earlier one, {previous.name}, is '
-                                                            'kept whole. To switch back: metaform activate metaform '
-                                                            f'{previous.name}'})
+            notices.append({'where': 'base', 'message': f'This intake was stored as the new active base '
+                                                        f'{found.metaform}; the earlier one, {previous.name}, is '
+                                                        'kept whole. To switch back: metaform map activate '
+                                                        f'{previous.name}'})
     for kind, text in (('report', report), ('feedback', feedback)):
         if text is not None:
-            save_report(store.project_id, found.layer.layer_id, kind, text, store=found.store,
-                        layer=found.layer.layer_id)
+            save_report(store.project_id, found.layer.id, kind, text, store=found.store,
+                        layer=found.layer.id)
     # The open work records on what this intake recorded, MAP-046: the condition of an object is apart from the map.
-    recorded_ids = {element.element_id for element in elements} | {held.join_id for held in joins}
-    work = sum(1 for row in found.store.work(open=True, limit=0).results if row.id in recorded_ids)
-    return {'layer': found.layer.name, 'project': store.project_id, 'metaform': found.metaform,
+    recorded_ids = {element.id for element in elements} | {held.id for held in joins}
+    work = sum(1 for row in found.store.work(open=True, limit=0).results if row.node_id in recorded_ids)
+    return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
             'elements': len(elements), 'joins': len(joins), 'work': work, 'notices': notices}
 
 

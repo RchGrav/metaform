@@ -12,7 +12,7 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('BASE-057')]
 
 
 def signals(dispatch, run, active=None):
-    words = ['dispatch', 'signals', f'id={dispatch.work_id}', '--json']
+    words = ['dispatch', 'signals', f'id={dispatch.id}', '--json']
     if active is not None:
         words.append(f'active={str(active).lower()}')
     return json.loads(run(*words, cwd=dispatch.folder).stdout)['signals']
@@ -23,7 +23,7 @@ def test_unfinished_fake_session_raises_not_smooth_and_requeue(dispatch, run):
     assert dispatch.process.wait(15) == 0
     found = signals(dispatch, run)
     assert {'not-smooth', 'requeue'} <= {row['signal'] for row in found}
-    assert all(row['work_id'] == dispatch.work_id for row in found)
+    assert all(row['work_id'] == dispatch.id for row in found)
 
 
 def test_completed_fake_session_has_no_not_smooth(dispatch, run):
@@ -36,8 +36,8 @@ def test_permission_signal_is_cleared_by_its_answer(dispatch, run):
     dispatch.start('ask', FAKE_ACP_ASK_HOLD='1')
     [question] = eventually(dispatch.questions)
     waiting = eventually(lambda: [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting'])
-    assert waiting[0]['message_id'] == question.message_id
-    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
+    assert waiting[0]['message_id'] == question.id
+    run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     eventually(lambda: dispatch.logged('permission'))
     assert not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']
     assert [row for row in signals(dispatch, run, False) if row['signal'] == 'permission-waiting']
@@ -50,7 +50,7 @@ def test_thresholds_count_unique_calls_and_reset_on_real_steps(dispatch, run):
     from metaform.modules.dispatch.runner import Session
     run('set', '--dispatch-spin-calls', '3', '--dispatch-repeat-failures', '2', cwd=dispatch.folder)
     store = Store('proj', module='dispatch')
-    store.take_work(dispatch.work_id, by='fake')
+    store.take_work(dispatch.id, by='fake')
     session = Session(context('dispatch', dispatch.folder, project='proj'), store, dispatch.ticket(), 'claude', [])
     session.session_id = 'unit-session'
     session.turns = 1
@@ -65,7 +65,7 @@ def test_thresholds_count_unique_calls_and_reset_on_real_steps(dispatch, run):
         assert not [row for row in signals(dispatch, run) if row['signal'] == 'spinning-calls']
         await update('3')
         assert len([row for row in signals(dispatch, run) if row['signal'] == 'spinning-calls']) == 1
-        store.step_work(dispatch.work_id, 'Read the necessary files.')
+        store.step_work(dispatch.id, 'Read the necessary files.')
         await update('4')
         assert not [row for row in signals(dispatch, run) if row['signal'] == 'spinning-calls']
         await update('5', 'failed', 'Fail file')
@@ -101,23 +101,23 @@ def test_elapsed_threshold_uses_the_next_event_and_not_a_timer(dispatch, run, mo
 
 
 def test_manual_requeue_signals_only_a_real_column_transition(dispatch, run):
-    run('map', 'work', 'op=take', f'id={dispatch.work_id}', 'by=claude', cwd=dispatch.folder)
-    run('map', 'work', 'op=move', f'id={dispatch.work_id}', 'column=todo', cwd=dispatch.folder)
+    run('map', 'work', 'op=take', f'id={dispatch.id}', 'by=claude', cwd=dispatch.folder)
+    run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)
     [raised] = signals(dispatch, run)
     assert raised['signal'] == 'requeue' and raised['previous'] == 'doing'
-    run('map', 'work', 'op=move', f'id={dispatch.work_id}', 'column=todo', 'position=0', cwd=dispatch.folder)
+    run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', 'position=0', cwd=dispatch.folder)
     assert signals(dispatch, run) == [raised]
 
 
 def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
     from metaform.modules.mcp.tests.test_mcp import session
     context('dispatch', dispatch.folder, project='proj').publish('dispatch.rework-limit',
-            {'work_id': dispatch.work_id, 'attempts': 3, 'limit': 3})
+            {'work_id': dispatch.id, 'attempts': 3, 'limit': 3})
     async def check(client, init):
         offered = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert 'dispatch' in offered
         assert 'signals' in offered['dispatch'].input_schema['properties']['command']['enum']
-        response = await client.call_tool('dispatch', {'command': 'signals', 'arguments': {'id': dispatch.work_id}})
+        response = await client.call_tool('dispatch', {'command': 'signals', 'arguments': {'id': dispatch.id}})
         assert not response.is_error
         assert 'rework-limit' in ''.join(block.text for block in response.content if hasattr(block, 'text'))
     session(home, dispatch.folder, check)
@@ -127,9 +127,9 @@ def test_consensus_start_and_person_review_publish_once(dispatch, run):
     from metaform.data import Store
     from metaform.modules.dispatch.consensus import TIE_REVIEW, _round, _settle
     own = Store('proj', module='dispatch')
-    question = dispatch.store.ask(dispatch.node, 'Which output?', suggestions=['JSON', 'Text'], work=dispatch.work_id)
+    question = dispatch.store.ask(dispatch.node, 'Which output?', suggestions=['JSON', 'Text'], work=dispatch.id)
     with own.tables() as tx:
-        tx.insert('consensus', {'message_id': question.message_id, 'work_id': dispatch.work_id, 'state': 'OPEN',
+        tx.insert('consensus', {'message_id': question.id, 'work_id': dispatch.id, 'state': 'OPEN',
                                 'opened': '2026-10-05T00:00:00Z', 'seq': 1})
     first = _round(own, 1)
     assert _round(own, 1)['round'] == first['round']
@@ -150,17 +150,17 @@ def test_signal_events_reach_another_process_without_polling(dispatch, run):
             ready.set()
     listener = context('dispatch', dispatch.folder, project='proj').listen(received)
     try:
-        run('map', 'work', 'op=take', f'id={dispatch.work_id}', 'by=claude', cwd=dispatch.folder)
-        run('map', 'work', 'op=move', f'id={dispatch.work_id}', 'column=todo', cwd=dispatch.folder)
+        run('map', 'work', 'op=take', f'id={dispatch.id}', 'by=claude', cwd=dispatch.folder)
+        run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)
         assert ready.wait(10), 'a committed signal wakes the existing relay listener'
         assert len(observed) == 1 and observed[0]['active']
         saved = signals(dispatch, run)
         assert json.loads(run('dispatch', 'sessions', '--json', cwd=dispatch.folder).stdout)['signals'] == saved
-        read = json.loads(run('map', 'work', f'id={dispatch.work_id}', '--json', cwd=dispatch.folder).stdout)
+        read = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
         assert read['dispatch']['signals'] == saved
         ctx = context('dispatch', dispatch.folder, project='proj')
-        publish(ctx, 'rework-limit', work_id=dispatch.work_id, attempts=3)
-        publish(ctx, 'rework-limit', work_id=dispatch.work_id, attempts=3)
+        publish(ctx, 'rework-limit', work_id=dispatch.id, attempts=3)
+        publish(ctx, 'rework-limit', work_id=dispatch.id, attempts=3)
         assert len([row for row in signals(dispatch, run) if row['signal'] == 'rework-limit']) == 1
     finally:
         listener.close()
@@ -210,8 +210,8 @@ def test_release_clears_permission_signal_after_a_crashed_runner(dispatch, run):
     from metaform.modules.dispatch import release
     from metaform.modules.dispatch.signals import publish
     own = Store('proj', module='dispatch')
-    own.take_work(dispatch.work_id, by='claude crashed')
-    publish(context('dispatch', dispatch.folder, project='proj'), 'permission-waiting', work_id=dispatch.work_id,
+    own.take_work(dispatch.id, by='claude crashed')
+    publish(context('dispatch', dispatch.folder, project='proj'), 'permission-waiting', work_id=dispatch.id,
             session_id='crashed', key='permission', message_id='permission')
-    release(own, dispatch.work_id, 'claude crashed', True, 'crashed', 'crash cleanup')
+    release(own, dispatch.id, 'claude crashed', True, 'crashed', 'crash cleanup')
     assert not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']

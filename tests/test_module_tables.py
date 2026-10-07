@@ -70,9 +70,9 @@ def ledger(home, project_folder, user_module):
 
 
 def store_file(project='proj'):
-    active = metaform_home.active_metaform(project)
+    active = metaform_home.active_base(project)
     assert active is not None
-    return metaform_home.store_path(project, active.metaform_id)
+    return metaform_home.store_path(project, active.id)
 
 
 def project_store(project='proj', module='ledger'):

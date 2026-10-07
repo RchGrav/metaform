@@ -56,14 +56,14 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
             chosen.append(record)
     exported: list[dict[str, Any]] = []
     for record in chosen:
-        metaforms = [item for item in home.metaforms(record.project_id) if metaform is None or item.name == metaform]
+        metaforms = [item for item in home.bases(record.project_id) if metaform is None or item.name == metaform]
         if metaform is not None and not metaforms:
-            raise StoreError(f'No metaform {metaform} in {record.project_id}.', 'metaform list metaforms')
-        active = home.active_metaform(record.project_id)
+            raise StoreError(f'No base {metaform} in {record.project_id}.', 'metaform list bases')
+        active = home.active_base(record.project_id)
         entry: dict[str, Any] = {
             'project': record.to_dict(),
-            'metaforms': [_export_metaform(record.project_id, item, layers) for item in metaforms],
-            'active_metaform': active.metaform_id if active else None,
+            'metaforms': [_export_base(record.project_id, item, layers) for item in metaforms],
+            'active_base': active.id if active else None,
         }
         modules = _export_project_modules(record.project_id)
         if modules:  # a module's project-level tables, STORE-045
@@ -72,14 +72,14 @@ def export_document(project_ids: Sequence[str] | None = None, *, metaform: str |
     return {'metaform_export': FORMAT, 'schema_version': SCHEMA_VERSION, 'projects': exported}
 
 
-def _export_metaform(project_id: str, metaform: home.Metaform, layer_names: Sequence[str]) -> dict[str, Any]:
-    document: dict[str, Any] = {'metaform': {'metaform_id': metaform.metaform_id, 'name': metaform.name,
+def _export_base(project_id: str, metaform: home.Base, layer_names: Sequence[str]) -> dict[str, Any]:
+    document: dict[str, Any] = {'metaform': {'base_id': metaform.id, 'name': metaform.name,
                                              'created': metaform.created}}
     for name in ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
                  'hidden', *THINGS, 'refs', 'join_elements',
                  'reexamine', 'requires'):
         document[name] = []
-    with open_store(home.store_path(project_id, metaform.metaform_id), write=False) as db:
+    with open_store(home.store_path(project_id, metaform.id), write=False) as db:
         db.execute('BEGIN')
         _fill(db, document, layer_names)
         modules = tables.export_modules(db)
@@ -217,7 +217,7 @@ def _requires(document: dict[str, Any]) -> list[dict[str, str]]:
 ROW_TABLES = ('types', 'layers', 'layer_fields', 'layer_tags', 'layer_sources', 'provenance', 'selections',
               *THINGS, 'reexamine')
 PROJECT_KEYS = ('project_id', 'path', 'target_type', 'target_value')
-HEAD_KEYS = ('metaform_id', 'name', 'created')
+HEAD_KEYS = ('base_id', 'name', 'created')
 REF_KEYS = ('owner', 'owner_id', 'owner_layer_id', 'owner_version', 'position', 'key', 'value')
 HELD_KEYS = ('join_id', 'join_layer_id', 'join_version', 'position', 'element_id')
 
@@ -278,8 +278,8 @@ def _validate(document: Any) -> None:
         _record(entry.get('project'), f'{path}.project', PROJECT_KEYS, problems)
         if 'modules' in entry:
             tables.check(entry['modules'], f'{path}.modules', problems)
-        if not _scalar(entry.get('active_metaform')):
-            problems.append(f'{path}.active_metaform: not an id or null')
+        if not _scalar(entry.get('active_base')):
+            problems.append(f'{path}.active_base: not an id or null')
         metaforms = as_list(entry.get('metaforms'))
         if metaforms is None:
             problems.append(f'{path}.metaforms: not a list')
@@ -333,7 +333,7 @@ def _validate(document: Any) -> None:
                          'metaform export > <file>, from the home that holds the project')
 
 
-def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, metaform_id: str | None = None,
+def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, base_id: str | None = None,
               created: str | None = None) -> dict[str, Any]:
     """A new metaform `name` holding each current intake element and join once, with its held elements, LAYER-026.
 
@@ -353,10 +353,10 @@ def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, 
     if intake[0]['ready'] is None:  # collapsing would mark a building intake finished
         raise StoreError('The intake is still building; finish it before collapsing.', 'metaform intake finish')
     source_layer = intake[0]['layer_id']
-    metaform_id, layer_id, created = metaform_id or new_id(), new_id(), created or home.now()
+    base_id, layer_id, created = base_id or new_id(), new_id(), created or home.now()
     result: dict[str, Any] = {
-        'metaform': {'metaform_id': metaform_id, 'name': name, 'created': created},
-        'layers': [{**intake[0], 'layer_id': layer_id, 'metaform_id': metaform_id,
+        'metaform': {'base_id': base_id, 'name': name, 'created': created},
+        'layers': [{**intake[0], 'layer_id': layer_id, 'metaform_id': base_id,
                     'name': 'intake', 'result_id': None, 'created': created, 'ready': created}],
         'provenance': [{'layer_id': layer_id, 'module': 'chassis', 'workflow': workflow,
                         'prompt': None, 'model': None, 'role': role, 'blinded': None}],
@@ -392,7 +392,7 @@ def collapsed(document: dict[str, Any], name: str, *, workflow: str, role: str, 
     result['requires'] = [{'kind': 'element', 'id': ident} for ident in sorted(needed - elements)]
     released = {**{key: document[key] for key in ('metaform_export', 'schema_version')},
                 'projects': [{'project': project['project'].copy(), 'metaforms': [result],
-                              'active_metaform': metaform_id}]}
+                              'active_base': base_id}]}
     _validate(released)
     return released
 
@@ -432,16 +432,16 @@ def _plan(document: dict[str, Any], project: str | None,
                     raise StoreError(f'{record.path} is already registered as project {holder}.',
                                      f'metaform import <file> {holder}')
         for metaform in entry.get('metaforms', []):
-            metaform_id = metaform['metaform']['metaform_id']
-            owner = home.metaform_owner(metaform_id)
+            base_id = metaform['metaform']['base_id']
+            owner = home.base_owner(base_id)
             if owner is not None and owner != project_id:
                 skipped += 1
-                notices.append({'where': f'metaforms.{metaform_id}', 'message': (
-                    f'Metaform {metaform_id} belongs to project {owner} here; nothing of it was written. To add '
+                notices.append({'where': f'metaforms.{base_id}', 'message': (
+                    f'Metaform {base_id} belongs to project {owner} here; nothing of it was written. To add '
                     f'what it holds to that project: metaform import <file> {owner}')})
                 continue
             planned.append(Planned(project_id, record, registered, metaform,
-                                   not registered and entry.get('active_metaform') == metaform_id))
+                                   not registered and entry.get('active_base') == base_id))
     return planned, skipped
 
 
@@ -471,15 +471,15 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
                     registered.append(item.project_id)
             for item in planned:
                 head = item.metaform['metaform']
-                known = home.metaform_by_id(item.project_id, head['metaform_id'])
-                path = (home.store_path(item.project_id, head['metaform_id']) if known is not None
+                known = home.base_by_id(item.project_id, head['base_id'])
+                path = (home.store_path(item.project_id, head['base_id']) if known is not None
                         else home.store_file(item.project_id, head['name']))
                 if not path.exists():
                     created.append(path)
                 db = stores.enter_context(open_store(path, write=True))
                 opened.append(db)
                 db.execute('BEGIN IMMEDIATE')
-                _import_rows(db, item.metaform['metaform']['metaform_id'], item.metaform, report)
+                _import_rows(db, item.metaform['metaform']['base_id'], item.metaform, report)
             for entry in document.get('projects', []):  # the modules' project-level tables, STORE-045
                 if not entry.get('modules'):
                     continue
@@ -500,7 +500,7 @@ def import_document(document: dict[str, Any], project: str | None = None) -> dic
                 folder = home.project_folder(item.project_id)
                 assert folder is not None
                 with home.project_db(folder, write=True) as own:
-                    added = home.import_metaform_in(own, item.project_id, head['metaform_id'], head['name'],
+                    added = home.import_base_in(own, item.project_id, head['base_id'], head['name'],
                                                     head['created'], activate=item.activate)
                 report['metaforms_added' if added else 'metaforms_skipped'] += 1
             for db in opened:
@@ -527,7 +527,7 @@ def _missing(db: sqlite3.Connection, need: dict[str, str]) -> bool:
             db.execute('SELECT 1 FROM properties WHERE property_id=? LIMIT 1', (need['id'],)).fetchone() is None)
 
 
-def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, Any], report: dict[str, Any]) -> None:
+def _import_rows(db: sqlite3.Connection, base_id: str, metaform: dict[str, Any], report: dict[str, Any]) -> None:
     if 'prior_schema_version' in metaform:
         db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)",
                    (metaform['prior_schema_version'],))
@@ -553,11 +553,11 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             report['layers_skipped'] += 1
             continue
         new_layers.append(layer['layer_id'])
-        _insert(db, 'layers', {**layer, 'metaform_id': metaform_id})
+        _insert(db, 'layers', {**layer, 'metaform_id': base_id})
         report['layers_added'] += 1
     fresh = set(new_layers)
     if not fresh:
-        _import_extensions(db, metaform, report, metaform_id)
+        _import_extensions(db, metaform, report, base_id)
         return
     for row in metaform.get('types', []):
         db.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, ?)', (row['address'], row['parent']))
@@ -629,15 +629,15 @@ def _import_rows(db: sqlite3.Connection, metaform_id: str, metaform: dict[str, A
             _insert(db, 'reexamine', row, ignore=True)
     for kind in versions.ORDER:
         versions.recompute(db, kind, touched[kind])
-    _import_extensions(db, metaform, report, metaform_id)
+    _import_extensions(db, metaform, report, base_id)
 
 
 def _import_extensions(db: sqlite3.Connection, document: dict[str, Any], report: dict[str, Any],
-                       metaform_id: str) -> None:
+                       base_id: str) -> None:
     """Import declared extensions after the core identities and layers their rows can reference."""
     tables.import_unowned(db, document.get('unowned_tables', []))
     entries = document.get('modules', []) + document.get('extensions', [])
-    tables.import_modules(db, entries, report, f'metaforms.{metaform_id}.modules')
+    tables.import_modules(db, entries, report, f'metaforms.{base_id}.modules')
     for name, declared in tables.exchange_tables(db, entries).items():
         for row in document.get(name, []):
             # Integer row keys are local sequence numbers. Established documents omit them, so a repeated import

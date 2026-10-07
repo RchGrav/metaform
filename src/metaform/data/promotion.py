@@ -8,7 +8,7 @@ from . import layering, rows, views, writes
 from .records import Join, Notice, Outcome
 from .selection import all_layers
 from .session import Tx
-from .versions import METAFORM_KINDS
+from .versions import BASE_KINDS
 
 
 def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length: Any = None,
@@ -25,7 +25,7 @@ def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length
     if base is None:
         return Outcome((Notice('join', f'{join_id} has no current join; nothing was written.'),))
     found = rows.layer(tx, str(base['layer_id']))
-    if found.kind not in METAFORM_KINDS:
+    if found.kind not in BASE_KINDS:
         stop = writes.unchangeable(tx, found, join_id)
         if stop is not None:
             return Outcome((stop,))
@@ -39,7 +39,7 @@ def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length
     notices = list(element.notices)
     if associated is None:
         change = {'element': element.address}
-        if found.kind in METAFORM_KINDS:
+        if found.kind in BASE_KINDS:
             result = layering.refine(tx, join_id, change, reason=reason)
         else:
             result = writes.edit(tx, join_id, change)

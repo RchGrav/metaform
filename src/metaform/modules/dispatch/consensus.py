@@ -194,11 +194,11 @@ def recommend(ctx: Context, store: Store, question: Message, record: WorkRecord 
     for the person to decide. It is started only by the person, applies no answer and closes nothing. A question
     already being helped with keeps its helpers."""
     own = Store(store.project_id, module='dispatch')
-    prefix = f'help:{question.message_id}:'
+    prefix = f'help:{question.id}:'
     running = [row['voter'] for row in running_voters(own) if str(row['round']).startswith(prefix)]
     if running:
         return running
-    queue = [{'message_id': question.message_id, 'work_id': record.work_id if record else '',
+    queue = [{'message_id': question.id, 'work_id': record.id if record else '',
               'address': record.address if record else '', 'task': record.task if record else '',
               'note': record.note if record else '', 'question': question.text or '',
               'choices': list(question.suggestions)}]
@@ -229,7 +229,7 @@ def advice(store: Store, message_id: str) -> dict[str, Any]:
 
 def frozen(open_work: Sequence[WorkRecord], waiting: Mapping[str, list[Message]]) -> list[WorkRecord]:
     """The open tickets that wait on an unanswered question; an exclude record is no ticket."""
-    return [record for record in open_work if record.condition != 'exclude' and record.work_id in waiting]
+    return [record for record in open_work if record.condition != 'exclude' and record.id in waiting]
 
 
 def all_frozen(open_work: Sequence[WorkRecord], waiting: Mapping[str, list[Message]]) -> bool:
@@ -237,7 +237,7 @@ def all_frozen(open_work: Sequence[WorkRecord], waiting: Mapping[str, list[Messa
     by an agent, is not available to be selected, so it neither counts against this nor stops it; voters fill the free
     slots while those agents go on working."""
     tickets = [record for record in open_work if record.condition != 'exclude' and not record.taken]
-    return bool(tickets) and all(record.work_id in waiting for record in tickets)
+    return bool(tickets) and all(record.id in waiting for record in tickets)
 
 
 def _now() -> str:
@@ -306,27 +306,27 @@ def _settle(store: Store, own: Store, record: WorkRecord, question: Message, sta
             rule: str, counts: Mapping[str, int]) -> None:
     """A settled ticket: a winning choice answers its question, so the ticket goes back to work; a write-in, a comment
     or a tie is told to the person at the ticket's node, the voter's words with it."""
-    node = Node.of(record.kind, record.id)
+    node = Node.of(record.node_kind, record.node_id)
     shown = ', '.join(f'{choice}: {count}' for choice, count in counts.items()) or 'no votes for a choice'
     if state == CLOSED and rule != 'write-in' and winner is not None:
-        store.reply(question.message_id, winner)
-        store.tell(node, f'Consensus answered question {question.message_id} on work {record.work_id} with "{winner}", '
+        store.reply(question.id, winner)
+        store.tell(node, f'Consensus answered question {question.id} on work {record.id} with "{winner}", '
                          f'by {rule} ({shown}).', by='consensus')
     elif state == CLOSED:
-        store.tell(node, f'Consensus voting ended on question {question.message_id} on work {record.work_id}: a voter '
+        store.tell(node, f'Consensus voting ended on question {question.id} on work {record.id}: a voter '
                          f'wrote in its own answer, for you to read: "{winner}". Votes so far: {shown}.', by='consensus')
     elif state == HALTED:
         with own.tables(write=False) as tx:
-            said = [row['choice'] for row in tx.rows('votes', {'message_id': question.message_id}, limit=0).results
+            said = [row['choice'] for row in tx.rows('votes', {'message_id': question.id}, limit=0).results
                     if row['kind'] == COMMENT]
-        store.tell(node, f'Consensus voting stopped on question {question.message_id} on work {record.work_id}: a voter '
+        store.tell(node, f'Consensus voting stopped on question {question.id} on work {record.id}: a voter '
                          f'commented, for you to read: "{said[0] if said else ""}". Votes so far: {shown}.',
                    by='consensus')
     else:
-        store.tell(node, f'Consensus voting tied on question {question.message_id} on work {record.work_id} ({shown}); '
+        store.tell(node, f'Consensus voting tied on question {question.id} on work {record.id} ({shown}); '
                          'it waits for your answer.', by='consensus')
     with own.tables() as tx:
-        tx.update('consensus', {'message_id': question.message_id},
+        tx.update('consensus', {'message_id': question.id},
                   {'state': state, 'winner': winner, 'rule': rule, 'tally': json.dumps(dict(counts)),
                    'closed': _now()})
     if not (state == CLOSED and rule != 'write-in' and winner is not None):
@@ -334,7 +334,7 @@ def _settle(store: Store, own: Store, record: WorkRecord, question: Message, sta
 
         from .signals import publish
         publish(context('dispatch', Path(store.project().path), project=store.project_id), 'consensus-review',
-                work_id=record.work_id, key=question.message_id, message_id=question.message_id,
+                work_id=record.id, key=question.id, message_id=question.id,
                 reason=rule, state=state)
 
 
@@ -349,10 +349,10 @@ def coordinate(ctx: Context, store: Store, tickets: Sequence[WorkRecord], waitin
     candidates: list[tuple[WorkRecord, Message]] = []
     with own.tables() as tx:
         for record in tickets:
-            question = waiting[record.work_id][0]
-            row = tx.get('consensus', {'message_id': question.message_id})
+            question = waiting[record.id][0]
+            row = tx.get('consensus', {'message_id': question.id})
             if row is None:
-                tx.insert('consensus', {'message_id': question.message_id, 'work_id': record.work_id, 'state': OPEN,
+                tx.insert('consensus', {'message_id': question.id, 'work_id': record.id, 'state': OPEN,
                                         'round': mode['round'], 'opened': _now(), 'seq': time.time_ns()})
             elif row['state'] in SETTLED:
                 continue
@@ -361,13 +361,13 @@ def coordinate(ctx: Context, store: Store, tickets: Sequence[WorkRecord], waitin
     still: list[tuple[WorkRecord, Message]] = []
     for record, question in candidates:
         with own.tables(write=False) as tx:
-            votes = [dict(row) for row in tx.rows('votes', {'message_id': question.message_id}, limit=0).results]
+            votes = [dict(row) for row in tx.rows('votes', {'message_id': question.id}, limit=0).results]
         counts, write_in, comment = tally(votes)
-        state, winner, rule = decide(blocked=bool(read_ticket(store, record.work_id).taken), comment=comment,
+        state, winner, rule = decide(blocked=bool(read_ticket(store, record.id).taken), comment=comment,
                                      write_in=write_in, counts=counts, cap=limit)
         if state in SETTLED:
             _settle(store, own, record, question, state, winner, rule, counts)
-            settled.append({'work_id': record.work_id, 'message_id': question.message_id, 'state': state,
+            settled.append({'work_id': record.id, 'message_id': question.id, 'state': state,
                             'answer': winner, 'rule': rule, 'counts': counts})
         elif state == OPEN:
             still.append((record, question))
@@ -379,7 +379,7 @@ def coordinate(ctx: Context, store: Store, tickets: Sequence[WorkRecord], waitin
         made = len(tx.rows('voters', {'round': mode['round']}, limit=0).results)
     free = max(0, MAX_OPEN - workers - len(active))
     free = min(free, max(0, int(mode['tickets'] or len(tickets)) * PASSES - made))
-    queue = [{'work_id': record.work_id, 'message_id': question.message_id, 'address': record.address,
+    queue = [{'work_id': record.id, 'message_id': question.id, 'address': record.address,
               'task': record.task, 'note': record.note, 'question': question.text or '',
               'choices': list(question.suggestions)}
              for record, question in sorted(still, key=lambda pair: (pair[1].created, pair[0].created))]  # ties keep board order
@@ -396,7 +396,7 @@ def results(store: Store) -> list[dict[str, Any]]:
                 for row in tx.rows('consensus', {'state': state}, limit=0).results]
         votes = {row['message_id']: [dict(vote) for vote in tx.rows('votes', {'message_id': row['message_id']},
                                                                       limit=0).results] for row in rows}
-    asked = {message.message_id: message for message in store.messages(None, 'question', None, limit=0).results}
+    asked = {message.id: message for message in store.messages(None, 'question', None, limit=0).results}
     shown: list[dict[str, Any]] = []
     for row in sorted(rows, key=lambda row: int(row['seq']), reverse=True):
         message = asked.get(row['message_id'])
@@ -575,7 +575,7 @@ async def vote(ctx: Context) -> dict[str, Any]:
             end_group(process.pid)
         with own.tables() as tx:
             tx.update('voters', {'voter': voter}, {'state': 'ended', 'how': how})
-        active = await asyncio.to_thread(store.active_metaform)
+        active = await asyncio.to_thread(store.active_base)
         await ctx.publish_async('map.changed', {'project': store.project_id, 'tables': 'dispatch',
-                                                'metaform_id': active.metaform_id if active is not None else None})
+                                                'base_id': active.id if active is not None else None})
     return {'voter': voter, 'votes': kept, 'ended': how}

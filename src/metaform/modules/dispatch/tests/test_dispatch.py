@@ -107,17 +107,17 @@ class Dispatch:
         self.store.add_element('parts', NODE)
         self.store.add_element('parts', LINKED)
         self.node = Node('element', NODE)
-        self.work_id = self.store.add_work(self.node, 'missing', task='Write notes.txt',
-                                           links=[Node('element', LINKED)]).work_id
+        self.id = self.store.add_work(self.node, 'missing', task='Write notes.txt',
+                                           links=[Node('element', LINKED)]).id
         self.process = None
 
     def env(self, mode, **more):
         return {**os.environ, 'METAFORM_HOME': str(self.home), 'FAKE_ACP_LOG': str(self.log),
-                'FAKE_ACP_MODE': mode, 'FAKE_ACP_WORK': self.work_id, 'FAKE_SECRET': 'the-person-own-value', **more}
+                'FAKE_ACP_MODE': mode, 'FAKE_ACP_WORK': self.id, 'FAKE_SECRET': 'the-person-own-value', **more}
 
     def start(self, mode='ask', **more):
         """`metaform dispatch run <id> claude`, the runner, in the foreground of its own process."""
-        self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', self.work_id, 'claude'],
+        self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', self.id, 'claude'],
                                         cwd=self.folder, env=self.env(mode, **more), stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE)
         return self
@@ -153,7 +153,7 @@ class Dispatch:
         return eventually(lambda: next(iter(self.items('session')), None))
 
     def ticket(self):
-        return self.store.ticket(self.work_id).work
+        return self.store.ticket(self.id).work
 
     def questions(self, open=True):
         return self.store.messages(self.node, 'question', open, limit=0).results
@@ -161,7 +161,7 @@ class Dispatch:
     def stop(self):
         """Stop the agent. A session ends by itself when a turn ends with its ticket open, so a stop that finds none
         running is cleanup already done; a test that needs the stop's own report reads its JSON."""
-        result = self.run('dispatch', 'stop', self.work_id, '--json', cwd=self.folder, ok=False)
+        result = self.run('dispatch', 'stop', self.id, '--json', cwd=self.folder, ok=False)
         if result.returncode != 0 and 'No agent is running' not in result.stdout + result.stderr:
             raise AssertionError(f'metaform dispatch stop failed ({result.returncode}):\n{result.stdout}{result.stderr}')
         return result
@@ -268,7 +268,7 @@ def test_session_new_is_in_the_project_folder_with_metaform_mcp_and_the_person_e
     assert {tuple(entry['argv']) for entry in dispatch.entries() if 'argv' in entry} == {(str(FAKE),)}, \
         'no text of the ticket goes in an argument'
     eventually(lambda: dispatch.ticket().taken)
-    second = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.work_id, 'claude'],
+    second = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'claude'],
                             cwd=dispatch.folder, env=dispatch.env('hold'), capture_output=True, text=True,
                             check=False)
     assert second.returncode != 0 and 'taken' in second.stdout + second.stderr
@@ -284,20 +284,20 @@ def test_the_ticket_is_taken_for_the_agent_with_a_nonce_and_one_prompt(dispatch,
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     blocks = prompt['params']['prompt']
     assert len(blocks) == 1 and blocks[0]['type'] == 'text'
-    assert f'metaform map work id={dispatch.work_id}' in blocks[0]['text']
+    assert f'metaform map work id={dispatch.id}' in blocks[0]['text']
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
     assert ticket.taken and ticket.taken_by == 'claude fake-session-1'
     session = dispatch.session().extra
-    assert session['work_id'] == dispatch.work_id and session['session_id'] == 'fake-session-1'
+    assert session['work_id'] == dispatch.id and session['session_id'] == 'fake-session-1'
     # Work f6adbefd: the session is dispatch's own field on the work record, shown when the ticket is read.
-    on_record = json.loads(run('map', 'work', f'id={dispatch.work_id}', '--json', cwd=dispatch.folder).stdout)
+    on_record = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     [shown] = on_record['dispatch']['sessions']
     assert (shown['session_id'], shown['agent'], shown['state']) == ('fake-session-1', 'claude', 'running')
     assert not {'port', 'token', 'pid', 'nonce'} & set(shown)
     held = nonce.read(session['nonce'])
     assert held is not None and held.module == 'dispatch' and held.function == 'handoff'
-    assert held.value['work_id'] == dispatch.work_id
+    assert held.value['work_id'] == dispatch.id
     read = run(session['nonce'], cwd=dispatch.folder).stdout
     assert read.startswith(blocks[0]['text'].strip())
     assert NODE in read and LINKED in read, 'the nonce hands the agent the namespace nodes of its work'
@@ -315,7 +315,7 @@ def test_session_updates_become_notes_at_the_ticket_node(dispatch):
     tools = [item for item in dispatch.items('note') if (item.extra or {}).get('update') in ('tool_call',
                                                                                              'tool_call_update')]
     assert len(tools) == 1, 'one note per tool call, changed in place'
-    assert notes[0].extra['work_id'] == dispatch.work_id
+    assert notes[0].extra['work_id'] == dispatch.id
     eventually(lambda: [item for item in dispatch.items('note') if item.value == 'Hello from fake'])
     assert [item.value for item in dispatch.items('note') if item.extra['update'] == 'agent_thought_chunk'] == \
         ['Thinking it over']
@@ -334,7 +334,7 @@ def test_a_permission_request_is_a_question_and_the_answer_from_another_process_
     assert list(question.suggestions) == ['Allow once', 'Reject']
     assert 'Write notes.txt' in question.text and question.by == 'claude fake-session-1'
     assert not dispatch.logged('permission'), 'the agent waits'
-    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'allow'}}
     assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
@@ -353,14 +353,14 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
         'the base relays map.changed to the runner; dispatch has no module relay'
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
-    dispatch.store.reply(question.message_id, 'Reject')  # written here, and announced by no command
+    dispatch.store.reply(question.id, 'Reject')  # written here, and announced by no command
     session = dispatch.session().extra
     assert 'error' in module.tell(session, 'changed'), 'the control port takes no change; the base relays it'
-    events.publish('map.changed', {'project': 'another', 'metaform_id': None},
+    events.publish('map.changed', {'project': 'another', 'base_id': None},
                    Context(module='chassis', folder=dispatch.folder, project='another'))
     time.sleep(4)  # a poll would have read it by now, and a change to another project is not this runner's
     assert not dispatch.logged('permission')
-    deliveries = events.publish('map.changed', {'project': 'proj', 'metaform_id': None},
+    deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                 Context(module='chassis', folder=dispatch.folder, project='proj'))
     assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'], \
         'published in this process, handed by the base to the runner\'s listener'
@@ -374,12 +374,12 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
 def test_an_answer_that_names_no_option_is_asked_again(dispatch, run):
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
-    run('map', 'reply', question.message_id, 'answer=maybe later', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=maybe later', cwd=dispatch.folder)
     [again] = eventually(dispatch.questions)
-    assert again.message_id != question.message_id and list(again.suggestions) == ['Allow once', 'Reject']
+    assert again.id != question.id and list(again.suggestions) == ['Allow once', 'Reject']
     assert 'maybe later' in again.text
     assert not dispatch.logged('permission')
-    run('map', 'reply', again.message_id, 'answer=allow', cwd=dispatch.folder)  # an option's id is its answer too
+    run('map', 'reply', again.id, 'answer=allow', cwd=dispatch.folder)  # an option's id is its answer too
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome['outcome']['optionId'] == 'allow'
     dispatch.stop()
@@ -391,7 +391,7 @@ def asked_by_the_agent(dispatch):
     from metaform.data import Node
     [printed] = eventually(lambda: dispatch.logged('asked'))
     [mine] = dispatch.store.messages(Node('element', UNRELATED), 'question', True, limit=0).results
-    assert mine.message_id in printed, 'the agent was shown the id of the question it asked'
+    assert mine.id in printed, 'the agent was shown the id of the question it asked'
     return mine
 
 
@@ -411,12 +411,12 @@ def test_a_turn_ending_with_a_question_releases_the_ticket_and_the_next_agent_is
     assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
     assert dispatch.session().extra['how'] == 'cannot continue without an answer'
     assert dispatch.ticket().taken is None and not dispatch.ticket().held, 'the ticket remains available in To do'
-    run('map', 'reply', mine.message_id, 'answer=Yes, keep it', cwd=dispatch.folder)
+    run('map', 'reply', mine.id, 'answer=Yes, keep it', cwd=dispatch.folder)
     dispatch.start('ask')
     [first, second] = eventually(lambda: dispatch.received('session/prompt')[1:] or None)[:1] + [None]
     del second
     text = first['params']['prompt'][0]['text']
-    assert mine.message_id in text and 'Yes, keep it' in text, 'the next agent on the ticket is told the answer'
+    assert mine.id in text and 'Yes, keep it' in text, 'the next agent on the ticket is told the answer'
     dispatch.stop()
 
 
@@ -428,7 +428,7 @@ def test_a_question_another_asked_that_the_agent_only_read_does_not_end_its_sess
     time.sleep(1.1)  # the store keeps a question's time to the second
     dispatch.start('list')
     [listed] = eventually(lambda: dispatch.logged('listed'))
-    assert other.message_id in listed, 'the agent read the other question in a tool call'
+    assert other.id in listed, 'the agent read the other question in a tool call'
     time.sleep(1)
     assert dispatch.process.poll() is None and dispatch.session().extra['state'] == 'running'
     dispatch.stop()
@@ -440,7 +440,7 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
-    sent = json.loads(run('dispatch', 'message', dispatch.work_id, 'also', 'run', 'the', 'tests', '--json',
+    sent = json.loads(run('dispatch', 'message', dispatch.id, 'also', 'run', 'the', 'tests', '--json',
                           cwd=dispatch.folder).stdout)
     assert sent['sent'] is True
     assert len(dispatch.received('session/prompt')) == 1
@@ -464,7 +464,7 @@ def test_the_help_shows_how_a_message_that_is_a_switch_name_reaches_the_agent_as
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
-    run('dispatch', 'message', dispatch.work_id, *words[1:], cwd=dispatch.folder)
+    run('dispatch', 'message', dispatch.id, *words[1:], cwd=dispatch.folder)
     (gates / '1').touch()
     prompts = eventually(lambda: dispatch.received('session/prompt')[1:])
     assert prompts[0]['params']['prompt'] == [{'type': 'text', 'text': '--json'}]
@@ -498,10 +498,10 @@ def test_the_session_ends_when_a_turn_ends_with_the_ticket_done(dispatch):
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('QUAL-015')
 def test_start_returns_at_once_and_the_runner_goes_on_without_it(dispatch, run, dispatch_runners):
-    started = json.loads(run('dispatch', 'start', dispatch.work_id, 'claude', '--json', cwd=dispatch.folder,
+    started = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout)
     dispatch_runners.append((started, dispatch.folder, dispatch.log))
-    assert started['state'] == 'starting' and started['work_id'] == dispatch.work_id
+    assert started['state'] == 'starting' and started['work_id'] == dispatch.id
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
     eventually(lambda: dispatch.logged('grandchild'))
     assert json.loads(dispatch.stop().stdout)['stopped'] is True
@@ -509,8 +509,8 @@ def test_start_returns_at_once_and_the_runner_goes_on_without_it(dispatch, run, 
 
 @pytest.mark.req('BASE-052')
 def test_start_refuses_a_ticket_already_taken(dispatch, run):
-    dispatch.store.take_work(dispatch.work_id, by='someone')
-    refused = run('dispatch', 'start', dispatch.work_id, 'claude', cwd=dispatch.folder, ok=False)
+    dispatch.store.take_work(dispatch.id, by='someone')
+    refused = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'taken' in refused.stdout + refused.stderr
     assert not dispatch.log.exists()
 
@@ -519,11 +519,11 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
 def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch_runners):
     """Found 2026-10-03 with the ghost agents: f566b181 had two sessions from two starts, since start checked the
     ticket and the runner took it only after the agent had started. Start takes the ticket in the write that checks it."""
-    first = json.loads(run('dispatch', 'start', dispatch.work_id, 'claude', '--json', cwd=dispatch.folder,
+    first = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
                            env=dispatch.env('hold')).stdout)
     dispatch_runners.append((first, dispatch.folder, dispatch.log))
     assert dispatch.ticket().taken, 'the ticket is taken when start returns, before the agent has started'
-    second = run('dispatch', 'start', dispatch.work_id, 'claude', cwd=dispatch.folder, ok=False,
+    second = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False,
                  env=dispatch.env('hold'))
     assert second.returncode != 0 and 'taken' in second.stdout + second.stderr
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
@@ -534,23 +534,23 @@ def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch
 
 @pytest.mark.req('BASE-052')
 def test_message_and_stop_name_the_next_step_when_no_agent_runs(dispatch, run):
-    for args in (('message', dispatch.work_id, 'hello'), ('stop', dispatch.work_id)):
+    for args in (('message', dispatch.id, 'hello'), ('stop', dispatch.id)):
         refused = run('dispatch', *args, cwd=dispatch.folder, ok=False)
         assert refused.returncode != 0
-        assert f'metaform dispatch start {dispatch.work_id}' in refused.stdout + refused.stderr
+        assert f'metaform dispatch start {dispatch.id}' in refused.stdout + refused.stderr
 
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('BASE-050')
 def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_its_nodes(dispatch, run):
     from metaform import nonce
-    made = run('dispatch', 'handoff', f'id={dispatch.work_id}', cwd=dispatch.folder).stdout
+    made = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
     [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
     held = nonce.read(number)
     assert held is not None and held.module == 'dispatch' and held.function == 'handoff'
-    assert held.value['work_id'] == dispatch.work_id
+    assert held.value['work_id'] == dispatch.id
     read = run(number, cwd=dispatch.folder).stdout
-    assert f'metaform map work id={dispatch.work_id}' in read
+    assert f'metaform map work id={dispatch.id}' in read
     assert NODE in read and LINKED in read
     assert not dispatch.ticket().taken, 'making a hand-off takes nothing'
 
@@ -559,7 +559,7 @@ def test_an_agent_makes_a_handoff_nonce_that_hands_the_next_agent_the_work_and_i
 @pytest.mark.req('MAP-050')
 def test_the_handoff_leads_a_dispatched_agent_to_ask_with_suggestions(dispatch, run):
     """Questions asked without suggestions show no buttons on the web GUI, so the person cannot answer them there."""
-    made = run('dispatch', 'handoff', f'id={dispatch.work_id}', cwd=dispatch.folder).stdout
+    made = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
     [number] = {word for word in made.replace('`', ' ').split() if len(word) == 7 and word.isdigit()}
     assert 'metaform help map ask' in run(number, cwd=dispatch.folder).stdout
     assert 'suggestions=' in run('help', 'map', 'ask', cwd=dispatch.folder).stdout.split('Details')[1]
@@ -633,7 +633,7 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
     with Store('proj', module='dispatch').tables(write=False) as tx:
         sessions = list(tx.rows('sessions', limit=0).results)
         lines = list(tx.rows('lines', limit=0).results)
-    assert [(row['work_id'], row['state']) for row in sessions] == [(dispatch.work_id, 'running')]
+    assert [(row['work_id'], row['state']) for row in sessions] == [(dispatch.id, 'running')]
     assert [row['text'] for row in lines if row['kind'] == 'agent_message_chunk'] == ['Hello from fake']
     dispatch.stop()
 
@@ -658,8 +658,8 @@ def test_a_session_ends_when_its_ticket_is_done_whatever_turn_closed_it(dispatch
     closed elsewhere while the agent waits on a permission prompt; when that turn ends the session ends as done."""
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
-    run('map', 'work', 'op=done', f'id={dispatch.work_id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
-    run('map', 'reply', question.message_id, 'answer=Allow once', cwd=dispatch.folder)
+    run('map', 'work', 'op=done', f'id={dispatch.id}', 'resolution=closed elsewhere', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     assert eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
     assert dispatch.session().extra['how'] == 'the ticket is done'
 
@@ -700,7 +700,7 @@ def glyphed(dispatch, run, *tickets):
     Distribute and `map work op=edit glyph=` set it; a glyph of None leaves the ticket with none."""
     made = []
     for task, glyph, held in tickets:
-        work_id = dispatch.store.add_work(dispatch.node, 'missing', task=task, held=held).work_id
+        work_id = dispatch.store.add_work(dispatch.node, 'missing', task=task, held=held).id
         if glyph is not None:
             run('map', 'work', 'op=edit', f'id={work_id}', f'glyph={glyph}', cwd=dispatch.folder)
         made.append(work_id)
@@ -714,7 +714,7 @@ def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dis
     a ticket with a glyph takes that glyph's tickets one after another in board order, To do before Backlog, each by
     its place, the next taken when the one before is done; a ticket of another glyph, one with none, and one taken
     by someone else are not its own."""
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     other, held, later, top, loose, busy = glyphed(
         dispatch, run, ('Another agent', 'moth', False), ('Held', 'kite', True), ('Later', 'kite', False),
         ('Top', 'kite', False), ('No glyph', None, False), ('Busy', 'kite', False))
@@ -725,7 +725,7 @@ def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dis
     assert dispatch.store.ticket(unplaced).work.position is None and dispatch.store.ticket(held).work.position == 0
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 5) == 0, dispatch.process.stderr.read().decode()
-    worked = [dispatch.work_id, top, later, unplaced, held]
+    worked = [dispatch.id, top, later, unplaced, held]
     assert dispatch.logged('work') == worked
     order = [('start' if entry.get('message', {}).get('method') == 'initialize' else 'done')
              for entry in dispatch.entries() if 'done' in entry or entry.get('message', {}).get('method') == 'initialize']
@@ -747,7 +747,7 @@ def test_a_ticket_with_no_glyph_is_worked_alone(dispatch, run):
     [beside] = glyphed(dispatch, run, ('Beside', None, False))
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()
-    assert dispatch.logged('work') == [dispatch.work_id]
+    assert dispatch.logged('work') == [dispatch.id]
     assert dispatch.store.ticket(beside).work.taken is None
 
 
@@ -757,14 +757,14 @@ def test_a_ticket_whose_glyph_has_an_agent_at_work_is_not_started_and_another_gl
     """VIEW-040: one agent per glyph. While the glyph's agent works one of its tickets, start and run refuse another
     ticket of that glyph and name the ticket being worked; a ticket of another glyph starts its own agent. Stopping the
     agent ends its turn through the glyph's tickets."""
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     later, other = glyphed(dispatch, run, ('Later', 'kite', False), ('Another agent', 'moth', False))
     dispatch.start('hold')
     eventually(lambda: dispatch.logged('grandchild'))
     for verb in ('start', 'run'):
         refused = run('dispatch', verb, later, 'claude', cwd=dispatch.folder, env=dispatch.env('done'), ok=False)
         said = refused.stdout + refused.stderr
-        assert refused.returncode != 0 and 'kite' in said and dispatch.work_id in said, said
+        assert refused.returncode != 0 and 'kite' in said and dispatch.id in said, said
     assert dispatch.store.ticket(later).work.taken is None
     own = run('dispatch', 'run', other, 'claude', '--json', cwd=dispatch.folder, env=dispatch.env('done'))
     assert json.loads(own.stdout)['work_id'] == other
@@ -786,9 +786,9 @@ def test_start_and_run_refuse_an_agent_the_ticket_does_not_list_and_name_the_one
     """Ticket bd96cbd1: explicit dispatch honors the eligible agents. Codex started on a ticket only Claude is
     eligible for is refused, by start and by run, with claude named, and the ticket stays untaken."""
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE}"', cwd=dispatch.folder)
-    eligible(dispatch, run, dispatch.work_id, 'claude')
+    eligible(dispatch, run, dispatch.id, 'claude')
     for verb in ('start', 'run'):
-        refused = run('dispatch', verb, dispatch.work_id, 'codex', cwd=dispatch.folder, env=dispatch.env('done'),
+        refused = run('dispatch', verb, dispatch.id, 'codex', cwd=dispatch.folder, env=dispatch.env('done'),
                       ok=False)
         said = refused.stdout + refused.stderr
         assert refused.returncode != 0 and 'claude' in said and 'codex' in said, said
@@ -802,14 +802,14 @@ def test_the_glyphs_agent_takes_only_the_tickets_it_is_eligible_for_and_the_othe
     """Ticket bd96cbd1: automatic selection of the next ticket honors the eligible agents while keeping the glyph
     assignment and the board order. The claude agent of glyph kite works its own and Any tickets in board order and
     passes a ticket only Codex is eligible for, which keeps glyph kite and stays untaken."""
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     codex_only, anyone, claude_only = glyphed(
         dispatch, run, ('Codex only', 'kite', False), ('Anyone', 'kite', False), ('Claude only', 'kite', False))
     eligible(dispatch, run, codex_only, 'codex')
     eligible(dispatch, run, claude_only, 'claude', 'gemini')
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 4) == 0, dispatch.process.stderr.read().decode()
-    assert dispatch.logged('work') == [dispatch.work_id, anyone, claude_only]
+    assert dispatch.logged('work') == [dispatch.id, anyone, claude_only]
     skipped = json.loads(run('map', 'work', f'id={codex_only}', '--json', cwd=dispatch.folder).stdout)
     assert skipped['taken'] is None and skipped['map']['glyph'] == 'kite'
 
@@ -828,4 +828,4 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
     monkeypatch.setattr(module, 'start', lambda ctx: launched.append((ctx.nouns['id'], ctx.nouns['agent'])) or
                         {'work_id': ctx.nouns['id']})
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert launched == [(dispatch.work_id, 'codex'), (claude_only, 'claude')]
+    assert launched == [(dispatch.id, 'codex'), (claude_only, 'claude')]

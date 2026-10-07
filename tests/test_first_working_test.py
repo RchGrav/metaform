@@ -194,7 +194,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
         # 8: an agent writes a memory at the DE element and at one join.
         joins = last_json(asked(first, 'map_joins', {'element': 'code.timer.kitchen'}, limit=LIMIT))['results']
-        join_id = joins[0]['join_id']
+        join_id = joins[0]['id']
         assert joins[0]['receiver_address'] == 'code.timer.kitchen'
         at_element = asked(first, 'memory_create_entities', {
             'node': 'element:code.timer.kitchen',

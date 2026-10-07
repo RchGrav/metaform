@@ -33,28 +33,28 @@ def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_a
     run('set', '--dispatch-codex', f'"{sys.executable}" "{fake}"', '--dispatch-agents=1', cwd=mapped)
     store = Store('proj')
     for ticket in store.work(open=True, limit=0).results:
-        store.finish_work(ticket.work_id, 'Existing fixture work completed.')
-    node = Node('element', store.element('code.alarm.audible').element_id)
+        store.finish_work(ticket.id, 'Existing fixture work completed.')
+    node = Node('element', store.element('code.alarm.audible').id)
     tickets = [store.add_work(node, 'missing', task=f'Complete task {n}') for n in range(3)]
     questioned = store.add_work(node, 'missing', task='Continue independent work', held=True)
-    question = store.ask(node, 'Which approach?', work=questioned.work_id, suggestions=['Use the existing approach'])
+    question = store.ask(node, 'Which approach?', work=questioned.id, suggestions=['Use the existing approach'])
     started(run)
     headers = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
     try:
         status, _ = api(web, '/api/dispatch-autostart', method='POST', headers=headers,
                         body=json.dumps({'project': 'proj', 'value': True}))
         assert status == 200
-        eventually(lambda: all(store.ticket(ticket.work_id).work.done for ticket in tickets), limit=30)
-        eventually(lambda: store.ticket(questioned.work_id).work.done, limit=30)
-        assert store.messages(node, 'question', True).results[0].message_id == question.message_id
+        eventually(lambda: all(store.ticket(ticket.id).work.done for ticket in tickets), limit=30)
+        eventually(lambda: store.ticket(questioned.id).work.done, limit=30)
+        assert store.messages(node, 'question', True).results[0].id == question.id
         status, _ = api(web, '/api/answer', method='POST', headers=headers,
-                        body=json.dumps({'project': 'proj', 'id': question.message_id,
+                        body=json.dumps({'project': 'proj', 'id': question.id,
                                          'answer': 'Use the existing approach'}))
         assert status == 200
         assert store.messages(node, 'question', False).results[0].answer == 'Use the existing approach'
         with Store('proj', module='dispatch').tables(write=False) as tx:
             sessions = tx.rows('sessions', by=('seq',), limit=0).results
-        expected = [ticket.work_id for ticket in tickets] + [questioned.work_id]
+        expected = [ticket.id for ticket in tickets] + [questioned.id]
         assert [session['work_id'] for session in sessions] == expected
     finally:
         api(web, '/api/dispatch-autostart', method='POST', headers=headers,
@@ -145,9 +145,9 @@ def test_question_chat_opens_the_returned_session_and_waits_for_a_starting_one(r
 
     store = Store('proj')
     element = store.element('code.alarm.audible')
-    ticket = store.add_work(Node('element', element.element_id), 'missing', task='Adjust the tone')
-    question = store.ask(Node('element', element.element_id), 'Which tone?', suggestions=['Keep this tone'],
-                         work=ticket.work_id)
+    ticket = store.add_work(Node('element', element.id), 'missing', task='Adjust the tone')
+    question = store.ask(Node('element', element.id), 'Which tone?', suggestions=['Keep this tone'],
+                         work=ticket.id)
     started(run)
     page, problems, _ = opened(browser, web)
     page.route('**/api/dispatch-autostart*', lambda route: route.fulfill(json={'value': False, 'agent': 'codex'}))
@@ -155,22 +155,22 @@ def test_question_chat_opens_the_returned_session_and_waits_for_a_starting_one(r
     page.route('**/api/dispatch-sessions?*', lambda route: route.fulfill(json={'sessions': sessions, 'lines': []}))
 
     def chat(route):
-        assert route.request.post_data_json['id'] == question.message_id
+        assert route.request.post_data_json['id'] == question.id
         if state == 'running':
-            sessions.append({'work_id': ticket.work_id, 'session_id': 'chat-session', 'agent': 'codex',
+            sessions.append({'work_id': ticket.id, 'session_id': 'chat-session', 'agent': 'codex',
                              'state': 'running', 'activity': 'idle'})
-        route.fulfill(json={'work_id': ticket.work_id, 'session_id': 'chat-session' if sessions else None,
+        route.fulfill(json={'work_id': ticket.id, 'session_id': 'chat-session' if sessions else None,
                             'agent': 'codex', 'state': state})
 
     page.route('**/api/dispatch-chat', chat)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.menu("{element.element_id}")')
+    page.evaluate(f'window.metaform.menu("{element.id}")')
     page.click('#menu .unread')
     page.wait_for_selector('#float button.chat')
     page.click('#float button.chat')
     if state == 'starting':
         assert page.is_hidden('#agent')
-        sessions.append({'work_id': ticket.work_id, 'session_id': 'chat-session', 'agent': 'codex',
+        sessions.append({'work_id': ticket.id, 'session_id': 'chat-session', 'agent': 'codex',
                          'state': 'running', 'activity': 'idle'})
         from metaform import relay
         relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})

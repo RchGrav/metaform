@@ -187,7 +187,7 @@ def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_typ
 @pytest.mark.req('STORE-020')
 def test_a_join_is_a_node_of_memory_keyed_by_its_receiver_and_provider(run, mapped):
     store = Store('proj')
-    join_id = store.joins('code.manager.route').results[0].join_id
+    join_id = store.joins('code.manager.route').results[0].id
     mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'The echo times out after 1 s.')]),
        f'node=join:{join_id}', cwd=mapped)
     assert mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)['entities'] == [
@@ -215,7 +215,7 @@ def test_memory_survives_a_clear_its_joins_are_orphaned_and_a_new_intake_at_the_
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('MAP-015')
 def test_a_memory_on_a_map_join_reconnects_by_its_two_addresses_and_only_lost_addresses_are_orphaned(run, mapped):
-    join_id = Store('proj').joins('code.manager.route').results[0].join_id
+    join_id = Store('proj').joins('code.manager.route').results[0].id
     mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), f'node=join:{join_id}', cwd=mapped)
     mj(run, 'create_entities', J([entity('probe cost', 'fact')]), PROBE, cwd=mapped)
     run('clear', 'project', 'proj', '--confirm', cwd=mapped)
@@ -227,7 +227,7 @@ def test_a_memory_on_a_map_join_reconnects_by_its_two_addresses_and_only_lost_ad
         store.add_element(layer.name, 'code.probe.echo', name_length=2, role='SE')
         store.add_join(layer.name, 'code.manager.route', 'code.probe.echo', purpose='Know a route is alive.')
         store.add_element(layer.name, 'code.manager.table', name_length=2, role='SE')
-    new_id = Store('proj').joins('code.manager.route').results[0].join_id
+    new_id = Store('proj').joins('code.manager.route').results[0].id
     assert new_id != join_id
     assert mj(run, 'read_graph', f'node=join:{new_id}', cwd=mapped)['entities'] == [
         entity('echo timeout', 'fact', 'One second.')]
@@ -367,7 +367,7 @@ def test_agents_see_the_memory_joins_when_they_read_a_node_and_the_layer_named_m
 
 @pytest.mark.req('LAYER-013')
 def test_an_elements_read_shows_the_memories_on_the_joins_it_receives_and_provides(run, mapped):
-    join_id = Store('proj').joins('code.manager.route').results[0].join_id
+    join_id = Store('proj').joins('code.manager.route').results[0].id
     mj(run, 'create_entities', J([entity('echo timeout', 'fact', 'One second.')]), f'node=join:{join_id}', cwd=mapped)
     for address in ('code.manager.route', 'code.probe.echo'):
         assert where(run, address, mapped)['memory']['joins'] == [
@@ -407,7 +407,7 @@ def test_one_graph_read_opens_the_project_databases_of_the_home_as_often_whateve
     from metaform import home as metaform_home
     from metaform import sqlite as metaform_sqlite
     store = Store('proj')
-    join_id = store.joins('code.manager.route').results[0].join_id
+    join_id = store.joins('code.manager.route').results[0].id
     store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
     for number, node in enumerate((ROUTE, PROBE, f'node=join:{join_id}', 'node=element:code.probe.echo.timer')):
         mj(run, 'create_entities', J([entity(f'fact {number}', 'fact')]), node, cwd=mapped)
@@ -588,7 +588,7 @@ def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped
     are internal. An agent names a join by its receiver and an element it holds, as refine does, and never handles
     join:<id>; with address beside them it names an element that join holds, Rich's shape, 2026-10-04."""
     store = Store('proj')
-    join_id = store.joins('code.manager.route').results[0].join_id
+    join_id = store.joins('code.manager.route').results[0].id
     with store.atomic():
         store.add_element('intake-1', 'code.probe.echo.timer', name_length=3, role='SE')
         store.refine(join_id, {'elements': ['code.probe.echo', 'code.probe.echo.timer']}, reason='the timer serves it')
@@ -613,7 +613,7 @@ def test_memory_names_a_join_by_its_receiver_and_an_element_it_holds(run, mapped
     mj(run, 'create_entities', J([entity('route cost', 'fact')]), 'address=code.manager.route', cwd=mapped)
     assert mj(run, 'read_graph', *PURPOSE, cwd=mapped) == mj(run, 'read_graph', f'node=join:{join_id}', cwd=mapped)
     assert [one['name'] for one in mj(run, 'read_graph', *PURPOSE, cwd=mapped)['entities']] == ['echo timeout']
-    assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{tabled.join_id}', cwd=mapped)['entities']] == [
+    assert [one['name'] for one in mj(run, 'read_graph', f'node=join:{tabled.id}', cwd=mapped)['entities']] == [
         'table size']
     assert [one['name'] for one in mj(run, 'read_graph', 'node=element:code.probe.echo.timer',
                                       cwd=mapped)['entities']] == ['timer drift']
@@ -696,7 +696,7 @@ def test_rekey_transfers_exact_addresses_at_both_ends_and_preserves_the_graph(ru
     with store.tables(write=False) as tx:
         before = {table: list(tx.rows(table, limit=0).results) for table in ('joins', 'notes')}
     if old_missing:
-        store.refine(store.element(old, raw=True).element_id, remove=True, reason='Replace the old address.')
+        store.refine(store.element(old, raw=True).id, remove=True, reason='Replace the old address.')
         assert any(one.get('address') == old for one in mj(run, 'orphaned', cwd=mapped)['joins'])
     result = mj(run, 'rekey', old, new, cwd=mapped)
     assert result == {'old': old, 'new': new, 'joins': 4, 'notes': 4}

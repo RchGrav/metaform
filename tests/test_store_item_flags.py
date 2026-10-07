@@ -21,9 +21,9 @@ def test_an_item_keeps_its_read_first_and_always_show_flags_and_an_edit_changes_
     note = store.add_item(critic.name, KITCHEN, 'The tick loop was rewritten once.')
     assert (flagged.read_first, flagged.always_show) == (True, True)
     assert (note.read_first, note.always_show) == (False, False)
-    edited = store.edit(flagged.item_id, {'read_first': False})
+    edited = store.edit(flagged.id, {'read_first': False})
     assert (edited.fields['read_first'], edited.fields['always_show']) == (False, True)
-    raised = store.edit(note.item_id, {'read_first': True})
+    raised = store.edit(note.id, {'read_first': True})
     assert (raised.fields['read_first'], raised.fields['always_show']) == (True, False)
     store.finish(critic.name)
     read = {item.value: (item.read_first, item.always_show) for group in store.node(KITCHEN).layers
@@ -40,7 +40,7 @@ def test_an_item_flagged_task_adds_a_ticket_at_its_node_and_does_not_store_the_f
     tickets = store.work(KITCHEN, open=True).results
     assert [(ticket.condition, ticket.task) for ticket in tickets] == [('missing', 'Make the alarm stop after a minute.')]
     told = [notice for notice in item.notices if notice.where == 'task']
-    assert len(told) == 1 and tickets[0].work_id in told[0].message
+    assert len(told) == 1 and tickets[0].id in told[0].message
     store.finish(critic.name)
     assert values(store.node(KITCHEN), 'critic') == ['Make the alarm stop after a minute.']
     db = sqlite3.connect(store_file(home, store))
@@ -63,7 +63,7 @@ def test_an_always_show_item_shows_at_its_node_where_its_layer_does_not_reach(st
     store.add_item(critic.name, KITCHEN, 'Optional reading.')
     store.finish(critic.name)
     store.mask('code.timer', critic.name)
-    assert critic.layer_id not in store.effective_selection('code.timer.kitchen').layer_ids
+    assert critic.id not in store.effective_selection('code.timer.kitchen').layer_ids
     assert values(store.node(KITCHEN), 'critic') == ['Never block the tick loop.']
     assert [item.value for item in store.where('code.timer.kitchen').layers[0].items] == ['Never block the tick loop.']
 
@@ -96,7 +96,7 @@ def test_a_ticket_read_returns_the_read_first_items_of_its_node_and_its_linked_n
     store.add_item(critic.name, ALARM, 'Read the alarm wiring first.', read_first=True)
     store.finish(critic.name)
     ticket = store.add_work(KITCHEN, 'missing', task='stop the alarm', links=[ALARM])
-    read = store.ticket(ticket.work_id)
+    read = store.ticket(ticket.id)
     assert [item.value for item in read.read_first] == ['Read the timer spec first.', 'Read the alarm wiring first.']
     plain = read.to_dict()
     keys = list(plain)

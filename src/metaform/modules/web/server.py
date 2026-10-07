@@ -107,7 +107,7 @@ def coalesce(held: dict[str, Any], event: dict[str, Any]) -> dict[str, Any] | No
     names `dispatch` and the other a list. The merged event names the union of what each named; one that named no
     detail may have changed any dispatch table, so the merge then names none."""
     a, b = held['payload'], event['payload']
-    if any(a.get(key) != b.get(key) for key in ('project', 'metaform_id')) or type(a['tables']) is not type(b['tables']):
+    if any(a.get(key) != b.get(key) for key in ('project', 'base_id')) or type(a['tables']) is not type(b['tables']):
         return None
     payload = dict(a)
     if isinstance(a['tables'], list):
@@ -633,10 +633,10 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(answer, str) or not answer.strip():
             return self.send(400, {'error': 'An answer says something.'})
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 asked = [found for found in store.messages(None, 'question', True, limit=0).results
-                         if found.message_id == record]
+                         if found.id == record]
                 if not asked:
                     return self.send(400, {'error': 'This is not an open question.'})
                 done = store.reply(record, answer.strip())
@@ -649,10 +649,10 @@ class Handler(BaseHTTPRequestHandler):
         VIEW-021. Only an answered question is reopened from the page."""
         record = str(given.get('id', ''))
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 answered = [found for found in store.messages(None, 'question', False, limit=0).results
-                            if found.message_id == record]
+                            if found.id == record]
                 if not answered:
                     return self.send(400, {'error': 'This is not an answered question.'})
                 done = store.reopen(record)
@@ -664,10 +664,10 @@ class Handler(BaseHTTPRequestHandler):
         """Mark a note read, which ends its record, VIEW-030. Only an unread note is read from the page."""
         record = str(given.get('id', ''))
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 unread = [found for found in store.messages(None, 'message', True, limit=0).results
-                          if found.message_id == record]
+                          if found.id == record]
                 if not unread:
                     return self.send(400, {'error': 'This is not an unread message.'})
                 done = store.reply(record)
@@ -686,14 +686,14 @@ class Handler(BaseHTTPRequestHandler):
         if condition not in TICKETS:
             return self.send(400, {'error': 'Work is missing, broken, flawed or an enhancement.'})
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
                 written = [store.add_work(targets[0], condition, task=text.strip(), held=bool(given.get('held')),
                                           links=targets[1:])]
             kept = {key: given[key] for key in ('agent', 'hold', 'eligible') if given.get(key) is not None}
             if kept:  # the ticket's preferred agent and the person's hold, kept by the map module
-                module_verb(given, 'map', 'work', {'op': 'edit', 'id': written[0].work_id, **kept}, chosen=True)
+                module_verb(given, 'map', 'work', {'op': 'edit', 'id': written[0].id, **kept}, chosen=True)
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, {'results': plain(written)})
@@ -826,7 +826,7 @@ class Handler(BaseHTTPRequestHandler):
         if position is not None and (not isinstance(position, int) or isinstance(position, bool)):
             return self.send(400, {'error': 'A place in a column is a whole number.'})
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             moved = store.move_work(work_id, column, position, given.get('by'))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
@@ -855,7 +855,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(anchor, str) or given.get('receives') not in ('node', 'new'):
             return self.send(400, {'error': 'An element is joined to a node, and one of the two holds the purpose.'})
         try:
-            store = opened({'project': str(given.get('project', '')), 'metaform': str(given.get('metaform') or '')})
+            store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 store.layer(ADDITIONS, 'web', 'What people added to the map by hand.', mutable=True, hideable=True,
                             provenance=ADDED, ready=True)
@@ -864,12 +864,12 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(made, Outcome):
                     return self.send(400, {'error': 'The element was not written.', 'notices': plain(made.notices)})
                 held = Node.parse(anchor).id
-                receiver, provider = (held, made.element_id) if given['receives'] == 'node' else (made.element_id, held)
+                receiver, provider = (held, made.id) if given['receives'] == 'node' else (made.id, held)
                 joined = store.add_join(ADDITIONS, receiver, provider, purpose=given.get('purpose') or None,
                                         ef=given.get('ef') or None)
-                work = store.add_work(Node('element', made.element_id), 'missing', note='Added by hand in the web GUI.')
+                work = store.add_work(Node('element', made.id), 'missing', note='Added by hand in the web GUI.')
                 if given.get('validate') is True:
-                    work = store.edit_work(work.work_id, {'task': validation(made.address)})
+                    work = store.edit_work(work.id, {'task': validation(made.address)})
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, {'element': plain(made), 'join': plain(joined), 'work': plain(work)})
@@ -1213,7 +1213,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
     if not any(one.id == 'map' for one in chassis.surface(Path(project.path))):
         return page
     try:
-        store = Store(project.project_id, metaform=given.get('metaform') or None, module='map')
+        store = Store(project.project_id, base=given.get('base') or None, module='map')
         with store.tables(write=False) as tx:
             held: dict[str, dict[str, Any]] = {
                 str(row['work_id']): {'glyph': row['glyph']} for row in tx.rows('glyphs', limit=0).results}
@@ -1228,8 +1228,8 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
     shown: list[dict[str, Any]] = []
     for record in page.results:
         data = record.to_dict()
-        if record.work_id in held:
-            data.setdefault('map', held[record.work_id])
+        if record.id in held:
+            data.setdefault('map', held[record.id])
         shown.append(data)
     return {**page.to_dict(), 'results': shown}
 
@@ -1265,17 +1265,17 @@ def referenced(project: Any, ref: str) -> dict[str, Any] | None:
         return spec_record(folder, ref)
     if HEX_REF.match(ref):
         store = Store(project.project_id)
-        tickets = [record for record in store.work(limit=0).results if record.work_id.startswith(ref)]
+        tickets = [record for record in store.work(limit=0).results if record.id.startswith(ref)]
         if len(tickets) == 1:
             record = tickets[0]
-            return {'kind': 'ticket', 'id': record.work_id, 'title': record.task or record.note or record.work_id,
+            return {'kind': 'ticket', 'id': record.id, 'title': record.task or record.note or record.id,
                     'task': record.task, 'note': record.note, 'condition': record.condition, 'column': record.column,
                     'done': record.done, 'resolution': record.resolution, 'address': record.address}
         said = [message for kind in ('question', 'message')
-                for message in store.messages(None, kind, None, limit=0).results if message.message_id.startswith(ref)]
+                for message in store.messages(None, kind, None, limit=0).results if message.id.startswith(ref)]
         if len(said) == 1:
             message = said[0]
-            return {'kind': 'message', 'id': message.message_id, 'type': message.kind, 'title': message.text or '',
+            return {'kind': 'message', 'id': message.id, 'type': message.kind, 'title': message.text or '',
                     'text': message.text, 'choices': list(message.suggestions), 'answer': message.answer,
                     'closed': message.closed, 'address': message.address}
         return None
@@ -1331,8 +1331,8 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
     switches['layers'] = chosen_layers(given, folder)
     ctx = chassis.context(module_id, folder, project=project.project_id, nouns=nouns, switches=switches,
                           sink=lambda text: None, surface='web')
-    if chosen and given.get('metaform'):
-        ctx.store = Store(project.project_id, toggled=switches['layers'], metaform=str(given['metaform']),
+    if chosen and given.get('base'):
+        ctx.store = Store(project.project_id, toggled=switches['layers'], base=str(given['base']),
                           module=module_id)
     return chassis.call(verb.run, ctx)
 
@@ -1345,7 +1345,7 @@ def opened(given: dict[str, str]) -> Store:
         raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
     chosen = given.get('layers')
     toggled = [name for name in chosen.split(',') if name] if chosen is not None else settings.toggled_layers(Path(project.path))
-    return Store(project.project_id, toggled=toggled, metaform=given.get('metaform') or None)
+    return Store(project.project_id, toggled=toggled, base=given.get('base') or None)
 
 
 def main(argv: list[str] | None = None) -> int:

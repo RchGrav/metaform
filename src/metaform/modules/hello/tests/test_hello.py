@@ -192,10 +192,10 @@ def test_todo_writes_a_work_record_on_the_modules_own_element_and_done_resolves_
     store = Store('proj')
     records = store.work(node=Node('element', 'code.module.hello')).results
     assert [(row.condition, row.task, row.done) for row in records] == [('missing', 'greet in every language', None)]
-    assert said == f'To do: greet in every language ({records[0].work_id})'
+    assert said == f'To do: greet in every language ({records[0].id})'
     assert store.element('code.module.hello', raw=True).open_work == ('missing',)
     assert 'Hello: 1 greeted, 1 to do' in run(cwd=hello).stdout.splitlines()
-    run('hello', 'done', records[0].work_id, 'greets in Latin now', cwd=hello)
+    run('hello', 'done', records[0].id, 'greets in Latin now', cwd=hello)
     finished = store.work(node=Node('element', 'code.module.hello')).results[0]
     assert (finished.resolution, finished.done is not None) == ('greets in Latin now', True)
     assert store.element('code.module.hello', raw=True).open_work == ()
@@ -377,7 +377,7 @@ def test_report_saves_a_report_that_hellos_layer_carries_in_its_provenance(run, 
     from metaform.data import Store
     name = run('hello', 'report', 'Greets in English only.', cwd=hello).stdout.strip()
     layer = Store('proj').layer_ref('hello.greetings')
-    assert name == f'{layer.layer_id}-report.md'
+    assert name == f'{layer.id}-report.md'
     assert (own('proj') / 'reports' / name).read_text(encoding='utf-8') == 'Greets in English only.'
     assert [(ref.key, ref.value) for ref in Store('proj').provenance('hello.greetings').refs
             if ref.key == 'report'] == [('report', name)]
@@ -469,12 +469,12 @@ def test_work_read_shows_hellos_own_field_on_its_work_record_and_the_store_layou
     work_id = said.rsplit('(', 1)[1].rstrip(')')
     run('hello', 'greet', 'cy', cwd=hello)
     ticket = json.loads(run('map', 'work', f'id={work_id}', '--json', cwd=hello).stdout)
-    assert ticket['work_id'] == work_id and ticket['hello'] == {'greeted': 2}
+    assert ticket['id'] == work_id and ticket['hello'] == {'greeted': 2}
     assert 'hello: {"greeted":2}' in run('map', 'work', f'id={work_id}', cwd=hello).stdout.splitlines()
     with Store('proj', module='hello').tables(write=False) as tx:
         assert tx.get('todos', {'work_id': work_id}) == {'work_id': work_id, 'greeted': 2}
     other = Store('proj').add_work(Node('element', 'code.module.hello'), 'flawed', task='not hello\'s own')
-    assert 'hello' not in json.loads(run('map', 'work', f'id={other.work_id}', '--json', cwd=hello).stdout)
+    assert 'hello' not in json.loads(run('map', 'work', f'id={other.id}', '--json', cwd=hello).stdout)
     from metaform.modules.map import TABLES
     work_table = TABLES.table('work').schema.split('CREATE TABLE IF NOT EXISTS work(')[1].split(');')[0]
     assert [line.split()[0] for line in work_table.strip().splitlines()] == [

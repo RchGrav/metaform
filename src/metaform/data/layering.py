@@ -22,7 +22,7 @@ from .ids import LAYER_NAME, TAG, is_id, new_id
 from .records import Layer, Notice, Outcome, Version
 from .selection import LAYER_COLUMNS, LayerRow, all_layers, layer_row
 from .session import Tx
-from .versions import METAFORM_KINDS
+from .versions import BASE_KINDS
 
 KINDS = ('layer', 'intake', 'memory')
 
@@ -126,7 +126,7 @@ def create(tx: Tx, name: object, module: str, variable: Any, *, kind: str = 'lay
     stamp = home.now()
     tx.db.execute('INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, result_id, kind, '
                   'created, ready) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                  (layer_id, tx.metaform_id, name, module, question, int(bool(mutable)), int(bool(hideable)),
+                  (layer_id, tx.base_id, name, module, question, int(bool(mutable)), int(bool(hideable)),
                    result_id, kind, stamp, stamp if (ready or kind == 'memory') else None))
     if kind != 'memory':
         given = provenance or {}
@@ -306,7 +306,7 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
                                                f'metaform map history {thing}')))
     base = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (current,)).fetchone()
     found = rows.layer(tx, str(base['layer_id']))
-    if found.kind not in METAFORM_KINDS:
+    if found.kind not in BASE_KINDS:
         return Outcome((Notice('id', f'{thing} belongs to the knowledge layer {found.name}, not to the metaform; a '
                                      'knowledge layer is edited in place: metaform map knowledge '
                                      f'op=edit layer={found.name} id={thing} <field>=<value>. Nothing was '

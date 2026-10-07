@@ -62,10 +62,10 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
     before = dump(store_file(home, store))
     missing = store.add_work(Node('element', 'code.alarm.audible'), 'missing', note='the pin is never released',
                          task='release the pin after stop')
-    broken = store.add_work(Node('join', join.join_id), 'broken', task='wire the tone', held=True)
+    broken = store.add_work(Node('join', join.id), 'broken', task='wire the tone', held=True)
     assert (missing.condition, missing.note, missing.task, missing.held, missing.reviewed, missing.done, missing.resolution) == (
         'missing', 'the pin is never released', 'release the pin after stop', False, False, None, None)
-    assert (missing.kind, missing.id, missing.address) == ('element', alarm.element_id, 'code.alarm.audible')
+    assert (missing.node_kind, missing.node_id, missing.address) == ('element', alarm.id, 'code.alarm.audible')
     assert (broken.receiver_address, broken.provider_address, broken.held) == ('code.timer.kitchen', 'code.alarm.audible',
                                                                                True)
     after = dump(store_file(home, store))
@@ -73,9 +73,9 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
     assert {name: rows for name, rows in after.items() if name != 'work'} == {name: rows for name, rows in before.items()
                                                                               if name != 'work'}, 'the map changed'
     listed = json.loads(run('map', 'work', 'condition=broken', '--json', cwd=folder).stdout)['results']
-    assert [(row['kind'], row['receiver_address'], row['provider_address'], row['condition'])
+    assert [(row['node_kind'], row['receiver_address'], row['provider_address'], row['condition'])
             for row in listed] == [('join', 'code.timer.kitchen', 'code.alarm.audible', 'broken')]
-    assert json.loads(run('map', 'work', f'id={listed[0]["work_id"]}', '--json', cwd=folder).stdout)['task'] == (
+    assert json.loads(run('map', 'work', f'id={listed[0]["id"]}', '--json', cwd=folder).stdout)['task'] == (
         'wire the tone')  # a list row leaves its task out, MAP-049
     element = json.loads(run('map', 'element', 'code.alarm.audible', '--json', cwd=folder).stdout)
     assert element['open_work'] == ['missing'] and 'flag' not in element
@@ -83,22 +83,22 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
     assert store.element('code.timer.kitchen').open_work == ()
     traced.clear()
     store.work(condition='missing')
-    store.work(node=Node('element', alarm.element_id))
+    store.work(node=Node('element', alarm.id))
     store.work(open=True)
     lines = [line for _, plan in plans(home, store, traced) for line in plan]
     for index in ('work_by_condition', 'work_by_target', 'work_by_done'):
         assert any(index in line for line in lines), index
-    changed = store.edit_work(missing.work_id, {'reviewed': True, 'task': 'release the pin, then test it'})
+    changed = store.edit_work(missing.id, {'reviewed': True, 'task': 'release the pin, then test it'})
     assert (changed.reviewed, changed.task, changed.note) == (True, 'release the pin, then test it',
                                                               'the pin is never released')
-    done = store.finish_work(missing.work_id, 'released in alarm.c')
+    done = store.finish_work(missing.id, 'released in alarm.c')
     assert done.done is not None and done.resolution == 'released in alarm.c' and done.condition == 'missing'
     assert store.element('code.alarm.audible').open_work == ()
-    assert [row.work_id for row in store.work(open=False).results] == [missing.work_id]
-    assert [row.work_id for row in store.work(open=True).results] == [broken.work_id]
+    assert [row.id for row in store.work(open=False).results] == [missing.id]
+    assert [row.id for row in store.work(open=True).results] == [broken.id]
     assert len(dump(store_file(home, store))['work']) == 2
-    again = store.finish_work(missing.work_id, 'a second resolution')
-    assert again.resolution == 'released in alarm.c' and [notice.where for notice in again.notices] == ['work_id']
+    again = store.finish_work(missing.id, 'a second resolution')
+    assert again.resolution == 'released in alarm.c' and [notice.where for notice in again.notices] == ['id']
     document = export_document(['proj'])['projects'][0]['metaforms'][0]
     assert sorted(row['condition'] for row in document['work']) == ['broken', 'missing']
 
@@ -115,11 +115,11 @@ def test_a_work_record_that_does_not_fit_is_stored_as_given_with_a_notice(run, t
     assert sideways.condition == 'sideways' and sideways.note == '{"pin": 4}'
     assert sorted(notice.where for notice in sideways.notices) == ['condition', 'note']
     nowhere = store.add_work(Node('element', 'code.nowhere'), 'missing', task='build it')
-    assert (nowhere.kind, nowhere.id, nowhere.address) == ('element', 'code.nowhere', None)
+    assert (nowhere.node_kind, nowhere.node_id, nowhere.address) == ('element', 'code.nowhere', None)
     assert [notice.where for notice in nowhere.notices] == ['node']
     assert store.element('code.alarm.audible').open_work == ('sideways',)
     assert sorted(row.condition for row in store.work().results) == ['missing', 'sideways']
-    edited = store.edit_work(nowhere.work_id, {'task': 'decide it', 'color': 'red'})
+    edited = store.edit_work(nowhere.id, {'task': 'decide it', 'color': 'red'})
     assert edited.task == 'decide it' and [notice.where for notice in edited.notices] == ['color']
     assert json.loads(run('map', 'work', 'op=add', 'node=element:code.alarm.audible', 'condition=exclude',
                           'note=old probe', '--json', cwd=folder).stdout)['condition'] == 'exclude'
@@ -137,7 +137,7 @@ def test_a_work_record_without_a_condition_is_stored_as_empty_text_with_a_notice
     assert [(notice.where, notice.message) for notice in unsaid.notices] == [
         ('condition', 'condition is missing; stored empty.')]
     assert [row.condition for row in store.work().results] == ['']
-    cleared = store.edit_work(unsaid.work_id, {'condition': None})
+    cleared = store.edit_work(unsaid.id, {'condition': None})
     assert cleared.condition == '' and [notice.where for notice in cleared.notices] == ['condition']
 
 
@@ -149,14 +149,14 @@ def test_a_work_record_follows_its_element_through_removal_and_recording_again(s
     first = store.add_element(layer.name, 'code.engine')
     record = store.add_work(Node('element', 'code.engine'), 'missing', task='build it')
     assert store.element('code.engine', raw=True).open_work == ('missing',)
-    store.remove(first.element_id)
+    store.remove(first.id)
     assert store.element('code.engine', raw=True) is None
-    assert [(row.work_id, row.address) for row in store.work(open=True).results] == [(record.work_id, None)]
+    assert [(row.id, row.address) for row in store.work(open=True).results] == [(record.id, None)]
     again = store.add_element(layer.name, 'code.engine')
-    assert again.element_id == first.element_id
+    assert again.id == first.id
     store.finish(layer.name)
     assert store.element('code.engine').open_work == ('missing',)
-    assert [(row.work_id, row.address) for row in store.work(open=True).results] == [(record.work_id, 'code.engine')]
+    assert [(row.id, row.address) for row in store.work(open=True).results] == [(record.id, 'code.engine')]
 
 
 @pytest.mark.req('STORE-042')
@@ -167,14 +167,14 @@ def test_discarding_a_layer_leaves_the_work_records_of_its_objects_in_place(home
     store.add_element(layer.name, 'code.draft.probe')
     join = store.add_join(layer.name, 'code.timer.kitchen', 'code.draft.probe', purpose='p', ef='f')
     on_element = store.add_work(Node('element', 'code.draft.probe'), 'exclude', note='old probe')
-    on_join = store.add_work(Node('join', join.join_id), 'broken')
+    on_join = store.add_work(Node('join', join.id), 'broken')
     on_intake = store.add_work(Node('element', 'code.alarm.audible'), 'missing')
     before = dump(store_file(home, store))
     store.discard(layer.name)
     assert dump(store_file(home, store))['work'] == before['work']
     assert [found.name for found in store.layers().results] == ['intake-1']
-    listed = {row.work_id: (row.kind, row.id, row.address, row.condition) for row in store.work().results}
-    assert listed == {on_element.work_id: ('element', on_element.id, None, 'exclude'),
-                      on_join.work_id: ('join', join.join_id, None, 'broken'),
-                      on_intake.work_id: ('element', on_intake.id, 'code.alarm.audible', 'missing')}
+    listed = {row.id: (row.node_kind, row.node_id, row.address, row.condition) for row in store.work().results}
+    assert listed == {on_element.id: ('element', on_element.node_id, None, 'exclude'),
+                      on_join.id: ('join', join.id, None, 'broken'),
+                      on_intake.id: ('element', on_intake.node_id, 'code.alarm.audible', 'missing')}
     assert store.element('code.alarm.audible').open_work == ('missing',)

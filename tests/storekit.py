@@ -16,10 +16,10 @@ PROVENANCE = {'module': 'test', 'workflow': 'fixture', 'prompt': 'Write the fixt
 
 
 def store_file(home: Path, store) -> Path:
-    active = store.active_metaform()
+    active = store.active_base()
     assert active is not None, 'the project has no metaform yet'
     from metaform import home as metaform_home
-    return metaform_home.store_path(store.project().project_id, active.metaform_id)
+    return metaform_home.store_path(store.project().project_id, active.id)
 
 
 def dump(path: Path) -> dict[str, frozenset]:

@@ -211,7 +211,7 @@ def test_a_home_made_before_nonces_existed_is_given_the_table_on_the_first_reque
     from metaform import home as metaform_home
     from metaform import nonce
     metaform_home.set_meta('made', 'before nonces')  # the chassis database exists, as it did then
-    db = sqlite3.connect(metaform_home.base_path())
+    db = sqlite3.connect(metaform_home.chassis_path())
     db.execute('DROP TABLE nonces')
     db.commit()
     db.close()

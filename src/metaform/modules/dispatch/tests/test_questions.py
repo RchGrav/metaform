@@ -14,15 +14,15 @@ pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('VIEW-042')]
 TRIAL_PROMPTS = Path(__file__).with_name('trial_prompts.xml')  # test-only prompts Rich has not written yet
 
 def test_an_unfinished_ticket_with_a_question_returns_to_todo_and_keeps_progress(dispatch, run):
-    dispatch.store.plan_work(dispatch.work_id, 3)
-    dispatch.store.step_work(dispatch.work_id, 'Read the dependencies.')
+    dispatch.store.plan_work(dispatch.id, 3)
+    dispatch.store.step_work(dispatch.id, 'Read the dependencies.')
     dispatch.start('question', FAKE_ACP_ASK_AT='code.engine')
     [question] = eventually(dispatch.questions)
     assert dispatch.process.wait(15) == 0, dispatch.process.stderr.read().decode()
     record = dispatch.ticket()
     assert record.taken is None and not record.held and record.steps == 3 and record.steps_done == 1
     assert dispatch.session().extra['state'] == 'ended'
-    run('map', 'reply', question.message_id, 'answer=Keep it', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Keep it', cwd=dispatch.folder)
     from metaform.module import context
     from metaform.modules.dispatch import autostart
     autostart(context('dispatch', dispatch.folder, project='proj'))
@@ -41,8 +41,8 @@ def test_automatic_dispatch_uses_board_order_free_glyphs_and_five_undistributed_
     monkeypatch.setattr(module, 'start', lambda ctx: launched.append(ctx.nouns['id']) or {'work_id': ctx.nouns['id']})
     ctx = context('dispatch', dispatch.folder, project='proj')
     module.autostart(ctx)
-    assert launched == [ids[-1], dispatch.work_id, *ids[:3]]
-    for work_id in [dispatch.work_id, *ids]:
+    assert launched == [ids[-1], dispatch.id, *ids[:3]]
+    for work_id in [dispatch.id, *ids]:
         run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={ids[1]}', 'glyph=moth', cwd=dispatch.folder)
     launched.clear()
@@ -65,12 +65,12 @@ def test_automatic_dispatch_counts_starting_reservations_before_sessions_registe
     ctx = context('dispatch', dispatch.folder, project='proj')
     module.autostart(ctx)
     module.autostart(ctx)
-    assert launched == [dispatch.work_id, ids[0]], 'unregistered runners still occupy the two slots'
-    for work_id in [dispatch.work_id, *ids]:
+    assert launched == [dispatch.id, ids[0]], 'unregistered runners still occupy the two slots'
+    for work_id in [dispatch.id, *ids]:
         run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={ids[-1]}', 'glyph=moth', cwd=dispatch.folder)
     module.autostart(ctx)
-    assert launched == [dispatch.work_id, ids[0]], 'the two reservations also occupy distributed capacity'
+    assert launched == [dispatch.id, ids[0]], 'the two reservations also occupy distributed capacity'
 
 
 def test_submitting_a_question_keeps_the_turn_working_and_its_answer_reaches_the_asker(dispatch, run, tmp_path):
@@ -80,13 +80,13 @@ def test_submitting_a_question_keeps_the_turn_working_and_its_answer_reaches_the
     eventually(lambda: [one for one in dispatch.items('note') if one.extra['update'] == 'tool_call' and
                        'Ask a question' in one.value])
     assert dispatch.process.poll() is None and dispatch.ticket().taken
-    run('map', 'reply', question.message_id, 'answer=Keep it', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Keep it', cwd=dispatch.folder)
     answered = eventually(lambda: [one for one in dispatch.items('note') if one.extra['update'] == 'answered'])
     assert 'Keep it' in answered[0].value
     assert dispatch.process.poll() is None, 'an answer queues while useful work continues'
     gate.touch()
     sent = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
-    assert question.message_id in sent['params']['prompt'][0]['text']
+    assert question.id in sent['params']['prompt'][0]['text']
     assert 'Keep it' in sent['params']['prompt'][0]['text']
     assert dispatch.process.wait(15) == 0
 
@@ -94,43 +94,43 @@ def test_submitting_a_question_keeps_the_turn_working_and_its_answer_reaches_the
 def test_open_questions_do_not_skip_board_order_in_next_ticket_or_autostart(dispatch, run, monkeypatch):
     from metaform.module import context
     from metaform.modules import dispatch as module
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [later] = glyphed(dispatch, run, ('Later', 'kite', False))
-    dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.work_id)
+    dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.id)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    assert module.next_ticket(ctx, dispatch.store, 'kite').work_id == dispatch.work_id
-    assert module.next_ticket(ctx, dispatch.store, 'kite', exclude=(dispatch.work_id,)).work_id == later
+    assert module.next_ticket(ctx, dispatch.store, 'kite').id == dispatch.id
+    assert module.next_ticket(ctx, dispatch.store, 'kite', exclude=(dispatch.id,)).id == later
     run('set', '--dispatch-autostart', cwd=dispatch.folder)
     started = []
     monkeypatch.setattr(module, 'start', lambda ctx: started.append(ctx.nouns['id']) or {'work_id': ctx.nouns['id']})
     module.autostart(ctx)
-    assert started == [dispatch.work_id], 'a question does not move the first ticket behind later work'
+    assert started == [dispatch.id], 'a question does not move the first ticket behind later work'
 
 
 def test_answer_does_not_move_a_ticket_the_person_put_in_backlog(dispatch, run):
     from metaform.module import context
     from metaform.modules.dispatch import autostart
-    question = dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.work_id)
-    dispatch.store.move_work(dispatch.work_id, 'backlog', 7)
+    question = dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.id)
+    dispatch.store.move_work(dispatch.id, 'backlog', 7)
     position = dispatch.ticket().position
-    run('map', 'reply', question.message_id, 'answer=Text', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Text', cwd=dispatch.folder)
     autostart(context('dispatch', dispatch.folder, project='proj'))
     assert dispatch.ticket().held and dispatch.ticket().position == position
 
 
 def test_an_answer_reaches_the_current_ticket_holder_even_when_another_agent_asked(dispatch, run, tmp_path):
-    question = dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.work_id,
+    question = dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.id,
                                  by='previous agent')
     gates = tmp_path / 'holder-turns'
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates))
     eventually(lambda: dispatch.received('session/prompt'))
-    run('map', 'reply', question.message_id, 'answer=Text', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Text', cwd=dispatch.folder)
     answered = eventually(lambda: [one for one in dispatch.items('note') if one.extra['update'] == 'answered'])
-    assert question.message_id in answered[0].value and 'Text' in answered[0].value
+    assert question.id in answered[0].value and 'Text' in answered[0].value
     (gates / '1').touch()
     sent = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
-    assert question.message_id in sent['params']['prompt'][0]['text']
+    assert question.id in sent['params']['prompt'][0]['text']
     assert 'Text' in sent['params']['prompt'][0]['text']
     (gates / '2').touch()
     assert dispatch.process.wait(15) == 0
@@ -145,8 +145,8 @@ def test_questions_added_and_reopened_during_work_reach_the_current_holder(dispa
                               'suggestions=["Text","XML"]', 'by=previous agent', 'specs=00-index.md',
                               'not_option=One format is read.',
                               'rich_said=None; the decision and its reason are described in the question.',
-                              f'work={dispatch.work_id}', '--json', cwd=dispatch.folder).stdout)
-    message_id = question['message_id']
+                              f'work={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    message_id = question['id']
     run('map', 'reply', message_id, 'answer=Text', cwd=dispatch.folder)
     eventually(lambda: [one for one in dispatch.items('note') if one.extra['update'] == 'answered'])
     (gates / '1').touch()
@@ -168,20 +168,20 @@ def test_chat_after_unfinished_exit_starts_new_glyph_and_answer_reaches_that_ses
     dispatch.start('question', FAKE_ACP_ASK_AT='code.engine')
     [question] = eventually(dispatch.questions)
     assert dispatch.process.wait(15) == 0
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     gates = tmp_path / 'turns'
     gates.mkdir()
     for name, value in dispatch.env('replace', FAKE_ACP_TURN_GATES=str(gates)).items():
         monkeypatch.setenv(name, value)
-    result = json.loads(run('dispatch', 'chat', question.message_id, '--json', cwd=dispatch.folder).stdout)
+    result = json.loads(run('dispatch', 'chat', question.id, '--json', cwd=dispatch.folder).stdout)
     dispatch_runners.append((result, dispatch.folder, dispatch.log))
     text = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
-    assert question.message_id in text and 'Is the store kept?' in text
-    record = json.loads(run('map', 'work', f'id={dispatch.work_id}', '--json', cwd=dispatch.folder).stdout)
+    assert question.id in text and 'Is the store kept?' in text
+    record = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert record['map']['glyph'] and record['map']['glyph'] != 'kite'
-    run('map', 'reply', question.message_id, 'answer=Keep it', cwd=dispatch.folder)
+    run('map', 'reply', question.id, 'answer=Keep it', cwd=dispatch.folder)
     eventually(lambda: [one for one in dispatch.items('note') if one.extra['update'] == 'answered'])
-    run('dispatch', 'message', dispatch.work_id, 'Check the store', cwd=dispatch.folder)
+    run('dispatch', 'message', dispatch.id, 'Check the store', cwd=dispatch.folder)
     assert len(dispatch.received('session/prompt')) == 2, 'the answer waits for the chat turn to end'
     (gates / '1').touch()
     answered = eventually(lambda: dispatch.received('session/prompt')[2:])[0]
@@ -200,15 +200,15 @@ def test_chat_on_a_question_naming_no_ticket_opens_one_at_its_node_and_a_second_
     question = dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'])
     for name, value in dispatch.env('hold').items():
         monkeypatch.setenv(name, value)
-    result = json.loads(run('dispatch', 'chat', question.message_id, '--json', cwd=dispatch.folder).stdout)
+    result = json.loads(run('dispatch', 'chat', question.id, '--json', cwd=dispatch.folder).stdout)
     dispatch_runners.append((result, dispatch.folder, dispatch.log))
     tickets = dispatch.store.work(dispatch.node, open=True, limit=0).results
-    [opened] = [record for record in tickets if record.work_id == result['work_id']]
+    [opened] = [record for record in tickets if record.id == result['work_id']]
     assert len(tickets) == 3 and opened.task == 'Which format?'
     eventually(lambda: [row for row in dispatch.items('session')
-                        if row.extra['work_id'] == opened.work_id and row.extra['state'] == 'running'])
-    again = json.loads(run('dispatch', 'chat', question.message_id, '--json', cwd=dispatch.folder).stdout)
-    assert again['work_id'] == opened.work_id
+                        if row.extra['work_id'] == opened.id and row.extra['state'] == 'running'])
+    again = json.loads(run('dispatch', 'chat', question.id, '--json', cwd=dispatch.folder).stdout)
+    assert again['work_id'] == opened.id
     assert len(dispatch.store.work(dispatch.node, open=True, limit=0).results) == 3
 
 
@@ -219,16 +219,16 @@ def test_chat_on_a_done_tickets_question_starts_an_agent_to_talk_it_through(disp
     dispatch.start('question', FAKE_ACP_ASK_AT='code.engine')
     [question] = eventually(dispatch.questions)
     assert dispatch.process.wait(15) == 0
-    dispatch.store.finish_work(dispatch.work_id, 'Finished')
+    dispatch.store.finish_work(dispatch.id, 'Finished')
     monkeypatch.setenv('METAFORM_PROMPTS', str(TRIAL_PROMPTS))
     for name, value in dispatch.env('hold').items():
         monkeypatch.setenv(name, value)
-    result = json.loads(run('dispatch', 'chat', question.message_id, '--json', cwd=dispatch.folder).stdout)
+    result = json.loads(run('dispatch', 'chat', question.id, '--json', cwd=dispatch.folder).stdout)
     dispatch_runners.append((result, dispatch.folder, dispatch.log))
-    assert result['work_id'] == dispatch.work_id
+    assert result['work_id'] == dispatch.id
     text = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
-    assert question.message_id in text and 'Is the store kept?' in text and 'Test talk prompt.' in text
-    eventually(lambda: [row for row in json.loads(run('dispatch', 'sessions', f'id={dispatch.work_id}', '--json',
+    assert question.id in text and 'Is the store kept?' in text and 'Test talk prompt.' in text
+    eventually(lambda: [row for row in json.loads(run('dispatch', 'sessions', f'id={dispatch.id}', '--json',
                                                       cwd=dispatch.folder).stdout)['sessions']
                         if row['state'] == 'running'])
     assert dispatch.ticket().done
@@ -240,19 +240,19 @@ def test_talk_on_a_done_ticket_and_on_a_node_starts_a_conversation_and_takes_not
     """Talk works on anything: a done ticket's agent is told the ticket and that it is done, the ticket stays done and
     untaken; a second Talk while one is open is refused, naming it; a node's Talk, after the first is closed, is told
     the node's address and how to read it."""
-    dispatch.store.finish_work(dispatch.work_id, 'Finished')
+    dispatch.store.finish_work(dispatch.id, 'Finished')
     for name, value in dispatch.env('hold').items():
         monkeypatch.setenv(name, value)
-    unwritten = run('dispatch', 'talk', f'id={dispatch.work_id}', cwd=dispatch.folder, ok=False)
+    unwritten = run('dispatch', 'talk', f'id={dispatch.id}', cwd=dispatch.folder, ok=False)
     assert 'This needs its prompt written:' in unwritten.stderr and 'prompts.xml talk' in unwritten.stderr
     monkeypatch.setenv('METAFORM_PROMPTS', str(TRIAL_PROMPTS))
-    result = json.loads(run('dispatch', 'talk', f'id={dispatch.work_id}', '--json', cwd=dispatch.folder).stdout)
+    result = json.loads(run('dispatch', 'talk', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     dispatch_runners.append((result, dispatch.folder, dispatch.log))
     text = eventually(lambda: dispatch.received('session/prompt'))[0]['params']['prompt'][0]['text']
-    assert f'ticket {dispatch.work_id}, done' in text and 'Test talk prompt.' in text
+    assert f'ticket {dispatch.id}, done' in text and 'Test talk prompt.' in text
     assert dispatch.ticket().done and not dispatch.ticket().taken
     refused = run('dispatch', 'talk', 'node=code.engine', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and dispatch.work_id in refused.stderr + refused.stdout
+    assert refused.returncode != 0 and dispatch.id in refused.stderr + refused.stdout
     dispatch.stop()
     eventually(lambda: not [row for row in json.loads(run('dispatch', 'sessions', 'thread=false', '--json',
                                                           cwd=dispatch.folder).stdout)['sessions']
@@ -267,8 +267,8 @@ def test_talk_on_a_done_ticket_and_on_a_node_starts_a_conversation_and_takes_not
 def test_start_reserves_ticket_before_runner_launch_and_restores_claim_on_launch_failure(dispatch, run, monkeypatch):
     from metaform.module import Stop, context
     from metaform.modules import dispatch as module
-    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.work_id, 'agent': 'claude'})
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [other] = glyphed(dispatch, run, ('Other ticket', 'kite', False))
     def launch(*args, **kwargs):
         assert dispatch.ticket().taken
@@ -287,13 +287,13 @@ def test_direct_run_and_glyph_transition_reserve_before_starting_the_adapter(dis
     from metaform.module import Stop, context
     from metaform.modules import dispatch as module
     from metaform.modules.dispatch import runner
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [other] = glyphed(dispatch, run, ('Next ticket', 'kite', False))
     began = []
     async def session_run(session):
         work_id = session.work_id
         assert dispatch.store.ticket(work_id).work.taken_by.startswith('dispatch starting ')
-        competing = other if work_id == dispatch.work_id else work_id
+        competing = other if work_id == dispatch.id else work_id
         with pytest.raises(Stop, match='kite|taken'):
             module.start(context('dispatch', dispatch.folder, project='proj',
                                  nouns={'id': competing, 'agent': 'claude'}))
@@ -301,21 +301,21 @@ def test_direct_run_and_glyph_transition_reserve_before_starting_the_adapter(dis
         dispatch.store.finish_work(work_id, 'Finished')
         return {'work_id': work_id}
     monkeypatch.setattr(runner.Session, 'run', session_run)
-    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.work_id, 'agent': 'claude'})
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
     result = asyncio.run(runner.dispatch(ctx))
-    assert result['worked'] == began == [dispatch.work_id, other]
+    assert result['worked'] == began == [dispatch.id, other]
 
 
 def test_reset_releases_tickets_dead_agents_hold_and_closes_their_sessions(dispatch, run):
     """After crashes a ticket can stay taken, by a start that died or a runner that is gone, and hold a slot for good;
     reset puts it back on the board and records the session as ended, deleting nothing."""
     from metaform.data import Store
-    dispatch.store.take_work(dispatch.work_id, by='dispatch starting deadbeef')
+    dispatch.store.take_work(dispatch.id, by='dispatch starting deadbeef')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 'gone', 'work_id': dispatch.work_id, 'agent': 'claude', 'state': 'running',
+        tx.insert('sessions', {'session_id': 'gone', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
                                'pid': 999999, 'port': 1, 'token': 'x', 'started': '2026-10-05T00:00:00Z', 'seq': 1})
     done = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
-    assert done['released'] == [dispatch.work_id] and done['sessions_ended'] == [dispatch.work_id]
+    assert done['released'] == [dispatch.id] and done['sessions_ended'] == [dispatch.id]
     assert dispatch.ticket().taken is None and not dispatch.ticket().done
     with Store('proj', module='dispatch').tables(write=False) as tx:
         assert tx.get('sessions', {'session_id': 'gone'})['state'] == 'ended'
@@ -324,9 +324,9 @@ def test_reset_releases_tickets_dead_agents_hold_and_closes_their_sessions(dispa
 def test_a_glyph_moves_past_unfinished_work_without_retrying_it_in_the_same_run(dispatch, run, monkeypatch):
     from metaform.module import context
     from metaform.modules.dispatch import release, runner
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [later] = glyphed(dispatch, run, ('Later', 'kite', False))
-    dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.work_id)
+    dispatch.store.ask(dispatch.node, 'Which format?', suggestions=['Text'], work=dispatch.id)
     began = []
     async def session_run(session):
         began.append(session.work_id)
@@ -344,13 +344,13 @@ def test_a_glyph_moves_past_unfinished_work_without_retrying_it_in_the_same_run(
         return {'work_id': session.work_id, 'ended': how}
     monkeypatch.setattr(runner.Session, 'run', session_run)
     result = asyncio.run(runner.dispatch(context('dispatch', dispatch.folder, project='proj',
-                                                nouns={'id': dispatch.work_id, 'agent': 'claude'})))
-    assert result['worked'] == began == [dispatch.work_id, later]
+                                                nouns={'id': dispatch.id, 'agent': 'claude'})))
+    assert result['worked'] == began == [dispatch.id, later]
     assert not dispatch.ticket().taken and not dispatch.ticket().held
 
 
 def test_a_real_glyph_runner_moves_past_a_questioned_ticket(dispatch, run):
-    run('map', 'work', 'op=edit', f'id={dispatch.work_id}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     [later] = glyphed(dispatch, run, ('Later', 'kite', False))
     dispatch.start('question', FAKE_ACP_ASK_AT='code.engine')
     assert dispatch.process.wait(20) == 0, dispatch.process.stderr.read().decode()

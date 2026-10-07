@@ -110,7 +110,7 @@ def test_broken_unrelated_source_does_not_block_retained_reads(home, user_module
     candidates = loader._candidates
     monkeypatch.setattr(loader, "_candidates", lambda project: sorted(
         candidates(project), key=lambda item: item.id != "aaa_broken"))
-    assert store.ticket(work.work_id).work == work
+    assert store.ticket(work.id).work == work
     assert not hasattr(store, "add_work")
     found = loader.get("aaa_broken")
     assert found is not None and found.module is None

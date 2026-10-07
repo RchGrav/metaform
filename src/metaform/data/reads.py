@@ -100,11 +100,11 @@ def where(tx: Tx, res: Resolver, raw: bool, address: str, full: bool) -> Where |
     found = views.element(tx, str(current[0]), context)
     if found is None:
         return None
-    at = node(tx, res, Node('element', found.element_id), raw)
+    at = node(tx, res, Node('element', found.id), raw)
     reaching = reaching_at(tx, res, address)
     return operations.decorate(tx, Where('element', found, None,
-                 joins(tx, context, found.element_id, 'provider', 0, None).results,
-                 joins(tx, context, found.element_id, 'receiver', 0, None).results,
+                 joins(tx, context, found.id, 'provider', 0, None).results,
+                 joins(tx, context, found.id, 'receiver', 0, None).results,
                  layers=() if at is None else at.layers, full=full, applying=reaching.applying,
                  visible=reaching.visible))
 
@@ -437,7 +437,7 @@ def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
         found = views.element(tx, str(row['key']), res)
         if found is None:
             return None
-        return RootElement(found.element_id, found.address, str(row['role']), found.short_name)
+        return RootElement(found.id, found.address, str(row['role']), found.short_name)
     page = paged(fetch, build, limit, after)
     return Roots(tuple(entry), page.results, page.next)
 
@@ -472,7 +472,7 @@ def graph(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> GraphP
             continue
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if in_context(prefix)), None)
         elements.append(GraphElement(element_view, parent))
-        held += joins(tx, res, element_view.element_id, 'receiver', 0, None).results
+        held += joins(tx, res, element_view.id, 'receiver', 0, None).results
     return GraphPage(tuple(elements), tuple(held), str(found[-1]['address']) if more else None)
 
 
@@ -495,6 +495,6 @@ def layer_graph(tx: Tx, layer: str) -> GraphPage:
         parent = next((prefix for prefix in reversed(prefixes(element_view.address)[:-1]) if prefix in addresses),
                       None)
         elements.append(GraphElement(element_view, parent))
-        held += [join for join in joins(tx, None, element_view.element_id, 'receiver', 0, None).results
+        held += [join for join in joins(tx, None, element_view.id, 'receiver', 0, None).results
                  if join.layer_id == found.layer_id]
     return GraphPage(tuple(elements), tuple(held))

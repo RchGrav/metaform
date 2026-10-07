@@ -268,7 +268,7 @@ def build(store):
         store.finish(name)
     store.mask('code.alarm', 'extra')
     store.hide('secret')
-    store.refine(store.element('code.gone').element_id, remove=True, reason='It is not there.')
+    store.refine(store.element('code.gone').id, remove=True, reason='It is not there.')
 
 
 @pytest.fixture
@@ -313,7 +313,7 @@ def test_each_read_endpoint_returns_what_its_store_read_returns_in_context_and_r
         '/api/work?node=element:code.timer.kitchen': lambda raw: store.work(node=kitchen),
         '/api/search?text=loop': lambda raw: store.search('loop'),
         '/api/provenance?layer=notes': lambda raw: store.provenance('notes'),
-        '/api/metaforms': lambda raw: store.metaforms(),
+        '/api/bases': lambda raw: store.bases(),
         '/api/layer-items?layer=notes': lambda raw: store.layer_items('notes'),
     }
     for path, read in reads.items():
@@ -340,7 +340,7 @@ def test_the_page_data_for_a_node_is_what_map_node_returns(run, web, mapped):
     from metaform.data import Store
     started(run)
     store = Store('proj')
-    held = store.joins('exterior.cook').results[0].join_id
+    held = store.joins('exterior.cook').results[0].id
     for node in ('element:code.timer.kitchen', 'element:exterior.cook', f'join:{held}', 'element:code.loop.tick'):
         cli = json.loads(run('map', 'node', node, '--json', cwd=mapped).stdout)
         assert api(web, f'/api/node?project=proj&target={node}') == (200, cli)
@@ -387,7 +387,7 @@ def test_reading_changes_nothing_and_applying_layers_is_a_write_only_from_the_gu
     assert any(path.name == 'memory.sqlite3' for path in stores)  # the memory module's store, with rows, is read too
     before = [path.read_bytes() for path in stores]
     shown = run('config', '--show', '--json', cwd=mapped).stdout
-    for path in ('/api/projects', '/api/metaforms?project=proj', '/api/roots?project=proj',
+    for path in ('/api/projects', '/api/bases?project=proj', '/api/roots?project=proj',
                  '/api/graph?project=proj&limit=0', '/api/graph?project=proj&raw=true&layers=notes',
                  '/api/children?project=proj&address=code', '/api/node?project=proj&target=element:code.timer.kitchen',
                  '/api/joins?project=proj&element=code.timer.kitchen', '/api/layers?project=proj',
@@ -521,8 +521,8 @@ def drawn_as_paths(graph, expected):
     """The page's graph against the store's: one vertex per element, each join one path from its receiver to its own
     purpose vertex and on to each element it holds with nothing back to the receiver, MAP-002, and each element's
     namespace edge from its nearest parent element, VIEW-005."""
-    elements = {entry['element']['element_id'] for entry in expected['elements']}
-    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
+    elements = {entry['element']['id'] for entry in expected['elements']}
+    by_address = {entry['element']['address']: entry['element']['id'] for entry in expected['elements']}
     links = graph['links']
     assert sorted(node['id'] for node in graph['nodes'] if node['t'] == 'el') == sorted(elements)
     by_join = {}
@@ -530,13 +530,13 @@ def drawn_as_paths(graph, expected):
         if link.get('join'):
             by_join.setdefault(link['join'], []).append((link['source'], link['target'], link['k']))
     for join in expected['joins']:
-        purpose = 'p:' + join['join_id']
-        assert sorted(by_join.pop(join['join_id'])) == sorted(
+        purpose = 'p:' + join['id']
+        assert sorted(by_join.pop(join['id'])) == sorted(
             [(join['receiver'], purpose, 'purpose')]
             + [(purpose, each['element_id'], 'encounter') for each in join['elements']])
     assert by_join == {}
     assert sorted((link['source'], link['target']) for link in links if link['k'] == 'tree') == sorted(
-        (by_address[entry['parent']], entry['element']['element_id']) for entry in expected['elements'] if entry['parent'])
+        (by_address[entry['parent']], entry['element']['id']) for entry in expected['elements'] if entry['parent'])
     assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
     assert len([node for node in graph['nodes'] if node['t'] == 'purpose']) == len(expected['joins'])
 
@@ -550,7 +550,7 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     page, problems, remote = opened(browser, web)
     graph = page.evaluate('window.metaform.graph()')
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
-    elements = {entry['element']['element_id'] for entry in expected['elements']}
+    elements = {entry['element']['id'] for entry in expected['elements']}
     drawn_as_paths(graph, expected)
     page.wait_for_function('([count]) => window.metaform.labels3d().filter(label => !label.hidden).length === count',
                            arg=[len(elements)])
@@ -564,13 +564,13 @@ def test_the_page_draws_each_join_as_its_path_and_both_views_select_together(run
     assert page.evaluate('[...document.querySelectorAll("#map2d svg .edgeLabel")].map(e => e.textContent.trim())'
                          '.filter(Boolean)') == []
     alarm = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'code.alarm.audible')
-    page.evaluate(f'window.metaform.select("{alarm["element_id"]}")')
+    page.evaluate(f'window.metaform.select("{alarm["id"]}")')
     assert page.evaluate('[...document.querySelectorAll("#map2d svg g.node.sel title")].map(t => t.textContent)') == [
         'code.alarm.audible']
     page.evaluate('[...document.querySelectorAll("#map2d svg g.node")].find(g => g.querySelector("title").textContent '
                   '=== "exterior.cook").dispatchEvent(new MouseEvent("click", {bubbles: true}))')
     cook = next(entry['element'] for entry in expected['elements'] if entry['element']['address'] == 'exterior.cook')
-    assert page.evaluate('window.metaform.selected()') == cook['element_id']
+    assert page.evaluate('window.metaform.selected()') == cook['id']
     assert page.text_content('#p-object h2') == 'cook'
     page.keyboard.press('f')
     page.wait_for_timeout(300)
@@ -646,7 +646,7 @@ def test_a_refined_join_is_drawn_as_the_metaform_is_and_the_page_offers_no_corre
     """Rich, 2026-10-01: refinements should not be changing things' colors, and need not be in layer select."""
     from metaform.data import Store
     held = Store('proj').joins('code.timer.kitchen').results[0]
-    join = held.join_id
+    join = held.id
     named = (f'receiver={held.receiver_address}', f'provider={held.elements[0].address}')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -680,11 +680,11 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
                              ready=True)
     store.add_item(remembered.name, Node('element', 'code.timer.kitchen'), 'drifts under load')
     challenged = store.add_item('notes', Node('element', 'code.timer.kitchen'), 'Nothing recovers a hung loop.')
-    store.answer(challenged.item_id, 'A')
+    store.answer(challenged.id, 'A')
     run('set', '--layers', ','.join([*TOGGLED, 'memory']), cwd=mapped)
     started(run)
     page, problems, _ = opened(browser, web)
-    kitchen = store.element('code.timer.kitchen').element_id
+    kitchen = store.element('code.timer.kitchen').id
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("written in C")')
     panel = page.inner_text('#p-object')
@@ -711,7 +711,7 @@ def test_a_node_with_open_missing_work_is_drawn_in_characters_a_broken_one_flash
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
+    ids = {address: store.element(address).id for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook')}
     look = lambda address: page.evaluate(f'window.metaform.look("{ids[address]}")')
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === true', timeout=5000)
     alarm = look('code.alarm.audible')
@@ -739,7 +739,7 @@ def test_a_node_with_open_missing_work_is_drawn_in_characters_a_broken_one_flash
     for shown in ('WORK', 'broken', 'drifts', 'hold the tick to one second', 'open'):
         assert shown in panel, shown
     # Its task done, pushed to the page, the alarm turns solid without a reload.
-    run('map', 'work', 'op=done', f'id={missing.work_id}', 'resolution=driver written', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={missing.id}', 'resolution=driver written', cwd=mapped)
     # glass, as every built element, once the text has given way to it
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").material === "MeshTransmissionMaterial"',
                            timeout=60000)  # the ending runs on a clock of at most 0.1 s a frame, slower as frames slow
@@ -762,17 +762,17 @@ def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, 
     from metaform.data import Node, Store
     store = Store('proj')
     joins = list(store.joins('code.timer.kitchen').results)
-    store.add_work(Node('join', joins[0].join_id), 'missing', task='build it')
+    store.add_work(Node('join', joins[0].id), 'missing', task='build it')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     links = page.evaluate('window.metaform.linkColors()')
     assert not any(link['color'].startswith('rgba(') for link in links)  # its links keep their color and opacity
-    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].join_id}").text3d === true', timeout=5000)
-    assert page.evaluate(f'window.metaform.look("p:{joins[0].join_id}").around3d') == 0
-    built = [join['join_id'] for join in keys_of(web)[0]['joins'] if join['join_id'] != joins[0].join_id]
+    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].id}").text3d === true', timeout=5000)
+    assert page.evaluate(f'window.metaform.look("p:{joins[0].id}").around3d') == 0
+    built = [join['id'] for join in keys_of(web)[0]['joins'] if join['id'] != joins[0].id]
     assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").text3d') is False
-    assert page.evaluate(f'window.metaform.edge2d("{joins[0].join_id}")') == ['work-missing']
+    assert page.evaluate(f'window.metaform.edge2d("{joins[0].id}")') == ['work-missing']
     glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-missing');
         const style = getComputedStyle(path); return [Number(style.opacity), style.filter]; })()""")
     assert glow[0] == 1 and 'drop-shadow' in glow[1]
@@ -793,8 +793,8 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    ids = {address: store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook')}
-    run('map', 'work', 'op=take', f'id={working.work_id}', cwd=mapped)
+    ids = {address: store.element(address).id for address in ('code.alarm.audible', 'exterior.cook')}
+    run('map', 'work', 'op=take', f'id={working.id}', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").work[0] === "in-progress"', timeout=15000)  # pushed, read and drawn again
     page.wait_for_function(f'() => window.metaform.look("{ids["code.alarm.audible"]}").text3d === true', timeout=15000)
     page.wait_for_timeout(600)  # the page redraws once for the change it was pushed
@@ -810,12 +810,12 @@ def test_the_text_of_a_part_being_worked_on_quickens_that_of_a_part_waiting_is_s
     cook = page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}")')
     assert cook['classes'] == ['work-in-progress'] and cook['animated2d'] is True
     assert 'work: in-progress' in page.inner_text('#legend')
-    run('map', 'work', 'op=done', f'id={working.work_id}', 'resolution=built', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={working.id}', 'resolution=built', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").material === "MeshTransmissionMaterial"',
                            timeout=60000)  # the ending runs on a clock of at most 0.1 s a frame, slower as frames slow
     assert page.evaluate(f'window.metaform.look("{ids["exterior.cook"]}").text3d') is False
     page.wait_for_function(f'() => window.metaform.look("{ids["exterior.cook"]}").classes.length === 0', timeout=5000)
-    assert waiting.work_id and problems == []
+    assert waiting.id and problems == []
 
 
 @pytest.mark.req('VIEW-022')
@@ -837,7 +837,7 @@ def test_a_propertys_reach_travels_as_a_wave_from_the_element_it_is_linked_to(ru
     assert {key: page.evaluate('window.metaform.bloom()')[key] for key in ('pass', 'levels')} == {'pass': True, 'levels': 3}
     assert page.evaluate('window.metaform.reach()') == {'property': None, 'elements': [], 'edges': 0}
     page.evaluate('window.metaform.waveTimes({every: 2.4, cross: 0.5, hold: 0.3, gaussian: false})')
-    key = 'r:' + written.property_id
+    key = 'r:' + written.id
     page.wait_for_function(f'() => window.metaform.graph().nodes.some(node => node.id === "{key}")', timeout=5000)
     page.evaluate(f'window.metaform.select("{key}")')
     reach = page.evaluate('window.metaform.reach()')
@@ -896,11 +896,11 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
     store = Store('proj')
     join = next(iter(store.joins('code.timer.kitchen').results))
     store.add_work(Node('element', 'exterior.cook'), 'exclude', task='review whether the cook belongs in the artifact scope')
-    store.add_work(Node('join', join.join_id), 'exclude', task='review whether this relationship belongs in the artifact scope')
+    store.add_work(Node('join', join.id), 'exclude', task='review whether this relationship belongs in the artifact scope')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    cook, purpose = store.element('exterior.cook').element_id, 'p:' + join.join_id
+    cook, purpose = store.element('exterior.cook').id, 'p:' + join.id
     exclude = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--exclude").trim().toLowerCase()')
     others = page.evaluate("""() => { const style = getComputedStyle(document.documentElement);
         return ['--broken', '--missing', '--signal', '--de', '--intake', '--memory',
@@ -913,9 +913,9 @@ def test_an_open_exclude_record_stands_out_on_an_element_and_on_a_join_in_both_v
     seen = page.evaluate(f'window.metaform.look("{cook}")')
     assert (seen['classes'], seen['animated2d']) == (['work-exclude'], True)
     colors = {link['color'].lower() for link in page.evaluate('window.metaform.linkColors()')
-              if link['join'] == join.join_id}
+              if link['join'] == join.id}
     assert colors == {exclude}
-    assert page.evaluate(f'window.metaform.edge2d("{join.join_id}")') == ['work-exclude']
+    assert page.evaluate(f'window.metaform.edge2d("{join.id}")') == ['work-exclude']
     assert problems == []
 
 
@@ -934,14 +934,14 @@ def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(r
     drawn = page.evaluate('window.metaform.linkColors()')
     for join in expected['joins']:
         assert 'perspective' not in join
-        encounters = [link for link in drawn if link['join'] == join['join_id'] and link['k'] == 'encounter']
+        encounters = [link for link in drawn if link['join'] == join['id'] and link['k'] == 'encounter']
         assert len(encounters) == len(join['elements'])
         for encounter in encounters:
             assert encounter['color'] == color['k1' if join['layer'] == 'notes' else 'intake'], join
     assert page.locator('#map2d svg .edgePaths path[class*="perspective-"]').count() == 0
     legend = page.inner_text('#legend')
     assert 'Function ·' not in legend and 'Encounter ·' not in legend
-    kitchen = next(entry['element']['element_id'] for entry in expected['elements']
+    kitchen = next(entry['element']['id'] for entry in expected['elements']
                    if entry['element']['address'] == 'code.timer.kitchen')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     assert page.locator('#p-object .join .perspective').count() == 0
@@ -950,7 +950,7 @@ def test_each_encounter_keeps_its_layers_color_and_nothing_names_a_perspective(r
 
 def keys_of(web):
     expected = api(web, '/api/graph?project=proj&limit=0')[1]
-    by_address = {entry['element']['address']: entry['element']['element_id'] for entry in expected['elements']}
+    by_address = {entry['element']['address']: entry['element']['id'] for entry in expected['elements']}
     return expected, by_address
 
 
@@ -1016,8 +1016,8 @@ def test_clicking_a_join_in_3d_shows_that_join(run, web, mapped, browser):
     page, problems, _ = opened(browser, web)
     expected, at = keys_of(web)
     outer = next(join for join in expected['joins'] if join['receiver'] == at['exterior.cook'])
-    page.evaluate(f'window.metaform.click3d("p:{outer["join_id"]}")')
-    assert page.evaluate('window.metaform.selected()') == 'p:' + outer['join_id']
+    page.evaluate(f'window.metaform.click3d("p:{outer["id"]}")')
+    assert page.evaluate('window.metaform.selected()') == 'p:' + outer['id']
     assert page.text_content('#p-object .eyebrow') == 'Join'
     assert outer['purpose'] in page.inner_text('#p-object')
     page.evaluate(f'window.metaform.select("{at["code.timer.kitchen"]}")')
@@ -1099,7 +1099,7 @@ def test_enter_or_a_click_on_the_selected_node_goes_inside_it_and_escape_backs_o
     expected, at = keys_of(web)
     kitchen, cook = at['code.timer.kitchen'], at['exterior.cook']
     # inside the kitchen timer is the join it receives, drawn as its purpose
-    tick = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
+    tick = 'p:' + next(join['id'] for join in expected['joins'] if join['receiver'] == kitchen)
     selected = lambda: page.evaluate('window.metaform.selected()')
     now_inside = lambda: page.evaluate('window.metaform.inside()')
     page.evaluate(f'window.metaform.select("{kitchen}")')
@@ -1296,7 +1296,7 @@ def test_going_inside_any_node_replaces_the_2d_map_with_its_own_graph_of_what_th
     page, problems, _ = opened(browser, web)
     expected, at = keys_of(web)
     kitchen, cook, alarm = at['code.timer.kitchen'], at['exterior.cook'], at['code.alarm.audible']
-    received = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
+    received = 'p:' + next(join['id'] for join in expected['joins'] if join['receiver'] == kitchen)
     assert 'The countdown drifts' not in page.inner_text('#p-object')  # the folder's layers leave memory off
     set_layer(page, 'memory', True)  # turned on in this view only
     page.keyboard.press('Escape')  # the first Escape closes the Layers list, and only that
@@ -1372,7 +1372,7 @@ def test_inside_a_node_the_graph_keeps_the_maps_orientation_and_fit_still_zooms(
     page, problems, _ = opened(browser, web)
     expected, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
-    tick = 'p:' + next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
+    tick = 'p:' + next(join['id'] for join in expected['joins'] if join['receiver'] == kitchen)
     across = page.evaluate('window.metaform.vertical()')
     assert across is True
     page.evaluate(f'window.metaform.select("{kitchen}")')
@@ -1476,8 +1476,8 @@ def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_d
     from metaform.data import Store
     store = Store('proj')
     for record in store.work(None, None, True, limit=0).results:  # nothing lit, nothing drawn in characters
-        store.finish_work(record.work_id, 'done')
-    cook = store.element('exterior.cook').element_id
+        store.finish_work(record.id, 'done')
+    cook = store.element('exterior.cook').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.emulate_media(reduced_motion='reduce')           # the distortion is still
@@ -1789,7 +1789,7 @@ def test_in_the_large_area_mode_one_keeps_the_whole_diagram_fitted_and_eases_to_
     assert page.evaluate('[...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")')
     assert fitted(page)
     expected, at = keys_of(web)
-    joined = next(join['join_id'] for join in expected['joins']
+    joined = next(join['id'] for join in expected['joins']
                   if [held['element_id'] for held in join['elements']] == [at['code.part.added']])
     gone = '![...document.querySelectorAll("#map2d svg title")].some(t => t.textContent === "code.part.added")'
     acted(page, lambda: [run('map', 'knowledge', 'op=remove', 'layer=notes', f'id={thing}', cwd=mapped)
@@ -2059,7 +2059,7 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     started(run)
     expected, at = keys_of(web)
     kitchen, alarm, tick = at['code.timer.kitchen'], at['code.alarm.audible'], at['code.loop.tick']
-    to_alarm = next(join['join_id'] for join in expected['joins'] if join['receiver'] == kitchen)
+    to_alarm = next(join['id'] for join in expected['joins'] if join['receiver'] == kitchen)
     remember(run, mapped, 'create_entities', [entity('countdown drift', 'The countdown drifts under load.')],
              'element:code.timer.kitchen')
     remember(run, mapped, 'create_entities', [entity('alarm pitch', 'Two kilohertz.')], 'element:code.alarm.audible')
@@ -2313,10 +2313,10 @@ def test_a_change_to_a_project_no_longer_registered_is_not_pushed_to_the_open_pa
     try:
         page: queue.SimpleQueue = queue.SimpleQueue()
         server.listeners.add(page)
-        assert server.changed({'project': 'gone', 'metaform_id': None}) == 0
+        assert server.changed({'project': 'gone', 'base_id': None}) == 0
         assert page.empty()
-        assert server.changed({'project': 'proj', 'metaform_id': None}) == 1
-        assert page.get_nowait() == {'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}
+        assert server.changed({'project': 'proj', 'base_id': None}) == 1
+        assert page.get_nowait() == {'topic': 'map.changed', 'payload': {'project': 'proj', 'base_id': None}}
     finally:
         server.server_close()
 
@@ -2359,9 +2359,9 @@ def test_the_server_hears_a_commands_change_through_the_bases_listener_and_has_n
         connection.makefile('rb').readline()
     listener.join(1)
     assert heard == [], 'a delivery without the listener\'s token reaches no page'
-    run('add', 'metaform', 'fresh', cwd=mapped)
+    run('add', 'base', 'fresh', cwd=mapped)
     listener.join(5)
-    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'base_id': None}}]
 
 
 @pytest.mark.req('QUAL-015')
@@ -2507,11 +2507,11 @@ def test_a_new_metaform_an_activation_and_a_memory_reach_the_open_page_without_a
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes > 0')
     whole = page.evaluate('window.metaform.drawn().nodes')
     options = 'document.querySelectorAll("#mf option")'
-    run('add', 'metaform', 'fresh', cwd=mapped)
+    run('add', 'base', 'fresh', cwd=mapped)
     page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "fresh · active")',
                            timeout=3000)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 0', timeout=5000)
-    run('activate', 'metaform', 'main', cwd=mapped)
+    run('activate', 'base', 'main', cwd=mapped)
     page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "main · active")',
                            timeout=3000)
     page.wait_for_function(f'() => window.metaform.loaded() && window.metaform.drawn().nodes === {whole}',
@@ -2531,13 +2531,13 @@ def test_prompts_are_read_and_an_edit_is_saved_as_a_new_version_only_from_the_gu
     prompts.add_prompt_version('practices', 'two\n', 1)
     third = prompts.add_prompt_version('practices', 'three\n', 2)
     notes = Store('proj').layer_ref('notes')
-    prompts.record_use(third.version_id, 'proj', notes.metaform_id, notes.layer_id)
+    prompts.record_use(third.version_id, 'proj', notes.base_id, notes.id)
     started(run)
     assert [item['name'] for item in api(web, '/api/prompts')[1]['prompts']] == ['practices']
     assert api(web, '/api/prompt?name=practices&number=3')[1]['text'] == 'three\n'
     versions = api(web, '/api/prompt-versions?name=practices')[1]['versions']
     assert [item['number'] for item in versions] == [3, 2, 1]
-    assert [use['layer_id'] for use in versions[0]['layers']] == [notes.layer_id] and versions[1]['layers'] == []
+    assert [use['layer_id'] for use in versions[0]['layers']] == [notes.id] and versions[1]['layers'] == []
     assert api(web, '/api/provenance?project=proj&layer=notes')[1]['prompt_version']['number'] == 3
     body = json.dumps({'name': 'practices', 'text': 'four\n', 'parent': 3})
     as_json = {'Content-Type': 'application/json'}
@@ -2563,7 +2563,7 @@ def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_ne
     prompts.add_prompt_version('practices', '<practices>\n  <two/>\n</practices>\n', 1)
     third = prompts.add_prompt_version('practices', '<practices>\n  <three/>\n</practices>\n', 2)
     notes = Store('proj').layer_ref('notes')
-    prompts.record_use(third.version_id, 'proj', notes.metaform_id, notes.layer_id)
+    prompts.record_use(third.version_id, 'proj', notes.base_id, notes.id)
     started(run)
     page, problems, remote = opened(browser, web)
     page.click('#t-prov')
@@ -2590,7 +2590,7 @@ def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_ne
     page.wait_for_function('() => document.querySelector("#verSel").value === "4"')
     saved = prompts.prompt_version('practices')
     assert (saved.number, saved.text, saved.parent_id) == (4, '<practices>\n  <four/>\n</practices>\n', third.version_id)
-    assert prompts.use_of('proj', notes.metaform_id, notes.layer_id).number == 3
+    assert prompts.use_of('proj', notes.base_id, notes.id).number == 3
     assert problems == [] and remote == []
 
 
@@ -2602,7 +2602,7 @@ def test_text_typed_into_a_prompt_just_opened_is_not_put_back_by_a_slower_read_o
     from metaform.data import Store, prompts
     prompts.add_prompt('practices', 'markdown', 'one\n')
     notes = Store('proj').layer_ref('notes')
-    prompts.record_use(prompts.prompt_version('practices').version_id, 'proj', notes.metaform_id, notes.layer_id)
+    prompts.record_use(prompts.prompt_version('practices').version_id, 'proj', notes.base_id, notes.id)
     started(run)
     page, problems, _ = opened(browser, web)
     page.evaluate('''() => { const real = window.fetch; let reads = 0; window.pending = 0;
@@ -2623,7 +2623,7 @@ def test_text_typed_into_a_prompt_just_opened_is_not_put_back_by_a_slower_read_o
 
 # ---------- clearing the project from the page, VIEW-019 and PROJ-025 ----------
 
-CLEARED = ('Cleared proj: one metaform, main, and one report file. Its registration, folder, settings, origins and '
+CLEARED = ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, origins and '
            'variants stay.')
 NO_METAFORM = 'proj has no metaform yet. The next intake creates one.'
 LEFT = ('It could not be removed and is still on disk. Close any program that has it open, such as a running web GUI, '
@@ -2646,7 +2646,7 @@ def caution_of(run, folder):
 
 
 def metaform_names(run, folder):
-    return [line.split()[0] for line in run('list', 'metaforms', cwd=folder).stdout.splitlines()]
+    return [line.split()[0] for line in run('list', 'bases', cwd=folder).stdout.splitlines()]
 
 
 def kept(home):
@@ -2690,8 +2690,8 @@ def test_the_page_reads_the_commands_caution_and_a_clear_without_confirm_or_from
     started(run)
     before = kept(home)
     caution = caution_of(run, mapped)
-    assert caution.startswith('Clearing proj removes one metaform, main, with its store, and one report file.')
-    assert api(web, '/api/clear-preview?project=proj') == (200, {'project': 'proj', 'metaforms': ['main'],
+    assert caution.startswith('Clearing proj removes one base, main, with its store, and one report file.')
+    assert api(web, '/api/clear-preview?project=proj') == (200, {'project': 'proj', 'bases': ['main'],
                                                                  'reports': 1, 'caution': caution})
     for given in ({}, {'confirm': False}):
         assert clear(web, **given) == (400, {'error': caution, 'next': 'If you are sure: send confirm true'})
@@ -2719,7 +2719,7 @@ def test_the_page_reads_the_commands_caution_and_a_clear_without_confirm_or_from
 def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_page_is_told(run, home, web, mapped,
                                                                                        tmp_path):
     remember(run, mapped, 'create_entities', [entity('drift', 'Drifts under load.')], 'element:code.timer.kitchen')
-    run('add', 'metaform', 'fresh', cwd=mapped)
+    run('add', 'base', 'fresh', cwd=mapped)
     run('feedback', 'The subtype fields did not match.', cwd=mapped)
     run('add', 'origin', cwd=mapped)
     work = tmp_path / 'work'
@@ -2736,23 +2736,23 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
     status, answer = clear(web, confirm=True)
     assert answer.pop('backup') and answer.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert status == 200 and answer == {
-        'project': 'proj', 'metaforms': ['main', 'fresh'], 'reports': 1,
-        'said': ('Cleared proj: two metaforms, main and fresh, and one report file. Its registration, folder, '
+        'project': 'proj', 'bases': ['main', 'fresh'], 'reports': 1,
+        'said': ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
                  'settings, origins and variants stay.')}
-    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     assert not (own('proj') / 'reports').exists()
-    assert run(cwd=mapped).stdout.count('Metaform: none yet') == 1
+    assert run(cwd=mapped).stdout.count('Base: none yet') == 1
     assert run('list', 'origins', cwd=mapped).stdout == before['origins']
     assert run('list', 'variants', cwd=mapped).stdout == before['variants']
     assert run('config', '--show', '--json', cwd=mapped).stdout == before['settings']
     assert [line.split()[0] for line in run('list', 'projects').stdout.splitlines()] == ['proj']
     assert sorted(path.name for path in mapped.iterdir()) == before['files']
     assert (mapped / 'notes.txt').read_text(encoding='utf-8') == 'first\n'
-    assert api(web, '/api/metaforms?project=proj')[1]['results'] == []
+    assert api(web, '/api/bases?project=proj')[1]['results'] == []
     assert first.wait(5)
     time.sleep(0.5)  # a second event, if one were sent, arrives within this
-    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'base_id': None}}]
     # the memory graph is the project's, kept by the clear as the command keeps it, its join orphaned, STORE-020
     kept = json.loads(run('memory', 'graph', '--json', cwd=mapped).stdout)
     assert [(one['name'], [seen['content'] for seen in one['observations']]) for one in kept['entities']] == [
@@ -2775,13 +2775,13 @@ def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_
     assert status == 200 and answer['said'] == CLEARED
     assert [entry['path'] for entry in answer['not_removed']] == [str(stuck)] and answer['not_removed'][0]['reason']
     assert answer['notices'] == [{'where': 'not_removed', 'message': LEFT}]
-    assert run('list', 'metaforms', cwd=mapped).stdout == ''
+    assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     status, again = clear(web, confirm=True)
     assert again.pop('backup') and again.pop('restore') == 'metaform restore project proj'  # PROJ-030
     assert (status, again) == (200, {
-        'project': 'proj', 'metaforms': [], 'reports': 1,
-        'said': ('Cleared proj: no metaforms and one report file. Its registration, folder, settings, origins and '
+        'project': 'proj', 'bases': [], 'reports': 1,
+        'said': ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins and '
                  'variants stay.')})
     assert not reports.exists()
 
@@ -2940,13 +2940,13 @@ def test_a_write_from_the_page_is_announced_on_the_event_bus_as_a_command_is(run
     time.sleep(0.5)
     assert heard_by(log) == [] and heard == []
     status, answer = clear(web, confirm=True)
-    assert status == 200 and answer['metaforms'] == ['main']
+    assert status == 200 and answer['bases'] == ['main']
     assert first.wait(5)
     time.sleep(0.5)
-    assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'web'}]
-    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'metaform_id': None}}]
+    assert heard_by(log) == [{'project': 'proj', 'base_id': None, 'surface': 'web'}]
+    assert heard == [{'topic': 'map.changed', 'payload': {'project': 'proj', 'base_id': None}}]
     run('clear', 'project', '--confirm', cwd=mapped)  # the command's clear reaches the same subscriber the same way
-    assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'cli'}]
+    assert heard_by(log) == [{'project': 'proj', 'base_id': None, 'surface': 'cli'}]
 
 
 @pytest.mark.req('VIEW-018')
@@ -2971,12 +2971,12 @@ def test_a_module_enabled_after_the_server_started_hears_the_pages_writes_in_tha
     run('enable', 'watcher')
     heard_by(log)
     status, answer = clear(web, confirm=True)
-    assert status == 200 and answer['metaforms'] == ['main']
+    assert status == 200 and answer['bases'] == ['main']
     deadline = time.monotonic() + 5  # the server announces after the answer is sent
     while not log.exists() and time.monotonic() < deadline:
         time.sleep(0.1)
     time.sleep(0.5)
-    assert heard_by(log) == [{'project': 'proj', 'metaform_id': None, 'surface': 'web'}]
+    assert heard_by(log) == [{'project': 'proj', 'base_id': None, 'surface': 'web'}]
 
 
 def watching_toasts(page):
@@ -3194,16 +3194,16 @@ def test_an_answer_written_from_the_page_is_kept_beside_the_question_and_closes_
     asked = store.ask(Node('element', 'code.timer.kitchen'), 'Is the 1 Hz tick still wanted?')
     assert [notice.where for notice in asked.notices] == ['suggestions'] and asked.kind == 'question'  # told to suggest
     started(run)
-    status, body = answered(web, asked.message_id, 'Yes, keep it.')
+    status, body = answered(web, asked.id, 'Yes, keep it.')
     assert status == 200 and body['answer'] == 'Yes, keep it.' and body['closed']
     kept = Store('proj').messages(Node('element', 'code.timer.kitchen'), 'question', False).results
     assert [(record.text, record.answer) for record in kept] == [('Is the 1 Hz tick still wanted?', 'Yes, keep it.')]
     assert Store('proj').messages(None, 'question', True).results == ()
     # only a question is answered from the page; any other record is left as it is
     other = Store('proj').add_work(Node('element', 'code.timer.kitchen'), 'missing', task='build it')
-    status, body = answered(web, other.work_id, 'done')
+    status, body = answered(web, other.id, 'done')
     assert status == 400 and Store('proj').work(None, 'missing', True).results[0].done is None
-    assert answered(web, asked.message_id, '   ')[0] == 400  # an answer says something
+    assert answered(web, asked.id, '   ')[0] == 400  # an answer says something
 
 
 def reopened(port, record, project='proj'):
@@ -3220,18 +3220,18 @@ def test_a_question_answered_by_mistake_is_reopened_from_the_page(run, web, mapp
     asked = store.ask(Node('element', 'code.timer.kitchen'), 'Is the 1 Hz tick still wanted?',
                       suggestions=['Yes, keep it.', 'No, drop it.'])
     started(run)
-    assert reopened(web, asked.message_id)[0] == 400  # an open question has nothing to reopen
-    answered(web, asked.message_id, 'No, drop it.')
-    status, body = reopened(web, asked.message_id)
+    assert reopened(web, asked.id)[0] == 400  # an open question has nothing to reopen
+    answered(web, asked.id, 'No, drop it.')
+    status, body = reopened(web, asked.id)
     assert status == 200 and (body['closed'], body['answer']) == (None, None)
     waiting = Store('proj').messages(None, 'question', True).results
-    assert [(record.message_id, record.suggestions) for record in waiting] == [
-        (asked.message_id, ('Yes, keep it.', 'No, drop it.'))]
-    status, body = answered(web, asked.message_id, 'Yes, keep it.')
+    assert [(record.id, record.suggestions) for record in waiting] == [
+        (asked.id, ('Yes, keep it.', 'No, drop it.'))]
+    status, body = answered(web, asked.id, 'Yes, keep it.')
     assert status == 200 and body['answer'] == 'Yes, keep it.'
     told = store.tell(Node('element', 'code.timer.kitchen'), 'The driver is written.')
-    store.reply(told.message_id)
-    assert reopened(web, told.message_id)[0] == 400  # only a question is reopened from the page
+    store.reply(told.id)
+    assert reopened(web, told.id)[0] == 400  # only a question is reopened from the page
     assert Store('proj').messages(None, 'message', False).results[0].closed
 
 
@@ -3277,7 +3277,7 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     # the alarm and the cook carry no record in the fixture; the kitchen carries a broken one
     first = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
     store.ask(Node('element', 'exterior.cook'), 'Who is the cook?')
-    kitchen, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    kitchen, cook = (store.element(address).id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -3298,7 +3298,7 @@ def test_an_open_question_glows_at_its_node_and_messages_leads_to_the_oldest_whe
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").work.length === 0 '
                            f'&& window.metaform.look("{kitchen}").light3d < 1')
     assert Store('proj').messages(None, 'question', False).results[0].answer == 'Yes, keep it.'
-    assert Store('proj').messages(None, 'question', False).results[0].message_id == first.message_id
+    assert Store('proj').messages(None, 'question', False).results[0].id == first.id
     # the answer stays at the node; the panel is drawn again once the page has read the change
     page.wait_for_function('() => document.querySelector("#float").innerText.includes("Answer: Yes, keep it.")',
                            timeout=5000)
@@ -3319,7 +3319,7 @@ def test_reopen_beside_an_answer_makes_the_question_wait_again_with_its_suggesti
     store = Store('proj')
     asked = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?',
                       suggestions=['Yes, keep it.', 'No, make it louder.'])
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -3341,7 +3341,7 @@ def test_reopen_beside_an_answer_makes_the_question_wait_again_with_its_suggesti
     assert 'Answer:' not in page.inner_text('#float') and page.locator('#float button.reopen').count() == 0
     page.click('#float button.suggestion.recommended')
     page.wait_for_function('() => document.querySelector("#messages").hidden')
-    assert Store('proj').messages(None, 'question', False).results[0].message_id == asked.message_id
+    assert Store('proj').messages(None, 'question', False).results[0].id == asked.id
     assert Store('proj').messages(None, 'question', False).results[0].answer == 'Yes, keep it.'
     assert problems == []
 
@@ -3352,7 +3352,7 @@ def test_the_two_views_change_places_on_demand_and_each_works_in_either_place(ru
     it cannot be read."""
     from metaform.data import Store
     store = Store('proj')
-    kitchen, alarm = (store.element(address).element_id for address in ('code.timer.kitchen', 'code.alarm.audible'))
+    kitchen, alarm = (store.element(address).id for address in ('code.timer.kitchen', 'code.alarm.audible'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -3402,7 +3402,7 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     from metaform.data import Node, Store
     store = Store('proj')
     asked = store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?')
-    kitchen, alarm, cook = (store.element(address).element_id
+    kitchen, alarm, cook = (store.element(address).id
                             for address in ('code.timer.kitchen', 'code.alarm.audible', 'exterior.cook'))
     broken = [record for record in store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results]
     assert broken  # the fixture's kitchen is broken
@@ -3424,11 +3424,11 @@ def test_a_node_that_needs_attention_gives_off_light_in_both_views_and_no_other_
     assert page.evaluate(f'window.metaform.look("{cook}").glow2d') is False
     # Closed from the command line and told to the page: the light goes back to the glass's own, and the pass goes off.
     for record in broken:
-        run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
-    run('map', 'reply', asked.message_id, 'answer=Yes.', cwd=mapped)
+        run('map', 'work', 'op=done', f'id={record.id}', 'resolution=fixed', cwd=mapped)
+    run('map', 'reply', asked.id, 'answer=Yes.', cwd=mapped)
     for record in store.work(None, None, True, limit=0).results:  # nothing on the map needs attention now
         if record.condition in ('broken', 'fixing', 'exclude'):
-            run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=done', cwd=mapped)
+            run('map', 'work', 'op=done', f'id={record.id}', 'resolution=done', cwd=mapped)
     page.wait_for_function(f'() => ["{kitchen}", "{alarm}"].every(id => window.metaform.look(id).light3d === {own}) '
                            '&& !window.metaform.bloom().on', timeout=5000)
     page.wait_for_timeout(1200)
@@ -3533,8 +3533,8 @@ def test_a_node_takes_the_pointer_anywhere_it_is_drawn(run, web, mapped, browser
     from metaform.data import Node, Store
     store = Store('proj')
     store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
-    alarm = store.element('code.alarm.audible').element_id
-    kitchen = store.element('code.timer.kitchen').element_id
+    alarm = store.element('code.alarm.audible').id
+    kitchen = store.element('code.timer.kitchen').id
     page, problems, names = staged_pair(run, web, browser, alarm, kitchen)
     page.wait_for_function(f'() => window.metaform.look("{alarm}").text3d', timeout=20000)
     assert page.evaluate('window.metaform.selected()') == kitchen
@@ -3554,9 +3554,9 @@ def test_with_the_bloom_off_a_glass_node_takes_the_pointer_on_its_sphere_and_not
     from metaform.data import Node, Store
     store = Store('proj')
     for record in store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results:
-        store.finish_work(record.work_id)
-    alarm = store.element('code.alarm.audible').element_id
-    kitchen = store.element('code.timer.kitchen').element_id
+        store.finish_work(record.id)
+    alarm = store.element('code.alarm.audible').id
+    kitchen = store.element('code.timer.kitchen').id
     page, problems, names = staged_pair(run, web, browser, alarm, kitchen)
     page.wait_for_timeout(500)
     assert page.evaluate('window.metaform.bloom().on') is False
@@ -3575,7 +3575,7 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     from metaform.data import Node, Store
     store = Store('proj')
     store.ask(Node('element', 'code.alarm.audible'), 'Still wanted?')  # the pass stays on
-    kitchen = store.element('code.timer.kitchen').element_id
+    kitchen = store.element('code.timer.kitchen').id
     broken = store.work(Node('element', 'code.timer.kitchen'), 'broken', True).results
     started(run)
     page, problems, _ = opened(browser, web)
@@ -3598,7 +3598,7 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     shown = pixels(page, [on_near, beyond, ground])
     assert sum(shown[1]) > sum(shown[2]) + 20, shown     # the light spreads past the outline, over the background
     for record in broken:
-        run('map', 'work', 'op=done', f'id={record.work_id}', 'resolution=fixed', cwd=mapped)
+        run('map', 'work', 'op=done', f'id={record.id}', 'resolution=fixed', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").light3d < 1 && window.metaform.bloom().on')
     page.wait_for_timeout(800)
     dark = pixels(page, [on_near, beyond, ground])
@@ -3616,8 +3616,8 @@ def test_with_the_bloom_pass_on_what_it_does_not_light_keeps_its_colors(run, web
     from metaform.data import Store
     store = Store('proj')
     for record in store.work(None, None, True, limit=0).results:  # nothing needs attention: the pass is off
-        store.finish_work(record.work_id, 'done')
-    cook, alarm = (store.element(address).element_id for address in ('exterior.cook', 'code.alarm.audible'))
+        store.finish_work(record.id, 'done')
+    cook, alarm = (store.element(address).id for address in ('exterior.cook', 'code.alarm.audible'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.emulate_media(reduced_motion='reduce')
@@ -3661,7 +3661,7 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
     from metaform.data import Store
     store = Store('proj')
     for record in store.work(None, None, True, limit=0).results:  # the kitchen timer is drawn in its own white
-        store.finish_work(record.work_id, 'done')
+        store.finish_work(record.id, 'done')
     started(run)
     _, at = keys_of(web)
     kitchen = at['code.timer.kitchen']
@@ -3722,7 +3722,7 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='build it')
     store.add_work(Node('element', 'exterior.cook'), 'missing', task='build that')
     asked = store.ask(Node('element', 'exterior.cook'), 'Is the cook still wanted?')
-    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    alarm, cook = (store.element(address).id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -3747,7 +3747,7 @@ def test_the_characters_of_a_part_not_built_keep_changing_and_glow_when_a_signal
     question = page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--question").trim().toLowerCase()')
     page.wait_for_function(f'() => window.metaform.look("{cook}").signal3d > 0.5', timeout=10000)
     assert page.evaluate(f'window.metaform.look("{cook}").signalColor3d') == question
-    store.reply(asked.message_id, 'Yes.')
+    store.reply(asked.id, 'Yes.')
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded()')
     page.wait_for_function(f'() => window.metaform.look("{cook}").text3d === true')
@@ -3768,7 +3768,7 @@ def test_a_question_is_answered_with_one_click_on_a_choice_or_by_typing_and_each
                       'Is the quiet tone still wanted?\n\n#1 Specifications reviewed:\n09-viewer.md',
                       suggestions=['Yes, keep it', 'No, make it louder'])
     second = store.ask(Node('element', 'exterior.cook'), 'Who is the cook?', suggestions=['Whoever sets the timer'])
-    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    alarm, cook = (store.element(address).id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -3794,7 +3794,7 @@ def test_a_question_is_answered_with_one_click_on_a_choice_or_by_typing_and_each
     page.wait_for_function('() => document.querySelector("#messages").hidden')
     assert Store('proj').messages(Node('element', 'exterior.cook'), 'question', False).results[0].answer \
         == 'The person who is cooking.'
-    assert first.message_id != second.message_id and problems == []
+    assert first.id != second.id and problems == []
 
 
 @pytest.mark.req('VIEW-028')
@@ -3853,11 +3853,11 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     store = Store('proj')
     alarm_node = Node('element', 'code.alarm.audible')
     answered = store.ask(alarm_node, 'Was the tone ever louder?', suggestions=['Yes', 'No'])
-    store.reply(answered.message_id, 'No')
+    store.reply(answered.id, 'No')
     store.ask(alarm_node, 'Is the quiet tone still wanted?', suggestions=['Yes', 'No'])
     note = store.tell(alarm_node, 'The piezo driver is written and waits for a test on the board.')
     assert note.notices == ()
-    alarm, cook = (store.element(address).element_id for address in ('code.alarm.audible', 'exterior.cook'))
+    alarm, cook = (store.element(address).id for address in ('code.alarm.audible', 'exterior.cook'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -3893,7 +3893,7 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     # the note shown is read; the question still waits
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
     read = Store('proj').messages(alarm_node, 'message', False).results
-    assert [record.message_id for record in read] == [note.message_id]
+    assert [record.id for record in read] == [note.id]
     before = page.evaluate('(() => { const box = document.querySelector("#float").getBoundingClientRect(); return [box.left, box.top]; })()')
     page.mouse.move(before[0] + 40, before[1] + 12)                   # it is moved by its title
     page.mouse.down()
@@ -3920,7 +3920,7 @@ def test_work_is_given_at_a_node_from_its_menu_with_nodes_linked_and_named_inlin
     the prompt or inserted inline by their proper noun, from a clickable browser of the namespace."""
     from metaform.data import Store
     store = Store('proj')
-    alarm, kitchen, cook = (store.element(address).element_id
+    alarm, kitchen, cook = (store.element(address).id
                             for address in ('code.alarm.audible', 'code.timer.kitchen', 'exterior.cook'))
     names = {address: store.element(address).name or store.element(address).short_name
              for address in ('code.timer.kitchen', 'exterior.cook')}
@@ -3994,7 +3994,7 @@ def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_f
     the project; the window sized or made full screen; the entry named Add Task."""
     from metaform.data import Store
     store = Store('proj')
-    alarm, kitchen = (store.element(address).element_id for address in ('code.alarm.audible', 'code.timer.kitchen'))
+    alarm, kitchen = (store.element(address).id for address in ('code.alarm.audible', 'code.timer.kitchen'))
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -4068,7 +4068,7 @@ def test_a_stored_workflow_runs_from_the_task_editor_through_acp(run, web, mappe
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     page.wait_for_function('() => window.metaform.loaded()')
     page.evaluate(f'window.metaform.task("{alarm}")')
     page.wait_for_selector(f'#task .workflow option[value="{ADDRESS}.review"]', state='attached')
@@ -4085,8 +4085,8 @@ def test_a_stored_workflow_runs_from_the_task_editor_through_acp(run, web, mappe
     assert ticket.address == 'code.alarm.audible'
     launch = json.loads(ticket.task.split('Workflow input: ', 1)[1].splitlines()[0])
     assert launch == {'call': call, 'element': 'code.alarm.audible'}
-    eventually(lambda: store.ticket(ticket.work_id).work.done)
-    assert json.loads(store.ticket(ticket.work_id).work.resolution) == [True, 'code.alarm.audible']
+    eventually(lambda: store.ticket(ticket.id).work.done)
+    assert json.loads(store.ticket(ticket.id).work.resolution) == [True, 'code.alarm.audible']
     assert problems == []
 
 
@@ -4108,7 +4108,7 @@ def test_a_workflow_ticket_keeps_its_call_when_queued_or_acp_cannot_start(run, w
     store = Store('proj')
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.task("{store.element("code.alarm.audible").element_id}")')
+    page.evaluate(f'window.metaform.task("{store.element("code.alarm.audible").id}")')
     page.wait_for_selector(f'#task .workflow option[value="{ADDRESS}.review"]', state='attached')
     page.select_option('#task .workflow', f'{ADDRESS}.review')
     page.fill('#task .workflow-call', f'{ADDRESS}.review(target=this)')
@@ -4146,7 +4146,7 @@ def test_workflow_picker_follows_the_enabled_module_and_launches_no_nonce_on_a_r
     status, listed = api(web, '/api/workflows?project=proj')
     assert status == 200 and listed['enabled'] is True
     assert any(item['address'] == ADDRESS and item['logic'] == ['review'] for item in listed['workflows'])
-    with home.base() as db:
+    with home.chassis() as db:
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='nonces'").fetchone():
             assert db.execute('SELECT COUNT(*) FROM nonces').fetchone()[0] == 0
     run('disable', 'workflow')
@@ -4174,7 +4174,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     import sys
 
     from metaform.data import Store
-    alarm = Store('proj').element('code.alarm.audible').element_id
+    alarm = Store('proj').element('code.alarm.audible').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
@@ -4205,18 +4205,18 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     assert made is not None and (made.layer, made.name_length, made.short_name, made.name) == (
         'additions', 2, 'visible alarm', 'Flash Alert')
     joined = [join for join in store.joins('code.alarm.audible').results
-              if [held.element_id for held in join.elements] == [made.element_id]]
+              if [held.element_id for held in join.elements] == [made.id]]
     assert [(join.receiver, join.layer, join.purpose, join.ef) for join in joined] == [
         (alarm, 'additions', 'Tell a cook who cannot hear that the time is up.', 'Flashes a lamp when the timer runs out.')]
     work = store.work(Node_of('code.alarm.visible'), 'missing', True).results
     assert len(work) == 1 and work[0].task == f'{VALIDATE} The element is code.alarm.visible.'
-    page.wait_for_function(f'() => window.metaform.look("{made.element_id}").text3d === true', timeout=8000)
+    page.wait_for_function(f'() => window.metaform.look("{made.id}").text3d === true', timeout=8000)
     made_session = logged_by(log, lambda entry: entry.get('message', {}).get('method') == 'session/new')
     assert Path(made_session['message']['params']['cwd']).resolve() == Path(mapped).resolve()
     told = logged_by(log, lambda entry: entry.get('message', {}).get('method') == 'session/prompt')
-    assert work[0].work_id in told['message']['params']['prompt'][0]['text']
+    assert work[0].id in told['message']['params']['prompt'][0]['text']
     page.wait_for_selector('#agents:not([hidden]) .agent', timeout=30000)
-    assert Store('proj').ticket(work[0].work_id).work.taken_by.startswith('codex ')
+    assert Store('proj').ticket(work[0].id).work.taken_by.startswith('codex ')
     # without the option nothing is run
     page.evaluate(f'window.metaform.element("{alarm}")')
     page.fill('#element .address', 'code.alarm.silent')
@@ -4232,7 +4232,7 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
     page.wait_for_timeout(1200)
     assert sum(json.loads(line).get('message', {}).get('method') == 'session/new'
                for line in log.read_text().splitlines()) == 1
-    run('dispatch', 'stop', work[0].work_id, cwd=mapped)
+    run('dispatch', 'stop', work[0].id, cwd=mapped)
     assert problems == []
 
 
@@ -4291,7 +4291,7 @@ def test_the_person_writes_the_note_at_a_node_in_the_page_and_an_agent_only_read
     the AI. The AI is going to have the memory server." One single note, not a list, of at most 2048 characters, Rich
     2026-10-02. The fixture's folder leaves memory out, and the note shows all the same."""
     from metaform.data import Store
-    alarm = Store('proj').element('code.alarm.audible').element_id
+    alarm = Store('proj').element('code.alarm.audible').id
     noted = lambda: json.loads(run('memory', 'note', 'element:code.alarm.audible', '--json', cwd=mapped).stdout)['note']
     started(run)
     page, problems, _ = opened(browser, web)
@@ -4339,10 +4339,10 @@ def test_a_map_change_keeps_every_open_write_window_and_editor_open_with_its_tex
     from metaform.data import Node, Store, prompts
     store = Store('proj')
     store.ask(Node('element', 'code.alarm.audible'), 'Is the quiet tone still wanted?', suggestions=['Yes', 'No'])
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     prompts.add_prompt('practices', 'markdown', 'one\n')
     notes = store.layer_ref('notes')
-    prompts.record_use(prompts.prompt_version('practices').version_id, 'proj', notes.metaform_id, notes.layer_id)
+    prompts.record_use(prompts.prompt_version('practices').version_id, 'proj', notes.base_id, notes.id)
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -4386,7 +4386,7 @@ def test_a_map_change_keeps_every_open_write_window_and_editor_open_with_its_tex
     assert page.evaluate(kept) == typed
     # and one that shows another metaform, read as on opening
     before = page.evaluate('window.metaform.changes()')
-    run('add', 'metaform', 'fresh', cwd=mapped)
+    run('add', 'base', 'fresh', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.changes() > {before}', timeout=10000)
     assert page.evaluate('[...document.querySelectorAll("#mf option")].find(o => o.selected).textContent') == 'fresh · active'
     assert page.evaluate(kept) == typed
@@ -4438,7 +4438,7 @@ def test_the_memories_of_a_node_open_from_its_menu_as_a_graph_of_their_own_in_bo
     page, problems, _ = opened(browser, web)
     expected, at = keys_of(web)
     kitchen, cook = at['code.timer.kitchen'], at['exterior.cook']
-    outer = next(join['join_id'] for join in expected['joins'] if join['receiver'] == cook)
+    outer = next(join['id'] for join in expected['joins'] if join['receiver'] == cook)
     still3d(page, 1)  # the page fits the whole 3D map into view once, a moment after it opens
     set_layer(page, 'memory', True)  # the fixture's folder leaves memory out; it is turned on in this view
     page.keyboard.press('Escape')
@@ -4577,7 +4577,7 @@ def remove_project(port, project='proj', **given):
                headers=own_write(port))
 
 
-HELD = ('proj holds one metaform, main, and no report files. Only an empty project is removed; clearing it backs it '
+HELD = ('proj holds one base, main, and no report files. Only an empty project is removed; clearing it backs it '
         'up first.')
 
 
@@ -4679,7 +4679,7 @@ def test_dragging_the_2d_map_or_the_task_chart_moves_it_and_selects_no_label_tex
     labels instead of the map. A drag that starts on a label and sweeps across the others moves the view, selects no
     text, and the drag after it moves the view again."""
     from metaform.data import Store
-    alarm = Store('proj').element('code.alarm.audible').element_id
+    alarm = Store('proj').element('code.alarm.audible').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -4719,12 +4719,12 @@ def test_a_nodes_menu_opens_its_work_history_every_ticket_open_and_closed_with_i
     newest first, each with its kind, its column, who took it, the steps the agent filed and how it was resolved."""
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     old = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
-    store.take_work(old.work_id, steps=2, by='codex')
-    store.step_work(old.work_id, 'Traced the pin.')
-    store.step_work(old.work_id, 'Wired the driver.')
-    store.finish_work(old.work_id, 'wired')
+    store.take_work(old.id, steps=2, by='codex')
+    store.step_work(old.id, 'Traced the pin.')
+    store.step_work(old.id, 'Wired the driver.')
+    store.finish_work(old.id, 'wired')
     store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='a softer tone', held=True)
     started(run)
     page, problems, _ = opened(browser, web)
@@ -4752,7 +4752,7 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     search and a filter by kind, and adding a card."""
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     kitchen = Node('element', 'code.timer.kitchen')
     todo = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone', links=[kitchen])
     store.add_work(kitchen, 'enhancement', task='a second countdown', held=True)
@@ -4763,10 +4763,10 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
         earlier = (datetime.now(UTC) - timedelta(days=2)).isoformat()
         clock.setattr(home, 'now', lambda: earlier)
         doing = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='wire the tone')
-    store.take_work(doing.work_id, steps=3, by='codex')
-    store.step_work(doing.work_id, 'Traced the pin.')
+    store.take_work(doing.id, steps=3, by='codex')
+    store.step_work(doing.id, 'Traced the pin.')
     done = store.add_work(kitchen, 'missing', task='the display')
-    store.finish_work(done.work_id, 'built')
+    store.finish_work(done.id, 'built')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
@@ -4782,25 +4782,25 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     held = Store('proj').work(limit=0).results
     expected = [str(sum(record.column == column for record in held)) for column in ('backlog', 'todo', 'doing', 'done')]
     assert [count(column) for column in ('backlog', 'todo', 'doing', 'done')] == expected
-    card = page.locator(f'#board .card[data-id="{todo.work_id}"]')
+    card = page.locator(f'#board .card[data-id="{todo.id}"]')
     assert card.get_attribute('data-kind') == 'flawed' and 'a quieter tone' in card.inner_text()
     chips = card.locator('.node').all_inner_texts()
     assert len(chips) == 2                                              # the node assigned and the one for reference
-    worked = page.locator(f'#board .card[data-id="{doing.work_id}"]')
+    worked = page.locator(f'#board .card[data-id="{doing.id}"]')
     assert 'codex' in worked.inner_text() and '1/3' in worked.inner_text()
     assert worked.locator('.age').inner_text() == 'now'
-    page.drag_and_drop(f'#board .card[data-id="{todo.work_id}"]', '#board .column[data-column="doing"] .cards')
-    page.wait_for_function(f'() => document.querySelector(\'#board .column[data-column="doing"] .card[data-id="{todo.work_id}"]\')')
-    moved = next(record for record in Store('proj').work(limit=0).results if record.work_id == todo.work_id)
+    page.drag_and_drop(f'#board .card[data-id="{todo.id}"]', '#board .column[data-column="doing"] .cards')
+    page.wait_for_function(f'() => document.querySelector(\'#board .column[data-column="doing"] .card[data-id="{todo.id}"]\')')
+    moved = next(record for record in Store('proj').work(limit=0).results if record.id == todo.id)
     assert (moved.column, moved.taken_by, moved.condition) == ('doing', 'user', 'flawed')
     assert int(count('doing')) == int(expected[2]) + 1 and int(count('todo')) == int(expected[1]) - 1
     page.fill('#board .search', 'quieter')
     assert page.locator('#board .card:visible').count() == 1
     page.fill('#board .search', '')
     page.click('#board .kinds [data-kind="flawed"]')                    # a kind toggled off hides its cards
-    assert page.locator(f'#board .card[data-id="{todo.work_id}"]').is_hidden()
+    assert page.locator(f'#board .card[data-id="{todo.id}"]').is_hidden()
     page.click('#board .kinds [data-kind="flawed"]')
-    page.locator(f'#board .card[data-id="{todo.work_id}"] .node').first.click()
+    page.locator(f'#board .card[data-id="{todo.id}"] .node').first.click()
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
     page.click('#board .add')
     page.wait_for_selector('#task:not([hidden])')
@@ -4814,21 +4814,21 @@ def test_board_priority_controls_save_order_with_filters_and_after_reloading(run
     node = Node('element', 'code.alarm.audible')
     tickets = [store.add_work(node, 'enhancement', task=f'priority {name}') for name in ('first', 'second', 'third')]
     for position, ticket in enumerate(tickets):
-        store.move_work(ticket.work_id, 'todo', position)
+        store.move_work(ticket.id, 'todo', position)
     started(run)
     page, problems, _ = opened(browser, web)
     page.click('#boardBtn')
     column = '#board .column[data-column="todo"]'
-    ids = [ticket.work_id for ticket in tickets]
+    ids = [ticket.id for ticket in tickets]
     def control(index, name):
         return page.locator(f'{column} .card[data-id="{ids[index]}"]').get_by_role('button', name=name, exact=True)
 
     def expect_order(expected):
         page.wait_for_function('''expected => [...document.querySelectorAll('#board .column[data-column="todo"] .card')]
             .map(card => card.dataset.id).filter(id => expected.includes(id)).join() === expected.join()''', arg=expected)
-        saved = sorted((record for record in Store('proj').work(limit=0).results if record.work_id in ids),
+        saved = sorted((record for record in Store('proj').work(limit=0).results if record.id in ids),
                        key=lambda record: record.position)
-        assert [record.work_id for record in saved] == expected
+        assert [record.id for record in saved] == expected
         assert all(record.column == 'todo' and record.taken is None for record in saved)
 
     expect_order(ids)
@@ -4855,10 +4855,10 @@ def test_a_ticket_flashes_its_node_in_its_kinds_light_faster_with_each_step_file
     lets you see the real node color and sense how far along it is by the flashing speed."""
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
-    kitchen = store.element('exterior.cook').element_id  # the timer itself has a broken ticket in the fixture
+    alarm = store.element('code.alarm.audible').id
+    kitchen = store.element('exterior.cook').id  # the timer itself has a broken ticket in the fixture
     flawed = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(flawed.work_id, steps=4, by='codex')
+    store.take_work(flawed.id, steps=4, by='codex')
     store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='a second recipe')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -4869,7 +4869,7 @@ def test_a_ticket_flashes_its_node_in_its_kinds_light_faster_with_each_step_file
         page.wait_for_function(f'() => window.metaform.look("{node}").color3d !== "{light}"', timeout=4000)  # its own between
     slow = page.evaluate(f'window.metaform.look("{alarm}").pace')
     for said in ('Found the gain.', 'Lowered it.'):
-        run('map', 'work', 'op=step', f'id={flawed.work_id}', f'said={said}', cwd=mapped)
+        run('map', 'work', 'op=step', f'id={flawed.id}', f'said={said}', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{alarm}").pace < {slow}', timeout=6000)
     faster = page.evaluate(f'window.metaform.look("{alarm}").pace')
     assert faster < slow and page.evaluate(f'window.metaform.look("{kitchen}").pace') == slow
@@ -4950,7 +4950,7 @@ def test_workbench_and_cli_agree_when_a_runner_dies_with_a_running_row(
         eventually(lambda: agent.logged('grandchild'))
         started(run)
         page, problems, _ = opened(browser, web)
-        button = f'#agents .agent[data-id="{agent.work_id}"]'
+        button = f'#agents .agent[data-id="{agent.id}"]'
         page.wait_for_selector(button, timeout=15000)
         assert api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions'][0]['state'] == 'running'
         agent.process.kill()
@@ -4987,7 +4987,7 @@ def test_a_runner_that_dies_before_the_page_stream_opens_leaves_agent_deployed_w
         page = browser.new_page(viewport={'width': 1280, 'height': 800})
         page.route('**/api/events*', lambda route: held.append(route))  # the stream is not open yet
         page.goto(f'http://127.0.0.1:{web}/#p=proj')
-        button = f'#agents .agent[data-id="{agent.work_id}"]'
+        button = f'#agents .agent[data-id="{agent.id}"]'
         page.wait_for_selector(button, timeout=30000)
         agent.process.kill()
         agent.process.wait()
@@ -5013,12 +5013,12 @@ def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_on
 
     store = Store('proj')
     run('enable', 'dispatch')
-    alarm = store.element('code.alarm.audible').element_id
-    idle = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').work_id
+    alarm = store.element('code.alarm.audible').id
+    idle = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').id
     store.take_work(idle, by='claude')
     live_session(idle)
     ACTIVITY[f's-{idle}'] = 'idle'
-    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').work_id
+    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').id
     store.take_work(working, by='codex')
     live_session(working, 'codex')
     started(run)
@@ -5027,7 +5027,7 @@ def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_on
               for one in api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']}
     assert served == {idle: ('running', 'idle'), working: ('running', 'working')}
     page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{working}")', timeout=15000)
     assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
     assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
     assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
@@ -5060,12 +5060,12 @@ def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor
 
     store = Store('proj')
     run('enable', 'dispatch')
-    older = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').work_id
+    older = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Work on the alarm').id
     store.take_work(older, by='claude')
     live_session(older)
     with Store('proj', module='dispatch').tables() as tx:  # its runner answers for another session, so this one is unproven
         tx.update('sessions', {'session_id': f's-{older}'}, {'token': f'older-{older}'})
-    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').work_id
+    working = store.add_work(Node('element', 'exterior.cook'), 'flawed', task='Work for the cook').id
     store.take_work(working, by='codex')
     live_session(working, 'codex')
     started(run)
@@ -5074,7 +5074,7 @@ def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor
     assert served[working] == 'running' and served[older] != 'running', served
     page, problems, _ = opened(browser, web)
     page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{working}")', timeout=15000)
     assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
     assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
     assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
@@ -5093,44 +5093,44 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     from metaform import relay
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
-    cook = store.element('exterior.cook').element_id
+    alarm = store.element('code.alarm.audible').id
+    cook = store.element('exterior.cook').id
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, steps=2, by='codex')
-    live_session(worked.work_id, 'codex')
+    store.take_work(worked.id, steps=2, by='codex')
+    live_session(worked.id, 'codex')
     other = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='a third recipe')
-    store.take_work(other.work_id, by='claude')
-    live_session(other.work_id)
+    store.take_work(other.id, by='claude')
+    live_session(other.id)
     orphan = store.add_work(Node('element', 'exterior.cook'), 'missing', task='left taken')   # no session behind it
-    store.take_work(orphan.work_id, by='gone')
+    store.take_work(orphan.id, by='gone')
     quick = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='a second recipe')
-    store.take_work(quick.work_id, by='claude')
-    store.finish_work(quick.work_id, 'added')
-    live_session(quick.work_id, state='ended')                        # finished before the page opened
+    store.take_work(quick.id, by='claude')
+    store.finish_work(quick.id, 'added')
+    live_session(quick.id, state='ended')                        # finished before the page opened
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2', timeout=15000)
     # Rich, 2026-10-03: an agent that is not active is not on the map, and the key lists only agents at work
-    assert {one['work_id'] for one in page.evaluate('window.metaform.figures()')} == {worked.work_id, other.work_id}
+    assert {one['work_id'] for one in page.evaluate('window.metaform.figures()')} == {worked.id, other.id}
     assert sorted(page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)')) == sorted(
-        [worked.work_id, other.work_id])
+        [worked.id, other.id])
     page.evaluate('''() => { window.stages = {}; setInterval(() => { for (const figure of window.metaform.figures())
-        (window.stages[figure.work_id] ||= new Set()).add(figure.stage); }, 50); }''')
+        (window.stages[figure.id] ||= new Set()).add(figure.stage); }, 50); }''')
     glyphs = page.evaluate('window.metaform.figures().map(figure => figure.glyph)')
     assert len(set(glyphs)) == 2                                      # no two at work look alike
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{worked.work_id}" && one.stage === "circling")',
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{worked.id}" && one.stage === "circling")',
                            timeout=20000)
     page.wait_for_timeout(1000)                                      # out onto its orbit
-    figure = next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == worked.work_id)
+    figure = next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == worked.id)
     node = page.evaluate(f'window.metaform.at3d("{alarm}")')
     away = sum((figure[axis] - node[axis]) ** 2 for axis in 'xyz') ** 0.5
     assert node['r'] < away < node['r'] + 2.5 * figure['scale'], (away, node, figure)  # on the node and around it
-    run('map', 'work', 'op=done', f'id={worked.work_id}', 'resolution=quieter', cwd=mapped)
-    live_session(worked.work_id, 'codex', state='ended')
-    page.wait_for_function(f'() => (window.stages["{worked.work_id}"] || new Set()).has("returning")', timeout=10000)
-    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{worked.work_id}")', timeout=20000)
-    live_session(other.work_id, state='ended')                        # stopped with its ticket open: it goes too
+    run('map', 'work', 'op=done', f'id={worked.id}', 'resolution=quieter', cwd=mapped)
+    live_session(worked.id, 'codex', state='ended')
+    page.wait_for_function(f'() => (window.stages["{worked.id}"] || new Set()).has("returning")', timeout=10000)
+    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.id === "{worked.id}")', timeout=20000)
+    live_session(other.id, state='ended')                        # stopped with its ticket open: it goes too
     relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})  # its runner announces the session ended
     page.wait_for_function('() => window.metaform.figures().length === 0', timeout=20000)
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=10000)
@@ -5143,18 +5143,18 @@ def test_an_agent_on_the_2d_map_is_its_flat_glyph_and_walks_to_its_ticket_circle
     2D map's edges from the DE to the ticket's box, circle it while the ticket is open and walk back when it closes."""
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, by='codex')
-    live_session(worked.work_id, 'codex')
+    store.take_work(worked.id, by='codex')
+    live_session(worked.id, 'codex')
     orphan = store.add_work(Node('element', 'exterior.cook'), 'missing', task='left taken')   # no session behind it
-    store.take_work(orphan.work_id, by='gone')
+    store.take_work(orphan.id, by='gone')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures2d().length === 1', timeout=15000)
     figure = page.evaluate('window.metaform.figures2d()')[0]
-    assert figure['work_id'] == worked.work_id and figure['shown']
+    assert figure['id'] == worked.id and figure['shown']
     page.wait_for_function('() => window.metaform.figures().length === 1', timeout=15000)
     assert figure['glyph'] == page.evaluate('window.metaform.figures()')[0]['glyph']      # the same agent in both views
     assert figure['icon'] == f"/page/agent-glyphs/{figure['glyph']}.svg"
@@ -5165,8 +5165,8 @@ def test_an_agent_on_the_2d_map_is_its_flat_glyph_and_walks_to_its_ticket_circle
     figure, node = page.evaluate(f'[window.metaform.figures2d()[0], window.metaform.at2d("{alarm}")]')
     away = ((figure['x'] - node['x']) ** 2 + (figure['y'] - node['y']) ** 2) ** 0.5
     assert 0 < away < 400 and figure['size'] > 0, (figure, node)                          # around the alarm's box
-    run('map', 'work', 'op=done', f'id={worked.work_id}', 'resolution=quieter', cwd=mapped)
-    live_session(worked.work_id, 'codex', state='ended')
+    run('map', 'work', 'op=done', f'id={worked.id}', 'resolution=quieter', cwd=mapped)
+    live_session(worked.id, 'codex', state='ended')
     page.wait_for_function('() => window.stages2d.has("returning")', timeout=10000)
     page.wait_for_function('() => window.metaform.figures2d().length === 0', timeout=20000)
     assert page.locator('.agents2d image').count() == 0 and problems == []
@@ -5183,16 +5183,16 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
     while the node's flashing, and the text of a part not built, quicken."""
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
-    cook = store.element('exterior.cook').element_id
-    far = store.element('code.timer.kitchen.display').element_id
+    alarm = store.element('code.alarm.audible').id
+    cook = store.element('exterior.cook').id
+    far = store.element('code.timer.kitchen.display').id
     run('enable', 'dispatch')
     flawed = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(flawed.work_id, steps=4, by='codex')
-    live_session(flawed.work_id, 'codex')
+    store.take_work(flawed.id, steps=4, by='codex')
+    live_session(flawed.id, 'codex')
     missing = store.add_work(Node('element', 'exterior.cook'), 'missing', task='a second recipe')
-    store.take_work(missing.work_id, steps=4, by='claude')
-    live_session(missing.work_id)
+    store.take_work(missing.id, steps=4, by='claude')
+    live_session(missing.id)
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures().length === 2'
@@ -5208,19 +5208,19 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
 
     def lap(work_id):  # seconds for one turn around the node, on the figure's own clock, whatever the frame rate
         turned = page.evaluate(f'''async () => {{ const one = () => window.metaform.figures()
-            .find(figure => figure.work_id === "{work_id}"); const from = one();
+            .find(figure => figure.id === "{work_id}"); const from = one();
             await new Promise(done => setTimeout(done, 2000));
             const to = one(); return [to.angle - from.angle, to.clock - from.clock]; }}''')
         return 2 * math.pi * turned[1] / turned[0]
-    before = {work_id: lap(work_id) for work_id in (flawed.work_id, missing.work_id)}
+    before = {work_id: lap(work_id) for work_id in (flawed.id, missing.id)}
     pace = page.evaluate(f'window.metaform.look("{alarm}").pace')
     turns = page.evaluate(f'window.metaform.look("{cook}").turns')
     for said in ('Found the gain.', 'Lowered it.'):
-        run('map', 'work', 'op=step', f'id={flawed.work_id}', f'said={said}', cwd=mapped)
-        run('map', 'work', 'op=step', f'id={missing.work_id}', f'said={said}', cwd=mapped)
+        run('map', 'work', 'op=step', f'id={flawed.id}', f'said={said}', cwd=mapped)
+        run('map', 'work', 'op=step', f'id={missing.id}', f'said={said}', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.look("{alarm}").pace < {pace}', timeout=6000)  # the flashing quickens
     page.wait_for_function(f'() => window.metaform.look("{cook}").turns > {turns}', timeout=6000)  # so does the text
-    after = {work_id: lap(work_id) for work_id in (flawed.work_id, missing.work_id)}
+    after = {work_id: lap(work_id) for work_id in (flawed.id, missing.id)}
     for work_id, pace in before.items():
         assert pace >= 10, before                          # slowly around its node
         assert abs(after[work_id] - pace) < 0.1 * pace, (before, after)  # one pace, never faster
@@ -5235,10 +5235,10 @@ def test_the_labels_wrap_keep_the_draw_order_and_the_hover_says_what_a_part_does
     selected, and its label still goes under the nearer timer's."""
     from metaform.data import Store
     store = Store('proj')
-    kitchen = store.element('code.timer.kitchen').element_id
-    alarm = store.element('code.alarm.audible').element_id
+    kitchen = store.element('code.timer.kitchen').id
+    alarm = store.element('code.alarm.audible').id
     store.add_element('notes', 'code.controller.address.fallback', name_length=3)
-    long = store.element('code.controller.address.fallback').element_id
+    long = store.element('code.controller.address.fallback').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function(f'() => window.metaform.labels3d().some(label => label.id === "{long}" && !label.hidden)')
@@ -5290,8 +5290,8 @@ def test_a_node_between_the_camera_and_a_label_hides_the_label(run, web, mapped,
     the glass made clear, the label is seen through it."""
     from metaform.data import Store
     store = Store('proj')
-    cook = store.element('exterior.cook').element_id
-    alarm = store.element('code.alarm.audible').element_id
+    cook = store.element('exterior.cook').id
+    alarm = store.element('code.alarm.audible').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.emulate_media(reduced_motion='reduce')                       # nothing moves between two pictures
@@ -5373,11 +5373,11 @@ def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, 
     a property. Each time the cook's label is drawn over the alarm's, and the alarm's goes under it where they meet."""
     from metaform.data import Node, Store
     store = Store('proj')
-    cook = store.element('exterior.cook').element_id
-    alarm = store.element('code.alarm.audible').element_id
-    display = store.element('code.timer.kitchen.display').element_id
+    cook = store.element('exterior.cook').id
+    alarm = store.element('code.alarm.audible').id
+    display = store.element('code.timer.kitchen.display').id
     store.add_element('notes', 'code.bell', name_length=1)
-    bell = store.element('code.bell').element_id
+    bell = store.element('code.bell').id
     store.add_join('notes', 'code.bell', 'code.alarm.audible', purpose='Ring.', ef='Rings the bell.')
     if case == 'missing':
         store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='a second tone')
@@ -5386,7 +5386,7 @@ def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, 
     elif case == 'question':
         store.ask(Node('element', 'code.alarm.audible'), 'Still wanted?')
     elif case == 'reach':
-        key = 'r:' + store.add_property('notes', 'code.alarm.audible', 'rings at 2 kHz').property_id
+        key = 'r:' + store.add_property('notes', 'code.alarm.audible', 'rings at 2 kHz').id
     started(run)
     page, problems, _ = opened(browser, web)
     if case == 'reach':
@@ -5440,7 +5440,7 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     import re
 
     from metaform.data import Node, Store
-    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
+    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').id
     started(run)
     own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
     given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
@@ -5485,9 +5485,9 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
 
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
-    work = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
-    other = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').work_id
+    alarm = store.element('code.alarm.audible').id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').id
+    other = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').id
     store.ask(Node('element', 'code.alarm.audible'), 'Is the tone too high?')  # a question of no agent, at the same node
     log, gate, end_gate = tmp_path / 'fake.jsonl', tmp_path / 'ask', tmp_path / 'turn-end'
     run('enable', 'dispatch')
@@ -5523,7 +5523,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     glyph = icon.rsplit('/', 1)[-1].removesuffix('.svg')
     assert icon == f'/page/agent-glyphs/{glyph}.svg' and glyph in AGENT_GLYPHS, icon
     page.wait_for_function('() => document.querySelector("#agents .agent img").naturalWidth > 0')
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{work}")', timeout=30000)
     assert next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == work)['glyph'] == glyph
     # the same character on every load of the page, Rich 2026-10-03: it comes from the ticket, never from chance
     reloaded, _, _ = opened(browser, web)
@@ -5542,7 +5542,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     # reached from the node's work history, where its session is still running
     gate.touch()
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=30000)
-    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
+    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.id === "{work}")', timeout=30000)
     waiting = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']
     assert [(one['state'], one['activity']) for one in waiting] == [('running', 'waiting')], waiting
     page.evaluate(f'window.metaform.menu("{alarm}")')
@@ -5863,7 +5863,7 @@ def test_the_page_distributes_the_open_tickets_over_n_agents_through_the_store_a
     from metaform.data import Node, Store
     from metaform.modules.map import AGENT_GLYPHS as GIVEN
     store = Store('proj')
-    made = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'part {n}').work_id for n in range(3)]
+    made = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'part {n}').id for n in range(3)]
     started(run)
     refused, _ = api(web, '/api/distribute', method='POST', body=json.dumps({'project': 'proj', 'agents': 2}),
                      headers={'Content-Type': 'application/json', 'Origin': 'http://evil.example'})
@@ -5872,7 +5872,7 @@ def test_the_page_distributes_the_open_tickets_over_n_agents_through_the_store_a
     status, body = distributed(web, 2)
     assert status == 200, body
     # the fixture's own open tickets come first; every one not taken or done is given a glyph, in turn
-    given = [(one['work_id'], glyph_of(one)) for one in body['results']]
+    given = [(one['id'], glyph_of(one)) for one in body['results']]
     assert [glyph for _, glyph in given] == [GIVEN[place % 2] for place in range(len(given))]
     assert set(made) <= {work_id for work_id, _ in given}
     assert all(glyph_held(run, mapped, work_id) == glyph for work_id, glyph in given)
@@ -5884,23 +5884,23 @@ def test_the_page_distributes_and_reads_glyphs_on_the_metaform_it_chose_and_show
     metaform the page chose; with the map module not on the surface the board shows no glyphs."""
     from metaform.data import Node, Store
     from metaform.modules.map import AGENT_GLYPHS as GIVEN
-    chosen = Store('proj').add_metaform('other', activate=False).metaform_id
-    other = Store('proj', metaform=chosen)
+    chosen = Store('proj').add_base('other', activate=False).id
+    other = Store('proj', base=chosen)
     other.add_element(None, 'code', name_length=1, name='code', role='DE')
-    made = [other.add_work(Node('element', 'code'), 'missing', task=f'part {n}').work_id for n in range(2)]
-    active = {one['work_id'] for one in plain(Store('proj').work(limit=0))['results']}
+    made = [other.add_work(Node('element', 'code'), 'missing', task=f'part {n}').id for n in range(2)]
+    active = {one['id'] for one in plain(Store('proj').work(limit=0))['results']}
     started(run)
     status, body = api(web, '/api/distribute', method='POST', headers=own_write(web),
                        body=json.dumps({'project': 'proj', 'metaform': chosen, 'agents': 2}))
     assert status == 200, body
-    assert [(one['work_id'], glyph_of(one)) for one in body['results']] == list(zip(made, GIVEN[:2]))
-    shown = api(web, f'/api/work?project=proj&metaform={chosen}')[1]['results']
-    assert {one['work_id']: glyph_of(one) for one in shown} == dict(zip(made, GIVEN[:2]))
+    assert [(one['id'], glyph_of(one)) for one in body['results']] == list(zip(made, GIVEN[:2]))
+    shown = api(web, f'/api/work?project=proj&base={chosen}')[1]['results']
+    assert {one['id']: glyph_of(one) for one in shown} == dict(zip(made, GIVEN[:2]))
     assert all(glyph_of(one) is None for one in api(web, '/api/work?project=proj')[1]['results']
-               if one['work_id'] in active)                            # the active metaform's tickets were not dealt
+               if one['id'] in active)                            # the active metaform's tickets were not dealt
     run('disable', 'map', cwd=mapped)                                  # after the server started
-    status, body = api(web, f'/api/work?project=proj&metaform={chosen}')
-    assert status == 200 and [one['work_id'] for one in body['results']] == made
+    status, body = api(web, f'/api/work?project=proj&base={chosen}')
+    assert status == 200 and [one['id'] for one in body['results']] == made
     assert all('map' not in one for one in body['results'])
 
 
@@ -5915,9 +5915,9 @@ def test_each_card_shows_its_agents_glyph_and_the_same_glyph_is_its_figure_and_i
     from metaform.data import Node, Store
     store = Store('proj')
     run('enable', 'dispatch')
-    tickets = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'part {n}').work_id
+    tickets = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'part {n}').id
                for n in range(4)]
-    early = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='already at work').work_id
+    early = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='already at work').id
     store.take_work(early, by='claude')                               # taken before the work is distributed
     live_session(early)
     started(run)
@@ -5927,7 +5927,7 @@ def test_each_card_shows_its_agents_glyph_and_the_same_glyph_is_its_figure_and_i
     page.wait_for_selector('#board:not([hidden]) .card')
     glyph = lambda work_id: page.get_attribute(f'#board .card[data-id="{work_id}"] .glyph', 'alt')
     figure_of = lambda work_id: next((one['glyph'] for one in page.evaluate('window.metaform.figures()')
-                                      if one['work_id'] == work_id), None)
+                                      if one['id'] == work_id), None)
     # a ticket with no glyph of its own shows its figure's while its agent is at work, and none before
     assert glyph(early) == figure_of(early) and glyph(early) in AGENT_GLYPHS
     assert all(page.locator(f'#board .card[data-id="{work_id}"] .glyph').count() == 0 for work_id in tickets)
@@ -5949,7 +5949,7 @@ def test_each_card_shows_its_agents_glyph_and_the_same_glyph_is_its_figure_and_i
     # an agent at work on a distributed ticket is drawn as that ticket's glyph, on the map and under Agent deployed
     live_session(tickets[1])
     run('map', 'work', 'op=take', f'id={tickets[1]}', 'by=claude', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{tickets[1]}")', timeout=20000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{tickets[1]}")', timeout=20000)
     assert figure_of(tickets[1]) == lanes[1]
     page.wait_for_selector(f'#agents .agent[data-id="{tickets[1]}"]', timeout=10000)
     assert page.get_attribute(f'#agents .agent[data-id="{tickets[1]}"] img', 'src') == src
@@ -5972,38 +5972,38 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     store = Store('proj')
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, by='claude')
+    store.take_work(worked.id, by='claude')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
     reads = []
     page.on('request', lambda sent: reads.append(sent.url))
-    live_session(worked.work_id)
+    live_session(worked.id)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-1', 'work_id': worked.work_id,
+        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'Hello from the line', 'seq': 1})
-    payload = {'project': 'proj', 'metaform_id': store.active_metaform().metaform_id, 'tables': 'dispatch'}
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
     relay.deliver('map.changed', payload)  # as the runner's process announces it
     page.wait_for_selector('#agents:not([hidden]) .agent', timeout=10000)
     page.click('#agents .agent')
     page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("Hello from the line")',
                            timeout=10000)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-2', 'work_id': worked.work_id,
+        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'and a second line', 'seq': 2})
     relay.deliver('map.changed', payload)  # as the runner's process announces it
     page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("a second line")',
                            timeout=10000)
     assert not [url for url in reads if '/api/graph' in url or '/api/memory-graph' in url], reads
     sessions = [url for url in reads if '/api/dispatch-sessions' in url]
-    assert sessions and all('thread=false' in url or f'id={worked.work_id}' in url for url in sessions), sessions
+    assert sessions and all('thread=false' in url or f'id={worked.id}' in url for url in sessions), sessions
     # A ticket closed changes only tickets: the page reads work and the open messages, at most three reads, never the map.
     handled, mark = page.evaluate('window.metaform.changes()'), len(reads)
-    run('map', 'work', 'op=done', f'id={worked.work_id}', 'resolution=quieter', cwd=mapped)
+    run('map', 'work', 'op=done', f'id={worked.id}', 'resolution=quieter', cwd=mapped)
     page.wait_for_function(f'() => window.metaform.changes() > {handled}', timeout=15000)
     asked = [url.split('/api/')[1].split('?')[0] for url in reads[mark:] if '/api/' in url]
     assert len(asked) <= 3 and set(asked) <= {'work', 'messages'}, asked
-    live_session(worked.work_id, state='ended')
+    live_session(worked.id, state='ended')
     relay.deliver('map.changed', payload)  # its runner announces the session ended
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=15000)
     run('enable', 'hello')
@@ -6024,15 +6024,15 @@ def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window
     store = Store('proj')
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, by='codex')
+    store.take_work(worked.id, by='codex')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    live_session(worked.work_id, agent='codex')
+    live_session(worked.id, agent='codex')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-1', 'work_id': worked.work_id,
+        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
                             'kind': 'person', 'text': 'Just checking in how is it going?', 'seq': 1})
-    payload = {'project': 'proj', 'metaform_id': store.active_metaform().metaform_id, 'tables': 'dispatch'}
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
     relay.deliver('map.changed', payload)
     page.wait_for_selector('#agents:not([hidden]) .agent', timeout=10000)
     page.click('#agents .agent')
@@ -6040,7 +6040,7 @@ def test_a_line_written_while_the_server_restarts_shows_in_the_open_agent_window
                            timeout=10000)
     run('web', 'stop')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('lines', {'session_id': f's-{worked.work_id}', 'name': 'said-2', 'work_id': worked.work_id,
+        tx.insert('lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'The routes are in place.', 'seq': 2})
     relay.deliver('map.changed', payload)  # announced while no server listens
     started(run)
@@ -6068,13 +6068,13 @@ def test_a_burst_of_thread_lines_is_drawn_in_few_reads_and_the_agent_window_only
     store = Store('proj')
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, by='claude')
+    store.take_work(worked.id, by='claude')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    live_session(worked.work_id)
-    thread_line(worked.work_id, 1, 'The first line')
-    payload = {'project': 'proj', 'metaform_id': store.active_metaform().metaform_id, 'tables': 'dispatch',
+    live_session(worked.id)
+    thread_line(worked.id, 1, 'The first line')
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch',
                'dispatch_tables': ['dispatch.lines']}
     relay.deliver('map.changed', payload)
     page.wait_for_selector('#agents:not([hidden]) .agent', timeout=10000)
@@ -6086,7 +6086,7 @@ def test_a_burst_of_thread_lines_is_drawn_in_few_reads_and_the_agent_window_only
     reads = []
     page.on('request', lambda sent: reads.append(sent.url.split('/api/')[1].split('?')[0]) if '/api/' in sent.url else None)
     for seq in range(2, 22):
-        thread_line(worked.work_id, seq, f'Line number {seq}')
+        thread_line(worked.id, seq, f'Line number {seq}')
         relay.deliver('map.changed', payload)
     page.wait_for_function('() => document.querySelector("#agent .activity").innerText.includes("Line number 21")',
                            timeout=10000)
@@ -6108,25 +6108,25 @@ def test_the_chat_dock_stays_with_its_session_when_a_newer_session_of_the_ticket
     store = Store('proj')
     run('enable', 'dispatch')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone')
-    store.take_work(worked.work_id, by='claude')
+    store.take_work(worked.id, by='claude')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    live_session(worked.work_id)
-    thread_line(worked.work_id, 1, 'Our first conversation')
-    payload = {'project': 'proj', 'metaform_id': store.active_metaform().metaform_id, 'tables': 'dispatch'}
+    live_session(worked.id)
+    thread_line(worked.id, 1, 'Our first conversation')
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
     relay.deliver('map.changed', payload)
     page.wait_for_selector('#agents:not([hidden]) .agent-row button.chat', timeout=10000)
     page.click('#agents .agent-row button.chat')
     page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent.includes("Our first conversation")',
                            timeout=10000)
-    runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', worked.work_id])
+    runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', worked.id])
     RUNNERS.append(runner)
     with Store('proj', module='dispatch').tables() as tx:  # a newer session of the same ticket
-        tx.insert('sessions', {'session_id': 'newer', 'work_id': worked.work_id, 'agent': 'claude', 'state': 'running',
+        tx.insert('sessions', {'session_id': 'newer', 'work_id': worked.id, 'agent': 'claude', 'state': 'running',
                                'pid': runner.pid, 'port': dispatch_control_port(), 'token': 'newer',
                                'started': '2026-10-03T00:01:00Z', 'seq': 100000})
-    thread_line(worked.work_id, 1, 'Another conversation', session='newer')
+    thread_line(worked.id, 1, 'Another conversation', session='newer')
     relay.deliver('map.changed', payload)
     page.wait_for_function('() => [...document.querySelectorAll("#agents .agent")]'
                            '.some(one => one.dataset.session === "newer")', timeout=10000)
@@ -6147,7 +6147,7 @@ def test_a_change_that_adds_or_removes_no_node_redraws_the_3d_map_in_place_witho
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    alarm = Store('proj').element('code.alarm.audible').element_id
+    alarm = Store('proj').element('code.alarm.audible').id
     layouts = page.evaluate('window.metaform.layouts()')
     drawn = page.evaluate('window.metaform.drawn()')
     changes = page.evaluate('window.metaform.changes()')
@@ -6285,7 +6285,7 @@ def test_a_task_can_be_created_and_started_in_acp_from_its_editor(run, web, mapp
 
     from metaform.data import Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
@@ -6304,9 +6304,9 @@ def test_a_task_can_be_created_and_started_in_acp_from_its_editor(run, web, mapp
                   if work.task == 'Inspect the alarm and report what you find.')
     assert ticket.taken_by.startswith('codex ') and ticket.address == 'code.alarm.audible'
     told = logged_by(log, lambda entry: entry.get('message', {}).get('method') == 'session/prompt')
-    assert ticket.work_id in told['message']['params']['prompt'][0]['text']
+    assert ticket.id in told['message']['params']['prompt'][0]['text']
     assert page.is_hidden('#task')
-    run('dispatch', 'stop', ticket.work_id, cwd=mapped)
+    run('dispatch', 'stop', ticket.id, cwd=mapped)
     assert problems == []
     # A task can still just be queued; failure to start keeps the new ticket for another attempt.
     run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)
@@ -6335,8 +6335,8 @@ def test_start_is_not_offered_or_accepted_for_an_untaken_ticket_with_a_live_sess
 
     run('enable', 'dispatch')
     store = Store('proj')
-    busy = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Busy ticket').work_id
-    later = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Same agent later').work_id
+    busy = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Busy ticket').id
+    later = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Same agent later').id
     if glyphed:
         for work_id in (busy, later):
             run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
@@ -6379,16 +6379,16 @@ def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_boar
     store = Store('proj')
     # Remove the fixture's ordinary waiting work so only this controlled queue is launched.
     for record in store.work(open=True, limit=0).results:
-        store.finish_work(record.work_id, 'fixture setup')
-    tickets = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Queue {i}').work_id
+        store.finish_work(record.id, 'fixture setup')
+    tickets = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Queue {i}').id
                for i in range(4)]
     for work_id, column, position in zip(tickets, ['backlog', 'todo', 'todo', 'todo'], [0, 2, 0, 1]):
         store.move_work(work_id, column, position=position)
     if distributed:
         for work_id, glyph in zip(tickets, ['kite', 'moth', 'kite', 'moth']):
             run('map', 'work', 'op=edit', f'id={work_id}', f'glyph={glyph}', cwd=mapped)
-    excluded = store.add_work(Node('element', 'exterior.cook'), 'exclude', task='Excluded material').work_id
-    busy = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Already running').work_id
+    excluded = store.add_work(Node('element', 'exterior.cook'), 'exclude', task='Excluded material').id
+    busy = store.add_work(Node('element', 'exterior.cook'), 'missing', task='Already running').id
     live_session(busy)
     log = tmp_path / 'all.jsonl'
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
@@ -6428,8 +6428,8 @@ def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     store = Store('proj')
     for record in store.work(open=True, limit=0).results:
-        store.finish_work(record.work_id, 'fixture setup')
-    failed, success = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Ticket {i}').work_id
+        store.finish_work(record.id, 'fixture setup')
+    failed, success = [store.add_work(Node('element', 'code.alarm.audible'), 'missing', task=f'Ticket {i}').id
                        for i in range(2)]
     run('web', '--json', env={'FAKE_ACP_LOG': str(tmp_path / 'retry.jsonl'), 'FAKE_ACP_MODE': 'ask'})
     page, problems, _ = opened(browser, web)
@@ -6483,9 +6483,9 @@ def test_a_read_that_fails_while_the_map_is_read_again_keeps_the_map_the_node_ch
     from metaform import relay
     from metaform.data import Node, Store
     store = Store('proj')
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     run('enable', 'dispatch')
-    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').work_id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').id
     store.take_work(work, by='claude')
     live_session(work)
     started(run)
@@ -6526,7 +6526,7 @@ def test_choosing_another_project_takes_the_agents_of_the_project_left_off_the_p
     from metaform.data import Node, Store
     store = Store('proj')
     run('enable', 'dispatch')
-    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').work_id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'flawed', task='a quieter tone').id
     store.take_work(work, by='claude')
     live_session(work)
     folder = tmp_path / 'other'
@@ -6534,7 +6534,7 @@ def test_choosing_another_project_takes_the_agents_of_the_project_left_off_the_p
     run('add', 'project', 'other', str(folder))
     build(Store('other'))
     run('set', '--layers', ','.join(TOGGLED), cwd=folder)
-    others = {entry.element.element_id for entry in Store('other').graph(limit=0).elements}
+    others = {entry.element.id for entry in Store('other').graph(limit=0).elements}
     started(run)
     page, problems, _ = opened(browser, web)
     button = f'#agents .agent[data-id="{work}"]'
@@ -6572,8 +6572,8 @@ def test_a_read_of_the_map_of_the_project_left_that_answers_after_the_choice_is_
     run('add', 'project', 'other', str(folder))
     build(Store('other'))
     run('set', '--layers', ','.join(TOGGLED), cwd=folder)
-    left = {entry.element.element_id for entry in Store('proj').graph(limit=0).elements}
-    others = {entry.element.element_id for entry in Store('other').graph(limit=0).elements}
+    left = {entry.element.id for entry in Store('proj').graph(limit=0).elements}
+    others = {entry.element.id for entry in Store('other').graph(limit=0).elements}
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -6607,7 +6607,7 @@ def test_the_metaforms_of_a_project_left_that_answer_after_the_next_choice_do_no
     run('add', 'project', 'other', str(folder))
     build(Store('other'))
     run('set', '--layers', ','.join(TOGGLED), cwd=folder)
-    shown = {entry.element.element_id for entry in Store('proj').graph(limit=0).elements}
+    shown = {entry.element.id for entry in Store('proj').graph(limit=0).elements}
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -6643,8 +6643,8 @@ def test_starting_an_agent_from_the_board_says_what_happened_above_the_board(run
 
     from metaform.data import Node, Store
     store = Store('proj')
-    refused = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').work_id
-    begun = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').work_id
+    refused = store.add_work(Node('element', 'code.alarm.audible'), 'missing', task='Write notes.txt').id
+    begun = store.add_work(Node('element', 'exterior.cook'), 'enhancement', task='Name the cook').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)
@@ -6690,7 +6690,7 @@ def test_a_waiting_merge_shows_review_and_review_asks_about_help_in_a_support_wi
     run('enable', 'dispatch')
     for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
-    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').work_id
+    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').id
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('merges', {'work_id': work, 'branch': f'metaform/{work[:12]}', 'worktree': str(mapped),
                              'state': 'ready', 'reason': '', 'ready': clock.time(), 'deadline': clock.time() + 900,
@@ -6776,7 +6776,7 @@ def test_a_done_ticket_has_chat_and_it_opens_the_chat_dock_with_an_agent(run, we
     monkeypatch.setenv('FAKE_ACP_LOG', str(tmp_path / 'acp.log'))
     monkeypatch.setenv('FAKE_ACP_MODE', 'hold')
     store = Store('proj')
-    work = store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').work_id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').id
     store.finish_work(work, 'Quieter now')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -6812,10 +6812,10 @@ def test_a_spec_code_and_a_ticket_id_in_a_question_open_what_they_refer_to(run, 
     (mapped / 'specifications' / '09-viewer.md').write_text(
         '# Viewer\n\n### VIEW-042 A question never holds up work\n\nThe record text.\n- Why: a test.\n\n### VIEW-043 Next\n')
     store = Store('proj')
-    work = store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').work_id
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'enhancement', task='A quieter alarm').id
     store.ask(Node('element', 'code.alarm.audible'), f'Per VIEW-042 and ZZZ-999, should ticket {work[:8]} wait?',
               suggestions=['Yes', 'No'])
-    alarm = store.element('code.alarm.audible').element_id
+    alarm = store.element('code.alarm.audible').id
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')

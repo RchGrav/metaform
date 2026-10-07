@@ -234,7 +234,7 @@ def close_message(tx: Tx, message_id: str, answer: Any = None) -> Message:
     notices: list[Notice] = []
     row = _message_row(tx, message_id)
     if row["closed"] is not None:
-        notices.append(Notice("message_id", f"This was closed at {row['closed']}; its answer was kept."))
+        notices.append(Notice("id", f"This was closed at {row['closed']}; its answer was kept."))
         return message(tx, row, tuple(notices))
     tx.execute(
         "UPDATE messages SET closed=?, answer=? WHERE message_id=?",
@@ -259,7 +259,7 @@ def reopen_message(tx: Tx, message_id: str) -> Message:
     if row["kind"] != "question":
         raise StoreError("Only a question is reopened; this is a message.", "metaform map messages kind=question")
     if row["closed"] is None:
-        return message(tx, row, (Notice("message_id", "This question is open; it was left as it is."),))
+        return message(tx, row, (Notice("id", "This question is open; it was left as it is."),))
     tx.execute("UPDATE messages SET closed=NULL, answer=NULL WHERE message_id=?", (message_id,))
     return message(tx, _message_row(tx, message_id))
 
@@ -395,7 +395,7 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None) -> WorkRecord:
     notices: list[Notice] = []
     row = _work_row(tx, work_id)
     if row["done"] is not None:
-        notices.append(Notice("work_id", f"This work record was done at {row['done']}; its resolution was kept."))
+        notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
     tx.execute(
         "UPDATE work SET done=?, resolution=? WHERE work_id=?",
@@ -423,7 +423,7 @@ def ticket(tx: Tx, work_id: str, *, selection: Sequence[str] | None = None, raw:
     if row is None:
         raise StoreError(f"No work record has the id {work_id}.", "metaform map work open=true")
     record = work_record(tx, row)
-    at = tx.reads.node_where(res, raw, Node.of(record.kind, record.id))
+    at = tx.reads.node_where(res, raw, Node.of(record.node_kind, record.node_id))
     linked = tuple(tx.reads.node_where(res, raw, Node.of(link.kind, link.id)) for link in record.links)
     # What is read before the task: the read_first items its node's read and its linked nodes' reads show, LAYER-021.
     first = tuple(
@@ -957,7 +957,7 @@ def ask(tx: Tx, node: Node, text: Any, *, suggestions: Any = None, by: Any = Non
         _work_row(tx, work)
     asked = add_message(tx, node, "question", text, suggestions=suggestions, by=by)
     if work is not None:
-        tx.tables().insert('question_work', {'message_id': asked.message_id, 'work_id': work})
+        tx.tables().insert('question_work', {'message_id': asked.id, 'work_id': work})
         asked = dataclasses.replace(asked, work_id=work)
     return asked
 
@@ -969,23 +969,23 @@ def tell(tx: Tx, node: Node, text: Any, *, by: Any = None) -> Message:
 def decorate(tx: Tx, record: Any) -> Any:
     """What map's features contribute to a native DAO record."""
     if isinstance(record, Element):
-        plan = tx.execute("SELECT 1 FROM plans WHERE element_id=?", (record.element_id,)).fetchone()
+        plan = tx.execute("SELECT 1 FROM plans WHERE element_id=?", (record.id,)).fetchone()
         return dataclasses.replace(
-            record, state="plan" if plan else None, open_work=open_work(tx, "element", record.element_id)
+            record, state="plan" if plan else None, open_work=open_work(tx, "element", record.id)
         )
     if isinstance(record, Join):
         plan = any(
-            row is not None and row[0] == record.join_id
+            row is not None and row[0] == record.id
             for row in (
                 tx.execute("SELECT join_id FROM plans WHERE element_id=?", (end,)).fetchone()
                 for end in (*(held.element_id for held in record.elements), record.receiver)
             )
         )
         return dataclasses.replace(
-            record, state="plan" if plan else None, open_work=open_work(tx, "join", record.join_id)
+            record, state="plan" if plan else None, open_work=open_work(tx, "join", record.id)
         )
     if isinstance(record, Item):
-        state = tx.execute("SELECT state FROM challenge_states WHERE item_id=?", (record.item_id,)).fetchone()
+        state = tx.execute("SELECT state FROM challenge_states WHERE item_id=?", (record.id,)).fetchone()
         return dataclasses.replace(record, state=str(state[0]) if state else None)
     if isinstance(record, Provenance):
         refs = tuple(
@@ -998,10 +998,10 @@ def decorate(tx: Tx, record: Any) -> Any:
     if isinstance(record, Where):
         if record.kind == "join":
             assert record.join is not None
-            target = Node("join", record.join.join_id)
+            target = Node("join", record.join.id)
         else:
             assert record.element is not None
-            target = Node("element", record.element.element_id)
+            target = Node("element", record.element.id)
         pending = work(tx, target, open=True, limit=0).results
         waiting = messages(tx, target, open=True, limit=0).results
         return dataclasses.replace(record, work=pending, messages=waiting, past_work=_past_work(tx, target))
@@ -1016,7 +1016,7 @@ def item_write(tx: Tx, target: Node, answers: list[Any], fields: dict[str, Any],
             notices.append(
                 Notice(
                     "task",
-                    f"task is not stored on the item; it added the ticket {ticket.work_id} at "
+                    f"task is not stored on the item; it added the ticket {ticket.id} at "
                     f"{target.kind}:{target.id}.",
                 )
             )

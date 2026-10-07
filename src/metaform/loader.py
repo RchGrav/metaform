@@ -492,7 +492,7 @@ def _follow_enabled() -> None:
     if _selected_project() != _cache_project:
         reset()
         return
-    path = home.base_path()
+    path = home.chassis_path()
     if not path.is_file() or not path.stat().st_size:
         return
     for item in _cache:

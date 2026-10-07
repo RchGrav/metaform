@@ -21,7 +21,7 @@ from .records import LayerKind
 @dataclass(frozen=True)
 class LayerRow:
     layer_id: str
-    metaform_id: str
+    base_id: str
     name: str
     module: str
     variable: str

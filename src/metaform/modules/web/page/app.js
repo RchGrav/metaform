@@ -59,7 +59,7 @@ function keyedFill(node, rows) {
 
 /* ---------- reads ---------- */
 const S = {
-  projects: [], project: null, metaforms: [], metaform: null, layers: [], view: null,
+  projects: [], project: null, bases: [], base: null, layers: [], view: null,
   elements: new Map(), joins: [], items: new Map(), selected: null, neighbors: new Set(), trail: [], history: [], at: -1, loading: 0, opening: 0,
   whole: null,  // the last map read whole, {elements, joins}, put back when a read of it fails
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},  // LAYER-013
@@ -81,7 +81,7 @@ async function reach(url, options, again = 10) {
   }
 }
 async function read(name, params = {}) {
-  const query = new URLSearchParams({project: S.project, ...(S.metaform ? {metaform: S.metaform} : {}), ...params});
+  const query = new URLSearchParams({project: S.project, ...(S.base ? {base: S.base} : {}), ...params});
   const response = await reach(`/api/${name}?${query}`, {headers: {Accept: 'application/json'}});
   const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
   if (!response.ok) throw Object.assign(new Error(body.error || `${name} failed`), {status: response.status, body});
@@ -200,7 +200,7 @@ function showExport(open) {
 $('#exportBtn').onclick = event => { event.stopPropagation(); showAdmin(false); showExport($('#exportbox').hidden); };
 async function exportAs(format, extension, type) {
   showExport(false);
-  const query = new URLSearchParams({project: S.project, ...(S.metaform ? {metaform: S.metaform} : {}), ...viewLayers()});
+  const query = new URLSearchParams({project: S.project, ...(S.base ? {base: S.base} : {}), ...viewLayers()});
   const response = await fetch(`/api/${format}?${query}`);
   if (!response.ok) return toast((await response.json().catch(() => ({}))).error || 'The map could not be exported.');
   const link = h('a', {href: URL.createObjectURL(new Blob([await response.text()], {type})),
@@ -269,7 +269,7 @@ async function removeProject(project) {
   await loadProject();
 }
 /* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
-const noMetaform = () => !S.metaforms.length;
+const noMetaform = () => !S.bases.length;
 const noneYet = () => `${S.project} has no metaform yet. The next intake creates one.`;
 $('#apply').onclick = async () => {
   if (S.view === null) return;
@@ -289,22 +289,22 @@ $('#apply').onclick = async () => {
  * its nearest parent element, VIEW-005. */
 function graphData() {
   const nodes = [], links = [];
-  const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.element_id]));
+  const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
   for (const {element, parent} of S.elements.values()) {
-    nodes.push({id: element.element_id, t: 'el', name: labelOf(element), address: element.address,
+    nodes.push({id: element.id, t: 'el', name: labelOf(element), address: element.address,
       role: element.role, work: element.open_work || [], layer: element.layer});
-    if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.element_id, k: 'tree'});
+    if (parent && byAddress.has(parent)) links.push({source: byAddress.get(parent), target: element.id, k: 'tree'});
   }
   const ids = new Set(nodes.map(node => node.id));
   for (const join of S.joins) {
     const drawnTo = join.providers.filter(id => ids.has(id));
     if (!ids.has(join.receiver) || !drawnTo.length) continue;
-    const purpose = 'p:' + join.join_id;
-    nodes.push({id: purpose, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []});
-    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.join_id,
+    const purpose = 'p:' + join.id;
+    nodes.push({id: purpose, t: 'purpose', join: join.id, layer: join.layer, work: join.open_work || []});
+    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.id,
       work: join.open_work || []});
     for (const provider of drawnTo)
-      links.push({source: purpose, target: provider, k: 'encounter', layer: join.layer, join: join.join_id,
+      links.push({source: purpose, target: provider, k: 'encounter', layer: join.layer, join: join.id,
         work: join.open_work || []});
   }
   // Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
@@ -345,7 +345,7 @@ function graphData() {
 const withProviders = join => ({...join, providers: (join.elements || []).map(each => each.element_id),
   provider: join.elements?.[0]?.element_id, provider_address: join.elements?.[0]?.address});
 const accessed = (value, item) => typeof value === 'function' ? value(item) : value;
-const joinOf = key => S.joins.find(join => 'p:' + join.join_id === key);
+const joinOf = key => S.joins.find(join => 'p:' + join.id === key);
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
   click3d: id => clicked3d(G?.graphData().nodes.find(node => node.id === id)),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
@@ -399,10 +399,10 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   },
   waveTimes: times => { Object.assign(TIMES, times, {gaussian: times.gaussian === false ? [] : times.gaussian || TIMES.gaussian}); W.next = W.clock; },
   reach: () => ({property: R.key, edges: R.edges,
-    elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.element_id)).map(element => element.address)}),
+    elements: [...S.elements.values()].map(entry => entry.element).filter(element => R.nodes.has(element.id)).map(element => element.address)}),
   own: id => { const node = G ? G.graphData().nodes.find(item => item.id === id) : null; return node ? ownColor(node).toLowerCase() : null; },
   box2d: id => { const box = M.nodes.get(id)?.g.getBoundingClientRect(); return box ? {left: box.left, right: box.right, top: box.top, bottom: box.bottom} : null; },
-  edge2d: join => [...(M.base?.edges.find(edge => edge.join.join_id === join)?.path?.classList || [])]
+  edge2d: join => [...(M.base?.edges.find(edge => edge.join.id === join)?.path?.classList || [])]
     .filter(name => name.startsWith('work-')),
   // The dots that travel the joins held still at a share of the way along each link, and where on the page each
   // link's dots are, so a browser check can read a picture of a dot passing through a node.
@@ -503,7 +503,7 @@ const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, size: 2.6
   recent: 120, appear: 0.8, touch: 0.9, vanish: 0.6};
 const nodeById = (data, id) => data.nodes.find(node => node.id === id);
 const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE') || data.nodes.find(node => node.t === 'el');
-const ticketNode = ticket => ticket.kind === 'join' ? 'p:' + ticket.id : ticket.id;
+const ticketNode = ticket => ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id;
 const ballOf = node => Math.cbrt(nodeSize(node)) * 3;
 function sizeOf(data) {  // a figure's size: a share of half the drawn map's widest side
   const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
@@ -531,7 +531,7 @@ function routeOf(data, from, to) {  // the fewest edges of the drawn map from on
  * agent that is not active is not on the map, whatever its ticket says; when its session ends the figure walks back
  * and is gone. */
 const liveWork = () => new Set(D.sessions.filter(one => one.activity === 'working')
-  .map(one => one.work_id));
+  .map(one => one.id));
 function figures(tickets) {
   figures2d(tickets);
   if (!G) return;
@@ -539,20 +539,20 @@ function figures(tickets) {
   if (!home) return;
   const live = liveWork();
   for (const ticket of tickets) {
-    const figure = ROAM.figures.get(ticket.work_id), target = ticketNode(ticket);
-    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.work_id); continue; }
-    const working = live.has(ticket.work_id) && !ticket.done;
-    if (working && !ROAM.seen.has(ticket.work_id) && nodeById(data, target)) {
-      const glyph = drawGlyph(ticket.work_id, ownGlyph(ticket)), mesh = createAgent(glyph);
+    const figure = ROAM.figures.get(ticket.id), target = ticketNode(ticket);
+    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.id); continue; }
+    const working = live.has(ticket.id) && !ticket.done;
+    if (working && !ROAM.seen.has(ticket.id) && nodeById(data, target)) {
+      const glyph = drawGlyph(ticket.id, ownGlyph(ticket)), mesh = createAgent(glyph);
       mesh.scale.setScalar(0.001);
       G.scene().add(mesh);
-      ROAM.seen.add(ticket.work_id);
-      ROAM.figures.set(ticket.work_id, {id: ticket.work_id, glyph, mesh, home: home.id, target, stage: 'arriving',
+      ROAM.seen.add(ticket.id);
+      ROAM.figures.set(ticket.id, {id: ticket.id, glyph, mesh, home: home.id, target, stage: 'arriving',
         path: routeOf(data, home.id, target), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
         done: Boolean(ticket.done)});
     }
   }
-  for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.work_id === id)) figure.done = true;
+  for (const [id, figure] of ROAM.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
 }
 const AHEAD = new THREE.Vector3();
 function roam3d(data) {
@@ -627,7 +627,7 @@ function roam3d(data) {
  * so it keeps its place beside the boxes at any zoom. With reduced motion it stands above its node. */
 const ROAM2D = {figures: new Map(), seen: new Set(), frame: 0, last: 0, speed: 240, size: 1.2, orbit: 0.45, lap: 12,
   appear: 0.8, touch: 0.9, vanish: 0.6};
-const home2d = () => [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id
+const home2d = () => [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id
   || S.elements.keys().next().value;
 function route2d(base, from, to) {  // the fewest edges of the 2D map from one element to another
   const near = new Map(), add = (one, two) => { if (!near.has(one)) near.set(one, []); near.get(one).push(two); };
@@ -644,15 +644,15 @@ function route2d(base, from, to) {  // the fewest edges of the 2D map from one e
 }
 function spot2d(base, key) {  // where a 2D figure stands: an element's box, or the middle of a join's edge
   if (!key.startsWith('p:')) { const node = base.nodes.get(key); return node && {x: node.x, y: node.y, w: node.w, h: node.h}; }
-  const path = base.edges.find(edge => edge.join.join_id === key.slice(2))?.path;
+  const path = base.edges.find(edge => edge.join.id === key.slice(2))?.path;
   if (!path?.getTotalLength) return null;
   const middle = path.getPointAtLength(path.getTotalLength() / 2);
   return {x: middle.x, y: middle.y, w: 0, h: 0};
 }
 function target2d(base, ticket) {  // the ticket's place, and the element its walk ends at
-  if (ticket.kind !== 'join') return base.nodes.has(ticket.id) ? {key: ticket.id, last: ticket.id} : null;
-  const edge = base.edges.find(one => one.join.join_id === ticket.id);
-  return edge ? {key: 'p:' + ticket.id, last: edge.join.receiver} : null;
+  if (ticket.node_kind !== 'join') return base.nodes.has(ticket.node_id) ? {key: ticket.node_id, last: ticket.node_id} : null;
+  const edge = base.edges.find(one => one.join.id === ticket.node_id);
+  return edge ? {key: 'p:' + ticket.node_id, last: edge.join.receiver} : null;
 }
 function back2d(base, figure) {  // the way home, from the middle of a join's edge through its receiver
   const way = route2d(base, figure.last, figure.home);
@@ -663,23 +663,23 @@ function figures2d(tickets) {
   if (!base || !home || !base.nodes.has(home)) return;
   const live = liveWork();
   for (const ticket of tickets) {
-    const figure = ROAM2D.figures.get(ticket.work_id);
-    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.work_id); continue; }
-    const working = live.has(ticket.work_id) && !ticket.done, target = working && target2d(base, ticket);
-    if (target && !ROAM2D.seen.has(ticket.work_id)) {
-      const glyph = ROAM.figures.get(ticket.work_id)?.glyph || glyphFor(ticket.work_id);
+    const figure = ROAM2D.figures.get(ticket.id);
+    if (figure) { figure.done = Boolean(ticket.done) || !live.has(ticket.id); continue; }
+    const working = live.has(ticket.id) && !ticket.done, target = working && target2d(base, ticket);
+    if (target && !ROAM2D.seen.has(ticket.id)) {
+      const glyph = ROAM.figures.get(ticket.id)?.glyph || glyphFor(ticket.id);
       const g = document.createElementNS(SVG, 'g'), image = document.createElementNS(SVG, 'image');
       g.setAttribute('class', 'agent2d');
       g.dataset.glyph = glyph;
       image.setAttribute('href', `/page/agent-glyphs/${glyph}.svg`);
       g.append(image);
-      ROAM2D.seen.add(ticket.work_id);
-      ROAM2D.figures.set(ticket.work_id, {id: ticket.work_id, glyph, g, home, target: target.key, last: target.last, stage: 'arriving',
+      ROAM2D.seen.add(ticket.id);
+      ROAM2D.figures.set(ticket.id, {id: ticket.id, glyph, g, home, target: target.key, last: target.last, stage: 'arriving',
         path: route2d(base, home, target.last), leg: 0, along: 0, clock: 0, angle: Math.random() * Math.PI * 2,
         x: 0, y: 0, size: 0, done: Boolean(ticket.done)});
     }
   }
-  for (const [id, figure] of ROAM2D.figures) if (!tickets.some(ticket => ticket.work_id === id)) figure.done = true;
+  for (const [id, figure] of ROAM2D.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;
   if (ROAM2D.figures.size && !ROAM2D.frame) ROAM2D.frame = requestAnimationFrame(roam2d);
 }
 function layer2d(base) {  // the figures are drawn over the boxes, in the boxes' own coordinates
@@ -897,14 +897,14 @@ const timed = name => TIMES[name] * (TIMES.gaussian.includes(name) ? Math.random
 const W = {clock: 0, last: 0, next: 0, dots: [], held: [], pulses: new Map(), glows: new Map()};
 function setReach(key) {
   const thing = key?.startsWith('r:') ? S.items.get(key) : null;
-  const home = thing ? [...S.elements.values()].find(entry => entry.element.element_id === thing.item.element_id)?.element : null;
+  const home = thing ? [...S.elements.values()].find(entry => entry.element.id === thing.item.element_id)?.element : null;
   if (!home && !R.key) return;
   R.key = home ? key : null;
   R.color = home ? layerColor(thing.layer) : null;
-  R.home = home ? home.element_id : null;
+  R.home = home ? home.id : null;
   R.nodes = new Set(home ? [...S.elements.values()].map(entry => entry.element)
     .filter(({address}) => address === home.address || home.address.startsWith(address + '.') || address.startsWith(home.address + '.'))
-    .map(element => element.element_id) : []);
+    .map(element => element.id) : []);
   R.edges = G ? G.graphData().links.filter(inReach).length : 0;
   for (const dot of W.dots) G.scene().remove(dot.mesh);
   if (G) for (const node of G.graphData().nodes) pulse3d(node, 0);  // no node is left lit
@@ -1499,7 +1499,7 @@ function picked(raycaster, hits) {
 function tipFor(node) {
   if (node.t === 'el') return [h('b', {}, node.name), ...servedBy(node)];
   if (node.t === 'item') return [h('b', {}, node.layer), h('span', {}, short(node.text, 160))];
-  const join = S.joins.find(item => item.join_id === node.join);
+  const join = S.joins.find(item => item.id === node.join);
   if (node.t === 'purpose') return [h('span', {}, join?.purpose || 'purpose')];
   return [h('b', {}, node.name || '')];
 }
@@ -1936,7 +1936,7 @@ function showBase(left = null) {
     return;
   }
   base.svg.style.transition = ''; base.svg.style.opacity = '';  // a map faded on the way in shows whole again
-  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id;
+  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
   setCam(base.cam || (moded() ? frame(modeTarget()) : frame(readable(base.fit, base.nodes.get(S.selected)
     || base.nodes.get(entry) || base.nodes.values().next().value))));
 }
@@ -1993,12 +1993,12 @@ async function drawInside(arriving = false) {
     }
   } else {
     for (const join of S.joins.filter(item => item.receiver === key))
-      edges.push(`${center} --> ${add('p:' + join.join_id, joinLabel(join), 'purpose')}`);
+      edges.push(`${center} --> ${add('p:' + join.id, joinLabel(join), 'purpose')}`);
   }
   const linked = [];
   for (const found of view?.layers || []) {
-    const all = [...(found.items || []).map(item => ({kind: 'item', key: 'i:' + item.item_id, item})),
-      ...(found.properties || []).map(item => ({kind: 'property', key: 'r:' + item.property_id, item}))]
+    const all = [...(found.items || []).map(item => ({kind: 'item', key: 'i:' + item.id, item})),
+      ...(found.properties || []).map(item => ({kind: 'property', key: 'r:' + item.id, item}))]
       .map(thing => ({...thing, value: thing.item.value, layer: found.layer, layerKind: found.kind}));
     if (!all.length) continue;
     const shown = level.more[found.layer] || GROUP, gid = `g${groups.size}`;
@@ -2036,17 +2036,17 @@ async function drawInside(arriving = false) {
       edges.push(`${ids.get(memoryKey(relation.from))} -->|"${label2d(relation.relationType)}"| ${ids.get(memoryKey(relation.to))}`);
     }
   }
-  const coming = incoming.filter(item => !ids.has('i:' + item.item_id));
+  const coming = incoming.filter(item => !ids.has('i:' + item.id));
   if (coming.length) {
     const gid = `g${groups.size}`;
     groups.set(gid, null);
     lines.push(`subgraph ${gid} ["linked here"]`, 'direction TB');
-    for (const item of coming) add('i:' + item.item_id, itemText(item.value), 'item', {kind: 'item', key: 'i:' + item.item_id,
+    for (const item of coming) add('i:' + item.id, itemText(item.value), 'item', {kind: 'item', key: 'i:' + item.id,
       item, value: item.value, layer: item.layer, layerKind: S.layers.find(layer => layer.name === item.layer)?.kind});
     lines.push('end');
     for (const item of coming) {
       const from = keyOf(item.target);
-      if (from) edges.push(`${add(from, nameOf(from, item.target.id), 'stub')} --> ${ids.get('i:' + item.item_id)}`);
+      if (from) edges.push(`${add(from, nameOf(from, item.target.id), 'stub')} --> ${ids.get('i:' + item.id)}`);
     }
     edges.push(`${gid} --> ${center}`);
   }
@@ -2154,11 +2154,11 @@ function nodeAt(join) {
   const addressOf = id => S.elements.get(id)?.element.address;
   if (join.address !== undefined) {
     const found = [...S.elements.values()].find(entry => entry.element.address === join.address);
-    return found ? found.element.element_id : null;
+    return found ? found.element.id : null;
   }
   const parent = S.joins.find(one => addressOf(one.receiver) === join.receiver
     && (one.elements || []).some(each => each.address === join.provider));
-  return parent ? 'p:' + parent.join_id : null;
+  return parent ? 'p:' + parent.id : null;
 }
 async function memoryOf() {
   let whole;
@@ -2197,7 +2197,7 @@ function entityNode(key) {
   if (element) return {id: key, t: 'el', name: labelOf(element), address: element.address,
     role: element.role, work: element.open_work || [], layer: element.layer};
   const join = joinOf(key);
-  if (join) return {id: key, t: 'purpose', join: join.join_id, layer: join.layer, work: join.open_work || []};
+  if (join) return {id: key, t: 'purpose', join: join.id, layer: join.layer, work: join.open_work || []};
   return {id: key, t: 'el', name: key, address: key, work: []};  // a node the layers in view do not draw
 }
 function memoryData() {
@@ -2398,7 +2398,7 @@ function renderEntity(name, pane = $('#p-object')) {
     one.key ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(one.key); }}, nameOf(one.key))
       : h('b', {}, joinPlace(one)),
     one.orphaned ? h('small', {}, ' · orphaned, the map no longer holds it') : one.key ? h('small', {}, '; Enter goes there.') : null,
-    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.join_id}])}, 'Take away')));
+    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.id}])}, 'Take away')));
   const renaming = draft('rename');
   const naming = h('div', {class: 'naming', hidden: !EDITING.has(renaming)},
     h('input', {class: 'name', 'data-draft': draft('name'), value: name, 'aria-label': 'Name'}),
@@ -2469,7 +2469,7 @@ async function orphans() {
     lost.length ? lost.map(join => h('div', {class: 'ticket orphan'}, h('b', {}, join.entity),
       h('p', {class: 'note'}, `was attached to ${joinPlace(join)}`),
       h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: async () => {
-        if (await memoryWrite(['unjoin', {id: join.join_id}])) orphans(); }}, 'Take away the join'),
+        if (await memoryWrite(['unjoin', {id: join.id}])) orphans(); }}, 'Take away the join'),
         h('button', {class: 'forget', onclick: async () => {
           if (await memoryWrite(['delete_entities', {entityNames: [join.entity]}])) orphans(); }}, 'Delete memory'))))
       : h('p', {class: 'empty'}, 'No memory join is orphaned.'),
@@ -2542,7 +2542,7 @@ async function renderVotes() {
       one.said.length ? h('div', {class: 'said'}, one.said.map(said => h('p', {}, h('b', {}, said.kind === 'write-in' ? 'Wrote in: ' : 'Commented: '), said.text))) : null,
       one.still_applied ? h('button', {class: 'reopen', title: 'Undo this answer: the question waits for an answer again', onclick: async event => {
         event.target.disabled = true;
-        if (await wrote('/api/reopen', {id: one.message_id})) { toast('Reopened.'); renderVotes(); } else event.target.disabled = false;
+        if (await wrote('/api/reopen', {id: one.id})) { toast('Reopened.'); renderVotes(); } else event.target.disabled = false;
       }}, 'Reopen') : null)));
 }
 $('#votesBtn').onclick = async () => { showAgentMenu(false); $('#votes').hidden = false; await renderVotes(); };
@@ -2640,7 +2640,7 @@ function modeTarget() {
   // The viewBox at which that text, times the screen pixels per unit, is the minimum; the larger on screen wins.
   const w = area.width * M.base.text / (6 + 2 * MODE.key), height = w * area.height / area.width;
   if (w >= fit.w) return fit;
-  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.element_id;
+  const entry = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
   const center = at2d(S.selected) || M.nodes.get(entry) || {x: fit.x + fit.w / 2, y: fit.y + fit.h / 2};
   return {x: center.x - w / 2, y: center.y - height / 2, w, h: height};
 }
@@ -2938,9 +2938,9 @@ function formParts(text) {
   }
   return {question: question.join('\n').trim(), parts: parts.map(part => ({...part, text: part.lines.join('\n').trim()}))};
 }
-function asked(record, metaform = S.metaform, full = false) {
+function asked(record, metaform = S.base, full = false) {
   const answer = h('textarea', {class: 'answer', placeholder: 'Type an answer or a message'});
-  const written = text => wrote('/api/answer', {id: record.message_id, answer: text, metaform});
+  const written = text => wrote('/api/answer', {id: record.id, answer: text, metaform});
   const send = h('button', {class: 'answer', onclick: async () => {
     if (!answer.value.trim()) return;
     send.disabled = true;
@@ -2974,12 +2974,12 @@ function asked(record, metaform = S.metaform, full = false) {
     $('#qa').hidden = false;
   }}, 'Read in full');
   // Help me answer, VIEW-043: three agents say what it means and what they would answer; nothing changes until a click
-  const advice = record.closed ? null : h('div', {class: 'advice', 'data-id': record.message_id});
+  const advice = record.closed ? null : h('div', {class: 'advice', 'data-id': record.id});
   const helper = record.closed ? null : h('button', {class: 'help-answer',
     title: 'Three agents each explain the question in plain words and say what they would answer; nothing is applied',
     onclick: async event => {
       event.target.disabled = true;
-      if (await wrote('/api/recommend', {id: record.message_id})) drawAdvice(advice, record, written);
+      if (await wrote('/api/recommend', {id: record.id})) drawAdvice(advice, record, written);
       else event.target.disabled = false;
     }}, 'Help me answer');
   if (advice) drawAdvice(advice, record, written);
@@ -2993,7 +2993,7 @@ function asked(record, metaform = S.metaform, full = false) {
     // Answered by mistake: Reopen clears the answer and the question waits again with its suggestions, MAP-050.
     record.closed ? h('button', {class: 'reopen', onclick: async event => {
       event.target.disabled = true;
-      if (!await wrote('/api/reopen', {id: record.message_id, metaform})) event.target.disabled = false;
+      if (!await wrote('/api/reopen', {id: record.id, metaform})) event.target.disabled = false;
     }}, 'Reopen') : null);
 }
 $('#qa .close').onclick = () => { $('#qa').hidden = true; };
@@ -3002,7 +3002,7 @@ $('#qa .close').onclick = () => { $('#qa').hidden = true; };
 async function drawAdvice(box, record, written) {
   box.answer = written;
   let found;
-  try { found = await read('advice', {id: record.message_id}); } catch { return; }
+  try { found = await read('advice', {id: record.id}); } catch { return; }
   const said = found.advice || [];
   if (!said.length) {
     fill(box, found.reading ? h('p', {class: 'reading'}, `${found.reading} agents are reading the question…`) : null);
@@ -3028,7 +3028,7 @@ async function drawAdvice(box, record, written) {
     found.reading ? h('p', {class: 'reading'}, `${found.reading} more still reading…`) : null);
 }
 const refreshAdvice = () => document.querySelectorAll('.advice[data-id]').forEach(box =>
-  box.answer && drawAdvice(box, {message_id: box.dataset.id}, box.answer));
+  box.answer && drawAdvice(box, {id: box.dataset.id}, box.answer));
 /* The review-or-merge flow, VIEW-044: Review. while done work waits; a click takes it over for good, offers an agent's
  * help, and the help comes in a support window at the lower right. */
 const MERGE = {rows: [], chat: null, since: 0};
@@ -3037,10 +3037,10 @@ async function renderMerges() {
   try { MERGE.rows = (await read('merges')).merges || []; } catch { MERGE.rows = []; }
   const at = seconds => new Date(seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   fill($('#reviewNotice'), MERGE.rows.map(row => {
-    const ticket = (B.tickets || []).find(one => one.work_id === row.work_id);
+    const ticket = (B.tickets || []).find(one => one.id === row.id);
     return h('div', {class: 'notice'}, h('b', {}, 'Review.'),
       h('span', {}, ` ${ticket ? (ticket.task || ticket.note || '').slice(0, 80) : row.branch} · merges by itself at ${at(row.deadline)}`),
-      h('button', {onclick: event => takeReview(row.work_id, event.target)}, 'Review'));
+      h('button', {onclick: event => takeReview(row.id, event.target)}, 'Review'));
   }));
   $('#reviewNotice').hidden = !MERGE.rows.length;
 }
@@ -3116,13 +3116,13 @@ async function dockCommand(text) {
     let found = [];
     try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { return dockNote(error.message); }
     DOCK.list = found.filter(one => one.state === 'running');
-    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
+    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${ticketPart(ticketOf(one.id))}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
       : 'No agent is at work right now.');
   }
   if (command === 'chat') {
     const chosen = DOCK.list[Number(rest[0]) - 1];
     if (!chosen) return dockNote('Type /list first, then /chat with the number of the agent.');
-    openHelpdesk(chosen.work_id, `${agentName(chosen.agent)} on ${ticketPart(ticketOf(chosen.work_id))}`, 'It answers when its current step ends.',
+    openHelpdesk(chosen.id, `${agentName(chosen.agent)} on ${ticketPart(ticketOf(chosen.id))}`, 'It answers when its current step ends.',
       chosen.session_id);
     return dockNote(`You are now talking with ${DOCK.label}. Its work goes on while you talk.`);
   }
@@ -3137,21 +3137,21 @@ async function callSystem() {
   const call = DOCK.calling = {};
   const started = await wrote('/api/system-chat', {});
   if (DOCK.calling !== call) {  // dismissed while it was being reached: it is stopped as soon as it answers
-    if (started) await wrote('/api/dispatch-stop', {work_id: started.work_id});
+    if (started) await wrote('/api/dispatch-stop', {work_id: started.id});
     return;
   }
   DOCK.calling = null;
   if (!started) { $('#helpdesk .call').textContent = 'Call'; return; }
-  DOCK.mine = started.work_id;
-  openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id);
+  DOCK.mine = started.id;
+  openHelpdesk(started.id, 'your system agent', STANDBY, started.session_id);
 }
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
  * agent at work on it is talked to directly; otherwise one starts to talk, and Dismiss stops it. */
 async function talkAbout(given, label) {
   const started = await wrote('/api/talk', given);
   if (!started) return;
-  if (started.conversation) DOCK.mine = started.work_id;
-  openHelpdesk(started.work_id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
+  if (started.conversation) DOCK.mine = started.id;
+  openHelpdesk(started.id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
     started.session_id);
 }
 const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
@@ -3289,7 +3289,7 @@ const ago = text => {
 const partAt = address => [...S.elements.values()].map(entry => entry.element).find(element => element.address === address);
 function nodeChip(target, role) {
   const element = target.address ? partAt(target.address) : null;
-  const key = target.kind === 'join' ? 'p:' + target.id : element?.element_id || target.id;
+  const key = target.kind === 'join' ? 'p:' + target.id : element?.id || target.id;
   const end = address => (address ? partAt(address) : null) ? named(partAt(address)) : address;
   const name = element ? named(element) : target.kind === 'join'
     ? joinOf('p:' + target.id)?.name || (target.ends?.[0] ? `${end(target.ends[0])} → ${end(target.ends[1])}` : 'a join')
@@ -3423,7 +3423,7 @@ function ticketControls(ticket) {
   const kept = ticket.map || {};
   const change = async (fields, control) => {
     control.disabled = true;
-    try { if (await wrote('/api/ticket', {work_id: ticket.work_id, ...fields})) await renderBoard(); }
+    try { if (await wrote('/api/ticket', {work_id: ticket.id, ...fields})) await renderBoard(); }
     finally { control.disabled = false; }
   };
   const chosen = kept.agent || defaultAgent(ticket.address);
@@ -3433,7 +3433,7 @@ function ticketControls(ticket) {
       h('select', {class: 'agent', onchange: event => change({agent: event.target.value}, event.target)},
         TICKET_AGENTS.map(([value, label]) => h('option', {value, selected: value === chosen}, label)))),
     eligibilityPicker(eligibleAgents(ticket), async agents => {
-      if (!await wrote('/api/eligible', {work_id: ticket.work_id, agents})) return false;
+      if (!await wrote('/api/eligible', {work_id: ticket.id, agents})) return false;
       await renderBoard();
       return true;
     }),
@@ -3444,7 +3444,7 @@ function ticketControls(ticket) {
     ticket.taken && !ticket.done ? h('button', {class: 'recall', title: 'Recall the agent working this ticket; the ticket goes back on the board',
       onclick: async event => {
         event.target.disabled = true;
-        if (await wrote('/api/dispatch-stop', {work_id: ticket.work_id})) await renderBoard(); else event.target.disabled = false;
+        if (await wrote('/api/dispatch-stop', {work_id: ticket.id})) await renderBoard(); else event.target.disabled = false;
       }}, 'Recall agent') : null,
     ticket.done ? null : h('button', {class: kept.hold ? 'hold on' : 'hold',
       title: kept.hold ? 'Release it: agents and automatic starts see it again' : 'Hold it: hidden from agents, automatic starts and consensus mode',
@@ -3453,12 +3453,12 @@ function ticketControls(ticket) {
 function card(ticket, place, total) {
   const steps = ticket.steps || 0, filed = ticket.steps_done || 0;
   const move = async position => {
-    if (await wrote('/api/move', {work_id: ticket.work_id, column: columnOf(ticket), position})) await renderBoard();
+    if (await wrote('/api/move', {work_id: ticket.id, column: columnOf(ticket), position})) await renderBoard();
   };
   // its agent's glyph, VIEW-040: its own, or while its agent is at work the one its figure is drawn as
-  const glyph = ownGlyph(ticket) || ROAM.figures.get(ticket.work_id)?.glyph;
-  const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.work_id, 'data-kind': ticket.condition || 'none',
-    onclick: () => { const element = partAt(ticket.address); if (element) { select(element.element_id, true); history(element.element_id); } }},
+  const glyph = ownGlyph(ticket) || ROAM.figures.get(ticket.id)?.glyph;
+  const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.condition || 'none',
+    onclick: () => { const element = partAt(ticket.address); if (element) { select(element.id, true); history(element.id); } }},
     h('div', {class: 'top'}, glyph ? h('img', {class: 'glyph', src: `/page/agent-glyphs/${glyph}.svg`, alt: glyph,
       title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
       h('span', {class: 'kind'}, ticket.condition || 'unsorted'),
@@ -3466,7 +3466,7 @@ function card(ticket, place, total) {
       h('span', {class: 'age', title: ticket.done ? 'Since completion' : ticket.taken ? 'Since taken' : 'Since opened'},
         ago(ticket.done || ticket.taken || ticket.created))),
     h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
-    h('div', {class: 'nodes'}, nodeChip({kind: ticket.kind, id: ticket.id, address: ticket.address,
+    h('div', {class: 'nodes'}, nodeChip({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
       ends: [ticket.receiver_address, ticket.provider_address]}, 'assigned'),
       ...(ticket.links || []).map(link => nodeChip(link, 'ref'))),
     steps || filed ? h('div', {class: 'progress'}, h('span', {style: {width: `${Math.min(100, 100 * filed / Math.max(steps, filed, 1))}%`}}),
@@ -3482,7 +3482,7 @@ function card(ticket, place, total) {
     waiting(ticket) ? h('button', {class: 'start', title: 'Start an agent on this ticket', onclick: event => {
       event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); }}, 'Start agent') : null);
   if (ticket.map?.hold) box.classList.add('on-hold');
-  box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.work_id); box.classList.add('dragging'); });
+  box.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', ticket.id); box.classList.add('dragging'); });
   box.addEventListener('dragend', () => box.classList.remove('dragging'));
   return box;
 }
@@ -3516,9 +3516,9 @@ function drawBoard() {
 }
 async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
-  const project = S.project, metaform = S.metaform;  // the agents are read on dispatch events only, VIEW-018
+  const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
   try { B.tickets = (await read('work', {limit: 0})).results || []; } catch (error) { toast(error.message); return; }
-  if (S.project !== project || S.metaform !== metaform) return;
+  if (S.project !== project || S.base !== metaform) return;
   drawBoard();
 }
 $('#boardBtn').onclick = async () => { $('#board').hidden = false; await renderBoard(); $('#board .search').focus(); };
@@ -3557,16 +3557,16 @@ async function history(id) {
       ticket.done ? ` · done ${when(ticket.done)}` : ''),
     (ticket.said || []).length ? h('ol', {class: 'steps'}, ticket.said.map(step => h('li', {}, ...linked(step.said)))) : null,
     ticket.resolution ? h('p', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
-    chatButton({id: ticket.work_id}, ticketPart(ticket)),
+    chatButton({id: ticket.id}, ticketPart(ticket)),
     // each agent sent to work it, and its session's log, VIEW-036 and VIEW-039
-    ...dispatched.filter(one => one.work_id === ticket.work_id).map(one => h('div', {class: 'dispatch'},
+    ...dispatched.filter(one => one.id === ticket.id).map(one => h('div', {class: 'dispatch'},
       h('span', {}, `${agentName(one.agent)} sent ${when(one.started)} · `
         + (one.state === 'running' ? 'working' : `ended${one.how ? `, ${one.how}` : ''}`)),
-      chatButton(one.state === 'running' ? {id: one.work_id} : {session: `${one.work_id}:${one.session_id}`},
+      chatButton(one.state === 'running' ? {id: one.id} : {session: `${one.id}:${one.session_id}`},
         `${agentName(one.agent)} on ${ticketPart(ticket)}`),
       h('button', {class: 'log', title: "The session's whole thread", onclick: async () => {
         await renderAgents();
-        agentAt(one.work_id, one.session_id);
+        agentAt(one.id, one.session_id);
       }}, 'Open log')))))
     : h('p', {class: 'empty'}, 'No work here yet.'));
   $('#float').hidden = false;
@@ -3574,27 +3574,27 @@ async function history(id) {
 /* The floating window, VIEW-030. It shows the messages it was opened with, each as it is now, so a question answered
  * in it shows its answer and a note read in it stays in sight until the window is closed. Shown again as the map
  * changes, a message that has not changed keeps the part of the window drawn for it, with whatever is typed there. */
-const F = {id: null, which: null, ids: new Set(), drawn: new Map(), metaform: null};
+const F = {id: null, which: null, ids: new Set(), drawn: new Map(), base: null};
 async function show(id, which, again = false) {
   // Its messages are those of the metaform it was opened in; while another is shown it is left as it is.
-  if (again && F.metaform !== S.metaform) return;
+  if (again && F.base !== S.base) return;
   let found;
   try { found = await messagesOf(id); } catch (error) { toast(error.message); return; }
-  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.message_id)), drawn: new Map(),
-    metaform: S.metaform});
+  if (!again) Object.assign(F, {id, which, ids: new Set(found[which].map(record => record.id)), drawn: new Map(),
+    base: S.base});
   if (F.id !== id) return;
-  const shown = found.all.filter(record => F.ids.has(record.message_id));
+  const shown = found.all.filter(record => F.ids.has(record.id));
   $('#float .title').textContent = `${which === 'unread' ? 'Unread' : 'Past'} messages · ${calledOf(id)}`;
   const drawn = new Map(shown.map(record => {
-    const state = JSON.stringify([record.closed, record.answer, record.text, record.suggestions]), had = F.drawn.get(record.message_id);
-    return [record.message_id, had && had.state === state ? had : {state, node: h('div', {},
+    const state = JSON.stringify([record.closed, record.answer, record.text, record.suggestions]), had = F.drawn.get(record.id);
+    return [record.id, had && had.state === state ? had : {state, node: h('div', {},
       h('div', {class: 'when'}, record.created.replace('T', ' ').replace('Z', '')),
-      record.kind === 'question' ? asked(record, F.metaform) : noted(record))}];
+      record.kind === 'question' ? asked(record, F.base) : noted(record))}];
   }));
   F.drawn = drawn;
   keepFill($('#float .body'), shown.length ? [...drawn.values()].map(one => one.node) : [h('p', {class: 'empty'}, 'No messages here.')]);
   $('#float').hidden = false;
-  for (const record of shown) if (record.kind === 'message' && !record.closed) wrote('/api/read', {id: record.message_id});
+  for (const record of shown) if (record.kind === 'message' && !record.closed) wrote('/api/read', {id: record.id});
 }
 function noted(record) {
   return h('div', {class: 'item work'},
@@ -3606,7 +3606,7 @@ async function wrote(path, given) {
   let response;
   try {
     response = await reach(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})}, 0);
+      body: JSON.stringify({project: S.project, base: S.base, ...given})}, 0);
   } catch (error) { toast(error.message); return null; }
   const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
   if (!response.ok) toast(body.error || 'It was not written.');
@@ -3663,16 +3663,16 @@ $('#autostartAgents').onchange = async () => {
 };
 async function questionChat(record, metaform) {
   const project = S.project;
-  const found = await wrote('/api/dispatch-chat', {id: record.message_id, metaform, agent: $('#dispatch select.agent').value});
-  if (!found || S.project !== project || S.metaform !== metaform) return;
-  if (found.conversation) DOCK.mine = found.work_id;  // Dismiss stops a conversation agent, never ticket work
-  openHelpdesk(found.work_id, `${agentName(found.agent)} on the question`,
+  const found = await wrote('/api/dispatch-chat', {id: record.id, metaform, agent: $('#dispatch select.agent').value});
+  if (!found || S.project !== project || S.base !== metaform) return;
+  if (found.conversation) DOCK.mine = found.id;  // Dismiss stops a conversation agent, never ticket work
+  openHelpdesk(found.id, `${agentName(found.agent)} on the question`,
     found.state === 'running' ? 'It answers when its current step ends.' : STANDBY, found.session_id);
 }
 const waiting = ticket => !ticket.done && !ticket.taken && ticket.condition !== 'exclude'
   && !D.sessions.some(one => one.state === 'running'
-    && (one.work_id === ticket.work_id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
-const ticketOf = workId => (S.tickets || []).find(ticket => ticket.work_id === workId);
+    && (one.id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.id)) === ownGlyph(ticket))));
+const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id === workId);
 function ticketPart(ticket) {
   const element = ticket?.address ? partAt(ticket.address) : null;
   return element ? named(element) : ticket ? calledOf(ticketNode(ticket)) : 'its ticket';
@@ -3710,7 +3710,7 @@ function startWindow(title, tickets, all = false) {
     for (const ticket of pending) {
       const button = buttons[tickets.indexOf(ticket)];
       try {
-        if (await startAgent(ticket.work_id, agent)) { started++; button.textContent = 'Starting'; }
+        if (await startAgent(ticket.id, agent)) { started++; button.textContent = 'Starting'; }
         else { button.disabled = false; button.textContent = 'Retry'; }
       } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
     }
@@ -3733,7 +3733,7 @@ function startWindow(title, tickets, all = false) {
       return true;
     }) : candidates;
     startAll.disabled = !tickets.length;
-    fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.work_id},
+    fill($('#dispatch .tickets'), tickets.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
     h('span', {class: 'kind'}, ticket.condition || 'ticket'),
     h('button', {class: 'start', disabled: !allowsAgent(ticket, agent),
       title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
@@ -3741,7 +3741,7 @@ function startWindow(title, tickets, all = false) {
       const agent = $('#dispatch select.agent').value;
       event.target.disabled = true;
       try {
-        if (await startAgent(ticket.work_id, agent)) { $('#dispatch').hidden = true; await renderBoard(); }
+        if (await startAgent(ticket.id, agent)) { $('#dispatch').hidden = true; await renderBoard(); }
         else event.target.disabled = false;
       } catch (error) { toast(error.message); event.target.disabled = false; }
     }}, 'Start'),
@@ -3757,33 +3757,33 @@ movable($('#dispatch'));
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
 async function renderAgents() {
-  const project = S.project, metaform = S.metaform;
+  const project = S.project, metaform = S.base;
   let found = {sessions: []};
   if (!noMetaform()) {
     try { found = await read('dispatch-sessions', {thread: 'false'}); }  // the threads are read for the open window only
     catch (error) { toast(error.message); found = {sessions: D.sessions}; }  // a failed read keeps the agents drawn
   }
-  if (S.project !== project || S.metaform !== metaform) return;  // the answer for a project the person has left
+  if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
   D.sessions = found.sessions || [];
   if (D.chat) {
     const pending = D.chat;
-    const session = D.sessions.find(one => one.work_id === pending.work && one.state === 'running'
+    const session = D.sessions.find(one => one.id === pending.work && one.state === 'running'
       && (pending.session ? one.session_id === pending.session : !pending.known.has(one.session_id)));
-    if (session) { D.chat = null; agentAt(session.work_id, session.session_id); }
+    if (session) { D.chat = null; agentAt(session.id, session.session_id); }
   }
   if (!$('#board').hidden) drawBoard();
   // at work: a session whose runner says a turn is executing, the same ones the map's figures follow
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.work_id, one.agent, glyphOf(one.work_id), ticketPart(ticketOf(one.work_id))].join('\n'),
+    text: [one.id, one.agent, glyphOf(one.id), ticketPart(ticketOf(one.id))].join('\n'),
     make: () => h('div', {class: 'agent-row'}, h('button', {
-      class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
-      title: `${agentName(one.agent)} on work ${one.work_id}: working`,
-      onclick: () => agentAt(one.work_id, one.session_id)},
-      h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
-      h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · working`)),
-      chatButton({id: one.work_id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}`))})));
+      class: 'agent working', 'data-id': one.id, 'data-session': one.session_id,
+      title: `${agentName(one.agent)} on work ${one.id}: working`,
+      onclick: () => agentAt(one.id, one.session_id)},
+      h('img', {src: glyphOf(one.id), alt: glyphFor(one.id)}), h('b', {}, agentName(one.agent)),
+      h('small', {}, `on ${ticketPart(ticketOf(one.id))} · working`)),
+      chatButton({id: one.id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.id))}`))})));
   $('#agents').hidden = !working.length;
   figures(S.tickets || []);  // the map's figures follow the same sessions
   if (D.work) await drawAgent();
@@ -3800,7 +3800,7 @@ function agentAt(workId, sessionId = null) {
  * drawn again, so a map change keeps it, VIEW-018. */
 async function drawAgent() {
   const work = D.work;
-  const session = D.sessions.filter(one => one.work_id === work && (!D.session || one.session_id === D.session)).at(-1);
+  const session = D.sessions.filter(one => one.id === work && (!D.session || one.session_id === D.session)).at(-1);
   const {agent, session_id: sessionId, state} = session || {};
   const ticket = ticketOf(work);
   $('#agent .icon').src = glyphOf(work);
@@ -3811,15 +3811,15 @@ async function drawAgent() {
   $('#agent .task').textContent = task;
   $('#agent .task').title = 'Click to show all of the task, and again to fold it';
   // A chat: newest at the bottom, kept in view while the person is reading the end of it, VIEW-039.
-  const project = S.project, metaform = S.metaform;
+  const project = S.project, metaform = S.base;
   let notes = D.notes;
   try { notes = (await read('dispatch-sessions', {id: work})).lines || []; }
   catch (error) { toast(error.message); }
-  if (D.work !== work || S.project !== project || S.metaform !== metaform) return;
+  if (D.work !== work || S.project !== project || S.base !== metaform) return;
   D.notes = notes;
   const thread = $('#agent .activity');
   const following = !thread.childElementCount || thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
-  keyedFill(thread, D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId))
+  keyedFill(thread, D.notes.filter(line => line.id === work && (!sessionId || line.session_id === sessionId))
     .map(line => ({key: `${line.session_id}:${line.name ?? line.seq}`, text: `${line.kind}\n${line.text}`,
       make: () => h('li', {class: THREAD[line.kind] || 'note'},
         h('small', {}, DOING[line.kind] || line.kind || ''), ...linked(line.text))})));
@@ -3830,7 +3830,7 @@ async function drawAgent() {
     catch (error) { toast(error.message); }
   }
   if (D.work !== work) return;
-  const drawn = new Map(open.map(record => [record.message_id, D.drawn.get(record.message_id) || asked(record)]));
+  const drawn = new Map(open.map(record => [record.id, D.drawn.get(record.id) || asked(record)]));
   D.drawn = drawn;
   keepFill($('#agent .asked'), [...drawn.values()]);
   $('#agent .send').disabled = $('#agent .stop').disabled = state !== 'running';
@@ -3838,7 +3838,7 @@ async function drawAgent() {
 // The task shows in three lines, so the conversation always has the window; a click unfolds it, within a third.
 $('#agent .task').onclick = () => $('#agent .task').classList.toggle('open');
 $('#agent .chat').onclick = () => {
-  const session = D.sessions.filter(one => one.work_id === D.work && (!D.session || one.session_id === D.session)).at(-1);
+  const session = D.sessions.filter(one => one.id === D.work && (!D.session || one.session_id === D.session)).at(-1);
   const label = `${agentName(session?.agent)} on ${ticketPart(ticketOf(D.work))}`;
   talkAbout(!session || session.state === 'running' ? {id: D.work} : {session: `${D.work}:${session.session_id}`}, label);
 };
@@ -3861,7 +3861,7 @@ $('#agent .close').onclick = () => { $('#agent').hidden = true; D.work = null; }
 movable($('#agent'));
 /* Giving work, VIEW-032: the task is written as a person writes, the nodes it concerns are linked to it, and a node
  * inserted into the text reads there as its proper noun and carries its address. */
-const K = {nodes: [], chosen: null, at: null, generation: 0, project: null, metaform: null, eligible: []};
+const K = {nodes: [], chosen: null, at: null, generation: 0, project: null, base: null, eligible: []};
 const partOf = address => [...S.elements.values()].map(entry => entry.element).find(element => element.address === address);
 const named = element => labelOf(element);
 function chip(element, remove = null) {
@@ -3873,13 +3873,13 @@ function linkedNodes() {
     index ? () => { K.nodes = K.nodes.filter(one => one !== address); linkedNodes(); } : null)));
 }
 async function taskWorkflows() {
-  const generation = ++K.generation, picker = $('#task .workflow'), project = S.project, metaform = S.metaform;
-  const stale = () => generation !== K.generation || $('#task').hidden || project !== S.project || metaform !== S.metaform;
+  const generation = ++K.generation, picker = $('#task .workflow'), project = S.project, metaform = S.base;
+  const stale = () => generation !== K.generation || $('#task').hidden || project !== S.project || metaform !== S.base;
   picker.disabled = true;
   fill(picker, h('option', {value: ''}, 'Loading workflows…'));
   $('#task .workflow-entry').hidden = true;
   $('#task .workflow-call').value = '';
-  if (!S.metaforms.some(map => map.active && map.metaform_id === metaform)) {
+  if (!S.bases.some(map => map.active && map.id === metaform)) {
     fill(picker, h('option', {value: ''}, 'Choose the active map to run workflows'));
     return;
   }
@@ -3905,7 +3905,7 @@ $('#task .condition').onchange = () => { $('#task .put').disabled = !$('#task .c
 function giveWork(id, text = '') {
   const element = S.elements.get(id)?.element;
   if (!element) { toast('Work is given at an element.'); return; }
-  Object.assign(K, {nodes: [element.address], chosen: null, at: null, project: S.project, metaform: S.metaform, eligible: []});
+  Object.assign(K, {nodes: [element.address], chosen: null, at: null, project: S.project, base: S.base, eligible: []});
   $('#task .condition').value = '';
   $('#task .put').disabled = true;
   $('#task .backlog').checked = false;
@@ -3946,8 +3946,8 @@ async function chart(parts) {
   const unable = text => fill(host, h('p', {class: 'empty', style: {padding: '12px'}}, text));
   if (!window.mermaid || !mermaidReady) return unable('The chart could not load.');
   if (parts.length > MAP2D) return unable(`The chart lays out at most ${MAP2D} parts.`);
-  const keys = new Map(parts.map((part, index) => [part.element_id, `c${index}`]));
-  const lines = ['flowchart TB', ...parts.map(part => `${keys.get(part.element_id)}["${plain2d(named(part))}"]`),
+  const keys = new Map(parts.map((part, index) => [part.id, `c${index}`]));
+  const lines = ['flowchart TB', ...parts.map(part => `${keys.get(part.id)}["${plain2d(named(part))}"]`),
     ...S.joins.filter(join => keys.has(join.receiver)).flatMap(join => join.providers.filter(id => keys.has(id))
       .map(provider => `${keys.get(join.receiver)} --> ${keys.get(provider)}`))];
   let result;
@@ -3958,7 +3958,7 @@ async function chart(parts) {
   svg.removeAttribute('style'); svg.removeAttribute('width'); svg.removeAttribute('height');
   host.replaceChildren(svg);
   for (const part of parts) {
-    const group = svg.querySelector(`[id*="-flowchart-${keys.get(part.element_id)}-"]`);
+    const group = svg.querySelector(`[id*="-flowchart-${keys.get(part.id)}-"]`);
     if (!group) continue;
     group.dataset.address = part.address;
     group.append(Object.assign(document.createElementNS(SVG, 'title'), {textContent: part.address}));
@@ -4049,7 +4049,7 @@ const taskText = () => [...$('#task .text').childNodes].map(function told(node) 
 }).join('').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
 $('#task .put').onclick = async () => {
   if (!$('#task .condition').value) return;
-  if (K.project !== S.project || K.metaform !== S.metaform) {
+  if (K.project !== S.project || K.base !== S.base) {
     toast('This task belongs to the map you left. Reopen Add Task at its target.');
     return;
   }
@@ -4068,19 +4068,19 @@ $('#task .put').onclick = async () => {
   // inline, is linked for reference, VIEW-035.
   const inline = [...$('#task .text').querySelectorAll('[data-address]')].map(node => node.dataset.address);
   const all = [...new Set([...K.nodes, ...inline])].filter(address => partOf(address));
-  const nodes = all.map(address => `element:${partOf(address).element_id}`);
-  const project = S.project, metaform = S.metaform, generation = K.generation;
+  const nodes = all.map(address => `element:${partOf(address).id}`);
+  const project = S.project, metaform = S.base, generation = K.generation;
   const agent = $('#task select.agent').value, startNow = $('#task .start-agent').checked;
   const eligible = [...K.eligible];
   const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value, held: $('#task .backlog').checked,
     agent, eligible});
-  if (project !== S.project || metaform !== S.metaform || generation !== K.generation) {
+  if (project !== S.project || metaform !== S.base || generation !== K.generation) {
     if (written) toast(`Task saved in ${project}. Open that map to start its agent.`);
     return;
   }
   if (written) {
     $('#task').hidden = true;
-    if (startNow) await startAgent(written.results[0].work_id,
+    if (startNow) await startAgent(written.results[0].id,
       !eligible.length || eligible.includes(agent) ? agent : eligible[0]);
     renderBoard();
   }
@@ -4148,12 +4148,12 @@ $('#element .add').onclick = async () => {
     purpose: $('#element .purpose').value.trim(), ef: $('#element .ef').value.trim(),
     validate: $('#element .validate').checked};
   const response = await fetch('/api/element', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({project: S.project, metaform: S.metaform, ...given})});
+    body: JSON.stringify({project: S.project, base: S.base, ...given})});
   const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
   if (!response.ok) { toast(body.error || 'The element was not written.'); return; }
   for (const notice of body.notices || []) toast(notice.message);
   $('#element').hidden = true;
-  if (given.validate) await startAgent(body.work.work_id, $('#element select.agent').value);
+  if (given.validate) await startAgent(body.work.id, $('#element select.agent').value);
   // What a person adds is shown: where the layers in view are chosen by name, the layer of what is added by hand
   // is put among them.
   S.layers = (await read('layers', {limit: 0})).results;
@@ -4182,7 +4182,7 @@ async function renderWork(target, key, also = null) {
     record.note ? h('p', {}, ...linked(record.note)) : null,
     record.task ? h('p', {class: 'fn'}, ...linked(record.task)) : null,
     record.done ? h('p', {class: 'obs'}, 'Resolved: ', ...linked(record.resolution)) : null,
-    chatButton({id: record.work_id}, ticketPart(record)))));
+    chatButton({id: record.id}, ticketPart(record)))));
 }
 function layerPill(name) { return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name); }
 function elementLink(id, address) {
@@ -4226,7 +4226,7 @@ function renderJoin(join) {
     (join.open_work || []).length ? h('div', {class: 'pills'}, join.open_work.map(workPill)) : null,
     joinCard(join, 'provider'),
     h('div', {id: 'work'}));
-  renderWork(`join:${join.join_id}`, 'p:' + join.join_id);
+  renderWork(`join:${join.id}`, 'p:' + join.id);
 }
 async function renderObject(id) {
   const {element} = S.elements.get(id);
@@ -4412,37 +4412,37 @@ function toast(message) { const box = $('#toast'); box.textContent = message; bo
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
-const LIVE = {layer: null, metaform: null, seen: '', busy: false, again: false, whole: false, done: 0, drawn: -Infinity};
-const following = () => LIVE.layer !== null && S.metaform === LIVE.metaform;
+const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, done: 0, drawn: -Infinity};
+const following = () => LIVE.layer !== null && S.base === LIVE.base;
 async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
   const text = JSON.stringify(page);
   if (text === LIVE.seen || !following()) return;
   LIVE.seen = text;
-  S.elements = new Map(page.elements.map(entry => [entry.element.element_id, entry]));
+  S.elements = new Map(page.elements.map(entry => [entry.element.id, entry]));
   S.joins = page.joins.map(withProviders);
   S.items = new Map();
   draw3D(); renderLegend();
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
-  const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
+  const start = keep || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
     || S.elements.keys().next().value;
   if (start) select(start, false, false, false, true);
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }
-/* Follow the intake being recorded, found = {layer, metaform_id}, or return to the map when it is no longer being
+/* Follow the intake being recorded, found = {layer, base_id}, or return to the map when it is no longer being
  * recorded, saying what happened: it finished when its metaform still stands, or it stopped because the project was
  * cleared, the one thing that takes a metaform away, VIEW-019. */
 async function follow(found) {
   if (found && found.layer !== LIVE.layer) {
-    Object.assign(LIVE, {layer: found.layer, metaform: found.metaform_id, seen: ''});
-    if (S.metaform !== found.metaform_id) await loadProject(found.metaform_id);
+    Object.assign(LIVE, {layer: found.layer, base: found.base_id, seen: ''});
+    if (S.base !== found.base_id) await loadProject(found.base_id);
     else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
-    const {metaform} = LIVE;
-    const stands = (await read('metaforms', {limit: 0})).results.some(item => item.metaform_id === metaform);
-    Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+    const {base} = LIVE;
+    const stands = (await read('bases', {limit: 0})).results.some(item => item.id === base);
+    Object.assign(LIVE, {layer: null, base: null, seen: ''});
     renderLegend();
     toast(stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     await loadProject();
@@ -4453,7 +4453,7 @@ async function follow(found) {
 /* On connecting, and on the browser's own reconnect, what is being recorded now is read once. */
 async function recordingNow() {
   const found = (await read('intake-recording')).results[0] || null;
-  await follow(found ? {layer: found.layer.name, metaform_id: found.metaform_id} : null);
+  await follow(found ? {layer: found.layer.name, base_id: found.base_id} : null);
 }
 /* One push: the chassis fired map.changed for a metaform of this project, or for its metaforms themselves, VIEW-018.
  * The page reads what is being recorded, then follows it, returns to the map when it has finished, shows the active
@@ -4467,7 +4467,7 @@ async function changed(event) {
   // an agent's own tables, its thread, sessions and settings, change no map
   if (named === 'dispatch' || Array.isArray(named) && named.length && named.every(table => String(table).startsWith('dispatch.'))) return;
   const tickets = ticketsOnly(event.payload);
-  if (tickets && event.payload.metaform_id && event.payload.metaform_id !== S.metaform) return;  // another metaform's
+  if (tickets && event.payload.base_id && event.payload.base_id !== S.base) return;  // another metaform's
   if (!tickets) LIVE.whole = true;
   if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
@@ -4479,10 +4479,10 @@ async function changed(event) {
       LIVE.whole = false;
       LIVE.drawn = performance.now();  // a whole reload: the next waits SPACING, a ticket change does not
       const found = (await read('intake-recording')).results[0] || null;
-      if (found || LIVE.layer) { await follow(found ? {layer: found.layer.name, metaform_id: found.metaform_id} : null); continue; }
-      const metaforms = (await read('metaforms', {limit: 0})).results;
-      const same = metaforms.length === S.metaforms.length && metaforms.every(item =>
-        S.metaforms.some(known => known.metaform_id === item.metaform_id && known.active === item.active));
+      if (found || LIVE.layer) { await follow(found ? {layer: found.layer.name, base_id: found.base_id} : null); continue; }
+      const metaforms = (await read('bases', {limit: 0})).results;
+      const same = metaforms.length === S.bases.length && metaforms.every(item =>
+        S.bases.some(known => known.id === item.id && known.active === item.active));
       if (!same) await loadProject();  // the project's metaforms changed: show the active one, as on opening
       else {
         S.layers = (await read('layers', {limit: 0})).results;
@@ -4518,9 +4518,9 @@ const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.l
 /* A change to tickets or messages alone: work and the open messages are read once each, and the nodes' lights, the
  * figures, the board and the selected node's panel are drawn from them, VIEW-035 and VIEW-037. */
 async function ticketsChanged() {
-  const project = S.project, metaform = S.metaform;
+  const project = S.project, metaform = S.base;
   const [progress] = await Promise.all([progressOf(), renderMessages()]);
-  if (S.project !== project || S.metaform !== metaform) return;
+  if (S.project !== project || S.base !== metaform) return;
   S.progress = progress;
   openWork();
   draw3D();
@@ -4541,10 +4541,10 @@ const TAKEN = {missing: 'in-progress', broken: 'fixing'};
 function openWork() {
   const open = new Map(), add = (key, what) => open.set(key, [...(open.get(key) || []), what]);
   for (const ticket of S.tickets || []) if (!ticket.done)
-    add(`${ticket.kind}:${ticket.id}`, ticket.taken ? TAKEN[ticket.condition] || ticket.condition : ticket.condition);
+    add(`${ticket.node_kind}:${ticket.node_id}`, ticket.taken ? TAKEN[ticket.condition] || ticket.condition : ticket.condition);
   for (const message of Q.open) add(`${message.node_kind}:${message.node_id}`, message.kind);
-  for (const entry of S.elements.values()) entry.element.open_work = open.get(`element:${entry.element.element_id}`) || [];
-  for (const join of S.joins) join.open_work = open.get(`join:${join.join_id}`) || [];
+  for (const entry of S.elements.values()) entry.element.open_work = open.get(`element:${entry.element.id}`) || [];
+  for (const join of S.joins) join.open_work = open.get(`join:${join.id}`) || [];
 }
 /* The selected node's open work pills and its Work box drawn again, the rest of its panel kept as it is. */
 function workInPanel() {
@@ -4559,7 +4559,7 @@ function workInPanel() {
     const before = pills.querySelector('.pill.layer');
     for (const condition of (join || element).open_work || []) pills.insertBefore(workPill(condition), before);
   }
-  renderWork(join ? `join:${join.join_id}` : `element:${id}`, id);
+  renderWork(join ? `join:${join.id}` : `element:${id}`, id);
 }
 /* A line an agent wrote, or its session begun or ended: the agents key, the open agent window and the open chat are
  * read again, at most once every BATCH and never under the person's hands, once for however many lines came
@@ -4608,8 +4608,8 @@ async function itemsOf(generation) {
       const page = await read('layer-items', {layer: layer.name, in_context: 'true', limit: 500, ...(after ? {after} : {}), ...viewLayers()});
       if (generation !== S.loading) return found;
       for (const item of page.results) {
-        const property = 'property_id' in item;
-        const key = property ? 'r:' + item.property_id : 'i:' + item.item_id;
+        const property = !('target' in item);  // a property sits on an element, an item on a node
+        const key = property ? 'r:' + item.id : 'i:' + item.id;
         found.set(key, {kind: property ? 'property' : 'item', key, item, value: item.value, layer: layer.name, layerKind: layer.kind});
       }
       after = page.next;
@@ -4622,14 +4622,14 @@ async function itemsOf(generation) {
 /* The steps filed and planned of each node's open tickets, the most advanced first, VIEW-035: an element's by its
  * id, a join's on its purpose vertex. */
 async function progressOf() {
-  const found = new Map(), project = S.project, metaform = S.metaform;
+  const found = new Map(), project = S.project, metaform = S.base;
   let tickets = [];
   try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { return found; }
-  if (S.project !== project || S.metaform !== metaform) return found;  // a late answer for a project the person left
+  if (S.project !== project || S.base !== metaform) return found;  // a late answer for a project the person left
   S.tickets = tickets;
   for (const ticket of tickets) {
     if (!ticket.taken || ticket.done) continue;
-    const keys = ticket.kind === 'join' ? ['p:' + ticket.id] : [ticket.id];
+    const keys = ticket.node_kind === 'join' ? ['p:' + ticket.node_id] : [ticket.node_id];
     const done = {filed: ticket.steps_done || 0, planned: ticket.steps || 0};
     const share = one => one.planned ? one.filed / one.planned : one.filed;
     for (const key of keys) if (!found.has(key) || share(done) > share(found.get(key))) found.set(key, done);
@@ -4647,16 +4647,16 @@ async function opening(work) {
 function loadGraph(agents = true) { return opening(() => readGraph(agents)); }
 async function readGraph(agents) {
   if (following()) { LIVE.seen = ''; S.loading = 0; return loadLive(); }
-  const generation = ++S.loading, project = S.project, metaform = S.metaform;
+  const generation = ++S.loading, project = S.project, metaform = S.base;
   // a read is dropped once another has begun or the person has chosen another project or metaform
-  const stale = () => generation !== S.loading || S.project !== project || S.metaform !== metaform;
+  const stale = () => generation !== S.loading || S.project !== project || S.base !== metaform;
   S.elements = new Map(); S.joins = [];
   let after = null, whole = false;
   try {
     do {
       const page = await read('graph', {limit: 500, ...(after ? {after} : {}), ...viewLayers()});
       if (stale()) return;
-      for (const entry of page.elements) S.elements.set(entry.element.element_id, entry);
+      for (const entry of page.elements) S.elements.set(entry.element.id, entry);
       S.joins.push(...page.joins.map(withProviders));
       draw3D(); renderLegend();
       after = page.next;
@@ -4686,7 +4686,7 @@ async function readGraph(agents) {
   await build2D();
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)
     || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
-  const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.element_id
+  const start = keep || MEM.key || [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
     || S.elements.keys().next().value;
   if (!start) fill($('#p-object'), h('p', {class: 'empty'}, noMetaform() ? noneYet() : 'Nothing to show in these layers yet.'));
   else {
@@ -4707,13 +4707,13 @@ function loadProject(wanted = null) { return opening(() => readProject(wanted));
 async function readProject(wanted) {
   const project = S.project;
   await readAutostart();
-  const metaforms = (await read('metaforms', {limit: 0})).results;
+  const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
 
-  S.metaforms = metaforms;
-  const active = metaforms.find(item => item.metaform_id === wanted) || metaforms.find(item => item.active) || metaforms[0];
-  S.metaform = active ? active.metaform_id : null;
-  fill($('#mf'), ...(metaforms.length ? metaforms.map(item => h('option', {value: item.metaform_id, selected: item === active}, item.name + (item.active ? ' · active' : '')))
+  S.bases = metaforms;
+  const active = metaforms.find(item => item.id === wanted) || metaforms.find(item => item.active) || metaforms[0];
+  S.base = active ? active.id : null;
+  fill($('#mf'), ...(metaforms.length ? metaforms.map(item => h('option', {value: item.id, selected: item === active}, item.name + (item.active ? ' · active' : '')))
     : [h('option', {}, 'none yet')]));
   $('#mf').disabled = !metaforms.length;
   await loadMetaform();
@@ -4726,7 +4726,7 @@ function toProject(id) {
   S.tickets = []; B.tickets = [];  // nothing of the project left behind shows on the next one
   if (!$('#board').hidden) drawBoard();
   location.hash = 'p=' + encodeURIComponent(id);
-  Object.assign(LIVE, {layer: null, metaform: null, seen: ''});
+  Object.assign(LIVE, {layer: null, base: null, seen: ''});
   Object.assign(D, {sessions: [], notes: [], work: null, session: null, drawn: new Map(), chat: null});
   $('#autostartAgents').checked = false;
   $('#autostartAgents').disabled = true;
@@ -4740,7 +4740,7 @@ function toProject(id) {
   renderMerges();  // the merges this project has waiting for review, VIEW-044
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
-$('#mf').onchange = () => { S.metaform = $('#mf').value; loadMetaform(); };
+$('#mf').onchange = () => { S.base = $('#mf').value; loadMetaform(); };
 
 async function main() {
   const response = await reach('/api/projects');

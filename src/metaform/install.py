@@ -261,18 +261,18 @@ def _said(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _recorded() -> set[str]:
-    with home.base() as db:
+    with home.chassis() as db:
         return {str(row[0]) for row in db.execute("SELECT tool FROM installs WHERE source != ''")}
 
 
 def _installed() -> dict[str, str | None]:
     """Each tool Metaform set up, with the skill file it wrote there."""
-    with home.base() as db:
+    with home.chassis() as db:
         return {str(row[0]): row[1] for row in db.execute('SELECT tool, skill_path FROM installs')}
 
 
 def _record(tool: str, wheel: Path | None, skill: Path | None) -> None:
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         db.execute('INSERT INTO installs(tool, source, skill_path, installed) VALUES (?, ?, ?, ?) '
                    "ON CONFLICT(tool) DO UPDATE SET source=CASE WHEN excluded.source='' THEN installs.source "
                    'ELSE excluded.source END, skill_path=excluded.skill_path, installed=excluded.installed',
@@ -351,11 +351,11 @@ def backstage(force: bool = False) -> None:
     """Protect a home from an installed copy that skipped the wheel's install stage, BASE-047."""
     if os.environ.get('METAFORM_WHEEL'):
         return
-    with home.base() as db:
+    with home.chassis() as db:
         versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
     if not force and versions.get('last_run_version') == __version__:
         return
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         versions = dict(db.execute("SELECT key, value FROM meta WHERE key IN ('installed_version', 'last_run_version')"))
         if versions.get('installed_version') != __version__:
             _check_downgrade(versions.get('last_run_version'), force, 'metaform install force=true')
@@ -372,7 +372,7 @@ def stage(wheel: Path, uv: str, force: bool, say: Callable[[str], None], retry: 
     next_step = f'python "{wheel}" install force=true'
     # Keep preflight, executable replacement and approval together. Concurrent installs and
     # first runs use the same chassis write lock, so an older preflight cannot outlive a newer install.
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         installed = shutil.which('metaform')
         if installed:
             probe_next = f'"{installed}" --version'
@@ -612,7 +612,7 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
         skill = installed.get(tool.name)
         if skill:
             _remove_file(Path(skill), backups)
-        with home.base(write=True) as db:
+        with home.chassis(write=True) as db:
             db.execute('DELETE FROM installs WHERE tool=?', (tool.name,))
         say(f'Removed: {tool.name}')
     for path in shared:

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from .records import Notice
 
-METAFORM_KINDS = ('intake',)
+BASE_KINDS = ('intake',)
 
 
 @dataclass(frozen=True)
@@ -106,7 +106,7 @@ def insert_current(db: sqlite3.Connection, kind: str, thing_id: str, row: sqlite
 
 def _of_metaform(db: sqlite3.Connection, kinds: dict[str, str], table: str, row_number: int) -> bool:
     layer_id = db.execute(f'SELECT layer_id FROM {table} WHERE row=?', (row_number,)).fetchone()[0]
-    return kinds[layer_id] in METAFORM_KINDS
+    return kinds[layer_id] in BASE_KINDS
 
 
 def orphaned_by(db: sqlite3.Connection, kind: str, thing_id: str) -> list[Notice]:

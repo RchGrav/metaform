@@ -163,9 +163,9 @@ def key(binary: Path | str) -> str | None:
 def known(binary: Path | str) -> bool:
     """Whether the agent has said it is done provisioning this binary's harness."""
     found = key(binary)
-    if found is None or not home.base_path().exists():
+    if found is None or not home.chassis_path().exists():
         return False
-    with home.base() as db:
+    with home.chassis() as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='harnesses'").fetchone():
             return False
         return db.execute('SELECT 1 FROM harnesses WHERE path_key=?', (found,)).fetchone() is not None
@@ -176,7 +176,7 @@ def done(binary: Path | str) -> None:
     found = key(binary)
     if found is None:
         return
-    with home.base(write=True) as db:
+    with home.chassis(write=True) as db:
         db.execute(HARNESSES)
         db.execute('INSERT INTO harnesses(path_key, binary, done) VALUES (?, ?, ?) '
                    'ON CONFLICT(path_key) DO UPDATE SET binary=excluded.binary, done=excluded.done',

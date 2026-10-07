@@ -20,7 +20,7 @@ from .records import Element, Held, Item, Join, Layer, Node, Op, Property, Prove
 from .rows import address_of, held_elements, layer_name, read_refs, target_current, whole_number
 from .selection import LayerRow, Resolver, all_layers, hidden_closure
 from .session import Tx
-from .versions import METAFORM_KINDS
+from .versions import BASE_KINDS
 
 Row = sqlite3.Row
 
@@ -28,7 +28,7 @@ Row = sqlite3.Row
 def element_shows(res: Resolver, layer_id: str, address: str) -> bool:
     """An element of the metaform is always a node; one a knowledge layer created shows where its layer does."""
     found = res.layers.get(layer_id)
-    if found is not None and found.kind in METAFORM_KINDS:
+    if found is not None and found.kind in BASE_KINDS:
         return found.finished
     return res.reaches(layer_id, address)
 
@@ -121,7 +121,7 @@ def provenance(tx: Tx, layer_id: str) -> Provenance | None:
     row = tx.db.execute('SELECT * FROM provenance WHERE layer_id=?', (layer_id,)).fetchone()
     if row is None:
         return None
-    used = prompts.use_of(tx.project_id, tx.metaform_id, layer_id) if tx.metaform_id else None
+    used = prompts.use_of(tx.project_id, tx.base_id, layer_id) if tx.base_id else None
     return operations.decorate(tx, Provenance(str(row['layer_id']), str(row['module']), row['workflow'], row['prompt'], row['model'],
                       row['role'], None if row['blinded'] is None else bool(row['blinded']), (),
                       VersionRef(used.name, used.number, used.version_id) if used else None))
@@ -132,7 +132,7 @@ def layer(tx: Tx, found: LayerRow, *, toggled: frozenset[str] | None = None, hid
     db = tx.db
     layer_id = found.layer_id
     return Layer(
-        layer_id, found.metaform_id, found.name, found.module, found.variable, found.kind, found.mutable,
+        layer_id, found.base_id, found.name, found.module, found.variable, found.kind, found.mutable,
         found.hideable, found.result_id, found.created, found.ready,
         tuple(str(row[0]) for row in db.execute('SELECT name FROM layer_fields WHERE layer_id=? ORDER BY position',
                                                 (layer_id,))),

@@ -101,7 +101,7 @@ def feedback(where: Path, text: str, *, layer: str | None = None, report: str | 
                                            'without a layer.'))
         else:
             try:
-                layer_id = store.layer_ref(layer).layer_id
+                layer_id = store.layer_ref(layer).id
             except StoreError:
                 notices.append(Notice('layer', f'No layer {layer} in this project; the files were saved without a '
                                                'layer.'))
