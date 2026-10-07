@@ -33,10 +33,11 @@ def noted(run, folder, text):
 
 
 def heard(log):
-    """What the watcher heard since it was last asked, once."""
+    """What the watcher heard since it was last asked, once: each event's project and base. What was written, the
+    `tables` beside them, is the page's to read, VIEW-018, not what these tests count."""
     found = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
     log.unlink(missing_ok=True)
-    return found
+    return [{key: value for key, value in event.items() if key in ('project', 'base_id')} for event in found]
 
 
 @pytest.fixture

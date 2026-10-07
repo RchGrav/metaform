@@ -1,13 +1,16 @@
-"""Transactions on one metaform's store, STORE-006 and STORE-037.
+"""Transactions on one base's store, STORE-006, STORE-037 and STORE-046.
 
-Every operation opens and closes its own connection and transaction.
-`atomic()` is the one exception: while its block runs, every operation on the
-same project, in the same thread or task, joins its one connection and
-transaction, and nested blocks join the outer one.
+Every operation opens and closes its own connection and transaction, and works on this process's projection of
+the base, caught up to the log first. A write gathers ops as it reasons, applies each to the projection at once,
+so what it reads back inside the transaction is what it wrote, and appends them all to the log at commit; a
+rollback reads the projection whole again from the log. `atomic()` is the one exception to one transaction per
+operation: while its block runs, every operation on the same project, in the same thread or task, joins its one
+connection and transaction, and nested blocks join the outer one.
 """
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -17,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 
 from .. import changes, home, sqlite
 from ..errors import StoreError
+from . import log
+from .projection import Op, Projection
 from .schema import STORE_SCHEMA
 from .upgrade import upgrade
 
@@ -24,22 +29,38 @@ if TYPE_CHECKING:
     from .tables import Tables
 
 
+SESSION_ID = uuid.uuid4().hex  # who wrote each op: one id per process, a session boundary is where it changes
+
+
 @dataclass
 class Tx:
-    """One open transaction: its connection, its metaform, and the layers created inside it."""
+    """One open transaction: its connection, its base's projection, and the ops it has gathered."""
     db: sqlite3.Connection
     base_id: str | None
     project_id: str
     writing: bool
+    base: Projection = field(default_factory=Projection)
     created: set[str] = field(default_factory=set[str])
     named: bool = False
     toggled: tuple[str, ...] = ()
     module: str | None = None
     path: Path = field(default_factory=Path)
+    pending: list[Op] = field(default_factory=list[Op])
+    kinds: set[str] = field(default_factory=set[str])  # the kinds of op this transaction wrote, VIEW-018
 
     def execute(self, statement: str, values: Any = ()) -> sqlite3.Cursor:
-        """Issue SQL through the DAO inside this operation's transaction."""
+        """Issue SQL through the DAO inside this operation's transaction: a module's own tables."""
         return self.db.execute(statement, values)
+
+    def emit(self, op: str, kind: str, ident: str, layer_id: str, data: dict[str, Any]) -> Op:
+        """One op: applied to the projection now, appended to the log at commit."""
+        if not self.writing:
+            raise StoreError('A read transaction writes nothing.', 'metaform help map knowledge')
+        made = Op(self.base.seq + 1, SESSION_ID, op, kind, ident, layer_id, data)
+        self.base.apply(made)
+        self.pending.append(made)
+        self.kinds.add(kind)
+        return made
 
     @property
     def rows(self) -> Any:
@@ -64,7 +85,7 @@ class Tx:
         return invoke(self, name, *args, **kwargs)
 
     def tables(self) -> Any:
-        """The operation owner's metaform tables on this same transaction."""
+        """The operation owner's base-level tables on this same transaction."""
         from . import tables
         declared = tables.declared(self.module, retained=True)
         assert self.module is not None
@@ -72,7 +93,7 @@ class Tx:
         path = self.path
         def opener(place: tables.Place) -> tuple[sqlite3.Connection, Path, bool]:
             if place != 'metaform':
-                raise StoreError('A map transaction reaches metaform-level tables.',
+                raise StoreError('A map transaction reaches base-level tables.',
                                  'use Store.tables() for a project-level transaction')
             if self.writing:
                 tables.ensure(self.db, path, module, declared, place)
@@ -82,7 +103,7 @@ class Tx:
 
     def layers(self) -> Any:
         from .selection import all_layers
-        return all_layers(self.db)
+        return all_layers(self.base)
 
 
 _ATOMIC: ContextVar[Tx | None] = ContextVar('metaform_atomic', default=None)
@@ -110,7 +131,7 @@ def open_store(path: Path, *, write: bool,
 
 
 class Session:
-    """Opens transactions on one metaform of one project: the active one, or the one named."""
+    """Opens transactions on one base of one project: the active one, or the one named."""
 
     def __init__(self, project_id: str, base_id: str | None = None) -> None:
         self.project_id = project_id
@@ -147,14 +168,21 @@ class Session:
         with open_store(path, write=True) as db:
             written = changes.watch(db)
             db.execute('BEGIN IMMEDIATE')
-            try:
-                yield Tx(db, metaform.id, self.project_id, True, named=self.base_id is not None, path=path)
-            except BaseException:
-                db.execute('ROLLBACK')
-                raise
-            db.execute('COMMIT')
+            held = log.projection(path, db)
+            with held.lock:
+                tx = Tx(db, metaform.id, self.project_id, True, held, named=self.base_id is not None, path=path)
+                try:
+                    yield tx
+                    log.append(db, tx.pending, home.now())
+                    log.snapshot_if_due(db, held)
+                except BaseException:
+                    db.execute('ROLLBACK')
+                    if tx.pending:
+                        log.forget(path)  # the projection applied ops the log never took: read it whole again
+                    raise
+                db.execute('COMMIT')
             if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
-                changes.note(self.project_id, metaform.id, written)
+                changes.note(self.project_id, metaform.id, written | {f'op:{kind}' for kind in tx.kinds}, held.seq)
 
     @contextmanager
     def read(self, *, required: tuple[str, Tables] | None = None) -> Generator[Tx, None, None]:
@@ -183,7 +211,9 @@ class Session:
         with open_store(path, write=False, required=required) as db:
             db.execute('BEGIN')
             try:
-                yield Tx(db, metaform.id, self.project_id, False, path=path)
+                held = log.projection(path, db)
+                with held.lock:
+                    yield Tx(db, metaform.id, self.project_id, False, held, path=path)
             finally:
                 db.execute('COMMIT')
 

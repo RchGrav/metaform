@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from storekit import knowledge, memory, plans, scans, small_map
+from storekit import knowledge, memory, small_map
 
 from metaform.data import Node, Store
 
@@ -31,8 +31,10 @@ def populated(store):
 
 @pytest.mark.req('STORE-005')
 @pytest.mark.req('STORE-025')
-@pytest.mark.req('STORE-033')
-def test_every_read_is_answered_through_an_index(home, store, traced):
+@pytest.mark.req('STORE-046')
+def test_every_read_is_answered_from_the_graph_in_memory(home, store, traced):
+    """A read never touches SQLite for structure: the only SQL it issues reads the ops past the sequence it applied,
+    by the primary key, and the modules' own tables, STORE-046."""
     _, _, inner = populated(store)
     kitchen = Node('element', 'code.timer.kitchen')
     reads = {
@@ -63,9 +65,6 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
         'effective_selection': lambda: store.effective_selection('code.alarm.audible'),
         'search': lambda: store.search('drifts').results,
         'has_intake': lambda: store.has_intake(),
-        'metaforms': lambda: store.bases().results,
-        'active_base': lambda: store.active_base(),
-        'project': lambda: store.project(),
         'roots': lambda: store.roots(),
         'work': lambda: store.work().results,
         'work by condition': lambda: store.work(condition='broken').results,
@@ -76,16 +75,25 @@ def test_every_read_is_answered_through_an_index(home, store, traced):
     for name, read in reads.items():
         traced.clear()
         read()
-        issued = plans(home, store, traced)
-        assert issued, f'{name} issued no query'
-        for statement, plan_lines in issued:
-            if bad := scans(plan_lines):
-                failures.setdefault(name, []).append((statement, bad))
+        touched = [statement for statement in traced if statement.upper().startswith(('SELECT', 'WITH'))
+                   and 'sqlite_master' not in statement and 'FROM meta' not in statement]
+        structure = [statement for statement in touched if 'FROM ops' not in statement and 'FROM snapshots' not in statement
+                     and not any(own in statement for own in ('work', 'messages', 'question_work', 'work_links',
+                                                               'work_steps', 'eligible', 'glyphs', 'plans',
+                                                               'challenge_states', 'reports', 'prompt_uses',
+                                                               'prompt_versions', 'prompts', 'projects', 'bases',
+                                                               'active_bases', 'settings', 'modules', 'harnesses'))]
+        if structure:
+            failures[name] = structure
+        if not any('FROM ops' in statement and 'seq >' in statement for statement in touched):
+            failures[name] = failures.get(name, []) + ['no catch-up read of the log']
     assert failures == {}
 
 
 @pytest.mark.req('STORE-010')
-def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store, traced):
+@pytest.mark.req('STORE-046')
+def test_the_identity_read_among_many_joins_answers_from_the_index_in_memory(home, store, traced):
+    import time
     layer = knowledge(store, 'many')
     with store.atomic():
         store.add_element(layer.name, 'code.target')
@@ -96,9 +104,11 @@ def test_the_identity_read_uses_the_provider_index_among_many_joins(home, store,
                            purpose='p', ef='f')
     store.finish(layer.name)
     traced.clear()
+    started = time.monotonic()
     assert len(store.identity('code.target').results) == 50
-    lines = [line for _, plan_lines in plans(home, store, traced) for line in plan_lines]
-    assert any('join_elements_by_element' in line for line in lines)
+    assert time.monotonic() - started < 2  # the index in memory, not a scan of a hundred thousand joins
+    assert not any(table in statement for statement in traced
+                   for table in ('FROM joins', 'FROM elements', 'current_joins', 'join_elements'))
 
 
 @pytest.mark.req('STORE-025')

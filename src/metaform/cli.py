@@ -634,13 +634,13 @@ def _nouns(args: list[str], allowed: tuple[str, ...], verb: str = 'export') -> t
 
 
 def export(args: list[str], folder: Path) -> None:
-    positional, named = _nouns(args, ('file', 'metaform', 'layer'))
+    positional, named = _nouns(args, ('file', 'base', 'metaform', 'layer'))  # metaform= is the base's old name
     if len(positional) > 1:
         raise Stop('export takes one project, or all.', 'metaform export --help')
     projects = positional or [_project_arg(folder, None)]
     if projects != ['all'] and home.project(projects[0]) is None:
         raise Stop(f'No project {projects[0]} is registered.', 'metaform list projects')
-    document = export_document(projects, metaform=(named.get('metaform') or [None])[0],
+    document = export_document(projects, metaform=(named.get('base') or named.get('metaform') or [None])[0],
                                layers=named.get('layer', []))
     text = json.dumps(document, ensure_ascii=False, indent=1)
     if 'file' in named:
@@ -1018,7 +1018,7 @@ docs.command(Command('alias', 'Give two or more modules one name at the top menu
                      examples=(('metaform alias mapping map memory', 'One name for the map and memory commands.'),),
                      see_also=('help',)))
 docs.command(Command('export', "Write a project's data to one JSON document.",
-                     ('metaform export [<project>|all] [file=<file>] [metaform=<name>] [layer=<name>]...',),
+                     ('metaform export [<project>|all] [file=<file>] [base=<name>] [layer=<name>]...',),
                      details='With no file the document goes to standard output. Everything carries its unique id.',
                      see_also=('import',)))
 docs.command(Command('import', 'Add what a JSON document holds and this home does not.',

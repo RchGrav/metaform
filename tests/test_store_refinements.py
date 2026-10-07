@@ -3,7 +3,7 @@ LAYER-025."""
 from __future__ import annotations
 
 import pytest
-from storekit import dump, knowledge, memory, small_map, store_file, values
+from storekit import dump, knowledge, memory, ops, small_map, store_file, values
 
 from metaform.data import Node
 
@@ -160,13 +160,13 @@ def test_a_refinement_moves_a_join_to_another_receiver_and_what_is_attached_stay
     notes = knowledge(store, 'notes')
     store.add_item(notes.name, Node('join', inner.id), 'rings too long')
     store.finish(notes.name)
-    knowledge_rows = {row for row in dump(store_file(home, store))['items']}
+    knowledge_rows = {op['seq'] for op in ops(store_file(home, store), 'item')}
     moved = store.refine(inner.id, {'receiver': 'stakeholder.cook.home'}, reason='the cook hears it')
     assert moved.notices == ()
     assert inner.id in [join.id for join in store.joins('stakeholder.cook.home').results]
     assert store.joins('code.timer.kitchen').results == ()
     assert values(store.node(Node('join', inner.id)), 'notes') == ['rings too long']
-    assert {row for row in dump(store_file(home, store))['items']} == knowledge_rows
+    assert {op['seq'] for op in ops(store_file(home, store), 'item')} == knowledge_rows
     assert [(version.layer, version.op) for version in store.history(inner.id).results] == [
         ('intake-1', 'add'), ('intake-1', 'change')]
 

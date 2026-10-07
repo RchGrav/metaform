@@ -1,25 +1,21 @@
-"""The SQL of one metaform's store, STORE-003 to STORE-042, at schema version 20.
+"""The SQL of one base's store, STORE-003 to STORE-046, at schema version 21.
 
-Every table follows STORE-004: one row per thing, and no row holds a collection.
-The metaform is Rich's shape, 2026-10-04: an element is its address, name_length,
-name and role, STORE-009, and it cannot be moved, MAP-015; a join is its type,
-purpose, ef and ifd, held by its receiver, and holds the elements that serve its
-purpose, one `join_elements` row per element for each version of the join, in
-order. A promoted join also records its element address, MAP-054: refs live in the sources layer and
-anything more in a knowledge layer, as items. `current_elements` carries the
-current row's role, so the map's entry is one read on `current_elements_by_role`.
-`address_elements` remembers the element id of every address the store has held,
-so an element recorded again at its address is the same element, STORE-009. A
-join's identity holds only its id, so it can be moved, MAP-003. Feature tables are
-declared by their modules. `elements_by_address` reads the history of one address,
-STORE-005, and `join_elements_by_element` the joins that hold an element. A thing
-keeps every version it was given in its layer, so the metaform is refined in its
-own intake layer, LAYER-025: no thing is unique per layer, and `<table>_by_id`
-reads a thing's versions in order.
+The store is an op log: `ops`, append only, `objects`, the registry of every id and its kind, and `snapshots`, the
+projection as of a sequence. Every structure the reads answer from is the projection in memory, built from the
+log, `projection.py`; no table holds the current state of an element, a join, an item or a property. Feature
+tables are declared by their modules and live in the same file as before, STORE-045. `LAYOUT_20` is the layout
+before the log, kept for the upgrade that reads a version 20 store into ops.
 """
 from __future__ import annotations
 
+from .log import LOG_SCHEMA
+
 STORE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+""" + LOG_SCHEMA
+
+# The tables of a version 20 store, read by the upgrade and never created again.
+LAYOUT_20 = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS element_ids(element_id TEXT PRIMARY KEY);

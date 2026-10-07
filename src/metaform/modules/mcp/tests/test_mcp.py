@@ -559,8 +559,7 @@ def test_a_tool_call_that_changes_the_map_is_announced_and_a_read_is_not(run, ho
     active = Store('proj').active_base()
     assert read == []
     assert written == [{'project': 'proj', 'base_id': active.id,
-                        'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
-                                   'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # once, for the one write
+                        'tables': ['objects', 'op:item', 'ops']}]  # once, for the one write: the log and the kind of op
     assert after == written  # the notes were taken once: the read announces nothing, not the write again
 
 
@@ -607,8 +606,7 @@ def test_a_module_enabled_or_disabled_after_the_server_started_is_loaded_or_drop
     assert (off[0], on[0], dropped[0]) == (False, False, False)  # each of the three notes was written
     assert off[1] == []
     assert on[1] == [{'project': 'proj', 'base_id': active.id, 'surface': 'mcp',
-                      'tables': ['current_items', 'identities', 'item_ids', 'item_text', 'item_text_data',
-                                 'item_text_docsize', 'item_text_idx', 'items', 'refs']}]  # heard in the server
+                      'tables': ['objects', 'op:item', 'ops']}]  # heard in the server
     assert dropped[1] == on[1]
 
 

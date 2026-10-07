@@ -4,7 +4,7 @@ import json
 import sqlite3
 
 import pytest
-from storekit import dump, knowledge, small_map, store_file
+from storekit import dump, knowledge, ops, small_map, store_file
 
 from metaform.data import Node, Store, StoreError, export_document, import_document, promotion
 from metaform.data.session import open_store
@@ -132,28 +132,64 @@ def test_a_knowledge_join_can_promote_without_changing_its_layer_rules(store):
 
 
 @pytest.mark.req('STORE-029')
-def test_layout_19_upgrade_keeps_all_rows_and_backups_are_layout_19(home, store):
+@pytest.mark.req('STORE-046')
+def test_a_layout_20_store_is_read_into_the_log_and_the_old_file_is_kept_whole(home, store):
+    """A store at the layout before the log opens: its rows become ops in a new file, every version kept, and the old
+    file goes whole under the backups, never changed in place, STORE-046."""
+    from metaform.data.schema import LAYOUT_20
     _, original, _ = small_map(store)
     store.refine(original.id, {'ef': 'Delivers expiry.'}, reason='Clarify delivery.')
+    history = store.history(original.id).to_dict()
+    held = store.where('stakeholder.cook.home').to_dict()
     path = store_file(home, store)
-    with sqlite3.connect(path) as db:
-        if 'element' in [row[1] for row in db.execute('PRAGMA table_info(joins)')]:
-            db.execute('ALTER TABLE joins DROP COLUMN element')
-        db.execute("UPDATE meta SET value='19' WHERE key='schema_version'")
-        db.execute("UPDATE joins SET type='require' WHERE join_id=?", (original.id,))
+    log_ops = ops(path)
+    # A layout 20 file with the same content: its tables filled from the log, then the log taken away.
+    old = sqlite3.connect(path)
+    old.executescript(LAYOUT_20)
+    for op in log_ops:
+        data = op['data']
+        if op['kind'] == 'layer' and op['op'] == 'add':
+            old.execute('INSERT INTO layers(layer_id, metaform_id, name, module, variable, mutable, hideable, result_id, '
+                        'kind, created, ready) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        (op['id'], data['base_id'], data['name'], data['module'], data['variable'], int(data['mutable']),
+                         int(data['hideable']), data['result_id'], 'intake' if data['kind'] == 'base' else data['kind'],
+                         data['created'], data['ready']))
+        elif op['kind'] == 'element':
+            old.execute('INSERT OR IGNORE INTO element_ids(element_id) VALUES (?)', (op['id'],))
+            old.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'element')", (op['id'],))
+            for prefix in [data['address'].rsplit('.', n)[0] for n in range(data['address'].count('.'), -1, -1)]:
+                old.execute('INSERT OR IGNORE INTO types(address, parent) VALUES (?, ?)',
+                            (prefix, prefix.rsplit('.', 1)[0] if '.' in prefix else None))
+            old.execute('INSERT INTO elements(element_id, layer_id, address, name_length, name, role, op, reason, '
+                        'evidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        (op['id'], op['layer_id'], data['address'], data['name_length'], data['name'], data['role'],
+                         op['op'], data.get('reason'), data.get('evidence')))
+        elif op['kind'] == 'join':
+            old.execute('INSERT OR IGNORE INTO join_ids(join_id) VALUES (?)', (op['id'],))
+            old.execute("INSERT OR IGNORE INTO identities(id, kind) VALUES (?, 'join')", (op['id'],))
+            cursor = old.execute('INSERT INTO joins(join_id, layer_id, type, receiver, purpose, ef, ifd, element, op, '
+                                 'reason, evidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                                 (op['id'], op['layer_id'], data['type'], data['receiver'], data['purpose'], data['ef'],
+                                  data['ifd'], data.get('element'), op['op'], data.get('reason'), data.get('evidence')))
+            for position, element_id in enumerate(data['held']):
+                old.execute('INSERT INTO join_elements(join_row, position, element_id) VALUES (?, ?, ?)',
+                            (cursor.lastrowid, position, element_id))
+    for name in ('ops', 'objects', 'snapshots'):
+        old.execute(f'DROP TABLE {name}')
+    old.execute("UPDATE meta SET value='20' WHERE key='schema_version'")
+    old.commit()
+    old.close()
+    from metaform.data import log
+    log.forget(path)
     before = dump(path)
     with open_store(path, write=False) as db:
-        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '20'
-        assert all(row[0] is None for row in db.execute('SELECT element FROM joins'))
-    after = dump(path)
-    with sqlite3.connect(path) as db:
-        columns = [row[1] for row in db.execute('PRAGMA table_info(joins)') if row[1] != 'element']
-        assert frozenset(db.execute(f'SELECT {", ".join(columns)} FROM joins')) == before['joins']
-    assert {key: rows for key, rows in before.items() if key not in ('meta', 'joins')} == {
-        key: rows for key, rows in after.items() if key not in ('meta', 'joins')}
-    backups = list((home / 'backups' / 'upgrade-20').glob('*/*/*.sqlite3'))
-    assert len(backups) == 1 and dump(backups[0]) == before
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '21'
+        assert {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")} >= {'ops', 'objects'}
+    kept = list((home / 'backups' / 'upgrade-21').glob('*/*/*.sqlite3'))
+    assert len(kept) == 1 and dump(kept[0]) == before  # the old file, whole, never changed in place
     with open_store(path, write=False):
         pass
-    assert len(list((home / 'backups' / 'upgrade-20').glob('*/*/*.sqlite3'))) == 1
+    assert len(list((home / 'backups' / 'upgrade-21').glob('*/*/*.sqlite3'))) == 1
+    assert store.history(original.id).to_dict() == history  # every version, in order
+    assert store.where('stakeholder.cook.home').to_dict() == held
     assert store.promote_join(original.id, 'code.delivery').element == 'code.delivery'

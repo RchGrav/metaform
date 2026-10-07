@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .module import Surface
 
-# each project's changed metaforms, each with the tables written, or None when what was written is not known
+# each project's changed bases, each with the tables written, or None when what was written is not known
 _NOTED: dict[str, dict[str, set[str] | None]] = {}
+_SEQS: dict[tuple[str, str], int] = {}  # the sequence each noted base reached, STORE-046
 _LOCK = threading.Lock()
 _WRITES = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
 
@@ -37,14 +38,18 @@ def watch(db: sqlite3.Connection) -> set[str]:
     return written
 
 
-def note(project_id: str, base_id: str | None = None, tables: set[str] | None = None) -> None:
-    """A change to a project's map: one metaform's store, or, with no metaform, the project's metaforms themselves;
-    with the tables it wrote when they are known. One change whose tables are not known makes the metaform's unknown."""
+def note(project_id: str, base_id: str | None = None, tables: set[str] | None = None,
+         seq: int | None = None) -> None:
+    """A change to a project's map: one base's store, or, with no base, the project's bases themselves; with the
+    tables it wrote when they are known, and the sequence the base's log reached, so a page applies the ops past the
+    one it drew, STORE-046. One change whose tables are not known makes the base's unknown."""
     with _LOCK:
         noted = _NOTED.setdefault(project_id, {})
         key = base_id or ''
         known = noted.get(key, set())
         noted[key] = None if known is None or not tables else known | tables
+        if seq is not None:
+            _SEQS[(project_id, key)] = max(seq, _SEQS.get((project_id, key), 0))
 
 
 def take() -> dict[str, dict[str, set[str] | None]]:
@@ -53,6 +58,12 @@ def take() -> dict[str, dict[str, set[str] | None]]:
         found = {project: dict(metaforms) for project, metaforms in _NOTED.items()}
         _NOTED.clear()
     return found
+
+
+def sequence(project_id: str, base_id: str | None) -> int | None:
+    """The sequence a noted base reached, taken once."""
+    with _LOCK:
+        return _SEQS.pop((project_id, base_id or ''), None)
 
 
 def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
@@ -69,6 +80,9 @@ def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
             payload: dict[str, Any] = {'project': project, 'base_id': metaform or None}
             if tables:
                 payload['tables'] = sorted(tables)
+            seq = sequence(project, metaform)
+            if seq is not None:
+                payload['seq'] = seq
             events.publish('map.changed', dict(payload), source)
             fired.append(payload)
     return fired

@@ -1,9 +1,9 @@
-"""Test helpers for the storage records: build layers the way writers do, and diff stored tables.
+"""Test helpers for the storage records: build layers the way writers do, and diff the stored log and tables.
 
-The diff reads the SQLite file directly. It lets a test state which rows an
-operation must write and that nothing else changed, which STORE-024 asks for.
-The full-text index's shadow tables are left out: they are the index of
-`items`, not rows of their own.
+The diff reads the SQLite file directly. It lets a test state which ops an
+operation must append, and which rows of the modules' own tables it writes, and
+that nothing else changed, which STORE-024 asks for. `snapshots` is left out: a
+snapshot is a copy of the log's effect, not a write of its own, STORE-046.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def dump(path: Path) -> dict[str, frozenset]:
     try:
         names = [row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
-            "AND name NOT LIKE 'item_text%'")]
+            "AND name NOT IN ('snapshots', 'meta')")]
         return {name: frozenset(db.execute(f'SELECT * FROM "{name}"').fetchall()) for name in names}
     finally:
         db.close()
@@ -167,3 +167,15 @@ def page_note(project: str, node: str, text: str, **naming: str):
     takes provider and address beside node, as the command does."""
     from metaform.modules.web.server import module_verb
     return module_verb({'project': project}, 'memory', 'note', {'node': node, 'text': text, 'by': 'user', **naming})
+
+
+def ops(path: Path, kind: str | None = None) -> list[dict]:
+    """The ops of a store's log in order, each with its data decoded, STORE-046; one kind when named."""
+    db = sqlite3.connect(path)
+    try:
+        rows = db.execute('SELECT seq, session_id, op, kind, id, layer_id, data FROM ops ORDER BY seq').fetchall()
+    finally:
+        db.close()
+    found = [{'seq': r[0], 'session_id': r[1], 'op': r[2], 'kind': r[3], 'id': r[4], 'layer_id': r[5],
+              'data': json.loads(r[6])} for r in rows]
+    return [op for op in found if kind is None or op['kind'] == kind]

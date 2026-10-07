@@ -96,7 +96,7 @@ def test_collapse_command_preserves_current_map_and_switches_back_to_its_history
     assert made['id'] != old.id
     assert any('stay with' in notice['message'] for notice in made['notices'])
     assert without_layer(store.roots().to_dict()) == without_layer(current)
-    assert [(layer.name, layer.kind) for layer in store.layers().results] == [('intake', 'intake')]
+    assert [(layer.name, layer.kind) for layer in store.layers().results] == [('base', 'base')]
     assert len(store.history(join.id).results) == 1
     assert {form['name']: form['active'] for form in j(run, 'bases', cwd=mapped)['results']} == {
         old.name: False, 'fresh': True}
@@ -519,7 +519,7 @@ def test_layers_and_metaforms_read_as_one_aligned_row_each(run, mapped):
         assert len(starts) == 1, lines
         return {line.split()[0]: line.split() for line in lines}
     layers = rows('layers')
-    assert layers['intake-1'] == ['intake-1', 'intake', 'intake', 'ready', 'on']
+    assert layers['intake-1'] == ['intake-1', 'base', 'intake', 'ready', 'on']
     assert layers['practices-cpp'] == ['practices-cpp', 'layer', 'test', 'practices', 'ready', 'on']
     assert layers['draft'] == ['draft', 'layer', 'test', 'building', 'off']
     assert sorted(layers) == ['draft', 'intake-1', 'practices-cpp']  # refining makes no layer, LAYER-025

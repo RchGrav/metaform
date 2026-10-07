@@ -188,15 +188,17 @@ def test_an_intake_recorded_object_by_object_is_stored_whole_and_reads_back(run,
     assert (tick.role, tick.name_length, tick.name) == ('SE', 2, 'one-second tick loop')
     assert alarm_join.elements[1].element_id == tick.id  # the part is one element record
     layer = next(item for item in store.layers().results if item.name == report['layer'])
-    assert (layer.kind, layer.mutable, layer.hideable) == ('intake', False, False)
+    assert (layer.kind, layer.mutable, layer.hideable) == ('base', False, False)
     provenance = store.provenance(report['layer'])
     assert (provenance.module, provenance.workflow, provenance.model, provenance.role) == (
         'intake', 'canonical-intake', 'claude', 'intake agent')
     assert provenance.prompt is None  # the Canonical Intake's purpose never changes, so no copy is kept, STORE-016
-    document = export_document(['timer'], layers=[report['layer']])['projects'][0]['metaforms'][0]
-    assert len(document['elements']) == 4 and len(document['joins']) == 2 and len(document['join_elements']) == 3
-    assert sorted(row['type'] for row in document['joins']) == ['purpose', 'purpose']  # Rich 2026-10-04
-    assert all(set(row) & {'perspective', 'verb', 'non_goal', 'name', 'provider'} == set() for row in document['joins'])
+    document = export_document(['timer'], layers=[report['layer']])['projects'][0]['bases'][0]
+    elements = [op for op in document['ops'] if op['kind'] == 'element']
+    joins = [op for op in document['ops'] if op['kind'] == 'join']
+    assert len(elements) == 4 and len(joins) == 2 and sum(len(op['data']['held']) for op in joins) == 3
+    assert sorted(op['data']['type'] for op in joins) == ['purpose', 'purpose']  # Rich 2026-10-04
+    assert all(set(row) & {'perspective', 'verb', 'non_goal', 'name', 'provider'} == set() for row in (op['data'] for op in joins))
 
 
 @pytest.mark.req('BASE-039')

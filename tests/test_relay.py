@@ -77,7 +77,7 @@ def test_a_listener_hears_map_changed_from_a_command_run_in_another_process(run,
         write_note(run, folder)
         assert told.wait(LIMIT), 'the command in another process told this one'
         active = metaform_home.active_base('proj')
-        assert {'project': 'proj', 'base_id': active.id} in heard
+        assert {'project': 'proj', 'base_id': active.id} in [{key: value for key, value in event.items() if key in ('project', 'base_id')} for event in heard]
     finally:
         listener.close()
     assert records(home) == [], 'closing a listener removes its record'

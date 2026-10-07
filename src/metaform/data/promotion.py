@@ -15,7 +15,7 @@ def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length
             role: Any = None, reason: Any = 'Promote the join to an element.') -> Join | Outcome:
     """Create or reuse an element and record its address on the same join in this transaction.
 
-    Intake joins gain a version under LAYER-025. Knowledge joins follow their
+    Base joins gain a version under LAYER-025. Knowledge joins follow their
     existing edit rules. A retry retains the association, and a different target
     returns a notice before writing anything.
     """
@@ -24,7 +24,7 @@ def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length
     base = rows.current_join(tx, join_id)
     if base is None:
         return Outcome((Notice('join', f'{join_id} has no current join; nothing was written.'),))
-    found = rows.layer(tx, str(base['layer_id']))
+    found = rows.layer(tx, base.layer_id)
     if found.kind not in BASE_KINDS:
         stop = writes.unchangeable(tx, found, join_id)
         if stop is not None:
@@ -46,4 +46,4 @@ def promote(tx: Tx, join_id: str, address: Any, *, name: Any = None, name_length
         notices.extend(result.notices)
     current = rows.current_join(tx, join_id)
     assert current is not None
-    return dataclasses.replace(views.join(tx, current, all_layers(tx.db)), notices=tuple(notices))
+    return dataclasses.replace(views.join(tx, join_id, current, all_layers(tx.base)), notices=tuple(notices))

@@ -5027,7 +5027,7 @@ def test_only_agents_whose_turn_is_executing_are_shown_as_working_and_an_idle_on
               for one in api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']}
     assert served == {idle: ('running', 'idle'), working: ('running', 'working')}
     page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{working}")', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
     assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
     assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
     assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
@@ -5074,7 +5074,7 @@ def test_a_session_whose_runner_is_not_verified_is_neither_in_the_agents_key_nor
     assert served[working] == 'running' and served[older] != 'running', served
     page, problems, _ = opened(browser, web)
     page.wait_for_selector(f'#agents .agent[data-id="{working}"]', timeout=15000)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{working}")', timeout=15000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{working}")', timeout=15000)
     assert page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)') == [working]
     assert [one['work_id'] for one in page.evaluate('window.metaform.figures()')] == [working]
     assert page.eval_on_selector_all('#agents .title', 'found => found.map(one => one.textContent)') == ['Agent deployed']
@@ -5116,10 +5116,10 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     assert sorted(page.eval_on_selector_all('#agents .agent', 'found => found.map(one => one.dataset.id)')) == sorted(
         [worked.id, other.id])
     page.evaluate('''() => { window.stages = {}; setInterval(() => { for (const figure of window.metaform.figures())
-        (window.stages[figure.id] ||= new Set()).add(figure.stage); }, 50); }''')
+        (window.stages[figure.work_id] ||= new Set()).add(figure.stage); }, 50); }''')
     glyphs = page.evaluate('window.metaform.figures().map(figure => figure.glyph)')
     assert len(set(glyphs)) == 2                                      # no two at work look alike
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{worked.id}" && one.stage === "circling")',
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{worked.id}" && one.stage === "circling")',
                            timeout=20000)
     page.wait_for_timeout(1000)                                      # out onto its orbit
     figure = next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == worked.id)
@@ -5129,7 +5129,7 @@ def test_an_agents_figure_walks_from_the_de_to_its_ticket_circles_it_and_walks_b
     run('map', 'work', 'op=done', f'id={worked.id}', 'resolution=quieter', cwd=mapped)
     live_session(worked.id, 'codex', state='ended')
     page.wait_for_function(f'() => (window.stages["{worked.id}"] || new Set()).has("returning")', timeout=10000)
-    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.id === "{worked.id}")', timeout=20000)
+    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{worked.id}")', timeout=20000)
     live_session(other.id, state='ended')                        # stopped with its ticket open: it goes too
     relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})  # its runner announces the session ended
     page.wait_for_function('() => window.metaform.figures().length === 0', timeout=20000)
@@ -5154,7 +5154,7 @@ def test_an_agent_on_the_2d_map_is_its_flat_glyph_and_walks_to_its_ticket_circle
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.figures2d().length === 1', timeout=15000)
     figure = page.evaluate('window.metaform.figures2d()')[0]
-    assert figure['id'] == worked.id and figure['shown']
+    assert figure['work_id'] == worked.id and figure['shown']
     page.wait_for_function('() => window.metaform.figures().length === 1', timeout=15000)
     assert figure['glyph'] == page.evaluate('window.metaform.figures()')[0]['glyph']      # the same agent in both views
     assert figure['icon'] == f"/page/agent-glyphs/{figure['glyph']}.svg"
@@ -5208,7 +5208,7 @@ def test_an_agents_figure_is_big_enough_to_see_with_the_whole_map_in_view_and_ci
 
     def lap(work_id):  # seconds for one turn around the node, on the figure's own clock, whatever the frame rate
         turned = page.evaluate(f'''async () => {{ const one = () => window.metaform.figures()
-            .find(figure => figure.id === "{work_id}"); const from = one();
+            .find(figure => figure.work_id === "{work_id}"); const from = one();
             await new Promise(done => setTimeout(done, 2000));
             const to = one(); return [to.angle - from.angle, to.clock - from.clock]; }}''')
         return 2 * math.pi * turned[1] / turned[0]
@@ -5523,7 +5523,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     glyph = icon.rsplit('/', 1)[-1].removesuffix('.svg')
     assert icon == f'/page/agent-glyphs/{glyph}.svg' and glyph in AGENT_GLYPHS, icon
     page.wait_for_function('() => document.querySelector("#agents .agent img").naturalWidth > 0')
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{work}")', timeout=30000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
     assert next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == work)['glyph'] == glyph
     # the same character on every load of the page, Rich 2026-10-03: it comes from the ticket, never from chance
     reloaded, _, _ = opened(browser, web)
@@ -5542,7 +5542,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     # reached from the node's work history, where its session is still running
     gate.touch()
     page.wait_for_function('() => document.querySelector("#agents").hidden', timeout=30000)
-    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.id === "{work}")', timeout=30000)
+    page.wait_for_function(f'() => !window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
     waiting = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']
     assert [(one['state'], one['activity']) for one in waiting] == [('running', 'waiting')], waiting
     page.evaluate(f'window.metaform.menu("{alarm}")')
@@ -5891,7 +5891,7 @@ def test_the_page_distributes_and_reads_glyphs_on_the_metaform_it_chose_and_show
     active = {one['id'] for one in plain(Store('proj').work(limit=0))['results']}
     started(run)
     status, body = api(web, '/api/distribute', method='POST', headers=own_write(web),
-                       body=json.dumps({'project': 'proj', 'metaform': chosen, 'agents': 2}))
+                       body=json.dumps({'project': 'proj', 'base': chosen, 'agents': 2}))
     assert status == 200, body
     assert [(one['id'], glyph_of(one)) for one in body['results']] == list(zip(made, GIVEN[:2]))
     shown = api(web, f'/api/work?project=proj&base={chosen}')[1]['results']
@@ -5949,7 +5949,7 @@ def test_each_card_shows_its_agents_glyph_and_the_same_glyph_is_its_figure_and_i
     # an agent at work on a distributed ticket is drawn as that ticket's glyph, on the map and under Agent deployed
     live_session(tickets[1])
     run('map', 'work', 'op=take', f'id={tickets[1]}', 'by=claude', cwd=mapped)
-    page.wait_for_function(f'() => window.metaform.figures().some(one => one.id === "{tickets[1]}")', timeout=20000)
+    page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{tickets[1]}")', timeout=20000)
     assert figure_of(tickets[1]) == lanes[1]
     page.wait_for_selector(f'#agents .agent[data-id="{tickets[1]}"]', timeout=10000)
     assert page.get_attribute(f'#agents .agent[data-id="{tickets[1]}"] img', 'src') == src
@@ -6614,7 +6614,7 @@ def test_the_metaforms_of_a_project_left_that_answer_after_the_next_choice_do_no
     chosen = page.input_value('#mf')
     page.evaluate("""() => { window.held = 0; const fetched = window.fetch;
         window.fetch = async (url, ...rest) => {
-            if (/^\\/api\\/metaforms\\?project=other&/.test(String(url))) {
+            if (/^\\/api\\/bases\\?project=other&/.test(String(url))) {
                 window.held++; await new Promise(done => setTimeout(done, 1500)); }
             return fetched(url, ...rest); }; }""")
     page.select_option('#proj', 'other')

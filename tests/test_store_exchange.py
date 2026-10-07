@@ -66,10 +66,11 @@ def test_an_exported_join_carries_no_relation_and_no_observation_and_a_document_
     """Rich, 2026-10-02: relation and observation are removed from export and import with the store."""
     filled(store)
     document = export_document(['proj'])
-    rows = document['projects'][0]['metaforms'][0]['joins']
-    assert rows and all('relation' not in row and 'observation' not in row and 'ef' in row for row in rows)
-    rows[0]['relation'] = 'r'
-    with pytest.raises(StoreError, match='relation: not a field here'):
+    joins = [op for op in document['projects'][0]['bases'][0]['ops'] if op['kind'] == 'join']
+    assert joins and all('relation' not in op['data'] and 'observation' not in op['data'] and 'ef' in op['data']
+                         for op in joins)
+    joins[0]['relation'] = 'r'
+    with pytest.raises(StoreError, match=r'ops\[\d+\].relation: not a field here'):
         import_document(json.loads(json.dumps(document)))
 
 
@@ -85,7 +86,8 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
     on_tick = store.add_work(Node('element', tick.id), 'exclude')
     done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'missing').id, 'built it')
     first = export_document(['proj'])
-    assert len(first['projects'][0]['metaforms'][0]['work']) == 4
+    work = next(entry for entry in first['projects'][0]['bases'][0]['extensions'] if entry['module'] == 'map')
+    assert len(work['rows']['work']) == 4
     move_home(monkeypatch, tmp_path, 'other-home')
     import_document(json.loads(json.dumps(first)))
     assert export_document(['proj']) == first
@@ -135,11 +137,12 @@ def test_moved_joins_and_the_elements_joins_hold_come_through_export_and_import_
 def test_importing_what_already_exists_changes_nothing(home, store):
     filled(store)
     document = export_document(['proj'])
-    for row in document['projects'][0]['metaforms'][0]['items']:
-        row['value'] = json.dumps('rewritten elsewhere')
+    for op in document['projects'][0]['bases'][0]['ops']:
+        if op['kind'] == 'item':
+            op['data']['value'] = json.dumps('rewritten elsewhere')
     before = dump(store_file(home, store))
     report = import_document(document)
-    assert report['layers_added'] == 0 and report['layers_skipped'] == 3 and report['metaforms_added'] == 0
+    assert report['layers_added'] == 0 and report['layers_skipped'] == 3 and report['bases_added'] == 0
     assert dump(store_file(home, store)) == before
 
 
@@ -156,11 +159,11 @@ def test_an_import_that_fails_partway_leaves_the_store_unchanged(home, store, mo
     target.add_element(layer.name, 'code.here')
     snapshot = dump(store_file(tmp_path / 'other-home', target))
     broken = json.loads(json.dumps(document))
-    metaform = broken['projects'][0]['metaforms'][0]
-    metaform['metaform']['base_id'] = target.active_base().id
-    notes_id = next(layer['layer_id'] for layer in metaform['layers'] if layer['name'] == 'notes')
-    metaform['refs'].append({'owner': 'join', 'owner_id': '0' * 32, 'owner_layer_id': notes_id,
-                             'position': 0, 'key': 'path', 'value': 'nowhere'})
+    base = broken['projects'][0]['bases'][0]
+    base['base']['id'] = target.active_base().id
+    # a module's rows that no longer fit their table break the import partway, after the ops were appended
+    held = next(entry for entry in base['extensions'] if entry['module'] == 'map')
+    held['rows']['work'].append({'work_id': 'not a row'})
     with pytest.raises(StoreError):
         import_document(broken, 'proj')
     assert dump(store_file(tmp_path / 'other-home', target)) == snapshot
@@ -170,8 +173,8 @@ def test_an_import_that_fails_partway_leaves_the_store_unchanged(home, store, mo
 def test_a_layer_limited_export_names_what_it_requires(home, store, monkeypatch, tmp_path):
     filled(store)
     document = export_document(['proj'], layers=['notes'])
-    metaform = document['projects'][0]['metaforms'][0]
-    assert {layer['name'] for layer in metaform['layers']} == {'notes'}
+    metaform = document['projects'][0]['bases'][0]
+    assert {op['data']['name'] for op in metaform['ops'] if op['kind'] == 'layer' and op['op'] == 'add'} == {'notes'}
     assert {'kind': 'element', 'id': store.element('code.timer.kitchen').id} in metaform['requires']
     kitchen = store.element('code.timer.kitchen').id
     move_home(monkeypatch, tmp_path, 'empty-home')
@@ -191,16 +194,19 @@ def test_an_import_document_is_checked_whole_before_any_write_and_its_keys_never
     other = move_home(monkeypatch, tmp_path, 'other-home')
     entry = document['projects'][0]
     entry['project']['owner'] = 'someone'
-    metaform = entry['metaforms'][0]
-    metaform['items'][0]['value) SELECT * FROM items; --'] = 'x'
-    del metaform['joins'][0]['purpose']
-    metaform['elements'][0]['address'] = {'not': 'text'}
+    metaform = entry['bases'][0]
+    item = next(index for index, op in enumerate(metaform['ops']) if op['kind'] == 'item')
+    metaform['ops'][item]['value) SELECT * FROM items; --'] = 'x'
+    join = next(index for index, op in enumerate(metaform['ops']) if op['kind'] == 'join')
+    del metaform['ops'][join]['op']
+    element = next(index for index, op in enumerate(metaform['ops']) if op['kind'] == 'element')
+    metaform['ops'][element]['data'] = 'not an object'
     traced.clear()
     with pytest.raises(StoreError) as refused:
         import_document(document)
     message = str(refused.value)
-    for path in ('projects[0].project.owner', 'projects[0].metaforms[0].items[0]',
-                 'projects[0].metaforms[0].joins[0].purpose', 'projects[0].metaforms[0].elements[0].address'):
+    for path in ('projects[0].project.owner', f'projects[0].bases[0].ops[{item}].value) SELECT',
+                 f'projects[0].bases[0].ops[{join}].op', f'projects[0].bases[0].ops[{element}].data'):
         assert path in message
     assert refused.value.next_step and '\n' not in refused.value.next_step
     assert not any('SELECT * FROM items' in statement for statement in traced)

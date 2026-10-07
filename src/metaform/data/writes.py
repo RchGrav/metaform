@@ -3,11 +3,12 @@
 Every function works inside one open write transaction and never refuses a
 write for its content, BASE-044 and STORE-026: what does not fit is stored as
 given, and the result carries a notice for it. A write aimed at something that
-cannot change in place, what a finished intake holds or memory through the
+cannot change in place, what a finished base holds or memory through the
 knowledge tool, writes nothing and returns a notice naming the operation that
-does it. The finished intake still takes additions: the metaform grows in its
+does it. The finished base still takes additions: the base grows in its
 own layer, LAYER-025. Only a reference that cannot be read at all,
-such as an id that names nothing, raises `StoreError`.
+such as an id that names nothing, raises `StoreError`. Every write is ops on the
+base's projection, appended to the log at commit, STORE-046.
 """
 from __future__ import annotations
 
@@ -43,10 +44,11 @@ def _as_answers(value: Any, notices: list[Notice]) -> list[Any]:
 
 def _element_fields(name_length: Any, role: Any, found: LayerRow,
                     notices: list[Notice]) -> tuple[Any, str | None, list[tuple[str, Any]]]:
-    """An element's name_length and role as its row holds them, STORE-009, each stored as given and named in a notice
-    when it does not fit, BASE-044: a name_length that is not a whole number of at least 1, or a role outside the five.
-    A role is the intake's classification of the artifact, D48: one given in another layer is not the element's; it is
-    kept as an item of that layer at the element, returned here to be written, so nothing given is lost.
+    """An element's name_length and role as its version holds them, STORE-009, each stored as given and named in a
+    notice when it does not fit, BASE-044: a name_length that is not a whole number of at least 1, or a role outside
+    the five. A role is the intake's classification of the artifact, D48: one given in another layer is not the
+    element's; it is kept as an item of that layer at the element, returned here to be written, so nothing given is
+    lost.
     """
     if name_length is not None and not rows.whole_number(name_length):
         notices.append(Notice('name_length', 'name_length is not a whole number; it was stored as given.'))
@@ -141,46 +143,43 @@ def add_join(tx: Tx, layer: str, receiver: Any, elements: Any, *, purpose: Any =
     if receiver_id in ids:
         notices.append(Notice('elements', 'The join holds its own receiver; it was stored as given, D82.'))
     join_id = new_id()
-    tx.db.execute('INSERT INTO join_ids(join_id) VALUES (?)', (join_id,))
-    rows.identity(tx, join_id, 'join')
-    cursor = tx.db.execute('INSERT INTO joins(join_id, layer_id, type, receiver, purpose, ef, ifd) '
-                           'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                           (join_id, found.layer_id, kind, receiver_id, texts['purpose'], texts['ef'],
-                            _ifd(ifd, notices)))
-    row = int(cursor.lastrowid or 0)
-    rows.write_held(tx, row, ids)
-    tx.db.execute('INSERT INTO current_joins(join_id, row, receiver) VALUES (?, ?, ?)', (join_id, row, receiver_id))
-    record = views.join(tx, tx.db.execute('SELECT * FROM joins WHERE row=?', (row,)).fetchone(), all_layers(tx.db))
-    return _with(record, notices)
+    tx.emit('add', 'join', join_id, found.id, {'mode': 'add', 'type': kind, 'receiver': receiver_id,
+                                              'purpose': texts['purpose'], 'ef': texts['ef'],
+                                              'ifd': _ifd(ifd, notices), 'element': None, 'held': ids})
+    current = rows.current_join(tx, join_id)
+    assert current is not None
+    return _with(views.join(tx, join_id, current, all_layers(tx.base)), notices)
 
 
 IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction, Rich 2026-10-01
+IFD_SPELLINGS = {'send': 'sends', 'receive': 'receives'}  # the intake procedure's spelling, stored as the store's
 
 
 def _ifd(value: Any, notices: list[Notice]) -> str | None:
-    """A join's Information Flow Direction: sends, receives or both; anything else is stored as given, BASE-044."""
+    """A join's Information Flow Direction: sends, receives or both, the procedure's send and receive read as them;
+    anything else is stored as given, BASE-044."""
     if value is None or value in IFDS:
         return value
+    if value in IFD_SPELLINGS:
+        return IFD_SPELLINGS[value]
     notices.append(Notice('ifd', f'{value!r} is not sends, receives or both; it was stored as given.'))
     return str(value)
 
 
 def add_ref(tx: Tx, owner: str, key: Any, value: Any) -> Ref | Outcome:
-    """Add one ref to an item's or a property's current version, STORE-012. The metaform holds no refs; an element's
+    """Add one ref to an item's or a property's current version, STORE-012. The base holds no refs; an element's
     refs are items of the sources layer, Rich 2026-10-04."""
     key = key if isinstance(key, str) else json.dumps(key, ensure_ascii=False, sort_keys=True)
     value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     kind = rows.kind_of(tx, owner)
     if kind not in ('item', 'property'):
-        return Outcome((Notice('owner', f'{owner} is a {kind}, and the metaform holds no refs; an element\'s refs go '
+        return Outcome((Notice('owner', f'{owner} is a {kind}, and the base holds no refs; an element\'s refs go '
                                         'in the sources layer. Nothing was written.'),))
-    current = versions.current_row(tx.db, kind, owner)
+    current = versions.current_version(tx.base, kind, owner)
     if current is None:
         return Outcome((Notice('owner', f'{owner} has no current version; nothing was written. See metaform map '
                                         f'history {owner}'),))
-    last = tx.db.execute('SELECT MAX(position) FROM refs WHERE owner=? AND owner_row=?',
-                         (kind, current)).fetchone()[0]
-    rows.write_refs(tx, kind, current, [(key, value)], start=(int(last) + 1) if last is not None else 0)
+    rows.write_refs(tx, kind, current.seq, [(key, value)], start=len(current.refs))
     return Ref(key, value)
 
 
@@ -231,22 +230,18 @@ def add_property(tx: Tx, layer: str, element: Any, value: Any, *, refs: Iterable
     element_id = _property_element(tx, element, found, notices)
     if isinstance(element, Node) and element.kind == 'join':
         kept_extra = {**(kept_extra or {}), 'target': str(element)}
-    made: list[int] = []
+    made: list[str] = []
     for answer in answers:
         property_id = new_id()
-        cursor = tx.db.execute('INSERT INTO properties(property_id, layer_id, element_id, value, extra) '
-                               'VALUES (?, ?, ?, ?, ?)', (property_id, found.layer_id, element_id,
-                                                          encode_value(answer, 'the property'),
-                                                          encode_extra(kept_extra, 'the property')))
-        row = int(cursor.lastrowid or 0)
-        tx.db.execute('INSERT INTO current_properties(property_id, row, layer_id, element_id) VALUES (?, ?, ?, ?)',
-                      (property_id, row, found.layer_id, element_id))
-        rows.write_refs(tx, 'property', row, pairs)
-        made.append(row)
+        tx.emit('add', 'property', property_id, found.id, {'mode': 'add', 'element_id': element_id,
+                                                          'value': encode_value(answer, 'the property'),
+                                                          'extra': encode_extra(kept_extra, 'the property'),
+                                                          'refs': [list(pair) for pair in pairs]})
+        made.append(property_id)
     rows.split_items(tx, found, 'element', element_id, split)
-    record = views.prop(tx, tx.db.execute('SELECT * FROM properties WHERE row=?', (made[0],)).fetchone(),
-                        all_layers(tx.db))
-    return _with(record, notices)
+    current = versions.current_version(tx.base, 'property', made[0])
+    assert current is not None
+    return _with(views.prop(tx, made[0], current, all_layers(tx.base)), notices)
 
 
 def _property_element(tx: Tx, element: Any, found: LayerRow, notices: list[Notice]) -> str:
@@ -265,7 +260,7 @@ def _property_element(tx: Tx, element: Any, found: LayerRow, notices: list[Notic
     return rows.element_at(tx, ref, found, 'element', notices)
 
 
-def _memory_item(tx: Tx, item_id: str, change: str) -> tuple[Any, LayerRow] | Notice:
+def _memory_item(tx: Tx, item_id: str, change: str) -> tuple[Row, LayerRow] | Notice:
     if rows.kind_of(tx, item_id) != 'item':
         return Notice('item', f'{item_id} is not an item; nothing was written.')
     row, found = rows.own_row(tx, 'item', item_id)
@@ -282,7 +277,7 @@ def update_item(tx: Tx, item_id: str, value: Any) -> Item | Outcome:
     if isinstance(found, Notice):
         return Outcome((found,))
     row, _ = found
-    tx.db.execute('UPDATE items SET value=? WHERE row=?', (encode_value(value, item_id), row['row']))
+    tx.emit('change', 'item', item_id, row.layer_id, {'mode': 'place', 'value': encode_value(value, item_id)})
     return views.item_by_id(tx, item_id)
 
 
@@ -291,22 +286,20 @@ def delete_item(tx: Tx, item_id: str) -> Outcome:
     if isinstance(found, Notice):
         return Outcome((found,))
     row, _ = found
-    tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', ('item', row['row']))
-    tx.db.execute('DELETE FROM current_items WHERE item_id=?', (item_id,))
-    tx.db.execute('DELETE FROM items WHERE row=?', (row['row'],))
+    tx.emit('remove', 'item', item_id, row.layer_id, {'mode': 'place'})
     return Outcome()
 
 
-# Edit and remove, in place, in a knowledge layer or a building intake ----------------------------------------
+# Edit and remove, in place, in a knowledge layer or a building base ----------------------------------------
 
 def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
-    """Why a thing cannot change in place: memory has its own operations; the finished metaform changes only by
+    """Why a thing cannot change in place: memory has its own operations; the finished base changes only by
     refining, which keeps every version, LAYER-025."""
     if found.kind == 'memory':
         return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
                             'delete_observations. Nothing was written.')
     if found.kind in BASE_KINDS and found.finished:
-        return Notice('id', f'{thing} belongs to {found.name}; the metaform changes by refining, which keeps every '
+        return Notice('id', f'{thing} belongs to {found.name}; the base changes by refining, which keeps every '
                             f'version: {rows.refine_step(thing)}. Nothing was written.')
     return None
 
@@ -314,12 +307,12 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
 MOVED = ("An element cannot be moved: its address is its identity, and another address is a different element, "
          "MAP-015. address was not applied; record the element at the new address and move its joins to it with "
          "receiver or elements.")
-HELD = '_held'  # the key changed_columns gives a join's new elements under, written to join_elements, not a column
+HELD = '_held'  # the key changed_columns gives a join's new elements under, written as the version's held list
 
 
 def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice]) -> dict[str, Any]:
     """The changes a thing of this kind takes; any other key is named in a notice and not applied, STORE-034. An
-    element's address is never applied, MAP-015. Items and properties take refs; the metaform holds none."""
+    element's address is never applied, MAP-015. Items and properties take refs; the base holds none."""
     allowed: dict[str, Any] = {}
     takes_refs = kind in ('item', 'property')
     for key, value in changes.items():
@@ -336,7 +329,7 @@ def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice]) -> 
 
 def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow, notices: list[Notice],
                     base: Row) -> tuple[dict[str, Any], list[tuple[str, Any]]]:
-    """The column values of a change of `base`, each checked the way a write checks it; and records split from an
+    """The field values of a change of `base`, each checked the way a write checks it; and records split from an
     extra. A join's `elements` come back under HELD, the ids of the elements it now holds."""
     columns: dict[str, Any] = {}
     split: list[tuple[str, Any]] = []
@@ -390,7 +383,7 @@ def changed_columns(tx: Tx, kind: str, changes: dict[str, Any], found: LayerRow,
 
 
 def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
-    """Change a thing of a knowledge layer, or of a building intake, in place, STORE-032.
+    """Change a thing of a knowledge layer, or of a building base, in place, STORE-032.
 
     A join's receiver moves it, and it stays the same join, MAP-003, and `elements` gives the elements it holds; an
     element's address is never changed, MAP-015.
@@ -407,27 +400,20 @@ def edit(tx: Tx, thing: str, changes: Any) -> Version | Outcome:
     allowed = split_changes(kind, {str(key): value for key, value in given_changes.items()}, notices)
     if not allowed:
         return Outcome(tuple(notices))
-    spec = versions.KINDS[kind]
     columns, split = changed_columns(tx, kind, allowed, found, notices, row)
     held = columns.pop(HELD, None)
+    data: dict[str, Any] = {'mode': 'place', **columns}
     if held is not None:
-        rows.write_held(tx, int(row['row']), held)
-    if columns:
-        assignments = ', '.join(f'{column}=?' for column in columns)
-        tx.db.execute(f'UPDATE {spec.table} SET {assignments} WHERE row=?', (*columns.values(), row['row']))
+        data['held'] = held
     if allowed.get('refs') is not None:
-        tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
-        rows.write_refs(tx, kind, int(row['row']), refs_fit(allowed['refs'])[0])
+        data['refs'] = [list(pair) for pair in refs_fit(allowed['refs'])[0]]
+    if len(data) > 1:
+        tx.emit('change', kind, thing, row.layer_id, data)
     if split:
         target_kind, target_id = (('element', str(columns.get('element_id', row['element_id']))) if kind == 'property'
                                   else _node_of(kind, thing, row))
         rows.split_items(tx, found, target_kind, target_id, split)
-    if versions.current_of_row(tx.db, kind, int(row['row'])) is not None:
-        updated = tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?', (row['row'],)).fetchone()
-        versions.drop_current(tx.db, kind, 'row', row['row'])
-        versions.insert_current(tx.db, kind, thing, updated)
-    record = views.version(tx, kind, tx.db.execute(f'SELECT * FROM {spec.table} WHERE row=?',
-                                                   (row['row'],)).fetchone())
+    record = views.version(tx, kind, thing, row)
     return _with(record, notices)
 
 
@@ -439,7 +425,7 @@ def _node_of(kind: str, thing: str, row: Any) -> tuple[str, str]:
 
 
 def remove(tx: Tx, thing: str | int) -> Outcome:
-    """Delete a row a knowledge layer or a building intake wrote, with its refs, STORE-032.
+    """Delete a version a knowledge layer or a building base wrote, with its refs, STORE-032.
 
     What in the same layer still used it as receiver, held element or target is left orphaned and named, STORE-017.
     """
@@ -451,14 +437,9 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
     if stop is not None:
         return Outcome((stop,))
     users = _users(tx, kind, thing, found)
-    spec = versions.KINDS[kind]
-    tx.db.execute('DELETE FROM refs WHERE owner=? AND owner_row=?', (kind, row['row']))
-    if kind == 'join':
-        tx.db.execute('DELETE FROM join_elements WHERE join_row=?', (row['row'],))
-    versions.drop_current(tx.db, kind, 'row', row['row'])
     if kind == 'item':
         operations.cleanup(tx, 'item', str(thing))
-    tx.db.execute(f'DELETE FROM {spec.table} WHERE row=?', (row['row'],))
+    tx.emit('remove', kind, thing, row.layer_id, {'mode': 'place'})
     if not users:
         return Outcome()
     return Outcome((Notice('id', f'{thing} was still used in {found.name} by {", ".join(users)}; '
@@ -466,31 +447,37 @@ def remove(tx: Tx, thing: str | int) -> Outcome:
 
 
 def _remove_ref(tx: Tx, ref_id: int) -> Outcome:
-    ref = tx.db.execute('SELECT owner, owner_row FROM refs WHERE ref_id=?', (ref_id,)).fetchone()
-    if ref is None:
-        raise StoreError(f'No ref {ref_id}.', 'metaform map where <address>')
-    table = versions.KINDS[str(ref['owner'])].table
-    layer_id = tx.db.execute(f'SELECT layer_id FROM {table} WHERE row=?', (ref['owner_row'],)).fetchone()[0]
-    stop = unchangeable(tx, rows.layer(tx, str(layer_id)), str(ref_id))
-    if stop is not None:
-        return Outcome((stop,))
-    tx.db.execute('DELETE FROM refs WHERE ref_id=?', (ref_id,))
-    return Outcome()
+    """A ref named by its number: the sequence of the version that holds it and its position, as `(seq << 16) + position`."""
+    seq, position = divmod(ref_id, 1 << 16)
+    for kind in ('item', 'property'):
+        found = rows.version_at(tx, kind, seq)
+        if found is None:
+            continue
+        ident, version = found
+        stop = unchangeable(tx, rows.layer(tx, version.layer_id), str(ref_id))
+        if stop is not None:
+            return Outcome((stop,))
+        if position >= len(version.refs):
+            break
+        kept = [list(pair) for index, pair in enumerate(version.refs) if index != position]
+        tx.emit('change', kind, ident, version.layer_id, {'mode': 'place', 'refs': kept})
+        return Outcome()
+    raise StoreError(f'No ref {ref_id}.', 'metaform map where <address>')
 
 
 def _users(tx: Tx, kind: str, thing: str, found: LayerRow) -> list[str]:
-    """The current rows of the same layer that use a thing as receiver, held element or target."""
-    db = tx.db
+    """The current things of the same layer that use a thing as receiver, held element or target."""
+    base = tx.base
     users: list[str] = []
+
+    def in_layer(ident: str) -> bool:
+        current = base.current(ident)
+        return current is not None and current.layer_id == found.id
+
     if kind == 'element':
-        users += [str(row[0]) for row in db.execute('SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row '
-                                                    'WHERE c.receiver=? AND j.layer_id=?', (thing, found.layer_id))]
-        users += [str(row[0]) for row in db.execute('SELECT DISTINCT c.join_id FROM join_elements e JOIN current_joins c '
-                                                    'ON c.row = e.join_row JOIN joins j ON j.row = c.row '
-                                                    'WHERE e.element_id=? AND j.layer_id=?', (thing, found.layer_id))]
-        users += [str(row[0]) for row in db.execute('SELECT property_id FROM current_properties WHERE element_id=? '
-                                                    'AND layer_id=?', (thing, found.layer_id))]
+        users += [join_id for join_id in base.joins_received(thing) if in_layer(join_id)]
+        users += [join_id for join_id in base.joins_holding(thing) if in_layer(join_id) and join_id not in users]
+        users += [property_id for property_id in base.properties_of(thing) if in_layer(property_id)]
     if kind in ('element', 'join'):
-        users += [str(row[0]) for row in db.execute('SELECT item_id FROM current_items WHERE target_kind=? AND '
-                                                    'target_id=? AND layer_id=?', (kind, thing, found.layer_id))]
+        users += [item_id for item_id in base.items_at(kind, thing) if in_layer(item_id)]
     return users

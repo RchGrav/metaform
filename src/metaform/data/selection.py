@@ -5,78 +5,46 @@ trunk to leaf, starting from the toggled layers, LAYER-019. Hidden layers,
 and every layer built from a hidden layer, are removed at the end, STORE-013.
 Building layers are never selected, STORE-032. There are no correction
 layers, LAYER-025. Every read resolves layers through one
-`Resolver`, so no path lets an excluded layer through.
+`Resolver`, so no path lets an excluded layer through. The layers, their
+sources, the hidden set and the select and mask rows are read from the
+projection, STORE-046.
 """
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from typing import cast
 
 from .ids import is_id, prefixes
-from .records import LayerKind
+from .projection import LayerRec, Projection
+
+LayerRow = LayerRec
 
 
-@dataclass(frozen=True)
-class LayerRow:
-    layer_id: str
-    base_id: str
-    name: str
-    module: str
-    variable: str
-    mutable: bool
-    hideable: bool
-    result_id: str | None
-    kind: LayerKind
-    created: str
-    ready: str | None
-
-    @property
-    def finished(self) -> bool:
-        return self.ready is not None
+def all_layers(base: Projection) -> dict[str, LayerRow]:
+    """Every layer, in creation order."""
+    return dict(sorted(base.layers.items(), key=lambda pair: pair[1].seq))
 
 
-LAYER_COLUMNS = 'layer_id, metaform_id, name, module, variable, mutable, hideable, result_id, kind, created, ready'
-
-
-def layer_row(row: sqlite3.Row) -> LayerRow:
-    # The schema's CHECK keeps `kind` to the four layer kinds, STORE-013.
-    return LayerRow(row['layer_id'], row['metaform_id'], row['name'], row['module'], row['variable'],
-                    bool(row['mutable']), bool(row['hideable']), row['result_id'], cast(LayerKind, row['kind']),
-                    row['created'], row['ready'])
-
-
-def all_layers(db: sqlite3.Connection) -> dict[str, LayerRow]:
-    """Every layer, in creation order. A full read of `layers` is allowed, STORE-005."""
-    rows = db.execute(f'SELECT {LAYER_COLUMNS} FROM layers ORDER BY rowid').fetchall()
-    return {row['layer_id']: layer_row(row) for row in rows}
-
-
-def hidden_closure(db: sqlite3.Connection) -> set[str]:
+def hidden_closure(base: Projection) -> set[str]:
     """Hidden layers and every layer built from one, directly or through other sources, D13."""
-    hidden = {row[0] for row in db.execute('SELECT layer_id FROM hidden_layers')}
+    hidden = {layer_id for layer_id, layer in base.layers.items() if layer.hidden}
     if not hidden:
         return hidden
-    sources: dict[str, set[str]] = {}
-    for layer_id, source in db.execute('SELECT layer_id, source_layer_id FROM layer_sources'):
-        sources.setdefault(layer_id, set()).add(source)
     changed = True
     while changed:
         changed = False
-        for layer_id, built_from in sources.items():
-            if layer_id not in hidden and built_from & hidden:
+        for layer_id, layer in base.layers.items():
+            if layer_id not in hidden and set(layer.sources) & hidden:
                 hidden.add(layer_id)
                 changed = True
     return hidden
 
 
-def resolve_names(db: sqlite3.Connection, layers: dict[str, LayerRow], names: Iterable[str]) -> list[str]:
+def resolve_names(base: Projection, layers: dict[str, LayerRow], names: Iterable[str]) -> list[str]:
     """Layer ids for names, ids and tags, STORE-038: a name that is no layer is a tag.
 
     A name that is neither turns nothing on, CLI-033; the `layers` setting names it in a notice when it is set.
     """
-    by_name = {layer.name: layer.layer_id for layer in layers.values()}
+    by_name = {layer.name: layer.id for layer in layers.values()}
     found: list[str] = []
     for name in names:
         if is_id(name) and name in layers:
@@ -84,35 +52,35 @@ def resolve_names(db: sqlite3.Connection, layers: dict[str, LayerRow], names: It
         elif name in by_name:
             found.append(by_name[name])
         else:
-            found.extend(row[0] for row in db.execute('SELECT layer_id FROM layer_tags WHERE tag=?', (name,)))
+            found.extend(layer_id for layer_id, layer in layers.items() if name in layer.tags)
     return found
 
 
 class Resolver:
     """The effective selection at any address, from one starting selection."""
 
-    def __init__(self, db: sqlite3.Connection, root: Sequence[str] | None, toggled: Sequence[str]) -> None:
-        self.db = db
-        self.layers = all_layers(db)
-        self.hidden = hidden_closure(db)
+    def __init__(self, base: Projection, root: Sequence[str] | None, toggled: Sequence[str]) -> None:
+        self.base = base
+        self.layers = all_layers(base)
+        self.hidden = hidden_closure(base)
         names = root if root is not None else (toggled or None)
         if names is None:
             start = {layer_id for layer_id, layer in self.layers.items() if self._selectable(layer)}
         else:
-            start = {layer_id for layer_id in resolve_names(db, self.layers, names)
+            start = {layer_id for layer_id in resolve_names(base, self.layers, names)
                      if self._selectable(self.layers[layer_id])}
         self.start = frozenset(start)
         self._rows: dict[str, list[tuple[str, str]]] = {}
         self._at: dict[str, frozenset[str]] = {}
 
     def _selectable(self, layer: LayerRow) -> bool:
-        return layer.finished and layer.layer_id not in self.hidden
+        return layer.finished and layer.id not in self.hidden
 
     def rows(self, address: str) -> list[tuple[str, str]]:
-        """The select and mask rows at one address: one primary-key range read, cached."""
+        """The select and mask rows at one address, cached."""
         if address not in self._rows:
-            self._rows[address] = [(row[0], row[1]) for row in self.db.execute(
-                'SELECT layer_id, kind FROM selections WHERE address=?', (address,))]
+            self._rows[address] = sorted((layer_id, kind) for held, layer_id, kind in self.base.selections
+                                         if held == address and layer_id in self.layers)
         return self._rows[address]
 
     def at(self, address: str) -> frozenset[str]:
@@ -137,9 +105,7 @@ class Resolver:
     def reaches(self, layer_id: str, address: str | None) -> bool:
         """Whether a layer's content shows at an address in context."""
         layer = self.layers.get(layer_id)
-        if layer is None:
-            return False
-        if address is None:
+        if layer is None or address is None:
             return False
         return layer_id in self.at(address)
 

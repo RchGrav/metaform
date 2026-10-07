@@ -79,6 +79,8 @@ READS: dict[str, Read] = {
     'layer-graph': Read('layer_graph', (('layer', str),), {}, "One layer's own elements and joins, building or "
                                                               'finished.'),
     'bases': Read('bases', (), dict(PAGING), "The project's bases."),
+    'ops': Read('ops', (), {'after': _int, 'limit': _int}, 'The ops of the log past a sequence, STORE-046.'),
+    'sequence': Read('sequence', (), {}, 'The sequence of the last op of the base, STORE-046.'),
     'active-base': Read('active_base', (), {}, "The project's active base."),
     'project': Read('project', (), {}, 'The project record with its target.'),
 }

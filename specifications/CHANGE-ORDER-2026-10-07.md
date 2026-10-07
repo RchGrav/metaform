@@ -28,7 +28,7 @@ answer, named).
 
 ## 1. Naming: base, id, objects
 
-**Decided.** First, because every later item writes tables and records under these names.
+**Built, 2026-10-07, on branch `store-oplog`, commit `Naming, change order item 1`; STORE-041 amended.** First, because every later item writes tables and records under these names.
 
 - The object a project has one or more of, with its own store, is a **base**; one is active. The layer the intake
   writes is `base`. "Metaform" names only the system. `metaform_id` becomes `base_id`; the `metaforms` table becomes
@@ -47,7 +47,7 @@ answer, named).
 
 ## 2. The store as an event log, the graph in memory
 
-**Decided.** Record to write: STORE-046, drafted on 2026-10-07 in the session; the draft is the text below.
+**Built, 2026-10-07, on branch `store-oplog`; the record is STORE-046.** The draft it was built from is the text below.
 
 - SQLite stays, one file per base in the home, standard library only. Inside it: `ops` (seq, session_id, op, kind,
   id, layer_id, data as JSON; append only), `objects`, `snapshots`, and the modules' own declared tables as today.
@@ -80,7 +80,7 @@ answer, named).
 
 ## 3. The page applies ops
 
-**Decided.** The web page receives the ops since its last sequence and applies them to what is drawn: add this
+**Built, 2026-10-07, on branch `store-oplog`; VIEW-018 amended.** The web page receives the ops since its last sequence and applies them to what is drawn: add this
 node, update that label, move this card. It stops rebuilding the map, the panel and the board on every change.
 This is what ends the shuddering; item 2 makes it possible and does not do it. Done with item 2, not after.
 

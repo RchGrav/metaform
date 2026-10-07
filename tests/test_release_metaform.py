@@ -36,9 +36,10 @@ def test_snapshot_keeps_current_encounters_and_identities_without_working_histor
     before = copy.deepcopy(original)
     document = snapshot(original)
     assert original == before
-    held = document['projects'][0]['metaforms'][0]
-    assert held['metaform']['base_id'] != original['projects'][0]['metaforms'][0]['metaform']['base_id']
-    assert len(held['layers']) == 1 and held['layers'][0]['layer_id'] != layer.id
+    held = document['projects'][0]['bases'][0]
+    assert held['base']['id'] != original['projects'][0]['bases'][0]['base']['id']
+    layers = [op for op in held['ops'] if op['kind'] == 'layer' and op['op'] == 'add']
+    assert len(layers) == 1 and layers[0]['id'] != layer.id
     monkeypatch.setenv('METAFORM_HOME', str(tmp_path / 'other-home'))
     result = import_document(document)
     assert result['notices'] == []
@@ -55,7 +56,7 @@ def test_snapshot_keeps_current_encounters_and_identities_without_working_histor
         assert len(versions) == 1 and versions[0].op == 'add'
         assert versions[0].reason is None and versions[0].evidence is None
     assert not moved.work().results and not moved.messages().results
-    assert export_document(['proj'])['projects'][0]['metaforms'][0]['items'] == []
+    assert [op for op in export_document(['proj'])['projects'][0]['bases'][0]['ops'] if op['kind'] == 'item'] == []
 
 
 @pytest.mark.req('BASE-048')
@@ -72,10 +73,10 @@ def test_bundled_map_imports_explicitly_into_a_fork_and_reimport_is_idle(run, ho
     original = Store('fork')
     small_map(original)
     active = original.active_base()
-    before_import = export_document(['fork'])['projects'][0]['metaforms'][0]
+    before_import = export_document(['fork'])['projects'][0]['bases'][0]
     run('import', str(file), 'fork')
     assert Store('fork').active_base() == active
-    assert export_document(['fork'], metaform=active.name)['projects'][0]['metaforms'][0] == before_import
+    assert export_document(['fork'], metaform=active.name)['projects'][0]['bases'][0] == before_import
     run('map', 'activate', 'metaform-release', cwd=folder)
     read = json.loads(run('map', 'where', 'code.tool.context_engineering', '--json', cwd=folder).stdout)
     assert read['element']['role'] == 'AUE'
@@ -111,7 +112,7 @@ def test_collapse_writes_a_new_active_metaform_with_the_same_ids_and_keeps_the_o
     tick = store.element('code.loop.tick').id
     store.refine(tick, {}, remove=True, reason='part of the timer')
     old = store.active_base()
-    before = export_document(['proj'], metaform=old.name)['projects'][0]['metaforms']
+    before = export_document(['proj'], metaform=old.name)['projects'][0]['bases']
     made = store.collapse('fresh')
     assert made.active and made.name == 'fresh' and made.notices
     fresh = Store('proj')
@@ -126,7 +127,7 @@ def test_collapse_writes_a_new_active_metaform_with_the_same_ids_and_keeps_the_o
     assert len(fresh.layers().results) == 1 and fresh.layers().results[0].ready is not None
     for thing in (outer.id, inner.id, fresh.element('code.timer.kitchen').id):
         assert [version.reason for version in fresh.history(thing).results] == [None]
-    assert export_document(['proj'], metaform=old.name)['projects'][0]['metaforms'] == before
+    assert export_document(['proj'], metaform=old.name)['projects'][0]['bases'] == before
     assert fresh.collapse('fresh').name == 'fresh-2'
 
 

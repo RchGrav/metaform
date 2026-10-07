@@ -26,7 +26,7 @@ from typing import Any, TypeVar, cast
 
 from .. import changes, home, loader
 from ..errors import StoreError
-from . import history, layering, operations, promotion, reads, rows, tables, views, writes
+from . import history, layering, log, operations, promotion, reads, rows, tables, views, writes
 from .paging import LIMIT, sliced
 from .records import (
     Citation,
@@ -521,6 +521,21 @@ class Store:
         with self._read() as tx:
             return reads.layer_graph(tx, layer)
 
+    def cypher(self, query: str) -> Any:
+        """A Cypher query over the base's graph in memory, STORE-046: every stored layer, no selection applied."""
+        with self._read() as tx:
+            return reads.cypher(tx, query)
+
+    def ops(self, after: int = 0, limit: int | None = None) -> list[dict[str, Any]]:
+        """The ops of the log past a sequence, as a page applies them, STORE-046 and VIEW-018."""
+        with self._read() as tx:
+            return log.read_ops(tx.db, after, limit)
+
+    def sequence(self) -> int:
+        """The sequence of the last op of the base, STORE-046."""
+        with self._read() as tx:
+            return tx.base.seq
+
 
     # -------------------------------------------------------------- metaforms
 
@@ -541,7 +556,7 @@ class Store:
         or one, BASE-039."""
         for metaform in home.bases(self.project_id):
             found = Store(self.project_id, base=metaform.id)
-            for layer in found.layers(kind='intake', limit=0).results:
+            for layer in found.layers(kind='base', limit=0).results:
                 if layer.ready is None:
                     return Page((Recording(metaform.id, metaform.name, metaform.active, layer),), None)
         return Page((), None)

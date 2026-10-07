@@ -94,9 +94,9 @@ const KNOWLEDGE = ['--k1', '--k2', '--k3', '--k4', '--k5', '--k6'];
 function colorVar(layerName) {
   const layer = S.layers.find(item => item.name === layerName);
   if (!layer) return '--intake';
-  if (layer.kind === 'intake') return '--intake';
+  if (layer.kind === 'base') return '--intake';  // the base layer, kind base, keeps the intake color
   if (layer.kind === 'memory') return '--memory';
-  const knowledge = S.layers.filter(item => !['intake', 'memory'].includes(item.kind));
+  const knowledge = S.layers.filter(item => !['base', 'memory'].includes(item.kind));
   return KNOWLEDGE[knowledge.indexOf(layer) % KNOWLEDGE.length];
 }
 const layerColor = name => css(colorVar(name));
@@ -531,7 +531,7 @@ function routeOf(data, from, to) {  // the fewest edges of the drawn map from on
  * agent that is not active is not on the map, whatever its ticket says; when its session ends the figure walks back
  * and is gone. */
 const liveWork = () => new Set(D.sessions.filter(one => one.activity === 'working')
-  .map(one => one.id));
+  .map(one => one.work_id));
 function figures(tickets) {
   figures2d(tickets);
   if (!G) return;
@@ -2398,7 +2398,7 @@ function renderEntity(name, pane = $('#p-object')) {
     one.key ? h('a', {class: 'link', href: '#', onclick: event => { event.preventDefault(); enter(one.key); }}, nameOf(one.key))
       : h('b', {}, joinPlace(one)),
     one.orphaned ? h('small', {}, ' · orphaned, the map no longer holds it') : one.key ? h('small', {}, '; Enter goes there.') : null,
-    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.id}])}, 'Take away')));
+    h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: () => memoryWrite(['unjoin', {id: one.join_id}])}, 'Take away')));
   const renaming = draft('rename');
   const naming = h('div', {class: 'naming', hidden: !EDITING.has(renaming)},
     h('input', {class: 'name', 'data-draft': draft('name'), value: name, 'aria-label': 'Name'}),
@@ -2469,7 +2469,7 @@ async function orphans() {
     lost.length ? lost.map(join => h('div', {class: 'ticket orphan'}, h('b', {}, join.entity),
       h('p', {class: 'note'}, `was attached to ${joinPlace(join)}`),
       h('div', {class: 'acts'}, h('button', {class: 'unjoin', onclick: async () => {
-        if (await memoryWrite(['unjoin', {id: join.id}])) orphans(); }}, 'Take away the join'),
+        if (await memoryWrite(['unjoin', {id: join.join_id}])) orphans(); }}, 'Take away the join'),
         h('button', {class: 'forget', onclick: async () => {
           if (await memoryWrite(['delete_entities', {entityNames: [join.entity]}])) orphans(); }}, 'Delete memory'))))
       : h('p', {class: 'empty'}, 'No memory join is orphaned.'),
@@ -2542,7 +2542,7 @@ async function renderVotes() {
       one.said.length ? h('div', {class: 'said'}, one.said.map(said => h('p', {}, h('b', {}, said.kind === 'write-in' ? 'Wrote in: ' : 'Commented: '), said.text))) : null,
       one.still_applied ? h('button', {class: 'reopen', title: 'Undo this answer: the question waits for an answer again', onclick: async event => {
         event.target.disabled = true;
-        if (await wrote('/api/reopen', {id: one.id})) { toast('Reopened.'); renderVotes(); } else event.target.disabled = false;
+        if (await wrote('/api/reopen', {id: one.message_id})) { toast('Reopened.'); renderVotes(); } else event.target.disabled = false;
       }}, 'Reopen') : null)));
 }
 $('#votesBtn').onclick = async () => { showAgentMenu(false); $('#votes').hidden = false; await renderVotes(); };
@@ -3037,10 +3037,10 @@ async function renderMerges() {
   try { MERGE.rows = (await read('merges')).merges || []; } catch { MERGE.rows = []; }
   const at = seconds => new Date(seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   fill($('#reviewNotice'), MERGE.rows.map(row => {
-    const ticket = (B.tickets || []).find(one => one.id === row.id);
+    const ticket = (B.tickets || []).find(one => one.id === row.work_id);
     return h('div', {class: 'notice'}, h('b', {}, 'Review.'),
       h('span', {}, ` ${ticket ? (ticket.task || ticket.note || '').slice(0, 80) : row.branch} · merges by itself at ${at(row.deadline)}`),
-      h('button', {onclick: event => takeReview(row.id, event.target)}, 'Review'));
+      h('button', {onclick: event => takeReview(row.work_id, event.target)}, 'Review'));
   }));
   $('#reviewNotice').hidden = !MERGE.rows.length;
 }
@@ -3116,13 +3116,13 @@ async function dockCommand(text) {
     let found = [];
     try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { return dockNote(error.message); }
     DOCK.list = found.filter(one => one.state === 'running');
-    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${ticketPart(ticketOf(one.id))}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
+    return dockNote(DOCK.list.length ? DOCK.list.map((one, index) => `${index + 1}. ${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}${one.activity ? ' · ' + one.activity : ''}`).join('\n')
       : 'No agent is at work right now.');
   }
   if (command === 'chat') {
     const chosen = DOCK.list[Number(rest[0]) - 1];
     if (!chosen) return dockNote('Type /list first, then /chat with the number of the agent.');
-    openHelpdesk(chosen.id, `${agentName(chosen.agent)} on ${ticketPart(ticketOf(chosen.id))}`, 'It answers when its current step ends.',
+    openHelpdesk(chosen.work_id, `${agentName(chosen.agent)} on ${ticketPart(ticketOf(chosen.work_id))}`, 'It answers when its current step ends.',
       chosen.session_id);
     return dockNote(`You are now talking with ${DOCK.label}. Its work goes on while you talk.`);
   }
@@ -3137,21 +3137,21 @@ async function callSystem() {
   const call = DOCK.calling = {};
   const started = await wrote('/api/system-chat', {});
   if (DOCK.calling !== call) {  // dismissed while it was being reached: it is stopped as soon as it answers
-    if (started) await wrote('/api/dispatch-stop', {work_id: started.id});
+    if (started) await wrote('/api/dispatch-stop', {work_id: started.work_id});
     return;
   }
   DOCK.calling = null;
   if (!started) { $('#helpdesk .call').textContent = 'Call'; return; }
-  DOCK.mine = started.id;
-  openHelpdesk(started.id, 'your system agent', STANDBY, started.session_id);
+  DOCK.mine = started.work_id;
+  openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id);
 }
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
  * agent at work on it is talked to directly; otherwise one starts to talk, and Dismiss stops it. */
 async function talkAbout(given, label) {
   const started = await wrote('/api/talk', given);
   if (!started) return;
-  if (started.conversation) DOCK.mine = started.id;
-  openHelpdesk(started.id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
+  if (started.conversation) DOCK.mine = started.work_id;
+  openHelpdesk(started.work_id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
     started.session_id);
 }
 const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
@@ -3559,14 +3559,14 @@ async function history(id) {
     ticket.resolution ? h('p', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
     chatButton({id: ticket.id}, ticketPart(ticket)),
     // each agent sent to work it, and its session's log, VIEW-036 and VIEW-039
-    ...dispatched.filter(one => one.id === ticket.id).map(one => h('div', {class: 'dispatch'},
+    ...dispatched.filter(one => one.work_id === ticket.id).map(one => h('div', {class: 'dispatch'},
       h('span', {}, `${agentName(one.agent)} sent ${when(one.started)} · `
         + (one.state === 'running' ? 'working' : `ended${one.how ? `, ${one.how}` : ''}`)),
-      chatButton(one.state === 'running' ? {id: one.id} : {session: `${one.id}:${one.session_id}`},
+      chatButton(one.state === 'running' ? {id: one.work_id} : {session: `${one.work_id}:${one.session_id}`},
         `${agentName(one.agent)} on ${ticketPart(ticket)}`),
       h('button', {class: 'log', title: "The session's whole thread", onclick: async () => {
         await renderAgents();
-        agentAt(one.id, one.session_id);
+        agentAt(one.work_id, one.session_id);
       }}, 'Open log')))))
     : h('p', {class: 'empty'}, 'No work here yet.'));
   $('#float').hidden = false;
@@ -3665,13 +3665,13 @@ async function questionChat(record, metaform) {
   const project = S.project;
   const found = await wrote('/api/dispatch-chat', {id: record.id, metaform, agent: $('#dispatch select.agent').value});
   if (!found || S.project !== project || S.base !== metaform) return;
-  if (found.conversation) DOCK.mine = found.id;  // Dismiss stops a conversation agent, never ticket work
-  openHelpdesk(found.id, `${agentName(found.agent)} on the question`,
+  if (found.conversation) DOCK.mine = found.work_id;  // Dismiss stops a conversation agent, never ticket work
+  openHelpdesk(found.work_id, `${agentName(found.agent)} on the question`,
     found.state === 'running' ? 'It answers when its current step ends.' : STANDBY, found.session_id);
 }
 const waiting = ticket => !ticket.done && !ticket.taken && ticket.condition !== 'exclude'
   && !D.sessions.some(one => one.state === 'running'
-    && (one.id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.id)) === ownGlyph(ticket))));
+    && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
 const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id === workId);
 function ticketPart(ticket) {
   const element = ticket?.address ? partAt(ticket.address) : null;
@@ -3767,23 +3767,23 @@ async function renderAgents() {
   D.sessions = found.sessions || [];
   if (D.chat) {
     const pending = D.chat;
-    const session = D.sessions.find(one => one.id === pending.work && one.state === 'running'
+    const session = D.sessions.find(one => one.work_id === pending.work && one.state === 'running'
       && (pending.session ? one.session_id === pending.session : !pending.known.has(one.session_id)));
-    if (session) { D.chat = null; agentAt(session.id, session.session_id); }
+    if (session) { D.chat = null; agentAt(session.work_id, session.session_id); }
   }
   if (!$('#board').hidden) drawBoard();
   // at work: a session whose runner says a turn is executing, the same ones the map's figures follow
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.id, one.agent, glyphOf(one.id), ticketPart(ticketOf(one.id))].join('\n'),
+    text: [one.work_id, one.agent, glyphOf(one.work_id), ticketPart(ticketOf(one.work_id))].join('\n'),
     make: () => h('div', {class: 'agent-row'}, h('button', {
-      class: 'agent working', 'data-id': one.id, 'data-session': one.session_id,
-      title: `${agentName(one.agent)} on work ${one.id}: working`,
-      onclick: () => agentAt(one.id, one.session_id)},
-      h('img', {src: glyphOf(one.id), alt: glyphFor(one.id)}), h('b', {}, agentName(one.agent)),
-      h('small', {}, `on ${ticketPart(ticketOf(one.id))} · working`)),
-      chatButton({id: one.id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.id))}`))})));
+      class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
+      title: `${agentName(one.agent)} on work ${one.work_id}: working`,
+      onclick: () => agentAt(one.work_id, one.session_id)},
+      h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentName(one.agent)),
+      h('small', {}, `on ${ticketPart(ticketOf(one.work_id))} · working`)),
+      chatButton({id: one.work_id}, `${agentName(one.agent)} on ${ticketPart(ticketOf(one.work_id))}`))})));
   $('#agents').hidden = !working.length;
   figures(S.tickets || []);  // the map's figures follow the same sessions
   if (D.work) await drawAgent();
@@ -3800,7 +3800,7 @@ function agentAt(workId, sessionId = null) {
  * drawn again, so a map change keeps it, VIEW-018. */
 async function drawAgent() {
   const work = D.work;
-  const session = D.sessions.filter(one => one.id === work && (!D.session || one.session_id === D.session)).at(-1);
+  const session = D.sessions.filter(one => one.work_id === work && (!D.session || one.session_id === D.session)).at(-1);
   const {agent, session_id: sessionId, state} = session || {};
   const ticket = ticketOf(work);
   $('#agent .icon').src = glyphOf(work);
@@ -3819,7 +3819,7 @@ async function drawAgent() {
   D.notes = notes;
   const thread = $('#agent .activity');
   const following = !thread.childElementCount || thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 24;
-  keyedFill(thread, D.notes.filter(line => line.id === work && (!sessionId || line.session_id === sessionId))
+  keyedFill(thread, D.notes.filter(line => line.work_id === work && (!sessionId || line.session_id === sessionId))
     .map(line => ({key: `${line.session_id}:${line.name ?? line.seq}`, text: `${line.kind}\n${line.text}`,
       make: () => h('li', {class: THREAD[line.kind] || 'note'},
         h('small', {}, DOING[line.kind] || line.kind || ''), ...linked(line.text))})));
@@ -3838,7 +3838,7 @@ async function drawAgent() {
 // The task shows in three lines, so the conversation always has the window; a click unfolds it, within a third.
 $('#agent .task').onclick = () => $('#agent .task').classList.toggle('open');
 $('#agent .chat').onclick = () => {
-  const session = D.sessions.filter(one => one.id === D.work && (!D.session || one.session_id === D.session)).at(-1);
+  const session = D.sessions.filter(one => one.work_id === D.work && (!D.session || one.session_id === D.session)).at(-1);
   const label = `${agentName(session?.agent)} on ${ticketPart(ticketOf(D.work))}`;
   talkAbout(!session || session.state === 'running' ? {id: D.work} : {session: `${D.work}:${session.session_id}`}, label);
 };
@@ -4353,7 +4353,7 @@ async function renderPrompt(name = P.name, number = P.number) {
   P.editor.setValue(version.text);
   P.editor.clearHistory();
   $('#diffOut').hidden = true;
-  const names = new Map(S.layers.map(layer => [layer.layer_id, layer.name]));
+  const names = new Map(S.layers.map(layer => [layer.id, layer.name]));
   const made = version.layers.map(use => names.get(use.layer_id) || `a layer of ${use.project_id}`);
   $('#promptNote').textContent = made.length ? `Version ${version.number} made: ${made.join(', ')}.`
     : `No layer was made with version ${version.number}.`;
@@ -4412,7 +4412,7 @@ function toast(message) { const box = $('#toast'); box.textContent = message; bo
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
-const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, done: 0, drawn: -Infinity};
+const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, named: null, done: 0, drawn: -Infinity};
 const following = () => LIVE.layer !== null && S.base === LIVE.base;
 async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -4468,7 +4468,7 @@ async function changed(event) {
   if (named === 'dispatch' || Array.isArray(named) && named.length && named.every(table => String(table).startsWith('dispatch.'))) return;
   const tickets = ticketsOnly(event.payload);
   if (tickets && event.payload.base_id && event.payload.base_id !== S.base) return;  // another metaform's
-  if (!tickets) LIVE.whole = true;
+  if (!tickets) { LIVE.whole = true; LIVE.named = LIVE.named && opsOnly(LIVE.named) ? [...LIVE.named, ...(named || [])] : named || null; }
   if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
   try {
@@ -4477,6 +4477,7 @@ async function changed(event) {
       LIVE.again = false;
       if (!LIVE.whole && S.whole && !LIVE.layer) { await ticketsChanged(); continue; }
       LIVE.whole = false;
+      const named = LIVE.named; LIVE.named = null;
       LIVE.drawn = performance.now();  // a whole reload: the next waits SPACING, a ticket change does not
       const found = (await read('intake-recording')).results[0] || null;
       if (found || LIVE.layer) { await follow(found ? {layer: found.layer.name, base_id: found.base_id} : null); continue; }
@@ -4484,6 +4485,7 @@ async function changed(event) {
       const same = metaforms.length === S.bases.length && metaforms.every(item =>
         S.bases.some(known => known.id === item.id && known.active === item.active));
       if (!same) await loadProject();  // the project's metaforms changed: show the active one, as on opening
+      else if (opsOnly(named) && await appliedOps()) { await ticketsChanged(); continue; }  // the ops since the drawn sequence, applied
       else {
         S.layers = (await read('layers', {limit: 0})).results;
         renderChips();
@@ -4492,6 +4494,104 @@ async function changed(event) {
       boardFromTickets();  // the work the map's read took, not read again
     } while (LIVE.again);
   } catch (error) { toast(error.message); } finally { LIVE.busy = false; LIVE.done++; }
+}
+/* The ops since the drawn sequence, applied to what is drawn, STORE-046 and VIEW-018: an element or a join added,
+ * changed or removed, an item or a property of a layer in view. The map, the panel and the board are drawn from what
+ * changed, not read again. A change to a layer's declaration or to a selection changes what is in view, and so does an
+ * op of a layer the page cannot place; those fall back to the whole read. Returns whether the ops were applied. */
+const plainWords = address => address.split('.').reverse().map(part => part.replace(/_/g, ' ')).join(' ');
+const shortName = (address, length) => {
+  const parts = address.split('.');
+  return !length || length > parts.length ? plainWords(address) : plainWords(parts.slice(-length).join('.'));
+};
+function layerInView(layerId) {
+  const layer = S.layers.find(item => item.id === layerId);
+  if (!layer || !layer.ready) return null;
+  if (layer.kind === 'base') return layer;
+  const shown = S.view === null ? layer.on : S.view.has(layer.name);
+  return shown ? layer : false;
+}
+function nearestParent(address) {
+  const parts = address.split('.');
+  const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
+  for (let n = parts.length - 1; n > 0; n--) {
+    const prefix = parts.slice(0, n).join('.');
+    if (byAddress.has(prefix)) return prefix;
+  }
+  return null;
+}
+function heldOf(ids) {
+  return ids.map(id => {
+    const entry = S.elements.get(id);
+    const element = entry ? entry.element : {address: null, name_length: null, name: null, role: null};
+    return {element_id: id, address: element.address, short_name: entry ? element.short_name : '',
+      name_length: element.name_length, name: element.name, role: element.role};
+  });
+}
+async function appliedOps() {
+  if (following() || !S.whole || typeof S.seq !== 'number') return false;
+  const ops = await read('ops', {after: S.seq, limit: 0});
+  if (!Array.isArray(ops) || !ops.length) return true;  // nothing of the map changed: the tickets are read beside
+  for (const op of ops) {
+    if (op.kind === 'layer' || op.kind === 'selection') return false;  // what is in view may have changed
+    if (op.kind === 'type') continue;
+    const layer = layerInView(op.layer_id);
+    if (layer === null && op.op !== 'remove') return false;  // a layer this page has not read yet
+    if (layer === false) continue;  // not in view: nothing to draw
+    const data = op.data || {};
+    const gone = op.op === 'remove';
+    if (op.kind === 'element') {
+      if (gone) { S.elements.delete(op.id); continue; }
+      const kept = S.elements.get(op.id)?.element || {};
+      const element = {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name,
+        ...('address' in data ? {address: data.address} : {}), ...('name' in data ? {name: data.name} : {}),
+        ...('name_length' in data ? {name_length: data.name_length} : {}), ...('role' in data ? {role: data.role} : {})};
+      if (!element.address) return false;
+      element.reading = plainWords(element.address);
+      element.short_name = shortName(element.address, element.name_length);
+      element.open_work = kept.open_work || [];
+      S.elements.set(op.id, {element, parent: nearestParent(element.address)});
+    } else if (op.kind === 'join') {
+      S.joins = S.joins.filter(join => join.id !== op.id);
+      if (gone) continue;
+      const before = S.whole.joins.find(join => join.id === op.id) || {};
+      const held = 'held' in data ? data.held : before.providers || [];
+      const receiver = 'receiver' in data ? data.receiver : before.receiver;
+      const join = {id: op.id, layer_id: op.layer_id, layer: layer.name, type: data.type ?? before.type ?? 'purpose',
+        receiver, receiver_address: S.elements.get(receiver)?.element.address ?? null,
+        purpose: 'purpose' in data ? data.purpose : before.purpose ?? null, ef: 'ef' in data ? data.ef : before.ef ?? null,
+        ifd: 'ifd' in data ? data.ifd : before.ifd ?? null, elements: heldOf(held), open_work: before.open_work || [],
+        element: 'element' in data ? data.element : before.element ?? null};
+      S.joins.push(withProviders(join));
+    } else if (op.kind === 'item' || op.kind === 'property') {
+      const key = (op.kind === 'item' ? 'i:' : 'r:') + op.id;
+      if (gone) { S.items.delete(key); continue; }
+      const kept = S.items.get(key)?.item || {};
+      const value = 'value' in data ? JSON.parse(data.value) : kept.value;
+      const refs = 'refs' in data ? data.refs.map(([k, v]) => ({key: k, value: v})) : kept.refs || [];
+      const extra = 'extra' in data ? (data.extra ? JSON.parse(data.extra) : null) : kept.extra ?? null;
+      const item = op.kind === 'item'
+        ? {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name, value, refs, extra,
+           target: 'target_kind' in data ? {kind: data.target_kind, id: data.target_id} : kept.target,
+           link: 'link_kind' in data ? (data.link_kind ? {kind: data.link_kind, id: data.link_id} : null) : kept.link ?? null,
+           read_first: 'read_first' in data ? !!data.read_first : !!kept.read_first,
+           always_show: 'always_show' in data ? !!data.always_show : !!kept.always_show}
+        : {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name, value, refs, extra,
+           element_id: 'element_id' in data ? data.element_id : kept.element_id,
+           address: S.elements.get('element_id' in data ? data.element_id : kept.element_id)?.element.address ?? null};
+      if (op.kind === 'item' && !item.target) return false;
+      S.items.set(key, {kind: op.kind, key, item, value, layer: layer.name, layerKind: layer.kind});
+    }
+  }
+  for (const entry of S.elements.values()) entry.parent = nearestParent(entry.element.address);
+  S.whole = {elements: S.elements, joins: S.joins};
+  S.seq = ops[ops.length - 1].seq;
+  draw3D();
+  renderLegend();
+  await build2D();
+  if (S.selected && (S.elements.has(S.selected) || joinOf(S.selected))) await select(S.selected, false, false, false, true);
+  else if (S.selected) { const start = [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id || S.elements.keys().next().value; if (start) await select(start, false, false, false, true); }
+  return true;
 }
 /* Agents write several times a second. The whole map is read again at most once every SPACING, and nothing is drawn
  * while the person is zooming or dragging, so nothing moves under their hands; the changes in between are read
@@ -4515,6 +4615,10 @@ const TICKET_TABLES = new Set(['work', 'work_links', 'work_steps', 'messages', '
   'map.question_work']);
 const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.length > 0
   && payload.tables.every(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
+/* A change the page can apply from the ops alone, STORE-046: the log, the objects registry, the kinds of op, and the
+ * tickets' tables; a module's own table, such as the memory graph's, is read again whole. */
+const opsOnly = named => Array.isArray(named) && named.length > 0 && named.every(table => table === 'ops'
+  || table === 'objects' || String(table).startsWith('op:') || TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
 /* A change to tickets or messages alone: work and the open messages are read once each, and the nodes' lights, the
  * figures, the board and the selected node's panel are drawn from them, VIEW-035 and VIEW-037. */
 async function ticketsChanged() {
@@ -4602,7 +4706,7 @@ function listen() {
  * as in every read, VIEW-017. */
 async function itemsOf(generation) {
   const found = new Map();
-  for (const layer of S.layers.filter(item => item.ready && item.kind !== 'intake')) {
+  for (const layer of S.layers.filter(item => item.ready && item.kind !== 'base')) {
     let after = null;
     do {
       const page = await read('layer-items', {layer: layer.name, in_context: 'true', limit: 500, ...(after ? {after} : {}), ...viewLayers()});
@@ -4663,6 +4767,8 @@ async function readGraph(agents) {
     } while (after);
     whole = true;
     S.whole = {elements: S.elements, joins: S.joins};
+    S.seq = await read('sequence');  // the sequence the map drawn is at; the ops after it are applied, STORE-046
+    if (stale()) return;
     const items = await itemsOf(generation);
     if (stale()) return;
     S.items = items;

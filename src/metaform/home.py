@@ -745,7 +745,8 @@ def intake_exists() -> bool:
     for path in sorted(root.glob(f'*/*{STORE_SUFFIX}')) if root.is_dir() else ():
         try:
             with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as db:
-                if db.execute("SELECT 1 FROM layers WHERE kind='intake' LIMIT 1").fetchone():
+                if db.execute("SELECT 1 FROM ops WHERE kind='layer' AND op='add' AND "
+                              "json_extract(data, '$.kind') IN ('base', 'intake') LIMIT 1").fetchone():
                     return True
         except sqlite3.Error:
             continue

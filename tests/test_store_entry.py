@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from storekit import dump, knowledge, plans, record_intake, small_map, store_file
+from storekit import dump, knowledge, ops, plans, record_intake, small_map, store_file
 
 from metaform.data import Node, Store
 
@@ -22,11 +22,11 @@ def test_the_entry_is_the_ve_and_de_with_their_joins_and_every_root_element(home
     tables = dump(store_file(home, store))
     assert 'element_roles' not in tables
     # The tick loop a join holds is an element as any other, Rich's shape, 2026-10-04.
-    assert sorted(row[3] for row in tables['current_elements']) == ['CQU', 'DE', 'SE', 'SE']
+    assert sorted(op['data']['role'] for op in ops(store_file(home, store), 'element')) == ['CQU', 'DE', 'SE', 'SE']
     traced.clear()
     roots = store.roots()
-    lines = [line for _, plan in plans(home, store, traced) for line in plan]
-    assert any('current_elements_by_role' in line for line in lines)
+    # The entry answers from the graph in memory, STORE-046: no table of elements is read for it.
+    assert not any('FROM elements' in statement or 'current_elements' in statement for statement in traced)
     entry = {item.element.address: [[each.address for each in join.elements] for join in item.joins]
              for item in roots.entry}
     assert entry == {'stakeholder.cook.home': [['code.timer.kitchen', 'code.loop.tick']],
@@ -99,8 +99,10 @@ def test_a_work_record_is_its_own_row_apart_from_the_map_and_reads_back_on_its_o
     assert len(dump(store_file(home, store))['work']) == 2
     again = store.finish_work(missing.id, 'a second resolution')
     assert again.resolution == 'released in alarm.c' and [notice.where for notice in again.notices] == ['id']
-    document = export_document(['proj'])['projects'][0]['metaforms'][0]
-    assert sorted(row['condition'] for row in document['work']) == ['broken', 'missing']
+    document = export_document(['proj'])['projects'][0]['bases'][0]
+    work = next(entry['rows']['work'] for entry in document.get('extensions', []) + document.get('modules', [])
+                if 'work' in entry['rows'])
+    assert sorted(row['condition'] for row in work) == ['broken', 'missing']
 
 
 @pytest.mark.req('STORE-042')

@@ -61,10 +61,11 @@ Row = DataRow
 ANSWERS = ("A", "B", "C")
 WORK_FIELDS = ("condition", "note", "task", "held", "reviewed")
 REPORT_KINDS = ("report", "feedback", "shape")
-JOINS_AT = (  # the current joins an element receives or holds
-    "SELECT join_id FROM current_joins WHERE receiver=? UNION SELECT c.join_id FROM join_elements e "
-    "JOIN current_joins c ON c.row = e.join_row WHERE e.element_id=?"
-)
+
+
+def joins_at(tx: Tx, element_id: str) -> list[str]:
+    """The current joins an element receives or holds, STORE-046."""
+    return sorted(set(tx.base.joins_received(element_id)) | set(tx.base.joins_holding(element_id)))
 
 
 def _work_text(value: Any, field: str, notices: list[Notice]) -> str | None:
@@ -457,8 +458,10 @@ def work(
         where: list[str] = ["row > ?"]
         params: list[Any] = [int(cursor or 0)]
         if target is not None and around:
-            where.append(f"(target_kind=? AND target_id=? OR target_kind='join' AND target_id IN ({JOINS_AT}))")
-            params.extend((*target, *[target[1]] * 2))
+            held = joins_at(tx, target[1])
+            marks = ', '.join('?' for _ in held) or "''"
+            where.append(f"(target_kind=? AND target_id=? OR target_kind='join' AND target_id IN ({marks}))")
+            params.extend((*target, *held))
         elif target is not None:
             where.append("target_kind=? AND target_id=?")
             params.extend(target)
@@ -778,10 +781,9 @@ def approve(tx: Tx, item_id: str) -> ChallengeState:
     tx.execute("UPDATE challenge_states SET state='plan', approved=? WHERE item_id=?", (stamp, item_id))
     if item["target_kind"] == "element":
         element_id = str(item["target_id"])
-        added = tx.execute(
-            "SELECT 1 FROM elements WHERE element_id=? AND layer_id=? AND op='add'", (element_id, found.layer_id)
-        ).fetchone()
-        if added is not None:
+        added = any(version.op == 'add' and version.layer_id == found.id
+                    for version in tx.base.versions.get(element_id, ()))
+        if added:
             tx.execute(
                 "INSERT OR IGNORE INTO plans(element_id, join_id, layer_id, source, item_id) VALUES (?, ?, ?, ?, ?)",
                 (element_id, _join_in_layer(tx, element_id, found.layer_id), found.layer_id, "approved", item_id),
@@ -791,13 +793,11 @@ def approve(tx: Tx, item_id: str) -> ChallengeState:
 
 def _join_in_layer(tx: Tx, element_id: str, layer_id: str) -> str | None:
     """The first join of the layer that holds the element, or else the first it receives."""
-    for sql in (("SELECT c.join_id FROM join_elements e JOIN current_joins c ON c.row = e.join_row JOIN joins j "
-                "ON j.row = c.row WHERE e.element_id=? AND j.layer_id=? ORDER BY c.row LIMIT 1"),
-                ("SELECT c.join_id FROM current_joins c JOIN joins j ON j.row = c.row "
-                "WHERE c.receiver=? AND j.layer_id=? ORDER BY c.row LIMIT 1")):
-        row = tx.execute(sql, (element_id, layer_id)).fetchone()
-        if row is not None:
-            return str(row[0])
+    for held in (tx.base.joins_holding(element_id), tx.base.joins_received(element_id)):
+        found = [(version.seq, join_id) for join_id in held
+                 if (version := tx.base.current(join_id)) is not None and version.layer_id == layer_id]
+        if found:
+            return min(found)[1]
     return None
 
 
@@ -809,10 +809,7 @@ def add_plan(tx: Tx, layer: str, element: Any, join: str | None) -> Plan:
     join_id: str | None = None
     if join:
         kind, join_id = tx.rows.node_at(Node("join", join), found, "join", notices)
-        if (
-            not tx.rows.target_current(kind, join_id)
-            and not tx.execute("SELECT 1 FROM join_ids WHERE join_id=?", (join_id,)).fetchone()
-        ):
+        if not tx.rows.target_current(kind, join_id) and tx.base.kinds.get(str(join_id)) != 'join':
             join_id = None
     tx.execute(
         "INSERT INTO plans(element_id, join_id, layer_id, source, item_id) VALUES (?, ?, ?, ?, NULL) "
@@ -844,9 +841,9 @@ CREATE INDEX IF NOT EXISTS challenge_states_by_state ON challenge_states(state);
         "plans",
         """
 CREATE TABLE IF NOT EXISTS plans(
-  element_id TEXT PRIMARY KEY REFERENCES element_ids(element_id),
-  join_id    TEXT REFERENCES join_ids(join_id),
-  layer_id   TEXT NOT NULL REFERENCES layers(layer_id),
+  element_id TEXT PRIMARY KEY,
+  join_id    TEXT,
+  layer_id   TEXT NOT NULL,
   source     TEXT NOT NULL CHECK(source IN ('direct','approved')),
   item_id    TEXT
 );
@@ -937,7 +934,7 @@ CREATE INDEX IF NOT EXISTS messages_by_closed ON messages(closed, row);
 CREATE TABLE IF NOT EXISTS reports(
   report_id TEXT PRIMARY KEY,
   run_id    TEXT NOT NULL,
-  layer_id  TEXT REFERENCES layers(layer_id),
+  layer_id  TEXT,
   kind      TEXT NOT NULL CHECK(kind IN ('report','feedback','shape')),
   created   TEXT NOT NULL,
   size      INTEGER NOT NULL
@@ -1047,7 +1044,7 @@ def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:
 
 
 TABLES = Tables(
-    version=6,
+    version=7,  # 7: no foreign keys into the chassis's tables, which the op log replaced, STORE-046
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,
     tables=(*FEATURE_TABLES, Table(

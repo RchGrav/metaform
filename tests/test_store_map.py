@@ -6,9 +6,9 @@ import re
 import sqlite3
 
 import pytest
-from storekit import diff, dump, intake, knowledge, memory, small_map, store_file, values
+from storekit import diff, dump, intake, knowledge, memory, ops, small_map, store_file, values
 
-from metaform.data import Node
+from metaform.data import Node, Store
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -22,7 +22,7 @@ def test_adding_one_ref_to_an_item_with_a_thousand_writes_one_row(home, store):
     item = store.add_item(layer.name, Node('element', 'code.a'), 'a', refs=[('path', f'file{n}.c') for n in range(1000)])
     before = dump(store_file(home, store))
     store.add_ref(item.id, 'path', 'one-more.c')
-    assert diff(before, dump(store_file(home, store))) == {'refs': (1, 0)}
+    assert diff(before, dump(store_file(home, store))) == {'ops': (1, 0)}  # one op carries the refs, STORE-046
 
 
 @pytest.mark.req('STORE-007')
@@ -37,8 +37,9 @@ def test_identity_ids_are_32_lowercase_hex(store):
 def test_an_address_writes_itself_and_every_prefix_as_types(home, store):
     layer = knowledge(store, 'types')
     store.add_element(layer.name, 'code.engine.game.fps')
-    db = sqlite3.connect(store_file(home, store))
-    assert set(db.execute('SELECT address, parent FROM types')) == {
+    with Store('proj')._read() as tx:  # the Type tree is read from the projection, STORE-046
+        types = dict(tx.base.types)
+    assert set(types.items()) == {
         ('code', None), ('code.engine', 'code'), ('code.engine.game', 'code.engine'),
         ('code.engine.game.fps', 'code.engine.game')}
     assert store.children('code').results == ('code.engine',)
@@ -71,7 +72,7 @@ def test_an_item_at_a_bare_type_address_makes_an_element_there_and_says_so(home,
     assert [notice.where for notice in item.notices] == ['target']
     assert 'data.bill_of_materials' in item.notices[0].message
     changed = diff(before, dump(store_file(home, store)))
-    assert changed['elements'] == (1, 0) and changed['items'] == (1, 0)
+    assert changed['ops'] == (2, 0) and changed['objects'] == (2, 0)  # the element and the item, STORE-046
 
 
 @pytest.mark.req('STORE-009')
@@ -151,7 +152,7 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
         layer = intake(store)
         store.add_element(layer.name, 'code.timer.kitchen', name_length=2, role='DE')
     changed = diff(before, dump(store_file(home, store)))
-    assert changed['elements'] == (1, 0) and 'refs' not in changed and 'items' not in changed
+    assert changed == {'ops': (2, 0), 'objects': (1, 0)}  # the layer and the element alone: no ref, no item, STORE-046
     element = store.element('code.timer.kitchen')
     assert (element.address, element.name_length, element.role, element.short_name, element.reading) == (
         'code.timer.kitchen', 2, 'DE', 'kitchen timer', 'kitchen timer code')
@@ -159,8 +160,8 @@ def test_an_element_is_its_address_name_length_and_role(home, store):
     assert 'refs' not in element.to_dict() and 'extra' not in element.to_dict()
     # Rich, 2026-10-01: a name goes anywhere there is a namespace and name length; it is the element's own field
     assert 'descriptors' not in element.to_dict() and element.name is None
-    columns = {row[1] for row in sqlite3.connect(store_file(home, store)).execute('PRAGMA table_info(elements)')}
-    assert {'name_length', 'name', 'role'} <= columns
+    [made] = [op for op in ops(store_file(home, store), 'element') if op['id'] == element.id]
+    assert {'name_length', 'name', 'role'} <= set(made['data'])  # the element's own fields, on its op
 
 
 @pytest.mark.req('STORE-009')
@@ -316,18 +317,15 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
     db = sqlite3.connect(store_file(home, store))
     try:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        columns = {table: [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
-                   for table in ('join_ids', 'joins', 'current_elements', 'join_elements')}
         version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        kinds = {row[0] for row in db.execute('SELECT type FROM joins')}
-        held = db.execute('SELECT COUNT(*) FROM join_elements').fetchone()[0]
     finally:
         db.close()
-    assert not {'subtypes', 'subtype_ids', 'unapplied', 'current_subtypes'} & tables
-    assert columns['join_ids'] == ['join_id'] and 'parent' not in columns['joins'] and 'stack_at' not in columns['joins']
-    assert 'moved' not in columns['current_elements']
-    assert columns['join_elements'] == ['join_row', 'position', 'element_id'] and held == 3
-    assert version == '20' and kinds == {'purpose'}  # MAP-054 adds the optional promotion address.
+    assert not {'subtypes', 'subtype_ids', 'unapplied', 'current_subtypes', 'joins', 'join_elements'} & tables
+    joins = ops(store_file(home, store), 'join')
+    assert {op['data']['type'] for op in joins} == {'purpose'}  # MAP-054 adds the optional promotion address.
+    assert sum(len(op['data']['held']) for op in joins) == 3  # a join holds its elements in order, STORE-046
+    assert all(set(op['data']) >= {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'} for op in joins)
+    assert version == '21'
     assert 'correction_stack' not in tables
 
 
