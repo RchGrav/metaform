@@ -29,22 +29,25 @@ def surfaced(folder: Path) -> list[Module]:
     return [module for module in sorted(loader.enabled(), key=lambda item: item.id) if on_surface(module.id, folder)]
 
 
-def _added(module: Module, folder: Path, project: str | None) -> str | None:
-    """The instruction a module's status hook gives for the state the folder is in, VIEW-015."""
+def _added(module: Module, folder: Path, project: str | None, *, full: bool) -> str | None:
+    """The instruction a module's status hook gives for the state the folder is in, VIEW-015; in the compact
+    connect-time text only when the hook puts it there, MCP-037."""
     if module.status is None:
         return None
     try:
         got = call(module.status, context.build(module.id, folder, project=project, resolve=False))
     except Exception:  # noqa: BLE001  a failing hook adds nothing to the instructions
         return None
-    return got.instruction if isinstance(got, Status) else None
+    if not isinstance(got, Status) or (not full and not got.at_connect):
+        return None
+    return got.instruction
 
 
 def _listed(module: Module, folder: Path, project: str | None, *, full: bool = True) -> str | None:
     """A module's line under "modules available.": its instructions prompt, or with full off the `active` line,
     then the instruction its status hook gives."""
     own = prompt_files.module(module.id, 'instructions') if full else prompt_files.chassis('active', module=module.id)
-    return ' '.join(part for part in (own, _added(module, folder, project)) if part) or None
+    return ' '.join(part for part in (own, _added(module, folder, project, full=full)) if part) or None
 
 
 def module_text(folder: Path, identifier: str, project: str | None = None) -> str | None:

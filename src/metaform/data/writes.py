@@ -155,12 +155,16 @@ def add_join(tx: Tx, layer: str, receiver: Any, elements: Any, *, purpose: Any =
 
 
 IFDS = ('sends', 'receives', 'both')  # IFD, Information Flow Direction, Rich 2026-10-01
+IFD_SPELLINGS = {'send': 'sends', 'receive': 'receives'}  # the intake procedure's spelling, stored as the store's
 
 
 def _ifd(value: Any, notices: list[Notice]) -> str | None:
-    """A join's Information Flow Direction: sends, receives or both; anything else is stored as given, BASE-044."""
+    """A join's Information Flow Direction: sends, receives or both, the procedure's send and receive read as them;
+    anything else is stored as given, BASE-044."""
     if value is None or value in IFDS:
         return value
+    if value in IFD_SPELLINGS:
+        return IFD_SPELLINGS[value]
     notices.append(Notice('ifd', f'{value!r} is not sends, receives or both; it was stored as given.'))
     return str(value)
 

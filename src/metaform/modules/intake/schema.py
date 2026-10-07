@@ -17,4 +17,4 @@ REF: Schema = {'type': 'object', 'required': ['key', 'value'],
                'properties': {'key': {'type': 'string'}, 'value': {'type': 'string'}}}
 REFS: Schema = {'type': 'array', 'items': REF}
 ELEMENTS: Schema = {'type': 'array', 'items': {'type': 'string'}}
-IFD: Schema = {'type': 'string', 'enum': ['sends', 'receives', 'both']}  # Information Flow Direction
+IFD: Schema = {'type': 'string', 'enum': ['sends', 'receives', 'both']}  # Information Flow Direction; the store also reads send and receive

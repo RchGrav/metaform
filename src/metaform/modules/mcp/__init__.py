@@ -16,6 +16,13 @@ SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('mcp>=2.2,<3',)
 SHIPS_DISABLED = False
 
+settings.choice('mcp_schemas', ['on_demand', 'inline'], 'on_demand', label='Tool schemas',
+                help='List the commands only and serve an argument schema when asked, or serve every schema inside '
+                     'its tool.',
+                details='On demand keeps what every agent is handed at connect to the menu, about 2,000 tokens; an '
+                        'argument schema is read with help or at metaform://tools/<tool>/<command> when a command is '
+                        'used. Inline puts every schema in the tool list, about 28,000 tokens for every agent '
+                        'whatever its role.')
 settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
                 help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
                 details='Relay preserves the host connection and retries calls refused before dispatch. '

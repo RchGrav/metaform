@@ -320,9 +320,16 @@ def assign(ctx: Context) -> Any:
 
 ADDRESS = Noun('address', 'The element address; workflow elements and project elements use the same logic.')
 LAYER = Noun('layer', 'The ordinary knowledge layer to write into, created when absent.')
-PROVENANCE = Noun('provenance', 'The producing prompt, model and role.', kind='json', required=False)
+PROVENANCE = Noun('provenance', 'The producing prompt, model and role.', kind='json', required=False,
+                  schema={'type': 'object', 'additionalProperties': False,
+                          'properties': {'prompt': {'type': 'string', 'description': 'The prompt the work was done from.'},
+                                         'model': {'type': 'string', 'description': 'The model that did the work.'},
+                                         'role': {'type': 'string', 'description': 'The role of the agent.'}}})
 TOKEN = Noun('nonce', 'The call nonce; omit when running through that nonce.', required=False)
-VARIABLES = Noun('variables', 'The interpreter\'s current variable values.', kind='json', required=False)
+VARIABLES = Noun('variables', 'The interpreter\'s current variable values, an object of variable name to value.',
+                 kind='json', required=False,
+                 schema={'type': 'object', 'additionalProperties': True,
+                         'description': 'Each key is a variable name; its value is that variable\'s current JSON value.'})
 # A noun that may follow a nonce is positional and optional, so the grammar collects its words as a list; over MCP it
 # takes one text as well, read by _words.
 TEXT = {'type': 'string'}
@@ -346,12 +353,14 @@ MODULE = Module(
              nouns=(Noun('text', 'The imported prompt or workflow, verbatim.'),)),
         Verb('preprocess', preprocess, 'Place visible knowledge between a lexicalized prompt body and its address footer.',
              nouns=(Noun('text', 'The lexicalized prompt body, verbatim, without its address footer.'),
-                    Noun('addresses', 'The namespace addresses named by the prompt, as a JSON list.', 'json'))),
+                    Noun('addresses', 'The namespace addresses named by the prompt, as a JSON list.', 'json',
+                         schema={'type': 'array', 'items': {'type': 'string'}}))),
         Verb('list', workflows, 'List visible workflow elements and their subroutine names.'),
         Verb('submit', submit, 'Record a workflow element in an ordinary knowledge layer.',
              nouns=(ADDRESS, LAYER, Noun('name', 'The canonical workflow name.', required=False),
                     Noun('name_length', 'Trailing address segments that name its short type.', 'int', required=False),
-                    Noun('selected', 'Knowledge layers selected to go with this workflow.', 'json', required=False),
+                    Noun('selected', 'Knowledge layers selected to go with this workflow, by name or id.', 'json',
+                         required=False, schema={'type': 'array', 'items': {'type': 'string'}}),
                     PROVENANCE)),
         Verb('add_logic', add_logic, 'Record an Axiom subroutine on a workflow or project element.',
              nouns=(ADDRESS, LAYER, Noun('name', 'The subroutine name.'), Noun('content', 'Verbatim Axiom.'), PROVENANCE)),
@@ -370,7 +379,8 @@ MODULE = Module(
         Verb('handoff', handoff, 'Issue a callee nonce to give directly or through the orchestrator to a fresh agent.',
              nouns=(CALL, TOKEN, VARIABLES)),
         Verb('parallel', parallel, 'Register independent calls and resume when every branch returns.',
-             nouns=(Noun('calls', 'The independent Axiom calls.', 'json'), TOKEN, VARIABLES)),
+             nouns=(Noun('calls', 'The independent Axiom calls, each written as call is.', 'json',
+                         schema={'type': 'array', 'items': {'type': 'string'}, 'minItems': 1}), TOKEN, VARIABLES)),
         Verb('complete', complete, 'Deliver RETURN to the caller, or close an assignment; the interpreter supplies '
                                    'its final variables.',
              nouns=(TOKEN, VARIABLES, Noun('return', 'RETURN of a value or tuple; an assignment needs none.',

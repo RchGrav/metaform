@@ -12,6 +12,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from metaform.data import Node, Store
+from metaform.modules.mcp.server import mcp_next
 
 
 def own(project_id):
@@ -199,8 +200,7 @@ def test_the_tool_list_follows_the_folders_command_surface(run, home, mapped):
         return set(tools) | set(await listed(client)), refused.is_error, text(refused)
     names, error, message = session(home, mapped, narrowed)
     assert 'map' not in names and 'map_knowledge' not in names and 'memory_open_nodes' in names
-    assert error and message[0].splitlines() == ['Error: No tool map on this surface.',
-                                                 'Next: metaform help commands']
+    assert error and message[0].splitlines() == ['Error: No tool map on this surface.', 'Next: list the tools']
     run('unset', '--modules', cwd=mapped)
 
     async def restored(client, init):
@@ -246,7 +246,9 @@ def test_tool_errors_end_with_the_one_next_step_the_cli_gives(run, home, mapped)
         caution = await called(client, 'hello_forget', {})
         return missing.is_error, text(missing), caution.is_error, text(caution)
     error, missing, caution_error, caution = session(home, mapped, call)
-    assert error and missing[0].splitlines() == cli
+    # The CLI's next step, read over MCP as the tool call it stands for, MCP-038.
+    assert error and missing[0].splitlines() == [mcp_next(line, mapped) for line in cli]
+    assert missing[0].splitlines()[-1].startswith('Next: call map with command where')
     assert caution_error and caution[0].splitlines() == [
         'Error: This deletes the greeting history.', 'Next: If you are sure: call hello with command forget and confirm true in its arguments']
     assert run('hello', 'history', cwd=mapped).stdout.split() == ['ada']
@@ -425,7 +427,8 @@ def test_tool_arguments_are_checked_by_kind_with_the_clis_next_step(run, home, m
     assert all(error for error, _ in results)
     assert all(len([line for line in blocks[0].splitlines() if line.startswith('Next: ')]) == 1
                for _, blocks in results)
-    assert results[0][1][0].splitlines()[-1] == missing_cli
+    assert missing_cli == 'Next: metaform hello greet --help'  # the CLI's next step, read over MCP as its resource
+    assert results[0][1][0].splitlines()[-1] == 'Next: read resource metaform://tools/hello/greet'
     assert run('hello', 'history', cwd=mapped).stdout.startswith('No greetings')
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
     assert shown['loud']['state'] == 'default'
@@ -821,8 +824,10 @@ def test_a_text_noun_sent_another_json_value_reaches_the_tool_as_its_json_text_w
 
 @pytest.mark.req('CLI-037')
 def test_the_server_lists_one_tool_for_each_module_and_a_module_is_entered_for_its_commands(run, home, mapped):
-    """The first thing an agent meets is small: a name for each thing that can be entered and none of the commands
-    beneath it. 64 tools cost an agent about 13,800 tokens before it had done anything."""
+    """One tool for each module, holding its commands. What every agent is handed at the start is small, a name for
+    each thing that can be entered and none of the arguments beneath it; a command's schema is read with help or at
+    its resource when the command is used, so an agent pays for what its role touches. With mcp_schemas inline every
+    command's schema is in the tool, under arguments, one anyOf branch titled per command, MCP-037."""
     async def check(client, init):
         tools = await listed(client)
         entered = await client.call_tool('map', {})
@@ -835,12 +840,23 @@ def test_the_server_lists_one_tool_for_each_module_and_a_module_is_entered_for_i
                if line.split()[1] == 'on'}
     assert set(tools) == (enabled - {'mcp'}) | {'metaform'}           # mcp has only serve, which is no tool
     size = sum(len(json.dumps(tool.input_schema)) + len(tool.description) for tool in tools.values())
-    assert size < 6000                                                   # what an agent is handed at the start
+    assert size < 8000                                                   # what every agent is handed at the start
     for name, tool in tools.items():
         properties = tool.input_schema['properties']
         assert set(properties) == {'command', 'arguments', 'help'} and tool.input_schema['additionalProperties'] is False
         assert properties['help']['type'] == 'string' and properties['help']['description'], name
         assert all(command in tool.description for command in properties['command']['enum']), name
+        assert 'anyOf' not in properties['arguments'], name
+    assert 'metaform://instructions/map' in tools['map'].description
+    run('set', '--mcp-schemas', 'inline', cwd=mapped)
+    full = session(home, mapped, lambda client, init: listed(client))
+    for name, tool in full.items():
+        branches = {one['title']: one for one in tool.input_schema['properties']['arguments']['anyOf']}
+        assert set(branches) == set(tool.input_schema['properties']['command']['enum']), name
+        assert all(one['type'] == 'object' and one['description'] for one in branches.values())
+    joins = {one['title']: one for one in full['map'].input_schema['properties']['arguments']['anyOf']}['joins']
+    assert 'element' in joins['properties']
+    run('unset', '--mcp-schemas', cwd=mapped)
     assert 'joins' in tools['map'].input_schema['properties']['command']['enum']
     commands = {one['command']: one for one in json.loads(text(entered)[-1])['commands']}
     assert not entered.is_error and set(commands) == set(tools['map'].input_schema['properties']['command']['enum'])
@@ -1152,3 +1168,34 @@ def test_a_direct_claim_over_mcp_is_honored_by_the_agent_the_client_names_at_ini
     took = take('claude-code', 'the agent')
     assert not took.is_error, text(took)
     assert store.ticket(gui).work.taken_by == 'the agent'
+
+
+@pytest.mark.req('MCP-037')
+def test_resources_serve_the_instructions_each_commands_schema_and_what_a_module_declares(run, home, mapped):
+    """What an agent reads at discovery, before any tool runs: the instructions, a module's instructions, a command's
+    argument schema, and the resources a module declares, each read through one of its verbs. The intake module
+    declares its procedure and its forms. A URI nothing serves is refused with a next step."""
+    async def check(client, init):
+        fixed = {one.uri: one for one in (await client.list_resources()).resources}
+        templates = {one.uri_template for one in (await client.list_resource_templates()).resource_templates}
+        texts = {uri: (await client.read_resource(uri)).contents[0].text for uri in (
+            'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure',
+            'metaform://intake/schema', 'metaform://tools/map/joins')}
+        try:
+            await client.read_resource('metaform://instructions/nothing')
+            refused = None
+        except Exception as error:  # noqa: BLE001
+            refused = str(error)
+        joins = await client.call_tool('map', {'help': 'joins'})
+        return init.capabilities.resources.list_changed, fixed, templates, texts, refused, joins
+    changed, fixed, templates, texts, refused, joins = session(home, mapped, check)
+    assert changed and set(fixed) == {'metaform://instructions', 'metaform://intake/procedure', 'metaform://intake/schema'}
+    assert all(one.description and one.name for one in fixed.values())
+    assert templates == {'metaform://instructions/{module}', 'metaform://tools/{tool}/{command}',
+                         'metaform://prompts/{name}', 'metaform://reports/{name}'}
+    assert texts['metaform://instructions'] == run('help', 'agents', cwd=mapped).stdout
+    assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
+    assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
+    assert texts['metaform://intake/schema'].strip() == run('intake', 'schema', cwd=mapped).stdout.strip()
+    assert json.loads(texts['metaform://tools/map/joins']) == json.loads(text(joins)[-1])['arguments']
+    assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused

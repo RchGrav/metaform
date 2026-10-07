@@ -9,11 +9,13 @@
 <!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
      unfinished after it, MCP-009. -->
 <instructions>intake is active.
-When assigned an intake, read its instructions with metaform intake prompt,
-or the intake tool's prompt command, and follow the procedure it serves.
-For recording commands and their arguments, read metaform help intake.</instructions>
+When assigned an intake, read its instructions at resource metaform://intake/procedure,
+with metaform intake prompt, or the intake tool's prompt command, and follow the procedure it serves.
+The forms it records are at resource metaform://intake/schema. The recording commands are
+start, then element and join as reasoned, show to read back, and finish; their arguments are in
+the intake tool's schema, or read metaform help intake.</instructions>
 <!-- Added to the instructions while the project has no intake and none is being recorded, MCP-009. -->
-<no_intake>This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake` tool's `prompt` command, and to follow them. When you offer the intake, suggest also creating a blind spot challenge and a knowledge layer that records best practices, and ask the person whether that is all right.</no_intake>
+<no_intake>This project has no intake. Nothing else in Metaform works until it is done. Tell the person, in words like these: "Since this is the first time running the system here, I'm going to do a basic analysis of the project. When it's done we can go through it together with some Q&amp;A. If that's all right, I'll start the web GUI so you can watch the process in real time. It opens on this machine only; that can be changed later, just ask. Ready for me to start?" When they say yes: call web with command start. It returns the address the GUI runs at; give that to the person. If it returns an error, say so and stop. Once it is running, start the intake: read resource metaform://intake/procedure and resource metaform://intake/schema, start a subagent with both, and have it perform the intake with the intake tool: start, then element and join as it reasons, show to check, finish. The person follows it live in the web GUI. When it finishes, say so and invite their questions.</no_intake>
 <!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
 <unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
 <!-- intake's slash command, /metaform:intake, which serves what metaform intake prompt prints, MCP-032 and MCP-033.

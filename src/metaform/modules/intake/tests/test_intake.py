@@ -443,8 +443,8 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
     notice, line = (prompts.findtext(name, '').strip() for name in ('no_intake', 'unfinished'))
     record = (ROOT / 'specifications' / '06-mcp-install.md').read_text(encoding='utf-8')
     assert line == 'An intake was started but aborted and still remains to be completed.' and line in record
-    assert notice.startswith('This project has no intake yet. Have a subagent perform it.') and notice in record
-    assert 'metaform intake prompt' in notice
+    assert notice.startswith('This project has no intake.') and notice in record
+    assert 'metaform://intake/procedure' in notice  # the procedure, named where an agent reads it, MCP-037
     agents = lambda: run('help', 'agents', cwd=project).stdout
     shown = agents()
     assert notice in shown and line not in shown
@@ -459,21 +459,23 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
 
 
 @pytest.mark.req('MCP-027')
-def test_the_no_intake_notice_suggests_a_blind_spot_challenge_and_a_best_practices_layer_and_asks(run, project):
-    """MCP-027: offering an intake, the agent suggests also creating a blind spot challenge and a knowledge layer that
-    records best practices, and asks the person whether that is all right. The suggestion comes after the sentence on
-    delegating the intake, and leaves with the notice once an intake is finished."""
+def test_the_no_intake_notice_asks_once_starts_the_web_gui_and_runs_the_intake_while_the_person_watches(run, project):
+    """MCP-009 and MCP-027, reworded with Rich 2026-10-07: on a first run the agent tells the person a basic analysis is
+    about to run and asks once whether to start, starts the web GUI and gives its address, then has a subagent perform
+    the intake from the procedure and forms resources while the person watches, then invites questions. What comes
+    after intake is a separate notice. The notice leaves once an intake is finished."""
     import xml.etree.ElementTree as ET
     prompts = ET.fromstring(RESOURCE.with_name('prompts.xml').read_text(encoding='utf-8'))
     notice = prompts.findtext('no_intake', '').strip()
-    delegate = notice.index('Have a subagent perform it.')
-    for words in ('blind spot challenge', 'knowledge layer', 'best practices', 'ask the person'):
-        assert notice.find(words) > delegate, words
-    suggestion = notice[notice.index('blind spot challenge'):]
-    assert suggestion in run('help', 'agents', cwd=project).stdout
+    ask, web = notice.index('Ready for me to start?'), notice.index('call web with command start')
+    delegate, questions = notice.index('start a subagent'), notice.index('invite their questions')
+    assert ask < web < delegate < questions
+    assert 'metaform://intake/procedure' in notice and 'metaform://intake/schema' in notice
+    assert 'blind spot' not in notice and 'best practices' not in notice
+    assert notice in run('help', 'agents', cwd=project).stdout
     run('intake', 'start', cwd=project)
     run('intake', 'finish', cwd=project)
-    assert 'blind spot challenge' not in run('help', 'agents', cwd=project).stdout
+    assert 'Ready for me to start?' not in run('help', 'agents', cwd=project).stdout
 
 
 @pytest.mark.req('MAP-041')

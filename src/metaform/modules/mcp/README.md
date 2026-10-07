@@ -4,7 +4,7 @@ Serves Metaform's tools to AI tools over MCP.
 
 ## Purpose
 
-The mcp module starts the Model Context Protocol server a host launches with `uvx --from <source> metaform mcp serve`. Every surfaced module verb is a tool, and the instructions are composed live from the base text and each module's purpose. It ships enabled.
+The mcp module starts the Model Context Protocol server a host launches with `uvx --from <source> metaform mcp serve`. Each surfaced module is one tool holding its verbs as commands, each command's arguments in the tool's schema; the instructions are composed live from the base text and each module's purpose, and served as a resource beside each module's instructions, each command's schema, the stored prompts, the reports and what a module declares, MCP-037. It ships enabled.
 
 ## Template version
 
@@ -36,12 +36,22 @@ and reminders and skips MCP registration and proof. The chassis global setting `
 selecting the sole eligible provider automatically. If several modules declare a server, set it to the chosen
 module id with `metaform set --install-server <id>`.
 
+`mcp_schemas` selects `inline` (the default) or `on_demand`. Inline puts every command's argument schema in its
+tool, under `arguments` as one `anyOf` branch titled per command, so an agent plans a call from the tool list. On demand lists the command names
+only, for a host that cannot hold the whole schema; a schema is then read with `help` or at the command's resource.
+
 `mcp_recovery` selects `relay` (the default) or `manual` when the server starts. Relay keeps the host connection
 when a pre-dispatch schema check refuses a newer store and the package code on disk has changed. It starts a
 replacement using the same Python interpreter, working folder and environment, replays the host's initialization
 internally, and retries only refused calls. Manual returns the ordinary schema error, leaving restart to the host.
 Unchanged code never starts a replacement. A host pinned to an old wheel must select a newer package source.
 The `set` tool stores any setting for the server's folder.
+
+## Resources
+
+`resources/list` serves `metaform://instructions`, the composed instructions, and each surfaced module's declared resources; the templates are `metaform://instructions/{module}`, `metaform://tools/{tool}/{command}`, the command's argument schema, `metaform://prompts/{name}` and `metaform://reports/{name}`. A module declares a resource with `Resource(uri, name, description, verb)` in its `Module.resources`; reading it runs that verb with no arguments. The intake module declares `metaform://intake/procedure` and `metaform://intake/schema`. A change to the surface is announced with `notifications/resources/list_changed`, as for tools and prompts.
+
+Error next steps that a module wrote for the command line are read over MCP as the tool call or resource they stand for, MCP-038: `metaform map ask` as `call map with command ask`, `metaform help map ask` as `read resource metaform://tools/map/ask`.
 
 ## Events
 

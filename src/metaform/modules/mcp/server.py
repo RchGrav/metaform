@@ -169,11 +169,11 @@ ORIGIN = _text('The origin, by its short id; without it, the project\'s selected
 PROMPTS = resources.files('metaform.modules.mcp')
 CLEAR_STATEMENT = prompt_files.required(PROMPTS, 'clear_statement')
 SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
-    'add_origin': ("Establish an origin from the project's current state, as metaform add origin does, PROJ-014.",
+    'add_origin': ("Establish an origin from the project's current state, as metaform add origin does.",
                    {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
     'list_origins': ("The project's origins, as metaform list origins lists them.",
                      {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
-    'add_variant': ('Collect a folder as a variant of an origin, as metaform add variant does, PROJ-017.',
+    'add_variant': ('Collect a folder as a variant of an origin, as metaform add variant does.',
                     {'type': 'object', 'required': ['folder'], 'additionalProperties': False,
                      'properties': {
                          'folder': _text('The folder to collect, such as a worker\'s worktree.'),
@@ -192,13 +192,13 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                        'properties': {'origin': ORIGIN, 'project': PROJECT}}),
     'prompts': ('The stored prompts, each with its newest version number, as metaform prompts lists them.',
                 {'type': 'object', 'additionalProperties': False, 'properties': {}}),
-    'prompt': ("A stored prompt's text and version, the newest unless a number is given, STORE-044.",
+    'prompt': ("A stored prompt's text and version, the newest unless a number is given.",
                {'type': 'object', 'required': ['name'], 'additionalProperties': False,
                 'properties': {'name': _text('The prompt, by name.'),
                                'number': {'type': 'integer', 'description': 'The version number; without it, the '
                                                                             'newest.'}}}),
     'save_prompt': (('Save a named prompt, creating its first version or adding an edit without changing earlier '
-                     'versions, STORE-044.'),
+                     'versions.'),
                     {'type': 'object', 'required': ['name', 'text'], 'additionalProperties': False,
                      'properties': {
                          'name': _text('The prompt, by name; a new name creates a prompt.'),
@@ -218,7 +218,7 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                                       'model': _text('Your full model designation.'),
                                       'date': _text('Date of confirmation, YYYY-MM-DD.'),
                                       'project': PROJECT}}),
-    'extract': ('Write variants out to folders with Python alone, as metaform extract does, PROJ-018.',
+    'extract': ('Write variants out to folders with Python alone, as metaform extract does.',
                 {'type': 'object', 'required': ['variants', 'folder'], 'additionalProperties': False,
                  'properties': {
                      'variants': {'type': 'array', 'items': {'type': 'string'},
@@ -234,8 +234,47 @@ CLEAR = prompt_files.required(PROMPTS, 'clear', statement=CLEAR_STATEMENT)
 CLEAR_AGAIN = CLEAR
 
 
-def _error(stop: Stop) -> Outcome:
-    return True, [f'Error: {stop}\nNext: {stop.next_step}']
+# A command line's next step, read over MCP as the tool call or resource it stands for, MCP-038. Modules write
+# next steps for the command line; the server translates the forms that name a module's command or its help, so an
+# agent holding tools is never sent to a shell it may not have. A chassis command line stays as written.
+HELP_AGENTS = re.compile(r'\bmetaform help agents(?: (?P<module>[a-z0-9_-]+))?')
+HELP_VERB = re.compile(r'\bmetaform help (?P<module>[a-z0-9_-]+)(?: (?P<verb>[a-z0-9_-]+))?')
+VERB = re.compile(r'\bmetaform (?P<module>[a-z0-9_-]+) (?P<verb>[a-z0-9_-]+)(?P<help> --help)?')
+
+
+def mcp_next(text: str, folder: Path) -> str:
+    """A next step as an MCP action where it names a module's command or help, which an agent cannot run."""
+    verbs = {module.id: {verb.name for verb in module.verbs} for module in surface(folder)}
+
+    def agents(match: re.Match[str]) -> str:
+        module = match.group('module')
+        return f'read resource metaform://instructions/{module}' if module else 'read resource metaform://instructions'
+
+    def help_verb(match: re.Match[str]) -> str:
+        module, verb = match.group('module'), match.group('verb')
+        if module == 'commands':
+            return 'list the tools; each lists its commands when called with no command'
+        if module == 'switches':
+            return f'read resource metaform://tools/{OWN}/set'
+        if module not in verbs:
+            return match.group(0)
+        if verb in verbs[module]:
+            return f'read resource metaform://tools/{module}/{verb}'
+        return f'call {module} with no command'
+
+    def verb(match: re.Match[str]) -> str:
+        module, name = match.group('module'), match.group('verb')
+        if name not in verbs.get(module, ()):
+            return match.group(0)
+        if match.group('help'):
+            return f'read resource metaform://tools/{module}/{name}'
+        return f'call {module} with command {name}'
+
+    return VERB.sub(verb, HELP_VERB.sub(help_verb, HELP_AGENTS.sub(agents, text)))
+
+
+def _error(stop: Stop, folder: Path) -> Outcome:
+    return True, [f'Error: {stop}\nNext: {mcp_next(str(stop.next_step), folder)}']
 
 
 def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
@@ -246,19 +285,19 @@ def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
     properties: dict[str, Any] = schema['properties']
     for key in schema.get('required', []):
         if key not in arguments:
-            raise Stop(f'{name} needs {key}.', 'metaform help commands')
+            raise Stop(f'{name} needs {key}.', f'read resource metaform://tools/{OWN}/{name}')
     checked: dict[str, Any] = {}
     for key, value in arguments.items():
         expected = properties.get(key)
         if expected is None:
-            raise Stop(f'{name} has no argument {key}.', 'metaform help commands')
+            raise Stop(f'{name} has no argument {key}.', f'read resource metaform://tools/{OWN}/{name}')
         wanted = JSON_TYPES[expected['type']]
         if wanted is str and not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False)
             notices.append(f'Notice: {key}: {key} is text; what was sent was kept as its JSON text.')
         elif not isinstance(value, wanted) or (isinstance(value, bool) and wanted is not bool):
             kind = {str: 'text', int: 'a whole number', bool: 'true or false', list: 'a list'}[wanted]
-            raise Stop(f'{key} is {kind}, not {value!r}.', 'metaform help commands')
+            raise Stop(f'{key} is {kind}, not {value!r}.', f'read resource metaform://tools/{OWN}/{name}')
         checked[key] = value
     return checked
 
@@ -270,7 +309,7 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
     notices: list[dict[str, str]] = []
     try:
         if not isinstance(glue, bool):
-            raise Stop('glue is true or false.', 'metaform help --glue')
+            raise Stop('glue is true or false.', f'read resource metaform://tools/{OWN}/set')
         read: list[tuple[str, str]] = []
         typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
         notices += [{'where': key, 'message': message} for key, message in read]
@@ -287,7 +326,7 @@ def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
             changes.append({'key': key, 'old': old, 'new': new})
             notices += [{'where': key, 'message': message} for message in noted]
     except Stop as stop:
-        return _error(stop)
+        return _error(stop, folder)
     result: dict[str, Any] = {'updated': changes, 'glued': glue}
     if notices:
         result['notices'] = notices
@@ -315,7 +354,7 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
         else:
             result = read_report(folder, given['name'], project=project)
     except Stop as stop:
-        return _error(stop)
+        return _error(stop, folder)
     return False, (['\n'.join(notices)] if notices else []) + [result]
 
 
@@ -326,7 +365,7 @@ def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
     try:
         error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices))
     except (Stop, StoreError) as stop:
-        return _error(stop)
+        return _error(stop, folder)
     return error, (['\n'.join(notices)] if notices else []) + blocks
 
 
@@ -392,10 +431,10 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
     layers = arguments.get('layers')
     confirmed = arguments.get('confirm', False)
     if project is not None and not isinstance(project, str):
-        raise Stop('project is a registered project id, as text.', 'metaform list projects')
+        raise Stop('project is a registered project id, as text.', "omit project for the folder's own project")
     if layers is not None and (not isinstance(layers, list)
                                or not all(isinstance(item, str) for item in cast(list[Any], layers))):
-        raise Stop('layers is a list of layer names or tags.', 'metaform map layers')
+        raise Stop('layers is a list of layer names or tags.', 'call map with command layers for their names')
     if not isinstance(confirmed, bool):
         raise Stop('confirm is true or false.', f'If you are sure: call {name} and confirm true in its arguments')
     if verb.caution and not confirmed:
@@ -448,15 +487,33 @@ def entries(folder: Path) -> dict[str, tuple[str, Commands]]:
     return found
 
 
-def entry_schema(commands: Commands) -> dict[str, Any]:
-    return {'type': 'object', 'additionalProperties': False,
-            'properties': {'command': {'type': 'string', 'enum': list(commands), 'description': COMMAND},
-                           'arguments': {'type': 'object', 'description': ARGUMENTS},
-                           'help': {'type': 'string', 'description': HELP}}}
+def entry_schema(commands: Commands, folder: Path | None = None) -> dict[str, Any]:
+    """A tool's input schema, CLI-037 and MCP-037. With mcp_schemas on_demand, the default, it lists the commands
+    only, about 2,000 tokens for the whole menu, and a command's argument schema is read with `help` or at
+    metaform://tools/<tool>/<command> when the command is used: an agent pays for what its role touches. With inline
+    every command's schema is in it, `arguments` an `anyOf` of each command's schema titled with its command, about
+    28,000 tokens for every agent. A combinator nested in a property is kept by a host; one at the top of the schema
+    Claude Code reduces to a sentence."""
+    schema: dict[str, Any] = {
+        'type': 'object', 'additionalProperties': False,
+        'properties': {'command': {'type': 'string', 'enum': list(commands), 'description': COMMAND},
+                       'arguments': {'type': 'object', 'description': ARGUMENTS},
+                       'help': {'type': 'string', 'description': HELP}}}
+    if folder is None or settings.value('mcp_schemas', folder) != 'inline':
+        return schema
+    schema['properties']['arguments'] = {
+        'description': ARGUMENTS + ' One of these, the one titled with the command.',
+        'anyOf': [{'title': name, 'description': described, **build()} for name, (described, build) in commands.items()]}
+    return schema
 
 
-def entry_description(summary: str, commands: Commands) -> str:
-    return f'{summary} Commands: {", ".join(commands)}. Call it with help and a command for what it takes.'
+def entry_description(tool: str, summary: str, commands: Commands, *, alias: bool = False) -> str:
+    """What a tool says of itself in the list, MCP-037: its summary, where its instructions are, and its commands.
+    An alias has no instructions of its own, CLI-039; the modules it stands for have."""
+    uri = 'metaform://instructions' if tool == OWN else f'metaform://instructions/{tool}'
+    where = ('' if alias else f' Read resource {uri} before the first call, or call this tool with no command for the '
+                              'same text and the commands.')
+    return f'{summary}{where} Commands: {", ".join(commands)}.'
 
 
 def inner(tool: str, command: str) -> str:
@@ -478,7 +535,7 @@ async def enter(folder: Path, tool: str, given: dict[str, Any], *, client: str |
     runs it with its arguments."""
     known = await anyio.to_thread.run_sync(entries, folder)
     if tool not in known:
-        return True, [f'Error: No tool {tool} on this surface.\nNext: metaform help commands']
+        return True, [f'Error: No tool {tool} on this surface.\nNext: list the tools']
     summary, commands = known[tool]
     asked = given.get('help')
     if asked is not None and 'command' not in given:
@@ -523,7 +580,7 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: s
         return await anyio.to_thread.run_sync(run_history, folder, name, dict(arguments))
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
-        return True, [f'Error: No tool {name} on this surface.\nNext: metaform help commands']
+        return True, [f'Error: No tool {name} on this surface.\nNext: list the tools']
     module, verb = known[name]
     lines: list[str] = []
     try:
@@ -534,9 +591,10 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], called: s
         else:
             result = await anyio.to_thread.run_sync(call, verb.run, ctx)
     except Stop as stop:
-        return _error(stop)
+        return _error(stop, folder)
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
-        return True, [f'Error: {type(error).__name__}: {error}\nNext: metaform list modules']
+        return True, [(f'Error: {type(error).__name__}: {error}\nNext: call metaform with command feedback and say '
+                       'what you called')]
     if lines and isinstance(result, str):  # one block, so no host's way of joining blocks runs the lines into the text
         return False, ['\n'.join(lines) + '\n' + result]
     blocks = ['\n'.join(lines)] if lines else []
@@ -622,12 +680,78 @@ def slash_text(folder: Path, slash: Slash, given: dict[str, str]) -> str:
     return (slash.before + printed + slash.after).strip()
 
 
+# Resources, MCP-037: the texts an agent reads at discovery, before any tool runs. The chassis serves the instructions,
+# each module's instructions, each command's argument schema, the stored prompts and the reports; a module serves
+# what it declares, each read through one of its verbs with no arguments.
+INSTRUCTIONS_URI = 'metaform://instructions'
+TEMPLATES: tuple[tuple[str, str, str], ...] = (
+    ('metaform://instructions/{module}', "A module's instructions",
+     "One module's full instructions, as entering its tool gives them. module is a tool's name."),
+    ('metaform://tools/{tool}/{command}', "A command's arguments",
+     ("The JSON Schema of one command's arguments, as help gives it. tool is a tool's name and command one of its "
+      'commands.')),
+    ('metaform://prompts/{name}', 'A stored prompt', "A stored prompt's newest text and version, by name."),
+    ('metaform://reports/{name}', 'A report file', ('One report, feedback or shape file exactly, by the name '
+                                                    'list_reports gives.')),
+)
+TEMPLATE_PATTERNS = {uri: re.compile('^' + re.sub(r'\{(\w+)\}', r'(?P<\1>[^/]+)', uri) + '$')
+                     for uri, _, _ in TEMPLATES}
+
+
+def resource_list(folder: Path) -> list[dict[str, Any]]:
+    """The fixed resources: the instructions, then each surfaced module's declared resources."""
+    listed = [{'uri': INSTRUCTIONS_URI, 'name': 'Agent instructions',
+               'description': 'The instructions agents read, composed now for this folder. Read first.',
+               'mime_type': 'text/plain'}]
+    for module in surface(folder):
+        listed += [{'uri': held.uri, 'name': held.name, 'description': held.description, 'mime_type': held.mime_type}
+                   for held in module.resources]
+    return listed
+
+
+async def read_resource_text(folder: Path, uri: str, *, client: str | None = None) -> tuple[str, str] | None:
+    """A resource's text and media type, or None when this folder serves no such resource."""
+    for module in await anyio.to_thread.run_sync(surface, folder):
+        for held in module.resources:
+            if held.uri == uri:
+                error, blocks = await run_tool(folder, f'{module.id}_{held.verb}', {}, client=client)
+                if error:
+                    raise Stop(blocks[0], 'read resource ' + INSTRUCTIONS_URI)
+                return '\n'.join(blocks), held.mime_type
+    if uri == INSTRUCTIONS_URI:
+        return await anyio.to_thread.run_sync(instructions, folder), 'text/plain'
+    matched = next(((name, held.groupdict()) for name, pattern in TEMPLATE_PATTERNS.items()
+                    if (held := pattern.match(uri))), None)
+    if matched is None:
+        return None
+    template, fields = matched
+    if template.startswith('metaform://instructions/'):
+        text = await anyio.to_thread.run_sync(module_instructions, folder, fields['module'])
+        return (text, 'text/plain') if text is not None else None
+    if template.startswith('metaform://tools/'):
+        known = await anyio.to_thread.run_sync(entries, folder)
+        if fields['tool'] not in known or fields['command'] not in known[fields['tool']][1]:
+            return None
+        commands = known[fields['tool']][1]
+        built = await anyio.to_thread.run_sync(commands[fields['command']][1])
+        return result_json(built), 'application/json'
+    if template.startswith('metaform://prompts/'):
+        return result_json(await anyio.to_thread.run_sync(prompts.prompt_version, fields['name'], None)), 'application/json'
+    return await anyio.to_thread.run_sync(read_report, folder, fields['name']), 'text/plain'
+
+
 def serve(folder: Path) -> None:
     from mcp import types
     from mcp.server import Server
     from mcp.server.lowlevel import NotificationOptions
     from mcp.server.stdio import stdio_server
-    from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, PromptsListChanged, ToolsListChanged
+    from mcp.server.subscriptions import (
+        InMemorySubscriptionBus,
+        ListenHandler,
+        PromptsListChanged,
+        ResourcesListChanged,
+        ToolsListChanged,
+    )
     from mcp.shared.exceptions import MCPError
 
     from .transport import Relay
@@ -635,8 +759,9 @@ def serve(folder: Path) -> None:
     relay = Relay(folder, settings.value('mcp_recovery', folder) == 'relay')
 
     def build() -> list[Any]:
-        return [types.Tool(name=name, description=entry_description(summary, commands),
-                           input_schema=entry_schema(commands))
+        ids = {module.id for module in surface(folder)} | {OWN}
+        return [types.Tool(name=name, description=entry_description(name, summary, commands, alias=name not in ids),
+                           input_schema=entry_schema(commands, folder))
                 for name, (summary, commands) in entries(folder).items()]
 
     def build_prompts() -> list[Any]:
@@ -649,17 +774,17 @@ def serve(folder: Path) -> None:
     # 2026-07-28 client, which is the only way that revision allows. The SDK drops whichever does not apply.
     # Both lists follow from the modules on the folder's surface and whether the chassis is on it, CLI-022.
     bus = InMemorySubscriptionBus()
-    shown: dict[str, Any] = {'tools': None, 'prompts': None}
+    shown: dict[str, Any] = {'tools': None, 'prompts': None, 'resources': None}
 
     def current() -> dict[str, Any]:
         """What each list follows: the tools also follow the folder's aliases, CLI-039."""
         both = tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
         named = tuple((name, tuple(module.id for module in held)) for name, held in aliases(folder).items())
-        return {'tools': (*both, named), 'prompts': both}
+        return {'tools': (*both, named), 'prompts': both, 'resources': both[0]}
 
     async def announce(ctx: Any) -> None:
         now = await anyio.to_thread.run_sync(current)
-        for kind in ('tools', 'prompts'):
+        for kind in ('tools', 'prompts', 'resources'):
             if shown[kind] is None:
                 shown[kind] = now[kind]
             elif shown[kind] != now[kind]:
@@ -667,9 +792,12 @@ def serve(folder: Path) -> None:
                 if kind == 'tools':
                     await bus.publish(ToolsListChanged())
                     await ctx.session.send_tool_list_changed()
-                else:
+                elif kind == 'prompts':
                     await bus.publish(PromptsListChanged())
                     await ctx.session.send_prompt_list_changed()
+                else:
+                    await bus.publish(ResourcesListChanged())
+                    await ctx.session.send_resource_list_changed()
 
     async def list_tools(ctx: Any, params: Any) -> Any:
         tools = await anyio.to_thread.run_sync(build)
@@ -698,17 +826,43 @@ def serve(folder: Path) -> None:
         found = await anyio.to_thread.run_sync(slashes, folder)
         slash = found.get(params.name)
         if slash is None:
-            raise MCPError(-32602, f'No slash command {params.name} on this surface.\nNext: metaform help commands')
+            raise MCPError(-32602, f'No slash command {params.name} on this surface.\nNext: list the prompts')
         said = await anyio.to_thread.run_sync(slash_text, folder, slash, dict(params.arguments or {}))
         await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
         await announce(ctx)
         return types.GetPromptResult(description=slash.summary or None, messages=[
             types.PromptMessage(role='user', content=types.TextContent(type='text', text=said))])
 
+    async def list_resources(ctx: Any, params: Any) -> Any:
+        listed = await anyio.to_thread.run_sync(resource_list, folder)
+        shown['resources'] = (await anyio.to_thread.run_sync(current))['resources']
+        return types.ListResourcesResult(resources=[
+            types.Resource(uri=one['uri'], name=one['name'], description=one['description'], mime_type=one['mime_type'])
+            for one in listed])
+
+    async def list_resource_templates(ctx: Any, params: Any) -> Any:
+        return types.ListResourceTemplatesResult(resource_templates=[
+            types.ResourceTemplate(uri_template=uri, name=name, description=description, mime_type='text/plain')
+            for uri, name, description in TEMPLATES])
+
+    async def read_resource(ctx: Any, params: Any) -> Any:
+        uri = str(params.uri)
+        initialized = ctx.session.client_params
+        client = initialized.client_info.name if initialized is not None else None
+        try:
+            found = await read_resource_text(folder, uri, client=client)
+        except (Stop, StoreError) as stop:
+            raise MCPError(-32603, f'Error: {stop}\nNext: {mcp_next(str(stop.next_step), folder)}') from None
+        if found is None:
+            raise MCPError(-32002, f'No resource {uri} on this surface.\nNext: list the resources and their templates')
+        text, mime = found
+        return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=text, mime_type=mime)])
+
     subscriptions = ListenHandler(bus)
     server = Server('metaform', version=chassis_version(), on_list_tools=list_tools, on_call_tool=call_tool,
                     on_list_prompts=list_prompts, on_get_prompt=get_prompt,
-                    on_subscriptions_listen=subscriptions)
+                    on_list_resources=list_resources, on_list_resource_templates=list_resource_templates,
+                    on_read_resource=read_resource, on_subscriptions_listen=subscriptions)
 
     def prepare(ctx: Any) -> None:
         """Prove schema compatibility before dispatch: construction alone does not open a Store.
@@ -740,7 +894,7 @@ def serve(folder: Path) -> None:
     def refused(ctx: Any, error: NewerStore) -> dict[str, Any]:
         if ctx.method != 'tools/call':
             raise MCPError(-32603, f'Error: {error}\nNext: {error.next_step}')
-        return types.CallToolResult(content=[types.TextContent(type='text', text=_error(error)[1][0])],
+        return types.CallToolResult(content=[types.TextContent(type='text', text=_error(error, folder)[1][0])],
                                     is_error=True).model_dump(by_alias=True, exclude_none=True)
 
     async def live(ctx: Any, call_next: Any) -> Any:
@@ -769,6 +923,6 @@ def serve(folder: Path) -> None:
         async with stdio_server() as (read, write):
             async def run(local_read: Any, local_write: Any) -> None:
                 await server.run(local_read, local_write, server.create_initialization_options(
-                    NotificationOptions(prompts_changed=True, tools_changed=True)))
+                    NotificationOptions(prompts_changed=True, tools_changed=True, resources_changed=True)))
             await relay.run(run, read, write, subscriptions.close)
     anyio.run(main)

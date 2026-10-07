@@ -635,16 +635,23 @@ def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] |
 
 KNOWLEDGE_NOUNS = (
     _noun('op', 'create, add-element, add-join, add-property, add-item, add-ref, add-plan, edit, remove, finish or '
-                'discard.'),
-    _noun('layer', 'The layer this call works on, by name or id. An object added without one goes to a new layer '
-                   'named unnamed-<time>.'),
+                'discard.',
+          schema={'type': 'string', 'enum': ['create', 'add-element', 'add-join', 'add-property', 'add-item', 'add-ref',
+                                             'add-plan', 'edit', 'remove', 'finish', 'discard']}),
+    _noun('layer', 'The layer this call works on, by name or id. Name a new layer <scope>@<content>: the address it is '
+                   'about, @, then a short adjective_noun you choose for what the prompt creates; base is the default '
+                   'scope. base@best_practices holds the best practices of the whole project; code.cpp@best_practices '
+                   'those of cpp code. Read in reverse with @ as "for": best practices for cpp code. A workflow layer is '
+                   'named the same way. An object added without a layer goes to a new layer named unnamed-<time>.'),
     _noun('variable', 'create: the one question the layer answers.'),
     _noun('mutable', 'create: whether its items change in place.', 'bool'),
     _noun('hideable', 'create: whether it can be hidden.', 'bool'),
     _noun('kind', 'create: layer.'),
-    _noun('fields', 'create: the fields of the variable, a JSON list of names.', 'json', {'type': 'array'}),
-    _noun('sources', 'create: the layers it is built from, a JSON list.', 'json', {'type': 'array'}),
-    _noun('tags', 'create: its tags, a JSON list.', 'json', {'type': 'array'}),
+    _noun('fields', 'create: the fields of the variable, a JSON list of names.', 'json',
+          {'type': 'array', 'items': {'type': 'string'}}),
+    _noun('sources', 'create: the layers it is built from, a JSON list of layer names or ids.', 'json',
+          {'type': 'array', 'items': {'type': 'string'}}),
+    _noun('tags', 'create: its tags, a JSON list.', 'json', {'type': 'array', 'items': {'type': 'string'}}),
     _noun('module', 'create: the module that makes the layer.'),
     _noun('workflow', 'create: the workflow within that module.'),
     _noun('prompt', 'create: the prompt the layer is made from.'),
@@ -668,7 +675,9 @@ KNOWLEDGE_NOUNS = (
     _noun('type', 'add-join: the join type, purpose by default.'),
     _noun('join', 'add-plan: the join id.'),
     _noun('element', 'add-property and add-plan: the element, by address or id, or as a node such as type:code.'),
-    _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON.', 'json', {}),
+    _noun('value', 'add-item, add-property, edit and add-ref: the value, as JSON: text, a number, true or false, a list '
+                   'or an object.', 'json',
+          {'type': ['string', 'number', 'boolean', 'array', 'object', 'null']}),
     _noun('node', 'add-item: element:<address or id> or join:<id>.'),
     _noun('link', 'add-item: a node the item links to.'),
     _noun('read_first', 'add-item and edit: the item is read before the task.', 'bool'),
@@ -1081,7 +1090,9 @@ WORK_NOUNS = (
     _noun('op', 'list, the default; add; edit; take, which says an agent has started on the task; plan, which says '
                 'how many steps the agent plans; step, which says it finished one; move, which puts it in a column '
                 'of the board; distribute, which gives the open tickets the glyphs of N agents; glyphs, which reads '
-                'the available agent glyph names; or done.'),
+                'the available agent glyph names; or done.',
+          schema={'type': 'string', 'enum': ['list', 'add', 'edit', 'take', 'plan', 'step', 'move', 'distribute',
+                                             'glyphs', 'done']}),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence.'),
     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
@@ -1093,7 +1104,8 @@ WORK_NOUNS = (
                        'all or is not built yet; a thing that exists but is wrong is not missing. broken, not '
                        'working, not connected or orphaned; flawed, works but is not right; enhancement, works and '
                        'could be better; or exclude, outside the scope or conflicting with a superseding '
-                       'specification, with the reason and references recorded for review.'),
+                       'specification, with the reason and references recorded for review.',
+          schema={'type': 'string', 'enum': ['missing', 'broken', 'flawed', 'enhancement', 'exclude']}),
     _noun('links', 'add and edit: other nodes the task links for reference, a list of element addresses, and of '
                    'objects of receiver and provider, with address for a part inside, each naming a purpose.',
           'json', {'type': 'array', 'items': {'anyOf': [
@@ -1102,20 +1114,22 @@ WORK_NOUNS = (
                                                 'address': {'type': 'string'}}}]}}),
     _noun('by', 'take and move: who takes it; on the CLI, take identifies the claiming agent by its first word, '
                 'claude, codex or gemini. Over MCP the client name identifies the agent.'),
-    _noun('column', 'move: backlog, todo, doing or done. todo puts a taken task back on the queue, keeping its log.'),
+    _noun('column', 'move: backlog, todo, doing or done. todo puts a taken task back on the queue, keeping its log.',
+          schema={'type': 'string', 'enum': ['backlog', 'todo', 'doing', 'done']}),
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
-                   'time, even while an agent works on it.'),
+                   'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
     _noun('hold', 'add and edit: true holds the ticket, hidden from agents, automatic starts and consensus mode until '
                   'the person lets it go; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
                    'done one at a time.'),
     _noun('eligible', 'add and edit: the eligible agent types as a JSON list, claude, codex or gemini; [] allows '
-                     'Any agent, the default for existing and new tickets. Dispatch and agent claims honor it.', 'json'),
+                     'Any agent, the default for existing and new tickets. Dispatch and agent claims honor it.', 'json',
+          {'type': 'array', 'items': {'type': 'string', 'enum': ['claude', 'codex', 'gemini']}}),
     _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets not done and not taken are given the first '
                     'that many glyphs in turn, To do first and then Backlog.', 'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
@@ -1138,8 +1152,10 @@ HELD = (_noun('provider', 'A purpose node holds as its receiver: the address of 
 MODULE = Module(
     id='map',
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
+    # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect,
+    # Rich 2026-10-07.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
-                              is not None and ctx.store.has_intake() else None),
+                              is not None and ctx.store.has_intake() else None, at_connect=False),
     tables=TABLES,
     data=DATA,
     work_read=work_read,
@@ -1256,7 +1272,8 @@ MODULE = Module(
                     Noun('question', 'The question, in plain words a person who has not read your context can answer.'),
                     *HELD,
                     _noun('suggestions', 'The answers you suggest, the one you recommend first, as a JSON list. The '
-                                         'user answers with one click on one of them, or types another.', 'json'),
+                                         'user answers with one click on one of them, or types another.', 'json',
+                          {'type': 'array', 'items': {'type': 'string'}}),
                     _noun('by', 'Who asks: your role or your name, so the user knows whose question it is.'),
                     _noun('work', 'The ticket this question belongs to, by its work id.'),
                     _noun('specs', 'Question form #1: the specification files you reviewed.'),
@@ -1294,7 +1311,7 @@ MODULE = Module(
              surfaces=('cli',)),
         Verb('messages', messages, 'List the questions and messages left for the user, or move one to another node.',
              nouns=(_noun('op', 'list, the default, oldest first; move changes one record\'s node, keeping its answer '
-                               'and closed state.'),
+                               'and closed state.', schema={'type': 'string', 'enum': ['list', 'move']}),
                     _noun('id', 'move: the id of the question or message.'),
                     _noun('node', 'list: only those at this node. move: the destination element, by address; with '
                                  'provider, the purpose it holds as receiver.'),

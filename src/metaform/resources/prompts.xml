@@ -17,7 +17,7 @@ modules available.
 <active><module/> is active.</active>
 <!-- Follows the module list in the compact instructions, the default connect_instructions=compact, and tells the
      agent where a module's full instructions are, MCP-029. -->
-<more>A module's full instructions: call its tool with no command, or run metaform help agents &lt;module&gt;.</more>
+<more>A module's full instructions: read resource metaform://instructions/&lt;module&gt;, or call its tool with no command. A command's arguments: call its tool with help and the command.</more>
 <!-- Added to the instructions when the folder is in no registered project and other projects are registered;
      <projects/> is filled with their ids. -->
 <registered>Registered projects: <projects/>.</registered>

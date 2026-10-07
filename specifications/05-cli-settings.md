@@ -403,7 +403,7 @@ Current code referenced here: `src/metaform/settings.py`, `cli.py`, `docs.py`, `
   Projects: 2 registered
   Modules: 4 on
   Intake: none yet
-    This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake_prompt` tool, and to follow them.
+    This project has no intake. Nothing else in Metaform works until it is done. First make sure the web GUI is running: ...
   Instructions: metaform help agents
   ```
 - Build: lines in order:

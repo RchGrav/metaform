@@ -36,6 +36,7 @@ __all__ = [
     'NodeReadHook',
     'Noun',
     'NounKind',
+    'Resource',
     'Status',
     'StatusHook',
     'Stop',
@@ -97,6 +98,8 @@ class Noun:
     def __post_init__(self) -> None:
         if self.kind not in NOUN_KINDS:
             raise ValueError(f'Noun {self.name}: kind must be one of {", ".join(NOUN_KINDS)}.')
+        if self.kind == 'json' and self.schema is None:  # an untyped argument over MCP leaves an agent guessing
+            raise ValueError(f'Noun {self.name}: a json noun declares its schema.')
 
     def usage(self) -> str:
         if self.many:
@@ -150,12 +153,27 @@ class Subscription:
 
 
 @dataclass(frozen=True)
+class Resource:
+    """A read-only text a module serves over MCP as a resource, MCP-037: an agent reads it by its URI at
+    discovery, before any tool runs. `verb` names the module verb whose result, called with no arguments, is the
+    text; a module serves nothing it cannot also give on the command line."""
+    uri: str
+    name: str
+    description: str
+    verb: str
+    mime_type: str = 'text/plain'
+
+
+@dataclass(frozen=True)
 class Status:
     """What a module's status hook adds: lines and a notice to status, BASE-035, and an instruction to the
-    instructions agents read, after the module's own instructions prompt, MCP-031."""
+    instructions agents read, after the module's own instructions prompt, MCP-031. With `at_connect` off the
+    instruction is in the module's full instructions only, read on demand, and not in what every agent is handed at
+    connect: a short notice of the folder's state belongs at connect, a procedure does not, MCP-037."""
     lines: tuple[str, ...] = ()
     notice: str | None = None
     instruction: str | None = None
+    at_connect: bool = True
 
 
 @dataclass(frozen=True)
@@ -175,6 +193,13 @@ class Module:
     node_read: NodeReadHook | None = None  # what the module adds to `map where` and `map node` of a node, BASE-035
     work_read: WorkReadHook | None = None  # what the module keeps on a work record, shown in `map work id=`, BASE-035
     mcp_server: str | None = None  # this module's verb serving MCP over stdio, used by install and provision
+    resources: tuple[Resource, ...] = ()  # read-only texts served over MCP as resources, MCP-037
+
+    def __post_init__(self) -> None:
+        names = {verb.name for verb in self.verbs}
+        for resource in self.resources:
+            if resource.verb not in names:
+                raise ValueError(f'Module {self.id}: resource {resource.uri} reads verb {resource.verb}, not declared.')
 
 
 @dataclass
