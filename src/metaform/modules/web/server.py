@@ -546,7 +546,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk,
-                  '/api/recommend': self.recommend,
+                  '/api/recommend': self.recommend, '/api/activate-base': self.activate_base,
+                  '/api/remove-base': self.remove_base,
                   '/api/memory': self.write_memory,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-prompts': self.set_dispatch_prompts,
@@ -595,6 +596,35 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.send(200, {'project': project.project_id, 'folder': str(folder), 'layers': assigned.new,
                         'notices': [{'where': 'layers', 'message': notice} for notice in assigned.notices]})
+
+    def activate_base(self, given: dict[str, Any]) -> None:
+        """Make a base the project's active one, as `metaform activate base <name>` does, STORE-041."""
+        project = home.project(str(given.get('project', '')))
+        name = given.get('name')
+        if project is None or not isinstance(name, str) or not name:
+            return self.send(400, {'error': 'Activate takes a registered project and a base name.'})
+        try:
+            made = home.activate_base(project.project_id, name)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        self.send(200, plain(made))
+
+    def remove_base(self, given: dict[str, Any]) -> None:
+        """Take one base out of the project, as `metaform map remove-base <name> --confirm` does, only with `confirm`
+        true; a copy of its store is kept, and the active base is refused, STORE-041."""
+        project = home.project(str(given.get('project', '')))
+        name = given.get('name')
+        if project is None or not isinstance(name, str) or not name:
+            return self.send(400, {'error': 'Remove takes a registered project and a base name.'})
+        if given.get('confirm') is not True:
+            return self.send(400, {'error': f'Removing {name} removes its store; a copy is kept under '
+                                            'backups/remove-base. The active base is refused.',
+                                   'next': 'If you are sure: send confirm true'})
+        try:
+            made = home.remove_base(project.project_id, name)
+        except StoreError as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
 
     def clear_preview(self, project: str) -> None:
         """What clearing the project removes and keeps, in the command's own caution; it changes nothing, VIEW-019."""

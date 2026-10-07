@@ -236,6 +236,11 @@ def activate(ctx: Context) -> Any:
     return _other_project(ctx).activate_base(ctx.nouns['name'])
 
 
+def remove_base(ctx: Context) -> Any:
+    from metaform import home
+    return home.remove_base(_other_project(ctx).project_id, ctx.nouns['name'])
+
+
 def search(ctx: Context) -> Any:
     return _store(ctx).search(ctx.nouns['text'], ctx.nouns.get('layer'), **_paging(ctx))
 
@@ -1220,6 +1225,10 @@ MODULE = Module(
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
         Verb('activate', activate, 'Make a base the active one.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.'))),
+        Verb('remove-base', remove_base, 'Take one base out of the project; a copy of its store is kept.',
+             nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
+             caution='Removes the base and its store; a copy is kept under backups/remove-base. The active base '
+                     'is refused.'),
         Verb('collapse', collapse, 'Write the current map as a new base of one base layer, each element and '
                                    'join once with the same ids, and make it active; the old one is kept whole.',
              nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.'))),

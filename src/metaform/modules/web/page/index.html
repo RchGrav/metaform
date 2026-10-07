@@ -17,8 +17,10 @@
     <div class="ctx">
       <label for="proj">project</label>
       <select id="proj"></select>
-      <label for="mf">metaform</label>
+      <label for="mf">base</label>
       <select id="mf"></select>
+      <button id="activateBase" type="button" title="Make the chosen base the active one: what agents and the command line read" disabled>Activate</button>
+      <button id="removeBase" type="button" title="Take the chosen base out of the project; a copy of its store is kept" disabled>Remove</button>
     </div>
     <label class="autostart" title="Start agents on this project's tickets. Each project has its own setting"><input id="autostartAgents" type="checkbox" disabled>Autostart</label>
     <div class="agentpick">

@@ -220,11 +220,20 @@ $('#clearBtn').onclick = async event => {
   catch (error) { return toast(error.message); }
   fill($('#clearbox'), h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
     h('span', {class: 'backed'}, 'It is backed up first.'),
-    h('div', {class: 'toolbar'},
-      h('button', {class: 'btn danger confirm', onclick: () => clearProject(found.project)}, 'Clear it'),
-      h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
+    ...typedConfirm('Clear it', () => clearProject(found.project))));
   showClear(true);
 };
+/* The gate on clearing or removing a project: the word confirm, typed, as the command takes --confirm; the
+ * destructive button stays off until it is there, Rich 2026-10-07. */
+function typedConfirm(verb, act) {
+  const field = h('input', {class: 'typed', type: 'text', placeholder: 'confirm', autocomplete: 'off', spellcheck: 'false'});
+  const go = h('button', {class: 'btn danger confirm', disabled: true, onclick: act}, verb);
+  field.oninput = () => { go.disabled = field.value.trim().toLowerCase() !== 'confirm'; };
+  field.onkeydown = event => { if (event.key === 'Enter' && !go.disabled) go.click(); };
+  setTimeout(() => field.focus(), 0);
+  return [h('label', {class: 'gate'}, 'Type confirm to go on:', field),
+    h('div', {class: 'toolbar'}, go, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))];
+}
 async function clearProject(project) {
   const response = await fetch('/api/clear-project', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({project, confirm: true})});
@@ -250,9 +259,7 @@ $('#removeBtn').onclick = async event => {
     ? h('div', {class: 'warn'}, h('span', {class: 'held'}, found.held), h('span', {class: 'next'}, 'Use Clear project first.'),
       h('div', {class: 'toolbar'}, h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Close')))
     : h('div', {class: 'warn'}, h('b', {}, 'Are you sure?'), h('span', {}, found.caution),
-      h('div', {class: 'toolbar'},
-        h('button', {class: 'btn danger confirm', onclick: () => removeProject(found.project)}, 'Remove it'),
-        h('button', {class: 'btn keep', onclick: () => showClear(false)}, 'Keep it'))));
+      ...typedConfirm('Remove it', () => removeProject(found.project))));
   showClear(true);
 };
 async function removeProject(project) {
@@ -4822,8 +4829,32 @@ async function readProject(wanted) {
   fill($('#mf'), ...(metaforms.length ? metaforms.map(item => h('option', {value: item.id, selected: item === active}, item.name + (item.active ? ' · active' : '')))
     : [h('option', {}, 'none yet')]));
   $('#mf').disabled = !metaforms.length;
+  baseButtons();
   await loadMetaform();
 }
+/* Activate and Remove beside the base chooser, STORE-041: the chooser only changes what the page shows; Activate makes
+ * the chosen base the active one, and Remove takes it out of the project with a copy kept. Neither acts on the active
+ * base, as the command refuses to. */
+function baseButtons() {
+  const chosen = S.bases.find(item => item.id === $('#mf').value);
+  $('#activateBase').disabled = !chosen || chosen.active;
+  $('#removeBase').disabled = !chosen || chosen.active;
+}
+$('#activateBase').onclick = async () => {
+  const chosen = S.bases.find(item => item.id === $('#mf').value);
+  if (!chosen) return;
+  $('#activateBase').disabled = true;
+  if (await wrote('/api/activate-base', {name: chosen.name})) toast(`${chosen.name} is the active base.`);
+  else baseButtons();
+};
+$('#removeBase').onclick = async () => {
+  const chosen = S.bases.find(item => item.id === $('#mf').value);
+  if (!chosen || !confirm(`Remove base ${chosen.name} from ${S.project}? A copy of its store is kept under backups/remove-base.`)) return;
+  $('#removeBase').disabled = true;
+  const done = await wrote('/api/remove-base', {name: chosen.name, confirm: true});
+  if (done) toast(`Removed ${chosen.name}; its store is kept at ${done.kept}.`);
+  else baseButtons();
+};
 /* Another project chosen: the agents drawn are the project left's, so its agent window closes and its agents go,
  * VIEW-039, and its figures with them at once, having no map here to walk back on, VIEW-035; the new project's are
  * read with its map. */
@@ -4846,7 +4877,7 @@ function toProject(id) {
   renderMerges();  // the merges this project has waiting for review, VIEW-044
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
-$('#mf').onchange = () => { S.base = $('#mf').value; loadMetaform(); };
+$('#mf').onchange = () => { S.base = $('#mf').value; baseButtons(); loadMetaform(); };
 
 async function main() {
   const response = await reach('/api/projects');

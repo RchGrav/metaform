@@ -834,6 +834,51 @@ def withdraw_base(project_id: str, base_id: str) -> None:
     changes.note(project_id)
 
 
+@dataclass(frozen=True)
+class Removed:
+    """A base taken out of a project, with the copy of its store kept, STORE-041."""
+    project_id: str
+    name: str
+    base_id: str
+    kept: str
+    notices: tuple[Any, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def __str__(self) -> str:
+        return f'Removed base {self.name} from {self.project_id}; its store is kept at {self.kept}'
+
+
+def remove_base(project_id: str, name: str) -> Removed:
+    """Take one base out of a project: its row goes, and its store file goes after a copy is kept under
+    `backups/remove-base/<project>/<stamp>/`. The active base is refused: activate another first. A project's bases
+    are never removed any other way but clearing the project, STORE-041."""
+    with _bases_db(project_id, write=True) as db:
+        row = db.execute('SELECT id FROM bases WHERE project_id=? AND name=?', (project_id, name)).fetchone()
+        if row is None:
+            raise StoreError(f'No base {name} in {project_id}.', 'metaform list bases')
+        active = db.execute('SELECT base_id FROM active_bases WHERE project_id=?', (project_id,)).fetchone()
+        if active is not None and active[0] == row[0]:
+            raise StoreError(f'{name} is the active base of {project_id}; it is not removed while it is active.',
+                             'metaform activate base <another>')
+        base_id = str(row[0])
+        path = store_path(project_id, base_id)
+        kept = home() / 'backups' / 'remove-base' / project_id / now().replace(':', '').replace('-', '')
+        kept.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            copy = sqlite3.connect(kept / path.name)
+            try:
+                with closing(sqlite3.connect(path)) as source:
+                    source.backup(copy)
+            finally:
+                copy.close()
+        db.execute('DELETE FROM bases WHERE id=? AND project_id=?', (base_id, project_id))
+    remove_store(path)
+    changes.note(project_id)
+    return Removed(project_id, name, base_id, str(kept / path.name))
+
+
 def activate_base(project_id: str, name: str) -> Base:
     with _bases_db(project_id, write=True) as db:
         row = db.execute('SELECT id, created FROM bases WHERE project_id=? AND name=?',

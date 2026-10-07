@@ -2849,6 +2849,7 @@ def test_clear_project_in_the_header_says_what_goes_asks_on_the_page_and_every_o
     assert kept(home) == before and metaform_names(run, mapped) == ['main']
     page.click('#adminBtn')
     page.click('#clearBtn')
+    page.fill('#clearbox input.typed', 'confirm')
     page.click('#clearbox button.confirm')
     page.wait_for_selector('#clearbox .said')
     assert page.inner_text('#clearbox .said') == CLEARED
@@ -2890,6 +2891,7 @@ def test_the_page_names_what_the_clear_could_not_remove_with_its_reason_and_what
     page.click('#adminBtn')
     page.click('#clearBtn')
     page.wait_for_selector('#clearbox button.confirm')
+    page.fill('#clearbox input.typed', 'confirm')
     with unremovable(stuck):
         page.click('#clearbox button.confirm')
         page.wait_for_selector('#clearbox .left li')
@@ -4261,6 +4263,7 @@ def test_the_clear_is_in_the_administration_menu_asks_are_you_sure_and_its_backu
     asked = page.inner_text('#clearbox')
     assert asked.startswith('Are you sure?') and 'It is backed up first.' in asked
     assert 'bring it back' not in asked and page.locator('#clearbox button').count() == 2   # Clear it and Keep it
+    page.fill('#clearbox input.typed', 'confirm')
     page.click('#clearbox button.confirm')
     page.wait_for_selector('#clearbox .said')
     told = page.inner_text('#clearbox')
@@ -4633,6 +4636,7 @@ def test_remove_project_in_the_administration_menu_names_what_a_project_holds_th
     assert 'proj' in [line.split()[0] for line in run('list', 'projects').stdout.splitlines()]
     page.click('#adminBtn')
     page.click('#removeBtn')
+    page.fill('#clearbox input.typed', 'confirm')
     page.click('#clearbox button.confirm')
     page.wait_for_function('() => ![...document.querySelectorAll("#proj option")].some(o => o.value === "proj")',
                            timeout=5000)
@@ -6855,4 +6859,42 @@ def test_the_mouse_wheel_zooms_the_2d_map_at_once_and_nothing_eases_after_it(run
     page.wait_for_timeout(800)
     assert view_box(page)[2] == landed, 'the zoom landed with the wheel and did not drift on after it'
     assert landed > before, 'turning the wheel down zooms out'
+    assert problems == []
+
+
+@pytest.mark.req('STORE-041')
+@pytest.mark.req('VIEW-011')
+def test_a_base_is_activated_and_removed_from_the_header_and_the_active_one_is_refused(run, home, web, mapped, browser):
+    """Rich, 2026-10-07: the page's base chooser only changed what it showed, and the one base operation the page had
+    was clearing the whole project. Activate and Remove sit beside the chooser; neither acts on the active base, and
+    Remove keeps a copy of the store."""
+    from metaform.data import Store
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    options = 'document.querySelectorAll("#mf option")'
+    run('add', 'base', 'fresh', cwd=mapped)  # fresh is active now, main is not; the page follows
+    page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "fresh · active")',
+                           timeout=5000)
+    Store('proj').add_element(None, 'code.part', role='SE')  # fresh has a store now, so removing it keeps a copy
+    page.wait_for_function('() => window.metaform.loaded()')
+    assert page.is_disabled('#activateBase') and page.is_disabled('#removeBase')  # the active base: nothing to do
+    main_id = next(base.id for base in Store('proj').bases(limit=0).results if base.name == 'main')
+    page.select_option('#mf', main_id)
+    assert page.is_enabled('#activateBase') and page.is_enabled('#removeBase')
+    page.click('#activateBase')
+    page.wait_for_function(f'() => [...{options}].some(o => o.selected && o.textContent === "main · active")', timeout=5000)
+    assert [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines() if '(active)' in line] == ['main']
+    assert page.is_disabled('#activateBase') and page.is_disabled('#removeBase')
+    fresh_id = next(base.id for base in Store('proj').bases(limit=0).results if base.name == 'fresh')
+    page.select_option('#mf', fresh_id)
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.click('#removeBase')
+    page.wait_for_function(f'() => ![...{options}].some(o => o.textContent.startsWith("fresh"))', timeout=5000)
+    assert [line.split()[0] for line in run('list', 'bases', cwd=mapped).stdout.splitlines()] == ['main']
+    kept = list((home / 'backups' / 'remove-base' / 'proj').glob('*/fresh.metaform.sqlite3'))
+    assert len(kept) == 1
+    status, body = api(web, '/api/remove-base', method='POST', headers=own_write(web),
+                       body=json.dumps({'project': 'proj', 'name': 'main', 'confirm': True}))
+    assert status == 400 and 'active' in body['error']
     assert problems == []
